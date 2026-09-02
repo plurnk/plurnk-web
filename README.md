@@ -31,6 +31,18 @@ npm install -g @plurnk/plurnk @plurnk/plurnk-web
 plurnk web --workspace my-project --model fireox --yolo
 ```
 
+No publication is required for development. After building this checkout,
+link it into a sibling `plurnk` checkout and run that client's binary:
+
+```sh
+npm install
+npm run build
+cd ../plurnk
+npm link --no-save --package-lock=false ../plurnk-web
+npm run build
+./bin/plurnk.js web --workspace my-project --model=fireox --yolo
+```
+
 `plurnk` remains the only owner of the environment cascade and all workspace,
 Worker, model, reasoning, policy, capability, and proposal controls. This
 package receives one resolved AG-UI session and interprets only its own portal
