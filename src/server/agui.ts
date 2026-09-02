@@ -1,20 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { HttpAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
+import type { BrowserSession } from "./session.ts";
 
 export interface PlurnkAguiTarget {
   upstream: URL;
   token?: string;
 }
 
-export interface BrowserSessionOptions extends PlurnkAguiTarget {
-  workspace?: string;
-  worker?: string;
-  projectRoot: string | null;
+export interface BrowserAguiOptions extends PlurnkAguiTarget {
+  workspaceProperties: Readonly<Record<string, unknown>>;
+  prepareSession?(session: BrowserSession): Promise<void>;
 }
 
-export interface BrowserSession {
-  workspace: string;
-  threadId: string;
+export interface BrowserCatalog {
+  workspaces: string[];
+  workers: string[];
 }
 
 interface ActionOutcome<T> {
@@ -47,19 +47,31 @@ export const runAction = async <T>(
   target: PlurnkAguiTarget,
   kind: string,
   params: Readonly<Record<string, unknown>> = {},
+  context?: {
+    session: BrowserSession;
+    workspaceProperties: Readonly<Record<string, unknown>>;
+  },
 ): Promise<T> => {
   const agent = new HttpAgent({
     url: new URL("/", target.upstream).href,
     headers: headers(target.token),
   });
   const input: RunAgentInput = {
-    threadId: `plurnk-web-bootstrap-${randomUUID()}`,
+    threadId: context?.session.threadId ?? `plurnk-web-bootstrap-${randomUUID()}`,
     runId: randomUUID(),
     state: {},
     messages: [],
     tools: [],
     context: [],
-    forwardedProps: { plurnk: { action: { kind, ...params } } },
+    forwardedProps: {
+      plurnk: {
+        ...(context === undefined ? {} : {
+          workspace: context.session.workspace,
+          ...context.workspaceProperties,
+        }),
+        action: { kind, ...params },
+      },
+    },
   };
 
   return await new Promise<T>((resolve, reject) => {
@@ -94,20 +106,51 @@ export const runAction = async <T>(
   });
 };
 
-export const resolveBrowserSession = async (
-  options: BrowserSessionOptions,
-): Promise<BrowserSession> => {
-  if (options.workspace !== undefined) {
-    return {
-      workspace: options.workspace,
-      threadId: options.worker ?? options.workspace,
-    };
+const nonEmptyName = (value: unknown, operation: string): string => {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${operation} completed without a non-empty name.`);
   }
+  return value;
+};
+
+export const createBrowserWorkspace = async (
+  options: BrowserAguiOptions,
+): Promise<string> => {
   const created = await runAction<{ name?: unknown }>(options, "workspace.create", {
-    projectRoot: options.projectRoot,
+    ...options.workspaceProperties,
   });
-  if (typeof created.name !== "string" || created.name.length === 0) {
-    throw new Error("workspace.create completed without a non-empty workspace name.");
-  }
-  return { workspace: created.name, threadId: created.name };
+  return nonEmptyName(created.name, "workspace.create");
+};
+
+export const resolveBrowserCatalog = async (
+  options: BrowserAguiOptions,
+  session: BrowserSession,
+): Promise<BrowserCatalog> => {
+  await runAction(options, "workspace.create", {
+    name: session.workspace,
+    ...options.workspaceProperties,
+  });
+  const workers = await runAction<{
+    workers?: Array<{ name?: unknown }>;
+  }>(options, "workspace.workers", {}, {
+    session,
+    workspaceProperties: options.workspaceProperties,
+  });
+  await options.prepareSession?.(session);
+  const workspaces = await runAction<{
+    workspaces?: Array<{ name?: unknown }>;
+  }>(options, "workspace.list");
+
+  const workspaceNames = (workspaces.workspaces ?? [])
+    .map(({ name }) => nonEmptyName(name, "workspace.list"));
+  const workerNames = (workers.workers ?? [])
+    .map(({ name }) => nonEmptyName(name, "workspace.workers"));
+  return {
+    workspaces: workspaceNames.includes(session.workspace)
+      ? workspaceNames
+      : [...workspaceNames, session.workspace],
+    workers: workerNames.includes(session.threadId)
+      ? workerNames
+      : [...workerNames, session.threadId],
+  };
 };

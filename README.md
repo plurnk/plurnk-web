@@ -45,9 +45,16 @@ npm run build
 
 `plurnk` remains the only owner of the environment cascade and all workspace,
 Worker, model, reasoning, policy, capability, and proposal controls. This
-package receives one resolved AG-UI session and interprets only its own portal
+package receives a safe resolved projection and interprets only its own portal
 host and port (`PLURNK_WEB_HOST`, `PLURNK_WEB_PORT`; defaults
 `127.0.0.1:10660`). It never starts or embeds the daemon.
+
+Every ready browser URL is `/<workspace>/<threadId>`. With no configured
+workspace or Worker, tabs may select or create either coordinate independently.
+`--workspace` locks only the workspace, so tabs may still open many Workers in
+that world. `--worker` locks only the Worker name in web mode, and each selected
+workspace resolves before that Worker. Supplying both exposes one durable
+conversation. Opening the same complete URL opens the same Worker.
 
 ## Boundary
 

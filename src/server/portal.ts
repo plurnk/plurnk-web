@@ -3,15 +3,32 @@ import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { basename, extname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
-import type { BrowserSession } from "./agui.ts";
+import {
+  createBrowserWorkspace,
+  resolveBrowserCatalog,
+  type BrowserAguiOptions,
+} from "./agui.ts";
 import { createPlurnkRuntimeHandler, type FetchHandler } from "./copilot.ts";
 import { resolvePortalAddress } from "./config.ts";
+import {
+  BrowserRouteError,
+  encodeRuntimeThreadId,
+  resolveSessionRoute,
+  type BrowserSession,
+  type BrowserSessionConstraints,
+} from "./session.ts";
 
 export interface BrowserBootstrap {
   runtimeUrl: string;
   agentId: string;
   workspace: string;
   threadId: string;
+  runtimeThreadId: string;
+  canonicalPath: string;
+  workspaceLocked: boolean;
+  workerLocked: boolean;
+  workspaces: string[];
+  workers: string[];
   autoAcceptProposals: boolean;
 }
 
@@ -20,9 +37,12 @@ export interface PortalOptions {
   port: number;
   upstream: URL;
   token?: string;
-  session: BrowserSession;
+  constraints: BrowserSessionConstraints;
+  workspaceProperties: Readonly<Record<string, unknown>>;
   runProperties: Readonly<Record<string, unknown>>;
+  prepareSession?(session: BrowserSession): Promise<void>;
   autoAcceptProposals: boolean;
+  createThreadId?(): string;
   assetRoot?: string;
 }
 
@@ -31,8 +51,10 @@ export interface ClientPortalOptions {
   port?: string;
   upstream: URL;
   token?: string;
-  session: BrowserSession;
+  constraints: BrowserSessionConstraints;
+  workspaceProperties: Readonly<Record<string, unknown>>;
   runProperties: Readonly<Record<string, unknown>>;
+  prepareSession?(session: BrowserSession): Promise<void>;
   autoAcceptProposals: boolean;
 }
 
@@ -99,6 +121,16 @@ const sendProblem = (response: ServerResponse, value: Problem): void => {
     "content-type": "application/problem+json; charset=utf-8",
   });
   response.end(body);
+};
+
+const sendRedirect = (response: ServerResponse, location: string): void => {
+  response.writeHead(302, {
+    ...securityHeaders(),
+    "cache-control": "no-store",
+    "content-length": "0",
+    location,
+  });
+  response.end();
 };
 
 const originHost = (host: string): string => host.includes(":") ? `[${host}]` : host;
@@ -223,6 +255,16 @@ const close = (server: Server): Promise<void> => new Promise((resolveClose, reje
 
 export const startPortal = async (options: PortalOptions): Promise<RunningPortal> => {
   const assetRoot = options.assetRoot ?? new URL("../browser/", import.meta.url).pathname;
+  const navigation: BrowserAguiOptions = {
+    upstream: options.upstream,
+    ...(options.token === undefined ? {} : { token: options.token }),
+    workspaceProperties: options.workspaceProperties,
+    ...(options.prepareSession === undefined ? {} : { prepareSession: options.prepareSession }),
+  };
+  const resolveRoute = (pathname: string) => resolveSessionRoute(pathname, options.constraints, {
+    createWorkspace: () => createBrowserWorkspace(navigation),
+    ...(options.createThreadId === undefined ? {} : { createThreadId: options.createThreadId }),
+  });
   let allowedOrigin = "";
   let runtimePromise: Promise<FetchHandler> | undefined;
   const runtime = (): Promise<FetchHandler> => {
@@ -256,11 +298,24 @@ export const startPortal = async (options: PortalOptions): Promise<RunningPortal
           sendProblem(response, problem(405, "method-not-allowed", "Method not allowed", "Browser bootstrap accepts GET requests only."));
           return;
         }
+        const pathname = url.searchParams.get("path");
+        if (pathname === null) {
+          sendProblem(response, problem(400, "session-path-required", "Session path required", "Browser bootstrap requires the current URL path."));
+          return;
+        }
+        const route = await resolveRoute(pathname);
+        const catalog = await resolveBrowserCatalog(navigation, route.session);
         const bootstrap: BrowserBootstrap = {
           runtimeUrl: "/api/copilotkit",
           agentId: "default",
-          workspace: options.session.workspace,
-          threadId: options.session.threadId,
+          workspace: route.session.workspace,
+          threadId: route.session.threadId,
+          runtimeThreadId: encodeRuntimeThreadId(route.session),
+          canonicalPath: route.canonicalPath,
+          workspaceLocked: options.constraints.workspace !== undefined,
+          workerLocked: options.constraints.threadId !== undefined,
+          workspaces: catalog.workspaces,
+          workers: catalog.workers,
           autoAcceptProposals: options.autoAcceptProposals,
         };
         const body = JSON.stringify(bootstrap);
@@ -278,10 +333,28 @@ export const startPortal = async (options: PortalOptions): Promise<RunningPortal
         sendProblem(response, problem(405, "method-not-allowed", "Method not allowed", "Bundled assets are read-only."));
         return;
       }
-      await streamFile(request, response, assetRoot, url.pathname);
+      if (url.pathname.startsWith("/assets/") || /^\/[A-Za-z0-9._-]+\.[A-Za-z0-9]+$/.test(url.pathname)) {
+        await streamFile(request, response, assetRoot, url.pathname);
+        return;
+      }
+      const route = await resolveRoute(url.pathname);
+      if (route.canonicalPath !== url.pathname) {
+        sendRedirect(response, route.canonicalPath);
+        return;
+      }
+      await streamFile(request, response, assetRoot, "/index.html");
     })().catch((cause) => {
       if (response.headersSent) response.destroy(cause as Error);
-      else sendProblem(response, problem(500, "portal-failure", "Portal failure", cause instanceof Error ? cause.message : String(cause)));
+      else if (cause instanceof BrowserRouteError) {
+        sendProblem(response, problem(
+          cause.status,
+          cause.status === 409 ? "session-constraint" : "session-route",
+          cause.status === 409 ? "Session constraint conflict" : "Invalid session route",
+          cause.message,
+        ));
+      } else {
+        sendProblem(response, problem(500, "portal-failure", "Portal failure", cause instanceof Error ? cause.message : String(cause)));
+      }
     });
   });
 
@@ -311,8 +384,10 @@ export const startClientPortal = async (options: ClientPortalOptions): Promise<R
     ...address,
     upstream: options.upstream,
     ...(options.token === undefined ? {} : { token: options.token }),
-    session: options.session,
+    constraints: options.constraints,
+    workspaceProperties: options.workspaceProperties,
     runProperties: options.runProperties,
+    ...(options.prepareSession === undefined ? {} : { prepareSession: options.prepareSession }),
     autoAcceptProposals: options.autoAcceptProposals,
   });
 };
