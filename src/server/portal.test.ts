@@ -74,8 +74,12 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     port: 0,
     upstream: upstream.url,
     token: "daemon-secret",
-    workspace: "web-test",
-    projectRoot: "/workspace",
+    session: { workspace: "web-test", threadId: "web-test" },
+    runProperties: {
+      policy: { capabilities: {}, proposals: "review" },
+      maxTurns: 7,
+    },
+    autoAcceptProposals: true,
     assetRoot: assets,
   });
   try {
@@ -91,7 +95,7 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
       agentId: "default",
       workspace: "web-test",
       threadId: "web-test",
-      projectRoot: "/workspace",
+      autoAcceptProposals: true,
     });
 
     const info = await fetch(`${portal.origin}/api/copilotkit/info`);
@@ -120,7 +124,13 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     assert.equal(upstreamAuthorization, "Bearer daemon-secret");
     assert.equal(upstreamBrowserAuthorization, undefined);
     assert.equal(upstreamInputs[0]?.threadId, "web-test");
-    assert.deepEqual(upstreamInputs[0]?.forwardedProps, input.forwardedProps);
+    assert.deepEqual(upstreamInputs[0]?.forwardedProps, {
+      plurnk: {
+        workspace: "web-test",
+        policy: { capabilities: {}, proposals: "review" },
+        maxTurns: 7,
+      },
+    });
 
     const connect = await fetch(`${portal.origin}/api/copilotkit/agent/default/connect`, {
       method: "POST",
@@ -142,7 +152,6 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     assert.deepEqual(upstreamInputs[1]?.forwardedProps, {
       plurnk: {
         workspace: "web-test",
-        projectRoot: "/workspace",
         mode: "sync",
       },
     });

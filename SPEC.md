@@ -8,14 +8,16 @@ all durable runtime state and executes every operation.
 
 ```mermaid
 flowchart LR
-    Browser[CopilotKit React client] <-->|same-origin CopilotKit runtime API| Portal[plurnk-web portal]
+    Client[plurnk client] -->|resolved launch contract| Portal[plurnk-web portal]
+    Browser[CopilotKit React client] <-->|same-origin CopilotKit runtime API| Portal
     Portal -->|official HttpAgent over AG-UI HTTP/SSE| Daemon[plurnk-service]
 ```
 
 | Component | Owned responsibility |
 |---|---|
+| PLURNK client | Environment cascade, workspace and Worker selection, model, reasoning, LoopPolicy, capabilities, proposal behavior |
 | Browser application | CopilotKit chat/run UX, multiline input, review controls, PLURNK semantic renderers |
-| Local portal | Static assets, local admission perimeter, CopilotKit runtime bridge, daemon credential |
+| Local portal | Host/port, static assets, local admission perimeter, CopilotKit runtime bridge, daemon credential |
 | PLURNK daemon | Workspaces, Workers, Runs, log, policy, execution, accounting, model lifecycle |
 
 §web-one-wire **The daemon's public AG-UI+ endpoint is the sole runtime
@@ -39,25 +41,27 @@ workspace and Worker.
 
 ## Invocation and configuration
 
-§web-invocation The installed `plurnk-web` executable starts one foreground
-portal, prints its URL, and remains attached to the terminal until interrupted.
-It does not start the daemon or open a network listener other than its own
+§web-invocation `plurnk web` is the sole product invocation. The canonical
+PLURNK client parses and resolves its ordinary configuration, dynamically loads
+the optional `@plurnk/plurnk-web` package, starts one foreground portal, prints
+its URL, and remains attached to the terminal until interrupted. It does not
+download the package, start the daemon, or open a listener other than the local
 portal.
 
-| Input | Default | Meaning |
-|---|---:|---|
-| `--host`, `PLURNK_WEB_HOST` | `127.0.0.1` | Portal bind host; only loopback is admitted |
-| `--port`, `PLURNK_WEB_PORT` | `10660` | Portal TCP port |
-| `--workspace`, `PLURNK_CLIENT_WORKSPACE` | unset | Initial workspace name |
-| `--worker`, `PLURNK_CLIENT_WORKER` | unset | Initial conversation Worker name |
-| `--project-root`, `PLURNK_CLIENT_PROJECT_ROOT` | current directory | Create-time workspace root |
-| `PLURNK_AGUI_URL` | assembled from `PLURNK_HOST:PLURNK_PORT` | Daemon AG-UI endpoint |
-| `PLURNK_AGUI_TOKEN` | unset | Daemon bearer retained only by the portal |
+| Module input | Ownership |
+|---|---|
+| `host`, `port` | Web-owned listener configuration; only a loopback host is admitted |
+| `upstream`, `token` | Client-resolved daemon target; the token remains inside the portal |
+| `session` | Client-resolved `{workspace, threadId}` identity |
+| `runProperties` | Opaque properties merged into `forwardedProps.plurnk` on each user Run |
+| `autoAcceptProposals` | Resolved client proposal behavior; never applies to user-input interactions |
 
-The environment cascade, highest precedence first, is shell values, repeated
-explicit env files, project `.env`, the shared XDG PLURNK `.env`, then packaged
-`.env.defaults`. Loading is set-if-unset, so higher layers cannot be replaced by
-lower ones.
+The web module owns no parallel environment cascade and no copy of the client's
+configuration schema. The host client has already applied its normal cascade
+before the module is loaded. `PLURNK_WEB_HOST` and `PLURNK_WEB_PORT` are the only
+web-owned environment values. The source checkout's `npm run dev` command is a
+private development runner that creates an anonymous cwd workspace; it is not a
+second product client.
 
 ## Local security perimeter
 
@@ -78,12 +82,10 @@ portal needs a separately specified authentication and admission perimeter.
 
 ## Browser session
 
-§web-session One selected workspace and conversation Worker define the active
-browser session. An explicit workspace is used verbatim. Without one, the
-portal asks the daemon to mint a workspace through `workspace.create` when the
-browser first requests its bootstrap. An explicit Worker names the CopilotKit
-thread; otherwise the workspace name does. Reload and reconnect use that same
-durable daemon identity.
+§web-session One client-resolved workspace and conversation Worker define the
+active browser session. The workspace is the AG-UI world and the Worker is the
+CopilotKit thread. The portal neither invents nor re-resolves either identity.
+Reload and reconnect use that same durable daemon identity.
 
 §web-run A user prompt produces an official AG-UI Run. The browser consumes:
 
@@ -129,10 +131,10 @@ there are no runtime CDN fetches.
 ## Composition and verification
 
 §web-composition The package is verified in its packed form. Production tests
-start the built executable, load built assets, and drive the official AG-UI
-client through the portal against a real listener. Source-only or development-
-server success is insufficient.
+install packed client and web artifacts together, launch `plurnk web`, load
+built assets, and drive the official AG-UI client through the portal against a
+real listener. Source-only or development-server success is insufficient.
 
-The terminal client's `plurnk web` command discovers and launches this
-executable but does not import its presentation. The two clients may share only
-presentation-neutral AG-UI session machinery with an explicit public contract.
+The terminal client imports only the package's server-side launch function; it
+does not import browser presentation code. The launch function accepts resolved
+runtime values rather than a second client configuration representation.

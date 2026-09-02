@@ -3,15 +3,16 @@ import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { basename, extname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
-import { resolveBrowserSession, type BrowserSession } from "./agui.ts";
+import type { BrowserSession } from "./agui.ts";
 import { createPlurnkRuntimeHandler, type FetchHandler } from "./copilot.ts";
+import { resolvePortalAddress } from "./config.ts";
 
 export interface BrowserBootstrap {
   runtimeUrl: string;
   agentId: string;
   workspace: string;
   threadId: string;
-  projectRoot: string | null;
+  autoAcceptProposals: boolean;
 }
 
 export interface PortalOptions {
@@ -19,10 +20,20 @@ export interface PortalOptions {
   port: number;
   upstream: URL;
   token?: string;
-  workspace?: string;
-  worker?: string;
-  projectRoot: string | null;
+  session: BrowserSession;
+  runProperties: Readonly<Record<string, unknown>>;
+  autoAcceptProposals: boolean;
   assetRoot?: string;
+}
+
+export interface ClientPortalOptions {
+  host?: string;
+  port?: string;
+  upstream: URL;
+  token?: string;
+  session: BrowserSession;
+  runProperties: Readonly<Record<string, unknown>>;
+  autoAcceptProposals: boolean;
 }
 
 export interface RunningPortal {
@@ -213,18 +224,9 @@ const close = (server: Server): Promise<void> => new Promise((resolveClose, reje
 export const startPortal = async (options: PortalOptions): Promise<RunningPortal> => {
   const assetRoot = options.assetRoot ?? new URL("../browser/", import.meta.url).pathname;
   let allowedOrigin = "";
-  let sessionPromise: Promise<BrowserSession> | undefined;
   let runtimePromise: Promise<FetchHandler> | undefined;
-  const session = (): Promise<BrowserSession> => {
-    sessionPromise ??= resolveBrowserSession(options).catch((cause) => {
-      sessionPromise = undefined;
-      throw cause;
-    });
-    return sessionPromise;
-  };
   const runtime = (): Promise<FetchHandler> => {
-    runtimePromise ??= session()
-      .then((selected) => createPlurnkRuntimeHandler({ ...options, session: selected }))
+    runtimePromise ??= createPlurnkRuntimeHandler(options)
       .catch((cause) => {
         runtimePromise = undefined;
         throw cause;
@@ -254,13 +256,12 @@ export const startPortal = async (options: PortalOptions): Promise<RunningPortal
           sendProblem(response, problem(405, "method-not-allowed", "Method not allowed", "Browser bootstrap accepts GET requests only."));
           return;
         }
-        const selected = await session();
         const bootstrap: BrowserBootstrap = {
           runtimeUrl: "/api/copilotkit",
           agentId: "default",
-          workspace: selected.workspace,
-          threadId: selected.threadId,
-          projectRoot: options.projectRoot,
+          workspace: options.session.workspace,
+          threadId: options.session.threadId,
+          autoAcceptProposals: options.autoAcceptProposals,
         };
         const body = JSON.stringify(bootstrap);
         response.writeHead(200, {
@@ -302,4 +303,16 @@ export const startPortal = async (options: PortalOptions): Promise<RunningPortal
     address: { host: options.host, port: address.port },
     close: () => close(server),
   };
+};
+
+export const startClientPortal = async (options: ClientPortalOptions): Promise<RunningPortal> => {
+  const address = resolvePortalAddress(options.host, options.port);
+  return await startPortal({
+    ...address,
+    upstream: options.upstream,
+    ...(options.token === undefined ? {} : { token: options.token }),
+    session: options.session,
+    runProperties: options.runProperties,
+    autoAcceptProposals: options.autoAcceptProposals,
+  });
 };

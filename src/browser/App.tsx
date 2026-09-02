@@ -8,7 +8,7 @@ import {
   type Interrupt,
   type ReactActivityMessageRenderer,
 } from "@copilotkit/react-core/v2";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 interface BrowserBootstrap {
@@ -16,7 +16,7 @@ interface BrowserBootstrap {
   agentId: string;
   workspace: string;
   threadId: string;
-  projectRoot: string | null;
+  autoAcceptProposals: boolean;
 }
 
 interface PlanEntry {
@@ -60,7 +60,7 @@ const bootstrapSchema = z.object({
   agentId: z.string().min(1),
   workspace: z.string().min(1),
   threadId: z.string().min(1),
-  projectRoot: z.string().nullable(),
+  autoAcceptProposals: z.boolean(),
 });
 
 const planSchema = z.object({
@@ -120,12 +120,15 @@ const InterruptCard = ({
   interrupt,
   resolve,
   cancel,
+  autoAcceptProposals,
 }: {
   interrupt: Interrupt;
   resolve(payload?: unknown, interruptId?: string): Promise<unknown>;
   cancel(interruptId?: string): Promise<unknown>;
+  autoAcceptProposals: boolean;
 }) => {
   const proposal = interrupt.id.startsWith("prop:");
+  const automaticallyResolved = useRef(false);
   const [body, setBody] = useState("");
   const [payload, setPayload] = useState("{}");
   const [error, setError] = useState<string>();
@@ -149,21 +152,35 @@ const InterruptCard = ({
     }
   };
 
+  useEffect(() => {
+    if (!proposal || !autoAcceptProposals || automaticallyResolved.current) return;
+    automaticallyResolved.current = true;
+    setBusy(true);
+    void resolve({ decision: "accept" }, interrupt.id).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setBusy(false);
+    });
+  }, [autoAcceptProposals, interrupt.id, proposal, resolve]);
+
   return (
     <section className="interrupt" aria-label={proposal ? "Approval required" : "Input required"}>
       <div className="semantic-label">{proposal ? "Approval required" : "Input required"}</div>
-      <p>{interrupt.message ?? "Review the request before continuing."}</p>
+      <p>{proposal && autoAcceptProposals ? "Approving proposal…" : interrupt.message ?? "Review the request before continuing."}</p>
       {proposal ? (
         <>
-          <label>
-            Replacement body <span>(optional)</span>
-            <textarea value={body} onChange={(event) => setBody(event.target.value)} disabled={busy} />
-          </label>
-          <div className="interrupt-actions">
-            <button disabled={busy} onClick={() => void settle(() => resolve({ decision: "accept", ...(body.length > 0 ? { body } : {}) }, interrupt.id))}>Approve</button>
-            <button disabled={busy} onClick={() => void settle(() => resolve({ decision: "reject", ...(body.length > 0 ? { body } : {}) }, interrupt.id))}>Reject</button>
-            <button className="quiet" disabled={busy} onClick={() => void settle(() => cancel(interrupt.id))}>Cancel</button>
-          </div>
+          {!autoAcceptProposals && (
+            <>
+              <label>
+                Replacement body <span>(optional)</span>
+                <textarea value={body} onChange={(event) => setBody(event.target.value)} disabled={busy} />
+              </label>
+              <div className="interrupt-actions">
+                <button disabled={busy} onClick={() => void settle(() => resolve({ decision: "accept", ...(body.length > 0 ? { body } : {}) }, interrupt.id))}>Approve</button>
+                <button disabled={busy} onClick={() => void settle(() => resolve({ decision: "reject", ...(body.length > 0 ? { body } : {}) }, interrupt.id))}>Reject</button>
+                <button className="quiet" disabled={busy} onClick={() => void settle(() => cancel(interrupt.id))}>Cancel</button>
+              </div>
+            </>
+          )}
         </>
       ) : (
         <>
@@ -188,13 +205,13 @@ const InterruptCard = ({
   );
 };
 
-const PresentationBindings = ({ agentId }: { agentId: string }) => {
+const PresentationBindings = ({ agentId, autoAcceptProposals }: { agentId: string; autoAcceptProposals: boolean }) => {
   useDefaultRenderTool();
   useInterrupt({
     agentId,
     render: ({ interrupt, resolve, cancel }) => interrupt === null
       ? <></>
-      : <InterruptCard interrupt={interrupt} resolve={resolve} cancel={cancel} />,
+      : <InterruptCard interrupt={interrupt} resolve={resolve} cancel={cancel} autoAcceptProposals={autoAcceptProposals} />,
   });
   return null;
 };
@@ -268,21 +285,14 @@ const EventRail = ({ agentId }: { agentId: string }) => {
 
 const Client = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
   const [runtimeError, setRuntimeError] = useState<string>();
-  const properties = useMemo(() => ({
-    plurnk: {
-      workspace: bootstrap.workspace,
-      projectRoot: bootstrap.projectRoot,
-    },
-  }), [bootstrap.projectRoot, bootstrap.workspace]);
   return (
     <CopilotKit
       runtimeUrl={bootstrap.runtimeUrl}
-      properties={properties}
       renderActivityMessages={activityRenderers}
       defaultThrottleMs={50}
       onError={({ error }) => setRuntimeError(error.message)}
     >
-      <PresentationBindings agentId={bootstrap.agentId} />
+      <PresentationBindings agentId={bootstrap.agentId} autoAcceptProposals={bootstrap.autoAcceptProposals} />
       <main className="shell">
         <StatusBar agentId={bootstrap.agentId} workspace={bootstrap.workspace} />
         {runtimeError !== undefined && <div className="runtime-error" role="alert">{runtimeError}</div>}

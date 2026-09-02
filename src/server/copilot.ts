@@ -8,14 +8,11 @@ import type {
   AgentRunnerStopRequest,
 } from "@copilotkit/runtime/v2";
 import { defer, switchMap, throwError, type Observable } from "rxjs";
-import type { BrowserSession } from "./agui.ts";
 import type { PortalOptions } from "./portal.ts";
 
 export type FetchHandler = (request: Request) => Promise<Response>;
 
-type RuntimeOptions = Pick<PortalOptions, "upstream" | "token" | "projectRoot"> & {
-  session: BrowserSession;
-};
+type RuntimeOptions = Pick<PortalOptions, "upstream" | "token" | "session" | "runProperties">;
 
 const daemonHeaders = (token: string | undefined): Record<string, string> =>
   token === undefined || token.length === 0
@@ -32,7 +29,27 @@ class PlurnkAgentRunner implements AgentRunner {
   }
 
   run(request: AgentRunnerRunRequest): Observable<BaseEvent> {
-    return this.#delegate.run(request);
+    if (request.threadId !== this.#options.session.threadId) {
+      return throwError(() => new Error(
+        `Thread ${JSON.stringify(request.threadId)} is outside this portal's selected conversation.`,
+      ));
+    }
+    const forwarded = request.input.forwardedProps as Record<string, unknown> | undefined;
+    const plurnk = forwarded?.plurnk as Record<string, unknown> | undefined;
+    return this.#delegate.run({
+      ...request,
+      input: {
+        ...request.input,
+        forwardedProps: {
+          ...(forwarded ?? {}),
+          plurnk: {
+            ...(plurnk ?? {}),
+            ...this.#options.runProperties,
+            workspace: this.#options.session.workspace,
+          },
+        },
+      },
+    });
   }
 
   connect(request: AgentRunnerConnectRequest): Observable<BaseEvent> {
@@ -71,7 +88,6 @@ class PlurnkAgentRunner implements AgentRunner {
       forwardedProps: {
         plurnk: {
           workspace: this.#options.session.workspace,
-          projectRoot: this.#options.projectRoot,
           mode: "sync",
         },
       },

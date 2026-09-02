@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { parseArgs } from "node:util";
 
@@ -9,9 +9,6 @@ export interface PortalConfiguration {
   port: number;
   upstream: URL;
   token?: string;
-  workspace?: string;
-  worker?: string;
-  projectRoot: string | null;
 }
 
 export interface ParsedCommand {
@@ -20,28 +17,26 @@ export interface ParsedCommand {
   version: boolean;
 }
 
-export const USAGE = `usage: plurnk-web [options]
+export const USAGE = `usage: npm start -- [options]
 
-Serve the browser-native PLURNK client against a separately running daemon.
+Run the source checkout's browser portal against a separately running daemon.
 
 options:
   --host <host>            loopback portal host (default 127.0.0.1)
   --port <port>            portal port (default 10660)
-  --workspace <name>       initial workspace
-  --worker <name>          initial conversation Worker (requires workspace)
-  --project-root <path>    create-time workspace root (default cwd; empty = headless)
   --env-file <path>        required env layer; repeatable, last wins
   --env-file-if-exists <p> optional env layer; repeatable, last wins
   --help                    show this help
   --version                 show package version
 
+Product invocation:
+  Use plurnk web [options]. The plurnk client owns all session and run
+  configuration; this development runner creates an anonymous cwd workspace.
+
 daemon target:
-  PLURNK_AGUI_URL overrides http://$PLURNK_HOST:$PLURNK_PORT
+  PLURNK_AGUI_URL selects the daemon (default http://127.0.0.1:1066)
   PLURNK_AGUI_TOKEN remains inside this portal and never reaches the browser
 `;
-
-const truthy = (value: string | undefined): boolean =>
-  value !== undefined && ["1", "true", "yes", "on"].includes(value.toLowerCase());
 
 const load = (path: string, required: boolean): void => {
   if (!existsSync(path)) {
@@ -79,8 +74,20 @@ const positiveInteger = (raw: string, name: string): number => {
 const isLoopback = (host: string): boolean =>
   host === "localhost" || host === "::1" || /^127(?:\.[0-9]{1,3}){3}$/.test(host);
 
-const nonempty = (value: string | undefined): string | undefined =>
-  value !== undefined && value.length > 0 ? value : undefined;
+export const resolvePortalAddress = (
+  hostOverride: string | undefined,
+  portOverride: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): { host: string; port: number } => {
+  const host = hostOverride ?? env.PLURNK_WEB_HOST ?? "127.0.0.1";
+  if (!isLoopback(host)) {
+    throw new Error(`--host must be loopback; received ${JSON.stringify(host)}`);
+  }
+  return {
+    host,
+    port: positiveInteger(portOverride ?? env.PLURNK_WEB_PORT ?? "10660", "--port"),
+  };
+};
 
 export const parseCommand = (
   argv: readonly string[],
@@ -94,9 +101,6 @@ export const parseCommand = (
     options: {
       host: { type: "string" },
       port: { type: "string" },
-      workspace: { type: "string" },
-      worker: { type: "string" },
-      "project-root": { type: "string" },
       "env-file": { type: "string", multiple: true },
       "env-file-if-exists": { type: "string", multiple: true },
       help: { type: "boolean", short: "h" },
@@ -106,13 +110,9 @@ export const parseCommand = (
 
   loadEnvironment(values["env-file"] ?? [], values["env-file-if-exists"] ?? [], cwd, env);
 
-  const host = values.host ?? env.PLURNK_WEB_HOST ?? "127.0.0.1";
-  if (!isLoopback(host)) {
-    throw new Error(`--host must be loopback; received ${JSON.stringify(host)}`);
-  }
-  const port = positiveInteger(values.port ?? env.PLURNK_WEB_PORT ?? "10660", "--port");
+  const { host, port } = resolvePortalAddress(values.host, values.port, env);
   const upstreamRaw = env.PLURNK_AGUI_URL
-    ?? `http://${env.PLURNK_HOST ?? "127.0.0.1"}:${env.PLURNK_PORT ?? "1066"}`;
+    ?? "http://127.0.0.1:1066";
   const upstream = new URL(upstreamRaw);
   if (upstream.protocol !== "http:" && upstream.protocol !== "https:") {
     throw new Error("PLURNK_AGUI_URL must use http: or https:");
@@ -121,29 +121,15 @@ export const parseCommand = (
     throw new Error("PLURNK_AGUI_URL must not contain credentials; use PLURNK_AGUI_TOKEN");
   }
 
-  const workspace = nonempty(values.workspace ?? env.PLURNK_CLIENT_WORKSPACE);
-  const worker = nonempty(values.worker ?? env.PLURNK_CLIENT_WORKER);
-  if (worker !== undefined && workspace === undefined) {
-    throw new Error("--worker requires --workspace (or PLURNK_CLIENT_WORKSPACE)");
-  }
-  const rootRaw = values["project-root"] ?? env.PLURNK_CLIENT_PROJECT_ROOT;
-  const projectRoot = rootRaw === "" ? null : resolve(cwd, rootRaw ?? cwd);
-  if (projectRoot !== null && !isAbsolute(projectRoot)) {
-    throw new Error("--project-root must resolve to an absolute path");
-  }
-
-  const token = nonempty(env.PLURNK_AGUI_TOKEN);
+  const token = env.PLURNK_AGUI_TOKEN;
   return {
     configuration: {
       host,
       port,
       upstream,
-      ...(token !== undefined ? { token } : {}),
-      ...(workspace !== undefined ? { workspace } : {}),
-      ...(worker !== undefined ? { worker } : {}),
-      projectRoot,
+      ...(token !== undefined && token.length > 0 ? { token } : {}),
     },
     help: values.help === true,
-    version: values.version === true || truthy(env.PLURNK_WEB_VERSION),
+    version: values.version === true,
   };
 };

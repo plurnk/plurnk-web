@@ -20,21 +20,22 @@ Early development. The owning implementation plan is
 ```sh
 npm install
 npm test
-npm start
+npm run dev
 ```
 
-The production portal listens on `http://127.0.0.1:10660/` by default and
-connects to the PLURNK daemon at `http://127.0.0.1:1066/`. Run the daemon
-separately; this client never starts or embeds it. If no workspace is named,
-the daemon mints one when the browser first connects.
+Install this optional presentation package alongside the PLURNK client, run the
+daemon separately, then use the canonical client command:
 
 ```sh
-plurnk-web --workspace my-project
+npm install -g @plurnk/plurnk @plurnk/plurnk-web
+plurnk web --workspace my-project --model fireox --yolo
 ```
 
-Configuration follows the PLURNK environment cascade. `PLURNK_AGUI_URL` and
-`PLURNK_AGUI_TOKEN` select and authenticate the daemon. `PLURNK_WEB_HOST` and
-`PLURNK_WEB_PORT` configure the local browser portal.
+`plurnk` remains the only owner of the environment cascade and all workspace,
+Worker, model, reasoning, policy, capability, and proposal controls. This
+package receives one resolved AG-UI session and interprets only its own portal
+host and port (`PLURNK_WEB_HOST`, `PLURNK_WEB_PORT`; defaults
+`127.0.0.1:10660`). It never starts or embeds the daemon.
 
 ## Boundary
 
