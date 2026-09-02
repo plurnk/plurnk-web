@@ -15,9 +15,9 @@ flowchart LR
 
 | Component | Owned responsibility |
 |---|---|
-| PLURNK client | Environment cascade, workspace and Worker selection, model, reasoning, LoopPolicy, capabilities, proposal behavior |
-| Browser application | CopilotKit chat/run UX, multiline input, review controls, PLURNK semantic renderers |
-| Local portal | Host/port, static assets, local admission perimeter, CopilotKit runtime bridge, daemon credential |
+| PLURNK client | Environment cascade, optional workspace/Worker constraints, workspace-create and Run properties, model, reasoning, LoopPolicy, capabilities, proposal behavior |
+| Browser application | URL-addressed workspace/Worker selection, CopilotKit chat/run UX, multiline input, review controls, PLURNK semantic renderers |
+| Local portal | Host/port, static assets, route enforcement, local admission perimeter, CopilotKit runtime bridge, daemon credential |
 | PLURNK daemon | Workspaces, Workers, Runs, log, policy, execution, accounting, model lifecycle |
 
 §web-one-wire **The daemon's public AG-UI+ endpoint is the sole runtime
@@ -34,10 +34,10 @@ synchronization Run and renders the daemon's authoritative
 `MESSAGES_SNAPSHOT`; it never becomes durable truth, executes a model, or owns
 a tool.
 
-§web-state-authority **Browser storage is never runtime authority.** A reload
-reattaches using daemon discovery, replay, and log actions. Browser storage may
-retain only presentation preferences and the names of the last selected
-workspace and Worker.
+§web-state-authority **Browser storage is never runtime authority.** The URL
+names the selected workspace and Worker; a reload reattaches using daemon
+discovery, replay, and log actions. Browser storage may retain presentation
+preferences only.
 
 ## Invocation and configuration
 
@@ -52,16 +52,18 @@ portal.
 |---|---|
 | `host`, `port` | Web-owned listener configuration; only a loopback host is admitted |
 | `upstream`, `token` | Client-resolved daemon target; the token remains inside the portal |
-| `session` | Client-resolved `{workspace, threadId}` identity |
+| `constraints` | Optional client-resolved workspace and Worker constraints |
+| `workspaceProperties` | Client-resolved create-time properties used for every selected workspace |
 | `runProperties` | Opaque properties merged into `forwardedProps.plurnk` on each user Run |
+| `prepareSession` | Client-owned application of explicit durable model and reasoning selections |
 | `autoAcceptProposals` | Resolved client proposal behavior; never applies to user-input interactions |
 
 The web module owns no parallel environment cascade and no copy of the client's
 configuration schema. The host client has already applied its normal cascade
 before the module is loaded. `PLURNK_WEB_HOST` and `PLURNK_WEB_PORT` are the only
 web-owned environment values. The source checkout's `npm run dev` command is a
-private development runner that creates an anonymous cwd workspace; it is not a
-second product client.
+private development runner that supplies cwd workspace-create properties to an
+otherwise unconstrained portal; it is not a second product client.
 
 ## Local security perimeter
 
@@ -82,10 +84,22 @@ portal needs a separately specified authentication and admission perimeter.
 
 ## Browser session
 
-§web-session One client-resolved workspace and conversation Worker define the
-active browser session. The workspace is the AG-UI world and the Worker is the
-CopilotKit thread. The portal neither invents nor re-resolves either identity.
-Reload and reconnect use that same durable daemon identity.
+§web-session **Every ready browser URL is
+`/<workspace>/<threadId>`.** The first coordinate names the AG-UI world and the
+second names its conversation Worker. Missing unconstrained coordinates are
+generated and redirected to a complete URL before the application is served.
+A configured workspace or Worker fixes only its respective coordinate. Thus an
+unconstrained portal may host many worlds and conversations; a workspace-locked
+portal may host many conversations in that world; and a fully constrained
+portal exposes one pair. A duplicated complete URL observes the same durable
+Worker.
+
+The browser discovers existing choices through `workspace.list` and
+`workspace.workers`, and uses the ordinary AG-UI creation/attachment path for
+new choices. Workspace resolution always precedes Worker resolution. Browser
+storage contributes no identity. CopilotKit's process-local bookkeeping uses a
+collision-free pair key, while AG-UI receives the real workspace and Worker as
+separate coordinates.
 
 §web-run A user prompt produces an official AG-UI Run. The browser consumes:
 
@@ -134,9 +148,14 @@ there are no runtime CDN fetches.
 
 §web-composition The package is verified in its packed form. Production tests
 install packed client and web artifacts together, launch `plurnk web`, load
-built assets, and drive the official AG-UI client through the portal against a
-real listener. Source-only or development-server success is insufficient.
+built assets, and drive independently addressed browser sessions through the
+official AG-UI client against a real listener. The gate supplies workspace,
+Worker, proposal, and portal values through the normal environment cascade and
+asserts the resulting route constraints, create-time properties, durable model
+and reasoning actions, and per-Run policy. Source-only or development-server
+success is insufficient.
 
 The terminal client imports only the package's server-side launch function; it
 does not import browser presentation code. The launch function accepts resolved
-runtime values rather than a second client configuration representation.
+configuration and navigation values rather than a singleton session or a
+second client configuration parser.

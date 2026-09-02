@@ -7,12 +7,20 @@ import type {
   AgentRunnerRunRequest,
   AgentRunnerStopRequest,
 } from "@copilotkit/runtime/v2";
-import { defer, switchMap, throwError, type Observable } from "rxjs";
+import { defer, map, switchMap, throwError, type Observable } from "rxjs";
 import type { PortalOptions } from "./portal.ts";
+import {
+  assertSessionConstraints,
+  decodeRuntimeThreadId,
+  type BrowserSession,
+} from "./session.ts";
 
 export type FetchHandler = (request: Request) => Promise<Response>;
 
-type RuntimeOptions = Pick<PortalOptions, "upstream" | "token" | "session" | "runProperties">;
+type RuntimeOptions = Pick<
+  PortalOptions,
+  "upstream" | "token" | "constraints" | "workspaceProperties" | "runProperties" | "prepareSession"
+>;
 
 const daemonHeaders = (token: string | undefined): Record<string, string> =>
   token === undefined || token.length === 0
@@ -29,57 +37,85 @@ class PlurnkAgentRunner implements AgentRunner {
   }
 
   run(request: AgentRunnerRunRequest): Observable<BaseEvent> {
-    if (request.threadId !== this.#options.session.threadId) {
-      return throwError(() => new Error(
-        `Thread ${JSON.stringify(request.threadId)} is outside this portal's selected conversation.`,
-      ));
+    let session: BrowserSession;
+    try {
+      session = this.#session(request.threadId);
+    } catch (cause) {
+      return throwError(() => cause);
     }
     const forwarded = request.input.forwardedProps as Record<string, unknown> | undefined;
     const plurnk = forwarded?.plurnk as Record<string, unknown> | undefined;
-    return this.#delegate.run({
-      ...request,
-      input: {
-        ...request.input,
-        forwardedProps: {
-          ...(forwarded ?? {}),
-          plurnk: {
-            ...(plurnk ?? {}),
-            ...this.#options.runProperties,
-            workspace: this.#options.session.workspace,
+    const agent = request.agent.clone();
+    agent.threadId = session.threadId;
+    return defer(() => this.#prepare(session)).pipe(
+      switchMap(() => this.#delegate.run({
+        ...request,
+        agent,
+        input: {
+          ...request.input,
+          threadId: session.threadId,
+          forwardedProps: {
+            ...(forwarded ?? {}),
+            plurnk: {
+              ...(plurnk ?? {}),
+              ...this.#options.runProperties,
+              workspace: session.workspace,
+            },
           },
         },
-      },
-    });
+      })),
+      map((event) => this.#browserEvent(event, request.threadId, session)),
+    );
   }
 
   connect(request: AgentRunnerConnectRequest): Observable<BaseEvent> {
-    if (request.threadId !== this.#options.session.threadId) {
-      return throwError(() => new Error(
-        `Thread ${JSON.stringify(request.threadId)} is outside this portal's selected conversation.`,
-      ));
+    let session: BrowserSession;
+    try {
+      session = this.#session(request.threadId);
+    } catch (cause) {
+      return throwError(() => cause);
     }
-    return defer(() => this.#delegate.isRunning({ threadId: request.threadId })).pipe(
+    return defer(() => this.#prepare(session)).pipe(
+      switchMap(() => this.#delegate.isRunning({ threadId: request.threadId })),
       switchMap((running) => running
         ? this.#delegate.connect(request)
-        : this.#synchronize(request.threadId)),
+        : this.#synchronize(session)),
+      map((event) => this.#browserEvent(event, request.threadId, session)),
     );
   }
 
   isRunning(request: AgentRunnerIsRunningRequest): Promise<boolean> {
+    this.#session(request.threadId);
     return this.#delegate.isRunning(request);
   }
 
   stop(request: AgentRunnerStopRequest): Promise<boolean | undefined> {
+    this.#session(request.threadId);
     return this.#delegate.stop(request);
   }
 
-  #synchronize(threadId: string): Observable<BaseEvent> {
+  #session(runtimeThreadId: string): BrowserSession {
+    const session = decodeRuntimeThreadId(runtimeThreadId);
+    assertSessionConstraints(session, this.#options.constraints);
+    return session;
+  }
+
+  async #prepare(session: BrowserSession): Promise<void> {
+    await this.#options.prepareSession?.(session);
+  }
+
+  #browserEvent(event: BaseEvent, runtimeThreadId: string, session: BrowserSession): BaseEvent {
+    if (!("threadId" in event) || event.threadId !== session.threadId) return event;
+    return { ...event, threadId: runtimeThreadId } as BaseEvent;
+  }
+
+  #synchronize(session: BrowserSession): Observable<BaseEvent> {
     const agent = new HttpAgent({
       url: new URL("/", this.#options.upstream).href,
       headers: daemonHeaders(this.#options.token),
     });
     const input: RunAgentInput = {
-      threadId,
+      threadId: session.threadId,
       runId: randomUUID(),
       state: {},
       messages: [],
@@ -87,7 +123,8 @@ class PlurnkAgentRunner implements AgentRunner {
       context: [],
       forwardedProps: {
         plurnk: {
-          workspace: this.#options.session.workspace,
+          ...this.#options.workspaceProperties,
+          workspace: session.workspace,
           mode: "sync",
         },
       },

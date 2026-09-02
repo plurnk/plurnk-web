@@ -31,7 +31,8 @@ options:
 
 Product invocation:
   Use plurnk web [options]. The plurnk client owns all session and run
-  configuration; this development runner creates an anonymous cwd workspace.
+  configuration. This private development runner leaves browser routes
+  unconstrained and applies cwd when each selected workspace is created.
 
 daemon target:
   PLURNK_AGUI_URL selects the daemon (default http://127.0.0.1:1066)

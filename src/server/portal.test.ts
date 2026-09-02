@@ -52,7 +52,26 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
       upstreamInputs.push(upstreamInput);
       response.writeHead(200, { "content-type": "text/event-stream", "x-accel-buffering": "no" });
       response.write(`data: ${JSON.stringify({ type: "RUN_STARTED", threadId: upstreamInput.threadId, runId: upstreamInput.runId })}\n\n`);
-      if ((upstreamInput.forwardedProps as { plurnk?: { mode?: unknown } } | undefined)?.plurnk?.mode === "sync") {
+      const plurnk = (upstreamInput.forwardedProps as {
+        plurnk?: { mode?: unknown; action?: { kind: string; name?: string } };
+      } | undefined)?.plurnk;
+      if (plurnk?.action !== undefined) {
+        const result = plurnk.action.kind === "workspace.create"
+          ? { id: 1, name: plurnk.action.name ?? "web-test", workerId: 1 }
+          : plurnk.action.kind === "workspace.workers"
+            ? { workers: [{ id: 1, name: upstreamInput.threadId, created_at: "now", origin: "client", parentWorkerId: null }] }
+            : plurnk.action.kind === "workspace.list"
+              ? { workspaces: [{ id: 1, name: "web-test", project_root: null, created_at: "now" }] }
+              : {};
+        response.write(`data: ${JSON.stringify({
+          type: "CUSTOM",
+          name: "plurnk.action.result",
+          value: { kind: plurnk.action.kind, ok: true, result },
+        })}\n\n`);
+        response.end(`data: ${JSON.stringify({ type: "RUN_FINISHED", threadId: upstreamInput.threadId, runId: upstreamInput.runId, outcome: { type: "success" } })}\n\n`);
+        return;
+      }
+      if (plurnk?.mode === "sync") {
         response.write(`data: ${JSON.stringify({ type: "STATE_SNAPSHOT", snapshot: { plurnk: { workspace: { name: "web-test" } } } })}\n\n`);
         response.write(`data: ${JSON.stringify({
           type: "MESSAGES_SNAPSHOT",
@@ -74,7 +93,8 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     port: 0,
     upstream: upstream.url,
     token: "daemon-secret",
-    session: { workspace: "web-test", threadId: "web-test" },
+    constraints: { workspace: "web-test", threadId: "web-test" },
+    workspaceProperties: {},
     runProperties: {
       policy: { capabilities: {}, proposals: "review" },
       maxTurns: 7,
@@ -88,13 +108,23 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     assert.match(await page.text(), /PLURNK test/);
     assert.match(page.headers.get("content-security-policy") ?? "", /script-src 'self'/);
 
-    const bootstrapResponse = await fetch(`${portal.origin}/bootstrap.json`);
+    const bootstrapResponse = await fetch(`${portal.origin}/bootstrap.json?path=${encodeURIComponent("/web-test/web-test")}`);
     assert.equal(bootstrapResponse.status, 200);
-    assert.deepEqual(await bootstrapResponse.json(), {
+    const bootstrap = await bootstrapResponse.json() as {
+      runtimeThreadId: string;
+      [key: string]: unknown;
+    };
+    assert.deepEqual(bootstrap, {
       runtimeUrl: "/api/copilotkit",
       agentId: "default",
       workspace: "web-test",
       threadId: "web-test",
+      runtimeThreadId: JSON.stringify(["web-test", "web-test"]),
+      canonicalPath: "/web-test/web-test",
+      workspaceLocked: true,
+      workerLocked: true,
+      workspaces: ["web-test"],
+      workers: ["web-test"],
       autoAcceptProposals: true,
     });
 
@@ -111,7 +141,7 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
       },
     });
     const input: RunAgentInput = {
-      threadId: "web-test",
+      threadId: bootstrap.runtimeThreadId,
       runId: "web-run",
       state: {},
       messages: [{ id: "prompt", role: "user", content: "hello" }],
@@ -123,8 +153,8 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     assert(events.some((event) => event.type === "TEXT_MESSAGE_CONTENT" && event.delta === "hello"));
     assert.equal(upstreamAuthorization, "Bearer daemon-secret");
     assert.equal(upstreamBrowserAuthorization, undefined);
-    assert.equal(upstreamInputs[0]?.threadId, "web-test");
-    assert.deepEqual(upstreamInputs[0]?.forwardedProps, {
+    assert.equal(upstreamInputs[3]?.threadId, "web-test");
+    assert.deepEqual(upstreamInputs[3]?.forwardedProps, {
       plurnk: {
         workspace: "web-test",
         policy: { capabilities: {}, proposals: "review" },
@@ -149,13 +179,13 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     assert.ok(connectEvents.some((event) =>
       event.type === "MESSAGES_SNAPSHOT"
       && (event.messages as Array<{ id?: unknown }>).some(({ id }) => id === "durable-answer")), "connect asks the daemon for durable history");
-    assert.deepEqual(upstreamInputs[1]?.forwardedProps, {
+    assert.deepEqual(upstreamInputs[4]?.forwardedProps, {
       plurnk: {
         workspace: "web-test",
         mode: "sync",
       },
     });
-    assert.equal(upstreamInputs[1]?.messages.length, 0);
+    assert.equal(upstreamInputs[4]?.messages.length, 0);
     assert.equal(upstreamAuthorization, "Bearer daemon-secret");
     assert.equal(upstreamBrowserAuthorization, undefined);
 

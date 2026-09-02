@@ -10,6 +10,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { newWorkerHref, sessionHref, workspaceHref } from "./navigation.ts";
 import { PlainReasoningContent } from "./reasoning.ts";
 
 interface BrowserBootstrap {
@@ -17,6 +18,12 @@ interface BrowserBootstrap {
   agentId: string;
   workspace: string;
   threadId: string;
+  runtimeThreadId: string;
+  canonicalPath: string;
+  workspaceLocked: boolean;
+  workerLocked: boolean;
+  workspaces: string[];
+  workers: string[];
   autoAcceptProposals: boolean;
 }
 
@@ -61,6 +68,12 @@ const bootstrapSchema = z.object({
   agentId: z.string().min(1),
   workspace: z.string().min(1),
   threadId: z.string().min(1),
+  runtimeThreadId: z.string().min(1),
+  canonicalPath: z.string().startsWith("/"),
+  workspaceLocked: z.boolean(),
+  workerLocked: z.boolean(),
+  workspaces: z.array(z.string().min(1)),
+  workers: z.array(z.string().min(1)),
   autoAcceptProposals: z.boolean(),
 });
 
@@ -258,6 +271,52 @@ const StatusBar = ({ agentId, workspace }: { agentId: string; workspace: string 
   );
 };
 
+const SessionNavigation = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
+  const selectWorkspace = (workspace: string): void => {
+    window.location.assign(workspaceHref(
+      workspace,
+      bootstrap.workerLocked ? bootstrap.threadId : undefined,
+    ));
+  };
+  const selectWorker = (threadId: string): void => {
+    window.location.assign(sessionHref(bootstrap.workspace, threadId));
+  };
+  return (
+    <nav className="session-navigation" aria-label="PLURNK session">
+      <label>
+        <span>Workspace</span>
+        <select
+          aria-label="Workspace"
+          value={bootstrap.workspace}
+          disabled={bootstrap.workspaceLocked}
+          onChange={(event) => selectWorkspace(event.target.value)}
+        >
+          {bootstrap.workspaces.map((workspace) => (
+            <option key={workspace} value={workspace}>{workspace}</option>
+          ))}
+        </select>
+      </label>
+      {!bootstrap.workspaceLocked && <a href="/">New workspace</a>}
+      <label>
+        <span>Worker</span>
+        <select
+          aria-label="Worker"
+          value={bootstrap.threadId}
+          disabled={bootstrap.workerLocked}
+          onChange={(event) => selectWorker(event.target.value)}
+        >
+          {bootstrap.workers.map((threadId) => (
+            <option key={threadId} value={threadId}>{threadId}</option>
+          ))}
+        </select>
+      </label>
+      {!bootstrap.workerLocked && (
+        <a href={newWorkerHref(bootstrap.workspace)}>New Worker</a>
+      )}
+    </nav>
+  );
+};
+
 const EventRail = ({ agentId }: { agentId: string }) => {
   const { agent } = useAgent({ agentId, updates: [] });
   const [events, setEvents] = useState<SurfaceEvent[]>([]);
@@ -301,12 +360,13 @@ const Client = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
     >
       <PresentationBindings agentId={bootstrap.agentId} autoAcceptProposals={bootstrap.autoAcceptProposals} />
       <main className="shell">
+        <SessionNavigation bootstrap={bootstrap} />
         <StatusBar agentId={bootstrap.agentId} workspace={bootstrap.workspace} />
         {runtimeError !== undefined && <div className="runtime-error" role="alert">{runtimeError}</div>}
         <EventRail agentId={bootstrap.agentId} />
         <CopilotChat
           agentId={bootstrap.agentId}
-          threadId={bootstrap.threadId}
+          threadId={bootstrap.runtimeThreadId}
           messageView={messageView}
           labels={{
             chatInputPlaceholder: "Ask PLURNK…",
@@ -326,12 +386,18 @@ const App = () => {
   const load = async (): Promise<void> => {
     setError(undefined);
     try {
-      const response = await fetch("/bootstrap.json", { headers: { accept: "application/json" } });
+      const url = new URL("/bootstrap.json", window.location.origin);
+      url.searchParams.set("path", window.location.pathname);
+      const response = await fetch(url, { headers: { accept: "application/json" } });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { detail?: unknown };
         throw new Error(typeof body.detail === "string" ? body.detail : `Bootstrap failed (${response.status}).`);
       }
-      setBootstrap(bootstrapSchema.parse(await response.json()));
+      const next = bootstrapSchema.parse(await response.json());
+      if (window.location.pathname !== next.canonicalPath) {
+        window.history.replaceState(null, "", next.canonicalPath);
+      }
+      setBootstrap(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }

@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { parseCommand, USAGE } from "./config.ts";
-import { resolveBrowserSession } from "./agui.ts";
 
 const version = async (): Promise<string> => {
   const body = await readFile(new URL("../../package.json", import.meta.url), "utf8");
@@ -26,15 +25,12 @@ export const main = async (argv: readonly string[] = process.argv.slice(2)): Pro
   }
 
   const { startPortal } = await import("./portal.ts");
-  const session = await resolveBrowserSession({
-    upstream: command.configuration.upstream,
-    ...(command.configuration.token === undefined ? {} : { token: command.configuration.token }),
-    projectRoot: process.cwd(),
-  });
+  const workspaceProperties = { projectRoot: process.cwd() };
   const portal = await startPortal({
     ...command.configuration,
-    session,
-    runProperties: {},
+    constraints: {},
+    workspaceProperties,
+    runProperties: workspaceProperties,
     autoAcceptProposals: false,
   });
   process.stderr.write(`plurnk-web: ${await version()} · ${portal.origin} · AG-UI ${command.configuration.upstream.origin}\n`);
