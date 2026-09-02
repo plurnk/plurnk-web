@@ -375,11 +375,6 @@ const Client = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
           agentId={bootstrap.agentId}
           threadId={bootstrap.runtimeThreadId}
           messageView={messageView}
-          labels={{
-            chatInputPlaceholder: "Ask PLURNK…",
-            welcomeMessageText: "What would you like to accomplish?",
-            chatDisclaimerText: "PLURNK can change the selected workspace. Review consequential operations.",
-          }}
           throttleMs={50}
         />
       </main>
