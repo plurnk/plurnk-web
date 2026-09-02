@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { basename, extname, resolve, sep } from "node:path";
+import { createRequire } from "node:module";
 import { Readable } from "node:stream";
 import {
   createBrowserWorkspace,
@@ -40,7 +41,10 @@ export interface PortalOptions {
   constraints: BrowserSessionConstraints;
   workspaceProperties: Readonly<Record<string, unknown>>;
   runProperties: Readonly<Record<string, unknown>>;
-  prepareSession?(session: BrowserSession): Promise<void>;
+  prepareSession?(session: BrowserSession, workspaceProperties: Readonly<Record<string, unknown>>): Promise<void>;
+  projectPrompt?(prompt: string): BrowserPromptProjection;
+  timeoutSec?: number;
+  mcpConfiguration?: Readonly<Record<string, string>>;
   autoAcceptProposals: boolean;
   createThreadId?(): string;
   assetRoot?: string;
@@ -54,9 +58,20 @@ export interface ClientPortalOptions {
   constraints: BrowserSessionConstraints;
   workspaceProperties: Readonly<Record<string, unknown>>;
   runProperties: Readonly<Record<string, unknown>>;
-  prepareSession?(session: BrowserSession): Promise<void>;
+  prepareSession?(session: BrowserSession, workspaceProperties: Readonly<Record<string, unknown>>): Promise<void>;
+  projectPrompt?(prompt: string): BrowserPromptProjection;
+  timeoutSec?: number;
+  mcpConfiguration: Readonly<Record<string, string>>;
   autoAcceptProposals: boolean;
 }
+
+export interface BrowserPromptProjection {
+  prompt: string;
+  runProperties: Readonly<Record<string, unknown>>;
+}
+
+const packageVersion = (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
+export const WEB_CLIENT_ID = `@plurnk/plurnk-web/${packageVersion}`;
 
 export interface RunningPortal {
   origin: string;
@@ -380,14 +395,32 @@ export const startPortal = async (options: PortalOptions): Promise<RunningPortal
 
 export const startClientPortal = async (options: ClientPortalOptions): Promise<RunningPortal> => {
   const address = resolvePortalAddress(options.host, options.port);
+  const withFrontend = (properties: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+    const settings = properties.settings;
+    if (settings !== undefined && (typeof settings !== "object" || settings === null || Array.isArray(settings))) {
+      throw new TypeError("plurnk-web requires object-valued workspace settings.");
+    }
+    return {
+      ...properties,
+      settings: {
+        ...(settings as Readonly<Record<string, unknown>> | undefined),
+        client: WEB_CLIENT_ID,
+      },
+    };
+  };
+  const workspaceProperties = withFrontend(options.workspaceProperties);
+  const runProperties = withFrontend(options.runProperties);
   return await startPortal({
     ...address,
     upstream: options.upstream,
     ...(options.token === undefined ? {} : { token: options.token }),
     constraints: options.constraints,
-    workspaceProperties: options.workspaceProperties,
-    runProperties: options.runProperties,
+    workspaceProperties,
+    runProperties,
     ...(options.prepareSession === undefined ? {} : { prepareSession: options.prepareSession }),
+    ...(options.projectPrompt === undefined ? {} : { projectPrompt: options.projectPrompt }),
+    ...(options.timeoutSec === undefined ? {} : { timeoutSec: options.timeoutSec }),
+    mcpConfiguration: options.mcpConfiguration,
     autoAcceptProposals: options.autoAcceptProposals,
   });
 };

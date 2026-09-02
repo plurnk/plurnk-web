@@ -9,7 +9,7 @@ export interface PlurnkAguiTarget {
 
 export interface BrowserAguiOptions extends PlurnkAguiTarget {
   workspaceProperties: Readonly<Record<string, unknown>>;
-  prepareSession?(session: BrowserSession): Promise<void>;
+  prepareSession?(session: BrowserSession, workspaceProperties: Readonly<Record<string, unknown>>): Promise<void>;
 }
 
 export interface BrowserCatalog {
@@ -136,7 +136,7 @@ export const resolveBrowserCatalog = async (
     session,
     workspaceProperties: options.workspaceProperties,
   });
-  await options.prepareSession?.(session);
+  await options.prepareSession?.(session, options.workspaceProperties);
   const workspaces = await runAction<{
     workspaces?: Array<{ name?: unknown }>;
   }>(options, "workspace.list");

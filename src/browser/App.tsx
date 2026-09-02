@@ -10,6 +10,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { McpManager } from "./McpManager.tsx";
 import { newWorkerHref, sessionHref, workspaceHref } from "./navigation.ts";
 import { PlainReasoningContent } from "./reasoning.ts";
 
@@ -362,6 +363,12 @@ const Client = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
       <main className="shell">
         <SessionNavigation bootstrap={bootstrap} />
         <StatusBar agentId={bootstrap.agentId} workspace={bootstrap.workspace} />
+        <McpManager
+          origin={window.location.origin}
+          runtimeUrl={bootstrap.runtimeUrl}
+          agentId={bootstrap.agentId}
+          runtimeThreadId={bootstrap.runtimeThreadId}
+        />
         {runtimeError !== undefined && <div className="runtime-error" role="alert">{runtimeError}</div>}
         <EventRail agentId={bootstrap.agentId} />
         <CopilotChat

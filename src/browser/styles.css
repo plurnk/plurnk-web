@@ -67,12 +67,77 @@ button:disabled {
 
 .shell {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
   width: min(76rem, 100%);
   height: 100dvh;
   margin: 0 auto;
   padding: 0.75rem;
   gap: 0.6rem;
+}
+
+.mcp-manager {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #34352f;
+  border-radius: 0.55rem;
+  background: rgb(25 26 23 / 92%);
+}
+
+.mcp-manager > summary {
+  color: #d3ff39;
+  cursor: pointer;
+  font: 0.78rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.mcp-heading,
+.mcp-manager li,
+.mcp-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mcp-heading,
+.mcp-manager li {
+  justify-content: space-between;
+}
+
+.mcp-heading {
+  margin-top: 0.7rem;
+  color: #a9aaa2;
+}
+
+.mcp-manager ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcp-manager li {
+  padding: 0.55rem;
+  border: 1px solid #34352f;
+  border-radius: 0.4rem;
+  background: #10110f;
+}
+
+.mcp-manager li > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.7rem;
+  min-width: 0;
+}
+
+.mcp-manager li span,
+.mcp-manager p {
+  color: #a9aaa2;
+  font-size: 0.78rem;
+}
+
+.mcp-manager button {
+  padding: 0.32rem 0.55rem;
+  font-size: 0.75rem;
 }
 
 .session-navigation {
