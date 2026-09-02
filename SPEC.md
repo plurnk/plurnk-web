@@ -119,9 +119,11 @@ the owner of cancellation and its resulting terminal truth.
 ## Presentation
 
 §web-presentation The browser presents PLURNK as a structured operation log,
-not a flattened transcript. CopilotKit owns generic text, reasoning, tool, and
-run presentation. Small PLURNK renderers preserve PLAN, status and budget,
-Problems and Notices, and standard interrupt controls as distinct semantics.
+not a flattened transcript. CopilotKit owns generic text, tool, and run
+presentation. Small PLURNK renderers preserve PLAN, reasoning, status and
+budget, Problems and Notices, and standard interrupt controls as distinct
+semantics. Reasoning content is escaped plaintext in a fixed-width,
+whitespace-preserving projection; it is never interpreted as Markdown or HTML.
 Host-native responsive layout may differ from terminal and Neovim without
 changing their meaning.
 

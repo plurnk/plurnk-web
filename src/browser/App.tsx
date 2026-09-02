@@ -10,6 +10,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { PlainReasoningContent } from "./reasoning.ts";
 
 interface BrowserBootstrap {
   runtimeUrl: string;
@@ -97,6 +98,12 @@ const planRenderer: ReactActivityMessageRenderer<{ entries: PlanEntry[] }> = {
 };
 
 const activityRenderers = [planRenderer];
+
+const messageView = {
+  reasoningMessage: {
+    contentView: PlainReasoningContent,
+  },
+};
 
 const valueMessage = (value: unknown): string => {
   if (value !== null && typeof value === "object") {
@@ -300,6 +307,7 @@ const Client = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
         <CopilotChat
           agentId={bootstrap.agentId}
           threadId={bootstrap.threadId}
+          messageView={messageView}
           labels={{
             chatInputPlaceholder: "Ask PLURNK…",
             welcomeMessageText: "What would you like to accomplish?",
