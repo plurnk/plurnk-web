@@ -11,6 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { McpManager } from "./McpManager.tsx";
+import { workerTopology, type WorkerRowLike } from "./topology.ts";
 import { newWorkerHref, sessionHref, workspaceHref } from "./navigation.ts";
 import { PlainReasoningContent } from "./reasoning.ts";
 
@@ -25,6 +26,7 @@ interface BrowserBootstrap {
   workerLocked: boolean;
   workspaces: string[];
   workers: string[];
+  workerRows: WorkerRowLike[];
   autoAcceptProposals: boolean;
 }
 
@@ -75,6 +77,13 @@ const bootstrapSchema = z.object({
   workerLocked: z.boolean(),
   workspaces: z.array(z.string().min(1)),
   workers: z.array(z.string().min(1)),
+  workerRows: z.array(z.object({
+    id: z.number().nullable(),
+    name: z.string().min(1),
+    origin: z.string().nullable(),
+    parentWorkerId: z.number().nullable(),
+    createdAt: z.string().nullable(),
+  })),
   autoAcceptProposals: z.boolean(),
 });
 
@@ -306,8 +315,8 @@ const SessionNavigation = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
           disabled={bootstrap.workerLocked}
           onChange={(event) => selectWorker(event.target.value)}
         >
-          {bootstrap.workers.map((threadId) => (
-            <option key={threadId} value={threadId}>{threadId}</option>
+          {workerTopology(bootstrap.workerRows, bootstrap.threadId).map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>
       </label>

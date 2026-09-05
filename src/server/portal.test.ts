@@ -136,6 +136,7 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
       workerLocked: true,
       workspaces: ["web-test"],
       workers: ["web-test"],
+      workerRows: [{ id: 1, name: "web-test", origin: "client", parentWorkerId: null, createdAt: "now" }],
       autoAcceptProposals: true,
     });
 

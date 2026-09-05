@@ -153,6 +153,7 @@ test("a workspace-locked portal mints independent Worker URLs and forwards resol
       workerLocked: false,
       workspaces: ["fixed-world"],
       workers: ["thread-a"],
+      workerRows: [{ id: 1, name: "thread-a", origin: "client", parentWorkerId: null, createdAt: "now" }],
       autoAcceptProposals: true,
     });
     assert.deepEqual(prepared, [{ workspace: "fixed-world", threadId: "thread-a" }]);

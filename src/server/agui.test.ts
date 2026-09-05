@@ -102,6 +102,7 @@ test("browser catalog hydration creates the exact world, binds its Worker, and t
     assert.deepEqual(catalog, {
       workspaces: ["research"],
       workers: ["analyst"],
+      workerRows: [{ id: 12, name: "analyst", origin: "client", parentWorkerId: null, createdAt: "now" }],
     });
     assert.deepEqual(prepared, [{ workspace: "research", threadId: "analyst" }]);
     assert.deepEqual(

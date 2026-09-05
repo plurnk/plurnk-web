@@ -8,6 +8,7 @@ import {
   createBrowserWorkspace,
   resolveBrowserCatalog,
   type BrowserAguiOptions,
+  type BrowserWorkerRow,
 } from "./agui.ts";
 import { createPlurnkRuntimeHandler, type FetchHandler } from "./copilot.ts";
 import { resolvePortalAddress } from "./config.ts";
@@ -30,6 +31,7 @@ export interface BrowserBootstrap {
   workerLocked: boolean;
   workspaces: string[];
   workers: string[];
+  workerRows: BrowserWorkerRow[];
   autoAcceptProposals: boolean;
 }
 
@@ -331,6 +333,7 @@ export const startPortal = async (options: PortalOptions): Promise<RunningPortal
           workerLocked: options.constraints.threadId !== undefined,
           workspaces: catalog.workspaces,
           workers: catalog.workers,
+          workerRows: catalog.workerRows,
           autoAcceptProposals: options.autoAcceptProposals,
         };
         const body = JSON.stringify(bootstrap);

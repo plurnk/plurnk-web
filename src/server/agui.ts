@@ -12,9 +12,19 @@ export interface BrowserAguiOptions extends PlurnkAguiTarget {
   prepareSession?(session: BrowserSession, workspaceProperties: Readonly<Record<string, unknown>>): Promise<void>;
 }
 
+export interface BrowserWorkerRow {
+  id: number | null;
+  name: string;
+  origin: string | null;
+  parentWorkerId: number | null;
+  createdAt: string | null;
+}
+
 export interface BrowserCatalog {
   workspaces: string[];
   workers: string[];
+  // The directory rows the browser projects as a topology (plurnk-web#2).
+  workerRows: BrowserWorkerRow[];
 }
 
 interface ActionOutcome<T> {
@@ -131,7 +141,7 @@ export const resolveBrowserCatalog = async (
     ...options.workspaceProperties,
   });
   const workers = await runAction<{
-    workers?: Array<{ name?: unknown }>;
+    workers?: Array<{ id?: unknown; name?: unknown; origin?: unknown; parentWorkerId?: unknown; created_at?: unknown }>;
   }>(options, "workspace.workers", {}, {
     session,
     workspaceProperties: options.workspaceProperties,
@@ -145,6 +155,13 @@ export const resolveBrowserCatalog = async (
     .map(({ name }) => nonEmptyName(name, "workspace.list"));
   const workerNames = (workers.workers ?? [])
     .map(({ name }) => nonEmptyName(name, "workspace.workers"));
+  const workerRows: BrowserWorkerRow[] = (workers.workers ?? []).map((row) => ({
+    id: typeof row.id === "number" ? row.id : null,
+    name: nonEmptyName(row.name, "workspace.workers"),
+    origin: typeof row.origin === "string" ? row.origin : null,
+    parentWorkerId: typeof row.parentWorkerId === "number" ? row.parentWorkerId : null,
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+  }));
   return {
     workspaces: workspaceNames.includes(session.workspace)
       ? workspaceNames
@@ -152,5 +169,8 @@ export const resolveBrowserCatalog = async (
     workers: workerNames.includes(session.threadId)
       ? workerNames
       : [...workerNames, session.threadId],
+    workerRows: workerNames.includes(session.threadId)
+      ? workerRows
+      : [...workerRows, { id: null, name: session.threadId, origin: null, parentWorkerId: null, createdAt: null }],
   };
 };

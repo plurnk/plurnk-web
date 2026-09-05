@@ -114,6 +114,17 @@ storage contributes no identity. CopilotKit's process-local bookkeeping uses a
 collision-free pair key, while AG-UI receives the real workspace and Worker as
 separate coordinates.
 
+§web-topology **The Worker selector is the workspace's worker topology.** The
+portal forwards the `workspace.workers` rows (`name`, `origin`, `parentWorkerId`,
+`createdAt`) in `bootstrap.json` beside the name list, and the browser renders the
+selector's options as a forest from `parentWorkerId`: the bound conversation's
+tree first and marked `●`, tree connectors in the labels, a worker whose parent is
+not in the directory standing as a root, an unminted thread as a plain root.
+Selection remains URL navigation to `/<workspace>/<name>`; "New Worker" remains
+the mint. Lifecycle glyphs for workers other than the bound one render only once
+the daemon exposes per-worker lifecycle (plurnk-service#523), never by inference.
+Live descendant activity is the lane projection (plurnk#38, plurnk-service#440),
+not this selector.
 §web-run A user prompt produces an official AG-UI Run. The browser consumes:
 
 | Semantic | Wire representation |
