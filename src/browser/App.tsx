@@ -14,6 +14,7 @@ import { McpManager } from "./McpManager.tsx";
 import { workerTopology, type WorkerRowLike } from "./topology.ts";
 import { newWorkerHref, sessionHref, workspaceHref } from "./navigation.ts";
 import { PlainReasoningContent } from "./reasoning.ts";
+import { PlanContent, type PlanEntry } from "./plan.ts";
 
 interface BrowserBootstrap {
   runtimeUrl: string;
@@ -28,12 +29,6 @@ interface BrowserBootstrap {
   workers: string[];
   workerRows: WorkerRowLike[];
   autoAcceptProposals: boolean;
-}
-
-interface PlanEntry {
-  content: string;
-  priority: "high" | "medium" | "low";
-  status: "pending" | "in_progress" | "completed";
 }
 
 interface ModelRoute {
@@ -95,29 +90,10 @@ const planSchema = z.object({
   })),
 });
 
-const planIcon = (entry: PlanEntry): string => {
-  if (entry.content.startsWith("Memory: ")) return "💾";
-  if (entry.status === "completed") return "✓";
-  if (entry.status === "in_progress") return "◇";
-  return "○";
-};
-
 const planRenderer: ReactActivityMessageRenderer<{ entries: PlanEntry[] }> = {
   activityType: "PLAN",
   content: planSchema,
-  render: ({ content }) => (
-    <section className="plan" aria-label="Plan">
-      <div className="semantic-label">Plan</div>
-      <ol>
-        {content.entries.map((entry, index) => (
-          <li className={`plan-${entry.status}`} key={`${index}:${entry.content}`}>
-            <span aria-hidden="true">{planIcon(entry)}</span>
-            <span>{entry.content}</span>
-          </li>
-        ))}
-      </ol>
-    </section>
-  ),
+  render: ({ content }) => <PlanContent entries={content.entries} />,
 };
 
 const activityRenderers = [planRenderer];
