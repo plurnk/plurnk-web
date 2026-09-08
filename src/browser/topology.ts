@@ -65,17 +65,19 @@ export const hop = (rows: readonly WorkerRowLike[], bound: string, direction: Ho
   return { target: siblings[(index + step + siblings.length) % siblings.length]!, notice: null };
 };
 
-// `~` at a root, `~/fork-1/recheck` two hops down: the path from the tree root to the bound worker.
+// The lineage from the tree root to the bound worker, `~` marking the worker the session is in —
+// the same `~` that means "this worker" in `worker://~/`: `/~main` at a root,
+// `/main/fork-1/~recheck` two hops down. A child always shows that it is a child.
 export const workerPath = (rows: readonly WorkerRowLike[], bound: string): string => {
   const parentOf = parentIn(rows);
   let current = rows.find((row) => row.name === bound) ?? null;
-  if (current === null) return "~";
-  const segments: string[] = [];
+  if (current === null) return `/~${bound}`;
+  const segments: string[] = [`~${current.name}`];
   for (let parent = parentOf(current); parent !== null; parent = parentOf(current)) {
-    segments.unshift(current.name);
     current = parent;
+    segments.unshift(current.name);
   }
-  return segments.length === 0 ? "~" : `~/${segments.join("/")}`;
+  return `/${segments.join("/")}`;
 };
 
 export const siblingPosition = (rows: readonly WorkerRowLike[], bound: string): { index: number; count: number } | null => {

@@ -45,10 +45,10 @@ test("hops: h climbs, l enters the newest child, j/k walk siblings and wrap, edg
   assert.equal(name("stranger", "enter"), "(no bound worker yet)");
 });
 
-test("the path from the tree root and the sibling position, newest first", () => {
-  assert.equal(workerPath(rows, "main"), "~");
-  assert.equal(workerPath(rows, "recheck"), "~/main-fork/recheck");
-  assert.equal(workerPath(rows, "stranger"), "~");
+test("the lineage path marks the bound worker with ~, and the sibling position is newest first", () => {
+  assert.equal(workerPath(rows, "main"), "/~main", "a root is still named; ~ marks where the session is");
+  assert.equal(workerPath(rows, "recheck"), "/main/main-fork/~recheck", "a child always shows that it is a child");
+  assert.equal(workerPath(rows, "stranger"), "/~stranger", "an unminted thread is still where the session is");
   assert.deepEqual(siblingPosition(rows, "main"), { index: 2, count: 2 }, "stray is newer than main");
   assert.deepEqual(siblingPosition(rows, "guesser1"), { index: 1, count: 2 });
   assert.equal(siblingPosition(rows, "recheck"), null);

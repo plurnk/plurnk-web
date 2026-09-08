@@ -133,10 +133,11 @@ the same URL navigation as selecting the worker, never a read-only visit; the
 composer then speaks to that worker. Places are conversations and their
 descendants; the daemon's and a connection's scratch workers are never targets.
 An edge shows why nothing moved (`(at the root: no parent)`, `(no children)`,
-`(no siblings)`). The navigation shows the path from the tree root to the bound
-worker, `[~]` at a root and `[~/fork-1/recheck]` two hops down, followed by the
-sibling position `(2/3)` when there is one; nothing is inferred from row
-coordinates. The status bar's ant, `🐜<n>`, is the daemon's
+`(no siblings)`). The navigation shows the lineage from the tree root to the
+bound worker with `~` marking the worker the session is in — the same `~` that
+means "this worker" in `worker://~/`: `[/~main]` at a root, `[/main/fork-1/~recheck]`
+two hops down; a child always shows that it is a child — followed by the sibling
+position `(2/3)` when there is one; nothing is inferred from row coordinates. The status bar's ant, `🐜<n>`, is the daemon's
 `status.children` — the bound worker's alive direct children (queued, running,
 parked) — and is absent when the daemon states none; the browser never polls the
 directory for it. Live descendant supervision is this navigation plus the ant,
