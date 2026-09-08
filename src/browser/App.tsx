@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { McpManager } from "./McpManager.tsx";
-import { workerTopology, type WorkerRowLike } from "./topology.ts";
+import { hop, hopForKey, siblingPosition, workerPath, workerTopology, type WorkerRowLike } from "./topology.ts";
 import { newWorkerHref, sessionHref, workspaceHref } from "./navigation.ts";
 import { PlainReasoningContent } from "./reasoning.ts";
 import { PlanContent, type PlanEntry } from "./plan.ts";
@@ -46,6 +46,8 @@ interface PlurnkState {
       model?: ModelRoute | null;
       packetCount?: number;
       activity?: { message?: string; percent?: number } | null;
+      // The daemon's count of the bound worker's alive direct children (plurnk-service#523).
+      children?: number;
     };
   };
   budget?: {
@@ -248,6 +250,7 @@ const StatusBar = ({ agentId, workspace }: { agentId: string; workspace: string 
       <span>{state.plurnk?.workspace?.name ?? workspace}</span>
       <span>{formatModel(status?.model)}</span>
       <span>{status?.packetCount ?? 0} packets</span>
+      {typeof status?.children === "number" && <span title="alive child workers">🐜{status.children}</span>}
       <span>{budget}</span>
       <span className={`lifecycle lifecycle-${status?.lifecycle ?? "connecting"}`}>
         {activity?.message ?? (isReady ? status?.lifecycle ?? "idle" : "connecting")}
@@ -267,6 +270,24 @@ const SessionNavigation = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
   const selectWorker = (threadId: string): void => {
     window.location.assign(sessionHref(bootstrap.workspace, threadId));
   };
+  // Topology is navigation (plurnk-service#523): Alt-h/j/k/l hop the worker tree, each hop a
+  // full attach through the session URL. Nothing is inferred from row coordinates.
+  const [hopNotice, setHopNotice] = useState<string>();
+  useEffect(() => {
+    if (bootstrap.workerLocked) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const direction = hopForKey(event);
+      if (direction === null) return;
+      event.preventDefault();
+      const { target, notice } = hop(bootstrap.workerRows, bootstrap.threadId, direction);
+      if (target === null) { setHopNotice(notice ?? undefined); return; }
+      selectWorker(target.name);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [bootstrap]);
+  const path = workerPath(bootstrap.workerRows, bootstrap.threadId);
+  const position = siblingPosition(bootstrap.workerRows, bootstrap.threadId);
   return (
     <nav className="session-navigation" aria-label="PLURNK session">
       <label>
@@ -296,6 +317,10 @@ const SessionNavigation = ({ bootstrap }: { bootstrap: BrowserBootstrap }) => {
           ))}
         </select>
       </label>
+      <span className="worker-path" title="where this session is in the worker tree; Alt-h parent · Alt-l newest child · Alt-j/k older/newer sibling">
+        [{path}]{position === null ? "" : ` (${position.index}/${position.count})`}
+      </span>
+      {hopNotice !== undefined && <span className="hop-notice" role="status">({hopNotice})</span>}
       {!bootstrap.workerLocked && (
         <a href={newWorkerHref(bootstrap.workspace)}>New Worker</a>
       )}

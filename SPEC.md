@@ -120,11 +120,27 @@ portal forwards the `workspace.workers` rows (`name`, `origin`, `parentWorkerId`
 selector's options as a forest from `parentWorkerId`: the bound conversation's
 tree first and marked `●`, tree connectors in the labels, a worker whose parent is
 not in the directory standing as a root, an unminted thread as a plain root.
-Selection remains URL navigation to `/<workspace>/<name>`; "New Worker" remains
-the mint. Lifecycle glyphs for workers other than the bound one render only once
-the daemon exposes per-worker lifecycle (plurnk-service#523), never by inference.
-Live descendant activity is the lane projection (plurnk#38, plurnk-service#440),
-not this selector.
+Siblings are newest first. Selection remains URL navigation to
+`/<workspace>/<name>`; "New Worker" remains the mint. The map carries no lifecycle:
+a worker's state is seen by being in it.
+
+§web-topology-hops **Topology is navigation, not a dashboard** (plurnk-service#523).
+A child worker is a first-class place the session goes to, prompts, forks, or
+opens as the root of another session. `Alt-h` climbs to the parent, `Alt-l`
+enters the newest child, `Alt-j`/`Alt-k` walk older/newer siblings and wrap —
+vim's tree orientation, depth horizontal and siblings vertical — and each hop is
+the same URL navigation as selecting the worker, never a read-only visit; the
+composer then speaks to that worker. Places are conversations and their
+descendants; the daemon's and a connection's scratch workers are never targets.
+An edge shows why nothing moved (`(at the root: no parent)`, `(no children)`,
+`(no siblings)`). The navigation shows the path from the tree root to the bound
+worker, `[~]` at a root and `[~/fork-1/recheck]` two hops down, followed by the
+sibling position `(2/3)` when there is one; nothing is inferred from row
+coordinates. The status bar's ant, `🐜<n>`, is the daemon's
+`status.children` — the bound worker's alive direct children (queued, running,
+parked) — and is absent when the daemon states none; the browser never polls the
+directory for it. Live descendant supervision is this navigation plus the ant,
+not a lane projection.
 §web-run A user prompt produces an official AG-UI Run. The browser consumes:
 
 | Semantic | Wire representation |

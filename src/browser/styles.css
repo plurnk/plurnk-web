@@ -23,3 +23,13 @@ body,
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* Topology is navigation (plurnk-service#523): where the session is in the worker tree. */
+.session-navigation .worker-path {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  opacity: 0.85;
+}
+
+.session-navigation .hop-notice {
+  opacity: 0.7;
+}
