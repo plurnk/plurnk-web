@@ -123,7 +123,7 @@ test("a workspace-locked portal mints independent Worker URLs and forwards resol
     upstream: upstream.url,
     constraints: { workspace: "fixed-world" },
     workspaceProperties: { projectRoot: "/workspace", settings: { filesItems: 4 } },
-    runProperties: { policy: { capabilities: {}, proposals: "review" }, maxTurns: 7 },
+    runProperties: { policy: { proposals: "review" }, maxTurns: 7 },
     prepareSession: async (session) => { prepared.push(session); },
     autoAcceptProposals: true,
     createThreadId: () => threadIds.shift() ?? assert.fail("unexpected Worker allocation"),
@@ -174,7 +174,7 @@ test("a workspace-locked portal mints independent Worker URLs and forwards resol
     assert.deepEqual(run?.forwardedProps, {
       plurnk: {
         workspace: "fixed-world",
-        policy: { capabilities: {}, proposals: "review" },
+        policy: { proposals: "review" },
         maxTurns: 7,
       },
     });

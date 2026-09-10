@@ -180,8 +180,8 @@ resolution endpoint or reconstructs proposal ownership from operation traits.
 the owner of cancellation and its resulting terminal truth.
 
 §web-mcp-management MCP management is an ordinary AG-UI Functionality
-projection. The browser lazily calls `worker.mcp.list` and
-`worker.mcp.discover`, then uses `worker.mcp.add | enable | disable | remove`
+projection. The browser lazily calls `workspace.mcp.list` and
+`workspace.mcp.discover`, then uses `workspace.mcp.add | enable | disable | remove`
 for deliberate mutations. When discovery has neither `query` nor `source`, the
 portal supplies its filtered client-held configuration overlay. Discovery is
 inert, raw declarations never enter bootstrap, and the browser neither parses

@@ -17,7 +17,7 @@ test("browser management actions use the selected runtime Worker and preserve ex
       response.write(`data: ${JSON.stringify({
         type: "CUSTOM",
         name: "plurnk.action.result",
-        value: { kind: "worker.mcp.list", ok: true, result: { definitions: [{ alias: "gitea" }] } },
+        value: { kind: "workspace.mcp.list", ok: true, result: { definitions: [{ alias: "gitea" }] } },
       })}\n\n`);
       response.end(`data: ${JSON.stringify({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, outcome: { type: "success" } })}\n\n`);
     });
@@ -31,11 +31,11 @@ test("browser management actions use the selected runtime Worker and preserve ex
       runtimeUrl: "/api/copilotkit",
       agentId: "default",
       runtimeThreadId: JSON.stringify(["world", "worker"]),
-    }, "worker.mcp.list");
+    }, "workspace.mcp.list");
     assert.deepEqual(result, { definitions: [{ alias: "gitea" }] });
     assert.equal(input?.threadId, JSON.stringify(["world", "worker"]));
     assert.deepEqual(input?.forwardedProps, {
-      plurnk: { action: { kind: "worker.mcp.list" } },
+      plurnk: { action: { kind: "workspace.mcp.list" } },
     });
   } finally {
     await new Promise<void>((resolve, reject) => server.close((cause) => cause === undefined ? resolve() : reject(cause)));

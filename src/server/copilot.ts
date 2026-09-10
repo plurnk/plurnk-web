@@ -149,7 +149,7 @@ class PlurnkAgentRunner implements AgentRunner {
     ) return action;
     const candidate = action as Record<string, unknown>;
     if (
-      candidate.kind !== "worker.mcp.discover"
+      candidate.kind !== "workspace.mcp.discover"
       || candidate.query !== undefined
       || candidate.source !== undefined
     ) return action;

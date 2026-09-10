@@ -96,7 +96,7 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     constraints: { workspace: "web-test", threadId: "web-test" },
     workspaceProperties: {},
     runProperties: {
-      policy: { capabilities: {}, proposals: "review" },
+      policy: { proposals: "review" },
       maxTurns: 7,
     },
     projectPrompt: (prompt) => ({
@@ -181,13 +181,13 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
       runId: "mcp-discovery",
       messages: [],
       forwardedProps: {
-        plurnk: { action: { kind: "worker.mcp.discover" } },
+        plurnk: { action: { kind: "workspace.mcp.discover" } },
       },
     });
     assert.deepEqual((upstreamInputs[4]?.forwardedProps as {
       plurnk?: { action?: unknown };
     }).plurnk?.action, {
-      kind: "worker.mcp.discover",
+      kind: "workspace.mcp.discover",
       configuration: {
         PLURNK_MCP_GITEA: "gitea-mcp",
         PLURNK_MCP_GITEA_TOKEN: "GITEA_TOKEN",
@@ -199,13 +199,13 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
       runId: "mcp-source-discovery",
       messages: [],
       forwardedProps: {
-        plurnk: { action: { kind: "worker.mcp.discover", source: "https://example.test/mcp" } },
+        plurnk: { action: { kind: "workspace.mcp.discover", source: "https://example.test/mcp" } },
       },
     });
     assert.deepEqual((upstreamInputs[5]?.forwardedProps as {
       plurnk?: { action?: unknown };
     }).plurnk?.action, {
-      kind: "worker.mcp.discover",
+      kind: "workspace.mcp.discover",
       source: "https://example.test/mcp",
     });
 

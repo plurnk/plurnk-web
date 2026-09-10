@@ -42,8 +42,8 @@ export const McpManager = (props: McpManagerProps) => {
     setBusy(true);
     setError(undefined);
     try {
-      const listed = await runBrowserAction<{ definitions?: McpState[] }>(props, "worker.mcp.list");
-      const discovered = await runBrowserAction<{ candidates?: McpCandidate[] }>(props, "worker.mcp.discover");
+      const listed = await runBrowserAction<{ definitions?: McpState[] }>(props, "workspace.mcp.list");
+      const discovered = await runBrowserAction<{ candidates?: McpCandidate[] }>(props, "workspace.mcp.discover");
       setDefinitions(listed.definitions ?? []);
       setCandidates(discovered.candidates ?? []);
       setLoaded(true);
@@ -91,12 +91,12 @@ export const McpManager = (props: McpManagerProps) => {
             </div>
             <div className="mcp-actions">
               {entry.state === "active" ? (
-                <button className="quiet" disabled={busy} onClick={() => void mutate("worker.mcp.disable", { alias: entry.alias })}>Disable</button>
+                <button className="quiet" disabled={busy} onClick={() => void mutate("workspace.mcp.disable", { alias: entry.alias })}>Disable</button>
               ) : (
-                <button disabled={busy} onClick={() => void mutate("worker.mcp.enable", { alias: entry.alias })}>Enable</button>
+                <button disabled={busy} onClick={() => void mutate("workspace.mcp.enable", { alias: entry.alias })}>Enable</button>
               )}
               {entry.origin === "worker" && (
-                <button className="quiet" disabled={busy} onClick={() => void mutate("worker.mcp.remove", { alias: entry.alias })}>Remove</button>
+                <button className="quiet" disabled={busy} onClick={() => void mutate("workspace.mcp.remove", { alias: entry.alias })}>Remove</button>
               )}
             </div>
           </li>
@@ -107,7 +107,7 @@ export const McpManager = (props: McpManagerProps) => {
               <strong>{candidate.alias}</strong>
               <span>configured · {candidate.summary ?? targetOf(candidate.definition)}</span>
             </div>
-            <button disabled={busy} onClick={() => void mutate("worker.mcp.add", {
+            <button disabled={busy} onClick={() => void mutate("workspace.mcp.add", {
               alias: candidate.alias,
               definition: candidate.definition,
             })}>Add</button>
