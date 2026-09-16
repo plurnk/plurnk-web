@@ -195,7 +195,7 @@ presentation. Small PLURNK renderers preserve PLAN, reasoning, status and
 budget, Problems and Notices, and standard interrupt controls as distinct
 semantics. Reasoning content is escaped plaintext in a fixed-width,
 whitespace-preserving projection; it is never interpreted as Markdown or HTML.
-Host-native responsive layout may differ from terminal and Neovim without
+Host-native responsive layout may differ from the terminal without
 changing their meaning.
 
 Markdown rendering does not execute embedded HTML. Browser assets are bundled;
