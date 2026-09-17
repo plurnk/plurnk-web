@@ -148,10 +148,10 @@ not a lane projection.
 |---|---|
 | Run lifecycle | `RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR` |
 | Reattach | `MESSAGES_SNAPSHOT` |
-| PLAN | `ACTIVITY_SNAPSHOT` with `activityType: "PLAN"` |
+| Notes | Ordinary NOTE tool calls and `CUSTOM plurnk.row`; not assistant speech or synthetic Plan activity. |
 | Reasoning | standard `REASONING_*` lifecycle |
 | Operations | standard tool calls plus full `CUSTOM plurnk.row` projection |
-| Speech | standard text-message lifecycle |
+| Speech | standard text-message lifecycle for delivered SEND and DONE/FAIL bodies, independently of workflow settlement |
 | Gauge | `STATE_SNAPSHOT` and `STATE_DELTA` |
 | Exact failures and notices | `CUSTOM plurnk.problem`, `CUSTOM plurnk.notice` |
 | Terminal accounting | `CUSTOM plurnk.terminated` |
