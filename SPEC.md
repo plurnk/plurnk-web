@@ -217,6 +217,11 @@ there are no runtime CDN fetches.
 
 ## Composition and verification
 
+§web-release The web client retains its independent version line. Its contracts
+dependency declares the supported platform range; `plurnk.builtAgainst` records
+the platform verified in composition. A platform release checks that compatibility
+without restamping or publishing the web client as a managed extension.
+
 §web-composition The package is verified in its packed form. Production tests
 install packed client and web artifacts together, launch `plurnk web`, load
 built assets, and drive independently addressed browser sessions through the

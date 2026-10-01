@@ -15,6 +15,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "plurnk": {
+    "builtAgainst": "1.25.0"
+  },
   "engines": {
     "node": ">=26"
   },
