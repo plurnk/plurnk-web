@@ -10,6 +10,7 @@ import type {
 import { defer, map, Observable, switchMap, throwError } from "rxjs";
 import type { PortalOptions } from "./portal.ts";
 import { runAction } from "./agui.ts";
+import { loadFloor } from "./config.ts";
 import {
   assertSessionConstraints,
   decodeRuntimeThreadId,
@@ -20,7 +21,7 @@ export type FetchHandler = (request: Request) => Promise<Response>;
 
 type RuntimeOptions = Pick<
   PortalOptions,
-  "upstream" | "token" | "constraints" | "workspaceProperties" | "runProperties" | "prepareSession" | "projectPrompt" | "timeoutSec" | "mcpConfiguration"
+  "upstream" | "token" | "constraints" | "workspaceProperties" | "runProperties" | "prepareSession" | "projectPrompt" | "timeoutSec"
 >;
 
 const daemonHeaders = (token: string | undefined): Record<string, string> =>
@@ -100,7 +101,7 @@ class PlurnkAgentRunner implements AgentRunner {
   #projectInput(input: RunAgentInput, session: BrowserSession): { input: RunAgentInput; promptRun: boolean } {
     const forwarded = input.forwardedProps as Record<string, unknown> | undefined;
     const plurnk = forwarded?.plurnk as Record<string, unknown> | undefined;
-    const action = this.#projectAction(plurnk?.action);
+    const action = plurnk?.action;
     const messages = [...input.messages];
     let promptRun = false;
     let dynamic: Readonly<Record<string, unknown>> = {};
@@ -137,23 +138,6 @@ class PlurnkAgentRunner implements AgentRunner {
         },
       },
     };
-  }
-
-  #projectAction(action: unknown): unknown {
-    const configuration = this.#options.mcpConfiguration;
-    if (
-      configuration === undefined
-      || typeof action !== "object"
-      || action === null
-      || Array.isArray(action)
-    ) return action;
-    const candidate = action as Record<string, unknown>;
-    if (
-      candidate.kind !== "workspace.mcp.discover"
-      || candidate.query !== undefined
-      || candidate.source !== undefined
-    ) return action;
-    return { ...candidate, configuration };
   }
 
   #withDeadline(
@@ -237,7 +221,7 @@ class PlurnkAgentRunner implements AgentRunner {
 export const createPlurnkRuntimeHandler = async (
   options: RuntimeOptions,
 ): Promise<FetchHandler> => {
-  process.env.COPILOTKIT_TELEMETRY_DISABLED ??= "true";
+  loadFloor();
   const {
     CopilotRuntime,
     InMemoryAgentRunner,

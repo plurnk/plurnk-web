@@ -15,10 +15,10 @@ flowchart LR
 
 | Component | Owned responsibility |
 |---|---|
-| PLURNK client | Environment cascade, optional workspace/Worker constraints, workspace-create and Run properties, model, reasoning, LoopPolicy, capabilities, prompt projection, timeout, MCP declarations, proposal behavior |
+| PLURNK client | Environment cascade, optional workspace/Worker constraints, workspace-create and Run properties, model, reasoning, LoopPolicy, capabilities, prompt projection, timeout, proposal behavior |
 | Browser application | URL-addressed workspace/Worker selection, CopilotKit chat/run UX, multiline input, review controls, lazy MCP management, PLURNK semantic renderers |
 | Local portal | Host/port, static assets, route enforcement, local admission perimeter, CopilotKit runtime bridge, daemon credential |
-| PLURNK daemon | Workspaces, Workers, Runs, log, policy, execution, accounting, model lifecycle |
+| PLURNK daemon | Workspaces, Workers, Runs, log, policy, execution, accounting, model lifecycle, resource configuration and publication |
 
 §web-one-wire **The daemon's public AG-UI+ endpoint is the sole runtime
 interface.** CopilotKit's official `HttpAgent` carries normal messages,
@@ -45,8 +45,8 @@ preferences only.
 PLURNK client parses and resolves its ordinary configuration, dynamically loads
 the optional `@plurnk/plurnk-web` package, starts one foreground portal, prints
 its URL, and remains attached to the terminal until interrupted. It does not
-download the package, start the daemon, or open a listener other than the local
-portal.
+download the package. Backend selection and any private daemon startup remain
+the canonical client's responsibility; the web module opens only its portal.
 
 | Module input | Ownership |
 |---|---|
@@ -58,23 +58,28 @@ portal.
 | `prepareSession` | Client-owned application of explicit durable model and reasoning selections |
 | `projectPrompt` | Canonical client projection of prompt prefixes and referenced paths into prompt text plus per-Run properties |
 | `timeoutSec` | Client-resolved deadline; the portal cancels the exact session through `loop.cancel` |
-| `mcpConfiguration` | Filtered client `PLURNK_MCP_*` declaration overlay, held by the portal and offered only through MCP discovery |
 | `autoAcceptProposals` | Resolved client proposal behavior; never applies to user-input interactions |
 
 The web module owns no parallel environment cascade and no copy of the client's
 configuration schema. The host client has already applied its normal cascade
-before the module is loaded. The filtered MCP overlay is opaque transport to
-the daemon's configuration owner; it is not parsed or serialized into browser
-bootstrap. `PLURNK_WEB_HOST` and `PLURNK_WEB_PORT` are the only web-owned
+before the module is loaded. MCP configuration remains daemon-owned; no client
+environment overlay is sent through discovery or browser bootstrap.
+`PLURNK_WEB_HOST` and `PLURNK_WEB_PORT` are the only web-owned
 environment values. The source checkout's `npm run dev` command is a private
 development runner that supplies cwd workspace-create properties to an
 otherwise unconstrained portal; it is not a second product client.
+
+The module loads its packaged `.env.defaults` and the shared contracts panel
+set-if-unset. Listener and telemetry defaults have no fallback literals in
+code. The development runner's daemon URL derives from the shared
+`PLURNK_HOST`/`PLURNK_PORT` unless `PLURNK_AGUI_URL` is explicit; it neither
+redefines the daemon's address nor changes the product client's cascade.
 
 §web-client-projection Every workspace create and prompt Run identifies the
 browser frontend as `@plurnk/plurnk-web/<version>`, regardless of which terminal
 client loaded the module. Create-time settings, capability ceilings, model and
 reasoning selections, base LoopPolicy, prompt-derived policy, `@path`
-references, turn limits, timeout, yolo behavior, and MCP declarations retain
+references, turn limits, timeout, and yolo behavior retain
 the canonical client's interpretation. Terminal-only output and state-query
 options have no browser projection.
 
@@ -124,7 +129,7 @@ Siblings are newest first. Selection remains URL navigation to
 `/<workspace>/<name>`; "New Worker" remains the mint. The map carries no lifecycle:
 a worker's state is seen by being in it.
 
-§web-topology-hops **Topology is navigation, not a dashboard** (plurnk-service#523).
+§web-topology-hops **Topology is navigation, not a dashboard.**
 A child worker is a first-class place the session goes to, prompts, forks, or
 opens as the root of another session. `Alt-h` climbs to the parent, `Alt-l`
 enters the newest child, `Alt-j`/`Alt-k` walk older/newer siblings and wrap —
@@ -134,8 +139,8 @@ composer then speaks to that worker. Places are conversations and their
 descendants; the daemon's and a connection's scratch workers are never targets.
 An edge shows why nothing moved (`(at the root: no parent)`, `(no children)`,
 `(no siblings)`). The navigation shows the lineage from the tree root to the
-bound worker with `~` marking the worker the session is in — the same `~` that
-means "this worker" in `worker://~/`: `[/~main]` at a root, `[/main/fork-1/~recheck]`
+bound worker with `~` marking the worker the session is in:
+`[/~main]` at a root, `[/main/fork-1/~recheck]`
 two hops down; a child always shows that it is a child — followed by the sibling
 position `(2/3)` when there is one; nothing is inferred from row coordinates. The status bar's ant, `🐜<n>`, is the daemon's
 `status.children` — the bound worker's alive direct children (queued, running,
@@ -151,7 +156,7 @@ not a lane projection.
 | Notes | Ordinary NOTE tool calls and `CUSTOM plurnk.row`; not assistant speech or synthetic Plan activity. |
 | Reasoning | standard `REASONING_*` lifecycle |
 | Operations | standard tool calls plus full `CUSTOM plurnk.row` projection |
-| Speech | standard text-message lifecycle for delivered SEND and DONE/FAIL bodies, independently of workflow settlement |
+| Speech | standard text-message lifecycle for delivered SEND and parameterless KILL bodies, independently of workflow settlement |
 | Gauge | `STATE_SNAPSHOT` and `STATE_DELTA` |
 | Exact failures and notices | `CUSTOM plurnk.problem`, `CUSTOM plurnk.notice` |
 | Terminal accounting | `CUSTOM plurnk.terminated` |
@@ -179,19 +184,28 @@ resolution endpoint or reconstructs proposal ownership from operation traits.
 §web-cancellation Cancelling aborts the active AG-UI Run. The daemon remains
 the owner of cancellation and its resulting terminal truth.
 
-§web-mcp-management MCP management is an ordinary AG-UI Functionality
-projection. The browser lazily calls `workspace.mcp.list` and
-`workspace.mcp.discover`, then uses `workspace.mcp.add | enable | disable | remove`
-for deliberate mutations. When discovery has neither `query` nor `source`, the
-portal supplies its filtered client-held configuration overlay. Discovery is
-inert, raw declarations never enter bootstrap, and the browser neither parses
-MCP environment syntax nor connects to a server itself.
+§web-mcp-management MCP management projects the daemon's workspace-scoped
+Functionality contract through ordinary AG-UI actions. Shared contract schemas
+validate responses before rendering; malformed responses are errors, not empty
+catalogs. The browser neither parses MCP configuration nor connects to servers.
+
+| Interaction | Action and interpretation |
+|---|---|
+| Open or refresh manager | `workspace.mcp.list`; inspect without discovery or activation |
+| Search MCP Registry | Explicit `workspace.mcp.discover {query}`; candidates remain inert |
+| Add candidate | `workspace.mcp.add` with its exact definition and alias; create a workspace override, not a plugin installation |
+| Enable or disable | `workspace.mcp.enable` or `.disable {alias}`; only `state=disabled` is disabled. Dormant, unavailable and authorization-required remain enabled. |
+| Remove | `workspace.mcp.remove {alias}` for workspace-owned definitions; inherited configuration resumes under the daemon's cascade |
+| Present | Alias, state, transport type, ownership, available tool count, exact Problem and authorization link; no host executable path or environment dump in the summary |
+
+No MCP configuration enters the portal launch contract or browser bootstrap.
+The portal preserves management payloads without injecting configuration.
 
 ## Presentation
 
 §web-presentation The browser presents PLURNK as a structured operation log,
 not a flattened transcript. CopilotKit owns generic text, tool, and run
-presentation. Small PLURNK renderers preserve PLAN, reasoning, status and
+presentation. Small PLURNK renderers preserve reasoning, status and
 budget, Problems and Notices, and standard interrupt controls as distinct
 semantics. Reasoning content is escaped plaintext in a fixed-width,
 whitespace-preserving projection; it is never interpreted as Markdown or HTML.
@@ -210,7 +224,9 @@ official AG-UI client against a real listener. The gate supplies workspace,
 Worker, proposal, and portal values through the normal environment cascade and
 asserts the resulting route constraints, create-time properties, browser
 frontend identity, durable model and reasoning actions, prompt-derived policy
-and referenced paths, deadline cancellation, and host-held MCP discovery.
+and referenced paths, deadline cancellation, and unchanged MCP management
+actions. Browser action tests cover exact definitions, readiness, mutations and
+configuration failures over HTTP/SSE.
 Source-only or development-server success is insufficient.
 
 The terminal client imports only the package's server-side launch function; it

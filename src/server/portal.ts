@@ -46,7 +46,6 @@ export interface PortalOptions {
   prepareSession?(session: BrowserSession, workspaceProperties: Readonly<Record<string, unknown>>): Promise<void>;
   projectPrompt?(prompt: string): BrowserPromptProjection;
   timeoutSec?: number;
-  mcpConfiguration?: Readonly<Record<string, string>>;
   autoAcceptProposals: boolean;
   createThreadId?(): string;
   assetRoot?: string;
@@ -63,7 +62,6 @@ export interface ClientPortalOptions {
   prepareSession?(session: BrowserSession, workspaceProperties: Readonly<Record<string, unknown>>): Promise<void>;
   projectPrompt?(prompt: string): BrowserPromptProjection;
   timeoutSec?: number;
-  mcpConfiguration: Readonly<Record<string, string>>;
   autoAcceptProposals: boolean;
 }
 
@@ -423,7 +421,6 @@ export const startClientPortal = async (options: ClientPortalOptions): Promise<R
     ...(options.prepareSession === undefined ? {} : { prepareSession: options.prepareSession }),
     ...(options.projectPrompt === undefined ? {} : { projectPrompt: options.projectPrompt }),
     ...(options.timeoutSec === undefined ? {} : { timeoutSec: options.timeoutSec }),
-    mcpConfiguration: options.mcpConfiguration,
     autoAcceptProposals: options.autoAcceptProposals,
   });
 };

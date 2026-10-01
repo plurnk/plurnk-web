@@ -49,9 +49,10 @@ package receives the resolved projection and interprets only its own portal
 host and port (`PLURNK_WEB_HOST`, `PLURNK_WEB_PORT`; defaults
 `127.0.0.1:10660`). Prompt prefixes, `@path` references, turn and timeout
 ceilings, and client-side yolo behavior therefore match the terminal clients.
-The portal holds the filtered client MCP declarations so its lazy MCP manager
-can discover and deliberately add them without exposing the environment in
-browser bootstrap. It never starts or embeds the daemon.
+The MCP manager uses the daemon's workspace configuration: inspect servers,
+search the MCP Registry, and deliberately add, enable, disable or remove a
+workspace override. The portal owns no MCP configuration and never starts or
+embeds the daemon.
 
 Every ready browser URL is `/<workspace>/<threadId>`. With no configured
 workspace or Worker, tabs may select or create either coordinate independently.

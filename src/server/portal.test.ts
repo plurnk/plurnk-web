@@ -102,14 +102,11 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     projectPrompt: (prompt) => ({
       prompt: prompt.replace(/^\?\s*/u, ""),
       runProperties: {
-        policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "review" },
+        policy: { proposals: "review" },
+        settings: { capabilities: { deny: [{ access: "execute" }] } },
         openPaths: ["README.md"],
       },
     }),
-    mcpConfiguration: {
-      PLURNK_MCP_GITEA: "gitea-mcp",
-      PLURNK_MCP_GITEA_TOKEN: "GITEA_TOKEN",
-    },
     autoAcceptProposals: true,
     assetRoot: assets,
   });
@@ -169,7 +166,8 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
     assert.deepEqual(upstreamInputs[3]?.forwardedProps, {
       plurnk: {
         workspace: "web-test",
-        policy: { capabilities: { deny: [{ operation: "EXEC" }] }, proposals: "review" },
+        policy: { proposals: "review" },
+        settings: { capabilities: { deny: [{ access: "execute" }] } },
         maxTurns: 7,
         openPaths: ["README.md"],
       },
@@ -188,25 +186,21 @@ test("the production portal serves assets and bridges CopilotKit to AG-UI", asyn
       plurnk?: { action?: unknown };
     }).plurnk?.action, {
       kind: "workspace.mcp.discover",
-      configuration: {
-        PLURNK_MCP_GITEA: "gitea-mcp",
-        PLURNK_MCP_GITEA_TOKEN: "GITEA_TOKEN",
-      },
     });
 
     await collect(agent, {
       ...input,
-      runId: "mcp-source-discovery",
+      runId: "mcp-registry-discovery",
       messages: [],
       forwardedProps: {
-        plurnk: { action: { kind: "workspace.mcp.discover", source: "https://example.test/mcp" } },
+        plurnk: { action: { kind: "workspace.mcp.discover", query: "web search" } },
       },
     });
     assert.deepEqual((upstreamInputs[5]?.forwardedProps as {
       plurnk?: { action?: unknown };
     }).plurnk?.action, {
       kind: "workspace.mcp.discover",
-      source: "https://example.test/mcp",
+      query: "web search",
     });
 
     const connect = await fetch(`${portal.origin}/api/copilotkit/agent/default/connect`, {

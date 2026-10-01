@@ -1,8 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { loadEnvFile } from "node:process";
-import { parseArgs } from "node:util";
+import { parseArgs, parseEnv } from "node:util";
 
 export interface PortalConfiguration {
   host: string;
@@ -22,8 +21,8 @@ export const USAGE = `usage: npm start -- [options]
 Run the source checkout's browser portal against a separately running daemon.
 
 options:
-  --host <host>            loopback portal host (default 127.0.0.1)
-  --port <port>            portal port (default 10660)
+  --host <host>            loopback portal host (PLURNK_WEB_HOST)
+  --port <port>            portal port (PLURNK_WEB_PORT)
   --env-file <path>        required env layer; repeatable, last wins
   --env-file-if-exists <p> optional env layer; repeatable, last wins
   --help                    show this help
@@ -35,16 +34,29 @@ Product invocation:
   unconstrained and applies cwd when each selected workspace is created.
 
 daemon target:
-  PLURNK_AGUI_URL selects the daemon (default http://127.0.0.1:1066)
+  PLURNK_AGUI_URL overrides the shared PLURNK_HOST and PLURNK_PORT target
   PLURNK_AGUI_TOKEN remains inside this portal and never reaches the browser
 `;
 
-const load = (path: string, required: boolean): void => {
+const load = (path: string | URL, required: boolean, env: NodeJS.ProcessEnv): void => {
   if (!existsSync(path)) {
     if (required) throw new Error(`environment file does not exist: ${path}`);
     return;
   }
-  loadEnvFile(path);
+  for (const [key, value] of Object.entries(parseEnv(readFileSync(path, "utf8")))) {
+    if (env[key] === undefined) env[key] = value;
+  }
+};
+
+export const loadFloor = (env: NodeJS.ProcessEnv = process.env): void => {
+  load(new URL("../../.env.defaults", import.meta.url), true, env);
+  load(new URL(".env.defaults", import.meta.resolve("@plurnk/plurnk-contracts/package.json")), true, env);
+};
+
+const requiredSetting = (name: string, env: NodeJS.ProcessEnv): string => {
+  const value = env[name];
+  if (value === undefined) throw new Error(`${name} is missing from the configuration floor`);
+  return value;
 };
 
 export const loadEnvironment = (
@@ -53,14 +65,13 @@ export const loadEnvironment = (
   cwd: string = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
 ): void => {
-  // loadEnvFile is set-if-unset. Highest-precedence sources therefore load
-  // first, and repeatable flags reverse so their last occurrence wins.
-  for (const path of [...required].reverse()) load(resolve(cwd, path), true);
-  for (const path of [...optional].reverse()) load(resolve(cwd, path), false);
-  load(join(cwd, ".env"), false);
+  // Highest-precedence sources load first; repeatable flags reverse so their last occurrence wins.
+  for (const path of [...required].reverse()) load(resolve(cwd, path), true, env);
+  for (const path of [...optional].reverse()) load(resolve(cwd, path), false, env);
+  load(join(cwd, ".env"), false, env);
   const xdg = env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
-  load(join(xdg, "plurnk", ".env"), false);
-  load(new URL("../../.env.defaults", import.meta.url).pathname, false);
+  load(join(xdg, "plurnk", ".env"), false, env);
+  loadFloor(env);
 };
 
 const positiveInteger = (raw: string, name: string): number => {
@@ -80,13 +91,14 @@ export const resolvePortalAddress = (
   portOverride: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): { host: string; port: number } => {
-  const host = hostOverride ?? env.PLURNK_WEB_HOST ?? "127.0.0.1";
+  loadFloor(env);
+  const host = hostOverride ?? requiredSetting("PLURNK_WEB_HOST", env);
   if (!isLoopback(host)) {
     throw new Error(`--host must be loopback; received ${JSON.stringify(host)}`);
   }
   return {
     host,
-    port: positiveInteger(portOverride ?? env.PLURNK_WEB_PORT ?? "10660", "--port"),
+    port: positiveInteger(portOverride ?? requiredSetting("PLURNK_WEB_PORT", env), "--port"),
   };
 };
 
@@ -113,7 +125,7 @@ export const parseCommand = (
 
   const { host, port } = resolvePortalAddress(values.host, values.port, env);
   const upstreamRaw = env.PLURNK_AGUI_URL
-    ?? "http://127.0.0.1:1066";
+    ?? `http://${requiredSetting("PLURNK_HOST", env)}:${requiredSetting("PLURNK_PORT", env)}`;
   const upstream = new URL(upstreamRaw);
   if (upstream.protocol !== "http:" && upstream.protocol !== "https:") {
     throw new Error("PLURNK_AGUI_URL must use http: or https:");
