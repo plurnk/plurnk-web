@@ -22,7 +22,9 @@ does not depend on this package. More-specific mounts retain their ownership.
 |---|---|
 | GET `/` | Packaged HTML document. |
 | GET `/app.js`, `/vendor/otm.js` | Packaged browser ES modules. |
-| GET `/locales/en.json`, `/vendor/OTM-LICENSE.txt` | Packaged translation and license. |
+| GET `/vendor/app-vendor.css` | Packaged Pico Classless Green stylesheet. |
+| GET `/locales/en.json` | Packaged translation. |
+| GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt` | Packaged dependency licenses. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
 | Other path | 404, never an HTML fallback or directory listing. |
 | Method other than GET/HEAD | 405 with `Allow: GET, HEAD`. |
@@ -37,14 +39,17 @@ byte length and `X-Content-Type-Options: nosniff`.
 ## §web-document Document
 
 The document says Hello world in semantic HTML and initializes OTM from locally
-packaged ES modules. It remains readable without JavaScript. It has no stylesheet,
-theme, client routing, persistent browser state, external asset requests or agent
-interface. No browser credential or daemon state is embedded in the document.
+packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
+without application classes or custom CSS. Its native color-scheme selection
+follows the browser preference; content and styling work without JavaScript.
+There is no theme switcher, client routing, persistent browser state, external
+asset request or agent interface. No browser credential or daemon state is embedded
+in the document.
 
 ## §web-package Package boundary
 
 The npm archive includes the Agent Plugin manifest, native module, defaults,
-document and its complete browser dependency graph, including OTM's license.
+document and its complete browser dependency graph, including OTM and Pico licenses.
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside a published service in an isolated environment and exercises actual module
 discovery, routing and browser execution.
