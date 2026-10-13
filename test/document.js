@@ -3,12 +3,29 @@ import assert from "node:assert/strict";
 // {§web-language} Query, browser and unrelated stored preferences cannot translate
 // the source-language document into itself or select an unshipped language.
 export default async function verifyDocument(browser, base) {
-    for (const query of ["", "?lang=fr"]) {
+    for (const { query, storageDenied } of [
+        { query: "", storageDenied: false },
+        { query: "?lang=fr", storageDenied: false },
+        { query: "?lang=fr", storageDenied: true },
+    ]) {
         const context = await browser.newContext({ locale: "fr-FR" });
         try {
-            await context.addInitScript(() => {
-                localStorage.setItem("otm:lang", "es");
-                localStorage.setItem("plurnk:lang", "es");
+            await context.addInitScript((storageDenied) => {
+                window.storageAccesses = [];
+                if (storageDenied) {
+                    for (const name of ["localStorage", "sessionStorage"]) {
+                        Object.defineProperty(window, name, {
+                            configurable: true,
+                            get() {
+                                window.storageAccesses.push(name);
+                                throw new DOMException("Storage disabled", "SecurityError");
+                            },
+                        });
+                    }
+                } else {
+                    localStorage.setItem("otm:lang", "es");
+                    localStorage.setItem("plurnk:lang", "es");
+                }
                 window.storageWrites = [];
                 window.sourceReplacements = [];
                 new MutationObserver((records) => {
@@ -29,7 +46,7 @@ export default async function verifyDocument(browser, base) {
                         return original.apply(this, args);
                     };
                 }
-            });
+            }, storageDenied);
             const tab = await context.newPage();
             const errors = [];
             const requests = [];
@@ -40,13 +57,15 @@ export default async function verifyDocument(browser, base) {
             });
             tab.on("request", (request) => requests.push(request.url()));
             await tab.goto(new URL(query || "/", base).href);
+            await tab.evaluate(() => import(document.querySelector('script[type="module"]').src));
             assert.equal(await tab.locator("main h1").innerText(), "Hello world");
             assert.equal(await tab.locator("html").getAttribute("lang"), "en");
             assert.equal(await tab.title(), "Plurnk");
             assert.deepEqual(await tab.evaluate(() => window.sourceReplacements), [], "source text is not rewritten during boot");
             assert.ok(!requests.some((url) => new URL(url).pathname.startsWith("/locales/")), "source-language document needs no translation request");
             assert.deepEqual(await tab.evaluate(() => window.storageWrites), [], "boot does not persist browser state");
-            assert.equal(await tab.evaluate(() => sessionStorage.length), 0);
+            assert.deepEqual(await tab.evaluate(() => window.storageAccesses), [], "boot does not require browser storage");
+            if (!storageDenied) assert.equal(await tab.evaluate(() => sessionStorage.length), 0);
 
             const styles = await tab.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href")));
             assert.ok(styles.length > 0);

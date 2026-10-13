@@ -29,3 +29,11 @@ Commit verified changes with the registered agent as author and the operator as
 signed committer, then push to the canonical forge. No automatic publication.
 
 Repository issues own investigation; SPEC.md owns current behavior.
+
+Before changing a contract, reconcile its specification, implementation,
+documentation and meaningful coverage. Do not preserve contradictory teaching.
+Use the service's named-tag convention: one `§lowercase-kebab` declaration at
+the beginning of its owning SPEC.md block, and `{§lowercase-kebab}` citations
+elsewhere. Tags are unique within the repository; every citation resolves and
+every contract has an implementation or coverage witness. A citation is not a
+substitute for testing the promised behavior through its real boundary.

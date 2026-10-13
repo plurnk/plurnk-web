@@ -6,7 +6,8 @@ monospace typography. It follows the browser's light/dark preference.
 No chat interface or additional server.
 
 English is rendered in the document, not filled in by JavaScript. The current
-page has no language picker or stored preferences. Ordinary navigation and forms
+page needs no duplicate English dictionary or browser storage, and has no language
+picker or stored preferences. Ordinary navigation and forms
 remain native HTML; the eventual interactive worker interface requires JavaScript.
 
 ## Install from source

@@ -38,7 +38,7 @@
         "@types/node": "^26.1.1",
         "eslint": "10.12.0",
         "eslint-plugin-no-unsanitized": "4.1.5",
-        "on_the_money": "0.9.1",
+        "on_the_money": "0.10.0",
         "playwright": "1.64.0",
         "stylelint": "17.16.0",
         "stylelint-config-standard": "40.0.0",
