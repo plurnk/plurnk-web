@@ -3,8 +3,13 @@
 An optional daemon module serving an OTM document. Read SPEC.md before changing
 behavior, and OTM's installed README before writing browser code.
 
-HTML owns content and structure. Browser JavaScript enhances the document; it
-does not construct an application shell. Native browser behavior is preferred.
+HTML owns document content and structure. Directory navigation uses real links
+and lists; ordinary actions use semantic forms and native controls. The core
+interactive worker requires JavaScript: do not build a parallel no-JS agent
+interface. OTM enhances documents, not a generic JavaScript application shell.
+Readable English lives at its rendering site, not in placeholders replaced at
+boot. OTM defects and missing general mechanisms go upstream; do not introduce
+consumer shims or disable its checks to work around them.
 Keep CSS concerns in four files: app-vendor.css (pinned Pico Classless Green),
 app-structure.css (layout), app-style.css (token overrides), and app-state.css
 (attribute-driven visual state). Use #148800 brand accents, readable light/dark
