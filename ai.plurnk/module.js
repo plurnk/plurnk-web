@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Knob } from "@plurnk/plurnk-meta";
+import indexDocument from "./index-document.js";
 
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<never, Pick<import("@plurnk/plurnk-contracts").ApplicationPort, "registerHttpRoute">>} */
 export default function createModule() {
@@ -17,7 +18,8 @@ export default function createModule() {
             ]))));
 
             seam.registerHttpRoute("/", (req, res) => {
-                const resource = resources.get((req.url ?? "").split("?")[0]);
+                const pathname = (req.url ?? "").split("?")[0];
+                const resource = resources.get(indexDocument(pathname));
                 const supported = req.method === "GET" || req.method === "HEAD";
                 const { status, body, mediaType } = !supported
                     ? { status: 405, body: Buffer.from("Method not allowed\n"), mediaType: "text/plain" }

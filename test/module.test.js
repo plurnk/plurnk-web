@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { ConfigurationError } from "@plurnk/plurnk-meta";
 import createModule from "../ai.plurnk/module.js";
+import verifyDirectories from "./directories.js";
 
 test("{§web-host} configuration admits only an enabled root owner", (t) => {
     const original = process.env.PLURNK_WEB_ENABLED;
@@ -32,6 +34,9 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
+    const index = await fetch(`${base}/index.html`);
+    assert.equal(index.status, 200, "{§web-index-documents} explicit root index is served");
+    assert.equal(await index.text(), await (await fetch(`${base}/`)).text());
     const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
     assert.equal(manifestResponse.status, 200, "{§web-installation} manifest is available on the module route");
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
@@ -46,7 +51,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             assert.deepEqual(Buffer.from(await res.arrayBuffer()), method === "HEAD" ? Buffer.alloc(0) : expected);
         }
     }
-    for (const path of ["/missing", "/index.html", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
+    for (const path of ["/missing", "/~/", "/~/workspace@user/", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}`, { method });
             assert.equal(res.status, 404, `${method} ${path}`);
@@ -67,4 +72,30 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
         }).on("error", reject).end();
     });
     assert.equal(raw, 404);
+});
+
+test("{§web-index-documents} production resolves only admitted directory indexes", async (t) => {
+    const directory = await mkdtemp(new URL("../.module-test-", import.meta.url));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const base = pathToFileURL(`${directory}/`);
+    await copyFile(new URL("../ai.plurnk/module.js", import.meta.url), new URL("module.js", base));
+    await copyFile(new URL("../ai.plurnk/index-document.js", import.meta.url), new URL("index-document.js", base));
+    await mkdir(new URL("dist/", base));
+    const inventory = [
+        ["/index.html", "root.html", "text/html"],
+        ["/nested/index.html", "nested.html", "text/html"],
+        ["/nested/child.txt", "child.txt", "text/plain"],
+    ];
+    await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
+    await writeFile(new URL("dist/root.html", base), "<h1>Hello world</h1>");
+    await writeFile(new URL("dist/nested.html", base), "<h1>Nested document</h1>");
+    await writeFile(new URL("dist/child.txt", base), "Child resource\n");
+    const { default: fixtureModule } = await import(new URL("module.js", base).href);
+    let handler;
+    await fixtureModule().start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
+    const server = createServer(handler);
+    t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    await verifyDirectories(`http://127.0.0.1:${server.address().port}`);
 });

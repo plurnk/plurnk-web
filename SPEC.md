@@ -21,6 +21,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 | Request | Response |
 |---|---|
 | GET `/` | Packaged HTML document. |
+| GET `/index.html` | Same root document. |
 | GET `/assets/<build-generated-name>` | Compiled browser JavaScript and CSS. |
 | GET `/manifest.webmanifest` | Web app manifest (`application/manifest+json`). |
 | GET `/icons/plurnk.svg`, `/icons/plurnk-{16,32,180,192,512}.png` | Local scalable and raster app icons. |
@@ -37,6 +38,29 @@ configuration, source, credentials and workspace files are not public resources.
 Assets are loaded during module startup: missing package bytes fail startup rather
 than leaving a partially functioning page. Responses declare their media type,
 byte length and `X-Content-Type-Options: nosniff`.
+
+## §web-index-documents Directory documents
+
+| Request | Resolution |
+|---|---|
+| `/folder/` | The admitted `/folder/index.html` resource. |
+| `/folder/index.html` | That same resource, with the same relative-link base. |
+| `/` and `/index.html` | The root index document. |
+| `/folder` | No implicit directory alias; links to directories include the final slash. |
+| Missing index or child asset | 404, not an ancestor's index or the root document. |
+
+Resolution uses the exact resource inventory, not a filesystem search or path
+normalization. Query strings do not change the selected bytes. Production GET and
+HEAD have the same status and headers; HEAD has no body. No redirect or history rewrite is
+needed for the two index spellings. Native links, relative children, refresh and
+back/forward work with JavaScript enabled or disabled. OTM does not intercept
+document navigation; the server remains responsible for the document.
+
+Production, Vite development and compiled preview share the same index-path
+projection, applied before resource serving. Vite still owns HTML transformation,
+compilation and HMR; no browser router is registered. Its development-only modules and
+source serving are not production resources. Currently only the root document
+is shipped: `/~/`, workspace/worker documents and worker assets remain unserved.
 
 ## §web-document Document
 

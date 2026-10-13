@@ -33,6 +33,7 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/OTM-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/index-document.js"));
     for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable-512.png", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt",
         ...[16, 32, 180, 192, 512].map((size) => `icons/plurnk-${size}.png`)]) {
         assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), path);
@@ -80,6 +81,9 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
             const page = await fetch(base);
             assert.equal(page.status, 200);
             assert.match(await page.text(), /<h1 data-i18n="greeting">Hello world<\/h1>/u);
+            const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
+            assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the root document");
+            assert.equal(await explicitIndex.text(), await (await fetch(base)).text());
             const agui = await fetch(new URL("/agui", base));
             assert.notEqual(agui.status, 200);
             assert.match(agui.headers.get("content-type"), /application\/problem\+json/u);

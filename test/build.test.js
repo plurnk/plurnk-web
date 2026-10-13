@@ -15,7 +15,7 @@ test("{§web-build} production HTML references compiled assets, not development 
     for (const asset of [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/gu)].map((match) => match[1])) {
         assert.ok(inventory.some(([path]) => path === asset), `inventory includes ${asset}`);
     }
-    assert.ok(inventory.some(([path, , type]) => path === "/" && type === "text/html"));
+    assert.ok(inventory.some(([path, , type]) => path === "/index.html" && type === "text/html"));
     assert.ok(inventory.some(([path]) => path === "/manifest.webmanifest"));
 });
 
