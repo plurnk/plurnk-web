@@ -14,6 +14,10 @@ state machinery or dependencies for future work.
 The module uses only public Plurnk contracts. It owns no listener, daemon,
 database or agent lifecycle. Configuration belongs in ai.plurnk/.env.defaults.
 
+Frontend source lives in web/. Vite owns development serving and production
+compilation; the module serves only the built ai.plurnk/dist/ asset inventory.
+Keep Vite out of runtime dependencies. Generated assets are packed, not committed.
+
 Run `npm ci --no-audit --no-fund`, then `npm test`. The gate includes a packed
 installation on an isolated daemon; it must not touch the operator's service.
 Commit verified changes with the registered agent as author and the operator as

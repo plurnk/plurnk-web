@@ -4,14 +4,29 @@
     "description": "Optional Plurnk daemon module serving an OTM document.",
     "type": "module",
     "license": "MIT",
-    "engines": { "node": ">=26" },
+    "engines": {
+        "node": ">=26"
+    },
     "repository": {
         "type": "git",
         "url": "ssh://git@ssh.possumtech.com/plurnk/plurnk-web.git"
     },
-    "bugs": { "url": "https://repo.possumtech.com/plurnk/plurnk-web/issues" },
-    "files": ["plugin.json", "ai.plurnk/", "README.md", "SPEC.md", "LICENSE"],
-    "dependencies": { "@plurnk/plurnk-meta": "^2.1.1" },
+    "bugs": {
+        "url": "https://repo.possumtech.com/plurnk/plurnk-web/issues"
+    },
+    "files": [
+        "plugin.json",
+        "ai.plurnk/module.js",
+        "ai.plurnk/.env.defaults",
+        "ai.plurnk/assets.json",
+        "ai.plurnk/dist/",
+        "README.md",
+        "SPEC.md",
+        "LICENSE"
+    ],
+    "dependencies": {
+        "@plurnk/plurnk-meta": "^2.1.1"
+    },
     "peerDependencies": {
         "@plurnk/plurnk-contracts": "^3.2.0",
         "@plurnk/plurnk-modules": "^3.1.0"
@@ -24,12 +39,15 @@
         "playwright": "1.64.0",
         "stylelint": "17.16.0",
         "stylelint-config-standard": "40.0.0",
-        "typescript": "^7.0.2"
+        "typescript": "^7.0.2",
+        "vite": "8.3.4"
     },
     "scripts": {
+        "dev": "node scripts/assets.mjs && vite",
         "build": "node scripts/build.mjs",
-        "test:lint": "tsc && otm-lint --check ai.plurnk/public && stylelint 'ai.plurnk/public/styles/*.css'",
-        "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js",
+        "preview": "vite preview",
+        "test:lint": "tsc && otm-lint --check web && stylelint 'web/styles/*.css'",
+        "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js test/build.test.js test/development.test.js",
         "test:installation": "node --test test/installation.test.js",
         "test": "npm run build && npm run test:lint && npm run test:unit && npm run test:installation",
         "prepack": "npm run build"

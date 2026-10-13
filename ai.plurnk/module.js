@@ -9,26 +9,11 @@ export default function createModule() {
         mounts: ["/"],
         async start(seam) {
             // {§web-assets} Requests select entries, never filesystem paths.
-            const resources = new Map(await Promise.all([
-                ["/", "index.html", "text/html"],
-                ["/manifest.webmanifest", "manifest.webmanifest", "application/manifest+json"],
-                ["/icons/plurnk.svg", "icons/plurnk.svg", "image/svg+xml"],
-                ...[16, 32, 180, 192, 512].map((size) => [`/icons/plurnk-${size}.png`, `icons/plurnk-${size}.png`, "image/png"]),
-                ["/icons/plurnk-maskable-512.png", "icons/plurnk-maskable-512.png", "image/png"],
-                ["/icons/NOTO-NOTICE.txt", "icons/NOTO-NOTICE.txt", "text/plain"],
-                ["/icons/APACHE-2.0.txt", "icons/APACHE-2.0.txt", "text/plain"],
-                ["/app.js", "app.js", "text/javascript"],
-                ["/vendor/otm.js", "vendor/otm.js", "text/javascript"],
-                ["/styles/app-vendor.css", "styles/app-vendor.css", "text/css"],
-                ["/styles/app-structure.css", "styles/app-structure.css", "text/css"],
-                ["/styles/app-style.css", "styles/app-style.css", "text/css"],
-                ["/styles/app-state.css", "styles/app-state.css", "text/css"],
-                ["/locales/en.json", "locales/en.json", "application/json"],
-                ["/vendor/OTM-LICENSE.txt", "vendor/OTM-LICENSE.txt", "text/plain"],
-                ["/vendor/PICO-LICENSE.txt", "vendor/PICO-LICENSE.txt", "text/plain"],
-            ].map(async ([pathname, file, mediaType]) => /** @type {const} */ ([
+            /** @type {[string, string, string][]} */
+            const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
+            const resources = new Map(await Promise.all(inventory.map(async ([pathname, file, mediaType]) => /** @type {const} */ ([
                 pathname,
-                { body: await readFile(new URL(`public/${file}`, import.meta.url)), mediaType, status: 200 },
+                { body: await readFile(new URL(`dist/${file}`, import.meta.url)), mediaType, status: 200 },
             ]))));
 
             seam.registerHttpRoute("/", (req, res) => {
