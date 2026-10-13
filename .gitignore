@@ -1,4 +1,5 @@
 node_modules/
 ai.plurnk/public/vendor/
 ai.plurnk/public/styles/app-vendor.css
+ai.plurnk/public/icons/*.png
 *.tgz

@@ -7,8 +7,8 @@ HTML owns content and structure. Browser JavaScript enhances the document; it
 does not construct an application shell. Native browser behavior is preferred.
 Keep CSS concerns in four files: app-vendor.css (pinned Pico Classless Green),
 app-structure.css (layout), app-style.css (token overrides), and app-state.css
-(attribute-driven visual state). Keep the existing green light/dark palette;
-use system monospace typography. Do not add decorative theming, navigation,
+(attribute-driven visual state). Use #148800 brand accents, readable light/dark
+colors and system monospace typography. Do not add decorative theming, navigation,
 state machinery or dependencies for future work.
 
 The module uses only public Plurnk contracts. It owns no listener, daemon,

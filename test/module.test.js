@@ -32,8 +32,16 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
+    const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
+    assert.equal(manifestResponse.status, 200, "{§web-installation} manifest is available on the module route");
     for (const [path, file, type] of [
         ["/", "index.html", "text/html"],
+        ["/manifest.webmanifest", "manifest.webmanifest", "application/manifest+json"],
+        ["/icons/plurnk.svg", "icons/plurnk.svg", "image/svg+xml"],
+        ...[16, 32, 180, 192, 512].map((size) => [`/icons/plurnk-${size}.png`, `icons/plurnk-${size}.png`, "image/png"]),
+        ["/icons/plurnk-maskable-512.png", "icons/plurnk-maskable-512.png", "image/png"],
+        ["/icons/NOTO-NOTICE.txt", "icons/NOTO-NOTICE.txt", "text/plain"],
+        ["/icons/APACHE-2.0.txt", "icons/APACHE-2.0.txt", "text/plain"],
         ["/app.js", "app.js", "text/javascript"],
         ["/vendor/otm.js", "vendor/otm.js", "text/javascript"],
         ["/styles/app-vendor.css", "styles/app-vendor.css", "text/css"],
@@ -48,7 +56,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}?ignored=yes`, { method });
             assert.equal(res.status, 200, `${method} ${path}`);
-            assert.equal(res.headers.get("content-type"), `${type}; charset=utf-8`);
+            assert.equal(res.headers.get("content-type"), type.startsWith("image/") ? type : `${type}; charset=utf-8`);
             assert.equal(res.headers.get("content-length"), String(expected.byteLength));
             assert.equal(res.headers.get("x-content-type-options"), "nosniff");
             assert.deepEqual(Buffer.from(await res.arrayBuffer()), method === "HEAD" ? Buffer.alloc(0) : expected);

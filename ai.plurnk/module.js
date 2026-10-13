@@ -11,6 +11,12 @@ export default function createModule() {
             // {§web-assets} Requests select entries, never filesystem paths.
             const resources = new Map(await Promise.all([
                 ["/", "index.html", "text/html"],
+                ["/manifest.webmanifest", "manifest.webmanifest", "application/manifest+json"],
+                ["/icons/plurnk.svg", "icons/plurnk.svg", "image/svg+xml"],
+                ...[16, 32, 180, 192, 512].map((size) => [`/icons/plurnk-${size}.png`, `icons/plurnk-${size}.png`, "image/png"]),
+                ["/icons/plurnk-maskable-512.png", "icons/plurnk-maskable-512.png", "image/png"],
+                ["/icons/NOTO-NOTICE.txt", "icons/NOTO-NOTICE.txt", "text/plain"],
+                ["/icons/APACHE-2.0.txt", "icons/APACHE-2.0.txt", "text/plain"],
                 ["/app.js", "app.js", "text/javascript"],
                 ["/vendor/otm.js", "vendor/otm.js", "text/javascript"],
                 ["/styles/app-vendor.css", "styles/app-vendor.css", "text/css"],
@@ -32,7 +38,7 @@ export default function createModule() {
                     ? { status: 405, body: Buffer.from("Method not allowed\n"), mediaType: "text/plain" }
                     : resource ?? { status: 404, body: Buffer.from("Not found\n"), mediaType: "text/plain" };
                 res.writeHead(status, {
-                    "content-type": `${mediaType}; charset=utf-8`,
+                    "content-type": mediaType.startsWith("image/") ? mediaType : `${mediaType}; charset=utf-8`,
                     "content-length": body.byteLength,
                     "x-content-type-options": "nosniff",
                     ...(status === 405 ? { allow: "GET, HEAD" } : {}),

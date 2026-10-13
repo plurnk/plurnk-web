@@ -1,3 +1,28 @@
 :root {
     --pico-font-family: var(--pico-font-family-monospace);
 }
+
+:root:not([data-theme="dark"]),
+[data-theme="light"] {
+    --pico-primary: #148800;
+    --pico-primary-underline: rgb(20 136 0 / 50%);
+    --pico-primary-hover: #106d00;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        --pico-primary: #4eb31b;
+        --pico-primary-underline: rgb(78 179 27 / 50%);
+        --pico-primary-hover: #72cc46;
+    }
+}
+
+[data-theme],
+:root:not([data-theme]),
+:root[data-theme] {
+    --pico-primary-background: #148800;
+    --pico-primary-hover-background: #106d00;
+    --pico-primary-focus: rgb(20 136 0 / 50%);
+    --pico-primary-inverse: #fff;
+    --pico-text-selection-color: rgb(20 136 0 / 25%);
+}
