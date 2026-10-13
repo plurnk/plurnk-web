@@ -25,7 +25,7 @@ const inventory = (await readdir(output, { recursive: true, withFileTypes: true 
         const file = relative(output, resolve(entry.parentPath, entry.name)).replaceAll("\\", "/");
         const type = types[extname(file)];
         if (!type) throw new Error(`Undeclared media type for built asset: ${file}`);
-        return [file === "index.html" ? "/" : `/${file}`, file, type];
+        return [`/${file}`, file, type];
     })
     .sort(([a], [b]) => a.localeCompare(b));
 await writeFile(new URL("../ai.plurnk/assets.json", import.meta.url), JSON.stringify(inventory, null, 2) + "\n");

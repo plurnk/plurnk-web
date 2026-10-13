@@ -5,6 +5,12 @@ Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
 No chat interface or additional server.
 
+Directories select their `index.html`: `/` and `/index.html` serve the same
+document, as do the two spellings for any admitted nested index. Directory links
+include the trailing slash. Missing documents and assets return 404, not the
+home page. Only the root document is currently shipped; workspace and worker
+routes are not exposed yet.
+
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
 picker or stored preferences. Ordinary navigation and forms

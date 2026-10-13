@@ -17,6 +17,7 @@
     "files": [
         "plugin.json",
         "ai.plurnk/module.js",
+        "ai.plurnk/index-document.js",
         "ai.plurnk/.env.defaults",
         "ai.plurnk/assets.json",
         "ai.plurnk/dist/",
