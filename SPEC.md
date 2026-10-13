@@ -106,3 +106,16 @@ discovery, routing and browser execution.
 
 Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-modules/SPEC.md),
 [Agent Plugins](https://agent-plugins.org/), and OTM's installed README.
+
+## §web-agui-conformance Browser protocol verification
+
+The packed-installation gate runs the official HttpAgent in Chromium from the
+module's real document origin, against an isolated authenticated daemon and a
+deterministic local model. Only the test SDK asset is injected; AG-UI traffic is
+not intercepted or synthesized. It verifies bearer rejection, discovery,
+reasoning, native tool/result correlation, Plurnk receipts, state reception,
+assistant replies and provider failure. No operator configuration or paid model
+is used. Test fixtures and the SDK test bundle are not shipped browser assets.
+
+This establishes the connection boundary, not a conversation UI or a claim of
+reconnect, history restoration, or interrupt/resume coverage.

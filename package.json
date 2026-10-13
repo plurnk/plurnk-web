@@ -32,6 +32,7 @@
         "@plurnk/plurnk-modules": "^3.1.0"
     },
     "devDependencies": {
+        "@ag-ui/client": "1.0.2",
         "@picocss/pico": "2.1.1",
         "@resvg/resvg-js": "2.6.2",
         "@types/node": "^26.1.1",

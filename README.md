@@ -61,6 +61,8 @@ with a published service in a temporary directory. The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Install that test browser with `npx playwright install chromium` if
 necessary. The operator's daemon and configuration are not used.
+The gate also runs the official HttpAgent in Chromium against that daemon and a
+deterministic local model; no paid inference or shipped conversation UI is involved.
 
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
