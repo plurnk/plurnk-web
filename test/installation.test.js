@@ -25,6 +25,8 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     const [archive] = archives;
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/otm.js"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/OTM-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/app-vendor.css"));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/PICO-LICENSE.txt"));
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules)\//u.test(path)));
     await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "web-installation-test", private: true, type: "module" }));
     await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund",
@@ -91,21 +93,42 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
                     assert.equal(await tab.locator("main h1").innerText(), "Hello world");
                     await tab.waitForFunction(async () => (await import("/vendor/otm.js")).the.locale === "en");
                     assert.equal(await tab.title(), "Plurnk");
-                    assert.equal(await tab.locator("link[rel=stylesheet], style, button, nav").count(), 0);
+                    assert.equal(await tab.locator('link[rel="stylesheet"]').getAttribute("href"), "/vendor/app-vendor.css");
+                    assert.equal(await tab.locator("style, [class], [style], button, nav").count(), 0);
                     assert.ok(requests.some((url) => url.endsWith("/app.js")));
                     assert.ok(requests.some((url) => url.endsWith("/vendor/otm.js")));
+                    assert.ok(requests.some((url) => url.endsWith("/vendor/app-vendor.css")));
                     assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
                     assert.deepEqual(errors, []);
                     await context.close();
                 });
-                await discovery.test("{§web-document} HTML remains whole with JavaScript disabled", async () => {
-                    const context = await browser.newContext({ javaScriptEnabled: false });
-                    const tab = await context.newPage();
-                    await tab.goto(base);
-                    assert.equal(await tab.locator("main h1").innerText(), "Hello world");
-                    assert.equal(await tab.title(), "Plurnk");
-                    await context.close();
-                });
+                for (const javaScriptEnabled of [true, false]) {
+                    await discovery.test(`{§web-document} classless green follows color preference with JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
+                        const context = await browser.newContext({ javaScriptEnabled, colorScheme: "light" });
+                        try {
+                            const tab = await context.newPage();
+                            await tab.goto(base);
+                            assert.equal(await tab.locator("main h1").innerText(), "Hello world");
+                            assert.equal(await tab.title(), "Plurnk");
+                            for (const [colorScheme, primary] of [["light", "#33790f"], ["dark", "#4eb31b"]]) {
+                                await tab.emulateMedia({ colorScheme });
+                                const rendered = await tab.evaluate(() => {
+                                    const root = getComputedStyle(document.documentElement);
+                                    return {
+                                        primary: root.getPropertyValue("--pico-primary").trim(),
+                                        scheme: root.colorScheme,
+                                        padding: parseFloat(getComputedStyle(document.querySelector("main")).paddingTop),
+                                    };
+                                });
+                                assert.equal(rendered.primary, primary);
+                                assert.equal(rendered.scheme, colorScheme);
+                                assert.ok(rendered.padding > 0, "semantic main receives the substrate layout");
+                            }
+                        } finally {
+                            await context.close();
+                        }
+                    });
+                }
             } finally {
                 await browser.close();
             }

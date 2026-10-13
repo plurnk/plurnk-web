@@ -1,7 +1,8 @@
 # plurnk-web
 
 An optional Plurnk daemon plugin serving an OTM Hello world document at `/`.
-No chat interface or additional server.
+Pico Classless Green supplies the styling and follows the browser's light/dark
+preference. No chat interface or additional server.
 
 ## Install from source
 
@@ -36,8 +37,9 @@ isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Install that test browser with `npx playwright install chromium` if
 necessary. The operator's daemon and configuration are not used.
 
-`npm run build` copies OTM's published browser artifact and license into the package;
-it does not compile the document or run a frontend bundler. Generated vendor files
+`npm run build` copies OTM's browser artifact, Pico's pinned Classless Green
+stylesheet and both licenses into the package. It does not compile the document
+or run a frontend bundler. Generated vendor files
 are packed but not committed. [SPEC.md](SPEC.md) defines the current contract.
 
 MIT.

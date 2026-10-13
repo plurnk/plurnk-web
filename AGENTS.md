@@ -5,7 +5,8 @@ behavior, and OTM's installed README before writing browser code.
 
 HTML owns content and structure. Browser JavaScript enhances the document; it
 does not construct an application shell. Native browser behavior is preferred.
-Do not add styling, navigation, state machinery or dependencies for future work.
+Pico Classless Green supplies the CSS substrate. Do not add custom styling,
+navigation, state machinery or dependencies for future work.
 
 The module uses only public Plurnk contracts. It owns no listener, daemon,
 database or agent lifecycle. Configuration belongs in ai.plurnk/.env.defaults.

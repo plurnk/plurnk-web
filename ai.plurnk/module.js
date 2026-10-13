@@ -13,8 +13,10 @@ export default function createModule() {
                 ["/", "index.html", "text/html"],
                 ["/app.js", "app.js", "text/javascript"],
                 ["/vendor/otm.js", "vendor/otm.js", "text/javascript"],
+                ["/vendor/app-vendor.css", "vendor/app-vendor.css", "text/css"],
                 ["/locales/en.json", "locales/en.json", "application/json"],
                 ["/vendor/OTM-LICENSE.txt", "vendor/OTM-LICENSE.txt", "text/plain"],
+                ["/vendor/PICO-LICENSE.txt", "vendor/PICO-LICENSE.txt", "text/plain"],
             ].map(async ([pathname, file, mediaType]) => /** @type {const} */ ([
                 pathname,
                 { body: await readFile(new URL(`public/${file}`, import.meta.url)), mediaType, status: 200 },

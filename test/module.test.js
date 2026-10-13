@@ -36,8 +36,10 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
         ["/", "index.html", "text/html"],
         ["/app.js", "app.js", "text/javascript"],
         ["/vendor/otm.js", "vendor/otm.js", "text/javascript"],
+        ["/vendor/app-vendor.css", "vendor/app-vendor.css", "text/css"],
         ["/locales/en.json", "locales/en.json", "application/json"],
         ["/vendor/OTM-LICENSE.txt", "vendor/OTM-LICENSE.txt", "text/plain"],
+        ["/vendor/PICO-LICENSE.txt", "vendor/PICO-LICENSE.txt", "text/plain"],
     ]) {
         const expected = await readFile(new URL(`../ai.plurnk/public/${file}`, import.meta.url));
         for (const method of ["GET", "HEAD"]) {
