@@ -5,6 +5,10 @@ Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
 No chat interface or additional server.
 
+English is rendered in the document, not filled in by JavaScript. The current
+page has no language picker or stored preferences. Ordinary navigation and forms
+remain native HTML; the eventual interactive worker interface requires JavaScript.
+
 ## Install from source
 
 Requires Node.js 26+ and an existing Plurnk service installation.
@@ -56,7 +60,8 @@ that build on the daemon's existing port; restart the daemon to load a new build
 `npm run preview` previews the last build locally without a daemon. It is not the
 production server. Vite is development tooling only.
 
-`npm test` checks the module and OTM document, then packs and installs the plugin
+`npm test` checks server and browser JavaScript, OTM's HTML/JavaScript/CSS
+contracts and the module, then packs and installs the plugin
 with a published service in a temporary directory. The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Install that test browser with `npx playwright install chromium` if

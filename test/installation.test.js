@@ -10,6 +10,7 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
 import verifyWebApp from "./web-app.js";
+import verifyDocument from "./document.js";
 import verifyAgui from "./agui-browser.js";
 import startModel from "./model-fixture.js";
 
@@ -90,33 +91,7 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
             const browser = await chromium.launch();
             try {
                 await discovery.test("{§web-installation} browser recognizes app metadata and decodes every icon", () => verifyWebApp(browser, base));
-                await discovery.test("{§web-document} browser initializes OTM without external requests", async () => {
-                    const context = await browser.newContext();
-                    const errors = [];
-                    const requests = [];
-                    const tab = await context.newPage();
-                    tab.on("pageerror", (error) => errors.push(error.message));
-                    tab.on("requestfailed", (request) => errors.push(request.url()));
-                    tab.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
-                    tab.on("request", (request) => requests.push(request.url()));
-                    await tab.route("**/locales/en.json", (route) => route.fulfill({
-                        json: { title: "Plurnk", greeting: "Hello from dictionary" },
-                    }));
-                    await tab.goto(new URL("?lang=fr", base).href);
-                    await tab.waitForFunction(() => document.querySelector("main h1").textContent === "Hello from dictionary");
-                    assert.equal(await tab.title(), "Plurnk");
-                    const styles = await tab.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href")));
-                    assert.ok(styles.length > 0);
-                    assert.ok(styles.every((path) => /^\/assets\/.+\.css$/u.test(path)));
-                    assert.equal(await tab.locator("style, [class], [style], button, nav").count(), 0);
-                    assert.ok(requests.some((url) => /\/assets\/.+\.js$/u.test(url)));
-                    assert.ok(requests.some((url) => url.endsWith("/locales/en.json")));
-                    assert.ok(styles.every((path) => requests.includes(new URL(path, base).href)));
-                    assert.ok(!requests.some((url) => url.includes("/@vite/") || url.includes("/node_modules/")));
-                    assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
-                    assert.deepEqual(errors, []);
-                    await context.close();
-                });
+                await discovery.test("{§web-language} source English remains intact without translation or persistence", () => verifyDocument(browser, base));
                 for (const javaScriptEnabled of [true, false]) {
                     await discovery.test(`{§web-document} classless green follows color preference with JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
                         const context = await browser.newContext({ javaScriptEnabled, colorScheme: "light" });
