@@ -83,6 +83,14 @@ storage even when storage is denied. No language picker or additional locale is 
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
 | Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. |
 
+## §web-contract-checks Specification gate
+
+The web lint gate uses the shared `@plurnk/plurnk-spec-check` development tool.
+Named declarations are unique, citations resolve, and each contract has a
+non-prose witness. No unwitnessed-contract allowance is used. The gate works from
+a standalone checkout with installed dependencies, without a neighboring service
+checkout. This checks traceability, not whether a cited test proves its contract.
+
 ## §web-build Development and production
 
 | Command | Contract |

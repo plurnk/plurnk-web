@@ -1,12 +1,32 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { ESLint } from "eslint";
+
+test("{§web-contract-checks} the actual web lint command rejects an unresolved specification citation", async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "plurnk-web-contract-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const root = new URL("../", import.meta.url);
+    const { scripts } = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+    await writeFile(join(directory, "package.json"), JSON.stringify({ private: true, scripts: { "test:lint": scripts["test:lint"] } }));
+    await writeFile(join(directory, ".gitignore"), "node_modules/\n");
+    await writeFile(join(directory, "broken.js"), `// {${"§"}missing-web-contract}\n`);
+    await symlink(fileURLToPath(new URL("node_modules", root)), join(directory, "node_modules"), "dir");
+    const run = promisify(execFile);
+    await run("git", ["init", "--quiet"], { cwd: directory });
+    await assert.rejects(run("npm", ["run", "test:lint"], { cwd: directory }), (error) => {
+        assert.equal(error.code, 1);
+        assert.match(error.stderr, /Unresolved specification-tag citations/u);
+        assert.match(error.stderr, /broken\.js:1/u);
+        assert.match(error.stderr, /missing-web-contract/u);
+        return true;
+    });
+});
 
 test("{§web-language} source-only HTML passes the shipped OTM linter without a dictionary", async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "plurnk-web-source-"));

@@ -61,7 +61,8 @@ that build on the daemon's existing port; restart the daemon to load a new build
 `npm run preview` previews the last build locally without a daemon. It is not the
 production server. Vite is development tooling only.
 
-`npm test` checks server and browser JavaScript, OTM's HTML/JavaScript/CSS
+`npm test` checks specification tags and witnesses using Plurnk's shared
+development checker, server and browser JavaScript, OTM's HTML/JavaScript/CSS
 contracts and the module, then packs and installs the plugin
 with a published service in a temporary directory. The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright

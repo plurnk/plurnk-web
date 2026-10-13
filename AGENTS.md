@@ -37,3 +37,5 @@ the beginning of its owning SPEC.md block, and `{§lowercase-kebab}` citations
 elsewhere. Tags are unique within the repository; every citation resolves and
 every contract has an implementation or coverage witness. A citation is not a
 substitute for testing the promised behavior through its real boundary.
+`npm test` runs the shared specification checker as part of lint. No local
+validator or adjacent service checkout is required.
