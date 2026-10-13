@@ -21,8 +21,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 | Request | Response |
 |---|---|
 | GET `/` | Packaged HTML document. |
-| GET `/app.js`, `/vendor/otm.js` | Packaged browser ES modules. |
-| GET `/styles/app-vendor.css`, `/styles/app-structure.css`, `/styles/app-style.css`, `/styles/app-state.css` | Packaged stylesheets. |
+| GET `/assets/<build-generated-name>` | Compiled browser JavaScript and CSS. |
 | GET `/locales/en.json` | Packaged translation. |
 | GET `/manifest.webmanifest` | Web app manifest (`application/manifest+json`). |
 | GET `/icons/plurnk.svg`, `/icons/plurnk-{16,32,180,192,512}.png` | Local scalable and raster app icons. |
@@ -33,7 +32,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 | Other path | 404, never an HTML fallback or directory listing. |
 | Method other than GET/HEAD | 405 with `Allow: GET, HEAD`. |
 
-Query strings do not select assets. Paths select an explicit resource map, never
+Query strings do not select assets. Paths select the build-generated asset inventory, never
 filesystem paths derived from the request. Only packaged public assets are served;
 configuration, source, credentials and workspace files are not public resources.
 Assets are loaded during module startup: missing package bytes fail startup rather
@@ -52,7 +51,8 @@ There is no theme switcher, client routing, persistent browser state, external
 asset request or agent interface. No browser credential or daemon state is embedded
 in the document.
 
-Stylesheets load in this order, with one concern per file:
+Source stylesheets load in this order, with one concern per file. Production
+compilation may combine them without changing their cascade:
 
 | File | Responsibility |
 |---|---|
@@ -62,6 +62,21 @@ Stylesheets load in this order, with one concern per file:
 | `app-state.css` | Attribute-driven application state; currently no rules. |
 
 The empty concerns remain explicit files, not reasons to add layout or state.
+
+## §web-build Development and production
+
+| Command | Contract |
+|---|---|
+| `npm run dev` | Prepare static assets, then serve `web/` through Vite on loopback with HTML reload and CSS hot updates. No daemon or model is started. |
+| `npm run build` | Prepare assets, clean and compile into `ai.plurnk/dist/`, then generate `ai.plurnk/assets.json` from the complete output. |
+| `npm run preview` | Locally preview the last build through Vite; not a production server. |
+| Daemon startup | Load the inventory and every listed production asset; serve them through the plugin's existing mount. No Vite runtime or development server. |
+
+`web/index.html` owns the document, `web/app.js` imports OTM's npm entry,
+and `web/public/` supplies unchanged public assets. The four CSS source
+concerns remain under `web/styles/`. Generated output is packed, not committed.
+Production contains no development-client injection, frontend sources, or source maps.
+The current development page has no backend interaction; no API proxy is installed.
 
 ## §web-installation App identity and installation
 

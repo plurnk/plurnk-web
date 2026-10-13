@@ -42,19 +42,33 @@ cache workspace data, or provide offline operation. Browser and OS support varie
 
 ## Development
 
+```sh
+npm ci --no-audit --no-fund
+npm run dev
+```
+
+Open the loopback URL Vite prints (normally `http://127.0.0.1:5173/`).
+HTML edits reload the page; CSS edits update it in place. This serves the frontend
+only and neither starts nor restarts the daemon.
+
+`npm run build` compiles the frontend into `ai.plurnk/dist/`. The plugin serves
+that build on the daemon's existing port; restart the daemon to load a new build.
+`npm run preview` previews the last build locally without a daemon. It is not the
+production server. Vite is development tooling only.
+
 `npm test` checks the module and OTM document, then packs and installs the plugin
 with a published service in a temporary directory. The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Install that test browser with `npx playwright install chromium` if
 necessary. The operator's daemon and configuration are not used.
 
-`npm run build` copies OTM's browser artifact, Pico's pinned Classless Green
-stylesheet and both licenses into the package. It also rasterizes the source SVG
-into favicon, Apple touch and app icons; the maskable variant has safe-area padding.
-It does not compile the document or run a frontend bundler. Generated icons and vendor files
-are packed but not committed. [SPEC.md](SPEC.md) defines the current contract.
+`web/index.html` and `web/app.js` are the document and browser entry point.
+Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
+Pico's pinned substrate and dependency licenses, and rasterizes the mascot SVG.
+The generated asset inventory tells the plugin which production files to serve.
+Build output is packed but not committed. [SPEC.md](SPEC.md) defines the contract.
 
-The four stylesheets in `ai.plurnk/public/styles/` load in order:
+The four source stylesheets in `web/styles/` load in order (combined in production):
 
 | File | Concern |
 |---|---|
@@ -63,8 +77,7 @@ The four stylesheets in `ai.plurnk/public/styles/` load in order:
 | `app-style.css` | Substrate token overrides; brand accents and system monospace. |
 | `app-state.css` | Attribute-driven visual state; no rules yet. |
 
-Authored CSS is checked with OTM's Stylelint rules. No frontend bundler or remote
-fonts are required.
+Authored CSS is checked with OTM's Stylelint rules. No remote fonts are required.
 
 Code: MIT. The hamster artwork derives from Google's Noto Emoji under Apache-2.0,
-with glasses and a green bow added. See [artwork attribution](ai.plurnk/public/icons/NOTO-NOTICE.txt).
+with glasses and a green bow added. See [artwork attribution](web/public/icons/NOTO-NOTICE.txt).

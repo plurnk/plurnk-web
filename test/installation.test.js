@@ -24,18 +24,16 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     const archives = Object.values(JSON.parse(stdout));
     assert.equal(archives.length, 1);
     const [archive] = archives;
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/otm.js"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/OTM-LICENSE.txt"));
-    for (const name of ["vendor", "structure", "style", "state"]) {
-        assert.ok(archive.files.some(({ path }) => path === `ai.plurnk/public/styles/app-${name}.css`));
-    }
-    assert.ok(!archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/app-vendor.css"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/PICO-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => /^ai\.plurnk\/dist\/assets\/.+\.js$/u.test(path)));
+    assert.ok(archive.files.some(({ path }) => /^ai\.plurnk\/dist\/assets\/.+\.css$/u.test(path)));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/OTM-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
     for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable-512.png", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt",
         ...[16, 32, 180, 192, 512].map((size) => `icons/plurnk-${size}.png`)]) {
-        assert.ok(archive.files.some((file) => file.path === `ai.plurnk/public/${path}`), path);
+        assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), path);
     }
-    assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules)\//u.test(path)));
+    assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|ai\.plurnk\/public)\/|vite\.config|\.map$/u.test(path)));
     await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "web-installation-test", private: true, type: "module" }));
     await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund",
         "@plurnk/plurnk-service@3.2.0", join(directory, archive.filename)],
@@ -98,18 +96,20 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
                     tab.on("requestfailed", (request) => errors.push(request.url()));
                     tab.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
                     tab.on("request", (request) => requests.push(request.url()));
-                    await tab.goto(base);
-                    assert.equal(await tab.locator("main h1").innerText(), "Hello world");
-                    await tab.waitForFunction(async () => (await import("/vendor/otm.js")).the.locale === "en");
+                    await tab.route("**/locales/en.json", (route) => route.fulfill({
+                        json: { title: "Plurnk", greeting: "Hello from dictionary" },
+                    }));
+                    await tab.goto(new URL("?lang=fr", base).href);
+                    await tab.waitForFunction(() => document.querySelector("main h1").textContent === "Hello from dictionary");
                     assert.equal(await tab.title(), "Plurnk");
-                    assert.deepEqual(await tab.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
-                        ["vendor", "structure", "style", "state"].map((name) => `/styles/app-${name}.css`));
+                    const styles = await tab.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+                    assert.ok(styles.length > 0);
+                    assert.ok(styles.every((path) => /^\/assets\/.+\.css$/u.test(path)));
                     assert.equal(await tab.locator("style, [class], [style], button, nav").count(), 0);
-                    assert.ok(requests.some((url) => url.endsWith("/app.js")));
-                    assert.ok(requests.some((url) => url.endsWith("/vendor/otm.js")));
-                    for (const name of ["vendor", "structure", "style", "state"]) {
-                        assert.ok(requests.some((url) => url.endsWith(`/styles/app-${name}.css`)));
-                    }
+                    assert.ok(requests.some((url) => /\/assets\/.+\.js$/u.test(url)));
+                    assert.ok(requests.some((url) => url.endsWith("/locales/en.json")));
+                    assert.ok(styles.every((path) => requests.includes(new URL(path, base).href)));
+                    assert.ok(!requests.some((url) => url.includes("/@vite/") || url.includes("/node_modules/")));
                     assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
                     assert.deepEqual(errors, []);
                     await context.close();
@@ -167,14 +167,14 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     });
 
     await t.test("{§web-assets} missing packaged bytes fail startup", async () => {
-        const asset = join(plugin, "ai.plurnk", "public", "vendor", "otm.js");
-        const saved = join(directory, "otm.js");
+        const asset = join(plugin, "ai.plurnk", "dist", "index.html");
+        const saved = join(directory, "index.html");
         await rename(asset, saved);
         try {
             await assert.rejects(start(), (error) => {
                 assert.equal(error.kind, "exited");
                 assert.match(error.stdout + error.stderr, /ENOENT/u);
-                assert.match(error.stdout + error.stderr, /otm\.js/u);
+                assert.match(error.stdout + error.stderr, /index\.html/u);
                 return true;
             });
         } finally {
