@@ -22,7 +22,6 @@ does not depend on this package. More-specific mounts retain their ownership.
 |---|---|
 | GET `/` | Packaged HTML document. |
 | GET `/assets/<build-generated-name>` | Compiled browser JavaScript and CSS. |
-| GET `/locales/en.json` | Packaged source dictionary; not used during boot. |
 | GET `/manifest.webmanifest` | Web app manifest (`application/manifest+json`). |
 | GET `/icons/plurnk.svg`, `/icons/plurnk-{16,32,180,192,512}.png` | Local scalable and raster app icons. |
 | GET `/icons/plurnk-maskable-512.png` | Maskable app icon. |
@@ -69,8 +68,10 @@ The shipped document is English, declared by `html[lang]`. Its readable source
 text remains in HTML; `data-i18n` keys identify text rather than appearing in its
 place. OTM boot explicitly uses the document language and opts into no persistent
 state. Browser language, query parameters and unrelated stored preferences do not
-select an unshipped translation. Boot neither fetches a dictionary nor rewrites
-the document into English. No language picker or additional locale is shipped.
+select an unshipped translation. No translation endpoint or duplicate source
+dictionary is declared or packaged. Boot neither fetches a dictionary nor
+rewrites the document into English, and completes without accessing browser
+storage even when storage is denied. No language picker or additional locale is shipped.
 
 ## §web-authoring Browser boundaries
 
@@ -81,10 +82,6 @@ the document into English. No language picker or additional locale is shipped.
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
 | Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. |
-
-Source-only localization without a dictionary endpoint and boot with browser
-storage denied are not yet supported through the complete OTM toolchain. These
-upstream gaps do not justify a second localization or persistence implementation.
 
 ## §web-build Development and production
 
