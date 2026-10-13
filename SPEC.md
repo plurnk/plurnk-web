@@ -22,7 +22,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 |---|---|
 | GET `/` | Packaged HTML document. |
 | GET `/app.js`, `/vendor/otm.js` | Packaged browser ES modules. |
-| GET `/vendor/app-vendor.css` | Packaged Pico Classless Green stylesheet. |
+| GET `/styles/app-vendor.css`, `/styles/app-structure.css`, `/styles/app-style.css`, `/styles/app-state.css` | Packaged stylesheets. |
 | GET `/locales/en.json` | Packaged translation. |
 | GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt` | Packaged dependency licenses. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
@@ -40,11 +40,23 @@ byte length and `X-Content-Type-Options: nosniff`.
 
 The document says Hello world in semantic HTML and initializes OTM from locally
 packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
-without application classes or custom CSS. Its native color-scheme selection
-follows the browser preference; content and styling work without JavaScript.
+without application classes. Its green palette and native color-scheme selection
+are preserved; typography uses Pico's system monospace stack. Content and styling
+work without JavaScript.
 There is no theme switcher, client routing, persistent browser state, external
 asset request or agent interface. No browser credential or daemon state is embedded
 in the document.
+
+Stylesheets load in this order, with one concern per file:
+
+| File | Responsibility |
+|---|---|
+| `app-vendor.css` | Unmodified pinned Pico Classless Green, copied during build. |
+| `app-structure.css` | Application layout; currently no overrides of Pico's layout. |
+| `app-style.css` | Presentation through substrate tokens; system monospace only. |
+| `app-state.css` | Attribute-driven application state; currently no rules. |
+
+The empty concerns remain explicit files, not reasons to add layout or state.
 
 ## §web-package Package boundary
 

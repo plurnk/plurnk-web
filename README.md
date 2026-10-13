@@ -2,7 +2,7 @@
 
 An optional Plurnk daemon plugin serving an OTM Hello world document at `/`.
 Pico Classless Green supplies the styling and follows the browser's light/dark
-preference. No chat interface or additional server.
+preference, with system monospace typography. No chat interface or additional server.
 
 ## Install from source
 
@@ -41,5 +41,17 @@ necessary. The operator's daemon and configuration are not used.
 stylesheet and both licenses into the package. It does not compile the document
 or run a frontend bundler. Generated vendor files
 are packed but not committed. [SPEC.md](SPEC.md) defines the current contract.
+
+The four stylesheets in `ai.plurnk/public/styles/` load in order:
+
+| File | Concern |
+|---|---|
+| `app-vendor.css` | Generated, unmodified Pico substrate. |
+| `app-structure.css` | Layout; no overrides yet. |
+| `app-style.css` | Substrate token overrides; system monospace. |
+| `app-state.css` | Attribute-driven visual state; no rules yet. |
+
+Authored CSS is checked with OTM's Stylelint rules. No frontend bundler or remote
+fonts are required.
 
 MIT.

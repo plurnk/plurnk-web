@@ -25,7 +25,10 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     const [archive] = archives;
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/otm.js"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/OTM-LICENSE.txt"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/app-vendor.css"));
+    for (const name of ["vendor", "structure", "style", "state"]) {
+        assert.ok(archive.files.some(({ path }) => path === `ai.plurnk/public/styles/app-${name}.css`));
+    }
+    assert.ok(!archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/app-vendor.css"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/PICO-LICENSE.txt"));
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules)\//u.test(path)));
     await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "web-installation-test", private: true, type: "module" }));
@@ -93,11 +96,14 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
                     assert.equal(await tab.locator("main h1").innerText(), "Hello world");
                     await tab.waitForFunction(async () => (await import("/vendor/otm.js")).the.locale === "en");
                     assert.equal(await tab.title(), "Plurnk");
-                    assert.equal(await tab.locator('link[rel="stylesheet"]').getAttribute("href"), "/vendor/app-vendor.css");
+                    assert.deepEqual(await tab.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+                        ["vendor", "structure", "style", "state"].map((name) => `/styles/app-${name}.css`));
                     assert.equal(await tab.locator("style, [class], [style], button, nav").count(), 0);
                     assert.ok(requests.some((url) => url.endsWith("/app.js")));
                     assert.ok(requests.some((url) => url.endsWith("/vendor/otm.js")));
-                    assert.ok(requests.some((url) => url.endsWith("/vendor/app-vendor.css")));
+                    for (const name of ["vendor", "structure", "style", "state"]) {
+                        assert.ok(requests.some((url) => url.endsWith(`/styles/app-${name}.css`)));
+                    }
                     assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
                     assert.deepEqual(errors, []);
                     await context.close();
@@ -118,11 +124,16 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
                                         primary: root.getPropertyValue("--pico-primary").trim(),
                                         scheme: root.colorScheme,
                                         padding: parseFloat(getComputedStyle(document.querySelector("main")).paddingTop),
+                                        font: getComputedStyle(document.querySelector("main h1")).fontFamily,
+                                        monospace: root.getPropertyValue("--pico-font-family-monospace").trim(),
                                     };
                                 });
                                 assert.equal(rendered.primary, primary);
                                 assert.equal(rendered.scheme, colorScheme);
                                 assert.ok(rendered.padding > 0, "semantic main receives the substrate layout");
+                                assert.deepEqual(rendered.font.split(",").map((name) => name.trim()),
+                                    rendered.monospace.split(",").map((name) => name.trim()),
+                                    "headings inherit the system monospace stack");
                             }
                         } finally {
                             await context.close();
