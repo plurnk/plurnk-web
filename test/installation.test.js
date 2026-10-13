@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -9,6 +10,8 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
 import verifyWebApp from "./web-app.js";
+import verifyAgui from "./agui-browser.js";
+import startModel from "./model-fixture.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -150,6 +153,30 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
                 await browser.close();
             }
         });
+    });
+
+    await t.test("{§web-agui-conformance} official HttpAgent in the browser on an authenticated daemon", async (conformance) => {
+        const model = await startModel();
+        const token = randomUUID();
+        const projectRoot = join(directory, "project");
+        await mkdir(projectRoot);
+        await writeFile(join(projectRoot, "witness.txt"), "cobalt heron\n");
+        try {
+            await withDaemon({
+                ...model.env,
+                PLURNK_AGUI_TOKEN: token,
+                PLURNK_MEMBERS_witness: "witness.txt",
+            }, async (base) => {
+                const browser = await chromium.launch();
+                try {
+                    await verifyAgui(browser, base, token, projectRoot, model, conformance);
+                } finally {
+                    await browser.close();
+                }
+            });
+        } finally {
+            await model.close();
+        }
     });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
