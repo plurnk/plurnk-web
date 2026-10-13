@@ -1,0 +1,33 @@
+{
+    "name": "@plurnk/plurnk-web",
+    "version": "0.1.0",
+    "description": "Optional Plurnk daemon module serving an OTM document.",
+    "type": "module",
+    "license": "MIT",
+    "engines": { "node": ">=26" },
+    "repository": {
+        "type": "git",
+        "url": "ssh://git@ssh.possumtech.com/plurnk/plurnk-web.git"
+    },
+    "bugs": { "url": "https://repo.possumtech.com/plurnk/plurnk-web/issues" },
+    "files": ["plugin.json", "ai.plurnk/", "README.md", "SPEC.md", "LICENSE"],
+    "dependencies": { "@plurnk/plurnk-meta": "^2.1.1" },
+    "peerDependencies": {
+        "@plurnk/plurnk-contracts": "^3.2.0",
+        "@plurnk/plurnk-modules": "^3.1.0"
+    },
+    "devDependencies": {
+        "@types/node": "^26.1.1",
+        "on_the_money": "0.9.0",
+        "playwright": "1.64.0",
+        "typescript": "^7.0.2"
+    },
+    "scripts": {
+        "build": "node scripts/build.mjs",
+        "test:lint": "tsc && otm-lint --check ai.plurnk/public",
+        "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js",
+        "test:installation": "node --test test/installation.test.js",
+        "test": "npm run build && npm run test:lint && npm run test:unit && npm run test:installation",
+        "prepack": "npm run build"
+    }
+}
