@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
+import verifyWebApp from "./web-app.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -30,6 +31,10 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     }
     assert.ok(!archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/app-vendor.css"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/public/vendor/PICO-LICENSE.txt"));
+    for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable-512.png", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt",
+        ...[16, 32, 180, 192, 512].map((size) => `icons/plurnk-${size}.png`)]) {
+        assert.ok(archive.files.some((file) => file.path === `ai.plurnk/public/${path}`), path);
+    }
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules)\//u.test(path)));
     await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "web-installation-test", private: true, type: "module" }));
     await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund",
@@ -83,6 +88,7 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
 
             const browser = await chromium.launch();
             try {
+                await discovery.test("{§web-installation} browser recognizes app metadata and decodes every icon", () => verifyWebApp(browser, base));
                 await discovery.test("{§web-document} browser initializes OTM without external requests", async () => {
                     const context = await browser.newContext();
                     const errors = [];
@@ -116,7 +122,7 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
                             await tab.goto(base);
                             assert.equal(await tab.locator("main h1").innerText(), "Hello world");
                             assert.equal(await tab.title(), "Plurnk");
-                            for (const [colorScheme, primary] of [["light", "#33790f"], ["dark", "#4eb31b"]]) {
+                            for (const [colorScheme, primary] of [["light", "#148800"], ["dark", "#4eb31b"]]) {
                                 await tab.emulateMedia({ colorScheme });
                                 const rendered = await tab.evaluate(() => {
                                     const root = getComputedStyle(document.documentElement);

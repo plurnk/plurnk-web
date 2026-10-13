@@ -1,0 +1,11 @@
+Plurnk hamster artwork is derived from Google Noto Emoji.
+Copyright 2013 Google, Inc. All Rights Reserved.
+Licensed under the Apache License, Version 2.0; see APACHE-2.0.txt.
+
+Source: https://github.com/googlefonts/noto-emoji/blob/v2.051/svg/emoji_u1f439.svg
+License: https://github.com/googlefonts/noto-emoji/blob/v2.051/svg/LICENSE
+
+Modifications: added glasses and a green bow, replaced the SVG wrapper and title.
+Generated PNGs are rasterizations of this modified SVG; the Apple touch icon
+has an opaque background and the maskable icon additionally has safe-area padding.
+No Google endorsement is implied.
