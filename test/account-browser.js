@@ -6,7 +6,7 @@ import verifyPageShell from "./page-shell.js";
 export default async function verifyAccount({ t, withDaemon }) {
     for (const javaScriptEnabled of [true, false]) {
         await t.test(`{§web-account} sign-in, native Account, individual/other revocation and sign-out with JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
-            await withDaemon({ PLURNK_USER: "account-user", PLURNK_PASS: "account-password" }, async (base) => {
+            await withDaemon({ PLURNK_PASS: "account-password" }, async (base) => {
                 const browser = await chromium.launch();
                 const contexts = [];
                 try {
@@ -16,14 +16,13 @@ export default async function verifyAccount({ t, withDaemon }) {
                         const page = await context.newPage();
                         await page.goto(new URL(target, base).href);
                         assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
-                        await page.getByLabel("User", { exact: true }).fill("account-user");
                         await page.getByLabel("Password", { exact: true }).fill("account-password");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await page.waitForURL(new URL(target, base).href);
                         if (target === "/account/") {
                             await verifyPageShell(page, { title: "Account — Plurnk", kind: "account" });
                             assert.equal(await page.locator("main form, main table").count(), 0, "Account offers sections, not an inline session inventory");
-                            assert.doesNotMatch(await page.locator("main").innerText(), /Signed in as|Local operator|account-user|operator/u);
+                            assert.doesNotMatch(await page.locator("main").innerText(), /Signed in as|Local operator|operator/u);
                             await page.locator("main").getByRole("link", { name: "Sessions", exact: true }).click();
                             await page.waitForURL(new URL("/account/sessions/", base).href);
                         }
@@ -127,7 +126,6 @@ export default async function verifyAccount({ t, withDaemon }) {
                     assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
                     const replay = await context.request.post(new URL(target, base).href, { headers: { origin: new URL(base).origin } });
                     assert.equal(replay.status(), 401, "a signed-out form is not replayed after automatic authorization");
-                    await page.getByLabel("User", { exact: true }).fill("account-user");
                     await page.getByLabel("Password", { exact: true }).fill("account-password");
                     await page.getByRole("button", { name: "Continue", exact: true }).click();
                     await page.waitForURL(new URL("/account/sessions/", base).href);

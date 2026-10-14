@@ -19,8 +19,14 @@ export default function createModule() {
 
     return {
         mounts: ["/"],
-        setup({ credentials }) {
-            if (authenticate) registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["agui"] });
+        async setup({ credentials }) {
+            if (!authenticate) return;
+            // {§web-authorization-style} The same built stylesheet serves both document owners.
+            /** @type {[string, string, string][]} */
+            const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
+            const stylesheets = inventory.filter(([, , mediaType]) => mediaType === "text/css");
+            if (stylesheets.length !== 1) throw new Error("The web asset inventory must contain exactly one application stylesheet.");
+            registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["agui"], stylesheetPath: stylesheets[0][0] });
         },
         async start(seam) {
             if (authenticate) {

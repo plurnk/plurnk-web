@@ -41,6 +41,7 @@
         "@ag-ui/client": "1.0.2",
         "@fullhuman/postcss-purgecss": "8.0.0",
         "@picocss/pico": "2.1.1",
+        "@plurnk/plurnk-agui": "^3.1.0",
         "@plurnk/plurnk-spec-check": "0.1.0",
         "@types/node": "^26.1.1",
         "eslint": "10.12.0",

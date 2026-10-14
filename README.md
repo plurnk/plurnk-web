@@ -24,12 +24,15 @@ project folders; URLs do not publish workspace files.
 
 ## Sign-in
 
-Web uses the daemon's shared `PLURNK_AUTH`, `PLURNK_USER` and `PLURNK_PASS`
-configuration. It has no separate user/password configuration. With authentication
-enabled, set both user and password; incomplete setup must not admit a browser,
+Web uses the daemon's shared `PLURNK_AUTH` and `PLURNK_PASS` configuration.
+There is one local operator account and no username setting. With authentication
+enabled, set a password; an empty password does not admit a browser,
 including on localhost. The daemon owns the sign-in form and credential validation.
 Set `PLURNK_AGUI_ISSUER` to the public origin when a proxy fronts the daemon.
 `PLURNK_AUTH=0` explicitly makes directories anonymous too.
+
+The daemon's native sign-in and setup/error pages use the same compiled Pico
+stylesheet as web. Authentication remains daemon-owned; web supplies no login form.
 
 The browser receives an HttpOnly session cookie; no access token, refresh token,
 password or operator secret is embedded in a page or browser storage. **Sign out**
@@ -48,7 +51,8 @@ remain native HTML; the eventual interactive worker interface requires JavaScrip
 
 Requires Node.js 26+ and a Plurnk service with the module-client credential API
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
-including sign-in inventory and shared browser/module revocation). That API is not in the current published service;
+including sign-in inventory, shared browser/module revocation, password-only login,
+and registered authorization-page styles). That API is not in the current published service;
 use packed candidate packages for development and verification.
 
 ```sh
@@ -116,7 +120,9 @@ deterministic local model; no paid inference or shipped conversation UI is invol
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
 Pico's readable pinned substrate and dependency licenses, and derives a maskable SVG
 from the mascot. Production prunes unused CSS rules, variables and keyframes from
-the browser and server-rendered document sources before minification.
+the browser and server-rendered document sources, plus the authority's publicly
+exported document specimens, before minification. The AG-UI package supplies those
+specimens as a development dependency only; no daemon code enters the browser bundle.
 The generated asset inventory tells the plugin which production files to serve.
 Build output is packed but not committed. [SPEC.md](SPEC.md) defines the contract.
 

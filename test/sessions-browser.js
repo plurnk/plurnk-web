@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import verifyPageShell from "./page-shell.js";
+import verifyAuthorizationPage from "./authorization-page.js";
 
 export default async function verifySessions({ t, consumer, withDaemon }) {
     // {§web-directory-documents} Fixture seeding and censuses use the same public application port,
@@ -41,7 +42,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
     } };\n`);
     try {
         await t.test("{§web-session} native sign-in, protected lists, logout and independent browsers", async () => {
-            await withDaemon({ PLURNK_USER: "browser-user", PLURNK_PASS: "browser-password" }, async (base) => {
+            await withDaemon({ PLURNK_PASS: "browser-password" }, async (base) => {
                 const initial = await (await fetch(new URL("/__fixture", base))).json();
                 const browser = await chromium.launch();
                 try {
@@ -51,14 +52,17 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         try {
                             const signIn = async (ctx, path) => {
                                 const page = await ctx.newPage();
-                                await page.goto(new URL(path, base).href);
+                                const response = await page.goto(new URL(path, base).href);
                                 assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
                                 assert.match(await page.locator("h1").innerText(), /Sign in/u);
-                                await page.getByLabel("User", { exact: true }).fill("browser-user");
+                                await verifyAuthorizationPage(page, response, { password: true });
                                 await page.getByLabel("Password", { exact: true }).fill("wrong");
+                                const failure = page.waitForResponse((reply) => reply.request().isNavigationRequest() && reply.request().method() === "POST");
                                 await page.getByRole("button", { name: "Continue", exact: true }).click();
-                                assert.match(await page.locator("body").innerText(), /user or password is wrong/u);
-                                await page.getByLabel("User", { exact: true }).fill("browser-user");
+                                const failedResponse = await failure;
+                                assert.equal(failedResponse.status(), 401);
+                                assert.match(await page.getByRole("alert").innerText(), /password is wrong/u);
+                                await verifyAuthorizationPage(page, failedResponse, { password: true, warning: true });
                                 await page.getByLabel("Password", { exact: true }).fill("browser-password");
                                 await page.getByRole("button", { name: "Continue", exact: true }).click();
                                 await page.waitForURL(new URL(path, base).href);
@@ -126,30 +130,28 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 } finally { await browser.close(); }
             });
         });
-        await t.test("{§web-session} authentication cannot silently become local admission", async (postures) => {
-            for (const [label, user, password] of [["unset pair", "", ""], ["user only", "browser-user", ""], ["password only", "", "browser-password"]]) {
-                await postures.test(label, async () => withDaemon({ PLURNK_AUTH: "1", PLURNK_USER: user, PLURNK_PASS: password }, async (base) => {
-                    const browser = await chromium.launch();
-                    try {
-                        for (const javaScriptEnabled of [true, false]) {
-                            const context = await browser.newContext({ javaScriptEnabled });
-                            try {
-                                const page = await context.newPage();
-                                const response = await page.goto(new URL("/~/", base).href);
-                                assert.equal(response.status(), 503, "unconfigured sign-in explains the missing configuration, never grants localhost access");
-                                assert.match(await page.locator("body").innerText(), /PLURNK_USER/u);
-                                assert.match(await page.locator("body").innerText(), /PLURNK_PASS/u);
-                                assert.equal((await context.cookies()).some(({ name }) => ["plurnk_session", "plurnk_web_session"].includes(name)), false,
-                                    "an incomplete credential pair issued no sign-in");
-                                assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
-                            } finally { await context.close(); }
-                        }
-                    } finally { await browser.close(); }
-                }));
-            }
+        await t.test("{§web-session} an empty password explains setup without admitting a localhost browser", async () => {
+            await withDaemon({ PLURNK_AUTH: "1", PLURNK_PASS: "" }, async (base) => {
+                const browser = await chromium.launch();
+                try {
+                    for (const javaScriptEnabled of [true, false]) {
+                        const context = await browser.newContext({ javaScriptEnabled });
+                        try {
+                            const page = await context.newPage();
+                            const response = await page.goto(new URL("/~/", base).href);
+                            assert.equal(response.status(), 503, "unconfigured sign-in explains the missing configuration, never grants localhost access");
+                            assert.match(await page.locator("body").innerText(), /PLURNK_PASS/u);
+                            await verifyAuthorizationPage(page, response, { warning: true });
+                            assert.equal((await context.cookies()).some(({ name }) => ["plurnk_session", "plurnk_web_session"].includes(name)), false,
+                                "an empty password issued no sign-in");
+                            assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+                        } finally { await context.close(); }
+                    }
+                } finally { await browser.close(); }
+            });
         });
         await t.test("{§web-session} explicitly anonymous access offers no fictional account or sign-out", async () => {
-            await withDaemon({ PLURNK_AUTH: "0", PLURNK_USER: "", PLURNK_PASS: "" }, async (base) => {
+            await withDaemon({ PLURNK_AUTH: "0", PLURNK_PASS: "" }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -173,7 +175,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             });
         });
         await t.test("{§web-session} sign-out stays signed out on a fresh visit, with another browser unaffected", async (journeys) => {
-            await withDaemon({ PLURNK_USER: "browser-user", PLURNK_PASS: "browser-password" }, async (base) => {
+            await withDaemon({ PLURNK_PASS: "browser-password" }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -184,7 +186,6 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 const enter = async (ctx) => {
                                     const page = await ctx.newPage();
                                     await page.goto(new URL("/~/", base).href);
-                                    await page.getByLabel("User", { exact: true }).fill("browser-user");
                                     await page.getByLabel("Password", { exact: true }).fill("browser-password");
                                     await page.getByRole("button", { name: "Continue", exact: true }).click();
                                     await page.waitForURL(new URL("/~/", base).href);
@@ -207,7 +208,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             });
         });
         await t.test("{§web-session} browser-bound single-use callbacks, expiry, host and return validation", async () => {
-            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_WEB_LOGIN_PENDING: "2", PLURNK_USER: "browser-user", PLURNK_PASS: "browser-password" }, async (base) => {
+            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_WEB_LOGIN_PENDING: "2", PLURNK_PASS: "browser-password" }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
@@ -215,7 +216,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     const request = context.request;
                     const get = (path) => request.get(new URL(path, base).href, { maxRedirects: 0 });
                     const authorize = (ctx, url) => ctx.request.post(url, { maxRedirects: 0, headers: { origin: new URL(base).origin },
-                        form: { ...Object.fromEntries(new URL(url).searchParams), username: "browser-user", password: "browser-password" },
+                        form: { ...Object.fromEntries(new URL(url).searchParams), password: "browser-password" },
                     });
                     for (const path of ["https://elsewhere.example/", "//elsewhere.example/", "/oauth/authorize", "/~/../bad/"]) {
                         assert.equal((await get(`/auth/login?${new URLSearchParams({ return: path })}`)).status(), 400);
@@ -271,7 +272,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             await once(proxy, "listening");
             const issuer = `http://127.0.0.1:${proxy.address().port}`;
             try {
-                await withDaemon({ PLURNK_AGUI_ISSUER: issuer, PLURNK_USER: "proxy-user", PLURNK_PASS: "proxy-pass" }, async (base) => {
+                await withDaemon({ PLURNK_AGUI_ISSUER: issuer, PLURNK_PASS: "proxy-pass" }, async (base) => {
                     upstream = base;
                     const browser = await chromium.launch();
                     try {
@@ -280,7 +281,6 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         assert.equal(new URL(page.url()).origin, issuer);
                         assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
                         assert.equal(new URL(page.url()).searchParams.get("redirect_uri"), `${issuer}/auth/callback`);
-                        await page.getByLabel("User", { exact: true }).fill("proxy-user");
                         await page.getByLabel("Password", { exact: true }).fill("proxy-pass");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await page.waitForURL(`${issuer}/~/`);

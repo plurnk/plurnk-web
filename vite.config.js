@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import purgeCSS from "@fullhuman/postcss-purgecss";
+import { authorizationDocumentSpecimens } from "@plurnk/plurnk-agui";
 import indexDocument from "./ai.plurnk/index-document.js";
 
 /** @param {import("vite").ViteDevServer | import("vite").PreviewServer} server */
@@ -31,6 +32,7 @@ export default defineConfig(({ command }) => ({
                 content: [
                     fileURLToPath(new URL("./web/**/*.{html,js}", import.meta.url)),
                     fileURLToPath(new URL("./ai.plurnk/documents.js", import.meta.url)),
+                    ...authorizationDocumentSpecimens().map((raw) => ({ raw, extension: "html" })),
                 ],
                 defaultExtractor: (content) => content.match(/[A-Za-z0-9_-]+/gu) ?? [],
                 // Browser pseudo-states are not HTML tokens, including inside :is() and :where().
