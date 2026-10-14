@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import Session from "../ai.plurnk/session.js";
+
+// {§web-session} The authority decides identity and expiry; a cookie is never a bearer.
+test("{§web-session} only this client's live scoped session admits a document", () => {
+    let claims = null;
+    const credentials = { verify: () => claims };
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, "http://127.0.0.1:1066", { ttl: 600, pending: 128 });
+    const req = { headers: { cookie: "plurnk_web_session=test" } };
+    assert.equal(session.admitted(req), false);
+    claims = { kind: "session", clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "one" };
+    assert.equal(session.admitted(req), true);
+    for (const change of [{ kind: "access" }, { kind: "refresh" }, { clientId: "other" }, { scopes: [] }]) {
+        const original = claims;
+        claims = { ...claims, ...change };
+        assert.equal(session.admitted(req), false);
+        claims = original;
+    }
+    assert.equal(session.admitted({ headers: {} }), false);
+    assert.equal(session.admitted({ headers: { cookie: "plurnk_web_session=test; plurnk_web_session=other" } }), false);
+});
+
+test("{§web-session} HTTPS cookie and session lifetime come from the verified grant", async (t) => {
+    const origin = "https://daemon.example";
+    const expiresAt = Date.now() + 1000;
+    const common = { clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "grant-one", expiresAt };
+    const issued = [];
+    const credentials = {
+        verify: (token) => token === "access" ? { ...common, kind: "access" } : token === "refresh" ? { ...common, kind: "refresh" } : null,
+        issue: (claims) => { issued.push(claims); return { token: "session", expiresAt }; },
+    };
+    let exchanges = 0;
+    t.mock.method(globalThis, "fetch", async (input, options) => {
+        if (String(input) === `${origin}/.well-known/oauth-authorization-server`) {
+            return Response.json({ issuer: origin, authorization_endpoint: `${origin}/oauth/authorize`, token_endpoint: `${origin}/oauth/token` });
+        }
+        assert.equal(String(input), `${origin}/oauth/token`);
+        assert.equal(options.method, "POST");
+        const form = new URLSearchParams(options.body);
+        assert.equal(form.get("grant_type"), "authorization_code");
+        assert.equal(form.get("redirect_uri"), `${origin}/auth/callback`);
+        assert.match(form.get("code_verifier"), /^[A-Za-z0-9_-]{43}$/u);
+        assert.match(new Headers(options.headers).get("authorization"), /^Basic /u);
+        exchanges++;
+        return Response.json({ access_token: "access", refresh_token: "refresh", token_type: "Bearer", expires_in: 300 });
+    });
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "fixture" }, origin, { ttl: 600, pending: 128 });
+    const headers = new Map();
+    const response = {
+        setHeader: (name, value) => headers.set(name, value),
+        writeHead: (status, values) => { assert.equal(status, 303); for (const [key, value] of Object.entries(values)) headers.set(key, value); },
+        end() {},
+    };
+    await session.login({ headers: {}, url: "/auth/login?return=/~/folderless/" }, response);
+    assert.match(headers.get("set-cookie"), /; Path=\/auth; HttpOnly; SameSite=Lax; Max-Age=600; Secure$/u);
+    const binding = headers.get("set-cookie").split(";")[0];
+    const state = new URL(headers.get("location")).searchParams.get("state");
+    await session.callback({ headers: { cookie: binding }, url: `/auth/callback?code=test&state=${state}` }, response);
+    assert.equal(exchanges, 1);
+    assert.equal(issued.length, 1);
+    assert.equal(issued[0].kind, "session");
+    assert.equal(issued[0].family, "grant-one");
+    assert.equal(issued[0].subject, "operator");
+    assert.ok(issued[0].ttlMs > 0 && issued[0].ttlMs <= 1000);
+    assert.match(headers.get("set-cookie"), /^plurnk_web_session=session; Path=\/; HttpOnly; SameSite=Lax; Max-Age=1; Secure$/u,
+        "a live subsecond credential must not become a Max-Age=0 deletion; authority verification still enforces exact expiry");
+    assert.equal(headers.get("location"), "/~/folderless/");
+    assert.equal(headers.get("cache-control"), "no-store");
+    session.close();
+    await assert.rejects(session.callback({ headers: { cookie: binding }, url: `/auth/callback?code=test&state=${state}` }, response), { status: 400 });
+});

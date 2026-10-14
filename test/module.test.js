@@ -8,6 +8,8 @@ import { ConfigurationError } from "@plurnk/plurnk-meta";
 import createModule from "../ai.plurnk/module.js";
 import verifyDirectories from "./directories.js";
 
+process.env.PLURNK_AUTH = "0";
+
 test("{§web-host} configuration admits only an enabled root owner", (t) => {
     const original = process.env.PLURNK_WEB_ENABLED;
     t.after(() => { process.env.PLURNK_WEB_ENABLED = original; });
@@ -28,7 +30,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     await createModule().start({ registerHttpRoute(prefix, serve) {
         assert.equal(prefix, "/");
         handler = serve;
-    } });
+    }, listWorkspaces: async () => [], listWorkers: async () => [] });
     const server = createServer(handler);
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
     server.listen(0, "127.0.0.1");
@@ -51,7 +53,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             assert.deepEqual(Buffer.from(await res.arrayBuffer()), method === "HEAD" ? Buffer.alloc(0) : expected);
         }
     }
-    for (const path of ["/missing", "/~/", "/~/workspace@user/", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
+    for (const path of ["/missing", "/~/workspace@user/", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}`, { method });
             assert.equal(res.status, 404, `${method} ${path}`);
@@ -78,8 +80,9 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const directory = await mkdtemp(new URL("../.module-test-", import.meta.url));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const base = pathToFileURL(`${directory}/`);
-    await copyFile(new URL("../ai.plurnk/module.js", import.meta.url), new URL("module.js", base));
-    await copyFile(new URL("../ai.plurnk/index-document.js", import.meta.url), new URL("index-document.js", base));
+    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "session.js", "http.js"]) {
+        await copyFile(new URL(`../ai.plurnk/${file}`, import.meta.url), new URL(file, base));
+    }
     await mkdir(new URL("dist/", base));
     const inventory = [
         ["/index.html", "root.html", "text/html"],
@@ -87,7 +90,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
         ["/nested/child.txt", "child.txt", "text/plain"],
     ];
     await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
-    await writeFile(new URL("dist/root.html", base), "<h1>Hello world</h1>");
+    await writeFile(new URL("dist/root.html", base), "<main><h1>Hello world</h1></main>");
     await writeFile(new URL("dist/nested.html", base), "<h1>Nested document</h1>");
     await writeFile(new URL("dist/child.txt", base), "Child resource\n");
     const { default: fixtureModule } = await import(new URL("module.js", base).href);
