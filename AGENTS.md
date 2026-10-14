@@ -1,6 +1,6 @@
 # plurnk-web
 
-An optional daemon module serving an OTM document. Read SPEC.md before changing
+An optional daemon module serving native OTM documents. Read SPEC.md before changing
 behavior, and OTM's installed README before writing browser code.
 
 HTML owns document content and structure. Directory navigation uses real links
@@ -23,7 +23,9 @@ Frontend source lives in web/. Vite owns development serving and production
 compilation; the module serves only the built ai.plurnk/dist/ asset inventory.
 Keep Vite out of runtime dependencies. Generated assets are packed, not committed.
 
-Run `npm ci --no-audit --no-fund`, then `npm test`. The gate includes a packed
+Run `npm ci --no-audit --no-fund`, then `npm run test:candidate -- <packed-platform-directory>`
+while the module-client API is unpublished. This installs candidate public type
+declarations without changing the lockfile and runs `npm test`, including a packed
 installation on an isolated daemon; it must not touch the operator's service.
 Commit verified changes with the registered agent as author and the operator as
 signed committer, then push to the canonical forge. No automatic publication.

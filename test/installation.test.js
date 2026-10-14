@@ -13,11 +13,14 @@ import verifyWebApp from "./web-app.js";
 import verifyDocument from "./document.js";
 import verifyAgui from "./agui-browser.js";
 import startModel from "./model-fixture.js";
+import candidatePackages from "./candidate-packages.js";
+import verifySessions from "./sessions-browser.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
 
-test("{§web-package} packed plugin on the published daemon", { timeout: 240_000 }, async (t) => {
+test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000 }, async (t) => {
+    const packages = await candidatePackages();
     const directory = await mkdtemp(join(tmpdir(), "plurnk-web-install-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const consumer = join(directory, "consumer");
@@ -42,7 +45,7 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|ai\.plurnk\/public)\/|vite\.config|\.map$/u.test(path)));
     await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "web-installation-test", private: true, type: "module" }));
     await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund",
-        "@plurnk/plurnk-service@3.2.0", join(directory, archive.filename)],
+        ...packages, join(directory, archive.filename)],
     { cwd: consumer, maxBuffer: 8 * 1024 * 1024, timeout: 120_000 });
     await run("npm", ["ls", "--all"], { cwd: consumer, maxBuffer: 8 * 1024 * 1024 });
 
@@ -96,9 +99,9 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
             assert.notEqual(agui.status, 200);
             assert.match(agui.headers.get("content-type"), /application\/problem\+json/u);
             assert.equal(typeof (await agui.json()).type, "string");
-            for (const path of ["/not-a-page", "/~/", "/~/example/", "/~/example@user/"]) {
+            for (const path of ["/not-a-page", "/~/example@user/asset"]) {
                 const unknown = await fetch(new URL(path, base));
-                assert.equal(unknown.status, 404, `${path}: the codec does not activate protected routes`);
+                assert.equal(unknown.status, 404, `${path}: no unimplemented resource is served`);
                 assert.equal(await unknown.text(), "Not found\n");
             }
 
@@ -153,12 +156,18 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
         try {
             await withDaemon({
                 ...model.env,
-                PLURNK_AGUI_TOKEN: token,
+                PLURNK_SECRET: token,
                 PLURNK_MEMBERS_witness: "witness.txt",
             }, async (base) => {
+                const exchanged = await fetch(new URL("/oauth/token", base), {
+                    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "agui" }),
+                });
+                assert.equal(exchanged.status, 200);
+                const { access_token } = await exchanged.json();
                 const browser = await chromium.launch();
                 try {
-                    await verifyAgui(browser, base, token, projectRoot, model, conformance);
+                    await verifyAgui(browser, base, access_token, projectRoot, model, conformance);
                 } finally {
                     await browser.close();
                 }
@@ -167,6 +176,8 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
             await model.close();
         }
     });
+
+    await verifySessions({ t, consumer, withDaemon });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
         for (const value of ["0", "invalid"]) {

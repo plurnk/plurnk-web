@@ -61,7 +61,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
                 assert.equal(result.rejected?.status, 401);
                 const problem = typeof result.rejected.payload === "string" ? JSON.parse(result.rejected.payload) : result.rejected.payload;
                 assert.equal(problem.status, 401);
-                assert.match(problem.type, /\/bearer-token-required$/u);
+                assert.match(problem.type, credential === undefined ? /\/bearer-token-required$/u : /\/bearer-token-invalid$/u);
                 assert.deepEqual(result.events, []);
                 assert.equal(result.running, false);
             }

@@ -9,6 +9,8 @@ import { createServer, preview } from "vite";
 import { directoryPath, parseDirectory } from "../ai.plurnk/directory-addresses.js";
 import createModule from "../ai.plurnk/module.js";
 
+process.env.PLURNK_AUTH = "0";
+
 const directories = [
     [{ kind: "daemon" }, "/~/"],
     ...[

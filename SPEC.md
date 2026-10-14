@@ -29,8 +29,8 @@ does not depend on this package. More-specific mounts retain their ownership.
 | GET `/icons/NOTO-NOTICE.txt`, `/icons/APACHE-2.0.txt` | Artwork attribution and license. |
 | GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt` | Packaged dependency licenses. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
-| Other path | 404, never an HTML fallback or directory listing. |
-| Method other than GET/HEAD | 405 with `Allow: GET, HEAD`. |
+| Other asset path | 404, never an HTML fallback or filesystem listing. |
+| Asset method other than GET/HEAD | 405 with `Allow: GET, HEAD`. |
 
 Query strings do not select assets. Paths select the build-generated asset inventory, never
 filesystem paths derived from the request. Only packaged public assets are served;
@@ -60,7 +60,8 @@ Production, Vite development and compiled preview share the same index-path
 projection, applied before resource serving. Vite still owns HTML transformation,
 compilation and HMR; no browser router is registered. Its development-only modules and
 source serving are not production resources. Currently only the root document
-is shipped: `/~/`, workspace/worker documents and worker assets remain unserved.
+is shipped by Vite. The daemon additionally renders the protected directories
+below; worker assets remain unserved.
 
 ## §web-directory-addresses Named directory addresses
 
@@ -97,8 +98,63 @@ also refused. Renaming changes its generated URL, not its identity or project
 folder. No old-name redirect or filesystem exposure is implied.
 
 This codec is verified using isolated native-document fixtures in production,
-Vite development and preview. Live directory publication remains separate from
-addressing and requires the daemon's authentication contract.
+Vite development and preview. Live directory publication uses the daemon's
+authentication contract.
+
+## §web-session Browser sign-in
+
+Web consumes the daemon's credential authority, never the operator's secret or
+a second user/password configuration. At setup it registers the confidential
+client `plurnk-web` with callback path `/auth/callback` and scope `agui`. At start
+it reads the published issuer. No issuing face means the daemon has explicitly
+disabled authentication; directory reads are then anonymous.
+
+| Boundary | Contract |
+|---|---|
+| GET `/auth/login?return=<directory>` | Begin authorization code with PKCE S256 and a fresh state, bound to an HttpOnly browser cookie. Return locations must parse as local directory addresses; never an external URL. |
+| GET `/auth/callback` | Consume the pending browser-bound state once; validate and exchange the code with client authentication. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |
+| Directory admission | Require a live authority-issued session for `plurnk-web` carrying `agui`; a bearer, refresh token, another client's cookie, or a revoked/expired session is not a web session. |
+| POST `/auth/logout` | Require the issuer's exact Origin, revoke this browser's web grant family and clear its cookie. Other browser sessions and running workers remain intact. The authorization server's own sign-in session remains separate. |
+| Cookies | Host-only, HttpOnly, SameSite=Lax; Secure under HTTPS. Session path `/`, transaction path `/auth`. No browser storage or token in document content. |
+| Request origin | Authentication and protected documents use the issuer's host and port, never forwarded headers. Loopback aliases redirect GET/HEAD to the issuer before starting sign-in; unrecognized hosts are refused. |
+| Failures | Invalid/replayed/mismatched callbacks fail without session issuance. Expiry/revocation requires sign-in again. Requests reveal no credential in diagnostics. |
+
+Pending authorization state lives only in bounded, expiring module memory:
+`PLURNK_WEB_LOGIN_TTL_SEC` and `PLURNK_WEB_LOGIN_PENDING` own its limits. Closing
+the module clears it. Cookie and grant lifetimes come from the authority, not a
+second lifetime setting. Sign-in uses the dependency-free MIT `oauth4webapi`
+client and RFC 8414 discovery after listener admission; passwords are entered
+only at the daemon's authorization endpoint.
+No refresh token, access token, token endpoint for browser JavaScript, or worker
+interaction is retained/implemented by this document-only slice.
+
+References: [OAuth browser applications](https://www.rfc-editor.org/rfc/rfc10017.html#section-6.2),
+[OAuth security best practice](https://www.rfc-editor.org/rfc/rfc9700.html).
+
+## §web-directory-documents Read-only directory documents
+
+| Document | Content / lookup |
+|---|---|
+| `/` | Public foundation document and a real link to `/~/`. |
+| `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then `listWorkers(id)`: real worker links and a parent link. |
+| Worker directory | Exact-name worker lookup; identity heading and parent link only. No conversation UI yet. |
+| Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
+| Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
+
+Every directory (including a missing one) is authenticated before data lookup.
+GET and HEAD have matching status/headers; HEAD has no body. Documents and auth
+responses are `Cache-Control: no-store`, suppress referrers, prevent framing and
+use same-origin scripts, styles and forms. Names are escaped as text/attribute
+values; never executable HTML or filesystem paths. Ordinary navigation and
+logout use native links/forms with JavaScript enabled or disabled. Rendering
+reuses the compiled root document's head, styles, icons and OTM boot; no browser
+router, client-side list fetch, duplicate English dictionary or extra UI library.
+
+Vite development/preview continue to serve frontend documents only: dynamic
+directory/auth routes require a daemon. The installation gate accepts explicitly
+supplied candidate package archives to verify the unreleased public contract;
+it must not substitute a published service missing that contract.
 
 ## §web-document Document
 
@@ -108,9 +164,9 @@ without application classes. Brand green is `#148800`; dark-mode link colors rem
 bright enough for contrast. Native color-scheme selection is preserved; typography
 uses Pico's system monospace stack. Content and styling
 work without JavaScript.
-There is no theme switcher, client routing, persistent browser state, external
-asset request or agent interface. No browser credential or daemon state is embedded
-in the document.
+There is no theme switcher, client routing, persistent browser storage, external
+asset request or agent interface. The root links to the directory index. Protected
+directory documents supply daemon identities as escaped HTML, never credentials.
 
 Source stylesheets load in this order, with one concern per file. Production
 compilation may combine them without changing their cascade:
@@ -191,7 +247,7 @@ References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progre
 The npm archive includes the Agent Plugin manifest, native module, defaults,
 document and its complete browser dependency graph, including OTM, Pico and artwork licenses.
 Tests and build tooling are not runtime inputs. Verification installs the archive
-beside a published service in an isolated environment and exercises actual module
+beside candidate service archives in an isolated environment and exercises actual module
 discovery, routing and browser execution.
 
 Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-modules/SPEC.md),

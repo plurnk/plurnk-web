@@ -1,20 +1,37 @@
 # plurnk-web
 
-An optional Plurnk daemon plugin serving an OTM Hello world document at `/`.
+An optional Plurnk daemon plugin serving native OTM documents at `/`.
 Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
-No chat interface or additional server.
+No chat interface or additional server. The root links to the daemon's workspace
+directory at `/~/`; workspace pages list workers as real links. Worker pages
+currently show identity and a parent link, not a conversation interface.
 
 Directories select their `index.html`: `/` and `/index.html` serve the same
 document, as do the two spellings for any admitted nested index. Directory links
 include the trailing slash. Missing documents and assets return 404, not the
-home page. Only the root document is currently shipped; workspace and worker
-routes are not exposed yet.
+home page. Navigation never creates workspaces or workers, claims control, or
+starts inference. Folderless workspaces work the same way as project workspaces.
 
 The [directory address contract](SPEC.md#web-directory-addresses-named-directory-addresses)
 maps workspace names to `/~/<workspace>/` and workers to `/~/<workspace>@<worker>/`,
-preserving slashes and encoding name punctuation. Its codec and native-browser
-round trips are tested independently; this does not enable protected listings.
+preserving slashes and encoding name punctuation. Names remain separate from
+project folders; URLs do not publish workspace files.
+
+## Sign-in
+
+Web uses the daemon's shared `PLURNK_AUTH`, `PLURNK_USER` and `PLURNK_PASS`
+configuration. It has no separate account or password panel. Under authentication,
+the daemon handles sign-in; a same-host browser can enter without a password when
+the shared user/password are unset. Set both on shared hosts or behind a proxy.
+Set `PLURNK_AGUI_ISSUER` to the public origin when a proxy fronts the daemon.
+`PLURNK_AUTH=0` explicitly makes directories anonymous too.
+
+The browser receives an HttpOnly session cookie; no access token, refresh token,
+password or operator secret is embedded in a page or browser storage. **Sign out**
+revokes that web grant, leaving other browser sessions and workers alone. The
+daemon's own authorization-server sign-in remains separate. A daemon restart
+invalidates sessions. Remotely, use HTTPS.
 
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
@@ -23,11 +40,14 @@ remain native HTML; the eventual interactive worker interface requires JavaScrip
 
 ## Install from source
 
-Requires Node.js 26+ and an existing Plurnk service installation.
+Requires Node.js 26+ and a Plurnk service with the module-client credential API
+([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
+including commit `c04520815`). That API is not in the current published service;
+use packed candidate packages for development and verification.
 
 ```sh
 npm ci --no-audit --no-fund
-npm test
+npm run test:candidate -- /path/to/packed-platform-packages
 npm pack
 ```
 
@@ -43,7 +63,7 @@ The plugin inherits the daemon's host and port, and leaves more-specific routes
 alone. It does not install or start a service.
 
 Set `PLURNK_WEB_ENABLED=0` in the service environment and restart to disable the
-module without uninstalling it. The sole setting is documented in
+module without uninstalling it. The module and pending-sign-in limits are documented in
 [ai.plurnk/.env.defaults](ai.plurnk/.env.defaults).
 
 ## Install as an app
@@ -65,7 +85,8 @@ npm run dev
 
 Open the loopback URL Vite prints (normally `http://127.0.0.1:5173/`).
 HTML edits reload the page; CSS edits update it in place. This serves the frontend
-only and neither starts nor restarts the daemon.
+only and neither starts nor restarts the daemon. Directory and sign-in requests
+need the daemon; Vite does not emulate its data or authentication.
 
 `npm run build` compiles the frontend into `ai.plurnk/dist/`. The plugin serves
 that build on the daemon's existing port; restart the daemon to load a new build.
@@ -75,7 +96,10 @@ production server. Vite is development tooling only.
 `npm test` checks specification tags and witnesses using Plurnk's shared
 development checker, server and browser JavaScript, OTM's HTML/JavaScript/CSS
 contracts and the module, then packs and installs the plugin
-with a published service in a temporary directory. The installed test uses an
+with packed candidate service packages in a temporary directory. `test:candidate`
+installs the candidate public type declarations without rewriting the lockfile,
+then runs the full gate with `PLURNK_WEB_TEST_PACKAGES` naming the archive directory.
+The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Install that test browser with `npx playwright install chromium` if
 necessary. The operator's daemon and configuration are not used.
