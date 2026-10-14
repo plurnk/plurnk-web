@@ -16,6 +16,7 @@ import startModel from "./model-fixture.js";
 import candidatePackages from "./candidate-packages.js";
 import verifySessions from "./sessions-browser.js";
 import verifyAccount from "./account-browser.js";
+import verifyTokens from "./tokens-browser.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -81,10 +82,19 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     });
     const withDaemon = async (overrides, verify) => {
         const daemon = await start(overrides);
+        let failure;
         try {
             await verify(new URL("/", daemon.url).href, daemon);
+        } catch (error) {
+            failure = error;
+            throw error;
         } finally {
-            assert.deepEqual(await daemon.stop(), { code: 0, signal: null });
+            try {
+                assert.deepEqual(await daemon.stop(), { code: 0, signal: null }, daemon.stderr());
+            } catch (error) {
+                if (failure !== undefined) throw new AggregateError([failure, error], "Verification and daemon cleanup failed", { cause: failure });
+                throw error;
+            }
         }
     };
 
@@ -160,7 +170,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                 ...model.env,
                 PLURNK_SECRET: token,
                 PLURNK_MEMBERS_witness: "witness.txt",
-            }, async (base) => {
+            }, async (base, daemon) => {
                 const exchanged = await fetch(new URL("/oauth/token", base), {
                     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
                     body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "agui" }),
@@ -169,7 +179,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                 const { access_token } = await exchanged.json();
                 const browser = await chromium.launch();
                 try {
-                    await verifyAgui(browser, base, access_token, projectRoot, model, conformance);
+                    await verifyAgui(browser, base, access_token, projectRoot, model, conformance, () => daemon.stop());
                 } finally {
                     await browser.close();
                 }
@@ -181,6 +191,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
 
     await verifySessions({ t, consumer, withDaemon });
     await verifyAccount({ t, withDaemon });
+    await verifyTokens({ t, withDaemon });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
         for (const value of ["0", "invalid"]) {

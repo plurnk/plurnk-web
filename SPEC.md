@@ -129,11 +129,30 @@ the module clears it. Cookie and grant lifetimes come from the authority, not a
 second lifetime setting. Sign-in uses the dependency-free MIT `oauth4webapi`
 client and RFC 8414 discovery after listener admission; passwords are entered
 only at the daemon's authorization endpoint.
-No refresh token, access token, token endpoint for browser JavaScript, or worker
-interaction is retained/implemented by this document-only slice.
+Worker interaction remains unimplemented. Browser access credentials use
+{§web-access-token}; they are never embedded in documents.
 
 References: [OAuth browser applications](https://www.rfc-editor.org/rfc/rfc10017.html#section-6.2),
 [OAuth security best practice](https://www.rfc-editor.org/rfc/rfc9700.html).
+
+## §web-access-token Browser access credentials
+
+The module is an OAuth token-mediating backend, not a second issuer. It retains
+the authorization-code grant's access and refresh credentials in daemon memory,
+keyed by the authority's sign-in family. The authority still owns admission,
+identity, expiry, revocation and the account inventory.
+
+| Boundary | Contract |
+|---|---|
+| POST `/auth/token` | Require a live web session and the issuer's exact Origin. Return only `access_token`, `token_type: Bearer`, and remaining `expires_in` seconds as no-store JSON. Other methods are 405; disabled authentication leaves the endpoint absent (404). No cross-origin access or credential-bearing redirect. |
+| Access expiry | Reuse a still-valid access credential; otherwise perform the standard OAuth refresh grant with confidential-client authentication. Concurrent requests in the same family share one refresh, so rotation does not race across tabs. |
+| Grant integrity | Access and refresh credentials must belong to the registered client, subject, scope and family. A refresh cannot change the family or resurrect a revoked sign-in. Failed refreshes are surfaced; no operation is replayed or authority substituted. |
+| Revocation and cleanup | Authority revocation releases the retained grant. Expired grants are pruned on subsequent credential activity; module close releases them and its revocation subscription. Session expiry remains fixed by sign-in, not extended by refresh. |
+| Browser custody | Access credentials are for the same-origin `/agui` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
+| Refusals | Missing/expired/revoked sign-in is 401; wrong/missing Origin is 403. Expected endpoint failures use RFC 9457 JSON, not an HTML sign-in redirect. |
+
+This supplies a verified connection primitive only. It installs no conversation
+UI, automatic retry loop, persistent browser state or additional session registry.
 
 ## §web-authorization-style Authorization document presentation
 
@@ -315,10 +334,18 @@ Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plur
 The packed-installation gate runs the official HttpAgent in Chromium from the
 module's real document origin, against an isolated authenticated daemon and a
 deterministic local model. Only the test SDK asset is injected; AG-UI traffic is
-not intercepted or synthesized. It verifies bearer rejection, discovery,
-reasoning, native tool/result correlation, Plurnk receipts, state reception,
-assistant replies and provider failure. No operator configuration or paid model
-is used. Test fixtures and the SDK test bundle are not shipped browser assets.
+not intercepted or synthesized. No operator configuration or paid model is used.
+Test fixtures and the SDK test bundle are not shipped browser assets.
 
-This establishes the connection boundary, not a conversation UI or a claim of
-reconnect, history restoration, or interrupt/resume coverage.
+| Boundary under verification | Required observation |
+|---|---|
+| Standard Run | Bearer rejection, discovery, reasoning, correlated native tool/results, Plurnk receipts, state, assistant replies and provider failures survive the official SDK. |
+| Synchronization | Authoritative messages/state without inference or borrowed history from another workspace. Retained reasoning and operation/result evidence must not disappear on a fresh connection. |
+| Observation | `/agui/connect` remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
+| Control | Disconnecting the controlling request cancels its work; an observer receives the cancellation. |
+| Approval | Native interrupts resume through the SDK; a different owner or consumed interrupt cannot resolve the gate. Test-only handlers do not advertise capabilities in the shipped page. |
+| Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |
+| Credentials | Real password/PKCE sign-in, browser access, expiry, concurrent refresh and revocation compose with the SDK. Revocation terminates admitted connections without cancelling their workers. |
+
+This establishes protocol prerequisites, not a conversation UI. There is no
+client-owned replay cache, second event parser or automatic retry of work.

@@ -1,18 +1,9 @@
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import { build } from "vite";
+import verifyLifecycle from "./agui-lifecycle.js";
+import httpAgentBundle from "./http-agent-bundle.js";
 
-export default async function verifyAgui(browser, base, token, projectRoot, model, t) {
-    const [{ output }] = await build({
-        configFile: false,
-        logLevel: "warn",
-        build: {
-            write: false,
-            lib: { entry: fileURLToPath(new URL("./http-agent-entry.js", import.meta.url)), formats: ["es"] },
-        },
-    });
-    const chunks = output.filter(({ type }) => type === "chunk");
-    assert.equal(chunks.length, 1, "the test SDK has one self-contained browser entry");
+export default async function verifyAgui(browser, base, token, projectRoot, model, t, stop) {
+    const mount = await httpAgentBundle();
     const context = await browser.newContext();
     try {
         const tab = await context.newPage();
@@ -20,10 +11,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
         const requests = [];
         tab.on("pageerror", (error) => errors.push(error.message));
         tab.on("request", (request) => requests.push(request.url()));
-        // Only the test SDK bundle is injected; every /agui request reaches the daemon.
-        await tab.route(new URL("/__test__/http-agent.js", base).href, (route) => route.fulfill({
-            contentType: "text/javascript", body: chunks[0].code,
-        }));
+        await mount(tab, base);
         await tab.goto(base);
         const run = (options) => tab.evaluate(async ({ token, ...options }) => {
             const { HttpAgent } = await import("/__test__/http-agent.js");
@@ -136,6 +124,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(model.requests.length, 3, "a provider refusal is not retried");
         });
 
+        await verifyLifecycle(tab, { token, projectRoot, model, t, stop });
         assert.deepEqual(model.errors, []);
         assert.deepEqual(errors, []);
         assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));

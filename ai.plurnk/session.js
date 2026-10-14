@@ -1,5 +1,5 @@
 import * as oauth from "oauth4webapi";
-import { cookie, redirect, RequestError } from "./http.js";
+import { cookie, redirect, RequestError, privateHeaders } from "./http.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import indexDocument from "./index-document.js";
 
@@ -8,7 +8,9 @@ const TRANSACTION = "plurnk_web_login";
 export const CALLBACK = "/auth/callback";
 export const CLIENT = "plurnk-web";
 
-/** {§web-session} A consumer of the daemon's authority; only OAuth transactions live here. */
+/** @typedef {{ access: string, refresh: string, claims: import("@plurnk/plurnk-contracts").CredentialClaims, refreshing: Promise<void> | null }} Grant */
+
+/** {§web-session} A consumer of the daemon's authority, never an independent issuer or session inventory. */
 export default class Session {
     #credentials;
     #client;
@@ -20,6 +22,9 @@ export default class Session {
     #limits;
     /** @type {Map<string, { verifier: string, binding: string, target: string, expires: number }>} */
     #pending = new Map();
+    /** @type {Map<string, Grant>} */
+    #grants = new Map();
+    #unsubscribe;
 
     /**
      * @param {import("@plurnk/plurnk-contracts").CredentialAuthority} credentials
@@ -35,6 +40,7 @@ export default class Session {
         // The daemon's declared issuer, including its normal HTTP loopback listener, owns transport.
         this.#options = { [oauth.allowInsecureRequests]: new URL(issuer).protocol === "http:" };
         this.#limits = limits;
+        this.#unsubscribe = credentials.onRevoked((family) => this.#grants.delete(family));
     }
 
     get issuer() { return this.#issuer; }
@@ -151,20 +157,84 @@ export default class Session {
         } catch (cause) {
             throw new RequestError(502, "The daemon did not complete sign-in. Start sign-in again.", { cause });
         }
+        const grant = this.#grant(result);
+        const { claims } = grant;
+        const ttlMs = claims.expiresAt - Date.now();
+        const issued = this.#credentials.issue({ kind: "session", subject: claims.subject, clientId: claims.clientId,
+            scopes: claims.scopes, family: claims.family, ttlMs });
+        const old = this.#claims(req);
+        if (old !== null && old.family !== claims.family) this.#credentials.revokeFamily(old.family);
+        this.#prune();
+        this.#grants.set(claims.family, grant);
+        res.setHeader("set-cookie", this.#cookie(SESSION, issued.token, "/", ttlMs / 1000));
+        redirect(res, transaction.target);
+    }
+
+    /** @param {oauth.TokenEndpointResponse} result @returns {Grant} */
+    #grant(result) {
         const access = this.#credentials.verify(result.access_token);
         const refresh = result.refresh_token === undefined ? null : this.#credentials.verify(result.refresh_token);
         if (access?.kind !== "access" || refresh?.kind !== "refresh" || access.family !== refresh.family
             || access.clientId !== this.#client.client_id || refresh.clientId !== access.clientId
-            || access.subject !== refresh.subject || !access.scopes.includes("agui")) {
+            || access.subject !== refresh.subject || !access.scopes.includes("agui") || !refresh.scopes.includes("agui")) {
             throw new Error("The authorization server returned credentials outside the registered web grant.");
         }
-        const ttlMs = refresh.expiresAt - Date.now();
-        const issued = this.#credentials.issue({ kind: "session", subject: access.subject, clientId: access.clientId,
-            scopes: access.scopes, family: access.family, ttlMs });
-        const old = this.#claims(req);
-        if (old !== null && old.family !== access.family) this.#credentials.revokeFamily(old.family);
-        res.setHeader("set-cookie", this.#cookie(SESSION, issued.token, "/", ttlMs / 1000));
-        redirect(res, transaction.target);
+        return { access: result.access_token, refresh: /** @type {string} */ (result.refresh_token), claims: refresh, refreshing: null };
+    }
+
+    #prune() {
+        for (const [family, grant] of this.#grants) {
+            if (grant.refreshing === null && this.#credentials.verify(grant.refresh) === null) this.#grants.delete(family);
+        }
+    }
+
+    /** @param {Grant} grant */
+    async #refresh(grant) {
+        const server = await this.#metadata();
+        let result;
+        try {
+            const response = await oauth.refreshTokenGrantRequest(server, this.#client, this.#authenticate, grant.refresh, this.#options);
+            result = await oauth.processRefreshTokenResponse(server, this.#client, response);
+        } catch (cause) {
+            if (cause instanceof oauth.ResponseBodyError && cause.error === "invalid_grant") {
+                this.#credentials.revokeFamily(grant.claims.family);
+                throw new RequestError(401, "Sign in again to connect.", { cause });
+            }
+            throw new RequestError(502, "The daemon could not refresh the connection credential.", { cause });
+        }
+        // Logout or a later callback must not be undone by an in-flight refresh.
+        if (this.#grants.get(grant.claims.family) !== grant) throw new RequestError(401, "Sign in again to connect.");
+        const next = this.#grant(result);
+        if (next.claims.family !== grant.claims.family || next.claims.subject !== grant.claims.subject) {
+            throw new Error("The authorization server changed the web grant during refresh.");
+        }
+        grant.access = next.access;
+        grant.refresh = next.refresh;
+        grant.claims = next.claims;
+    }
+
+    /** {§web-access-token} Share one standard refresh across concurrent tabs; authority owns validity.
+     * @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res
+     */
+    async token(req, res) {
+        const claims = this.#claims(req);
+        if (claims === null) throw new RequestError(401, "Sign in again to connect.");
+        if (req.headers.origin !== this.issuer) throw new RequestError(403, "Same-origin request required.");
+        this.#prune();
+        const grant = this.#grants.get(claims.family);
+        if (grant === undefined) throw new RequestError(401, "Sign in again to connect.");
+        if (this.#credentials.verify(grant.access) === null) {
+            grant.refreshing ??= this.#refresh(grant).finally(() => { grant.refreshing = null; });
+            await grant.refreshing;
+        }
+        const access = this.#credentials.verify(grant.access);
+        if (this.#claims(req) === null || this.#grants.get(claims.family) !== grant || access === null) {
+            throw new RequestError(401, "Sign in again to connect.");
+        }
+        const body = Buffer.from(JSON.stringify({ access_token: grant.access, token_type: "Bearer",
+            expires_in: Math.max(0, Math.floor((access.expiresAt - Date.now()) / 1000)) }));
+        res.writeHead(200, { ...privateHeaders, "content-type": "application/json", "content-length": body.byteLength });
+        res.end(body);
     }
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
@@ -176,5 +246,5 @@ export default class Session {
         redirect(res, "/");
     }
 
-    close() { this.#pending.clear(); }
+    close() { this.#pending.clear(); this.#grants.clear(); this.#unsubscribe(); }
 }
