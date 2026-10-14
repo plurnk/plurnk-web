@@ -12,3 +12,7 @@ body > a[href="#main"]:not(:focus) {
     clip-path: inset(50%);
     white-space: nowrap;
 }
+
+header nav button:is(:hover, :focus-visible) {
+    text-decoration: underline;
+}

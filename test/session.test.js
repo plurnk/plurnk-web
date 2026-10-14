@@ -70,3 +70,66 @@ test("{§web-session} HTTPS cookie and session lifetime come from the verified g
     session.close();
     await assert.rejects(session.callback({ headers: { cookie: binding }, url: `/auth/callback?code=test&state=${state}` }, response), { status: 400 });
 });
+
+test("{§web-session} a second tab's callback does not revoke its own sign-in family", async (t) => {
+    const origin = "https://daemon.example";
+    const common = { clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "shared", expiresAt: Date.now() + 60_000 };
+    const revoked = [];
+    const credentials = {
+        verify: (token) => ["access", "refresh", "old-session"].includes(token)
+            ? { ...common, kind: token === "old-session" ? "session" : token } : null,
+        issue: () => ({ token: "new-session", expiresAt: common.expiresAt }),
+        revokeFamily: (family) => revoked.push(family),
+    };
+    t.mock.method(globalThis, "fetch", async (input) => String(input).endsWith("/oauth/token")
+        ? Response.json({ access_token: "access", refresh_token: "refresh", token_type: "Bearer", expires_in: 60 })
+        : Response.json({ issuer: origin, authorization_endpoint: `${origin}/oauth/authorize`, token_endpoint: `${origin}/oauth/token` }));
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, origin, { ttl: 600, pending: 128 });
+    const headers = new Map();
+    const response = {
+        setHeader: (name, value) => headers.set(name, value),
+        writeHead: (_status, values) => { for (const [name, value] of Object.entries(values)) headers.set(name, value); },
+        end() {},
+    };
+    await session.login({ headers: {}, url: "/auth/login" }, response);
+    const binding = headers.get("set-cookie").split(";")[0];
+    const state = new URL(headers.get("location")).searchParams.get("state");
+    await session.callback({ headers: { cookie: `${binding}; plurnk_web_session=old-session` }, url: `/auth/callback?code=test&state=${state}` }, response);
+    assert.deepEqual(revoked, [], "the two callbacks belong to one browser sign-in, not competing families");
+    assert.match(headers.get("set-cookie"), /^plurnk_web_session=new-session;/u);
+});
+
+test("{§web-account} inventory and revocation are scoped to the authenticated subject", () => {
+    const current = { family: "current", subject: "operator", clientId: "plurnk-web", kind: "session", scopes: ["agui"] };
+    const entries = [current, { ...current, family: "other" }];
+    const revoked = [];
+    const credentials = {
+        verify: (token) => token === "current-token" ? current : null,
+        sessions: (subject) => { assert.equal(subject, "operator"); return entries; },
+        revokeFamily: (family) => revoked.push(family),
+    };
+    const origin = "https://daemon.example";
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, origin, { ttl: 600, pending: 128 });
+    const req = { headers: { origin, cookie: "plurnk_web_session=current-token" } };
+    const headers = new Map();
+    const response = {
+        setHeader: (name, value) => headers.set(name, value),
+        writeHead: (status, values) => { assert.equal(status, 303); for (const [name, value] of Object.entries(values)) headers.set(name, value); },
+        end() {},
+    };
+    assert.deepEqual(session.account(req), { subject: "operator", family: "current", sessions: entries });
+    assert.equal(session.account({ headers: {} }), null);
+    assert.throws(() => session.revoke({ headers: {} }, response, "other"), { status: 401 });
+    assert.throws(() => session.revoke({ headers: { ...req.headers, origin: "https://foreign.example" } }, response, "other"), { status: 403 });
+    assert.throws(() => session.revoke(req, response, "foreign-family"), { status: 404 });
+    assert.deepEqual(revoked, []);
+    session.revoke(req, response, "other");
+    assert.deepEqual(revoked, ["other"]);
+    assert.equal(headers.get("location"), "/account/");
+    session.revokeOthers(req, response);
+    assert.deepEqual(revoked, ["other", "other"]);
+    session.revoke(req, response, "current");
+    assert.deepEqual(revoked, ["other", "other", "current"]);
+    assert.match(headers.get("set-cookie"), /plurnk_web_session=;.*Max-Age=0/u);
+    assert.equal(headers.get("location"), "/");
+});

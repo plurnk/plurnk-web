@@ -38,19 +38,26 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     const base = `http://127.0.0.1:${server.address().port}`;
     const index = await fetch(`${base}/index.html`);
     assert.equal(index.status, 200, "{§web-index-documents} explicit root index is served");
-    assert.equal(await index.text(), await (await fetch(`${base}/`)).text());
+    const indexBody = await index.text();
+    assert.equal(indexBody, await (await fetch(`${base}/`)).text());
     const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
     assert.equal(manifestResponse.status, 200, "{§web-installation} manifest is available on the module route");
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     for (const [path, file, type] of inventory) {
-        const expected = await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url));
+        const expected = path === "/index.html" ? Buffer.from(indexBody) : await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url));
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}?ignored=yes`, { method });
             assert.equal(res.status, 200, `${method} ${path}`);
             assert.equal(res.headers.get("content-type"), type.startsWith("image/") ? type : `${type}; charset=utf-8`);
             assert.equal(res.headers.get("content-length"), String(expected.byteLength));
             assert.equal(res.headers.get("x-content-type-options"), "nosniff");
-            assert.deepEqual(Buffer.from(await res.arrayBuffer()), method === "HEAD" ? Buffer.alloc(0) : expected);
+            const body = Buffer.from(await res.arrayBuffer());
+            if (method === "HEAD") assert.deepEqual(body, Buffer.alloc(0));
+            else if (path === "/index.html") {
+                assert.match(body.toString(), /<h1[^>]*>Plurnk<\/h1>/u);
+                assert.doesNotMatch(body.toString(), /<template|href="\/account\/"|action="\/auth\/logout"/u);
+                assert.equal(body.byteLength, Number(res.headers.get("content-length")));
+            } else assert.deepEqual(body, expected);
         }
     }
     for (const path of ["/missing", "/~/workspace@user/", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
@@ -100,7 +107,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
         ["/nested/child.txt", "child.txt", "text/plain"],
     ];
     await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
-    await writeFile(new URL("dist/root.html", base), "<title>Plurnk</title><main><h1>Plurnk</h1></main>");
+    await writeFile(new URL("dist/root.html", base), '<title>Plurnk</title><template id="session-navigation"></template><main><h1>Plurnk</h1></main>');
     await writeFile(new URL("dist/nested.html", base), "<h1>Nested document</h1>");
     await writeFile(new URL("dist/child.txt", base), "Child resource\n");
     const { default: fixtureModule } = await import(new URL("module.js", base).href);

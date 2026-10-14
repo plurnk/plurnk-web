@@ -24,17 +24,19 @@ project folders; URLs do not publish workspace files.
 ## Sign-in
 
 Web uses the daemon's shared `PLURNK_AUTH`, `PLURNK_USER` and `PLURNK_PASS`
-configuration. It has no separate account or password panel. Under authentication,
-the daemon handles sign-in; a same-host browser can enter without a password when
-the shared user/password are unset. Set both on shared hosts or behind a proxy.
+configuration. It has no separate user/password configuration. With authentication
+enabled, set both user and password; incomplete setup must not admit a browser,
+including on localhost. The daemon owns the sign-in form and credential validation.
 Set `PLURNK_AGUI_ISSUER` to the public origin when a proxy fronts the daemon.
 `PLURNK_AUTH=0` explicitly makes directories anonymous too.
 
 The browser receives an HttpOnly session cookie; no access token, refresh token,
 password or operator secret is embedded in a page or browser storage. **Sign out**
-revokes that web grant, leaving other browser sessions and workers alone. The
-daemon's own authorization-server sign-in remains separate. A daemon restart
-invalidates sessions. Remotely, use HTTPS.
+ends this browser's sign-in and its module credentials together. Revisiting requires
+sign-in. **Account** lists the authority's live sign-ins, marks this session, and
+offers native forms to revoke one or all other sessions. No device or last-activity
+information is invented. Other sessions and independently authorized clients remain
+intact. A daemon restart invalidates sessions. Remotely, use HTTPS.
 
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
@@ -45,7 +47,7 @@ remain native HTML; the eventual interactive worker interface requires JavaScrip
 
 Requires Node.js 26+ and a Plurnk service with the module-client credential API
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
-including commit `c04520815`). That API is not in the current published service;
+including sign-in inventory and shared browser/module revocation). That API is not in the current published service;
 use packed candidate packages for development and verification.
 
 ```sh

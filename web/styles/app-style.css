@@ -2,6 +2,14 @@
     --pico-font-family: var(--pico-font-family-monospace);
 }
 
+header nav button {
+    --pico-primary-background: transparent;
+    --pico-primary-border: transparent;
+    --pico-primary-hover-background: transparent;
+    --pico-primary-hover-border: transparent;
+    --pico-primary-inverse: var(--pico-primary);
+}
+
 :root:not([data-theme="dark"]),
 [data-theme="light"] {
     --pico-primary: #148800;

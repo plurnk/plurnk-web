@@ -34,6 +34,11 @@
             </ul>
             <ul>
                 <li><a href="/~/" data-i18n="workspaces">Workspaces</a></li>
+                <!-- {§web-page-shell} Instantiated by the document server, not browser JavaScript. -->
+                <template id="session-navigation" data-otm-dynamic>
+                    <li><a href="/account/" data-i18n="account">Account</a></li>
+                    <li><form method="post" action="/auth/logout"><button type="submit" data-i18n="sign-out">Sign out</button></form></li>
+                </template>
             </ul>
         </nav>
     </header>

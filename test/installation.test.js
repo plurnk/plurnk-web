@@ -15,6 +15,7 @@ import verifyAgui from "./agui-browser.js";
 import startModel from "./model-fixture.js";
 import candidatePackages from "./candidate-packages.js";
 import verifySessions from "./sessions-browser.js";
+import verifyAccount from "./account-browser.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -179,6 +180,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     });
 
     await verifySessions({ t, consumer, withDaemon });
+    await verifyAccount({ t, withDaemon });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
         for (const value of ["0", "invalid"]) {
