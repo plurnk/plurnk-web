@@ -104,14 +104,15 @@ authentication contract.
 ## §web-session Browser sign-in
 
 Web consumes the daemon's credential authority, never the operator's secret or
-a second user/password configuration. At setup it registers the confidential
+a second credential configuration. At setup it registers the confidential
 client `plurnk-web` with callback path `/auth/callback` and scope `agui`. At start
 it reads the published issuer. No issuing face means the daemon has explicitly
 disabled authentication; directory reads are then anonymous.
 
 | Boundary | Contract |
 |---|---|
-| Authentication enabled, incomplete user/password | The authority shows configuration-required information and issues no browser sign-in, including on localhost. Web neither infers anonymous access nor adds a local bypass. |
+| Authentication enabled, empty password | The authority shows configuration-required information and issues no browser sign-in, including on localhost. Web neither infers anonymous access nor adds a local bypass. |
+| Authentication enabled, configured password | A browser signs in with `PLURNK_PASS` alone. No username field or web-owned identity configuration; a wrong password is refused by the authority at 401. |
 | Authentication explicitly disabled | Anonymous directories; no Account or Sign Out controls. |
 | GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, bound to an HttpOnly browser cookie. Return locations are local directory addresses, `/account/` or `/account/sessions/` (also their explicit indexes); never an external URL. |
 | GET `/auth/callback` | Consume the pending browser-bound state once; validate and exchange the code with client authentication. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |
@@ -133,6 +134,19 @@ interaction is retained/implemented by this document-only slice.
 
 References: [OAuth browser applications](https://www.rfc-editor.org/rfc/rfc10017.html#section-6.2),
 [OAuth security best practice](https://www.rfc-editor.org/rfc/rfc9700.html).
+
+## §web-authorization-style Authorization document presentation
+
+| Boundary | Contract |
+|---|---|
+| Registration | At setup the module registers the single compiled CSS resource from its asset inventory as its client's `stylesheetPath`. It does not add an alias route, second stylesheet or theme setting. Missing or multiple application stylesheets are build-contract faults. |
+| Document ownership | The authority owns sign-in, setup/error, consent and session documents, credential validation and security policy. Web supplies neither a form nor an HTML rewrite. The authority selects the stylesheet from the trusted client registration, never arbitrary request input. |
+| Presentation | The same Pico Classless Green, monospace, 65ch measure, light/dark colors, native controls and article cards apply to authorization and web documents. Ordinary authorization pages work without JavaScript. |
+| Production pruning | The public `authorizationDocumentSpecimens()` export from `@plurnk/plurnk-agui` supplies the authority's markup to PurgeCSS. No copied templates or private daemon-source scan. This is a development dependency, not a browser/runtime import. |
+
+The daemon's standalone documents remain its own responsibility when no registered
+module stylesheet applies. Browser coverage exercises the installed module and
+authority together, including empty/wrong passwords and signed-out re-entry.
 
 ## §web-account Account and sign-ins
 

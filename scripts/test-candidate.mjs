@@ -13,8 +13,8 @@ const run = (args) => new Promise((accept, reject) => {
     child.once("exit", (code, signal) => code === 0 ? accept() : reject(new Error(`npm exited ${code ?? signal}`)));
 });
 
-// Candidate public declarations for local type checking; the lockfile remains a registry graph.
+// Candidate public declarations and authorization specimens; the lockfile remains a registry graph.
 await run(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", "--package-lock=false",
-    ...archives.filter((file) => /\/plurnk-plurnk-(?:contracts|modules)-/u.test(file)),
+    ...archives.filter((file) => /\/plurnk-plurnk-(?:agui|contracts|modules)-/u.test(file)),
 ]);
 await run(["test"]);

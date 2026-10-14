@@ -24,6 +24,21 @@ test("{§web-host} configuration admits only an enabled root owner", (t) => {
     }
 });
 
+test("{§web-authorization-style} the registered browser client uses the packaged application stylesheet", async (t) => {
+    const original = process.env.PLURNK_AUTH;
+    t.after(() => { process.env.PLURNK_AUTH = original; });
+    process.env.PLURNK_AUTH = "1";
+    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const stylesheets = inventory.filter(([, , type]) => type === "text/css");
+    assert.equal(stylesheets.length, 1);
+    const registrations = [];
+    await createModule().setup({ credentials: { registerClient(options) {
+        registrations.push(options);
+        return { clientId: options.id, clientSecret: "test-only" };
+    } } });
+    assert.deepEqual(registrations, [{ id: "plurnk-web", redirectPaths: ["/auth/callback"], scopes: ["agui"], stylesheetPath: stylesheets[0][0] }]);
+});
+
 test("{§web-assets} exact public resources and HTTP method matrix", async (t) => {
     assert.equal(process.env.PLURNK_WEB_ENABLED, "1");
     let handler;
