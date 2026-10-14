@@ -164,6 +164,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.equal(await page.getByRole("link", { name: "Account", exact: true }).count(), 0);
                             assert.deepEqual(await context.cookies(), []);
                             assert.equal((await context.request.get(new URL("/account/", base).href)).status(), 404);
+                            assert.equal((await context.request.get(new URL("/account/sessions/", base).href)).status(), 404);
+                            assert.equal((await context.request.get(new URL("/account/sessions/index.html", base).href)).status(), 404);
                             assert.equal((await context.request.post(new URL("/account/sessions/revoke-others", base).href)).status(), 404);
                         } finally { await context.close(); }
                     }

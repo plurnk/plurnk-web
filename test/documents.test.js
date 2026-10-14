@@ -84,19 +84,29 @@ test("{§web-page-shell} a missing or duplicate document title fails at load", (
     assert.throws(() => new Documents('<title>Plurnk</title><main>Home</main>'), /exactly one session-navigation template/u);
 });
 
-test("{§web-account} the native account document renders real sign-ins without invented device facts", () => {
+test("{§web-account} Account offers native navigation without a fictional profile or inline session inventory", () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const html = document.account().toString();
+    assert.match(html, /<title[^>]*>Account — Plurnk<\/title>/u);
+    assert.match(html, /<article[\s\S]*<h1[^>]*>Account<\/h1>/u);
+    assert.match(html, /<nav aria-label="Account"><ul><li><a href="\/account\/sessions\/"[^>]*>Sessions<\/a><\/li><\/ul><\/nav>/u);
+    assert.doesNotMatch(html, /Signed in as|Local operator|data-session|<table|revoke/iu);
+});
+
+test("{§web-account} Sessions renders authority facts in a native table without invented device facts", () => {
     const document = new Documents('<title>Plurnk</title><header><template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template></header><main>Home</main>');
-    const html = document.account({ subject: 'operator<script>', family: "current", sessions: [
+    const html = document.sessions({ family: "current", sessions: [
         { family: "current", createdAt: 0, expiresAt: 60_000, clients: ["browser", "plurnk-web"] },
         { family: "other&family", createdAt: 1000, expiresAt: 61_000, clients: ["browser", "a<script>"] },
     ] }).toString();
-    assert.match(html, /<title[^>]*>Account — Plurnk<\/title>/u);
-    assert.match(html, /operator&lt;script&gt;/u);
+    assert.match(html, /<title[^>]*>Sessions — Plurnk<\/title>/u);
+    assert.match(html, /<article[\s\S]*<figure><table><thead>/u);
+    assert.match(html, /<th scope="row"/u);
     assert.match(html, /This session/u);
     assert.match(html, /<time datetime="1970-01-01T00:00:00.000Z"/u);
     assert.match(html, /a&lt;script&gt;/u);
     assert.match(html, /action="\/account\/sessions\/other%26family\/revoke"/u);
     assert.match(html, /action="\/account\/sessions\/revoke-others"/u);
     assert.match(html, /<header>[\s\S]*action="\/auth\/logout"[\s\S]*<\/header>/u);
-    assert.doesNotMatch(html, /<footer>|<script>|<template|last active|device/iu);
+    assert.doesNotMatch(html, /<script>|<template|last active|device|Signed in as/iu);
 });

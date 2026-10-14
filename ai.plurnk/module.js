@@ -45,12 +45,13 @@ export default function createModule() {
                 const directory = parseDirectory(pathname);
                 const home = indexDocument(pathname) === "/index.html";
                 const account = indexDocument(pathname) === "/account/index.html";
+                const sessions = indexDocument(pathname) === "/account/sessions/index.html";
                 const revoke = /^\/account\/sessions\/([^/]+)\/revoke$/u.exec(pathname);
                 const others = pathname === "/account/sessions/revoke-others";
                 const auth = ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
                 try {
-                    if (session !== null && (directory !== null || auth || home || account || revoke !== null || others)) {
+                    if (session !== null && (directory !== null || auth || home || account || sessions || revoke !== null || others)) {
                         const issuer = new URL(session.issuer);
                         // {§web-session} Use the configured public origin, never forwarded headers.
                         const incoming = URL.parse(`${issuer.protocol}//${req.headers.host ?? ""}`);
@@ -64,8 +65,8 @@ export default function createModule() {
                             throw new RequestError(421, "Use the daemon's configured origin.");
                         }
                     }
-                    const identity = account ? session?.account(req) : null;
-                    admitted = account ? identity != null : session?.admitted(req) ?? false;
+                    const inventory = sessions ? session?.account(req) : null;
+                    admitted = sessions ? inventory != null : session?.admitted(req) ?? false;
                     if (auth && session !== null) {
                         const expected = pathname === "/auth/logout" ? "POST" : "GET";
                         if (req.method !== expected) {
@@ -77,7 +78,7 @@ export default function createModule() {
                         else session.logout(req, res);
                         return;
                     }
-                    if (account || revoke !== null || others) {
+                    if (account || sessions || revoke !== null || others) {
                         if (session === null) throw new RequestError(404, "Account is unavailable while authentication is disabled.");
                         if (revoke !== null || others) {
                             if (req.method !== "POST") {
@@ -94,16 +95,16 @@ export default function createModule() {
                             return;
                         }
                     }
-                    if (directory !== null || home || account) {
+                    if (directory !== null || home || account || sessions) {
                         if (req.method !== "GET" && req.method !== "HEAD") {
                             res.setHeader("allow", "GET, HEAD");
                             throw new RequestError(405, "Method not allowed.");
                         }
                         if (!home && session !== null && !admitted) {
-                            redirect(res, `/auth/login?${new URLSearchParams({ return: account ? "/account/" : req.url ?? "/~/" })}`);
+                            redirect(res, `/auth/login?${new URLSearchParams({ return: req.url ?? "/~/" })}`);
                             return;
                         }
-                        const body = home ? documents.home(admitted) : identity ? documents.account(identity)
+                        const body = home ? documents.home(admitted) : account ? documents.account() : inventory ? documents.sessions(inventory)
                             : directory === null ? null : await documents.read(directory, seam, admitted);
                         if (body === null) throw new RequestError(404, "Workspace or worker not found.");
                         res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });

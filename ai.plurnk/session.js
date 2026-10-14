@@ -64,7 +64,7 @@ export default class Session {
     account(req) {
         const claims = this.#claims(req);
         return claims === null ? null : {
-            subject: claims.subject, family: claims.family, sessions: this.#credentials.sessions(claims.subject),
+            family: claims.family, sessions: this.#credentials.sessions(claims.subject),
         };
     }
 
@@ -82,14 +82,14 @@ export default class Session {
         if (!account.sessions.some((entry) => entry.family === family)) throw new RequestError(404, "Session not found.");
         if (family === account.family) { this.logout(req, res); return; }
         this.#credentials.revokeFamily(family);
-        redirect(res, "/account/");
+        redirect(res, "/account/sessions/");
     }
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
     revokeOthers(req, res) {
         const account = this.#mutation(req);
         for (const entry of account.sessions) if (entry.family !== account.family) this.#credentials.revokeFamily(entry.family);
-        redirect(res, "/account/");
+        redirect(res, "/account/sessions/");
     }
 
     /** @param {string} name @param {string} value @param {string} path @param {number} ttl */
@@ -102,7 +102,8 @@ export default class Session {
     async login(req, res) {
         const requested = new URL(req.url ?? "/", this.issuer).searchParams.get("return") ?? "/~/";
         const directory = parseDirectory(requested);
-        const target = indexDocument(requested) === "/account/index.html" ? "/account/"
+        const document = indexDocument(requested.split(/[?#]/u)[0]);
+        const target = ["/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
             : directory === null ? null : directoryPath(directory);
         if (target === null) throw new RequestError(400, "Invalid return page.");
         if (this.admitted(req)) { redirect(res, target); return; }

@@ -45,10 +45,16 @@ export default class Documents {
             + '<footer><a href="/" data-i18n="home">Home</a></footer></article>', "error", authenticated);
     }
 
+    /** {§web-account} Account navigation stays separate from session management. */
+    account() {
+        return this.#render("Account", '<article aria-labelledby="account-title"><header><h1 id="account-title" data-i18n="account">Account</h1></header>'
+            + '<nav aria-label="Account"><ul><li><a href="/account/sessions/" data-i18n="sessions">Sessions</a></li></ul></nav></article>', "account", true);
+    }
+
     /** {§web-account} Only authority-supplied facts are presented as session information.
-     * @param {{ subject: string, family: string, sessions: readonly import("@plurnk/plurnk-contracts").CredentialSession[] }} account
+     * @param {{ family: string, sessions: readonly import("@plurnk/plurnk-contracts").CredentialSession[] }} account
      */
-    account({ subject, family, sessions }) {
+    sessions({ family, sessions }) {
         const time = (/** @type {number} */ timestamp) => {
             const iso = new Date(timestamp).toISOString();
             return `<time datetime="${iso}" data-text="session-time">${iso.replace("T", " ").replace(/\.\d{3}Z$/u, " UTC")}</time>`;
@@ -56,17 +62,19 @@ export default class Documents {
         const entries = sessions.map((entry) => {
             const current = entry.family === family;
             const action = current ? "/auth/logout" : `/account/sessions/${encodeURIComponent(entry.family)}/revoke`;
-            return `<li data-session="${escapeHtml(entry.family)}"><h3 data-i18n="${current ? "this-session" : "another-session"}">${current ? "This session" : "Another session"}</h3>`
-                + `<dl><dt data-i18n="started">Started</dt><dd>${time(entry.createdAt)}</dd>`
-                + `<dt data-i18n="expires">Expires</dt><dd>${time(entry.expiresAt)}</dd>`
-                + `<dt data-i18n="clients">Clients</dt><dd data-text="session-clients">${entry.clients.map(escapeHtml).join(", ")}</dd></dl>`
-                + `<form method="post" action="${escapeHtml(action)}"><button type="submit" data-i18n="${current ? "end-this-session" : "revoke-session"}">${current ? "End this session" : "Revoke session"}</button></form></li>`;
+            return `<tr data-session="${escapeHtml(entry.family)}"><th scope="row"><span data-i18n="${current ? "this-session" : "another-session"}">${current ? "This session" : "Another session"}</span>`
+                + `<br><small data-text="session-clients">${entry.clients.map(escapeHtml).join(", ")}</small></th>`
+                + `<td>${time(entry.createdAt)}</td><td>${time(entry.expiresAt)}</td>`
+                + `<td><form method="post" action="${escapeHtml(action)}"><button type="submit" data-i18n="${current ? "end-this-session" : "revoke-session"}">${current ? "End this session" : "Revoke session"}</button></form></td></tr>`;
         }).join("");
         const others = sessions.some((entry) => entry.family !== family)
             ? '<form method="post" action="/account/sessions/revoke-others"><button type="submit" data-i18n="revoke-others">Revoke other sessions</button></form>' : "";
-        return this.#render("Account", '<h1 data-i18n="account">Account</h1>'
-            + `<dl><dt data-i18n="signed-in-as">Signed in as</dt><dd data-text="subject">${escapeHtml(subject)}</dd></dl>`
-            + `<section aria-labelledby="sign-ins"><h2 id="sign-ins" data-i18n="sign-ins">Sign-ins</h2><ul>${entries}</ul>${others}</section>`, "account", true);
+        return this.#render("Sessions", '<nav aria-label="breadcrumb"><ul><li><a href="/account/" data-i18n="account">Account</a></li>'
+            + '<li><span aria-current="page" data-i18n="sessions">Sessions</span></li></ul></nav>'
+            + '<article aria-labelledby="sessions-title"><header><h1 id="sessions-title" data-i18n="sessions">Sessions</h1></header>'
+            + '<figure><table><thead><tr><th scope="col" data-i18n="session">Session</th><th scope="col" data-i18n="started">Started</th>'
+            + '<th scope="col" data-i18n="expires">Expires</th><th scope="col" data-i18n="actions">Actions</th></tr></thead>'
+            + `<tbody>${entries}</tbody></table></figure>${others ? `<footer>${others}</footer>` : ""}</article>`, "account", true);
     }
 
     /** @param {string} label @param {import("./directory-addresses.js").Directory} directory */

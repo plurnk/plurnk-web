@@ -34,8 +34,8 @@ Set `PLURNK_AGUI_ISSUER` to the public origin when a proxy fronts the daemon.
 The browser receives an HttpOnly session cookie; no access token, refresh token,
 password or operator secret is embedded in a page or browser storage. **Sign out**
 ends this browser's sign-in and its module credentials together. Revisiting requires
-sign-in. **Account** lists the authority's live sign-ins, marks this session, and
-offers native forms to revoke one or all other sessions. No device or last-activity
+sign-in. **Account → Sessions** lists the authority's live sign-ins, marks this session,
+and offers native forms to revoke one or all other sessions. No device or last-activity
 information is invented. Other sessions and independently authorized clients remain
 intact. A daemon restart invalidates sessions. Remotely, use HTTPS.
 

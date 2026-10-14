@@ -99,6 +99,23 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
     assert.match(headers.get("set-cookie"), /^plurnk_web_session=new-session;/u);
 });
 
+test("{§web-account} sign-in returns to native account pages without treating query or fragment text as a path", async () => {
+    const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["agui"] }) },
+        { clientId: "plurnk-web", clientSecret: "test" }, "https://daemon.example", { ttl: 600, pending: 128 });
+    const locations = [];
+    const response = { writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
+    for (const path of ["/account/", "/account/sessions/"]) {
+        for (const requested of [path, `${path}index.html`, `${path}?filter=example`, `${path}index.html#section`]) {
+            await session.login({ headers: { cookie: "plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response);
+            assert.equal(locations.at(-1), path);
+        }
+    }
+    for (const requested of ["https://foreign.example/account/", "//foreign.example/account/", "/account", "/account/../sessions/"]) {
+        await assert.rejects(session.login({ headers: { cookie: "plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response),
+            { status: 400, message: "Invalid return page." });
+    }
+});
+
 test("{§web-account} inventory and revocation are scoped to the authenticated subject", () => {
     const current = { family: "current", subject: "operator", clientId: "plurnk-web", kind: "session", scopes: ["agui"] };
     const entries = [current, { ...current, family: "other" }];
@@ -117,7 +134,7 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
         writeHead: (status, values) => { assert.equal(status, 303); for (const [name, value] of Object.entries(values)) headers.set(name, value); },
         end() {},
     };
-    assert.deepEqual(session.account(req), { subject: "operator", family: "current", sessions: entries });
+    assert.deepEqual(session.account(req), { family: "current", sessions: entries });
     assert.equal(session.account({ headers: {} }), null);
     assert.throws(() => session.revoke({ headers: {} }, response, "other"), { status: 401 });
     assert.throws(() => session.revoke({ headers: { ...req.headers, origin: "https://foreign.example" } }, response, "other"), { status: 403 });
@@ -125,9 +142,10 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
     assert.deepEqual(revoked, []);
     session.revoke(req, response, "other");
     assert.deepEqual(revoked, ["other"]);
-    assert.equal(headers.get("location"), "/account/");
+    assert.equal(headers.get("location"), "/account/sessions/");
     session.revokeOthers(req, response);
     assert.deepEqual(revoked, ["other", "other"]);
+    assert.equal(headers.get("location"), "/account/sessions/");
     session.revoke(req, response, "current");
     assert.deepEqual(revoked, ["other", "other", "current"]);
     assert.match(headers.get("set-cookie"), /plurnk_web_session=;.*Max-Age=0/u);
