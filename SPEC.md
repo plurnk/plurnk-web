@@ -62,6 +62,44 @@ compilation and HMR; no browser router is registered. Its development-only modul
 source serving are not production resources. Currently only the root document
 is shipped: `/~/`, workspace/worker documents and worker assets remain unserved.
 
+## §web-directory-addresses Named directory addresses
+
+The directory codec maps names to origin-relative paths, not database IDs or
+filesystem locations. It does not serve documents or authorize access.
+
+| Directory | Generated path | Explicit document |
+|---|---|---|
+| Current unnamed daemon | `/~/` | `/~/index.html` |
+| Workspace `~/ptl/project` | `/~/~/ptl/project/` | `/~/~/ptl/project/index.html` |
+| Its worker `reviewer` | `/~/~/ptl/project@reviewer/` | `/~/~/ptl/project@reviewer/index.html` |
+| Workspace `a@b`, worker `user` | `/~/a%40b@user/` | `/~/a%40b@user/index.html` |
+| Workspace `index.html` | `/~/index.html/` | `/~/index.html/index.html` |
+
+Workspace names are opaque, case-sensitive text. Encode each slash-separated
+component with `encodeURIComponent`, preserving every slash, including leading,
+repeated and trailing slashes. Encode the worker as one component. Raw `@` is the
+worker delimiter: split it and the document suffix before decoding each name
+exactly once. Literal `%2F` therefore becomes `%252F`, not a slash. Do not trim,
+normalize Unicode, resolve names as paths, or interpret `~` as a home directory.
+
+The parser accepts the folder and explicit-index spellings, percent-encoding
+case variants and encoded equivalents of name characters (including `/`). `%7E`
+is equivalent to the fixed `~` namespace marker. Query and fragment components
+do not select a directory. Slashless directory aliases, malformed UTF-8/percent
+escapes, empty names, multiple raw worker delimiters, worker child resources and
+named-daemon prefixes are not directory matches. Parsing performs no lookups.
+
+The daemon's [workspace name contract](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md)
+admits nonempty well-formed Unicode without literal slash-delimited `.` or `..`
+segments. The codec returns no path for an unrepresentable legacy name rather
+than repairing it or substituting an ID; decoding an address to such a name is
+also refused. Renaming changes its generated URL, not its identity or project
+folder. No old-name redirect or filesystem exposure is implied.
+
+This codec is verified using isolated native-document fixtures in production,
+Vite development and preview. Live directory publication remains separate from
+addressing and requires the daemon's authentication contract.
+
 ## §web-document Document
 
 The document says Hello world in semantic HTML and initializes OTM from locally

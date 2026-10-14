@@ -34,6 +34,7 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/index-document.js"));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/directory-addresses.js"));
     for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable-512.png", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt",
         ...[16, 32, 180, 192, 512].map((size) => `icons/plurnk-${size}.png`)]) {
         assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), path);
@@ -49,6 +50,13 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
     const { default: Launch } = await import(pathToFileURL(require.resolve("@plurnk/plurnk-service/launch")));
     const daemonBin = join(consumer, "node_modules", ".bin", "plurnk-service");
     const plugin = join(consumer, "node_modules", "@plurnk", "plurnk-web");
+    await t.test("{§web-directory-addresses} the packed codec preserves exact names", async () => {
+        const { directoryPath, parseDirectory } = await import(pathToFileURL(join(plugin, "ai.plurnk", "directory-addresses.js")));
+        const directory = { kind: "worker", workspace: "~/project @%/index.html", worker: "user" };
+        const path = directoryPath(directory);
+        assert.equal(path, "/~/~/project%20%40%25/index.html@user/");
+        assert.deepEqual(parseDirectory(new URL(path, "https://example.test").pathname), directory);
+    });
     const start = (overrides = {}) => Launch.start({
         command: [daemonBin, "start"],
         cwd: consumer,
@@ -88,9 +96,11 @@ test("{§web-package} packed plugin on the published daemon", { timeout: 240_000
             assert.notEqual(agui.status, 200);
             assert.match(agui.headers.get("content-type"), /application\/problem\+json/u);
             assert.equal(typeof (await agui.json()).type, "string");
-            const unknown = await fetch(new URL("/not-a-page", base));
-            assert.equal(unknown.status, 404);
-            assert.equal(await unknown.text(), "Not found\n");
+            for (const path of ["/not-a-page", "/~/", "/~/example/", "/~/example@user/"]) {
+                const unknown = await fetch(new URL(path, base));
+                assert.equal(unknown.status, 404, `${path}: the codec does not activate protected routes`);
+                assert.equal(await unknown.text(), "Not found\n");
+            }
 
             const browser = await chromium.launch();
             try {
