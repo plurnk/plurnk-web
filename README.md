@@ -13,6 +13,7 @@ The workspace list marks folderless workspaces with ☁️ and folder-backed one
 Non-worker pages use a 65ch reading width; worker pages use the available width.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.
+Header controls: 📁 Workspaces, ⚙️ Account, ✖ Sign out.
 
 Directories select their `index.html`: `/` and `/index.html` serve the same
 document, as do the two spellings for any admitted nested index. Directory links

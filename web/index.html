@@ -22,11 +22,11 @@
                 <li><a href="/"><img src="/icons/plurnk.svg" width="32" height="32" alt=""> <strong data-i18n="brand">Plurnk</strong></a></li>
             </ul>
             <ul>
-                <li><a href="/~/" data-i18n="workspaces">Workspaces</a></li>
+                <li><a href="/~/" aria-label="Workspaces" title="Workspaces" data-text="workspaces-icon">📁</a></li>
                 <!-- {§web-page-shell} Instantiated by the document server, not browser JavaScript. -->
                 <template id="session-navigation" data-otm-dynamic>
-                    <li><a href="/account/" data-i18n="account">Account</a></li>
-                    <li><form method="post" action="/auth/logout"><button type="submit" data-i18n="sign-out">Sign out</button></form></li>
+                    <li><a href="/account/" aria-label="Account" title="Account" data-text="account-icon">⚙️</a></li>
+                    <li><form method="post" action="/auth/logout"><button type="submit" aria-label="Sign out" title="Sign out" data-text="sign-out-icon">✖</button></form></li>
                 </template>
             </ul>
         </nav>
