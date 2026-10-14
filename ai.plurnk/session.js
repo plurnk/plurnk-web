@@ -1,6 +1,7 @@
 import * as oauth from "oauth4webapi";
 import { cookie, redirect, RequestError } from "./http.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
+import indexDocument from "./index-document.js";
 
 const SESSION = "plurnk_web_session";
 const TRANSACTION = "plurnk_web_login";
@@ -57,6 +58,40 @@ export default class Session {
     /** @param {import("node:http").IncomingMessage} req */
     admitted(req) { return this.#claims(req) !== null; }
 
+    /** {§web-account} The authority owns the inventory; the cookie identifies its current family.
+     * @param {import("node:http").IncomingMessage} req
+     */
+    account(req) {
+        const claims = this.#claims(req);
+        return claims === null ? null : {
+            family: claims.family, sessions: this.#credentials.sessions(claims.subject),
+        };
+    }
+
+    /** @param {import("node:http").IncomingMessage} req */
+    #mutation(req) {
+        const account = this.account(req);
+        if (account === null) throw new RequestError(401, "Sign in again before managing sessions.");
+        if (req.headers.origin !== this.issuer) throw new RequestError(403, "Same-origin form required.");
+        return account;
+    }
+
+    /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res @param {string} family */
+    revoke(req, res, family) {
+        const account = this.#mutation(req);
+        if (!account.sessions.some((entry) => entry.family === family)) throw new RequestError(404, "Session not found.");
+        if (family === account.family) { this.logout(req, res); return; }
+        this.#credentials.revokeFamily(family);
+        redirect(res, "/account/sessions/");
+    }
+
+    /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
+    revokeOthers(req, res) {
+        const account = this.#mutation(req);
+        for (const entry of account.sessions) if (entry.family !== account.family) this.#credentials.revokeFamily(entry.family);
+        redirect(res, "/account/sessions/");
+    }
+
     /** @param {string} name @param {string} value @param {string} path @param {number} ttl */
     #cookie(name, value, path, ttl) {
         return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.ceil(ttl))}`
@@ -67,9 +102,10 @@ export default class Session {
     async login(req, res) {
         const requested = new URL(req.url ?? "/", this.issuer).searchParams.get("return") ?? "/~/";
         const directory = parseDirectory(requested);
-        if (directory === null) throw new RequestError(400, "Invalid return directory.");
-        const target = directoryPath(directory);
-        if (target === null) throw new RequestError(400, "Invalid return directory.");
+        const document = indexDocument(requested.split(/[?#]/u)[0]);
+        const target = ["/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
+            : directory === null ? null : directoryPath(directory);
+        if (target === null) throw new RequestError(400, "Invalid return page.");
         if (this.admitted(req)) { redirect(res, target); return; }
         const server = await this.#metadata();
         if (!server.authorization_endpoint) throw new Error("The daemon's authorization metadata omits its authorization endpoint.");
@@ -126,7 +162,7 @@ export default class Session {
         const issued = this.#credentials.issue({ kind: "session", subject: access.subject, clientId: access.clientId,
             scopes: access.scopes, family: access.family, ttlMs });
         const old = this.#claims(req);
-        if (old !== null) this.#credentials.revokeFamily(old.family);
+        if (old !== null && old.family !== access.family) this.#credentials.revokeFamily(old.family);
         res.setHeader("set-cookie", this.#cookie(SESSION, issued.token, "/", ttlMs / 1000));
         redirect(res, transaction.target);
     }

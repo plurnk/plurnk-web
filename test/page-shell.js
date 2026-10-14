@@ -10,6 +10,24 @@ export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await navigation.getByRole("link", { name: "Plurnk", exact: true }).getAttribute("href"), "/");
     assert.equal(await navigation.getByRole("link", { name: "Workspaces", exact: true }).getAttribute("href"), "/~/");
     assert.equal(await page.locator("[style], [class]").count(), 0);
+    if (kind === "error" || kind === "account") {
+        const card = page.getByRole("article");
+        assert.equal(await card.count(), 1);
+        if (kind === "error") {
+            assert.equal(await card.locator('[aria-hidden="true"]').innerText(), "⚠️");
+            assert.equal(await card.getByRole("link", { name: "Home", exact: true }).getAttribute("href"), "/");
+        }
+        for (const colorScheme of ["light", "dark"]) {
+            await page.emulateMedia({ colorScheme });
+            const style = await card.evaluate((element) => {
+                const card = getComputedStyle(element);
+                return { padding: parseFloat(card.paddingInlineStart), shadow: card.boxShadow, background: card.backgroundColor };
+            });
+            assert.ok(style.padding > 0, `${colorScheme}: ${kind} article receives Pico card spacing`);
+            assert.notEqual(style.shadow, "none", `${colorScheme}: ${kind} article receives Pico card presentation`);
+            assert.notEqual(style.background, "rgba(0, 0, 0, 0)", `${colorScheme}: ${kind} article has a visible surface`);
+        }
+    }
     for (const width of [320, 768, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         const bounds = await page.locator("main").evaluate((main) => {
@@ -29,14 +47,13 @@ export default async function verifyPageShell(page, { title, kind }) {
         assert.ok(Math.abs(bounds.content - expected) < 1, `${kind} main width ${bounds.content} should be ${expected}`);
         assert.ok(Math.abs(bounds.header - expected) < 1, `${kind} navigation shares the document width`);
     }
-    await page.getByRole("link", { name: "Skip to content", exact: true }).focus();
-    const focus = await page.evaluate(() => {
-        const element = document.activeElement;
-        const bounds = element.getBoundingClientRect();
-        return { text: element.textContent, width: bounds.width, height: bounds.height };
+    assert.equal(await page.getByRole("link", { name: "Skip to content", exact: true }).count(), 0);
+    await navigation.getByRole("link", { name: "Plurnk", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    const focus = await navigation.getByRole("link", { name: "Workspaces", exact: true }).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { active: document.activeElement === element, shadow: style.boxShadow, outline: style.outlineStyle };
     });
-    assert.equal(focus.text, "Skip to content");
-    assert.ok(focus.width > 1 && focus.height > 1, "focused skip link is visible");
-    await page.keyboard.press("Enter");
-    assert.equal(await page.evaluate(() => document.activeElement.id), "main");
+    assert.equal(focus.active, true, "native header links remain keyboard navigable");
+    assert.ok(focus.shadow !== "none" || focus.outline !== "none", "keyboard focus remains visible");
 }

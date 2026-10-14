@@ -35,7 +35,10 @@ test("{§web-build} development reloads HTML and hot-updates CSS without the dae
         assert.equal(await page.locator("main h1").innerText(), "Plurnk");
         assert.equal(await page.locator('script[src="/@vite/client"]').count(), 1);
         assert.deepEqual(await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
-            ["vendor", "structure", "style", "state"].map((name) => `/styles/app-${name}.css`));
+            ["/styles/index.css"]);
+        const entry = await readFile(join(root, "styles", "index.css"), "utf8");
+        assert.deepEqual([...entry.matchAll(/@import url\("(.+)"\);/gu)].map((match) => match[1]),
+            ["vendor", "structure", "style", "state"].map((name) => `./app-${name}.css`));
 
         const html = join(root, "index.html");
         await writeFile(html, (await readFile(html, "utf8")).replace('>Plurnk</h1>', '>Live reload works</h1>'));

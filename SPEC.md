@@ -20,12 +20,12 @@ does not depend on this package. More-specific mounts retain their ownership.
 
 | Request | Response |
 |---|---|
-| GET `/` | Packaged HTML document. |
+| GET `/` | Home document rendered from the packaged HTML; authenticated header controls follow {§web-page-shell}. |
 | GET `/index.html` | Same root document. |
 | GET `/assets/<build-generated-name>` | Compiled browser JavaScript and CSS. |
 | GET `/manifest.webmanifest` | Web app manifest (`application/manifest+json`). |
-| GET `/icons/plurnk.svg`, `/icons/plurnk-{16,32,180,192,512}.png` | Local scalable and raster app icons. |
-| GET `/icons/plurnk-maskable-512.png` | Maskable app icon. |
+| GET `/icons/plurnk.svg` | Scalable app icon. |
+| GET `/icons/plurnk-maskable.svg` | Maskable app icon. |
 | GET `/icons/NOTO-NOTICE.txt`, `/icons/APACHE-2.0.txt` | Artwork attribution and license. |
 | GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt` | Packaged dependency licenses. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
@@ -111,10 +111,13 @@ disabled authentication; directory reads are then anonymous.
 
 | Boundary | Contract |
 |---|---|
-| GET `/auth/login?return=<directory>` | Begin authorization code with PKCE S256 and a fresh state, bound to an HttpOnly browser cookie. Return locations must parse as local directory addresses; never an external URL. |
+| Authentication enabled, incomplete user/password | The authority shows configuration-required information and issues no browser sign-in, including on localhost. Web neither infers anonymous access nor adds a local bypass. |
+| Authentication explicitly disabled | Anonymous directories; no Account or Sign Out controls. |
+| GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, bound to an HttpOnly browser cookie. Return locations are local directory addresses, `/account/` or `/account/sessions/` (also their explicit indexes); never an external URL. |
 | GET `/auth/callback` | Consume the pending browser-bound state once; validate and exchange the code with client authentication. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |
 | Directory admission | Require a live authority-issued session for `plurnk-web` carrying `agui`; a bearer, refresh token, another client's cookie, or a revoked/expired session is not a web session. |
-| POST `/auth/logout` | Require the issuer's exact Origin, revoke this browser's web grant family and clear its cookie. Other browser sessions and running workers remain intact. The authorization server's own sign-in session remains separate. |
+| POST `/auth/logout` | Require the issuer's exact Origin, revoke this browser's sign-in family and clear the web cookie. The authority sign-in and its module credentials end together; revisiting requires sign-in. Other browser sessions and independently authorized clients remain intact. |
+| Concurrent callbacks | A new credential in the same sign-in family does not revoke that family. A genuinely different previous family is revoked. |
 | Cookies | Host-only, HttpOnly, SameSite=Lax; Secure under HTTPS. Session path `/`, transaction path `/auth`. No browser storage or token in document content. |
 | Request origin | Authentication and protected documents use the issuer's host and port, never forwarded headers. Loopback aliases redirect GET/HEAD to the issuer before starting sign-in; unrecognized hosts are refused. |
 | Failures | Invalid/replayed/mismatched callbacks fail without session issuance. Expiry/revocation requires sign-in again. Requests reveal no credential in diagnostics. |
@@ -130,6 +133,23 @@ interaction is retained/implemented by this document-only slice.
 
 References: [OAuth browser applications](https://www.rfc-editor.org/rfc/rfc10017.html#section-6.2),
 [OAuth security best practice](https://www.rfc-editor.org/rfc/rfc9700.html).
+
+## §web-account Account and sign-ins
+
+| Surface | Contract |
+|---|---|
+| GET/HEAD `/account/` or `/account/index.html` | Protected Pico article containing native navigation to Sessions. No displayed internal subject, fictional profile or inline session inventory. |
+| GET/HEAD `/account/sessions/` or `/account/sessions/index.html` | Protected Pico article with Account breadcrumb and a native table of the authenticated subject's live sign-ins from `credentials.sessions(subject)`. No independent inventory. Table overflow stays inside its figure on narrow screens. |
+| Each sign-in | Authority-issued creation/expiry times and client names; mark the family of the presented web session as “This session”. Do not invent device identity or last activity. Family handles are not credentials. |
+| POST `/account/sessions/<family>/revoke` | Require a live web session and the issuer's exact Origin; revoke only a family in that subject's live inventory. A missing or foreign handle is 404. Revoking this session also clears the web cookie and returns home; otherwise redirect to Sessions. |
+| POST `/account/sessions/revoke-others` | Same admission and Origin check; revoke all listed families except this session, then redirect to Sessions. |
+| Expired/revoked credentials | Protected GET requires sign-in again; a submitted action fails at 401 rather than silently authenticating and replaying it. |
+| Explicit anonymous posture | Account documents and actions are absent (404); no fictional account. |
+
+Forms work with JavaScript enabled or disabled. Read and mutation responses use
+the private headers in {§web-directory-documents}; GET never revokes anything.
+Revocation does not mutate workers, workspace ownership or independently authorized
+client credentials. The daemon owns credential lifetime, grouping and revocation.
 
 ## §web-directory-documents Read-only directory documents
 
@@ -160,16 +180,17 @@ it must not substitute a published service missing that contract.
 
 | Surface | Contract |
 |---|---|
-| Shared navigation | Home/brand and Workspaces are real links to implemented routes, with a keyboard-visible skip link to the single `main` landmark. No placeholder Account link. |
+| Shared navigation | Home/brand and Workspaces are real links preceding the single `main` landmark; no skip-navigation control. Authenticated documents add Account and a compact secondary Sign Out POST form in the header; no footer logout. Anonymous documents omit account/session controls. Native links and controls retain visible keyboard focus. |
 | Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. One visible `h1`. |
 | Directory breadcrumbs | Home → Workspaces → whole workspace name → worker; only applicable ancestors appear. The current item is text marked `aria-current="page"`. Slashes in names do not invent intermediate directories. |
 | Empty lists | “No workspaces.” or “No workers.”; no empty list masquerading as content. |
 | Page width | Non-worker documents are centered and bounded by 65ch or the viewport, whichever is narrower. Worker documents and their navigation use the available viewport width. Gutters and wrapping preserve narrow-screen usability and complete names. |
-| Expected HTTP failures | The same HTML shell, correct status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
+| Expected HTTP failures | A Pico `article` card within the same HTML shell: heading, decorative warning emoji, escaped explanation and native Home link. Preserve status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
 
-The compiled root document owns shared navigation and assets. Server rendering
-replaces its title and main content and supplies authenticated sign-out as a
-native form. Ordinary navigation, focus, lists and forms work without JavaScript;
+The compiled root document owns shared navigation and assets, including an inert
+template for authenticated navigation. OTM's documented indirect-template marker
+identifies its server-owned instantiation. Server rendering selects that template
+and replaces the title and main content. Ordinary navigation, focus, lists and forms work without JavaScript;
 there is no browser-owned route or session inventory.
 
 ## §web-document Document
@@ -236,6 +257,14 @@ checkout. This checks traceability, not whether a cited test proves its contract
 and `web/public/` supplies unchanged public assets. The four CSS source
 concerns remain under `web/styles/`. Generated output is packed, not committed.
 Production contains no development-client injection, frontend sources, or source maps.
+Current stable browsers are the supported platform. Compile native modern syntax;
+do not add legacy browser transforms or a module-preload polyfill.
+Development serves readable, complete Pico Classless Green. A CSS import entry
+composes all four layers before production pruning. PostCSS/PurgeCSS scans the
+browser source and server document renderer, preserves browser pseudo-states and
+ARIA/role/data-driven states, and removes unused rules, variables and keyframes.
+Vite then minifies the result. Browser coverage verifies the compiled presentation,
+including error cards, native controls, light/dark mode and narrow viewports.
 The current development page has no backend interaction; no API proxy is installed.
 
 ## §web-installation App identity and installation
@@ -243,9 +272,9 @@ The current development page has no backend interaction; no API proxy is install
 | Surface | Contract |
 |---|---|
 | Manifest | Stable origin-relative `id`, `start_url` and `scope` of `/`; Plurnk name, English description, `standalone` display, no orientation lock. |
-| Identity | Brand green `#148800`; Google Noto hamster SVG with glasses and a green bow. Every raster icon derives from this source during build, retaining Apache-2.0 licensing and modification attribution. |
-| Icons | SVG favicon and 16/32px PNG alternatives; opaque 180px Apple touch icon; 192/512px PNG manifest icons. A separate opaque, full-bleed 512px maskable icon places artwork inside the safe circle (40% of image width). |
-| Document metadata | UTF-8, language, zoomable viewport, description, application name, early `color-scheme: light dark`, brand theme color, mobile standalone metadata and Apple app title/status-bar preference. |
+| Identity | Brand green `#148800`; Google Noto hamster SVG with glasses and a green bow, retaining Apache-2.0 licensing and modification attribution. |
+| Icons | One SVG for the document, favicon and manifest; no raster fallback. A generated opaque, full-bleed maskable SVG places artwork inside the safe circle (40% of image width). Both manifest entries declare `sizes: any`. |
+| Document metadata | UTF-8, language, zoomable viewport, description, application name, early `color-scheme: light dark` and brand theme color. The standard manifest owns standalone launch; no legacy platform-specific launch metadata. |
 | Privacy | Discourage indexing with `noindex, nofollow`; limit referrers to the same origin. No external fonts, analytics or deployment-specific canonical URL. |
 | Installation | Browser-owned installation and standalone launch. HTTPS is required remotely; localhost/loopback is eligible without TLS. Browser and OS support varies. |
 | Availability | Requires the daemon. No service worker, offline cache, background sync, notifications or claim of offline functionality. |

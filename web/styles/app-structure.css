@@ -18,7 +18,20 @@ nav li {
     max-inline-size: 100%;
 }
 
-body > a[href="#main"] {
-    display: block;
-    margin: var(--pico-spacing);
+header nav form,
+header nav button[type="submit"] {
+    margin: 0;
+}
+
+header nav button {
+    --pico-form-element-spacing-vertical: 0;
+    --pico-form-element-spacing-horizontal: 0;
+}
+
+figure:has(> table) {
+    overflow-x: auto;
+}
+
+table {
+    overflow-wrap: normal;
 }

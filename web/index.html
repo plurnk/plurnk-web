@@ -9,24 +9,13 @@
     <meta name="description" content="Plurnk agent workspace.">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="same-origin">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Plurnk">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title data-i18n="title">Plurnk</title>
     <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="icon" href="/icons/plurnk-16.png" type="image/png" sizes="16x16">
-    <link rel="icon" href="/icons/plurnk-32.png" type="image/png" sizes="32x32">
     <link rel="icon" href="/icons/plurnk.svg" type="image/svg+xml" sizes="any">
-    <link rel="apple-touch-icon" href="/icons/plurnk-180.png" sizes="180x180">
-    <link rel="stylesheet" href="/styles/app-vendor.css">
-    <link rel="stylesheet" href="/styles/app-structure.css">
-    <link rel="stylesheet" href="/styles/app-style.css">
-    <link rel="stylesheet" href="/styles/app-state.css">
+    <link rel="stylesheet" href="/styles/index.css">
     <script type="module" src="/app.js"></script>
 </head>
 <body>
-    <a href="#main" data-i18n="skip-navigation">Skip to content</a>
     <header>
         <nav aria-label="Main navigation">
             <ul>
@@ -34,6 +23,11 @@
             </ul>
             <ul>
                 <li><a href="/~/" data-i18n="workspaces">Workspaces</a></li>
+                <!-- {§web-page-shell} Instantiated by the document server, not browser JavaScript. -->
+                <template id="session-navigation" data-otm-dynamic>
+                    <li><a href="/account/" data-i18n="account">Account</a></li>
+                    <li><form method="post" action="/auth/logout"><button type="submit" data-i18n="sign-out">Sign out</button></form></li>
+                </template>
             </ul>
         </nav>
     </header>

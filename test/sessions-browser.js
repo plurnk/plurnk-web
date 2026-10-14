@@ -126,30 +126,97 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 } finally { await browser.close(); }
             });
         });
-        await t.test("{§web-session} local default sign-in and explicitly anonymous posture", async () => {
-            for (const posture of ["1", "0"]) {
-                await withDaemon({ PLURNK_AUTH: posture }, async (base) => {
+        await t.test("{§web-session} authentication cannot silently become local admission", async (postures) => {
+            for (const [label, user, password] of [["unset pair", "", ""], ["user only", "browser-user", ""], ["password only", "", "browser-password"]]) {
+                await postures.test(label, async () => withDaemon({ PLURNK_AUTH: "1", PLURNK_USER: user, PLURNK_PASS: password }, async (base) => {
                     const browser = await chromium.launch();
                     try {
-                        const page = await browser.newPage();
-                        await page.goto(new URL("/~/", base).href);
-                        assert.equal(await page.locator("main h1").innerText(), "Workspaces");
-                        assert.equal(new URL(page.url()).pathname, "/~/");
-                        assert.equal(await page.getByRole("button", { name: "Sign out" }).count(), posture === "1" ? 1 : 0);
-                        const protectedResponse = await fetch(new URL("/~/", base), { redirect: "manual" });
-                        assert.equal(protectedResponse.status, posture === "1" ? 303 : 200);
+                        for (const javaScriptEnabled of [true, false]) {
+                            const context = await browser.newContext({ javaScriptEnabled });
+                            try {
+                                const page = await context.newPage();
+                                const response = await page.goto(new URL("/~/", base).href);
+                                assert.equal(response.status(), 503, "unconfigured sign-in explains the missing configuration, never grants localhost access");
+                                assert.match(await page.locator("body").innerText(), /PLURNK_USER/u);
+                                assert.match(await page.locator("body").innerText(), /PLURNK_PASS/u);
+                                assert.equal((await context.cookies()).some(({ name }) => ["plurnk_session", "plurnk_web_session"].includes(name)), false,
+                                    "an incomplete credential pair issued no sign-in");
+                                assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+                            } finally { await context.close(); }
+                        }
                     } finally { await browser.close(); }
-                });
+                }));
             }
         });
+        await t.test("{§web-session} explicitly anonymous access offers no fictional account or sign-out", async () => {
+            await withDaemon({ PLURNK_AUTH: "0", PLURNK_USER: "", PLURNK_PASS: "" }, async (base) => {
+                const browser = await chromium.launch();
+                try {
+                    for (const javaScriptEnabled of [true, false]) {
+                        const context = await browser.newContext({ javaScriptEnabled });
+                        try {
+                            const page = await context.newPage();
+                            const response = await page.goto(new URL("/~/", base).href);
+                            assert.equal(response.status(), 200);
+                            assert.equal(await page.locator("main h1").innerText(), "Workspaces");
+                            assert.equal(new URL(page.url()).pathname, "/~/");
+                            assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+                            assert.equal(await page.getByRole("link", { name: "Account", exact: true }).count(), 0);
+                            assert.deepEqual(await context.cookies(), []);
+                            assert.equal((await context.request.get(new URL("/account/", base).href)).status(), 404);
+                            assert.equal((await context.request.get(new URL("/account/sessions/", base).href)).status(), 404);
+                            assert.equal((await context.request.get(new URL("/account/sessions/index.html", base).href)).status(), 404);
+                            assert.equal((await context.request.post(new URL("/account/sessions/revoke-others", base).href)).status(), 404);
+                        } finally { await context.close(); }
+                    }
+                } finally { await browser.close(); }
+            });
+        });
+        await t.test("{§web-session} sign-out stays signed out on a fresh visit, with another browser unaffected", async (journeys) => {
+            await withDaemon({ PLURNK_USER: "browser-user", PLURNK_PASS: "browser-password" }, async (base) => {
+                const browser = await chromium.launch();
+                try {
+                    for (const javaScriptEnabled of [true, false]) {
+                        await journeys.test(`JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
+                            const context = await browser.newContext({ javaScriptEnabled });
+                            const other = await browser.newContext({ javaScriptEnabled });
+                            try {
+                                const enter = async (ctx) => {
+                                    const page = await ctx.newPage();
+                                    await page.goto(new URL("/~/", base).href);
+                                    await page.getByLabel("User", { exact: true }).fill("browser-user");
+                                    await page.getByLabel("Password", { exact: true }).fill("browser-password");
+                                    await page.getByRole("button", { name: "Continue", exact: true }).click();
+                                    await page.waitForURL(new URL("/~/", base).href);
+                                    return page;
+                                };
+                                const page = await enter(context);
+                                const second = await enter(other);
+                                await page.getByRole("button", { name: "Sign out", exact: true }).click();
+                                await page.waitForURL(base);
+                                await page.getByRole("navigation", { name: "Main navigation", exact: true }).getByRole("link", { name: "Workspaces", exact: true }).click();
+                                await page.waitForLoadState("domcontentloaded");
+                                assert.equal(new URL(page.url()).pathname, "/oauth/authorize", "revisiting Workspaces requires sign-in; revoking only the web cookie is insufficient");
+                                assert.equal(await page.getByLabel("Password", { exact: true }).count(), 1);
+                                await second.reload();
+                                assert.equal(new URL(second.url()).pathname, "/~/", "another browser remains admitted");
+                            } finally { await context.close(); await other.close(); }
+                        });
+                    }
+                } finally { await browser.close(); }
+            });
+        });
         await t.test("{§web-session} browser-bound single-use callbacks, expiry, host and return validation", async () => {
-            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_WEB_LOGIN_PENDING: "2" }, async (base) => {
+            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_WEB_LOGIN_PENDING: "2", PLURNK_USER: "browser-user", PLURNK_PASS: "browser-password" }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
                     const other = await browser.newContext();
                     const request = context.request;
                     const get = (path) => request.get(new URL(path, base).href, { maxRedirects: 0 });
+                    const authorize = (ctx, url) => ctx.request.post(url, { maxRedirects: 0, headers: { origin: new URL(base).origin },
+                        form: { ...Object.fromEntries(new URL(url).searchParams), username: "browser-user", password: "browser-password" },
+                    });
                     for (const path of ["https://elsewhere.example/", "//elsewhere.example/", "/oauth/authorize", "/~/../bad/"]) {
                         assert.equal((await get(`/auth/login?${new URLSearchParams({ return: path })}`)).status(), 400);
                     }
@@ -165,9 +232,9 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     assert.equal(alias.headers.location, new URL("/~/", base).href);
                     const first = await get("/auth/login?return=/~/");
                     assert.equal(first.status(), 303);
-                    const authorize = await get(first.headers().location);
-                    assert.equal(authorize.status(), 302);
-                    const callback = authorize.headers().location;
+                    const authorizedFirst = await authorize(context, first.headers().location);
+                    assert.equal(authorizedFirst.status(), 302);
+                    const callback = authorizedFirst.headers().location;
                     assert.equal((await other.request.get(callback, { maxRedirects: 0 })).status(), 400, "a stolen callback is not a login");
                     const altered = new URL(callback);
                     altered.searchParams.set("state", "wrong");
@@ -182,7 +249,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     assert.equal(pending.status(), 303);
                     assert.equal(again.status(), 303);
                     assert.equal((await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 })).status(), 429);
-                    const authorized = await other.request.get(pending.headers().location, { maxRedirects: 0 });
+                    const authorized = await authorize(other, pending.headers().location);
                     const page = await other.newPage();
                     await page.waitForTimeout(1100);
                     assert.equal((await other.request.get(authorized.headers().location, { maxRedirects: 0 })).status(), 400, "expired transactions cannot establish sessions");
