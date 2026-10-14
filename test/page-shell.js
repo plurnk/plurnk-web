@@ -4,10 +4,15 @@ import assert from "node:assert/strict";
 export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.title(), title);
     assert.equal(await page.locator("main").count(), 1);
-    assert.equal(await page.locator("main h1").count(), 1);
+    assert.equal(await page.locator("main h1").count(), ["home", "daemon", "workspace"].includes(kind) ? 0 : 1);
+    if (kind === "home") assert.equal(await page.locator("main").innerText(), "");
     assert.equal(await page.locator("main").getAttribute("data-page"), kind);
     const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
-    assert.equal(await navigation.getByRole("link", { name: "Plurnk", exact: true }).getAttribute("href"), "/");
+    const home = navigation.getByRole("link", { name: "Plurnk", exact: true });
+    assert.equal(await home.getAttribute("href"), "/");
+    assert.equal(await home.getAttribute("title"), "Home");
+    assert.equal(await home.innerText(), "", "the mascot has no duplicate brand text");
+    assert.equal(await home.getByRole("img", { name: "Plurnk", exact: true }).getAttribute("src"), "/icons/plurnk.svg");
     assert.equal(await navigation.getByRole("link", { name: "Workspaces", exact: true }).getAttribute("href"), "/~/");
     assert.equal(await page.locator("[style], [class]").count(), 0);
     if (kind === "error" || kind === "account") {

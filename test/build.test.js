@@ -51,7 +51,8 @@ test("{§web-build} production prunes unused CSS without dropping native state s
 test("{§web-language} source-only build declares and packages no dictionary", async () => {
     const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
     assert.doesNotMatch(html, /<meta\b[^>]*name="i18n"/u);
-    assert.match(html, /<h1 data-i18n="home-title">Plurnk<\/h1>/u);
+    assert.match(html, /<title data-i18n="title">Plurnk<\/title>/u);
+    assert.match(html, /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     assert.ok(!inventory.some(([path]) => path.startsWith("/locales/")));
 });

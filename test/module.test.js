@@ -72,7 +72,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             const body = Buffer.from(await res.arrayBuffer());
             if (method === "HEAD") assert.deepEqual(body, Buffer.alloc(0));
             else if (path === "/index.html") {
-                assert.match(body.toString(), /<h1[^>]*>Plurnk<\/h1>/u);
+                assert.match(body.toString(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
                 assert.doesNotMatch(body.toString(), /<template|href="\/account\/"|action="\/auth\/logout"/u);
                 assert.equal(body.byteLength, Number(res.headers.get("content-length")));
             } else assert.deepEqual(body, expected);

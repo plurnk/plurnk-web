@@ -92,6 +92,8 @@ export default async function verifyWebApp(browser, base) {
         assert.equal(mask.outside, 0, "all mascot artwork fits in the safe circle");
         assert.ok(mask.inside > 10_000, "maskable icon contains the mascot, not a blank background");
 
+        assert.equal((await tab.goto(new URL("/missing", base).href)).status(), 404);
+        assert.equal(await tab.locator("h1").innerText(), "⚠️ 404 Not Found");
         for (const colorScheme of ["light", "dark"]) {
             await tab.emulateMedia({ colorScheme });
             const colors = await tab.evaluate(() => {

@@ -9,7 +9,7 @@ directory at `/~/`; workspace pages list model workers as real links, with nativ
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
 breadcrumbs and their actual parent, not a conversation interface.
-The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
+The workspace list and workspace breadcrumb mark folderless workspaces with ☁️ and folder-backed ones with 📁.
 Non-worker pages use a 65ch reading width; worker pages use the available width.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.

@@ -5,6 +5,28 @@ import Documents from "../ai.plurnk/documents.js";
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({ id, name, parentWorkerId, origin, owner });
 
+test("{§web-page-shell} directory breadcrumbs replace duplicate headings and carry the workspace marker", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
+    for (const [name, project_root, icon, label] of [
+        ["~/looks-like-a-folder", null, "☁️", "Folderless workspace"],
+        ["research<&>", "/home/test/project", "📁", "Project workspace"],
+    ]) {
+        const port = {
+            listWorkspaces: async () => [{ id: 7, name, project_root }],
+            listWorkers: async () => [],
+        };
+        const index = (await document.read({ kind: "daemon" }, port, false)).toString();
+        assert.match(index, /<span aria-current="page" data-text="name">Workspaces<\/span>/u);
+        assert.doesNotMatch(index, /<h1\b/u);
+        const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
+        const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span></li>`), page);
+        assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
+        assert.doesNotMatch(page, /<h1\b/u);
+        assert.equal(page.split("<main")[1].split(escaped).length - 1, 1, "the workspace name appears once in the page content");
+    }
+});
+
 test("{§web-worker-directory} model lineage is complete, collapsed and independent of names and approval owners", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
     const workers = [

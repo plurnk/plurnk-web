@@ -107,9 +107,12 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             for (const workspace of initial) {
                                 await page.getByRole("link", { name: workspace.name, exact: true }).click();
                                 assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "workspace", workspace: workspace.name }));
-                                assert.equal(await page.locator("main h1").innerText(), workspace.name);
                                 await verifyPageShell(page, { title: `${workspace.name} — Plurnk`, kind: "workspace" });
                                 assert.equal(await page.locator('[aria-current="page"]').innerText(), workspace.name);
+                                const marker = page.getByRole("navigation", { name: "breadcrumb" }).getByRole("img", {
+                                    name: workspace.project_root === null ? "Folderless workspace" : "Project workspace", exact: true,
+                                });
+                                assert.equal(await marker.innerText(), workspace.project_root === null ? "☁️" : "📁");
                                 await verifyWorkerDirectory(page, workspace);
                                 const worker = workspace.workers.find(({ origin, parentWorkerId }) => origin === "model" && parentWorkerId === null);
                                 assert.ok(worker);
@@ -183,7 +186,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const page = await context.newPage();
                             const response = await page.goto(new URL("/~/", base).href);
                             assert.equal(response.status(), 200);
-                            assert.equal(await page.locator("main h1").innerText(), "Workspaces");
+                            assert.equal(await page.locator('[aria-current="page"]').innerText(), "Workspaces");
+                            assert.equal(await page.locator("main h1").count(), 0);
                             assert.equal(new URL(page.url()).pathname, "/~/");
                             assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
                             assert.equal(await page.getByRole("link", { name: "Account", exact: true }).count(), 0);
@@ -309,7 +313,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         await page.getByLabel("Password", { exact: true }).fill("proxy-pass");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await page.waitForURL(`${issuer}/~/`);
-                        assert.equal(await page.locator("main h1").innerText(), "Workspaces");
+                        assert.equal(await page.locator('[aria-current="page"]').innerText(), "Workspaces");
+                        assert.equal(await page.locator("main h1").count(), 0);
                         await page.getByRole("button", { name: "Sign out" }).click();
                         await page.waitForURL(`${issuer}/`);
                     } finally { await browser.close(); }
