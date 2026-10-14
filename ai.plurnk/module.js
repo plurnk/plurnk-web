@@ -33,7 +33,7 @@ export default function createModule() {
             if (authenticate) {
                 const face = seam.credentials.face();
                 if (registration === null || face === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
-                session = new Session(seam.credentials, registration, face.issuer(), limits);
+                session = new Session(seam.credentials, registration, face, limits);
             }
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {[string, string, string][]} */
@@ -59,20 +59,6 @@ export default function createModule() {
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
                 try {
-                    if (session !== null && (directory !== null || auth || home || account || sessions || revoke !== null || others)) {
-                        const issuer = new URL(session.issuer);
-                        // {§web-session} Use the configured public origin, never forwarded headers.
-                        const incoming = URL.parse(`${issuer.protocol}//${req.headers.host ?? ""}`);
-                        if (incoming === null || incoming.username || incoming.password || incoming.pathname !== "/" || incoming.search || incoming.hash) {
-                            throw new RequestError(421, "Use the daemon's configured origin.");
-                        }
-                        if (incoming.origin !== issuer.origin) {
-                            const loopback = incoming !== null && (incoming.hostname === "localhost" || incoming.hostname === "[::1]"
-                                || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(incoming.hostname));
-                            if (loopback && (req.method === "GET" || req.method === "HEAD")) { redirect(res, `${issuer.origin}${req.url}`); return; }
-                            throw new RequestError(421, "Use the daemon's configured origin.");
-                        }
-                    }
                     const inventory = sessions ? session?.account(req) : null;
                     admitted = sessions ? inventory != null : session?.admitted(req) ?? false;
                     if (token && session === null) throw new RequestError(404, "Access credentials are unavailable while authentication is disabled.");

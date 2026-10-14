@@ -105,9 +105,12 @@ authentication contract.
 
 Web consumes the daemon's credential authority, never the operator's secret or
 a second credential configuration. At setup it registers the confidential
-client `plurnk-web` with callback path `/auth/callback` and scope `agui`. At start
-it reads the published issuer. No issuing face means the daemon has explicitly
-disabled authentication; directory reads are then anonymous.
+client `plurnk-web` with callback path `/auth/callback` and scope `agui`. It asks
+the published issuing face for the issuer of each request: the daemon's configured
+public origin, else the address that request reached the daemon at. Its own calls to
+the authority (discovery, code exchange, refresh) go to the face's answer for no
+request, never to an address a browser named. No issuing face means the daemon has
+explicitly disabled authentication; directory reads are then anonymous.
 
 | Boundary | Contract |
 |---|---|
@@ -120,7 +123,7 @@ disabled authentication; directory reads are then anonymous.
 | POST `/auth/logout` | Require the issuer's exact Origin, revoke this browser's sign-in family and clear the web cookie. The authority sign-in and its module credentials end together; revisiting requires sign-in. Other browser sessions and independently authorized clients remain intact. |
 | Concurrent callbacks | A new credential in the same sign-in family does not revoke that family. A genuinely different previous family is revoked. |
 | Cookies | Host-only, HttpOnly, SameSite=Lax; Secure under HTTPS. Session path `/`, transaction path `/auth`. No browser storage or token in document content. |
-| Request origin | Authentication and protected documents use the issuer's host and port, never forwarded headers. Loopback aliases redirect GET/HEAD to the issuer before starting sign-in; unrecognized hosts are refused. |
+| Request origin | A browser is answered at the address it reached the daemon by: its sign-in redirect, callback and Origin checks use the daemon's issuer for that request. No host is refused or redirected; forwarded headers are never read. |
 | Failures | Invalid/replayed/mismatched callbacks fail without session issuance. Expiry/revocation requires sign-in again. Requests reveal no credential in diagnostics. |
 
 Pending authorization state lives only in bounded, expiring module memory:
