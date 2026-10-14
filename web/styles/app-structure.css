@@ -1,1 +1,24 @@
-/* Layout: the current document needs no overrides of Pico's semantic layout. */
+/* {§web-page-shell} Native documents retain readable measure and viewport gutters. */
+body > header,
+body > main,
+body > footer {
+    max-inline-size: 65ch;
+    padding-inline: var(--pico-spacing);
+    overflow-wrap: anywhere;
+}
+
+nav,
+nav ul {
+    flex-wrap: wrap;
+}
+
+nav ul,
+nav li {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+}
+
+body > a[href="#main"] {
+    display: block;
+    margin: var(--pico-spacing);
+}

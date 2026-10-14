@@ -57,14 +57,24 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}`, { method });
             assert.equal(res.status, 404, `${method} ${path}`);
-            assert.equal(await res.text(), method === "HEAD" ? "" : "Not found\n");
+            assert.equal(res.headers.get("content-type"), "text/html; charset=utf-8");
+            assert.equal(res.headers.get("cache-control"), "no-store");
+            assert.equal(res.headers.get("referrer-policy"), "no-referrer");
+            assert.match(res.headers.get("content-security-policy"), /frame-ancestors 'none'/u);
+            if (method === "HEAD") assert.equal(await res.text(), "");
+            else {
+                const body = await res.text();
+                assert.match(body, /<h1[^>]*>404 Not Found<\/h1>/u);
+                assert.match(body, /<nav aria-label="Main navigation">/u);
+                assert.equal(Buffer.byteLength(body), Number(res.headers.get("content-length")));
+            }
         }
     }
     for (const method of ["POST", "PUT", "DELETE", "OPTIONS"]) {
         const res = await fetch(base, { method });
         assert.equal(res.status, 405, method);
         assert.equal(res.headers.get("allow"), "GET, HEAD");
-        assert.equal(await res.text(), "Method not allowed\n");
+        assert.match(await res.text(), /<h1[^>]*>405 Method Not Allowed<\/h1>/u);
     }
     // Send the raw path: fetch normalizes dot segments before making its request.
     const raw = await new Promise((resolve, reject) => {
@@ -90,7 +100,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
         ["/nested/child.txt", "child.txt", "text/plain"],
     ];
     await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
-    await writeFile(new URL("dist/root.html", base), "<main><h1>Hello world</h1></main>");
+    await writeFile(new URL("dist/root.html", base), "<title>Plurnk</title><main><h1>Plurnk</h1></main>");
     await writeFile(new URL("dist/nested.html", base), "<h1>Nested document</h1>");
     await writeFile(new URL("dist/child.txt", base), "Child resource\n");
     const { default: fixtureModule } = await import(new URL("module.js", base).href);

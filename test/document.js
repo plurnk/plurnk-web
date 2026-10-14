@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import verifyPageShell from "./page-shell.js";
 
 // {§web-language} Query, browser and unrelated stored preferences cannot translate
 // the source-language document into itself or select an unshipped language.
@@ -58,7 +59,7 @@ export default async function verifyDocument(browser, base) {
             tab.on("request", (request) => requests.push(request.url()));
             await tab.goto(new URL(query || "/", base).href);
             await tab.evaluate(() => import(document.querySelector('script[type="module"]').src));
-            assert.equal(await tab.locator("main h1").innerText(), "Hello world");
+            assert.equal(await tab.locator("main h1").innerText(), "Plurnk");
             assert.equal(await tab.locator("html").getAttribute("lang"), "en");
             assert.equal(await tab.title(), "Plurnk");
             assert.deepEqual(await tab.evaluate(() => window.sourceReplacements), [], "source text is not rewritten during boot");
@@ -70,12 +71,14 @@ export default async function verifyDocument(browser, base) {
             const styles = await tab.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href")));
             assert.ok(styles.length > 0);
             assert.ok(styles.every((path) => /^\/assets\/.+\.css$/u.test(path)));
-            assert.equal(await tab.locator("style, [class], [style], button, nav").count(), 0);
+            assert.equal(await tab.locator("style, [class], [style], button").count(), 0);
+            assert.equal(await tab.getByRole("navigation", { name: "Main navigation" }).count(), 1);
             assert.ok(requests.some((url) => /\/assets\/.+\.js$/u.test(url)));
             assert.ok(styles.every((path) => requests.includes(new URL(path, base).href)));
             assert.ok(!requests.some((url) => url.includes("/@vite/") || url.includes("/node_modules/")));
             assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
             assert.deepEqual(errors, []);
+            await verifyPageShell(tab, { title: "Plurnk", kind: "home" });
         } finally {
             await context.close();
         }

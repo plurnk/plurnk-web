@@ -5,7 +5,10 @@ Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
 No chat interface or additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list workers as real links. Worker pages
-currently show identity and a parent link, not a conversation interface.
+currently show identity and breadcrumbs, not a conversation interface.
+Non-worker pages use a 65ch reading width; worker pages use the available width.
+Page titles, breadcrumbs and empty/error documents support ordinary browser
+navigation with or without JavaScript.
 
 Directories select their `index.html`: `/` and `/index.html` serve the same
 document, as do the two spellings for any admitted nested index. Directory links
@@ -117,9 +120,9 @@ The four source stylesheets in `web/styles/` load in order (combined in producti
 | File | Concern |
 |---|---|
 | `app-vendor.css` | Generated, unmodified Pico substrate. |
-| `app-structure.css` | Layout; no overrides yet. |
+| `app-structure.css` | Reading width, gutters and wrapping. |
 | `app-style.css` | Substrate token overrides; brand accents and system monospace. |
-| `app-state.css` | Attribute-driven visual state; no rules yet. |
+| `app-state.css` | Worker page width and native focus visibility. |
 
 Authored CSS is checked with OTM's Stylelint rules. No remote fonts are required.
 

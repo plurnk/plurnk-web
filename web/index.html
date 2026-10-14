@@ -26,9 +26,20 @@
     <script type="module" src="/app.js"></script>
 </head>
 <body>
-    <main>
-        <h1 data-i18n="greeting">Hello world</h1>
-        <p><a href="/~/" data-i18n="workspaces">Workspaces</a></p>
+    <a href="#main" data-i18n="skip-navigation">Skip to content</a>
+    <header>
+        <nav aria-label="Main navigation">
+            <ul>
+                <li><a href="/"><img src="/icons/plurnk.svg" width="32" height="32" alt=""> <strong data-i18n="brand">Plurnk</strong></a></li>
+            </ul>
+            <ul>
+                <li><a href="/~/" data-i18n="workspaces">Workspaces</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main id="main" tabindex="-1" data-page="home">
+        <h1 data-i18n="home-title">Plurnk</h1>
+        <p data-i18n="introduction">Browse your workspaces and workers.</p>
     </main>
 </body>
 </html>
