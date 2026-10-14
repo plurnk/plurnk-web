@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Knob } from "@plurnk/plurnk-meta";
+import { Problems } from "@plurnk/plurnk-contracts";
 import indexDocument from "./index-document.js";
 import { parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
@@ -54,7 +55,8 @@ export default function createModule() {
                 const sessions = indexDocument(pathname) === "/account/sessions/index.html";
                 const revoke = /^\/account\/sessions\/([^/]+)\/revoke$/u.exec(pathname);
                 const others = pathname === "/account/sessions/revoke-others";
-                const auth = ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
+                const token = pathname === "/auth/token";
+                const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
                 try {
                     if (session !== null && (directory !== null || auth || home || account || sessions || revoke !== null || others)) {
@@ -73,14 +75,16 @@ export default function createModule() {
                     }
                     const inventory = sessions ? session?.account(req) : null;
                     admitted = sessions ? inventory != null : session?.admitted(req) ?? false;
+                    if (token && session === null) throw new RequestError(404, "Access credentials are unavailable while authentication is disabled.");
                     if (auth && session !== null) {
-                        const expected = pathname === "/auth/logout" ? "POST" : "GET";
+                        const expected = token || pathname === "/auth/logout" ? "POST" : "GET";
                         if (req.method !== expected) {
                             res.setHeader("allow", expected);
                             throw new RequestError(405, "Method not allowed.");
                         }
                         if (pathname === "/auth/login") await session.login(req, res);
                         else if (pathname === CALLBACK) await session.callback(req, res);
+                        else if (token) await session.token(req, res);
                         else session.logout(req, res);
                         return;
                     }
@@ -132,8 +136,9 @@ export default function createModule() {
                     res.end(req.method === "HEAD" ? undefined : body);
                 } catch (error) {
                     if (!(error instanceof RequestError)) throw error;
-                    const body = documents.error(error.status, error.message, admitted);
-                    res.writeHead(error.status, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
+                    const body = token ? Buffer.from(JSON.stringify(Problems.create("web", "token-request-rejected", error.status, error.message)))
+                        : documents.error(error.status, error.message, admitted);
+                    res.writeHead(error.status, { ...privateHeaders, "content-type": token ? "application/problem+json" : "text/html; charset=utf-8", "content-length": body.byteLength });
                     res.end(req.method === "HEAD" ? undefined : body);
                 }
             });

@@ -42,6 +42,11 @@ and offers native forms to revoke one or all other sessions. No device or last-a
 information is invented. Other sessions and independently authorized clients remain
 intact. A daemon restart invalidates sessions. Remotely, use HTTPS.
 
+The same-origin `POST /auth/token` connection primitive supplies short-lived
+AG-UI access credentials to a signed-in browser. OAuth refresh credentials stay
+server-side; rotation and revocation use the daemon's authority. This adds no
+conversation UI or automatic connection to a worker.
+
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
 picker or stored preferences. Ordinary navigation and forms
@@ -115,6 +120,9 @@ Chromium. Install that test browser with `npx playwright install chromium` if
 necessary. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference or shipped conversation UI is involved.
+It exercises synchronization, observer/control disconnects, approval interrupts,
+shutdown and the real browser sign-in/access-token lifecycle. No AG-UI traffic is
+mocked and no client-owned replay cache hides differences from the daemon's history.
 
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies

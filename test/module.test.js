@@ -51,6 +51,9 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
+    const token = await fetch(`${base}/auth/token`, { method: "POST" });
+    assert.equal(token.status, 404, "{§web-access-token} disabled authentication issues no browser credential");
+    assert.equal((await token.json()).status, 404);
     const index = await fetch(`${base}/index.html`);
     assert.equal(index.status, 200, "{§web-index-documents} explicit root index is served");
     const indexBody = await index.text();

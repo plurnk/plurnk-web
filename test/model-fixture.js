@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 export default async function startModel() {
     const requests = [];
     const errors = [];
+    const pending = new Map();
+    const visits = new Map();
     const programs = [
         { reasoning: "I will read the requested project file.", content: "```READ (witness.txt)\n```" },
         { reasoning: "The file confirms the browser connection.", content: "```SEND [200]\nBrowser connection verified: cobalt heron.\n```" },
@@ -21,6 +23,35 @@ export default async function startModel() {
             assert.equal(body.model, "browser-fixture");
             assert.equal(body.stream, true);
             const packet = JSON.stringify(body.messages);
+            const lifecycle = /Lifecycle fixture: ([a-z-]+)/u.exec(packet)?.[1];
+            if (lifecycle) {
+                const visit = (visits.get(lifecycle) ?? 0) + 1;
+                visits.set(lifecycle, visit);
+                response.writeHead(200, { "content-type": "text/event-stream" });
+                const frame = (delta, finish_reason = null, usage) => response.write(`data: ${JSON.stringify({
+                    id: `${lifecycle}-${visit}`, object: "chat.completion.chunk", created: visit, model: body.model,
+                    choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}),
+                })}\n\n`);
+                const reasoning = `Considering ${lifecycle}.`;
+                frame({ reasoning_content: reasoning });
+                if (lifecycle.startsWith("held-")) {
+                    assert.ok(!pending.has(lifecycle), "a lifecycle request is not duplicated");
+                    const release = Promise.withResolvers();
+                    pending.set(lifecycle, release);
+                    response.once("close", () => release.resolve());
+                    await release.promise;
+                    pending.delete(lifecycle);
+                }
+                if (!response.destroyed) {
+                    const content = lifecycle === "approval" && visit === 1 ? "```sh\nprintf approved\n```"
+                        : `\`\`\`SEND [200]\nCompleted ${lifecycle}.\n\`\`\``;
+                    frame({ content });
+                    const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);
+                    frame({}, "stop", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });
+                    response.end("data: [DONE]\n\n");
+                }
+                return;
+            }
             if (packet.includes("Exercise the rejected browser request.")) {
                 response.writeHead(400, { "content-type": "application/json" });
                 response.end(JSON.stringify({ error: { message: "Browser fixture deliberately refused this request." } }));
@@ -51,6 +82,11 @@ export default async function startModel() {
     return {
         requests,
         errors,
+        release(name) {
+            const gate = pending.get(name);
+            assert.ok(gate, `the ${name} request reached the controlled model`);
+            gate.resolve();
+        },
         env: {
             PLURNK_MODEL: "browser",
             PLURNK_MODEL_browser: "browser-fixture/browser-fixture",

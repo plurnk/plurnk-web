@@ -5,7 +5,7 @@ import Session from "../ai.plurnk/session.js";
 // {§web-session} The authority decides identity and expiry; a cookie is never a bearer.
 test("{§web-session} only this client's live scoped session admits a document", () => {
     let claims = null;
-    const credentials = { verify: () => claims };
+    const credentials = { verify: () => claims, onRevoked: () => () => {} };
     const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, "http://127.0.0.1:1066", { ttl: 600, pending: 128 });
     const req = { headers: { cookie: "plurnk_web_session=test" } };
     assert.equal(session.admitted(req), false);
@@ -27,6 +27,7 @@ test("{§web-session} HTTPS cookie and session lifetime come from the verified g
     const common = { clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "grant-one", expiresAt };
     const issued = [];
     const credentials = {
+        onRevoked: () => () => {},
         verify: (token) => token === "access" ? { ...common, kind: "access" } : token === "refresh" ? { ...common, kind: "refresh" } : null,
         issue: (claims) => { issued.push(claims); return { token: "session", expiresAt }; },
     };
@@ -76,6 +77,7 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
     const common = { clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "shared", expiresAt: Date.now() + 60_000 };
     const revoked = [];
     const credentials = {
+        onRevoked: () => () => {},
         verify: (token) => ["access", "refresh", "old-session"].includes(token)
             ? { ...common, kind: token === "old-session" ? "session" : token } : null,
         issue: () => ({ token: "new-session", expiresAt: common.expiresAt }),
@@ -100,7 +102,7 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
 });
 
 test("{§web-account} sign-in returns to native account pages without treating query or fragment text as a path", async () => {
-    const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["agui"] }) },
+    const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["agui"] }), onRevoked: () => () => {} },
         { clientId: "plurnk-web", clientSecret: "test" }, "https://daemon.example", { ttl: 600, pending: 128 });
     const locations = [];
     const response = { writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
@@ -121,6 +123,7 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
     const entries = [current, { ...current, family: "other" }];
     const revoked = [];
     const credentials = {
+        onRevoked: () => () => {},
         verify: (token) => token === "current-token" ? current : null,
         sessions: (subject) => { assert.equal(subject, "operator"); return entries; },
         revokeFamily: (family) => revoked.push(family),
