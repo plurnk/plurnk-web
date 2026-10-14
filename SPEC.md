@@ -193,8 +193,8 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 |---|---|
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. Prefix each name with ☁️ when `project_root` is null, otherwise 📁; accessible image labels identify folderless/project workspaces. Never infer folder presence from the name. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then `listWorkers(id)`: real worker links and identity breadcrumbs. |
-| Worker directory | Exact-name worker lookup; identity heading and breadcrumbs only. No conversation UI yet. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then one `listWorkers(id)` census rendered under {§web-worker-directory}. |
+| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}. No conversation UI yet. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
 
@@ -211,6 +211,22 @@ Vite development/preview continue to serve frontend documents only: dynamic
 directory/auth routes require a daemon. The installation gate accepts explicitly
 supplied candidate package archives to verify the unreleased public contract;
 it must not substitute a published service missing that contract.
+
+## §web-worker-directory Model-worker navigation
+
+| Boundary | Representation |
+|---|---|
+| Membership | Every `origin: model` worker appears once, regardless of owner, lifecycle or name spelling. Client/runtime bookkeeping actors have no directory row or worker page; their direct page URLs return 404. This is presentation, not an access policy for daemon APIs. |
+| Roots | Model workers with `parentWorkerId: null` form the primary list. |
+| Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
+| Background | Model workers with an immediate non-model parent begin branches in one collapsed “Background work” section. Omit it when empty. No A2A-specific classification or reparenting. |
+| Disclosure | Native nested `ul/li` lists. Each name is a real link; a separate `details/summary` shows the direct model-child count. Initially collapsed; leaves have no disclosure. Link navigation and disclosure are separate keyboard/pointer actions, including without JavaScript. |
+| Parent on worker page | Show the actual parent's name: a link for a model parent, escaped text for a bookkeeping parent. Roots omit the parent line. URL breadcrumbs remain workspace/worker navigation, not invented lineage paths. |
+| Integrity | Duplicate identities, absent referenced parents and cyclic model parentage are internal contract failures; never silently omit or invent workers. |
+
+Rendering and expansion perform no attachment, inference, ownership change or
+daemon mutation. There is no browser topology cache, saved expansion state,
+lazy branch request, custom tree role or JavaScript disclosure handler.
 
 ## §web-page-shell Native page shell
 

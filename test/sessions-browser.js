@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import verifyPageShell from "./page-shell.js";
 import verifyAuthorizationPage from "./authorization-page.js";
+import verifyWorkerDirectory from "./workers-browser.js";
 
 export default async function verifySessions({ t, consumer, withDaemon }) {
     // {§web-directory-documents} Fixture seeding and censuses use the same public application port,
@@ -26,6 +27,21 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
             const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
             await port.ensureModelWorker(workspaceId);
+            if (name === ${JSON.stringify(names[0])} && !(await port.listWorkers(workspaceId)).some((worker) => worker.name === "primary")) {
+                const owner = "agui://fixture/threads/primary";
+                await port.registerWorkerOwner(workspaceId, { address: owner, tools: [], interactive: false });
+                const parent = await port.createConversationWorker({ workspaceId, name: "primary", owner });
+                const review = await port.forkWorker({ workspaceId, workerId: parent.workerId, name: "review" });
+                await port.createConversationWorker({ workspaceId, name: "research", parentWorkerId: parent.workerId });
+                await port.createConversationWorker({ workspaceId, name: "evidence", parentWorkerId: review.workerId });
+                await port.createConversationWorker({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
+                const runtime = await port.ensureRuntimeWorker(workspaceId);
+                const incoming = await port.createConversationWorker({ workspaceId, name: "incoming", parentWorkerId: runtime });
+                await port.createConversationWorker({ workspaceId, name: "incoming-child", parentWorkerId: incoming.workerId });
+                const client = (await port.listWorkers(workspaceId)).find((worker) => worker.origin === "client");
+                if (!client) throw new Error("Workspace fixture has no client actor.");
+                await port.createConversationWorker({ workspaceId, name: "client-child", parentWorkerId: client.id });
+            }
         }
         port.registerHttpRoute("/__fixture", async (req, res) => {
             if (req.url === "/__fixture/revoke" && req.method === "POST") {
@@ -94,8 +110,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 assert.equal(await page.locator("main h1").innerText(), workspace.name);
                                 await verifyPageShell(page, { title: `${workspace.name} — Plurnk`, kind: "workspace" });
                                 assert.equal(await page.locator('[aria-current="page"]').innerText(), workspace.name);
-                                assert.deepEqual(await page.locator("main > ul > li > a").allTextContents(), workspace.workers.map(({ name }) => name));
-                                const worker = workspace.workers.find(({ origin }) => origin === "model");
+                                await verifyWorkerDirectory(page, workspace);
+                                const worker = workspace.workers.find(({ origin, parentWorkerId }) => origin === "model" && parentWorkerId === null);
                                 assert.ok(worker);
                                 await page.getByRole("link", { name: worker.name, exact: true }).click();
                                 assert.equal(await page.locator("main h1").innerText(), `${workspace.name}@${worker.name}`);
