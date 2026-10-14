@@ -102,7 +102,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
         await withDaemon({}, async (base) => {
             const page = await fetch(base);
             assert.equal(page.status, 200);
-            assert.match(await page.text(), /<h1 data-i18n="home-title">Plurnk<\/h1>/u);
+            assert.match(await page.text(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
             const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
             assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the root document");
             assert.equal(await explicitIndex.text(), await (await fetch(base)).text());
@@ -127,7 +127,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                         try {
                             const tab = await context.newPage();
                             await tab.goto(base);
-                            assert.equal(await tab.locator("main h1").innerText(), "Plurnk");
+                            assert.equal(await tab.locator("main").innerText(), "");
                             assert.equal(await tab.title(), "Plurnk");
                             for (const [colorScheme, primary] of [["light", "#148800"], ["dark", "#4eb31b"]]) {
                                 await tab.emulateMedia({ colorScheme });
@@ -137,7 +137,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                                         primary: root.getPropertyValue("--pico-primary").trim(),
                                         scheme: root.colorScheme,
                                         padding: parseFloat(getComputedStyle(document.querySelector("main")).paddingTop),
-                                        font: getComputedStyle(document.querySelector("main h1")).fontFamily,
+                                        font: getComputedStyle(document.querySelector("main")).fontFamily,
                                         monospace: root.getPropertyValue("--pico-font-family-monospace").trim(),
                                     };
                                 });
@@ -146,7 +146,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                                 assert.ok(rendered.padding > 0, "semantic main receives the substrate layout");
                                 assert.deepEqual(rendered.font.split(",").map((name) => name.trim()),
                                     rendered.monospace.split(",").map((name) => name.trim()),
-                                    "headings inherit the system monospace stack");
+                                    "the document inherits the system monospace stack");
                             }
                         } finally {
                             await context.close();

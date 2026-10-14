@@ -84,12 +84,18 @@ export default class Documents {
             : `<a href="${escapeHtml(path)}" data-text="name">${escapeHtml(label)}</a>`;
     }
 
-    /** @param {import("./directory-addresses.js").Directory} directory */
-    #breadcrumbs(directory) {
+    /** @param {string | null} projectRoot */
+    #workspaceMarker(projectRoot) {
+        const folder = projectRoot !== null;
+        return `<span role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}">${folder ? "📁" : "☁️"}</span>`;
+    }
+
+    /** @param {import("./directory-addresses.js").Directory} directory @param {string} marker */
+    #breadcrumbs(directory, marker) {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
         const items = ['<a href="/" data-i18n="home">Home</a>'];
         items.push(directory.kind === "daemon" ? current("Workspaces") : this.#link("Workspaces", { kind: "daemon" }));
-        if (directory.kind === "workspace") items.push(current(directory.workspace));
+        if (directory.kind === "workspace") items.push(`${marker} ${current(directory.workspace)}`);
         if (directory.kind === "worker") {
             items.push(this.#link(directory.workspace, { kind: "workspace", workspace: directory.workspace }), current(directory.worker));
         }
@@ -143,15 +149,12 @@ export default class Documents {
      * @param {boolean} authenticated
      */
     async read(directory, port, authenticated) {
-        const render = (/** @type {string} */ title, /** @type {string} */ body) => this.#render(title,
-            `${this.#breadcrumbs(directory)}<h1 data-text="directory-title">${escapeHtml(title)}</h1>${body}`, directory.kind, authenticated);
+        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "") => this.#render(title,
+            `${this.#breadcrumbs(directory, marker)}${body}`, directory.kind, authenticated);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
-            const items = workspaces.map(({ name, project_root }) => {
-                const folder = project_root !== null;
-                const marker = `<span role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}">${folder ? "📁" : "☁️"}</span>`;
-                return `<li>${marker} ${this.#link(name, { kind: "workspace", workspace: name })}</li>`;
-            }).join("");
+            const items = workspaces.map(({ name, project_root }) =>
+                `<li>${this.#workspaceMarker(project_root)} ${this.#link(name, { kind: "workspace", workspace: name })}</li>`).join("");
             return render("Workspaces", items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>');
         }
         const workspace = workspaces.find(({ name }) => name === directory.workspace);
@@ -160,7 +163,7 @@ export default class Documents {
         const byId = new Map(workers.map((worker) => [worker.id, worker]));
         if (byId.size !== workers.length) throw new Error("Worker directory contains duplicate identities.");
         if (directory.kind === "workspace") {
-            return render(workspace.name, this.#workerTree(workspace.name, byId));
+            return render(workspace.name, this.#workerTree(workspace.name, byId), this.#workspaceMarker(workspace.project_root));
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
         if (worker === undefined) return null;
@@ -168,7 +171,8 @@ export default class Documents {
         const label = parent === null ? "" : parent.origin === "model"
             ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
             : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
-        return render(`${workspace.name}@${directory.worker}`, parent === null ? ""
-            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`);
+        const title = `${workspace.name}@${directory.worker}`;
+        return render(title, `<h1 data-text="directory-title">${escapeHtml(title)}</h1>` + (parent === null ? ""
+            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`));
     }
 }
