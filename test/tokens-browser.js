@@ -62,6 +62,14 @@ export default async function verifyTokens({ t, withDaemon }) {
                                 return { events };
                             } catch (error) { return { status: error.status }; }
                         },
+                        async create(token) {
+                            const agent = new HttpAgent({ url: new URL("/agui", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
+                            const events = [];
+                            await agent.runAgent({ forwardedProps: { plurnk: { workspace: "tokens", mode: "sync", control: true } } }, {
+                                onEvent: ({ event }) => events.push(event),
+                            });
+                            return events.at(-1);
+                        },
                         observe(token) {
                             this.agent = new Observer({ url: new URL("/agui/connect", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             this.pending = this.agent.connectAgent({ forwardedProps: { plurnk: { workspace: "tokens" } } }, {
@@ -72,6 +80,9 @@ export default async function verifyTokens({ t, withDaemon }) {
                 });
                 const discover = (access) => page.evaluate((access) => globalThis.connection.discover(access), access);
                 assert.equal((await discover(supplied.body.access_token)).events.at(-1).type, "RUN_FINISHED");
+                const created = await page.evaluate((access) => globalThis.connection.create(access), supplied.body.access_token);
+                assert.equal(created.type, "RUN_FINISHED");
+                assert.deepEqual(created.outcome, { type: "success" });
                 await page.evaluate((access) => globalThis.connection.observe(access), supplied.body.access_token);
                 await page.waitForFunction(() => globalThis.connection.events.some(({ type }) => type === "MESSAGES_SNAPSHOT"));
                 await setTimeout((supplied.body.expires_in + 1) * 1000);
