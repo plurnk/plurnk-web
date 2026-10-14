@@ -96,8 +96,7 @@ export default class Documents {
     /** @param {import("./directory-addresses.js").Directory} directory @param {string} marker */
     #breadcrumbs(directory, marker) {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
-        const items = ['<a href="/" data-i18n="home">Home</a>'];
-        items.push(directory.kind === "daemon" ? current("Workspaces") : this.#link("Workspaces", { kind: "daemon" }));
+        const items = [directory.kind === "daemon" ? current("Workspaces") : this.#link("Workspaces", { kind: "daemon" })];
         if (directory.kind === "workspace") items.push(`${marker} ${current(directory.workspace)}`);
         if (directory.kind === "worker") {
             items.push(this.#link(directory.workspace, { kind: "workspace", workspace: directory.workspace }), current(directory.worker));

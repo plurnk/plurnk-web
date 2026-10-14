@@ -69,7 +69,7 @@ test("{§web-page-shell} breadcrumb placement responds to content and available 
                     }
                     if (name === "~/ptl/project") {
                         await page.setViewportSize({ width: 768, height: 700 });
-                        await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
+                        await page.evaluate(() => { document.documentElement.style.fontSize = "48px"; });
                         const { logo, menu, breadcrumb, header, overflow } = await measure();
                         assert.ok(breadcrumb.y >= Math.max(logo.bottom, menu.bottom), "larger text moves the breadcrumb below without a viewport change");
                         assert.ok(Math.abs(breadcrumb.x + breadcrumb.width / 2 - header.x - header.width / 2) < 1);

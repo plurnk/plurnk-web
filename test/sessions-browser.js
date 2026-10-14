@@ -119,7 +119,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await page.getByRole("link", { name: worker.name, exact: true }).click();
                                 assert.equal(await page.locator("main h1").innerText(), `${workspace.name}@${worker.name}`);
                                 await verifyPageShell(page, { title: `${workspace.name}@${worker.name} — Plurnk`, kind: "worker" });
-                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["Home", "Workspaces", workspace.name, worker.name]);
+                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["Workspaces", workspace.name, worker.name]);
                                 await page.reload();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: workspace.name, exact: true }).click();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces", exact: true }).click();

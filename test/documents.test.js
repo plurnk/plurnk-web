@@ -16,9 +16,10 @@ test("{§web-page-shell} directory breadcrumbs replace duplicate headings and ca
             listWorkers: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
-        assert.match(index, /<span aria-current="page" data-text="name">Workspaces<\/span>/u);
+        assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span aria-current="page" data-text="name">Workspaces<\/span><\/li><\/ul><\/nav>/u);
         assert.doesNotMatch(index, /<h1\b/u);
         const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
+        assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li>/u);
         const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
         assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span></li>`), page);
         assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
@@ -158,7 +159,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" tabindex="-1" data-page="worker">/u);
-    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/"[^>]*>Home<\/a><\/li><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
+    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template|<footer/iu);
     assert.equal(html.match(/<main\b/gu).length, 1);
     assert.equal(html.match(/<h1\b/gu).length, 1);
