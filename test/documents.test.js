@@ -3,6 +3,75 @@ import test from "node:test";
 import Documents from "../ai.plurnk/documents.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
+const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({ id, name, parentWorkerId, origin, owner });
+
+test("{§web-worker-directory} model lineage is complete, collapsed and independent of names and approval owners", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const workers = [
+        worker(1, "_plurnk", null, "_plurnk"),
+        worker(2, "c9a4d11f", null, "client", "agui://owner"),
+        worker(6, "review", 4, "model", "agui://owner"),
+        worker(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
+        worker(4, "user", null, "model", "agui://owner"),
+        worker(5, "research", 4),
+        worker(7, "evidence", 6),
+        worker(8, "incoming", 1),
+        worker(9, "other", 2, "model", "agui://owner"),
+        worker(10, "incoming-child", 8),
+    ];
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work" }], listWorkers: async () => workers };
+    const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
+    const link = (name) => `<a href="/~/work@${name}/" data-text="name">${name}</a>`;
+    const children = (count, list) => `<details><summary data-text="child-workers">${count} child worker${count === 1 ? "" : "s"}</summary><ul>${list}</ul></details>`;
+    assert.ok(html.includes([
+        "<ul>",
+        `<li>${link(workers[3].name)}</li>`,
+        `<li>${link("user")}${children(2, `<li>${link("review")}${children(1, `<li>${link("evidence")}</li>`)}</li><li>${link("research")}</li>`)}</li>`,
+        "</ul>",
+        '<details><summary data-i18n="background-work">Background work</summary><ul>',
+        `<li>${link("incoming")}${children(1, `<li>${link("incoming-child")}</li>`)}</li>`,
+        `<li>${link("other")}</li>`,
+        "</ul></details>",
+    ].join("")), html);
+    const names = [...html.matchAll(/href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
+    assert.deepEqual(names.toSorted(), workers.filter(({ origin }) => origin === "model").map(({ name }) => name).toSorted());
+    assert.doesNotMatch(html, /c9a4d11f|_plurnk|agui:|\bopen\b|role="tree"|<script/u);
+    for (const internal of workers.filter(({ origin }) => origin !== "model")) {
+        assert.equal(await document.read({ kind: "worker", workspace: "work", worker: internal.name }, port, false), null);
+    }
+    const child = (await document.read({ kind: "worker", workspace: "work", worker: "review" }, port, false)).toString();
+    assert.match(child, /<p><span data-i18n="parent-worker">Parent:<\/span> <a href="\/~\/work@user\/" data-text="name">user<\/a><\/p>/u);
+    const background = (await document.read({ kind: "worker", workspace: "work", worker: "incoming" }, port, false)).toString();
+    assert.match(background, /<p><span data-i18n="parent-worker">Parent:<\/span> <span data-text="name">_plurnk<\/span><\/p>/u);
+    const root = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
+    assert.doesNotMatch(root, /parent-worker/u);
+});
+
+test("{§web-worker-directory} empty and internal-only workspaces have no empty navigation controls", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    for (const workers of [[], [worker(1, "_plurnk", null, "_plurnk"), worker(2, "c9a4d11f", null, "client")], [worker(3, "user")]]) {
+        const html = (await document.read({ kind: "workspace", workspace: "work" }, {
+            listWorkspaces: async () => [{ id: 7, name: "work" }], listWorkers: async () => workers,
+        }, false)).toString();
+        assert.doesNotMatch(html, /<details|Background work|<ul><\/ul>/u);
+        if (workers.some(({ origin }) => origin === "model")) assert.match(html, /href="\/~\/work@user\/"/u);
+        else assert.match(html, /<p[^>]*>No workers\.<\/p>/u);
+    }
+});
+
+test("{§web-worker-directory} inconsistent topology fails rather than dropping workers", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    for (const [workers, message] of [
+        [[worker(1, "first"), worker(1, "second")], "Worker directory contains duplicate identities."],
+        [[worker(1, "missing", 2)], "Worker 1 has an absent parent 2."],
+        [[worker(1, "self", 1)], "Worker directory contains cyclic model parentage."],
+        [[worker(1, "first", 2), worker(2, "second", 1)], "Worker directory contains cyclic model parentage."],
+    ]) {
+        await assert.rejects(document.read({ kind: "workspace", workspace: "work" }, {
+            listWorkspaces: async () => [{ id: 7, name: "work" }], listWorkers: async () => workers,
+        }, false), { name: "Error", message });
+    }
+});
 
 test("{§web-directory-documents} workspace markers describe folder presence without interpreting names", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
@@ -27,7 +96,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
             calls.push("workspaces");
             return [{ id: 7, name: '~/a&<script>@"b', project_root: null }, { id: 8, name: "../legacy", project_root: null }];
         },
-        listWorkers: async (id) => { calls.push(id); return [{ name: "user" }]; },
+        listWorkers: async (id) => { calls.push(id); return [worker(1, "user")]; },
     };
     const document = new Documents(`<!doctype html><title>Plurnk</title><header>${navigation}</header><main>Home</main><script src="/app.js"></script>`);
     const index = (await document.read({ kind: "daemon" }, port, true)).toString();
@@ -43,8 +112,8 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.match(workers, /a%26%3Cscript%3E%40%22b@user\//u);
     assert.doesNotMatch(workers, /<form/u);
     assert.equal(await document.read({ ...workspace, kind: "worker", worker: "absent" }, port, true), null);
-    const worker = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
-    assert.match(worker, /<h1[^>]*>~\/a&amp;&lt;script&gt;@&quot;b@user<\/h1>/u);
+    const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
+    assert.match(page, /<h1[^>]*>~\/a&amp;&lt;script&gt;@&quot;b@user<\/h1>/u);
     assert.deepEqual(calls, ["workspaces", "workspaces", "workspaces", 7, "workspaces", 7, "workspaces", 7]);
 });
 
@@ -58,7 +127,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     const name = "~/project/a&b<script>";
     const port = {
         listWorkspaces: async () => [{ id: 7, name }],
-        listWorkers: async () => [{ name: "user" }],
+        listWorkers: async () => [worker(1, "user")],
     };
     const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" tabindex="-1" data-page="home">Home</main></body></html>`);
     const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, port, true)).toString();

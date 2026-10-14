@@ -45,6 +45,7 @@ test("{§web-build} production prunes unused CSS without dropping native state s
     assert.match(css, /prefers-color-scheme/u);
     assert.match(css, /prefers-reduced-motion/u);
     assert.ok(css.includes("focus-visible"), "native keyboard-focus selectors survive production pruning");
+    assert.match(css, /details\[open\]/u, "native disclosure state survives production pruning");
 });
 
 test("{§web-language} source-only build declares and packages no dictionary", async () => {

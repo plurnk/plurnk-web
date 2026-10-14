@@ -96,6 +96,47 @@ export default class Documents {
         return `<nav aria-label="breadcrumb"><ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul></nav>`;
     }
 
+    /** {§web-worker-directory}
+     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection} worker
+     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
+     */
+    #parent(worker, workers) {
+        if (worker.parentWorkerId === null) return null;
+        const parent = workers.get(worker.parentWorkerId);
+        if (parent === undefined) throw new Error(`Worker ${worker.id} has an absent parent ${worker.parentWorkerId}.`);
+        return parent;
+    }
+
+    /** {§web-worker-directory}
+     * @param {string} workspace
+     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
+     */
+    #workerTree(workspace, workers) {
+        const models = [...workers.values()].filter(({ origin }) => origin === "model");
+        if (models.length === 0) return '<p data-i18n="no-workers">No workers.</p>';
+        const children = Map.groupBy(models, ({ parentWorkerId }) => parentWorkerId);
+        const background = models.filter((worker) => {
+            const parent = this.#parent(worker, workers);
+            return parent !== null && parent.origin !== "model";
+        });
+        let rendered = 0;
+        /** @param {readonly import("@plurnk/plurnk-contracts").ApplicationWorkerProjection[]} entries @returns {string} */
+        const list = (entries) => entries.length === 0 ? ""
+            : `<ul>${entries.map((worker) => {
+                rendered++;
+                const descendants = children.get(worker.id) ?? [];
+                const link = this.#link(worker.name, { kind: "worker", workspace, worker: worker.name });
+                const disclosure = descendants.length === 0 ? "" : '<details><summary data-text="child-workers">'
+                    + `${descendants.length} child worker${descendants.length === 1 ? "" : "s"}</summary>${list(descendants)}</details>`;
+                return `<li>${link}${disclosure}</li>`;
+            }).join("")}</ul>`;
+        const roots = list(children.get(null) ?? []);
+        const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
+            + `${list(background)}</details>`;
+        if (rendered !== models.length) throw new Error("Worker directory contains cyclic model parentage.");
+        return roots + other;
+    }
+
     /**
      * @param {import("./directory-addresses.js").Directory} directory
      * @param {Pick<import("@plurnk/plurnk-contracts").ApplicationPort, "listWorkspaces" | "listWorkers">} port
@@ -116,11 +157,18 @@ export default class Documents {
         const workspace = workspaces.find(({ name }) => name === directory.workspace);
         if (workspace === undefined) return null;
         const workers = await port.listWorkers(workspace.id);
+        const byId = new Map(workers.map((worker) => [worker.id, worker]));
+        if (byId.size !== workers.length) throw new Error("Worker directory contains duplicate identities.");
         if (directory.kind === "workspace") {
-            const items = workers.map(({ name }) => `<li>${this.#link(name, { kind: "worker", workspace: workspace.name, worker: name })}</li>`).join("");
-            return render(workspace.name, items ? `<ul>${items}</ul>` : '<p data-i18n="no-workers">No workers.</p>');
+            return render(workspace.name, this.#workerTree(workspace.name, byId));
         }
-        if (!workers.some(({ name }) => name === directory.worker)) return null;
-        return render(`${workspace.name}@${directory.worker}`, "");
+        const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
+        if (worker === undefined) return null;
+        const parent = this.#parent(worker, byId);
+        const label = parent === null ? "" : parent.origin === "model"
+            ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
+            : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
+        return render(`${workspace.name}@${directory.worker}`, parent === null ? ""
+            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`);
     }
 }

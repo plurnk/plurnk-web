@@ -5,8 +5,10 @@ Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
 Requires a current stable browser; no legacy-browser compatibility layer is shipped.
 No chat interface or additional server. The root links to the daemon's workspace
-directory at `/~/`; workspace pages list workers as real links. Worker pages
-currently show identity and breadcrumbs, not a conversation interface.
+directory at `/~/`; workspace pages list model workers as real links, with native
+collapsed child branches and a “Background work” section for branches beneath
+internal actors. Bookkeeping workers are omitted. Worker pages show identity,
+breadcrumbs and their actual parent, not a conversation interface.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 Non-worker pages use a 65ch reading width; worker pages use the available width.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
