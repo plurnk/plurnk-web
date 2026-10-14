@@ -139,7 +139,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
         assert.deepEqual(model.errors, []);
         assert.deepEqual(errors, []);
         assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
-        assert.equal(await tab.locator("main h1").innerText(), "Hello world", "conformance adds no application UI");
+        assert.equal(await tab.locator("main h1").innerText(), "Plurnk", "conformance adds no worker UI");
         assert.deepEqual(await tab.evaluate(() => Object.keys(localStorage)), []);
     } finally {
         await context.close();

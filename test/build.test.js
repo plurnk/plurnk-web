@@ -22,7 +22,7 @@ test("{§web-build} production HTML references compiled assets, not development 
 test("{§web-language} source-only build declares and packages no dictionary", async () => {
     const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
     assert.doesNotMatch(html, /<meta\b[^>]*name="i18n"/u);
-    assert.match(html, /<h1 data-i18n="greeting">Hello world<\/h1>/u);
+    assert.match(html, /<h1 data-i18n="home-title">Plurnk<\/h1>/u);
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     assert.ok(!inventory.some(([path]) => path.startsWith("/locales/")));
 });

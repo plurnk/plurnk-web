@@ -1,1 +1,14 @@
-/* Attribute-driven visual state: the current document has no application state. */
+/* {§web-page-shell} The worker is a product surface, not a reading column. */
+body:has(> main[data-page="worker"]) > :is(header, main, footer) {
+    max-inline-size: none;
+}
+
+body > a[href="#main"]:not(:focus) {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}

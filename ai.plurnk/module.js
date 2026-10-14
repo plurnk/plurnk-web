@@ -33,7 +33,7 @@ export default function createModule() {
             const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
             const resources = new Map(await Promise.all(inventory.map(async ([pathname, file, mediaType]) => /** @type {const} */ ([
                 pathname,
-                { body: await readFile(new URL(`dist/${file}`, import.meta.url)), mediaType, status: 200 },
+                { body: await readFile(new URL(`dist/${file}`, import.meta.url)), mediaType },
             ]))));
 
             const root = resources.get("/index.html");
@@ -80,30 +80,30 @@ export default function createModule() {
                             return;
                         }
                         const body = await documents.read(directory, seam, session !== null);
-                        if (body === null) throw new RequestError(404, "Not found");
+                        if (body === null) throw new RequestError(404, "Workspace or worker not found.");
                         res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
                         res.end(req.method === "HEAD" ? undefined : body);
                         return;
                     }
+                    if (req.method !== "GET" && req.method !== "HEAD") {
+                        res.setHeader("allow", "GET, HEAD");
+                        throw new RequestError(405, "Use GET or HEAD for this resource.");
+                    }
+                    const resource = resources.get(indexDocument(pathname));
+                    if (resource === undefined) throw new RequestError(404, "The requested page or resource does not exist.");
+                    const { body, mediaType } = resource;
+                    res.writeHead(200, {
+                        "content-type": mediaType.startsWith("image/") ? mediaType : `${mediaType}; charset=utf-8`,
+                        "content-length": body.byteLength,
+                        "x-content-type-options": "nosniff",
+                    });
+                    res.end(req.method === "HEAD" ? undefined : body);
                 } catch (error) {
                     if (!(error instanceof RequestError)) throw error;
-                    const body = Buffer.from(`${error.message}\n`);
-                    res.writeHead(error.status, { ...privateHeaders, "content-type": "text/plain; charset=utf-8", "content-length": body.byteLength });
+                    const body = documents.error(error.status, error.message);
+                    res.writeHead(error.status, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
                     res.end(req.method === "HEAD" ? undefined : body);
-                    return;
                 }
-                const resource = resources.get(indexDocument(pathname));
-                const supported = req.method === "GET" || req.method === "HEAD";
-                const { status, body, mediaType } = !supported
-                    ? { status: 405, body: Buffer.from("Method not allowed\n"), mediaType: "text/plain" }
-                    : resource ?? { status: 404, body: Buffer.from("Not found\n"), mediaType: "text/plain" };
-                res.writeHead(status, {
-                    "content-type": mediaType.startsWith("image/") ? mediaType : `${mediaType}; charset=utf-8`,
-                    "content-length": body.byteLength,
-                    "x-content-type-options": "nosniff",
-                    ...(status === 405 ? { allow: "GET, HEAD" } : {}),
-                });
-                res.end(req.method === "HEAD" ? undefined : body);
             });
         },
         close() { session?.close(); },

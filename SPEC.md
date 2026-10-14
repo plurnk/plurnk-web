@@ -29,7 +29,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 | GET `/icons/NOTO-NOTICE.txt`, `/icons/APACHE-2.0.txt` | Artwork attribution and license. |
 | GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt` | Packaged dependency licenses. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
-| Other asset path | 404, never an HTML fallback or filesystem listing. |
+| Other asset path | 404 error document, never a home-page fallback or filesystem listing. |
 | Asset method other than GET/HEAD | 405 with `Allow: GET, HEAD`. |
 
 Query strings do not select assets. Paths select the build-generated asset inventory, never
@@ -137,8 +137,8 @@ References: [OAuth browser applications](https://www.rfc-editor.org/rfc/rfc10017
 |---|---|
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then `listWorkers(id)`: real worker links and a parent link. |
-| Worker directory | Exact-name worker lookup; identity heading and parent link only. No conversation UI yet. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then `listWorkers(id)`: real worker links and identity breadcrumbs. |
+| Worker directory | Exact-name worker lookup; identity heading and breadcrumbs only. No conversation UI yet. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
 
@@ -156,9 +156,25 @@ directory/auth routes require a daemon. The installation gate accepts explicitly
 supplied candidate package archives to verify the unreleased public contract;
 it must not substitute a published service missing that contract.
 
+## §web-page-shell Native page shell
+
+| Surface | Contract |
+|---|---|
+| Shared navigation | Home/brand and Workspaces are real links to implemented routes, with a keyboard-visible skip link to the single `main` landmark. No placeholder Account link. |
+| Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. One visible `h1`. |
+| Directory breadcrumbs | Home → Workspaces → whole workspace name → worker; only applicable ancestors appear. The current item is text marked `aria-current="page"`. Slashes in names do not invent intermediate directories. |
+| Empty lists | “No workspaces.” or “No workers.”; no empty list masquerading as content. |
+| Page width | Non-worker documents are centered and bounded by 65ch or the viewport, whichever is narrower. Worker documents and their navigation use the available viewport width. Gutters and wrapping preserve narrow-screen usability and complete names. |
+| Expected HTTP failures | The same HTML shell, correct status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
+
+The compiled root document owns shared navigation and assets. Server rendering
+replaces its title and main content and supplies authenticated sign-out as a
+native form. Ordinary navigation, focus, lists and forms work without JavaScript;
+there is no browser-owned route or session inventory.
+
 ## §web-document Document
 
-The document says Hello world in semantic HTML and initializes OTM from locally
+The home document introduces workspace navigation in semantic HTML and initializes OTM from locally
 packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
 without application classes. Brand green is `#148800`; dark-mode link colors remain
 bright enough for contrast. Native color-scheme selection is preserved; typography
@@ -174,11 +190,9 @@ compilation may combine them without changing their cascade:
 | File | Responsibility |
 |---|---|
 | `app-vendor.css` | Unmodified pinned Pico Classless Green, copied during build. |
-| `app-structure.css` | Application layout; currently no overrides of Pico's layout. |
+| `app-structure.css` | Readable page width, gutters and wrapping. |
 | `app-style.css` | Presentation through substrate tokens; brand accents and system monospace. |
-| `app-state.css` | Attribute-driven application state; currently no rules. |
-
-The empty concerns remain explicit files, not reasons to add layout or state.
+| `app-state.css` | Worker page width and native focus visibility. |
 
 ## §web-language Source language
 

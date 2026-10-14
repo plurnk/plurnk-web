@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 export default async function verifyDirectories(base) {
     // Compare one representation, not Vite preview's optional GET compression.
     const headers = { "accept-encoding": "identity" };
-    for (const [folder, heading] of [["/", "Hello world"], ["/nested/", "Nested document"]]) {
+    for (const [folder, heading] of [["/", "Plurnk"], ["/nested/", "Nested document"]]) {
         let document;
         for (const path of [folder, `${folder}index.html`, `${folder}?q=one%2Ftwo&lang=fr`, `${folder}index.html?q=one%2Ftwo`]) {
             const get = await fetch(new URL(path, base), { headers, redirect: "manual" });
@@ -33,7 +33,9 @@ export default async function verifyDirectories(base) {
         for (const method of ["GET", "HEAD"]) {
             const missing = await fetch(new URL(path, base), { method, redirect: "manual" });
             assert.equal(missing.status, 404, `${method} ${path}`);
-            assert.ok(!(await missing.text()).includes("<h1"), "missing resources never return index HTML");
+            const body = await missing.text();
+            if (method === "HEAD") assert.equal(body, "");
+            assert.doesNotMatch(body, /<h1[^>]*>(?:Plurnk|Nested document)<\/h1>/u, "missing resources never return a home or ancestor document");
         }
     }
 }

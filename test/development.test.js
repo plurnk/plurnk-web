@@ -32,13 +32,13 @@ test("{§web-build} development reloads HTML and hot-updates CSS without the dae
         const connected = page.waitForEvent("console", { predicate: (message) => message.text().includes("[vite] connected") });
         await page.goto(`http://127.0.0.1:${address.port}/`);
         await connected;
-        assert.equal(await page.locator("main h1").innerText(), "Hello world");
+        assert.equal(await page.locator("main h1").innerText(), "Plurnk");
         assert.equal(await page.locator('script[src="/@vite/client"]').count(), 1);
         assert.deepEqual(await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
             ["vendor", "structure", "style", "state"].map((name) => `/styles/app-${name}.css`));
 
         const html = join(root, "index.html");
-        await writeFile(html, (await readFile(html, "utf8")).replace("Hello world", "Live reload works"));
+        await writeFile(html, (await readFile(html, "utf8")).replace('>Plurnk</h1>', '>Live reload works</h1>'));
         await page.waitForFunction(() => document.querySelector("main h1")?.textContent === "Live reload works");
         await page.evaluate(() => { document.body.dataset.reloadSentinel = "unchanged"; });
         const styles = join(root, "styles", "app-style.css");
@@ -64,11 +64,11 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
     let browser;
     try {
         await cp(new URL("../web/", import.meta.url), root, { recursive: true });
-        const template = (await readFile(join(root, "index.html"), "utf8")).replace('<h1 data-i18n="greeting">', '<h1 id="greeting" data-i18n="greeting">');
+        const template = (await readFile(join(root, "index.html"), "utf8")).replace('<h1 data-i18n="home-title">', '<h1 id="greeting" data-i18n="home-title">');
         await writeFile(join(root, "index.html"), template.replace("</main>", '<a href="nested/?q=one%2Ftwo#greeting" data-i18n="child">Nested document</a></main>'));
         await mkdir(join(root, "nested"));
         await mkdir(join(root, "public", "nested"));
-        await writeFile(join(root, "nested", "index.html"), template.replace("Hello world", "Nested document")
+        await writeFile(join(root, "nested", "index.html"), template.replace('>Plurnk</h1>', '>Nested document</h1>')
             .replace("</main>", '<a href="./index.html" data-i18n="index">Explicit index</a><a href="child.txt" data-i18n="asset">Child resource</a><a href="../" data-i18n="parent">Parent</a></main>'));
         await writeFile(join(root, "public", "nested", "child.txt"), "Child resource\n");
         development = await createServer({ configFile, root, cacheDir: join(directory, ".cache"), logLevel: "error", server: { port: 0 } });
@@ -111,7 +111,7 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
                     await page.goBack();
                     await page.getByRole("link", { name: "Parent" }).click();
                     await page.waitForURL(`${base}/`);
-                    assert.equal(await page.locator("h1").innerText(), "Hello world");
+                    assert.equal(await page.locator("h1").innerText(), "Plurnk");
                     assert.deepEqual(errors, []);
                 } finally {
                     await context.close();

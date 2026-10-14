@@ -5,12 +5,13 @@ import { createServer, request as httpRequest } from "node:http";
 import { once } from "node:events";
 import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
+import verifyPageShell from "./page-shell.js";
 
 export default async function verifySessions({ t, consumer, withDaemon }) {
     // {§web-directory-documents} Fixture seeding and censuses use the same public application port,
     // not the database. Only this isolated install contains the fixture module and its routes.
     const fixture = join(consumer, "node_modules", "@plurnk", "web-directory-fixture");
-    const names = ['~/repo with space/@%2F/<script>&"', "folderless", "/root//project/", "分析", "%2E%2E"];
+    const names = ['~/repo with space/@%2F/<script>&"', "folderless", "/root//project/", "分析", "%2E%2E", `~/project/${"long-name-".repeat(12)}`];
     await mkdir(fixture);
     await writeFile(join(fixture, "package.json"), JSON.stringify({
         name: "@plurnk/web-directory-fixture", version: "1.0.0", type: "module",
@@ -65,7 +66,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             };
                             const page = await signIn(context, "/~/");
                             const second = await signIn(other, "/~/");
-                            assert.deepEqual(await page.locator("main ul > li > a").allTextContents(), initial.map(({ name }) => name));
+                            await verifyPageShell(page, { title: "Workspaces — Plurnk", kind: "daemon" });
+                            assert.deepEqual(await page.locator("main > ul > li > a").allTextContents(), initial.map(({ name }) => name));
                             const cookie = (await context.cookies()).find(({ name }) => name === "plurnk_web_session");
                             assert.ok(cookie);
                             assert.equal(cookie.httpOnly, true);
@@ -79,14 +81,18 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await page.getByRole("link", { name: workspace.name, exact: true }).click();
                                 assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "workspace", workspace: workspace.name }));
                                 assert.equal(await page.locator("main h1").innerText(), workspace.name);
-                                assert.deepEqual(await page.locator("main ul > li > a").allTextContents(), workspace.workers.map(({ name }) => name));
+                                await verifyPageShell(page, { title: `${workspace.name} — Plurnk`, kind: "workspace" });
+                                assert.equal(await page.locator('[aria-current="page"]').innerText(), workspace.name);
+                                assert.deepEqual(await page.locator("main > ul > li > a").allTextContents(), workspace.workers.map(({ name }) => name));
                                 const worker = workspace.workers.find(({ origin }) => origin === "model");
                                 assert.ok(worker);
                                 await page.getByRole("link", { name: worker.name, exact: true }).click();
                                 assert.equal(await page.locator("main h1").innerText(), `${workspace.name}@${worker.name}`);
+                                await verifyPageShell(page, { title: `${workspace.name}@${worker.name} — Plurnk`, kind: "worker" });
+                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["Home", "Workspaces", workspace.name, worker.name]);
                                 await page.reload();
-                                await page.getByRole("link", { name: "Parent directory" }).click();
-                                await page.getByRole("link", { name: "Parent directory" }).click();
+                                await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: workspace.name, exact: true }).click();
+                                await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces", exact: true }).click();
                             }
                             const response = await context.request.get(new URL("/~/index.html?q=hello", base).href);
                             assert.equal(response.status(), 200);
@@ -97,6 +103,11 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.equal((await head.body()).length, 0);
                             assert.equal((await context.request.get(new URL("/~/missing/", base).href)).status(), 404);
                             assert.equal((await context.request.get(new URL(`${directoryPath({ kind: "workspace", workspace: names[0] }).slice(0, -1)}@absent/`, base).href)).status(), 404);
+                            const missing = await page.goto(new URL("/~/missing/", base).href);
+                            assert.equal(missing.status(), 404);
+                            await verifyPageShell(page, { title: "404 Not Found — Plurnk", kind: "error" });
+                            await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Workspaces" }).click();
+                            assert.equal(new URL(page.url()).pathname, "/~/");
                             await page.getByRole("button", { name: "Sign out" }).click();
                             await page.waitForURL(base);
                             assert.equal((await context.cookies()).some(({ name }) => name === "plurnk_web_session"), false);

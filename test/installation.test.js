@@ -91,7 +91,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
         await withDaemon({}, async (base) => {
             const page = await fetch(base);
             assert.equal(page.status, 200);
-            assert.match(await page.text(), /<h1 data-i18n="greeting">Hello world<\/h1>/u);
+            assert.match(await page.text(), /<h1 data-i18n="home-title">Plurnk<\/h1>/u);
             const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
             assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the root document");
             assert.equal(await explicitIndex.text(), await (await fetch(base)).text());
@@ -102,7 +102,8 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
             for (const path of ["/not-a-page", "/~/example@user/asset"]) {
                 const unknown = await fetch(new URL(path, base));
                 assert.equal(unknown.status, 404, `${path}: no unimplemented resource is served`);
-                assert.equal(await unknown.text(), "Not found\n");
+                assert.equal(unknown.headers.get("content-type"), "text/html; charset=utf-8");
+                assert.match(await unknown.text(), /<h1[^>]*>404 Not Found<\/h1>/u);
             }
 
             const browser = await chromium.launch();
@@ -115,7 +116,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                         try {
                             const tab = await context.newPage();
                             await tab.goto(base);
-                            assert.equal(await tab.locator("main h1").innerText(), "Hello world");
+                            assert.equal(await tab.locator("main h1").innerText(), "Plurnk");
                             assert.equal(await tab.title(), "Plurnk");
                             for (const [colorScheme, primary] of [["light", "#148800"], ["dark", "#4eb31b"]]) {
                                 await tab.emulateMedia({ colorScheme });
