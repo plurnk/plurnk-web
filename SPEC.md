@@ -192,7 +192,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 | Document | Content / lookup |
 |---|---|
 | `/` | Public foundation document and a real link to `/~/`. |
-| `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. |
+| `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. Prefix each name with ☁️ when `project_root` is null, otherwise 📁; accessible image labels identify folderless/project workspaces. Never infer folder presence from the name. |
 | Workspace directory | Exact-name lookup in `listWorkspaces()`, then `listWorkers(id)`: real worker links and identity breadcrumbs. |
 | Worker directory | Exact-name worker lookup; identity heading and breadcrumbs only. No conversation UI yet. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |

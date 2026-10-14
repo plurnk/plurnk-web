@@ -106,7 +106,11 @@ export default class Documents {
             `${this.#breadcrumbs(directory)}<h1 data-text="directory-title">${escapeHtml(title)}</h1>${body}`, directory.kind, authenticated);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
-            const items = workspaces.map(({ name }) => `<li>${this.#link(name, { kind: "workspace", workspace: name })}</li>`).join("");
+            const items = workspaces.map(({ name, project_root }) => {
+                const folder = project_root !== null;
+                const marker = `<span role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}">${folder ? "📁" : "☁️"}</span>`;
+                return `<li>${marker} ${this.#link(name, { kind: "workspace", workspace: name })}</li>`;
+            }).join("");
             return render("Workspaces", items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>');
         }
         const workspace = workspaces.find(({ name }) => name === directory.workspace);

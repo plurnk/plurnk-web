@@ -4,6 +4,22 @@ import Documents from "../ai.plurnk/documents.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 
+test("{§web-directory-documents} workspace markers describe folder presence without interpreting names", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const html = (await document.read({ kind: "daemon" }, {
+        listWorkspaces: async () => [
+            { id: 1, name: "~/looks-like-a-folder", project_root: null },
+            { id: 2, name: "research", project_root: "/home/daemon/project" },
+            { id: 3, name: "../legacy", project_root: null },
+        ],
+        listWorkers: async () => { throw new Error("The workspace index needs no worker lookup."); },
+    }, false)).toString();
+    assert.match(html, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <a href="\/~\/~\/looks-like-a-folder\/" data-text="name">~\/looks-like-a-folder<\/a><\/li>/u);
+    assert.match(html, /<li><span role="img" aria-label="Project workspace">📁<\/span> <a href="\/~\/research\/" data-text="name">research<\/a><\/li>/u);
+    assert.match(html, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <span data-text="name">\.\.\/legacy<\/span><\/li>/u);
+    assert.doesNotMatch(html, /\/home\/daemon\/project/u, "the index shows each name once, not a redundant filesystem label");
+});
+
 test("{§web-directory-documents} read-only lookup escapes names and never invents identities", async () => {
     const calls = [];
     const port = {
@@ -15,9 +31,9 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     };
     const document = new Documents(`<!doctype html><title>Plurnk</title><header>${navigation}</header><main>Home</main><script src="/app.js"></script>`);
     const index = (await document.read({ kind: "daemon" }, port, true)).toString();
-    assert.match(index, /<ul><li><a href="\/~\/~\/a%26%3Cscript%3E%40%22b\/"/u);
+    assert.match(index, /<ul><li><span role="img" aria-label="Folderless workspace">☁️<\/span> <a href="\/~\/~\/a%26%3Cscript%3E%40%22b\/"/u);
     assert.match(index, /~\/a&amp;&lt;script&gt;@&quot;b/u);
-    assert.match(index, /<li><span data-text="name">\.\.\/legacy<\/span><\/li>/u);
+    assert.match(index, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <span data-text="name">\.\.\/legacy<\/span><\/li>/u);
     assert.match(index, /<form method="post" action="\/auth\/logout">/u);
     assert.match(index, /<script src="\/app.js"><\/script>/u);
     assert.equal(await document.read({ kind: "workspace", workspace: "missing" }, port, false), null);
