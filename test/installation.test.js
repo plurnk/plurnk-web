@@ -39,10 +39,10 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/index-document.js"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/directory-addresses.js"));
-    for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable-512.png", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt",
-        ...[16, 32, 180, 192, 512].map((size) => `icons/plurnk-${size}.png`)]) {
+    for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable.svg", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt"]) {
         assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), path);
     }
+    assert.ok(!archive.files.some(({ path }) => path.endsWith(".png")), "no unused raster fallback is packed");
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|ai\.plurnk\/public)\/|vite\.config|\.map$/u.test(path)));
     await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "web-installation-test", private: true, type: "module" }));
     await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund",
@@ -104,7 +104,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                 const unknown = await fetch(new URL(path, base));
                 assert.equal(unknown.status, 404, `${path}: no unimplemented resource is served`);
                 assert.equal(unknown.headers.get("content-type"), "text/html; charset=utf-8");
-                assert.match(await unknown.text(), /<h1[^>]*>404 Not Found<\/h1>/u);
+                assert.match(await unknown.text(), /<h1 id="error-title">[\s\S]*<span data-text="error-title">404 Not Found<\/span><\/h1>/u);
             }
 
             const browser = await chromium.launch();

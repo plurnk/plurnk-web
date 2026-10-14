@@ -3,16 +3,6 @@ body:has(> main[data-page="worker"]) > :is(header, main, footer) {
     max-inline-size: none;
 }
 
-body > a[href="#main"]:not(:focus) {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    margin: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-}
-
 header nav button:is(:hover, :focus-visible) {
     text-decoration: underline;
 }

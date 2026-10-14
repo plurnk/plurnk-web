@@ -3,5 +3,5 @@ ai.plurnk/dist/
 ai.plurnk/assets.json
 web/public/vendor/
 web/styles/app-vendor.css
-web/public/icons/*.png
+web/public/icons/plurnk-maskable.svg
 *.tgz

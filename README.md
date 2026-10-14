@@ -3,6 +3,7 @@
 An optional Plurnk daemon plugin serving native OTM documents at `/`.
 Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
+Requires a current stable browser; no legacy-browser compatibility layer is shipped.
 No chat interface or additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list workers as real links. Worker pages
 currently show identity and breadcrumbs, not a conversation interface.
@@ -113,11 +114,14 @@ deterministic local model; no paid inference or shipped conversation UI is invol
 
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
-Pico's pinned substrate and dependency licenses, and rasterizes the mascot SVG.
+Pico's readable pinned substrate and dependency licenses, and derives a maskable SVG
+from the mascot. Production prunes unused CSS rules, variables and keyframes from
+the browser and server-rendered document sources before minification.
 The generated asset inventory tells the plugin which production files to serve.
 Build output is packed but not committed. [SPEC.md](SPEC.md) defines the contract.
 
-The four source stylesheets in `web/styles/` load in order (combined in production):
+The `web/styles/index.css` import entry composes the four source layers in order
+before production pruning, so references between layers remain visible:
 
 | File | Concern |
 |---|---|

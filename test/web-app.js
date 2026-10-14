@@ -32,7 +32,7 @@ export default async function verifyWebApp(browser, base) {
         assert.equal(manifest.lang, "en");
         assert.equal(manifest.dir, "ltr");
         assert.deepEqual(manifest.icons.map(({ sizes, purpose }) => [sizes, purpose]),
-            [["192x192", "any"], ["512x512", "any"], ["512x512", "maskable"]]);
+            [["any", "any"], ["any", "maskable"]]);
         assert.deepEqual((await cdp.send("Page.getInstallabilityErrors")).installabilityErrors, []);
 
         for (const [name, content] of Object.entries({
@@ -43,41 +43,35 @@ export default async function verifyWebApp(browser, base) {
             "description": manifest.description,
             "robots": "noindex, nofollow",
             "referrer": "same-origin",
-            "mobile-web-app-capable": "yes",
-            "apple-mobile-web-app-capable": "yes",
-            "apple-mobile-web-app-title": manifest.name,
-            "apple-mobile-web-app-status-bar-style": "default",
         })) {
             assert.equal(await tab.locator(`meta[name="${name}"]`).getAttribute("content"), content, name);
         }
         assert.equal(await tab.locator("html").getAttribute("lang"), "en");
         assert.equal(await tab.locator("meta[charset]").getAttribute("charset"), "utf-8");
         assert.deepEqual(await tab.locator('link[rel="icon"]').evaluateAll((links) => links.map((link) => [link.getAttribute("href"), link.getAttribute("sizes")])),
-            [["/icons/plurnk-16.png", "16x16"], ["/icons/plurnk-32.png", "32x32"], ["/icons/plurnk.svg", "any"]]);
-        assert.equal(await tab.locator('link[rel="apple-touch-icon"]').getAttribute("href"), "/icons/plurnk-180.png");
+            [["/icons/plurnk.svg", "any"]]);
+        assert.equal(await tab.locator('link[rel="apple-touch-icon"]').count(), 0);
 
-        const images = [...[16, 32, 180, 192, 512].map((size) => ({ src: `/icons/plurnk-${size}.png`, size })),
-            { src: "/icons/plurnk-maskable-512.png", size: 512 }];
-        for (const { src, size } of images) {
+        for (const { src } of manifest.icons) {
             const res = await fetch(new URL(src, base));
             assert.equal(res.status, 200, src);
-            assert.equal(res.headers.get("content-type"), "image/png");
+            assert.equal(res.headers.get("content-type"), "image/svg+xml");
             const dimensions = await tab.evaluate(async (src) => {
                 const image = new Image();
                 image.src = src;
                 await image.decode();
                 return [image.naturalWidth, image.naturalHeight];
             }, src);
-            assert.deepEqual(dimensions, [size, size], src);
+            assert.ok(dimensions.every((value) => value > 0), `${src}: scalable artwork decodes`);
         }
         const mask = await tab.evaluate(async () => {
             const image = new Image();
-            image.src = "/icons/plurnk-maskable-512.png";
+            image.src = "/icons/plurnk-maskable.svg";
             await image.decode();
             const canvas = document.createElement("canvas");
             canvas.width = canvas.height = 512;
             const context = canvas.getContext("2d");
-            context.drawImage(image, 0, 0);
+            context.drawImage(image, 0, 0, 512, 512);
             const { data } = context.getImageData(0, 0, 512, 512);
             let transparent = 0;
             let outside = 0;

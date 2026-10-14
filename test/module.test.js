@@ -71,7 +71,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             if (method === "HEAD") assert.equal(await res.text(), "");
             else {
                 const body = await res.text();
-                assert.match(body, /<h1[^>]*>404 Not Found<\/h1>/u);
+                assert.match(body, /<h1 id="error-title"><span aria-hidden="true">⚠️<\/span> <span data-text="error-title">404 Not Found<\/span><\/h1>/u);
                 assert.match(body, /<nav aria-label="Main navigation">/u);
                 assert.equal(Buffer.byteLength(body), Number(res.headers.get("content-length")));
             }
@@ -81,7 +81,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
         const res = await fetch(base, { method });
         assert.equal(res.status, 405, method);
         assert.equal(res.headers.get("allow"), "GET, HEAD");
-        assert.match(await res.text(), /<h1[^>]*>405 Method Not Allowed<\/h1>/u);
+        assert.match(await res.text(), /<h1 id="error-title"><span aria-hidden="true">⚠️<\/span> <span data-text="error-title">405 Method Not Allowed<\/span><\/h1>/u);
     }
     // Send the raw path: fetch normalizes dot segments before making its request.
     const raw = await new Promise((resolve, reject) => {

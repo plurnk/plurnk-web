@@ -70,7 +70,10 @@ test("{§web-page-shell} empty lists and request failures are useful native docu
     const error = document.error(403, 'Rejected <script> & "details"').toString();
     assert.match(error, /<title[^>]*>403 Forbidden — Plurnk<\/title>/u);
     assert.match(error, /data-page="error"/u);
+    assert.match(error, /<article aria-labelledby="error-title"><header><h1 id="error-title">/u);
+    assert.match(error, /<span aria-hidden="true">⚠️<\/span>/u);
     assert.match(error, /Rejected &lt;script&gt; &amp; &quot;details&quot;/u);
+    assert.match(error, /<footer><a href="\/" data-i18n="home">Home<\/a><\/footer><\/article>/u);
     assert.doesNotMatch(error, /<form|<script>/u);
 });
 

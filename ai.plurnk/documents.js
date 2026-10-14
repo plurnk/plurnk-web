@@ -39,7 +39,10 @@ export default class Documents {
         const reason = STATUS_CODES[status];
         if (reason === undefined) throw new Error(`Unknown HTTP status: ${status}`);
         const title = `${status} ${reason}`;
-        return this.#render(title, `<h1 data-text="error-title">${escapeHtml(title)}</h1><p data-text="error-message">${escapeHtml(message)}</p>`, "error", authenticated);
+        return this.#render(title, '<article aria-labelledby="error-title"><header><h1 id="error-title">'
+            + `<span aria-hidden="true">⚠️</span> <span data-text="error-title">${escapeHtml(title)}</span></h1></header>`
+            + `<p data-text="error-message">${escapeHtml(message)}</p>`
+            + '<footer><a href="/" data-i18n="home">Home</a></footer></article>', "error", authenticated);
     }
 
     /** {§web-account} Only authority-supplied facts are presented as session information.

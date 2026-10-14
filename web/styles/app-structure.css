@@ -27,8 +27,3 @@ header nav button {
     --pico-form-element-spacing-vertical: 0;
     --pico-form-element-spacing-horizontal: 0;
 }
-
-body > a[href="#main"] {
-    display: block;
-    margin: var(--pico-spacing);
-}

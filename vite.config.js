@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import purgeCSS from "@fullhuman/postcss-purgecss";
 import indexDocument from "./ai.plurnk/index-document.js";
 
 /** @param {import("vite").ViteDevServer | import("vite").PreviewServer} server */
@@ -13,7 +14,7 @@ function configureDirectories(server) {
     });
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
     root: fileURLToPath(new URL("./web/", import.meta.url)),
     appType: "mpa",
     plugins: [{
@@ -23,8 +24,26 @@ export default defineConfig({
     }],
     server: { host: "127.0.0.1" },
     preview: { host: "127.0.0.1" },
+    // {§web-build} Scan both browser documents and the server-owned document renderer.
+    css: {
+        postcss: {
+            plugins: command === "build" ? [purgeCSS({
+                content: [
+                    fileURLToPath(new URL("./web/**/*.{html,js}", import.meta.url)),
+                    fileURLToPath(new URL("./ai.plurnk/documents.js", import.meta.url)),
+                ],
+                defaultExtractor: (content) => content.match(/[A-Za-z0-9_-]+/gu) ?? [],
+                // Browser pseudo-states are not HTML tokens, including inside :is() and :where().
+                safelist: { standard: [/^:/], deep: [/aria-/, /role-/, /data-/] },
+                variables: true,
+                keyframes: true,
+            })] : [],
+        },
+    },
     build: {
+        target: "esnext",
+        modulePreload: { polyfill: false },
         outDir: fileURLToPath(new URL("./ai.plurnk/dist/", import.meta.url)),
         emptyOutDir: true,
     },
-});
+}));
