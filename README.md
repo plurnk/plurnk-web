@@ -7,6 +7,7 @@ Requires a current stable browser; no legacy-browser compatibility layer is ship
 No chat interface or additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list workers as real links. Worker pages
 currently show identity and breadcrumbs, not a conversation interface.
+The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 Non-worker pages use a 65ch reading width; worker pages use the available width.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.

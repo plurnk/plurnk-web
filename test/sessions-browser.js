@@ -13,6 +13,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
     // not the database. Only this isolated install contains the fixture module and its routes.
     const fixture = join(consumer, "node_modules", "@plurnk", "web-directory-fixture");
     const names = ['~/repo with space/@%2F/<script>&"', "folderless", "/root//project/", "分析", "%2E%2E", `~/project/${"long-name-".repeat(12)}`];
+    const projectRoot = join(consumer, "directory-project");
+    await mkdir(projectRoot);
     await mkdir(fixture);
     await writeFile(join(fixture, "package.json"), JSON.stringify({
         name: "@plurnk/web-directory-fixture", version: "1.0.0", type: "module",
@@ -21,7 +23,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
     await writeFile(join(fixture, "module.js"), `export default { mounts: ["/__fixture"], async start(port) {
         for (const name of ${JSON.stringify(names)}) {
             const existing = (await port.listWorkspaces()).find((workspace) => workspace.name === name);
-            const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot: null })).workspaceId;
+            const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
+            const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
             await port.ensureModelWorker(workspaceId);
         }
         port.registerHttpRoute("/__fixture", async (req, res) => {
@@ -72,6 +75,10 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const second = await signIn(other, "/~/");
                             await verifyPageShell(page, { title: "Workspaces — Plurnk", kind: "daemon" });
                             assert.deepEqual(await page.locator("main > ul > li > a").allTextContents(), initial.map(({ name }) => name));
+                            const markers = page.locator('main > ul > li > [role="img"]');
+                            assert.deepEqual(await markers.allTextContents(), initial.map(({ project_root }) => project_root === null ? "☁️" : "📁"));
+                            assert.deepEqual(await markers.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
+                                initial.map(({ project_root }) => project_root === null ? "Folderless workspace" : "Project workspace"));
                             const cookie = (await context.cookies()).find(({ name }) => name === "plurnk_web_session");
                             assert.ok(cookie);
                             assert.equal(cookie.httpOnly, true);
