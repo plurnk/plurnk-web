@@ -11,6 +11,11 @@ include the trailing slash. Missing documents and assets return 404, not the
 home page. Only the root document is currently shipped; workspace and worker
 routes are not exposed yet.
 
+The [directory address contract](SPEC.md#web-directory-addresses-named-directory-addresses)
+maps workspace names to `/~/<workspace>/` and workers to `/~/<workspace>@<worker>/`,
+preserving slashes and encoding name punctuation. Its codec and native-browser
+round trips are tested independently; this does not enable protected listings.
+
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
 picker or stored preferences. Ordinary navigation and forms

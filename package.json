@@ -18,6 +18,7 @@
         "plugin.json",
         "ai.plurnk/module.js",
         "ai.plurnk/index-document.js",
+        "ai.plurnk/directory-addresses.js",
         "ai.plurnk/.env.defaults",
         "ai.plurnk/assets.json",
         "ai.plurnk/dist/",
@@ -52,7 +53,7 @@
         "build": "node scripts/build.mjs",
         "preview": "vite preview",
         "test:lint": "plurnk-spec-check && tsc && tsc -p tsconfig.browser.json && eslint web && otm-lint --check web && stylelint 'web/styles/*.css'",
-        "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js test/build.test.js test/development.test.js test/authoring.test.js",
+        "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js",
         "test:installation": "node --test test/installation.test.js",
         "test": "npm run build && npm run test:lint && npm run test:unit && npm run test:installation",
         "prepack": "npm run build"
