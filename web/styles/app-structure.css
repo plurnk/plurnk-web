@@ -18,6 +18,42 @@ nav li {
     max-inline-size: 100%;
 }
 
+/* Floats reserve both edges; the intrinsic-width breadcrumb clears them when it cannot fit. */
+body > header {
+    display: flow-root;
+}
+
+body > header > a {
+    display: flex;
+    float: inline-start;
+    align-items: center;
+    min-block-size: 4rem;
+}
+
+body > header > nav[aria-label="Main navigation"] {
+    float: inline-end;
+    inline-size: max-content;
+}
+
+body > header > nav[aria-label] > ul {
+    min-block-size: 4rem;
+    margin-inline: 0;
+}
+
+body > header > nav[aria-label="Main navigation"] > ul {
+    flex-wrap: nowrap;
+}
+
+body > header > nav[aria-label="breadcrumb"] {
+    inline-size: max-content;
+    max-inline-size: 100%;
+    margin-inline: auto;
+}
+
+body > header > nav[aria-label="breadcrumb"] > ul {
+    justify-content: center;
+}
+
 header nav form,
 header nav button[type="submit"] {
     margin: 0;

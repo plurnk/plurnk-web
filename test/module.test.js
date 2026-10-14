@@ -125,7 +125,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
         ["/nested/child.txt", "child.txt", "text/plain"],
     ];
     await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
-    await writeFile(new URL("dist/root.html", base), '<title>Plurnk</title><template id="session-navigation"></template><main><h1>Plurnk</h1></main>');
+    await writeFile(new URL("dist/root.html", base), '<title>Plurnk</title><header><template id="session-navigation"></template></header><main><h1>Plurnk</h1></main>');
     await writeFile(new URL("dist/nested.html", base), "<h1>Nested document</h1>");
     await writeFile(new URL("dist/child.txt", base), "Child resource\n");
     const { default: fixtureModule } = await import(new URL("module.js", base).href);

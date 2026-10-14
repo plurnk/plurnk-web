@@ -5,6 +5,84 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { build } from "vite";
+import { chromium } from "playwright";
+import Documents from "../ai.plurnk/documents.js";
+
+test("{§web-page-shell} breadcrumb placement responds to content and available space without JavaScript", async (t) => {
+    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
+        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), contentType }])));
+    const documents = new Documents(assets.get("/index.html").body.toString());
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    for (const javaScriptEnabled of [false, true]) {
+        const context = await browser.newContext({ javaScriptEnabled });
+        try {
+            let html;
+            await context.route("http://web.test/**", (route) => {
+                const path = new URL(route.request().url()).pathname;
+                return route.fulfill(path === "/" ? { body: html, contentType: "text/html" } : assets.get(path));
+            });
+            const page = await context.newPage();
+            for (const authenticated of [false, true]) {
+                for (const [name, fitsWide] of [["w", true], ["~/ptl/project", true], [`~/project/${"long-name-".repeat(20)}`, false]]) {
+                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null }], listWorkers: async () => [] };
+                    html = await documents.read({ kind: "workspace", workspace: name }, port, authenticated);
+                    await page.goto("http://web.test/");
+                    assert.equal(await page.locator('header > nav[aria-label="breadcrumb"]').count(), 1);
+                    assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
+                    const measure = () => page.evaluate(() => {
+                        const header = document.querySelector("body > header");
+                        return {
+                            header: header.getBoundingClientRect().toJSON(),
+                            logo: header.querySelector('a[href="/"]').getBoundingClientRect().toJSON(),
+                            menu: header.querySelector('nav[aria-label="Main navigation"]').getBoundingClientRect().toJSON(),
+                            breadcrumb: header.querySelector('nav[aria-label="breadcrumb"]').getBoundingClientRect().toJSON(),
+                            padding: parseFloat(getComputedStyle(header).paddingInlineStart) * 2,
+                            overflow: document.documentElement.scrollWidth > innerWidth,
+                            items: [...header.querySelectorAll('nav[aria-label="breadcrumb"] li')].map((item) => item.getBoundingClientRect().toJSON()),
+                        };
+                    });
+                    await page.setViewportSize({ width: 500, height: 700 });
+                    const natural = await measure();
+                    const threshold = natural.logo.width + natural.menu.width + natural.breadcrumb.width + natural.padding;
+                    for (const width of [500, 320, 768, 500]) {
+                        await page.setViewportSize({ width, height: 700 });
+                        const { logo, menu, breadcrumb, header, overflow, items } = await measure();
+                        assert.equal(overflow, false);
+                        assert.equal(await page.locator('[aria-current="page"]').innerText(), name);
+                        if (fitsWide && width >= threshold) {
+                            assert.ok(Math.abs(breadcrumb.y - logo.y) < 1, "a short breadcrumb shares the header row");
+                            assert.ok(breadcrumb.x >= logo.right && breadcrumb.right <= menu.x, "the breadcrumb fits between both controls");
+                            assert.ok(items.every((item) => Math.abs(item.y - items[0].y) < 1), "an inline breadcrumb stays on one line");
+                        } else {
+                            assert.ok(breadcrumb.y >= Math.max(logo.bottom, menu.bottom), "the whole breadcrumb clears both controls");
+                            assert.ok(Math.abs(breadcrumb.x + breadcrumb.width / 2 - header.x - header.width / 2) < 1, "the lower row is centered");
+                        }
+                    }
+                    if (fitsWide) {
+                        for (const [width, inline] of [[Math.ceil(threshold) + 1, true], [Math.floor(threshold) - 1, false]]) {
+                            await page.setViewportSize({ width, height: 700 });
+                            const { logo, breadcrumb } = await measure();
+                            assert.equal(Math.abs(breadcrumb.y - logo.y) < 1, inline, "the actual content width determines wrapping");
+                        }
+                    }
+                    if (name === "~/ptl/project") {
+                        await page.setViewportSize({ width: 768, height: 700 });
+                        await page.evaluate(() => { document.documentElement.style.fontSize = "32px"; });
+                        const { logo, menu, breadcrumb, header, overflow } = await measure();
+                        assert.ok(breadcrumb.y >= Math.max(logo.bottom, menu.bottom), "larger text moves the breadcrumb below without a viewport change");
+                        assert.ok(Math.abs(breadcrumb.x + breadcrumb.width / 2 - header.x - header.width / 2) < 1);
+                        assert.equal(overflow, false);
+                        await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
+                    }
+                }
+            }
+        } finally {
+            await context.close();
+        }
+    }
+});
 
 test("{§web-build} production HTML references compiled assets, not development modules", async () => {
     const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
