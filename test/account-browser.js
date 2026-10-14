@@ -51,7 +51,7 @@ export default async function verifyAccount({ t, withDaemon }) {
                     await page.goBack();
                     await page.waitForURL(new URL("/account/sessions/", base).href);
                     const nav = page.getByRole("navigation", { name: "Main navigation", exact: true });
-                    assert.deepEqual(await nav.getByRole("link").allTextContents(), ["", "📁", "⚙️"]);
+                    assert.deepEqual(await nav.getByRole("link").allTextContents(), ["📁", "⚙️"]);
                     assert.equal(await nav.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
                     assert.equal(await page.locator("body > footer form").count(), 0);
                     const signOut = nav.getByRole("button", { name: "Sign out", exact: true });
@@ -114,7 +114,7 @@ export default async function verifyAccount({ t, withDaemon }) {
                         assert.equal((await context.request.post(new URL(path, base).href)).status(), 405);
                         assert.equal((await context.request.get(new URL(path.slice(0, -1), base).href)).status(), 404);
                     }
-                    await nav.getByRole("link", { name: "Plurnk", exact: true }).click();
+                    await page.getByRole("banner").getByRole("link", { name: "Plurnk", exact: true }).click();
                     assert.equal(await nav.getByRole("link", { name: "Account", exact: true }).count(), 1, "home reflects the live session");
                     await nav.getByRole("link", { name: "Account", exact: true }).click();
                     await page.locator("main").getByRole("link", { name: "Sessions", exact: true }).click();

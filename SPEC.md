@@ -234,6 +234,7 @@ lazy branch request, custom tree role or JavaScript disclosure handler.
 |---|---|
 | Shared navigation | Home/brand and Workspaces are real links preceding the single `main` landmark; no skip-navigation control. Authenticated documents add Account and a compact secondary Sign Out POST form in the header; no footer logout. Anonymous documents omit account/session controls. Native links and controls retain visible keyboard focus. |
 | Header actions | Mascot-only home link with accessible Plurnk name; 📁 Workspaces, ⚙️ Account, ✖ Sign out: icon-only controls with explicit accessible names and native explanatory titles. Brand and actions align in one horizontal row, including narrow viewports. Breadcrumbs retain text labels. |
+| Breadcrumb layout | One native breadcrumb in the header, between mascot and menu when its intrinsic width fits; otherwise centered directly below both. Names can wrap within the lower row, never clipped or abbreviated. Content, font size and available controls determine fit, not a viewport breakpoint or JavaScript measurements. Keyboard order remains mascot, menu, breadcrumb. |
 | Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. Home, workspace index and workspace pages omit headings; worker, account and error pages retain one `h1`. |
 | Directory breadcrumbs | Home → Workspaces → whole workspace name → worker; only applicable ancestors appear. The current item is text marked `aria-current="page"`. On the workspace page, prefix it with the same folder/cloud marker as {§web-directory-documents}. Slashes in names do not invent intermediate directories. |
 | Empty lists | “No workspaces.” or “No workers.”; no empty list masquerading as content. |
@@ -243,7 +244,7 @@ lazy branch request, custom tree role or JavaScript disclosure handler.
 The compiled root document owns shared navigation and assets, including an inert
 template for authenticated navigation. OTM's documented indirect-template marker
 identifies its server-owned instantiation. Server rendering selects that template
-and replaces the title and main content. Ordinary navigation, focus, lists and forms work without JavaScript;
+and supplies the title, header breadcrumb and main content. Ordinary navigation, focus, lists and forms work without JavaScript;
 there is no browser-owned route or session inventory.
 
 ## §web-document Document

@@ -16,17 +16,20 @@ export default class Documents {
         const title = parts[0].split(/<title\b[^>]*>|<\/title>/u);
         if (title.length !== 3) throw new Error("The web document must contain exactly one title element before main.");
         this.#beforeTitle = title[0];
-        this.#beforeMain = title[2].split(/<template id="session-navigation"[^>]*>|<\/template>/u);
-        if (this.#beforeMain.length !== 3) throw new Error("The web document must contain exactly one session-navigation template before main.");
+        const navigation = title[2].split(/<template id="session-navigation"[^>]*>|<\/template>/u);
+        if (navigation.length !== 3) throw new Error("The web document must contain exactly one session-navigation template before main.");
+        const header = navigation[2].split("</header>");
+        if (header.length !== 2) throw new Error("The web document must close its header once after session navigation and before main.");
+        this.#beforeMain = [navigation[0], navigation[1], ...header];
         this.#home = parts[1];
         this.#afterMain = parts[2];
     }
 
-    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] */
-    #render(title, body, kind, authenticated = false) {
-        const [before, navigation, after] = this.#beforeMain;
+    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] */
+    #render(title, body, kind, authenticated = false, breadcrumb = "") {
+        const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
-        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${after}<main id="main" tabindex="-1" data-page="${kind}">${body}</main>${this.#afterMain}`);
+        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" tabindex="-1" data-page="${kind}">${body}</main>${this.#afterMain}`);
     }
 
     /** @param {boolean} authenticated */
@@ -69,12 +72,12 @@ export default class Documents {
         }).join("");
         const others = sessions.some((entry) => entry.family !== family)
             ? '<form method="post" action="/account/sessions/revoke-others"><button type="submit" data-i18n="revoke-others">Revoke other sessions</button></form>' : "";
-        return this.#render("Sessions", '<nav aria-label="breadcrumb"><ul><li><a href="/account/" data-i18n="account">Account</a></li>'
-            + '<li><span aria-current="page" data-i18n="sessions">Sessions</span></li></ul></nav>'
-            + '<article aria-labelledby="sessions-title"><header><h1 id="sessions-title" data-i18n="sessions">Sessions</h1></header>'
+        const breadcrumb = '<nav aria-label="breadcrumb"><ul><li><a href="/account/" data-i18n="account">Account</a></li>'
+            + '<li><span aria-current="page" data-i18n="sessions">Sessions</span></li></ul></nav>';
+        return this.#render("Sessions", '<article aria-labelledby="sessions-title"><header><h1 id="sessions-title" data-i18n="sessions">Sessions</h1></header>'
             + '<figure><table><thead><tr><th scope="col" data-i18n="session">Session</th><th scope="col" data-i18n="started">Started</th>'
             + '<th scope="col" data-i18n="expires">Expires</th><th scope="col" data-i18n="actions">Actions</th></tr></thead>'
-            + `<tbody>${entries}</tbody></table></figure>${others ? `<footer>${others}</footer>` : ""}</article>`, "account", true);
+            + `<tbody>${entries}</tbody></table></figure>${others ? `<footer>${others}</footer>` : ""}</article>`, "account", true, breadcrumb);
     }
 
     /** @param {string} label @param {import("./directory-addresses.js").Directory} directory */
@@ -149,8 +152,8 @@ export default class Documents {
      * @param {boolean} authenticated
      */
     async read(directory, port, authenticated) {
-        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "") => this.#render(title,
-            `${this.#breadcrumbs(directory, marker)}${body}`, directory.kind, authenticated);
+        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "") =>
+            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker));
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
             const items = workspaces.map(({ name, project_root }) =>

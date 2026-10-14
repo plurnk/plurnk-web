@@ -23,7 +23,9 @@ test("{§web-page-shell} directory breadcrumbs replace duplicate headings and ca
         assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span></li>`), page);
         assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
         assert.doesNotMatch(page, /<h1\b/u);
-        assert.equal(page.split("<main")[1].split(escaped).length - 1, 1, "the workspace name appears once in the page content");
+        assert.equal(page.split("</title>")[1].split(escaped).length - 1, 1, "the workspace name appears once outside the browser title");
+        assert.match(page, /<header>[\s\S]*<nav aria-label="breadcrumb">[\s\S]*<\/nav><\/header>/u);
+        assert.doesNotMatch(page.split("<main")[1], /aria-label="breadcrumb"/u);
     }
 });
 
@@ -191,6 +193,14 @@ test("{§web-page-shell} a missing or duplicate document title fails at load", (
     assert.throws(() => new Documents('<title>Plurnk</title><main>Home</main>'), /exactly one session-navigation template/u);
 });
 
+test("{§web-page-shell} an absent or ambiguous breadcrumb insertion boundary fails at load", () => {
+    for (const closing of ["", "</header></header>"]) {
+        assert.throws(() => new Documents(`<title>Plurnk</title><header>${navigation}${closing}<main></main>`), {
+            name: "Error", message: "The web document must close its header once after session navigation and before main.",
+        });
+    }
+});
+
 test("{§web-account} Account offers native navigation without a fictional profile or inline session inventory", () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
     const html = document.account().toString();
@@ -215,5 +225,7 @@ test("{§web-account} Sessions renders authority facts in a native table without
     assert.match(html, /action="\/account\/sessions\/other%26family\/revoke"/u);
     assert.match(html, /action="\/account\/sessions\/revoke-others"/u);
     assert.match(html, /<header>[\s\S]*action="\/auth\/logout"[\s\S]*<\/header>/u);
+    assert.match(html, /<header>[\s\S]*<nav aria-label="breadcrumb">[\s\S]*<\/nav><\/header>/u);
+    assert.doesNotMatch(html.split("<main")[1], /aria-label="breadcrumb"/u);
     assert.doesNotMatch(html, /<script>|<template|last active|device|Signed in as/iu);
 });
