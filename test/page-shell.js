@@ -46,6 +46,17 @@ export default async function verifyPageShell(page, { title, kind }) {
         const expected = kind === "worker" ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
         assert.ok(Math.abs(bounds.content - expected) < 1, `${kind} main width ${bounds.content} should be ${expected}`);
         assert.ok(Math.abs(bounds.header - expected) < 1, `${kind} navigation shares the document width`);
+        const centers = await navigation.locator("li > a, li > form > button").evaluateAll((elements) => elements.map((element) => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.y + bounds.height / 2;
+        }));
+        assert.ok(Math.max(...centers) - Math.min(...centers) < 1, `${width}px: header controls share one horizontal row (${centers.join(", ")})`);
+    }
+    for (const [role, name, glyph] of [["link", "Workspaces", "📁"], ["link", "Account", "⚙️"], ["button", "Sign out", "✖"]]) {
+        const control = navigation.getByRole(role, { name, exact: true });
+        if (await control.count() === 0) continue;
+        assert.equal(await control.innerText(), glyph);
+        assert.equal(await control.getAttribute("title"), name, "icon actions retain native explanatory titles");
     }
     assert.equal(await page.getByRole("link", { name: "Skip to content", exact: true }).count(), 0);
     await navigation.getByRole("link", { name: "Plurnk", exact: true }).focus();
@@ -56,4 +67,13 @@ export default async function verifyPageShell(page, { title, kind }) {
     });
     assert.equal(focus.active, true, "native header links remain keyboard navigable");
     assert.ok(focus.shadow !== "none" || focus.outline !== "none", "keyboard focus remains visible");
+    if (await navigation.getByRole("link", { name: "Account", exact: true }).count()) {
+        for (const [role, name] of [["link", "Account"], ["button", "Sign out"]]) {
+            await page.keyboard.press("Tab");
+            assert.ok(await navigation.getByRole(role, { name, exact: true }).evaluate((element) => {
+                const style = getComputedStyle(element);
+                return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
+            }), `${name} retains native keyboard order and visible focus`);
+        }
+    }
 }
