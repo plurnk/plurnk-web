@@ -50,7 +50,7 @@ async function fixture(t) {
         entered.resolve();
         return released.promise;
     });
-    const session = new Session(authority, { clientId: "plurnk-web", clientSecret: "fixture-only" }, origin, { ttl: 600, pending: 128 });
+    const session = new Session(authority, { clientId: "plurnk-web", clientSecret: "fixture-only" }, { issuer: () => origin }, { ttl: 600, pending: 128 });
     t.after(() => session.close());
     const res = response();
     await session.login({ headers: {}, url: "/auth/login" }, res);

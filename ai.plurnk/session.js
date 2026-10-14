@@ -15,12 +15,11 @@ export default class Session {
     #credentials;
     #client;
     #authenticate;
-    #issuer;
-    /** @type {oauth.AuthorizationServer | null} */
-    #server = null;
-    #options;
+    #face;
+    /** @type {{ server: oauth.AuthorizationServer, options: { [oauth.allowInsecureRequests]: boolean } } | null} */
+    #authority = null;
     #limits;
-    /** @type {Map<string, { verifier: string, binding: string, target: string, expires: number }>} */
+    /** @type {Map<string, { verifier: string, binding: string, target: string, redirectUri: string, expires: number }>} */
     #pending = new Map();
     /** @type {Map<string, Grant>} */
     #grants = new Map();
@@ -29,29 +28,32 @@ export default class Session {
     /**
      * @param {import("@plurnk/plurnk-contracts").CredentialAuthority} credentials
      * @param {{ clientId: string, clientSecret: string }} registration
-     * @param {string} issuer
+     * @param {import("@plurnk/plurnk-contracts").CredentialFace} face
      * @param {{ ttl: number, pending: number }} limits
      */
-    constructor(credentials, registration, issuer, limits) {
+    constructor(credentials, registration, face, limits) {
         this.#credentials = credentials;
         this.#client = { client_id: registration.clientId };
         this.#authenticate = oauth.ClientSecretBasic(registration.clientSecret);
-        this.#issuer = issuer;
-        // The daemon's declared issuer, including its normal HTTP loopback listener, owns transport.
-        this.#options = { [oauth.allowInsecureRequests]: new URL(issuer).protocol === "http:" };
+        this.#face = face;
         this.#limits = limits;
         this.#unsubscribe = credentials.onRevoked((family) => this.#grants.delete(family));
     }
 
-    get issuer() { return this.#issuer; }
+    /** {§web-session} The daemon's issuer for this request: its configured origin, else the address the browser reached.
+     * @param {import("node:http").IncomingMessage} req
+     */
+    #issuer(req) { return this.#face.issuer(req); }
 
+    // {§web-session} This module's own calls go to the daemon's answer for no request, never to an address a
+    // browser named. Discovery is after admission, not module startup: the listener is not serving yet at start.
     async #metadata() {
-        if (this.#server !== null) return this.#server;
-        // Discovery is after admission, not module startup: the listener is not serving yet at start.
-        const issuer = new URL(this.issuer);
-        const response = await oauth.discoveryRequest(issuer, { ...this.#options, algorithm: "oauth2" });
-        this.#server = await oauth.processDiscoveryResponse(issuer, response);
-        return this.#server;
+        if (this.#authority !== null) return this.#authority;
+        const issuer = new URL(this.#face.issuer());
+        const options = { [oauth.allowInsecureRequests]: issuer.protocol === "http:" };
+        const response = await oauth.discoveryRequest(issuer, { ...options, algorithm: "oauth2" });
+        this.#authority = { server: await oauth.processDiscoveryResponse(issuer, response), options };
+        return this.#authority;
     }
 
     /** @param {import("node:http").IncomingMessage} req */
@@ -78,7 +80,7 @@ export default class Session {
     #mutation(req) {
         const account = this.account(req);
         if (account === null) throw new RequestError(401, "Sign in again before managing sessions.");
-        if (req.headers.origin !== this.issuer) throw new RequestError(403, "Same-origin form required.");
+        if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin form required.");
         return account;
     }
 
@@ -98,22 +100,23 @@ export default class Session {
         redirect(res, "/account/sessions/");
     }
 
-    /** @param {string} name @param {string} value @param {string} path @param {number} ttl */
-    #cookie(name, value, path, ttl) {
+    /** @param {import("node:http").IncomingMessage} req @param {string} name @param {string} value @param {string} path @param {number} ttl */
+    #cookie(req, name, value, path, ttl) {
         return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.ceil(ttl))}`
-            + (this.issuer.startsWith("https:") ? "; Secure" : "");
+            + (this.#issuer(req).startsWith("https:") ? "; Secure" : "");
     }
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
     async login(req, res) {
-        const requested = new URL(req.url ?? "/", this.issuer).searchParams.get("return") ?? "/~/";
+        const issuer = this.#issuer(req);
+        const requested = new URL(req.url ?? "/", issuer).searchParams.get("return") ?? "/~/";
         const directory = parseDirectory(requested);
         const document = indexDocument(requested.split(/[?#]/u)[0]);
         const target = ["/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
             : directory === null ? null : directoryPath(directory);
         if (target === null) throw new RequestError(400, "Invalid return page.");
         if (this.admitted(req)) { redirect(res, target); return; }
-        const server = await this.#metadata();
+        const { server } = await this.#metadata();
         if (!server.authorization_endpoint) throw new Error("The daemon's authorization metadata omits its authorization endpoint.");
 
         const state = oauth.generateRandomState();
@@ -123,11 +126,13 @@ export default class Session {
         for (const [key, transaction] of this.#pending) if (transaction.expires <= now) this.#pending.delete(key);
         if (this.#pending.size >= this.#limits.pending) throw new RequestError(429, "Too many pending sign-ins. Try again later.");
         const binding = cookie(req, TRANSACTION) ?? oauth.generateRandomState();
-        this.#pending.set(state, { verifier, binding, target, expires: now + this.#limits.ttl * 1000 });
-        res.setHeader("set-cookie", this.#cookie(TRANSACTION, binding, "/auth", this.#limits.ttl));
-        const url = new URL(server.authorization_endpoint);
+        const redirectUri = `${issuer}${CALLBACK}`;
+        this.#pending.set(state, { verifier, binding, target, redirectUri, expires: now + this.#limits.ttl * 1000 });
+        res.setHeader("set-cookie", this.#cookie(req, TRANSACTION, binding, "/auth", this.#limits.ttl));
+        // The browser signs in at the daemon's authorization endpoint on the address it reached.
+        const url = new URL(new URL(server.authorization_endpoint).pathname, issuer);
         url.search = new URLSearchParams({
-            client_id: this.#client.client_id, redirect_uri: `${this.issuer}${CALLBACK}`,
+            client_id: this.#client.client_id, redirect_uri: redirectUri,
             response_type: "code", scope: "agui", code_challenge_method: "S256", code_challenge: challenge, state,
         }).toString();
         redirect(res, url.href);
@@ -135,14 +140,14 @@ export default class Session {
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
     async callback(req, res) {
-        const url = new URL(req.url ?? "/", this.issuer);
+        const url = new URL(req.url ?? "/", this.#issuer(req));
         const state = url.searchParams.get("state") ?? "";
         const transaction = this.#pending.get(state);
         if (transaction === undefined || transaction.expires <= Date.now() || cookie(req, TRANSACTION) !== transaction.binding) {
             throw new RequestError(400, "Sign-in expired or does not belong to this browser. Start sign-in again.");
         }
         this.#pending.delete(state);
-        const server = await this.#metadata();
+        const { server, options } = await this.#metadata();
         let params;
         try {
             params = oauth.validateAuthResponse(server, this.#client, url, state);
@@ -150,7 +155,7 @@ export default class Session {
             throw new RequestError(400, "Sign-in was not completed. Start sign-in again.", { cause });
         }
         const response = await oauth.authorizationCodeGrantRequest(server, this.#client, this.#authenticate,
-            params, `${this.issuer}${CALLBACK}`, transaction.verifier, this.#options);
+            params, transaction.redirectUri, transaction.verifier, options);
         let result;
         try {
             result = await oauth.processAuthorizationCodeResponse(server, this.#client, response);
@@ -166,7 +171,7 @@ export default class Session {
         if (old !== null && old.family !== claims.family) this.#credentials.revokeFamily(old.family);
         this.#prune();
         this.#grants.set(claims.family, grant);
-        res.setHeader("set-cookie", this.#cookie(SESSION, issued.token, "/", ttlMs / 1000));
+        res.setHeader("set-cookie", this.#cookie(req, SESSION, issued.token, "/", ttlMs / 1000));
         redirect(res, transaction.target);
     }
 
@@ -190,10 +195,10 @@ export default class Session {
 
     /** @param {Grant} grant */
     async #refresh(grant) {
-        const server = await this.#metadata();
+        const { server, options } = await this.#metadata();
         let result;
         try {
-            const response = await oauth.refreshTokenGrantRequest(server, this.#client, this.#authenticate, grant.refresh, this.#options);
+            const response = await oauth.refreshTokenGrantRequest(server, this.#client, this.#authenticate, grant.refresh, options);
             result = await oauth.processRefreshTokenResponse(server, this.#client, response);
         } catch (cause) {
             if (cause instanceof oauth.ResponseBodyError && cause.error === "invalid_grant") {
@@ -219,7 +224,7 @@ export default class Session {
     async token(req, res) {
         const claims = this.#claims(req);
         if (claims === null) throw new RequestError(401, "Sign in again to connect.");
-        if (req.headers.origin !== this.issuer) throw new RequestError(403, "Same-origin request required.");
+        if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin request required.");
         this.#prune();
         const grant = this.#grants.get(claims.family);
         if (grant === undefined) throw new RequestError(401, "Sign in again to connect.");
@@ -239,10 +244,10 @@ export default class Session {
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
     logout(req, res) {
-        if (req.headers.origin !== this.issuer) throw new RequestError(403, "Same-origin form required.");
+        if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin form required.");
         const claims = this.#claims(req);
         if (claims !== null) this.#credentials.revokeFamily(claims.family);
-        res.setHeader("set-cookie", this.#cookie(SESSION, "", "/", 0));
+        res.setHeader("set-cookie", this.#cookie(req, SESSION, "", "/", 0));
         redirect(res, "/");
     }
 

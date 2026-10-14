@@ -6,7 +6,7 @@ import Session from "../ai.plurnk/session.js";
 test("{§web-session} only this client's live scoped session admits a document", () => {
     let claims = null;
     const credentials = { verify: () => claims, onRevoked: () => () => {} };
-    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, "http://127.0.0.1:1066", { ttl: 600, pending: 128 });
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "http://127.0.0.1:1066" }, { ttl: 600, pending: 128 });
     const req = { headers: { cookie: "plurnk_web_session=test" } };
     assert.equal(session.admitted(req), false);
     claims = { kind: "session", clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "one" };
@@ -46,7 +46,7 @@ test("{§web-session} HTTPS cookie and session lifetime come from the verified g
         exchanges++;
         return Response.json({ access_token: "access", refresh_token: "refresh", token_type: "Bearer", expires_in: 300 });
     });
-    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "fixture" }, origin, { ttl: 600, pending: 128 });
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "fixture" }, { issuer: () => origin }, { ttl: 600, pending: 128 });
     const headers = new Map();
     const response = {
         setHeader: (name, value) => headers.set(name, value),
@@ -86,7 +86,7 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
     t.mock.method(globalThis, "fetch", async (input) => String(input).endsWith("/oauth/token")
         ? Response.json({ access_token: "access", refresh_token: "refresh", token_type: "Bearer", expires_in: 60 })
         : Response.json({ issuer: origin, authorization_endpoint: `${origin}/oauth/authorize`, token_endpoint: `${origin}/oauth/token` }));
-    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, origin, { ttl: 600, pending: 128 });
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => origin }, { ttl: 600, pending: 128 });
     const headers = new Map();
     const response = {
         setHeader: (name, value) => headers.set(name, value),
@@ -103,7 +103,7 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
 
 test("{§web-account} sign-in returns to native account pages without treating query or fragment text as a path", async () => {
     const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["agui"] }), onRevoked: () => () => {} },
-        { clientId: "plurnk-web", clientSecret: "test" }, "https://daemon.example", { ttl: 600, pending: 128 });
+        { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600, pending: 128 });
     const locations = [];
     const response = { writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
     for (const path of ["/account/", "/account/sessions/"]) {
@@ -129,7 +129,7 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
         revokeFamily: (family) => revoked.push(family),
     };
     const origin = "https://daemon.example";
-    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, origin, { ttl: 600, pending: 128 });
+    const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => origin }, { ttl: 600, pending: 128 });
     const req = { headers: { origin, cookie: "plurnk_web_session=current-token" } };
     const headers = new Map();
     const response = {

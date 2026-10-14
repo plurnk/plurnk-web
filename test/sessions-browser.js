@@ -227,10 +227,12 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             response.resume(); response.once("end", () => accept(response));
                         }).once("error", reject).end();
                     });
-                    assert.equal((await hostRequest("elsewhere.example")).statusCode, 421);
-                    const alias = await hostRequest(`localhost:${new URL(base).port}`);
-                    assert.equal(alias.statusCode, 303);
-                    assert.equal(alias.headers.location, new URL("/~/", base).href);
+                    // {§web-session} A browser is answered at whatever address it reached the daemon by.
+                    for (const host of ["elsewhere.example", `localhost:${new URL(base).port}`]) {
+                        const answered = await hostRequest(host);
+                        assert.equal(answered.statusCode, 303, host);
+                        assert.equal(answered.headers.location, `/auth/login?${new URLSearchParams({ return: "/~/" })}`, host);
+                    }
                     const first = await get("/auth/login?return=/~/");
                     assert.equal(first.status(), 303);
                     const authorizedFirst = await authorize(context, first.headers().location);
