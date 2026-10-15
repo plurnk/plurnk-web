@@ -142,7 +142,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 const worker = workspace.workers.find(({ origin, parentWorkerId }) => origin === "model" && parentWorkerId === null);
                                 assert.ok(worker);
                                 await page.getByRole("link", { name: worker.name, exact: true }).click();
-                                assert.equal(await page.locator("main h1").innerText(), `${workspace.name}@${worker.name}`);
+                                assert.equal(await page.locator("main h1").count(), 0, "worker identity belongs in the breadcrumb, not a duplicate heading");
                                 await verifyPageShell(page, { title: `${workspace.name}@${worker.name} — Plurnk`, kind: "worker" });
                                 assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["Workspaces", workspace.name, worker.name]);
                                 await page.reload();

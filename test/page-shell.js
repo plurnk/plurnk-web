@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.title(), title);
     assert.equal(await page.locator("main").count(), 1);
-    assert.equal(await page.locator("main h1").count(), ["home", "daemon", "workspace"].includes(kind) ? 0 : 1);
+    assert.equal(await page.locator("main h1").count(), ["home", "daemon", "workspace", "worker"].includes(kind) ? 0 : 1);
     if (kind === "home") assert.equal(await page.locator("main").innerText(), "");
     assert.equal(await page.locator("main").getAttribute("data-page"), kind);
     const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });

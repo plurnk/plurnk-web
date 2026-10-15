@@ -149,7 +149,8 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.doesNotMatch(workers, /<form/u);
     assert.equal(await document.read({ ...workspace, kind: "worker", worker: "absent" }, port, true), null);
     const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
-    assert.match(page, /<h1[^>]*>~\/a&amp;&lt;script&gt;@&quot;b@user<\/h1>/u);
+    assert.match(page, /<title[^>]*>~\/a&amp;&lt;script&gt;@&quot;b@user — Plurnk<\/title>/u);
+    assert.doesNotMatch(page, /<h1\b/u);
     assert.deepEqual(calls, ["workspaces", "workspaces", "workspaces", 7, "workspaces", 7, "workspaces", 7]);
 });
 
@@ -173,7 +174,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template|<footer/iu);
     assert.equal(html.match(/<main\b/gu).length, 1);
-    assert.equal(html.match(/<h1\b/gu).length, 1);
+    assert.doesNotMatch(html, /<h1\b/u, "the breadcrumb and document title identify the worker without a duplicate heading");
 });
 
 test("{§web-page-shell} empty lists and request failures are useful native documents", async () => {

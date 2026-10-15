@@ -198,7 +198,7 @@ export default class Documents {
             ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
             : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
         const title = `${workspace.name}@${directory.worker}`;
-        return render(title, `<h1 data-text="directory-title">${escapeHtml(title)}</h1>` + (parent === null ? ""
+        return render(title, (parent === null ? ""
             : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`) + this.#workerStatus(directory, authenticated));
     }
 }

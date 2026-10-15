@@ -8,7 +8,8 @@ No chat interface or additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
-breadcrumbs, their actual parent, and live read-only status. There is no conversation UI.
+breadcrumbs, their actual parent, and live read-only status, without a duplicate page
+heading. There is no conversation UI.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
