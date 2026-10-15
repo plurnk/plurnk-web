@@ -44,6 +44,7 @@ export default defineConfig(({ command }) => ({
     },
     build: {
         target: "esnext",
+        license: { fileName: "vendor/DEPENDENCIES-LICENSE.txt" },
         modulePreload: { polyfill: false },
         outDir: fileURLToPath(new URL("./ai.plurnk/dist/", import.meta.url)),
         emptyOutDir: true,
