@@ -27,12 +27,16 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
     };
 
     await action("observer-world", "named-worker", "worker.model.set", { selector: "browser" });
+    // A real client operation creates the runtime journal; workspace attachment no longer fabricates actors.
+    const seeded = await action("observer-world", "named-worker", "op.parse", { text: "```READ (witness.txt)\n```" });
+    assert.deepEqual(seeded.results.map(({ status }) => status), [200]);
+    assert.match(seeded.results[0].content, /cobalt heron/u);
 
     await t.test("{§web-agui-conformance} explicit observation refuses absent and internal targets without mutation", async () => {
         const beforeCalls = model.requests.length;
         const before = await action("observer-world", "named-worker", "workspace.workers");
         const workspaces = await action(undefined, "observer-census", "workspace.list");
-        const internal = before.workers.find(({ origin }) => origin !== "model");
+        const internal = before.workers.find(({ origin }) => origin === "_plurnk");
         assert.ok(internal);
         for (const [workspace, worker, code] of [
             ["missing-observer-world", "named-worker", "workspace-not-found"],
@@ -53,7 +57,8 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         // More than a browser's per-origin HTTP/1 connection limit: detachment must release transport too.
         for (let visit = 0; visit < 8; visit++) {
             const id = `existing-explicit-${visit}`;
-            await observe(id, "observer-world", "named-worker");
+            const result = await observe(id, "observer-world", "named-worker");
+            assert.deepEqual(result.messages, [], "administrative receipts do not enter the model's history");
             await detach(id);
         }
         assert.deepEqual(await action("observer-world", "named-worker", "workspace.workers"), before);
