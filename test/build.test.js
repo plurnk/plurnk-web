@@ -26,7 +26,7 @@ test("{§web-page-shell} breadcrumb placement responds to content and available 
             const page = await context.newPage();
             for (const authenticated of [false, true]) {
                 for (const [name, fitsWide] of [["w", true], ["~/ptl/project", true], [`~/project/${"long-name-".repeat(20)}`, false]]) {
-                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null }], listWorkers: async () => [] };
+                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null }], listWorkers: async () => [] };
                     html = await documents.read({ kind: "workspace", workspace: name }, port, authenticated);
                     await page.goto("http://web.test/");
                     assert.equal(await page.locator('header > nav[aria-label="breadcrumb"]').count(), 1);

@@ -15,7 +15,12 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
     const fixture = join(consumer, "node_modules", "@plurnk", "web-directory-fixture");
     const names = ['~/repo with space/@%2F/<script>&"', "folderless", "/root//project/", "分析", "%2E%2E", `~/project/${"long-name-".repeat(12)}`];
     const projectRoot = join(consumer, "directory-project");
+    const homeFolders = [
+        [join(consumer, "..", "home", 'project @<draft>&"'), null],
+        [join(consumer, "..", "home", "renamed-project"), "renamed workspace"],
+    ];
     await mkdir(projectRoot);
+    for (const [folder] of homeFolders) await mkdir(folder);
     await mkdir(fixture);
     await writeFile(join(fixture, "package.json"), JSON.stringify({
         name: "@plurnk/web-directory-fixture", version: "1.0.0", type: "module",
@@ -43,6 +48,12 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 await port.createConversationWorker({ workspaceId, name: "client-child", parentWorkerId: client.id });
             }
         }
+        for (const [projectRoot, name] of ${JSON.stringify(homeFolders)}) {
+            const existing = (await port.listWorkspaces()).find((workspace) => workspace.project_root === projectRoot);
+            const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
+            if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
+            await port.ensureModelWorker(workspaceId);
+        }
         port.registerHttpRoute("/__fixture", async (req, res) => {
             if (req.url === "/__fixture/revoke" && req.method === "POST") {
                 const token = req.headers.authorization?.slice(7);
@@ -63,6 +74,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
         await t.test("{§web-session} native sign-in, protected lists, logout and independent browsers", async () => {
             await withDaemon({ PLURNK_PASS: "browser-password" }, async (base) => {
                 const initial = await (await fetch(new URL("/__fixture", base))).json();
+                assert.equal(initial.find(({ name }) => name === '~/project @<draft>&"')?.project_label, '~/project @<draft>&"');
+                assert.equal(initial.find(({ name }) => name === "renamed workspace")?.project_label, "~/renamed-project");
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -109,10 +122,20 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "workspace", workspace: workspace.name }));
                                 await verifyPageShell(page, { title: `${workspace.name} — Plurnk`, kind: "workspace" });
                                 assert.equal(await page.locator('[aria-current="page"]').innerText(), workspace.name);
+                                // {§web-workspace-folder} Render the daemon's label, including after a rename.
+                                const sameFolder = workspace.name === workspace.project_label;
                                 const marker = page.getByRole("navigation", { name: "breadcrumb" }).getByRole("img", {
-                                    name: workspace.project_root === null ? "Folderless workspace" : "Project workspace", exact: true,
+                                    name: sameFolder ? "Project workspace" : workspace.project_root === null ? "Folderless workspace" : "Workspace", exact: true,
                                 });
-                                assert.equal(await marker.innerText(), workspace.project_root === null ? "☁️" : "📁");
+                                assert.equal(await marker.innerText(), sameFolder ? "📁" : "☁️");
+                                const folder = page.locator('main [data-text="project-label"]');
+                                if (workspace.project_label !== null && !sameFolder) {
+                                    assert.equal(await folder.textContent(), workspace.project_label);
+                                    assert.equal(await page.getByRole("main").getByRole("img", { name: "Project folder", exact: true }).innerText(), "📁");
+                                    assert.equal(await folder.locator("a").count(), 0, "a filesystem label is not a web link");
+                                } else {
+                                    assert.equal(await folder.count(), 0, "equal labels and folderless workspaces need no folder row");
+                                }
                                 await verifyWorkerDirectory(page, workspace);
                                 const worker = workspace.workers.find(({ origin, parentWorkerId }) => origin === "model" && parentWorkerId === null);
                                 assert.ok(worker);
