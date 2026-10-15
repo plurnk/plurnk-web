@@ -95,6 +95,9 @@ test("{§web-build} production HTML references compiled assets, not development 
     }
     assert.ok(inventory.some(([path, , type]) => path === "/index.html" && type === "text/html"));
     assert.ok(inventory.some(([path]) => path === "/manifest.webmanifest"));
+    const license = await readFile(new URL("../ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt", import.meta.url), "utf8");
+    assert.match(license, /@ag-ui\/client/u);
+    assert.match(license, /MIT/u);
 });
 
 test("{§web-build} production prunes unused CSS without dropping native state selectors", async () => {

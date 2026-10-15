@@ -27,7 +27,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 | GET `/icons/plurnk.svg` | Scalable app icon. |
 | GET `/icons/plurnk-maskable.svg` | Maskable app icon. |
 | GET `/icons/NOTO-NOTICE.txt`, `/icons/APACHE-2.0.txt` | Artwork attribution and license. |
-| GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt` | Packaged dependency licenses. |
+| GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt`, `/vendor/DEPENDENCIES-LICENSE.txt` | Packaged substrate and bundled JavaScript dependency licenses. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
 | Other asset path | 404 error document, never a home-page fallback or filesystem listing. |
 | Asset method other than GET/HEAD | 405 with `Allow: GET, HEAD`. |
@@ -132,7 +132,7 @@ the module clears it. Cookie and grant lifetimes come from the authority, not a
 second lifetime setting. Sign-in uses the dependency-free MIT `oauth4webapi`
 client and RFC 8414 discovery after listener admission; passwords are entered
 only at the daemon's authorization endpoint.
-Worker interaction remains unimplemented. Browser access credentials use
+Worker observation uses {§web-worker-observer}. Browser access credentials use
 {§web-access-token}; they are never embedded in documents.
 
 References: [OAuth browser applications](https://www.rfc-editor.org/rfc/rfc10017.html#section-6.2),
@@ -154,8 +154,8 @@ identity, expiry, revocation and the account inventory.
 | Browser custody | Access credentials are for the same-origin `/agui` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
 | Refusals | Missing/expired/revoked sign-in is 401; wrong/missing Origin is 403. Expected endpoint failures use RFC 9457 JSON, not an HTML sign-in redirect. |
 
-This supplies a verified connection primitive only. It installs no interactive worker
-UI, automatic retry loop, persistent browser state or additional session registry.
+Worker observation consumes this primitive under {§web-worker-observer}; it adds no
+persistent browser state or additional session registry.
 
 ## §web-authorization-style Authorization document presentation
 
@@ -194,7 +194,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. Prefix each name with ☁️ when `project_root` is null, otherwise 📁; accessible image labels identify folderless/project workspaces. Never infer folder presence from the name. |
 | Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listWorkers(id)` census rendered under {§web-worker-directory}. |
-| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}. No interactive worker UI yet. |
+| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}, plus passive status under {§web-worker-observer}. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
 
@@ -244,7 +244,45 @@ workspace with a separate folder must not claim it is folderless.
 
 Rendering and expansion perform no attachment, inference, ownership change or
 daemon mutation. There is no browser topology cache, saved expansion state,
-lazy branch request, custom tree role or JavaScript disclosure handler.
+lazy branch request, custom tree role or JavaScript disclosure handler. Opening a
+worker page may observe it under {§web-worker-observer}, never control it.
+
+## §web-worker-observer Read-only worker status
+
+The server renders a semantic status section only for an existing model worker,
+with exact workspace/worker names and whether access requires a browser session.
+No credential appears in the document. JavaScript enhances that section; other
+pages neither load HttpAgent nor request access credentials or AG-UI streams.
+Without JavaScript the identity and navigation remain usable, with an explicit
+notice that live status requires JavaScript.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Connecting
+    Connecting --> Connected: authoritative status
+    Connected --> Connecting: worker terminal
+    Connecting --> Disconnected: refusal / transport failure
+    Connected --> Disconnected: shutdown / transport failure
+    Connecting --> SignedOut: sign-in refused
+    Connected --> SignedOut: credential revoked
+    Connecting --> Closed: page departure
+    Connected --> Closed: page departure
+    Closed --> Connecting: browser restores page
+```
+
+| Boundary | Contract |
+|---|---|
+| Transport | Official HttpAgent via its public connection hook, using `/agui/connect`, `threadId` as the worker name and `forwardedProps.plurnk.workspace` as the workspace name. Empty messages/tools; no action, resume, control claim or capability replacement. SDK owns event parsing, replay and state patches. |
+| Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/SDK instance and are released on departure. |
+| Continuity | A daemon `plurnk.terminated` event identifies normal worker completion, including failure or cancellation; reconnect passively to watch subsequent work. Never submit messages, retry work or infer completion from transport closure. |
+| Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card, retain clearly stale last-observed values, and offer a native reload link. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
+| Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
+| Projection | `plurnk.status` is authoritative for lifecycle, latest loop, packet count and spend. Usage/cost cover the worker and descendants; absent values read “Unknown”, not zero or a known subtotal presented as a total. The browser keeps no accounting ledger or transcript cache. |
+| Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
+| Presentation | Native definition list and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection status and errors are announced; the ticking elapsed value is not a live announcement. |
+
+There is no conversation, composer, operation control or approval interface. An
+unexpected interrupt stops observation rather than being resolved or retried.
 
 ## §web-page-shell Native page shell
 
@@ -274,7 +312,7 @@ bright enough for contrast. Native color-scheme selection is preserved; typograp
 uses Pico's system monospace stack. Content and styling
 work without JavaScript.
 There is no theme switcher, client routing, persistent browser storage, external
-asset request or agent interface. The root links to the directory index. Protected
+asset request or conversation interface. The root links to the directory index. Protected
 directory documents supply daemon identities as escaped HTML, never credentials.
 
 Source stylesheets load in this order, with one concern per file. Production
@@ -285,7 +323,7 @@ compilation may combine them without changing their cascade:
 | `app-vendor.css` | Unmodified pinned Pico Classless Green, copied during build. |
 | `app-structure.css` | Readable page width, gutters and wrapping. |
 | `app-style.css` | Presentation through substrate tokens; brand accents and system monospace. |
-| `app-state.css` | Worker page width and native focus visibility. |
+| `app-state.css` | Worker page width, observer connection/error presentation and native focus visibility. |
 
 ## §web-language Source language
 
@@ -303,7 +341,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Concern | Owner |
 |---|---|
 | Document structure and ordinary navigation | Semantic HTML, real links, lists and native forms; not a JavaScript-created application shell. |
-| Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. No worker interface is implemented yet. |
+| Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Only read-only status observation is implemented under {§web-worker-observer}. |
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
 | Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. |
@@ -360,7 +398,7 @@ References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progre
 ## §web-package Package boundary
 
 The npm archive includes the Agent Plugin manifest, native module, defaults,
-document and its complete browser dependency graph, including OTM, Pico and artwork licenses.
+document and its complete browser dependency graph, including OTM, Pico, HttpAgent and artwork licenses.
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside candidate service archives in an isolated environment and exercises actual module
 discovery, routing and browser execution.
@@ -374,7 +412,8 @@ The packed-installation gate runs the official HttpAgent in Chromium from the
 module's real document origin, against an isolated authenticated daemon and a
 deterministic local model. Only the test SDK asset is injected; AG-UI traffic is
 not intercepted or synthesized. No operator configuration or paid model is used.
-Test fixtures and the SDK test bundle are not shipped browser assets.
+Test fixtures and the SDK test bundle are not shipped browser assets. The actual
+worker page is exercised separately under {§web-worker-observer}, without SDK injection.
 
 | Boundary under verification | Required observation |
 |---|---|
@@ -389,5 +428,5 @@ Test fixtures and the SDK test bundle are not shipped browser assets.
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |
 | Credentials | Real password/PKCE sign-in, browser access, expiry, concurrent refresh and revocation compose with the SDK. Revocation terminates admitted connections without cancelling their workers. |
 
-This establishes protocol prerequisites, not an interactive worker UI. There is no
+This establishes protocol prerequisites, not a conversation interface. There is no
 client-owned replay cache, second event parser or automatic retry of work.

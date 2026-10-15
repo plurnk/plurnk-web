@@ -145,6 +145,25 @@ export default class Documents {
         return roots + other;
     }
 
+    /** {§web-worker-observer} Identity and navigation belong to the document; status arrives through AG-UI.
+     * @param {import("./directory-addresses.js").Directory & {kind: "worker"}} directory @param {boolean} authenticated
+     */
+    #workerStatus(directory, authenticated) {
+        const path = directoryPath(directory);
+        if (path === null) throw new Error("An admitted worker must have a directory address.");
+        const fields = [["lifecycle", "Worker"], ["loop", "Loop"], ["turns", "Turns"], ["elapsed", "Elapsed"],
+            ["requests", "Requests"], ["input", "Input tokens"], ["output", "Output tokens"], ["cost", "Cost (USD)"]];
+        return `<section id="worker-status" aria-label="Worker status" data-workspace="${escapeHtml(directory.workspace)}"`
+            + ` data-worker="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-connection="initial">`
+            + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
+            + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}</dl>`
+            + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
+            + '<p data-text="connection-detail">Displayed values are no longer live.</p><p>'
+            + `<a data-reconnect href="${escapeHtml(path)}" data-i18n="reconnect">Reconnect</a>`
+            + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-i18n="sign-in">Sign in</a>`
+            + '</p></article></section>';
+    }
+
     /**
      * @param {import("./directory-addresses.js").Directory} directory
      * @param {Pick<import("@plurnk/plurnk-contracts").ApplicationPort, "listWorkspaces" | "listWorkers">} port
@@ -180,6 +199,6 @@ export default class Documents {
             : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
         const title = `${workspace.name}@${directory.worker}`;
         return render(title, `<h1 data-text="directory-title">${escapeHtml(title)}</h1>` + (parent === null ? ""
-            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`));
+            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`) + this.#workerStatus(directory, authenticated));
     }
 }

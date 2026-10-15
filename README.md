@@ -8,7 +8,7 @@ No chat interface or additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
-breadcrumbs and their actual parent, not an interactive worker interface.
+breadcrumbs, their actual parent, and live read-only status. There is no conversation UI.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -52,13 +52,19 @@ intact. A daemon restart invalidates sessions. Remotely, use HTTPS.
 
 The same-origin `POST /auth/token` connection primitive supplies short-lived
 AG-UI access credentials to a signed-in browser. OAuth refresh credentials stay
-server-side; rotation and revocation use the daemon's authority. This adds no
-interactive worker UI or automatic connection to a worker.
+server-side; rotation and revocation use the daemon's authority.
+
+Worker pages passively connect through the official HttpAgent. They show lifecycle,
+elapsed time, turns, request/token totals and cost from the daemon; unavailable
+accounting stays **Unknown**, not zero. A finished loop leaves the page watching
+for the next one. Closing, refreshing or navigating away never cancels work.
+Connection failure stops observation and marks the displayed values as stale;
+use **Reconnect** or, after revocation, **Sign in**. No automatic work retries occur.
 
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
 picker or stored preferences. Ordinary navigation and forms
-remain native HTML; the eventual interactive worker interface requires JavaScript.
+remain native HTML; live worker status requires JavaScript.
 
 ## Install from source
 
@@ -129,7 +135,8 @@ isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Install that test browser with `npx playwright install chromium` if
 necessary. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
-deterministic local model; no paid inference or shipped interactive worker UI is involved.
+deterministic local model; no paid inference is involved. Separate journeys exercise
+the shipped read-only worker page without injecting an SDK or mocking AG-UI.
 It exercises synchronization, observer/control disconnects, approval interrupts,
 shutdown and the real browser sign-in/access-token lifecycle. No AG-UI traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
@@ -137,10 +144,13 @@ mocked and no client-owned replay cache hides differences from the daemon's hist
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
 Pico's readable pinned substrate and dependency licenses, and derives a maskable SVG
-from the mascot. Production prunes unused CSS rules, variables and keyframes from
+from the mascot. HttpAgent loads only on worker pages; Vite includes the bundled
+dependencies' license notices. Production prunes unused CSS rules, variables and keyframes from
 the browser and server-rendered document sources, plus the authority's publicly
 exported document specimens, before minification. The AG-UI package supplies those
 specimens as a development dependency only; no daemon code enters the browser bundle.
+Its public type declarations currently require Node typings, including for type-only
+browser consumers; these declarations are erased, not bundled.
 The generated asset inventory tells the plugin which production files to serve.
 Build output is packed but not committed. [SPEC.md](SPEC.md) defines the contract.
 
@@ -152,7 +162,7 @@ before production pruning, so references between layers remain visible:
 | `app-vendor.css` | Generated, unmodified Pico substrate. |
 | `app-structure.css` | Reading width, gutters and wrapping. |
 | `app-style.css` | Substrate token overrides; brand accents and system monospace. |
-| `app-state.css` | Worker page width and native focus visibility. |
+| `app-state.css` | Worker page width, connection state and native focus visibility. |
 
 Authored CSS is checked with OTM's Stylelint rules. No remote fonts are required.
 

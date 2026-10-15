@@ -71,3 +71,13 @@ figure:has(> table) {
 table {
     overflow-wrap: normal;
 }
+
+#worker-status dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--pico-spacing);
+}
+
+#worker-status dd {
+    margin-inline-start: 0;
+}

@@ -17,6 +17,7 @@ import candidatePackages from "./candidate-packages.js";
 import verifySessions from "./sessions-browser.js";
 import verifyAccount from "./account-browser.js";
 import verifyTokens from "./tokens-browser.js";
+import verifyWorkerPage from "./worker-browser.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -37,6 +38,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     assert.ok(archive.files.some(({ path }) => /^ai\.plurnk\/dist\/assets\/.+\.css$/u.test(path)));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/OTM-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/index-document.js"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/directory-addresses.js"));
@@ -192,6 +194,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     await verifySessions({ t, consumer, withDaemon });
     await verifyAccount({ t, withDaemon });
     await verifyTokens({ t, withDaemon });
+    await verifyWorkerPage({ t, withDaemon });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
         for (const value of ["0", "invalid"]) {

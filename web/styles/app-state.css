@@ -6,3 +6,10 @@ body:has(> main[data-page="worker"]) > :is(header, main, footer) {
 header nav button:is(:hover, :focus-visible) {
     text-decoration: underline;
 }
+
+/* {§web-worker-observer} Failed connections expose native recovery, never stale live indicators. */
+#worker-status:not([data-connection="disconnected"], [data-connection="signed-out"]) > article,
+#worker-status:not([data-connection="signed-out"]) [data-sign-in],
+#worker-status[data-connection="signed-out"] [data-reconnect] {
+    display: none;
+}
