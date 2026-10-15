@@ -31,28 +31,32 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             const existing = (await port.listWorkspaces()).find((workspace) => workspace.name === name);
             const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
             const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
-            await port.ensureModelWorker(workspaceId);
+            if (!(await port.listWorkers(workspaceId)).some((worker) => worker.name === "user")) {
+                await port.createWorker({ workspaceId, name: "user" });
+            }
             if (name === ${JSON.stringify(names[0])} && !(await port.listWorkers(workspaceId)).some((worker) => worker.name === "primary")) {
                 const owner = "agui://fixture/threads/primary";
                 await port.registerWorkerOwner(workspaceId, { address: owner, tools: [], interactive: false });
-                const parent = await port.createConversationWorker({ workspaceId, name: "primary", owner });
+                const parent = await port.createWorker({ workspaceId, name: "primary", owner });
                 const review = await port.forkWorker({ workspaceId, workerId: parent.workerId, name: "review" });
-                await port.createConversationWorker({ workspaceId, name: "research", parentWorkerId: parent.workerId });
-                await port.createConversationWorker({ workspaceId, name: "evidence", parentWorkerId: review.workerId });
-                await port.createConversationWorker({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
+                await port.createWorker({ workspaceId, name: "research", parentWorkerId: parent.workerId });
+                await port.createWorker({ workspaceId, name: "evidence", parentWorkerId: review.workerId });
+                await port.createWorker({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
                 const runtime = await port.ensureRuntimeWorker(workspaceId);
-                const incoming = await port.createConversationWorker({ workspaceId, name: "incoming", parentWorkerId: runtime });
-                await port.createConversationWorker({ workspaceId, name: "incoming-child", parentWorkerId: incoming.workerId });
+                const incoming = await port.createWorker({ workspaceId, name: "incoming", parentWorkerId: runtime });
+                await port.createWorker({ workspaceId, name: "incoming-child", parentWorkerId: incoming.workerId });
                 const client = (await port.listWorkers(workspaceId)).find((worker) => worker.origin === "client");
                 if (!client) throw new Error("Workspace fixture has no client actor.");
-                await port.createConversationWorker({ workspaceId, name: "client-child", parentWorkerId: client.id });
+                await port.createWorker({ workspaceId, name: "client-child", parentWorkerId: client.id });
             }
         }
         for (const [projectRoot, name] of ${JSON.stringify(homeFolders)}) {
             const existing = (await port.listWorkspaces()).find((workspace) => workspace.project_root === projectRoot);
             const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
             if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
-            await port.ensureModelWorker(workspaceId);
+            if (!(await port.listWorkers(workspaceId)).some((worker) => worker.name === "user")) {
+                await port.createWorker({ workspaceId, name: "user" });
+            }
         }
         port.registerHttpRoute("/__fixture", async (req, res) => {
             if (req.url === "/__fixture/revoke" && req.method === "POST") {

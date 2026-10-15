@@ -66,6 +66,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(action.result.actions["workspace.list"].scope, "worldless");
             assert.equal(action.result.actions["entry.read"].scope, "workspace");
             assert.equal(result.events.at(-1).type, "RUN_FINISHED");
+            assert.deepEqual(result.state, {});
             assert.equal(model.requests.length, 0);
         });
 
@@ -105,8 +106,31 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(result.state.plurnk.workspace.projectRoot, projectRoot);
             assert.equal(result.state.plurnk.status.lifecycle, "completed");
             assert.equal(result.state.plurnk.status.packetCount, 2);
-            assert.equal(result.state.plurnk.status.activity, null);
+            assert.equal(result.state.plurnk.workspace.activity, null);
+            assert.ok(Object.hasOwn(result.state.plurnk.workspace, "preparation"));
+            assert.equal(Object.hasOwn(result.state.plurnk.status, "activity"), false);
+            assert.equal(Object.hasOwn(result.state.plurnk.status, "preparation"), false);
             assert.equal(model.requests.length, 2);
+        });
+
+        await t.test("{§web-agui-conformance} workspace actions report workspace activity without selecting a model worker", async () => {
+            const before = model.requests.length;
+            const result = await run({ token, threadId: "not-a-worker", plurnk: {
+                workspace: "browser-conformance", action: { kind: "workspace.workers" },
+            } });
+            assert.equal(result.rejected, undefined);
+            assert.deepEqual(result.failures, []);
+            const action = result.events.find(({ name }) => name === "plurnk.action.result")?.value;
+            assert.equal(action?.kind, "workspace.workers");
+            assert.equal(action.ok, true);
+            assert.equal(result.events.at(-1).type, "RUN_FINISHED");
+            assert.deepEqual(result.events.at(-1).outcome, { type: "success" });
+            assert.equal(result.state.plurnk.workspace.name, "browser-conformance");
+            assert.ok(Object.hasOwn(result.state.plurnk.workspace, "activity"));
+            assert.ok(Object.hasOwn(result.state.plurnk.workspace, "preparation"));
+            assert.equal(Object.hasOwn(result.state.plurnk, "status"), false);
+            assert.equal(Object.hasOwn(result.state, "budget"), false);
+            assert.equal(model.requests.length, before);
         });
 
         await t.test("{§web-agui-conformance} provider refusal arrives as RUN_ERROR, not a successful completion", async () => {

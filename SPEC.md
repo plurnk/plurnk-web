@@ -154,7 +154,7 @@ identity, expiry, revocation and the account inventory.
 | Browser custody | Access credentials are for the same-origin `/agui` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
 | Refusals | Missing/expired/revoked sign-in is 401; wrong/missing Origin is 403. Expected endpoint failures use RFC 9457 JSON, not an HTML sign-in redirect. |
 
-This supplies a verified connection primitive only. It installs no conversation
+This supplies a verified connection primitive only. It installs no interactive worker
 UI, automatic retry loop, persistent browser state or additional session registry.
 
 ## §web-authorization-style Authorization document presentation
@@ -194,7 +194,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. Prefix each name with ☁️ when `project_root` is null, otherwise 📁; accessible image labels identify folderless/project workspaces. Never infer folder presence from the name. |
 | Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listWorkers(id)` census rendered under {§web-worker-directory}. |
-| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}. No conversation UI yet. |
+| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}. No interactive worker UI yet. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
 
@@ -379,8 +379,9 @@ Test fixtures and the SDK test bundle are not shipped browser assets.
 | Boundary under verification | Required observation |
 |---|---|
 | Standard Run | Bearer rejection, discovery, reasoning, correlated native tool/results, Plurnk receipts, state, assistant replies and provider failures survive the official SDK. |
+| State ownership | Preparation and activity belong to workspace state. Runs without a model worker expose neither worker status nor budget. |
 | Synchronization | Authoritative messages/state without inference or borrowed history from another workspace. Retained reasoning and operation/result evidence must not disappear on a fresh connection. |
-| Observation | `/agui/connect` remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
+| Observation | `/agui/connect` selects an existing worker by `threadId` in the named workspace, remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
 | Exact target | Explicit existing-worker selection preserves identity when workspace and worker names coincide. Missing/internal targets and renamed-away workspace names fail without creating or claiming anything, including on cached bindings. |
 | Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |
 | Control | Disconnecting the controlling request cancels its work; an observer receives the cancellation. |
@@ -388,5 +389,5 @@ Test fixtures and the SDK test bundle are not shipped browser assets.
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |
 | Credentials | Real password/PKCE sign-in, browser access, expiry, concurrent refresh and revocation compose with the SDK. Revocation terminates admitted connections without cancelling their workers. |
 
-This establishes protocol prerequisites, not a conversation UI. There is no
+This establishes protocol prerequisites, not an interactive worker UI. There is no
 client-owned replay cache, second event parser or automatic retry of work.
