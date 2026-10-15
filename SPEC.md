@@ -193,7 +193,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 |---|---|
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. Prefix each name with ☁️ when `project_root` is null, otherwise 📁; accessible image labels identify folderless/project workspaces. Never infer folder presence from the name. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then one `listWorkers(id)` census rendered under {§web-worker-directory}. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listWorkers(id)` census rendered under {§web-worker-directory}. |
 | Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}. No conversation UI yet. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
@@ -211,6 +211,24 @@ Vite development/preview continue to serve frontend documents only: dynamic
 directory/auth routes require a daemon. The installation gate accepts explicitly
 supplied candidate package archives to verify the unreleased public contract;
 it must not substitute a published service missing that contract.
+
+## §web-workspace-folder Workspace and folder labels
+
+Compare the workspace name with the daemon's `project_label` by exact equality.
+Render that label as escaped text, never a filesystem link. Do not derive a label
+from `project_root`, the browser's location, the client's home or the workspace name.
+The daemon owns home abbreviation; names remain opaque and unchanged.
+
+| Workspace page | Breadcrumb | Separate folder line before the worker list |
+|---|---|---|
+| Folderless (`project_label: null`) | ☁️ name | None. |
+| Name equals folder label | 📁 name | None; the breadcrumb already identifies the folder. |
+| Name differs from folder label | ☁️ name | 📁 followed by the supplied label. |
+
+The workspace index continues to mark folder presence under
+{§web-directory-documents}, irrespective of name equality. Accessible icon labels
+distinguish the workspace identity from its project folder; a cloud on a named
+workspace with a separate folder must not claim it is folderless.
 
 ## §web-worker-directory Model-worker navigation
 
@@ -236,7 +254,7 @@ lazy branch request, custom tree role or JavaScript disclosure handler.
 | Header actions | Mascot-only home link with accessible Plurnk name; 📁 Workspaces, ⚙️ Account, ✖ Sign out: icon-only controls with explicit accessible names and native explanatory titles. Brand and actions align in one horizontal row, including narrow viewports. Breadcrumbs retain text labels. |
 | Breadcrumb layout | One native breadcrumb in the header, between mascot and menu when its intrinsic width fits; otherwise centered directly below both. Names can wrap within the lower row, never clipped or abbreviated. Content, font size and available controls determine fit, not a viewport breakpoint or JavaScript measurements. Keyboard order remains mascot, menu, breadcrumb. |
 | Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. Home, workspace index and workspace pages omit headings; worker, account and error pages retain one `h1`. |
-| Directory breadcrumbs | Workspaces → whole workspace name → worker; only applicable ancestors appear. The current item is text marked `aria-current="page"`. On the workspace page, prefix it with the same folder/cloud marker as {§web-directory-documents}. Slashes in names do not invent intermediate directories. |
+| Directory breadcrumbs | Workspaces → whole workspace name → worker; only applicable ancestors appear. The current item is text marked `aria-current="page"`. The workspace-page marker follows {§web-workspace-folder}. Slashes in names do not invent intermediate directories. |
 | Empty lists | “No workspaces.” or “No workers.”; no empty list masquerading as content. |
 | Page width | Non-worker documents are centered and bounded by 65ch or the viewport, whichever is narrower. Worker documents and their navigation use the available viewport width. Gutters and wrapping preserve narrow-screen usability and complete names. |
 | Expected HTTP failures | A Pico `article` card within the same HTML shell: heading, decorative warning emoji, escaped explanation and native Home link. Preserve status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |

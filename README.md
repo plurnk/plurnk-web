@@ -9,7 +9,10 @@ directory at `/~/`; workspace pages list model workers as real links, with nativ
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
 breadcrumbs and their actual parent, not a conversation interface.
-The workspace list and workspace breadcrumb mark folderless workspaces with ☁️ and folder-backed ones with 📁.
+The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
+On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
+otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
+folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
 Non-worker pages use a 65ch reading width; worker pages use the available width.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.
@@ -59,10 +62,12 @@ remain native HTML; the eventual interactive worker interface requires JavaScrip
 
 ## Install from source
 
-Requires Node.js 26+ and a Plurnk service with the module-client credential API
+Requires Node.js 26+ and a Plurnk service with the module-client credential and
+workspace-label APIs
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
 including sign-in inventory, shared browser/module revocation, password-only login,
-and registered authorization-page styles). That API is not in the current published service;
+and registered authorization-page styles, plus daemon-supplied folder labels).
+These APIs are not in the current published service;
 use packed candidate packages for development and verification.
 
 ```sh

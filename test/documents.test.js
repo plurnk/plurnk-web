@@ -5,14 +5,19 @@ import Documents from "../ai.plurnk/documents.js";
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({ id, name, parentWorkerId, origin, owner });
 
-test("{§web-page-shell} directory breadcrumbs replace duplicate headings and carry the workspace marker", async () => {
+test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish workspace names from literal daemon folder labels", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
-    for (const [name, project_root, icon, label] of [
-        ["~/looks-like-a-folder", null, "☁️", "Folderless workspace"],
-        ["research<&>", "/home/test/project", "📁", "Project workspace"],
+    for (const [name, project_root, project_label, icon, label, separateFolder] of [
+        ["~/looks-like-a-folder", null, null, "☁️", "Folderless workspace", false],
+        ["~/project", "/home/daemon/project", "~/project", "📁", "Project workspace", false],
+        ["research<&>", "/home/daemon/project", "~/project", "☁️", "Workspace", true],
+        ["~/project/", "/home/daemon/project", "~/project", "☁️", "Workspace", true],
+        ["~", "/home/daemon", "~", "📁", "Project workspace", false],
+        ["/", "/", "/", "📁", "Project workspace", false],
+        ["研究", '/srv/資料 @<script>&"', '/srv/資料 @<script>&"', "☁️", "Workspace", true],
     ]) {
         const port = {
-            listWorkspaces: async () => [{ id: 7, name, project_root }],
+            listWorkspaces: async () => [{ id: 7, name, project_root, project_label }],
             listWorkers: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
@@ -24,9 +29,16 @@ test("{§web-page-shell} directory breadcrumbs replace duplicate headings and ca
         assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span></li>`), page);
         assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
         assert.doesNotMatch(page, /<h1\b/u);
-        assert.equal(page.split("</title>")[1].split(escaped).length - 1, 1, "the workspace name appears once outside the browser title");
+        assert.equal(page.match(/aria-current="page"/gu).length, 1, "the workspace breadcrumb has one current item");
         assert.match(page, /<header>[\s\S]*<nav aria-label="breadcrumb">[\s\S]*<\/nav><\/header>/u);
         assert.doesNotMatch(page.split("<main")[1], /aria-label="breadcrumb"/u);
+        if (separateFolder) {
+            const folder = project_label.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+            assert.ok(page.includes(`<p><span role="img" aria-label="Project folder">📁</span> <span data-text="project-label">${folder}</span></p>`));
+        } else {
+            assert.doesNotMatch(page, /data-text="project-label"/u, "no duplicate or invented folder row");
+        }
+        assert.doesNotMatch(page, /\/home\/daemon|<script>/u, "display the supplied label, not the filesystem root or executable markup");
     }
 });
 
@@ -44,7 +56,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
         worker(9, "other", 2, "model", "agui://owner"),
         worker(10, "incoming-child", 8),
     ];
-    const port = { listWorkspaces: async () => [{ id: 7, name: "work" }], listWorkers: async () => workers };
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name">${name}</a>`;
     const children = (count, list) => `<details><summary data-text="child-workers">${count} child worker${count === 1 ? "" : "s"}</summary><ul>${list}</ul></details>`;
@@ -76,7 +88,7 @@ test("{§web-worker-directory} empty and internal-only workspaces have no empty 
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
     for (const workers of [[], [worker(1, "_plurnk", null, "_plurnk"), worker(2, "c9a4d11f", null, "client")], [worker(3, "user")]]) {
         const html = (await document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work" }], listWorkers: async () => workers,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers,
         }, false)).toString();
         assert.doesNotMatch(html, /<details|Background work|<ul><\/ul>/u);
         if (workers.some(({ origin }) => origin === "model")) assert.match(html, /href="\/~\/work@user\/"/u);
@@ -93,7 +105,7 @@ test("{§web-worker-directory} inconsistent topology fails rather than dropping 
         [[worker(1, "first", 2), worker(2, "second", 1)], "Worker directory contains cyclic model parentage."],
     ]) {
         await assert.rejects(document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work" }], listWorkers: async () => workers,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers,
         }, false), { name: "Error", message });
     }
 });
@@ -102,9 +114,9 @@ test("{§web-directory-documents} workspace markers describe folder presence wit
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
     const html = (await document.read({ kind: "daemon" }, {
         listWorkspaces: async () => [
-            { id: 1, name: "~/looks-like-a-folder", project_root: null },
-            { id: 2, name: "research", project_root: "/home/daemon/project" },
-            { id: 3, name: "../legacy", project_root: null },
+            { id: 1, name: "~/looks-like-a-folder", project_root: null, project_label: null },
+            { id: 2, name: "research", project_root: "/home/daemon/project", project_label: "~/project" },
+            { id: 3, name: "../legacy", project_root: null, project_label: null },
         ],
         listWorkers: async () => { throw new Error("The workspace index needs no worker lookup."); },
     }, false)).toString();
@@ -119,7 +131,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     const port = {
         listWorkspaces: async () => {
             calls.push("workspaces");
-            return [{ id: 7, name: '~/a&<script>@"b', project_root: null }, { id: 8, name: "../legacy", project_root: null }];
+            return [{ id: 7, name: '~/a&<script>@"b', project_root: null, project_label: null }, { id: 8, name: "../legacy", project_root: null, project_label: null }];
         },
         listWorkers: async (id) => { calls.push(id); return [worker(1, "user")]; },
     };
@@ -151,7 +163,7 @@ test("{§web-directory-documents} a broken document outlet fails at load", () =>
 test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not path segments", async () => {
     const name = "~/project/a&b<script>";
     const port = {
-        listWorkspaces: async () => [{ id: 7, name }],
+        listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null }],
         listWorkers: async () => [worker(1, "user")],
     };
     const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" tabindex="-1" data-page="home">Home</main></body></html>`);
@@ -173,7 +185,7 @@ test("{§web-page-shell} empty lists and request failures are useful native docu
     assert.match(empty, /<p[^>]*>No workspaces\.<\/p>/u);
     assert.doesNotMatch(empty, /<ul><\/ul>/u);
     const workers = (await document.read({ kind: "workspace", workspace: "empty" }, {
-        ...port, listWorkspaces: async () => [{ id: 7, name: "empty" }],
+        ...port, listWorkspaces: async () => [{ id: 7, name: "empty", project_root: null, project_label: null }],
     }, false)).toString();
     assert.match(workers, /data-page="workspace"/u);
     assert.match(workers, /<p[^>]*>No workers\.<\/p>/u);

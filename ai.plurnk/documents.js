@@ -165,7 +165,12 @@ export default class Documents {
         const byId = new Map(workers.map((worker) => [worker.id, worker]));
         if (byId.size !== workers.length) throw new Error("Worker directory contains duplicate identities.");
         if (directory.kind === "workspace") {
-            return render(workspace.name, this.#workerTree(workspace.name, byId), this.#workspaceMarker(workspace.project_root));
+            // {§web-workspace-folder}
+            const separateFolder = workspace.project_label !== null && workspace.project_label !== workspace.name;
+            const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">📁</span> '
+                + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
+            const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
+            return render(workspace.name, folder + this.#workerTree(workspace.name, byId), marker);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
         if (worker === undefined) return null;
