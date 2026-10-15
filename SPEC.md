@@ -381,6 +381,8 @@ Test fixtures and the SDK test bundle are not shipped browser assets.
 | Standard Run | Bearer rejection, discovery, reasoning, correlated native tool/results, Plurnk receipts, state, assistant replies and provider failures survive the official SDK. |
 | Synchronization | Authoritative messages/state without inference or borrowed history from another workspace. Retained reasoning and operation/result evidence must not disappear on a fresh connection. |
 | Observation | `/agui/connect` remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
+| Exact target | Explicit existing-worker selection preserves identity when workspace and worker names coincide. Missing/internal targets and renamed-away workspace names fail without creating or claiming anything, including on cached bindings. |
+| Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |
 | Control | Disconnecting the controlling request cancels its work; an observer receives the cancellation. |
 | Approval | Native interrupts resume through the SDK; a different owner or consumed interrupt cannot resolve the gate. Test-only handlers do not advertise capabilities in the shipped page. |
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import verifyObserver from "./agui-observer.js";
 
 // {§web-agui-conformance} The fixture uses only the official SDK and the daemon's public wire.
 export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop }) {
@@ -28,6 +29,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
                 execute(run, parameters, observe);
             },
             resume(id, resume) { const run = runs.get(id); execute(run, { ...run.parameters, resume }); },
+            reconnect(id) { const run = runs.get(id); execute(run, run.parameters, true); },
             async finish(id) { await runs.get(id).promise; return this.read(id); },
             read(id) {
                 const run = runs.get(id);
@@ -35,15 +37,39 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
                     messages: run.agent.messages, state: run.agent.state, running: run.agent.isRunning,
                     interrupts: run.agent.pendingInterrupts };
             },
-            async detach(id) { await runs.get(id).agent.detachActiveRun(); },
+            async detach(id) {
+                const { agent } = runs.get(id);
+                // SDK 1.0.2 detaches its consumer without closing the SSE fetch; release the observer transport too.
+                try { await agent.detachActiveRun(); }
+                finally { agent.abortRun(); }
+            },
             abort(id) { runs.get(id).agent.abortRun(); },
             close() { for (const { agent } of runs.values()) agent.abortRun(); },
         };
     }, token);
     const start = (id, options) => tab.evaluate(({ id, options }) => globalThis.lifecycle.start(id, options), { id, options: { projectRoot, ...options } });
-    const finish = (id) => tab.evaluate((id) => globalThis.lifecycle.finish(id), id);
+    const finish = async (id) => {
+        try {
+            await tab.waitForFunction((id) => globalThis.lifecycle.read(id).settled, id, { timeout: 10_000 });
+        } catch (cause) {
+            const result = await read(id);
+            throw new Error(`SDK run ${id} did not settle: ${JSON.stringify(result)}`, { cause });
+        }
+        return tab.evaluate((id) => globalThis.lifecycle.finish(id), id);
+    };
     const read = (id) => tab.evaluate((id) => globalThis.lifecycle.read(id), id);
-    const event = (id, type) => tab.waitForFunction(({ id, type }) => globalThis.lifecycle.read(id).events.some((event) => event.type === type), { id, type }, { timeout: 10_000 });
+    const event = async (id, type) => {
+        try {
+            await tab.waitForFunction(({ id, type }) => {
+                const result = globalThis.lifecycle.read(id);
+                return result.settled || result.events.some((event) => event.type === type);
+            }, { id, type }, { timeout: 10_000 });
+        } catch (cause) {
+            throw new Error(`SDK run ${id} never received ${type}: ${JSON.stringify(await read(id))}`, { cause });
+        }
+        const result = await read(id);
+        assert.ok(result.events.some((event) => event.type === type), `SDK run ${id} ended before ${type}: ${JSON.stringify(result)}`);
+    };
     const successful = (result) => {
         assert.equal(result.failure, null);
         assert.equal(result.events.at(-1)?.type, "RUN_FINISHED");
@@ -161,6 +187,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal((await finish("duplicate")).events.at(-1).type, "RUN_ERROR");
             assert.equal(model.requests.length, before + 2, "one proposed command and one answer, without a model retry");
         });
+        await verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model });
         await t.test("{§web-agui-conformance} an idle observer receives daemon shutdown as a terminal error", async () => {
             await start("shutdown", { workspace: "browser-conformance", observe: true });
             await event("shutdown", "MESSAGES_SNAPSHOT");
