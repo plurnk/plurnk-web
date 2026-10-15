@@ -17,7 +17,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         assert.equal((await finish(id)).failure, null);
     };
     const observe = async (id, workspace, worker) => {
-        await start(id, { workspace, threadId: worker, worker, observe: true });
+        await start(id, { workspace, threadId: worker, observe: true });
         await event(id, "MESSAGES_SNAPSHOT");
         const result = await read(id);
         assert.equal(result.failure, null);
@@ -26,8 +26,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         return result;
     };
 
-    await start("observer-seed", { workspace: "observer-world", threadId: "named-worker", mode: "sync", control: true });
-    successful(await finish("observer-seed"));
+    await action("observer-world", "named-worker", "worker.model.set", { selector: "browser" });
 
     await t.test("{§web-agui-conformance} explicit observation refuses absent and internal targets without mutation", async () => {
         const beforeCalls = model.requests.length;
@@ -37,15 +36,18 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         assert.ok(internal);
         for (const [workspace, worker, code] of [
             ["missing-observer-world", "named-worker", "workspace-not-found"],
-            ["observer-world", "absent-worker", "conversation-not-found"],
-            ["observer-world", internal.name, "conversation-not-found"],
+            ["observer-world", "absent-worker", "worker-not-found"],
+            ["observer-world", internal.name, "worker-not-found"],
         ]) {
             const id = `missing-${sequence++}`;
-            await start(id, { workspace, threadId: "named-worker", worker, observe: true });
+            await start(id, { workspace, threadId: worker, observe: true });
             const result = await finish(id);
             assert.equal(result.failure?.status, 404);
             const problem = typeof result.failure.payload === "string" ? JSON.parse(result.failure.payload) : result.failure.payload;
             assert.ok(problem.type.endsWith(`/${code}`), JSON.stringify(problem));
+            assert.equal(problem.detail, code === "workspace-not-found"
+                ? `No workspace named "${workspace}" exists.`
+                : `No model worker named "${worker}" exists in workspace "${workspace}".`);
             assert.deepEqual(result.events, []);
         }
         // More than a browser's per-origin HTTP/1 connection limit: detachment must release transport too.
@@ -82,13 +84,14 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         }, undefined, { timeout: 10_000 });
         const stale = await read("cached-before-rename");
         if (!stale.settled) await detach("cached-before-rename");
-        assert.deepEqual(await action("exact-worker", "exact-worker", "workspace.workers"), before);
         assert.equal(model.requests.length, beforeCalls);
         assert.equal(stale.failure?.status, 404,
             `a cached envelope cannot resurrect a renamed-away workspace: ${JSON.stringify(stale.state.plurnk?.workspace)}`);
         const problem = typeof stale.failure.payload === "string" ? JSON.parse(stale.failure.payload) : stale.failure.payload;
         assert.ok(problem.type.endsWith("/workspace-not-found"), JSON.stringify(problem));
         assert.deepEqual(stale.events, []);
+        assert.deepEqual(await action("exact-worker", "exact-worker", "workspace.workers"), before,
+            "renaming or observing must not fabricate workers");
     });
 
     await t.test("{§web-agui-conformance} live and fresh observers agree on spend and timing across consecutive loops", async (probe) => {
