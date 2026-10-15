@@ -234,7 +234,7 @@ workspace with a separate folder must not claim it is folderless.
 
 | Boundary | Representation |
 |---|---|
-| Membership | Every `origin: model` worker appears once, regardless of owner, lifecycle or name spelling. Client/runtime bookkeeping actors have no directory row or worker page; their direct page URLs return 404. This is presentation, not an access policy for daemon APIs. |
+| Membership | Every `origin: model` worker appears once, regardless of owner, lifecycle or name spelling. The runtime bookkeeping worker has no directory row or worker page; its direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
 | Roots | Model workers with `parentWorkerId: null` form the primary list. |
 | Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
 | Background | Model workers with an immediate non-model parent begin branches in one collapsed “Background work” section. Omit it when empty. No A2A-specific classification or reparenting. |
@@ -381,7 +381,9 @@ Test fixtures and the SDK test bundle are not shipped browser assets.
 | Standard Run | Bearer rejection, discovery, reasoning, correlated native tool/results, Plurnk receipts, state, assistant replies and provider failures survive the official SDK. |
 | State ownership | Preparation and activity belong to workspace state. Runs without a model worker expose neither worker status nor budget. |
 | Synchronization | Authoritative messages/state without inference or borrowed history from another workspace. Retained reasoning and operation/result evidence must not disappear on a fresh connection. |
-| Observation | `/agui/connect` selects an existing worker by `threadId` in the named workspace, remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
+| Observation | Passive `/agui/connect` selects an existing worker by `threadId` in the named workspace, remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
+| Exact target | Passive existing-worker selection preserves identity when workspace and worker names coincide. Missing/internal targets and renamed-away workspace names fail without creating or claiming anything, including on cached bindings. |
+| Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |
 | Control | Disconnecting the controlling request cancels its work; an observer receives the cancellation. |
 | Approval | Native interrupts resume through the SDK; a different owner or consumed interrupt cannot resolve the gate. Test-only handlers do not advertise capabilities in the shipped page. |
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |

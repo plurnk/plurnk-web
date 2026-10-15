@@ -45,9 +45,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 const runtime = await port.ensureRuntimeWorker(workspaceId);
                 const incoming = await port.createWorker({ workspaceId, name: "incoming", parentWorkerId: runtime });
                 await port.createWorker({ workspaceId, name: "incoming-child", parentWorkerId: incoming.workerId });
-                const client = (await port.listWorkers(workspaceId)).find((worker) => worker.origin === "client");
-                if (!client) throw new Error("Workspace fixture has no client actor.");
-                await port.createWorker({ workspaceId, name: "client-child", parentWorkerId: client.id });
+                await port.createWorker({ workspaceId, name: "background-peer", parentWorkerId: runtime });
             }
         }
         for (const [projectRoot, name] of ${JSON.stringify(homeFolders)}) {

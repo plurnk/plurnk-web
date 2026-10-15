@@ -46,14 +46,13 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
     const workers = [
         worker(1, "_plurnk", null, "_plurnk"),
-        worker(2, "c9a4d11f", null, "client", "agui://owner"),
         worker(6, "review", 4, "model", "agui://owner"),
         worker(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
         worker(4, "user", null, "model", "agui://owner"),
         worker(5, "research", 4),
         worker(7, "evidence", 6),
         worker(8, "incoming", 1),
-        worker(9, "other", 2, "model", "agui://owner"),
+        worker(9, "other", 1, "model", "agui://owner"),
         worker(10, "incoming-child", 8),
     ];
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers };
@@ -62,7 +61,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     const children = (count, list) => `<details><summary data-text="child-workers">${count} child worker${count === 1 ? "" : "s"}</summary><ul>${list}</ul></details>`;
     assert.ok(html.includes([
         "<ul>",
-        `<li>${link(workers[3].name)}</li>`,
+        `<li>${link("2bb6a400-7106-4299-ae47-66daea5d6077")}</li>`,
         `<li>${link("user")}${children(2, `<li>${link("review")}${children(1, `<li>${link("evidence")}</li>`)}</li><li>${link("research")}</li>`)}</li>`,
         "</ul>",
         '<details><summary data-i18n="background-work">Background work</summary><ul>',
@@ -72,7 +71,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     ].join("")), html);
     const names = [...html.matchAll(/href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
     assert.deepEqual(names.toSorted(), workers.filter(({ origin }) => origin === "model").map(({ name }) => name).toSorted());
-    assert.doesNotMatch(html, /c9a4d11f|_plurnk|agui:|\bopen\b|role="tree"|<script/u);
+    assert.doesNotMatch(html, /_plurnk|agui:|\bopen\b|role="tree"|<script/u);
     for (const internal of workers.filter(({ origin }) => origin !== "model")) {
         assert.equal(await document.read({ kind: "worker", workspace: "work", worker: internal.name }, port, false), null);
     }
@@ -86,7 +85,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
 
 test("{§web-worker-directory} empty and internal-only workspaces have no empty navigation controls", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
-    for (const workers of [[], [worker(1, "_plurnk", null, "_plurnk"), worker(2, "c9a4d11f", null, "client")], [worker(3, "user")]]) {
+    for (const workers of [[], [worker(1, "_plurnk", null, "_plurnk")], [worker(3, "user")]]) {
         const html = (await document.read({ kind: "workspace", workspace: "work" }, {
             listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers,
         }, false)).toString();
