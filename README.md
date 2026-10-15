@@ -8,7 +8,7 @@ No chat interface or additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
-breadcrumbs and their actual parent, not a conversation interface.
+breadcrumbs and their actual parent, not an interactive worker interface.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -53,7 +53,7 @@ intact. A daemon restart invalidates sessions. Remotely, use HTTPS.
 The same-origin `POST /auth/token` connection primitive supplies short-lived
 AG-UI access credentials to a signed-in browser. OAuth refresh credentials stay
 server-side; rotation and revocation use the daemon's authority. This adds no
-conversation UI or automatic connection to a worker.
+interactive worker UI or automatic connection to a worker.
 
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
@@ -129,7 +129,7 @@ isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Install that test browser with `npx playwright install chromium` if
 necessary. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
-deterministic local model; no paid inference or shipped conversation UI is involved.
+deterministic local model; no paid inference or shipped interactive worker UI is involved.
 It exercises synchronization, observer/control disconnects, approval interrupts,
 shutdown and the real browser sign-in/access-token lifecycle. No AG-UI traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.

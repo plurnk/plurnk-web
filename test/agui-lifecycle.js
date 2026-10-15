@@ -75,8 +75,10 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
         });
         await t.test("{§web-agui-conformance} a repeated thread name in another workspace has no borrowed history", async () => {
             const before = model.requests.length;
-            await start("other-create", { workspace: "other-workspace", threadId: "browser-conformance", mode: "sync", control: true });
-            successful(await finish("other-create"));
+            await start("other-create", { workspace: "other-workspace", threadId: "browser-conformance", action: { kind: "worker.model.set", selector: "browser" } });
+            const created = await finish("other-create");
+            successful(created);
+            assert.equal(created.events.find(({ name }) => name === "plurnk.action.result")?.value.ok, true);
             await start("other", { workspace: "other-workspace", threadId: "browser-conformance", mode: "sync" });
             const result = await finish("other");
             successful(result);
