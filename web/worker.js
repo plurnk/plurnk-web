@@ -14,7 +14,7 @@ export default function observeWorker(element) {
     /** @param {AbortController} controller */
     async function observe(controller) {
         const { signal } = controller;
-        /** @type {import("@plurnk/plurnk-agui").AguiStatusState | undefined} */
+        /** @type {import("@plurnk/plurnk-agui/client").AguiStatusState | undefined} */
         let status;
         let connected = false;
         const timer = setInterval(() => {
@@ -43,7 +43,7 @@ export default function observeWorker(element) {
                 let problem;
                 await agent.connectAgent({ forwardedProps: { plurnk: { workspace } } }, {
                     onStateChanged: ({ state }) => {
-                        const next = /** @type {{plurnk?: import("@plurnk/plurnk-agui").AguiPlusState}} */ (state).plurnk?.status;
+                        const next = /** @type {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState}} */ (state).plurnk?.status;
                         if (!next || signal.aborted) return;
                         status = next;
                         connected = true;

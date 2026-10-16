@@ -166,7 +166,7 @@ export default class Documents {
 
     /**
      * @param {import("./directory-addresses.js").Directory} directory
-     * @param {Pick<import("@plurnk/plurnk-contracts").ApplicationPort, "listWorkspaces" | "listWorkers">} port
+     * @param {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "listWorkspaces" | "listWorkers">} port
      * @param {boolean} authenticated
      */
     async read(directory, port, authenticated) {

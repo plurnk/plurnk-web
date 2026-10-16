@@ -13,6 +13,7 @@ import browserDiagnostics from "./browser-diagnostics.js";
 import verifyWebApp from "./web-app.js";
 import verifyDocument from "./document.js";
 import verifyAgui from "./agui-browser.js";
+import verifyExecution from "./agui-execution.js";
 import startModel from "./model-fixture.js";
 import candidatePackages from "./candidate-packages.js";
 import verifySessions from "./sessions-browser.js";
@@ -188,6 +189,31 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                 const browser = await chromium.launch();
                 try {
                     await verifyAgui(browser, base, access_token, projectRoot, model, conformance, () => daemon.stop());
+                } finally {
+                    await browser.close();
+                }
+            });
+        } finally {
+            await model.close();
+        }
+    });
+
+    await t.test("{§web-agui-conformance} real execution results through the official browser SDK", async (conformance) => {
+        const model = await startModel();
+        const token = randomUUID();
+        const projectRoot = join(directory, "execution-project");
+        await mkdir(projectRoot);
+        try {
+            await withDaemon({ ...model.env, PLURNK_SECRET: token, PLURNK_SERVICE_PROPOSALS: "accept" }, async (base) => {
+                const grant = await fetch(new URL("/oauth/token", base), {
+                    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "agui" }),
+                });
+                assert.equal(grant.status, 200);
+                const { access_token } = await grant.json();
+                const browser = await chromium.launch();
+                try {
+                    await verifyExecution(browser, base, access_token, projectRoot, model, conformance);
                 } finally {
                     await browser.close();
                 }

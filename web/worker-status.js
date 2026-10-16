@@ -1,5 +1,5 @@
 /** {§web-worker-observer} Elapsed time is a projection of daemon timestamps, not a browser stopwatch.
- * @param {import("@plurnk/plurnk-agui").AguiStatusState} status @param {number} now
+ * @param {import("@plurnk/plurnk-agui/client").AguiStatusState} status @param {number} now
  */
 export function elapsed(status, now) {
     if (status.claimedAt === null) return "Unknown";
@@ -9,7 +9,7 @@ export function elapsed(status, now) {
     return `${hours ? `${hours}h ` : ""}${hours || minutes ? `${minutes}m ` : ""}${seconds % 60}s`;
 }
 
-/** @param {import("@plurnk/plurnk-agui").AguiStatusState} status */
+/** @param {import("@plurnk/plurnk-agui/client").AguiStatusState} status */
 export function gauges(status) {
     return {
         lifecycle: status.lifecycle,
