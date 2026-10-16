@@ -104,7 +104,9 @@ named-daemon prefixes are not directory matches. Parsing performs no lookups.
 
 The daemon's [workspace name contract](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md)
 admits nonempty well-formed Unicode without literal slash-delimited `.` or `..`
-segments. The codec returns no path for an unrepresentable legacy name rather
+segments and reserves ASCII digit-only names for IDs. Admission does not rename existing
+records: representable legacy names, including numeric names, retain their URLs.
+The codec returns no path for an unrepresentable legacy name rather
 than repairing it or substituting an ID; decoding an address to such a name is
 also refused. Renaming changes its generated URL, not its identity or project
 folder. No old-name redirect or filesystem exposure is implied.
