@@ -8,7 +8,7 @@ import Session, { CALLBACK, CLIENT } from "./session.js";
 import { privateHeaders, redirect, RequestError } from "./http.js";
 import { readAsset, sendAsset } from "./static-assets.js";
 
-/** @typedef {Pick<import("@plurnk/plurnk-contracts").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers">} Port */
+/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers">} Port */
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};

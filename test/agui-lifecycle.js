@@ -1,85 +1,11 @@
 import assert from "node:assert/strict";
 import verifyObserver from "./agui-observer.js";
+import aguiSession from "./agui-session.js";
 
 // {§web-agui-conformance} The fixture uses only the official SDK and the daemon's public wire.
 export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser }) {
-    await tab.evaluate(async (token) => {
-        const { HttpAgent, Observer } = await import("/__test__/http-agent.js");
-        const runs = new Map();
-        const execute = (run, parameters, observe = false) => {
-            run.events = [];
-            run.failure = null;
-            run.settled = false;
-            run.parameters = parameters;
-            run.promise = run.agent[observe ? "connectAgent" : "runAgent"](parameters, {
-                onEvent: ({ event }) => { run.events.push(event); },
-            }).catch((error) => {
-                run.failure = { name: error.name, message: error.message, status: error.status, payload: error.payload };
-            }).finally(() => { run.settled = true; });
-        };
-        globalThis.lifecycle = {
-            start(id, { workspace, threadId = workspace, observe = false, messages = [], tools = [], resume, ...plurnk }) {
-                const agent = new (observe ? Observer : HttpAgent)({
-                    url: new URL(observe ? "/agui/connect" : "/agui", location.href).href,
-                    threadId, headers: { Authorization: `Bearer ${token}` }, initialMessages: messages,
-                });
-                const run = { agent, events: [], failure: null, settled: false };
-                runs.set(id, run);
-                const parameters = { tools, forwardedProps: { plurnk: { workspace, ...plurnk } }, ...(resume ? { resume } : {}) };
-                execute(run, parameters, observe);
-            },
-            resume(id, resume) { const run = runs.get(id); execute(run, { ...run.parameters, resume }); },
-            reconnect(id) { const run = runs.get(id); execute(run, run.parameters, true); },
-            async finish(id) { await runs.get(id).promise; return this.read(id); },
-            read(id) {
-                const run = runs.get(id);
-                return { events: run.events, failure: run.failure, settled: run.settled,
-                    messages: run.agent.messages, state: run.agent.state, running: run.agent.isRunning,
-                    interrupts: run.agent.pendingInterrupts };
-            },
-            async detach(id) {
-                const { agent } = runs.get(id);
-                // SDK 1.0.2 detaches its consumer without closing the SSE fetch; release the observer transport too.
-                try { await agent.detachActiveRun(); }
-                finally { agent.abortRun(); }
-            },
-            abort(id) { runs.get(id).agent.abortRun(); },
-            async close() {
-                for (const { agent } of runs.values()) agent.abortRun();
-                await Promise.all([...runs.values()].map(({ promise }) => promise));
-            },
-        };
-    }, token);
-    const start = (id, options) => tab.evaluate(({ id, options }) => globalThis.lifecycle.start(id, options), { id, options: { projectRoot, ...options } });
-    const finish = async (id) => {
-        try {
-            await tab.waitForFunction((id) => globalThis.lifecycle.read(id).settled, id, { timeout: 10_000 });
-        } catch (cause) {
-            const result = await read(id);
-            throw new Error(`SDK run ${id} did not settle: ${JSON.stringify(result)}`, { cause });
-        }
-        return tab.evaluate((id) => globalThis.lifecycle.finish(id), id);
-    };
-    const read = (id) => tab.evaluate((id) => globalThis.lifecycle.read(id), id);
-    const event = async (id, type) => {
-        try {
-            await tab.waitForFunction(({ id, type }) => {
-                const result = globalThis.lifecycle.read(id);
-                return result.settled || result.events.some((event) => event.type === type);
-            }, { id, type }, { timeout: 10_000 });
-        } catch (cause) {
-            throw new Error(`SDK run ${id} never received ${type}: ${JSON.stringify(await read(id))}`, { cause });
-        }
-        const result = await read(id);
-        assert.ok(result.events.some((event) => event.type === type), `SDK run ${id} ended before ${type}: ${JSON.stringify(result)}`);
-    };
-    const successful = (result) => {
-        assert.equal(result.failure, null);
-        assert.equal(result.events.at(-1)?.type, "RUN_FINISHED");
-        assert.deepEqual(result.events.at(-1).outcome, { type: "success" });
-        assert.equal(result.running, false);
-    };
-    const prompt = (name) => [{ id: `message-${name}`, role: "user", content: `Lifecycle fixture: ${name}.` }];
+    const session = await aguiSession(tab, { token, projectRoot });
+    const { start, finish, read, event, successful, prompt } = session;
     try {
         await t.test("{§web-agui-conformance} synchronization is authoritative and inference-free", async () => {
             const before = model.requests.length;
@@ -158,7 +84,11 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             await finish("cancel-controller");
             const result = await finish("cancel-observer");
             assert.equal(result.failure, null);
-            assert.equal(result.events.at(-1).type, "RUN_ERROR");
+            assert.equal(result.events.at(-1).type, "RUN_FINISHED");
+            assert.deepEqual(result.events.at(-1).outcome, { type: "cancelled" });
+            assert.equal(result.events.some(({ type }) => type === "RUN_ERROR"), false);
+            assert.equal(Object.hasOwn(result.events.at(-1), "usage"), false,
+                "an interrupted request with no provider usage does not report zero tokens");
             const terminal = result.events.find(({ name }) => name === "plurnk.terminated")?.value;
             assert.equal(terminal?.result.status, 499);
             assert.equal(terminal?.result.problem.reason, "client_disconnected");
@@ -192,7 +122,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal((await finish("duplicate")).events.at(-1).type, "RUN_ERROR");
             assert.equal(model.requests.length, before + 2, "one proposed command and one answer, without a model retry");
         });
-        await verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser });
+        await verifyObserver({ ...session, t, model, checkBrowser });
         await t.test("{§web-agui-conformance} an idle observer receives daemon shutdown as a terminal error", async () => {
             await start("shutdown", { workspace: "browser-conformance", observe: true });
             await event("shutdown", "MESSAGES_SNAPSHOT");
@@ -204,6 +134,6 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal(result.running, false);
         });
     } finally {
-        await tab.evaluate(() => globalThis.lifecycle.close());
+        await session.close();
     }
 }

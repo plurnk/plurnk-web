@@ -356,7 +356,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Only read-only status observation is implemented under {§web-worker-observer}. |
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
-| Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. |
+| Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. Browser code consumes the public client types with DOM libraries and no Node globals; the application port remains server-only. |
 
 ## §web-browser-security Browser execution and diagnostics
 
@@ -443,6 +443,8 @@ worker page is exercised separately under {§web-worker-observer}, without SDK i
 | Synchronization | Authoritative messages/state without inference or borrowed history from another workspace. Retained reasoning and operation/result evidence must not disappear on a fresh connection. |
 | Conversation continuity | An observer attached before another client submits a prompt, the submitter, an observer attached mid-reasoning, and a refreshed observer retain the same ordered messages under the same identities. Prompts arrive once before inference completes; reattachment neither duplicates history nor submits it as new input. A same-named worker in another workspace remains isolated. |
 | Operation fidelity | Standard tool-call arguments preserve the authored resource address (including its host), scope, pattern and aside. Successful and failed READs retain their attempted operands and exactly one correlated result, live and after refresh. No custom-row reconstruction supplies missing conversation facts. |
+| Execution results | Real commands' stdout/stderr observations answer the native execution call, retaining output, terminal status and exit code, including nonzero exits. Pre-attached, submitting, late and refreshed SDK consumers retain the same ordered messages and identities; a start receipt is not the command's output. |
+| Run outcomes | Successful loops end with standard `RUN_FINISHED`, `outcome: success`, their result and aggregate reported token usage. Cancellation is `RUN_FINISHED` with `outcome: cancelled`, not `RUN_ERROR`; unreported usage stays absent. Provider failures remain `RUN_ERROR`, not successful completion. Command exit codes and overall loop outcomes remain distinct. |
 | Observation | Passive `/agui/connect` selects an existing worker by `threadId` in the named workspace, remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
 | Exact target | Passive existing-worker selection preserves identity when workspace and worker names coincide. Missing/internal targets and renamed-away workspace names fail without creating or claiming anything, including on cached bindings. |
 | Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |

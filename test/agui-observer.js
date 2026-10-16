@@ -3,30 +3,7 @@ import verifyConversation from "./agui-conversation.js";
 import { httpFailure } from "./browser-diagnostics.js";
 
 // {§web-agui-conformance} Exercise the public observer contract through the official browser SDK.
-export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser }) {
-    let sequence = 0;
-    const action = async (workspace, threadId, kind, parameters = {}) => {
-        const id = `observer-action-${sequence++}`;
-        await start(id, { workspace, threadId, action: { kind, ...parameters } });
-        const result = await finish(id);
-        successful(result);
-        const outcome = result.events.find(({ name }) => name === "plurnk.action.result")?.value;
-        assert.equal(outcome?.ok, true, JSON.stringify(outcome));
-        return outcome.result;
-    };
-    const detach = async (id) => {
-        await tab.evaluate((id) => globalThis.lifecycle.detach(id), id);
-        assert.equal((await finish(id)).failure, null);
-    };
-    const observe = async (id, workspace, worker) => {
-        await start(id, { workspace, threadId: worker, observe: true });
-        await event(id, "MESSAGES_SNAPSHOT");
-        const result = await read(id);
-        assert.equal(result.failure, null);
-        assert.equal(result.events[0].type, "RUN_STARTED");
-        assert.equal(result.events[1].type, "STATE_SNAPSHOT");
-        return result;
-    };
+export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser, action, detach, observe }) {
 
     await action("observer-world", "named-worker", "worker.model.set", { selector: "browser" });
     // A real client operation creates the runtime journal; workspace attachment no longer fabricates actors.
@@ -45,7 +22,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
             ["observer-world", "absent-worker", "worker-not-found"],
             ["observer-world", internal.name, "worker-not-found"],
         ]) {
-            const id = `missing-${sequence++}`;
+            const id = `missing-${workspace}-${worker}`;
             await start(id, { workspace, threadId: worker, observe: true });
             const result = await finish(id);
             assert.equal(result.failure?.status, 404);

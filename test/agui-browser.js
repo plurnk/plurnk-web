@@ -86,6 +86,10 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(result.events.at(-1).type, "RUN_FINISHED", JSON.stringify(result.events.filter((event) =>
                 event.type === "RUN_ERROR" || (event.name === "plurnk.row" && event.value.origin === "model"))));
             assert.deepEqual(result.events.at(-1).outcome, { type: "success" });
+            assert.equal(result.events.at(-1).result?.status, 200);
+            assert.deepEqual(result.events.at(-1).usage, [{ provider: "provider:browser-fixture", model: "browser-fixture",
+                inputTokens: 800, outputTokens: 160, totalTokens: 960 }],
+            "standard completion aggregates the two reported requests, without invented cache or reasoning counts");
             assert.equal(result.events.some(({ type }) => type === "RUN_ERROR"), false);
             assert.equal(result.running, false);
             assert.equal(result.messages.findLast(({ role }) => role === "assistant").content,

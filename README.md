@@ -140,8 +140,9 @@ deterministic local model; no paid inference is involved. Separate journeys exer
 the shipped read-only worker page without injecting an SDK or mocking AG-UI.
 It exercises synchronization, observer/control disconnects, approval interrupts,
 shutdown and the real browser sign-in/access-token lifecycle. Cross-client prompt
-delivery, exact READ operands and correlated results are compared live and after
-refresh through the SDK's messages, without custom-row reconstruction. No AG-UI traffic is
+delivery, exact READ operands and real command stdout/stderr results are compared live and after
+refresh through the SDK's messages, without custom-row reconstruction. Standard success,
+cancellation, failure and reported token usage are checked separately. No AG-UI traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
 Browser journeys also check console warnings/errors and uncaught exceptions;
 deliberately tested failures require explicit diagnostic expectations.
