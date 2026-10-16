@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { build } from "vite";
 import { chromium } from "playwright";
 import Documents from "../ai.plurnk/documents.js";
@@ -130,6 +131,22 @@ test("{§web-build} production prunes unused CSS without dropping native state s
     assert.match(css, /prefers-reduced-motion/u);
     assert.ok(css.includes("focus-visible"), "native keyboard-focus selectors survive production pruning");
     assert.match(css, /details\[open\]/u, "native disclosure state survives production pruning");
+});
+
+test("{§web-asset-encoding} the build records only useful, lossless static representations", async () => {
+    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    for (const [path, file, mediaType, encoded] of inventory) {
+        assert.doesNotMatch(path, /\.(br|gz)$/u, "encoded files have no separate public address");
+        const original = await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url));
+        if (mediaType === "text/html") assert.deepEqual(encoded, {});
+        for (const [coding, representation] of Object.entries(encoded)) {
+            assert.ok(["br", "gzip"].includes(coding));
+            const bytes = await readFile(new URL(`../ai.plurnk/dist/${representation}`, import.meta.url));
+            assert.ok(bytes.byteLength < original.byteLength, `${path} ${coding}`);
+            assert.deepEqual(coding === "br" ? brotliDecompressSync(bytes) : gunzipSync(bytes), original);
+        }
+        if (/\/worker-[^/]+\.js$/u.test(path)) assert.deepEqual(Object.keys(encoded).sort(), ["br", "gzip"]);
+    }
 });
 
 test("{§web-language} source-only build declares and packages no dictionary", async () => {
