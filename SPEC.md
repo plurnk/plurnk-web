@@ -346,6 +346,15 @@ storage even when storage is denied. No language picker or additional locale is 
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
 | Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. |
 
+## §web-browser-security Browser execution and diagnostics
+
+| Boundary | Contract |
+|---|---|
+| Scripts and styles | Same-origin resources only; no inline execution or dynamic code generation. Browser schema validation runs without JIT, configured before SDK schema initialization. |
+| Images | Same-origin and data-URI images, including Pico's embedded SVG controls. This permission does not extend to scripts, styles or connections. |
+| Other directives | Default same-origin; no objects, base URL changes or framing. Forms submit to the same origin. |
+| Browser gate | Capture console warnings/errors and uncaught exceptions from document, authentication, directory, SDK and actual worker journeys. Healthy paths produce none. Negative cases assert their specific expected diagnostics; no blanket filtering of CSP or SDK errors. |
+
 ## §web-contract-checks Specification gate
 
 The web lint gate uses the shared `@plurnk/plurnk-spec-check` development tool.

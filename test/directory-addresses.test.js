@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { createServer, preview } from "vite";
 import { directoryPath, parseDirectory } from "../ai.plurnk/directory-addresses.js";
 import createModule from "../ai.plurnk/module.js";
+import browserDiagnostics from "./browser-diagnostics.js";
 
 process.env.PLURNK_AUTH = "0";
 
@@ -149,11 +150,10 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
         const base = `http://127.0.0.1:${server.address().port}`;
         for (const javaScriptEnabled of [false, true]) {
             const context = await browser.newContext({ javaScriptEnabled });
+            const checkBrowser = browserDiagnostics(context);
             try {
                 const page = await context.newPage();
-                const errors = [];
                 const navigations = [];
-                page.on("pageerror", (error) => errors.push(error.message));
                 page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
                 await page.goto(`${base}/~/`);
                 for (const [index, [directory, path]] of directories.entries()) {
@@ -177,7 +177,7 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
                 assert.equal(page.url(), `${base}${path}index.html`);
                 await page.goForward();
                 assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
-                assert.deepEqual(errors, []);
+                checkBrowser();
             } finally {
                 await context.close();
             }

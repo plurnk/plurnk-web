@@ -143,6 +143,8 @@ shutdown and the real browser sign-in/access-token lifecycle. Cross-client promp
 delivery, exact READ operands and correlated results are compared live and after
 refresh through the SDK's messages, without custom-row reconstruction. No AG-UI traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
+Browser journeys also check console warnings/errors and uncaught exceptions;
+deliberately tested failures require explicit diagnostic expectations.
 
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies

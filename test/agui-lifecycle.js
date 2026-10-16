@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import verifyObserver from "./agui-observer.js";
 
 // {§web-agui-conformance} The fixture uses only the official SDK and the daemon's public wire.
-export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop }) {
+export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser }) {
     await tab.evaluate(async (token) => {
         const { HttpAgent, Observer } = await import("/__test__/http-agent.js");
         const runs = new Map();
@@ -192,7 +192,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal((await finish("duplicate")).events.at(-1).type, "RUN_ERROR");
             assert.equal(model.requests.length, before + 2, "one proposed command and one answer, without a model retry");
         });
-        await verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model });
+        await verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser });
         await t.test("{§web-agui-conformance} an idle observer receives daemon shutdown as a terminal error", async () => {
             await start("shutdown", { workspace: "browser-conformance", observe: true });
             await event("shutdown", "MESSAGES_SNAPSHOT");

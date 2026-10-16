@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { chromium } from "playwright";
 import { build, createServer, preview } from "vite";
 import verifyDirectories from "./directories.js";
+import browserDiagnostics from "./browser-diagnostics.js";
 
 test("{§web-build} development reloads HTML and hot-updates CSS without the daemon", { timeout: 30_000 }, async () => {
     // Keep dependency resolution local while editing only a disposable source copy.
@@ -27,8 +28,7 @@ test("{§web-build} development reloads HTML and hot-updates CSS without the dae
         assert.equal(address.address, "127.0.0.1");
         browser = await chromium.launch();
         const page = await browser.newPage();
-        const errors = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        const checkBrowser = browserDiagnostics(page.context());
         const connected = page.waitForEvent("console", { predicate: (message) => message.text().includes("[vite] connected") });
         await page.goto(`http://127.0.0.1:${address.port}/`);
         await connected;
@@ -50,7 +50,7 @@ test("{§web-build} development reloads HTML and hot-updates CSS without the dae
         await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--live-test").trim() === "ready");
         assert.equal(await page.locator("body").getAttribute("data-reload-sentinel"), "unchanged", "CSS updates preserve the page");
         assert.equal((await page.request.get(new URL("/manifest.webmanifest", page.url()).href)).status(), 200);
-        assert.deepEqual(errors, []);
+        checkBrowser();
     } finally {
         await browser?.close();
         await server?.close();
@@ -88,11 +88,10 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
             await verifyDirectories(base);
             for (const javaScriptEnabled of [false, true]) {
                 const context = await browser.newContext({ javaScriptEnabled });
+                const checkBrowser = browserDiagnostics(context);
                 try {
                     const page = await context.newPage();
-                    const errors = [];
                     const navigations = [];
-                    page.on("pageerror", (error) => errors.push(error.message));
                     page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
                     await page.goto(`${base}/`);
                     if (javaScriptEnabled) await page.evaluate(() => import(document.querySelector('script[type="module"]').src));
@@ -117,7 +116,7 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
                     await page.waitForURL(`${base}/`);
                     assert.equal(await page.locator("main h1").count(), 0);
                     assert.equal(await page.title(), "Plurnk");
-                    assert.deepEqual(errors, []);
+                    checkBrowser();
                 } finally {
                     await context.close();
                 }

@@ -66,6 +66,14 @@ export default async function verifyWorkerDirectory(page, workspace) {
             focus: getComputedStyle(element).outlineStyle,
         }));
         assert.notEqual(closed.marker, "none", `${colorScheme}: compiled Pico supplies the disclosure marker`);
+        const dimensions = await summary.evaluate(async (element) => {
+            const background = getComputedStyle(element, "::after").backgroundImage;
+            const image = new Image();
+            image.src = JSON.parse(background.slice(4, -1));
+            await image.decode();
+            return [image.naturalWidth, image.naturalHeight];
+        });
+        assert.deepEqual(dimensions, [24, 24], `${colorScheme}: the shipped CSP permits Pico's actual disclosure image`);
         assert.notEqual(closed.focus, "none", `${colorScheme}: disclosure keyboard focus is visible`);
         await page.keyboard.press("Enter");
         assert.equal(await link(review).isVisible(), true);

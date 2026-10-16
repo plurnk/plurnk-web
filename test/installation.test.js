@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
+import browserDiagnostics from "./browser-diagnostics.js";
 import verifyWebApp from "./web-app.js";
 import verifyDocument from "./document.js";
 import verifyAgui from "./agui-browser.js";
@@ -126,6 +127,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                 for (const javaScriptEnabled of [true, false]) {
                     await discovery.test(`{§web-document} classless green follows color preference with JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
                         const context = await browser.newContext({ javaScriptEnabled, colorScheme: "light" });
+                        const checkBrowser = browserDiagnostics(context);
                         try {
                             const tab = await context.newPage();
                             await tab.goto(base);
@@ -150,6 +152,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
                                     rendered.monospace.split(",").map((name) => name.trim()),
                                     "the document inherits the system monospace stack");
                             }
+                            checkBrowser();
                         } finally {
                             await context.close();
                         }

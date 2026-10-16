@@ -1,3 +1,4 @@
+import "./schema-validation.js";
 import { HttpAgent } from "@ag-ui/client";
 
 /** {§web-worker-observer} HttpAgent's transport hook targets passive connect, never Run. */

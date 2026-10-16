@@ -5,6 +5,7 @@ import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import startModel from "./model-fixture.js";
 import disconnectProxy from "./disconnect-proxy.js";
+import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 async function controller(base, secret, messages = []) {
     const headers = {};
@@ -52,11 +53,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     const observations = [];
                     const access = [];
-                    const errors = [];
-                    page.on("pageerror", (error) => errors.push(error.message));
                     page.on("request", (request) => {
                         if (new URL(request.url()).pathname === "/agui/connect") observations.push(request.postDataJSON());
                     });
@@ -72,6 +72,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const connected = () => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
                     const value = (key) => page.locator(`#worker-status [data-text="${key}"]`).innerText();
                     await connected();
+                    checkBrowser();
                     assert.equal(await value("lifecycle"), "idle");
                     assert.equal(await value("requests"), "0");
                     assert.equal(await value("cost"), "0");
@@ -138,7 +139,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
                     assert.ok(new Set(access).size > 1, "a later connection gets a fresh credential after expiry");
                     for (const token of access) assert.equal((await page.content()).includes(token), false, "credentials never enter document state");
-                    assert.deepEqual(errors, []);
+                    checkBrowser();
                     const after = await action("workspace.workers");
                     assert.deepEqual(after.workers.filter(({ origin }) => origin === "model").map(({ id, name }) => ({ id, name })),
                         before.workers.map(({ id, name }) => ({ id, name })));
@@ -147,6 +148,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await action("workspace.rename", { name: renamed });
                     const attempts = observations.length;
                     assert.equal((await page.reload()).status(), 404, "an old named URL is not an identity alias");
+                    checkBrowser([httpFailure(path, 404)]);
                     assert.equal(observations.length, attempts, "a missing directory starts no observation");
                     const renamedPath = directoryPath({ kind: "worker", workspace: renamed, worker: threadId });
                     await page.goto(new URL(renamedPath, base).href);
@@ -157,6 +159,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         "old-name refusal and new-name navigation preserve the existing worker identities and settings");
                     assert.equal(model.requests.length, 3);
                     assert.deepEqual(model.errors, []);
+                    checkBrowser();
                 } finally { await browser.close(); }
             });
         } finally { await model.close(); }
@@ -176,6 +179,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     let attempts = 0;
                     page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui/connect") attempts++; });
@@ -203,6 +207,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(model.requests.length, 1);
                     await page.getByRole("link", { name: "Sign in", exact: true }).click();
                     assert.equal(await page.getByLabel("Password", { exact: true }).isVisible(), true);
+                    checkBrowser();
                 } finally { run.abortRun(); await browser.close(); }
             });
         } finally { await model.close(); }
@@ -221,6 +226,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                 const proxy = await disconnectProxy(base);
                 try {
                     const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     const requests = [];
                     page.on("request", (request) => requests.push(request));
@@ -239,8 +245,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "completed");
                     await connected(page);
                     assert.equal(model.requests.length, 2);
+                    checkBrowser();
 
                     const native = await browser.newContext({ javaScriptEnabled: false });
+                    const checkNative = browserDiagnostics(native);
                     const nativePage = await native.newPage();
                     const nativeRequests = [];
                     nativePage.on("request", (request) => nativeRequests.push(request.url()));
@@ -248,6 +256,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await nativePage.getByText("Live status requires JavaScript.", { exact: true }).isVisible(), true);
                     assert.equal(await value(nativePage, "lifecycle"), "Unknown");
                     assert.equal(nativeRequests.some((url) => /\/agui|\/auth\/token/u.test(url)), false);
+                    checkNative();
                     await native.close();
 
                     proxy.drop();
@@ -255,6 +264,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const afterLoss = requests.length;
                     await setTimeout(1100);
                     assert.equal(requests.length, afterLoss, "an available endpoint does not trigger automatic retries after connection loss");
+                    checkBrowser([
+                        /^error \/agui\/connect: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
+                        /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: network error$/u,
+                    ]);
                     const card = page.getByRole("alert");
                     assert.equal(await card.isVisible(), true);
                     for (const colorScheme of ["light", "dark"]) {
@@ -271,6 +284,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await card.isVisible(), true);
                     assert.equal(model.requests.length, 2);
                     assert.deepEqual(model.errors, []);
+                    checkBrowser();
                 } finally { await browser.close(); await proxy.close(); }
             });
         } finally { await model.close(); }

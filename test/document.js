@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import verifyPageShell from "./page-shell.js";
+import browserDiagnostics from "./browser-diagnostics.js";
 
 // {§web-language} Query, browser and unrelated stored preferences cannot translate
 // the source-language document into itself or select an unshipped language.
@@ -10,8 +11,10 @@ export default async function verifyDocument(browser, base) {
         { query: "?lang=fr", storageDenied: true },
     ]) {
         const context = await browser.newContext({ locale: "fr-FR" });
+        const checkBrowser = browserDiagnostics(context);
         try {
             await context.addInitScript((storageDenied) => {
+                if (location.protocol === "about:") return;
                 window.storageAccesses = [];
                 if (storageDenied) {
                     for (const name of ["localStorage", "sessionStorage"]) {
@@ -51,11 +54,7 @@ export default async function verifyDocument(browser, base) {
             const tab = await context.newPage();
             const errors = [];
             const requests = [];
-            tab.on("pageerror", (error) => errors.push(error.message));
             tab.on("requestfailed", (request) => errors.push(request.url()));
-            tab.on("console", (message) => {
-                if (["error", "warning"].includes(message.type())) errors.push(message.text());
-            });
             tab.on("request", (request) => requests.push(request.url()));
             await tab.goto(new URL(query || "/", base).href);
             await tab.evaluate(() => import(document.querySelector('script[type="module"]').src));
@@ -79,6 +78,7 @@ export default async function verifyDocument(browser, base) {
             assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
             assert.deepEqual(errors, []);
             await verifyPageShell(tab, { title: "Plurnk", kind: "home" });
+            checkBrowser();
         } finally {
             await context.close();
         }

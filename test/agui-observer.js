@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import verifyConversation from "./agui-conversation.js";
+import { httpFailure } from "./browser-diagnostics.js";
 
 // {§web-agui-conformance} Exercise the public observer contract through the official browser SDK.
-export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model }) {
+export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser }) {
     let sequence = 0;
     const action = async (workspace, threadId, kind, parameters = {}) => {
         const id = `observer-action-${sequence++}`;
@@ -54,6 +55,10 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
                 ? `No workspace named "${workspace}" exists.`
                 : `No model worker named "${worker}" exists in workspace "${workspace}".`);
             assert.deepEqual(result.events, []);
+            checkBrowser([
+                httpFailure("/agui/connect", 404),
+                new RegExp(`^error /__test__/http-agent\\.js: Agent execution failed: Error: HTTP 404: .*"type":"${RegExp.escape(problem.type)}"`, "u"),
+            ]);
         }
         // More than a browser's per-origin HTTP/1 connection limit: detachment must release transport too.
         for (let visit = 0; visit < 8; visit++) {
@@ -96,6 +101,10 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         const problem = typeof stale.failure.payload === "string" ? JSON.parse(stale.failure.payload) : stale.failure.payload;
         assert.ok(problem.type.endsWith("/workspace-not-found"), JSON.stringify(problem));
         assert.deepEqual(stale.events, []);
+        checkBrowser([
+            httpFailure("/agui/connect", 404),
+            /^error \/__test__\/http-agent\.js: Agent execution failed: Error: HTTP 404: .*"type":"https:\/\/problems\.plurnk\.xyz\/agui\/http\/workspace-not-found"/u,
+        ]);
         assert.deepEqual(await action("exact-worker", "exact-worker", "workspace.workers"), before,
             "renaming or observing must not fabricate workers");
     });

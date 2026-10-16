@@ -1,3 +1,4 @@
+import "../web/schema-validation.js";
 import { HttpAgent } from "@ag-ui/client";
 
 export { HttpAgent };

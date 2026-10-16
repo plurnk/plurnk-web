@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import verifyPageShell from "./page-shell.js";
+import browserDiagnostics from "./browser-diagnostics.js";
 
 // {§web-account} Exercise the installed documents and ordinary forms, not a session-manager mock.
 export default async function verifyAccount({ t, withDaemon }) {
@@ -9,10 +10,12 @@ export default async function verifyAccount({ t, withDaemon }) {
             await withDaemon({ PLURNK_PASS: "account-password" }, async (base) => {
                 const browser = await chromium.launch();
                 const contexts = [];
+                const checks = [];
                 try {
                     const enter = async (target = "/account/") => {
                         const context = await browser.newContext({ javaScriptEnabled });
                         contexts.push(context);
+                        checks.push(browserDiagnostics(context));
                         const page = await context.newPage();
                         await page.goto(new URL(target, base).href);
                         assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
@@ -130,6 +133,7 @@ export default async function verifyAccount({ t, withDaemon }) {
                     await page.getByRole("button", { name: "Continue", exact: true }).click();
                     await page.waitForURL(new URL("/account/sessions/", base).href);
                     assert.equal(await current(page).count(), 1, "direct Sessions entry returns there after fresh sign-in");
+                    for (const check of checks) check();
                 } finally {
                     await Promise.all(contexts.map((context) => context.close()));
                     await browser.close();

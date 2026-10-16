@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import verifyLifecycle from "./agui-lifecycle.js";
 import httpAgentBundle from "./http-agent-bundle.js";
+import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 export default async function verifyAgui(browser, base, token, projectRoot, model, t, stop) {
     const mount = await httpAgentBundle();
     const context = await browser.newContext();
+    const checkBrowser = browserDiagnostics(context);
     try {
         const tab = await context.newPage();
-        const errors = [];
         const requests = [];
-        tab.on("pageerror", (error) => errors.push(error.message));
         tab.on("request", (request) => requests.push(request.url()));
         await mount(tab, base);
         await tab.goto(base);
@@ -52,6 +52,10 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
                 assert.match(problem.type, credential === undefined ? /\/bearer-token-required$/u : /\/bearer-token-invalid$/u);
                 assert.deepEqual(result.events, []);
                 assert.equal(result.running, false);
+                checkBrowser([
+                    httpFailure("/agui", 401),
+                    new RegExp(`^error /__test__/http-agent\\.js: Agent execution failed: Error: HTTP 401: .*"type":"${RegExp.escape(problem.type)}"`, "u"),
+                ]);
             }
             assert.equal(model.requests.length, 0);
         });
@@ -148,9 +152,10 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(model.requests.length, 3, "a provider refusal is not retried");
         });
 
-        await verifyLifecycle(tab, { token, projectRoot, model, t, stop });
+        checkBrowser();
+        await verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser });
         assert.deepEqual(model.errors, []);
-        assert.deepEqual(errors, []);
+        checkBrowser();
         assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));
         assert.equal(await tab.locator("main").innerText(), "", "conformance adds no worker UI");
         assert.deepEqual(await tab.evaluate(() => Object.keys(localStorage)), []);
