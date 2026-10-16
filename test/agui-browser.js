@@ -67,7 +67,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             const action = result.events.find(({ name }) => name === "plurnk.action.result")?.value;
             assert.equal(action?.kind, "discover");
             assert.equal(action.ok, true);
-            assert.equal(action.result.actions["workspace.list"].scope, "worldless");
+            assert.equal(action.result.actions["workspace.list"].scope, "daemon");
             assert.equal(action.result.actions["entry.read"].scope, "workspace");
             assert.equal(result.events.at(-1).type, "RUN_FINISHED");
             assert.deepEqual(result.state, {});
