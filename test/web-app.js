@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 function contrast(foreground, background) {
     const luminance = (color) => color.match(/[\d.]+/gu).slice(0, 3)
@@ -12,6 +13,7 @@ function contrast(foreground, background) {
 
 export default async function verifyWebApp(browser, base) {
     const context = await browser.newContext();
+    const checkBrowser = browserDiagnostics(context);
     try {
         const tab = await context.newPage();
         const cdp = await context.newCDPSession(tab);
@@ -135,6 +137,7 @@ export default async function verifyWebApp(browser, base) {
         }
         assert.deepEqual(await tab.evaluate(() => caches.keys()), []);
         assert.equal(await tab.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
+        checkBrowser([httpFailure("/missing", 404)]);
     } finally {
         await context.close();
     }

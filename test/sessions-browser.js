@@ -8,6 +8,7 @@ import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import verifyPageShell from "./page-shell.js";
 import verifyAuthorizationPage from "./authorization-page.js";
 import verifyWorkerDirectory from "./workers-browser.js";
+import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 export default async function verifySessions({ t, consumer, withDaemon }) {
     // {§web-directory-documents} Fixture seeding and censuses use the same public application port,
@@ -83,6 +84,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     for (const javaScriptEnabled of [true, false]) {
                         const context = await browser.newContext({ javaScriptEnabled });
                         const other = await browser.newContext({ javaScriptEnabled });
+                        const checkBrowser = browserDiagnostics(context);
+                        const checkOther = browserDiagnostics(other);
                         try {
                             const signIn = async (ctx, path) => {
                                 const page = await ctx.newPage();
@@ -174,6 +177,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await fetch(new URL("/__fixture/revoke", base), { method: "POST", headers: { authorization: `Bearer ${secondCookie.value}` } });
                             const revoked = await other.request.get(new URL("/~/", base).href, { maxRedirects: 0 });
                             assert.equal(revoked.status(), 303, "authority revocation invalidates the web cookie immediately");
+                            checkBrowser([httpFailure("/oauth/authorize", 401), httpFailure("/~/missing/", 404)]);
+                            checkOther([httpFailure("/oauth/authorize", 401)]);
                         } finally { await context.close(); await other.close(); }
                     }
                     assert.deepEqual(await (await fetch(new URL("/__fixture", base))).json(), initial,
@@ -187,6 +192,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 try {
                     for (const javaScriptEnabled of [true, false]) {
                         const context = await browser.newContext({ javaScriptEnabled });
+                        const checkBrowser = browserDiagnostics(context);
                         try {
                             const page = await context.newPage();
                             const response = await page.goto(new URL("/~/", base).href);
@@ -196,6 +202,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.equal((await context.cookies()).some(({ name }) => ["plurnk_session", "plurnk_web_session"].includes(name)), false,
                                 "an empty password issued no sign-in");
                             assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+                            checkBrowser([httpFailure("/oauth/authorize", 503)]);
                         } finally { await context.close(); }
                     }
                 } finally { await browser.close(); }
@@ -207,6 +214,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 try {
                     for (const javaScriptEnabled of [true, false]) {
                         const context = await browser.newContext({ javaScriptEnabled });
+                        const checkBrowser = browserDiagnostics(context);
                         try {
                             const page = await context.newPage();
                             const response = await page.goto(new URL("/~/", base).href);
@@ -221,6 +229,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.equal((await context.request.get(new URL("/account/sessions/", base).href)).status(), 404);
                             assert.equal((await context.request.get(new URL("/account/sessions/index.html", base).href)).status(), 404);
                             assert.equal((await context.request.post(new URL("/account/sessions/revoke-others", base).href)).status(), 404);
+                            checkBrowser();
                         } finally { await context.close(); }
                     }
                 } finally { await browser.close(); }
@@ -234,6 +243,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         await journeys.test(`JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
                             const context = await browser.newContext({ javaScriptEnabled });
                             const other = await browser.newContext({ javaScriptEnabled });
+                            const checkBrowser = browserDiagnostics(context);
+                            const checkOther = browserDiagnostics(other);
                             try {
                                 const enter = async (ctx) => {
                                     const page = await ctx.newPage();
@@ -253,6 +264,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 assert.equal(await page.getByLabel("Password", { exact: true }).count(), 1);
                                 await second.reload();
                                 assert.equal(new URL(second.url()).pathname, "/~/", "another browser remains admitted");
+                                checkBrowser();
+                                checkOther();
                             } finally { await context.close(); await other.close(); }
                         });
                     }
@@ -265,6 +278,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 try {
                     const context = await browser.newContext();
                     const other = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const checkOther = browserDiagnostics(other);
                     const request = context.request;
                     const get = (path) => request.get(new URL(path, base).href, { maxRedirects: 0 });
                     const authorize = (ctx, url) => ctx.request.post(url, { maxRedirects: 0, headers: { origin: new URL(base).origin },
@@ -309,6 +324,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     await page.waitForTimeout(1100);
                     assert.equal((await other.request.get(authorized.headers().location, { maxRedirects: 0 })).status(), 400, "expired transactions cannot establish sessions");
                     assert.equal((await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 })).status(), 303, "expired transactions free capacity");
+                    checkBrowser();
+                    checkOther();
                 } finally { await browser.close(); }
             });
         });
@@ -331,6 +348,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     const browser = await chromium.launch();
                     try {
                         const page = await browser.newPage();
+                        const checkBrowser = browserDiagnostics(page.context());
                         await page.goto(`${issuer}/~/`);
                         assert.equal(new URL(page.url()).origin, issuer);
                         assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
@@ -342,6 +360,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         assert.equal(await page.locator("main h1").count(), 0);
                         await page.getByRole("button", { name: "Sign out" }).click();
                         await page.waitForURL(`${issuer}/`);
+                        checkBrowser();
                     } finally { await browser.close(); }
                 });
                 assert.deepEqual(errors, []);

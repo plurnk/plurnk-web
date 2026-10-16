@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { build } from "vite";
 import { chromium } from "playwright";
 import Documents from "../ai.plurnk/documents.js";
+import browserDiagnostics from "./browser-diagnostics.js";
 
 test("{§web-page-shell} breadcrumb placement responds to content and available space without JavaScript", async (t) => {
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
@@ -17,6 +18,7 @@ test("{§web-page-shell} breadcrumb placement responds to content and available 
     t.after(() => browser.close());
     for (const javaScriptEnabled of [false, true]) {
         const context = await browser.newContext({ javaScriptEnabled });
+        const checkBrowser = browserDiagnostics(context);
         try {
             let html;
             await context.route("http://web.test/**", (route) => {
@@ -78,6 +80,7 @@ test("{§web-page-shell} breadcrumb placement responds to content and available 
                     }
                 }
             }
+            checkBrowser();
         } finally {
             await context.close();
         }

@@ -22,7 +22,7 @@ export const privateHeaders = {
     "cache-control": "no-store",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
-    "content-security-policy": "default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "content-security-policy": "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     "x-frame-options": "DENY",
 };
 

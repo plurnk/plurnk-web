@@ -85,7 +85,9 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             assert.equal(res.headers.get("content-type"), "text/html; charset=utf-8");
             assert.equal(res.headers.get("cache-control"), "no-store");
             assert.equal(res.headers.get("referrer-policy"), "no-referrer");
-            assert.match(res.headers.get("content-security-policy"), /frame-ancestors 'none'/u);
+            assert.equal(res.headers.get("content-security-policy"),
+                "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+                "{§web-browser-security} image sources do not broaden script or connection permissions");
             if (method === "HEAD") assert.equal(await res.text(), "");
             else {
                 const body = await res.text();

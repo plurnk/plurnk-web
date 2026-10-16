@@ -3,6 +3,7 @@ import { setTimeout } from "node:timers/promises";
 import { chromium } from "playwright";
 import httpAgentBundle from "./http-agent-bundle.js";
 import startModel from "./model-fixture.js";
+import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 // {§web-access-token} Real password, authorization code, cookie and OAuth token endpoints.
 export default async function verifyTokens({ t, withDaemon }) {
@@ -12,6 +13,7 @@ export default async function verifyTokens({ t, withDaemon }) {
             const browser = await chromium.launch();
             try {
                 const context = await browser.newContext();
+                const checkBrowser = browserDiagnostics(context);
                 const page = await context.newPage();
                 await mount(page, base);
                 await page.goto(base);
@@ -22,6 +24,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                 const absent = await token();
                 assert.equal(absent.status, 401);
                 assert.match(absent.headers["content-type"], /application\/problem\+json/u);
+                checkBrowser([httpFailure("/auth/token", 401)]);
                 await page.goto(new URL("/account/", base).href);
                 await page.getByLabel("Password", { exact: true }).fill("token-fixture-password");
                 await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -88,8 +91,13 @@ export default async function verifyTokens({ t, withDaemon }) {
                 assert.deepEqual(created.terminal.outcome, { type: "success" });
                 await page.evaluate((access) => globalThis.connection.observe(access), supplied.body.access_token);
                 await page.waitForFunction(() => globalThis.connection.events.some(({ type }) => type === "MESSAGES_SNAPSHOT"));
+                checkBrowser();
                 await setTimeout((supplied.body.expires_in + 1) * 1000);
                 assert.equal((await discover(supplied.body.access_token)).status, 401, "new requests cannot reuse the expired credential");
+                checkBrowser([
+                    httpFailure("/agui", 401),
+                    /^error \/__test__\/http-agent\.js: Agent execution failed: Error: HTTP 401: .*"type":"https:\/\/problems\.plurnk\.xyz\/agui\/http\/bearer-token-invalid"/u,
+                ]);
                 assert.equal(await page.evaluate(() => globalThis.connection.settled), false, "expiry does not sever an admitted observation");
                 const renewed = await Promise.all(Array.from({ length: 8 }, token));
                 assert.ok(renewed.every(({ status }) => status === 200));
@@ -108,6 +116,10 @@ export default async function verifyTokens({ t, withDaemon }) {
                 assert.equal(revoked.running, false);
                 assert.equal((await token()).status, 401);
                 assert.equal((await discover(current)).status, 401, "the issued access token shares the revoked sign-in family");
+                checkBrowser([
+                    httpFailure("/auth/token", 401), httpFailure("/agui", 401),
+                    /^error \/__test__\/http-agent\.js: Agent execution failed: Error: HTTP 401: .*"type":"https:\/\/problems\.plurnk\.xyz\/agui\/http\/bearer-token-invalid"/u,
+                ]);
             } finally { await browser.close(); }
         });
     });
@@ -119,6 +131,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     await mount(page, base);
                     await page.goto(new URL("/account/", base).href);
@@ -173,6 +186,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                     assert.equal(completed.messages.findLast(({ role }) => role === "assistant").content, "Completed held-revocation.");
                     assert.equal(model.requests.length, 1, "revocation neither cancels nor restarts the model");
                     assert.deepEqual(model.errors, []);
+                    checkBrowser();
                 } finally { await browser.close(); }
             });
         } finally { await model.close(); }
