@@ -34,7 +34,7 @@ export default async function startModel() {
                 })}\n\n`);
                 const reasoning = `Considering ${lifecycle}.`;
                 frame({ reasoning_content: reasoning });
-                if (lifecycle.startsWith("held-")) {
+                if (lifecycle.startsWith("held-") || (lifecycle === "conversation" && visit === 1)) {
                     assert.ok(!pending.has(lifecycle), "a lifecycle request is not duplicated");
                     const release = Promise.withResolvers();
                     pending.set(lifecycle, release);
@@ -44,6 +44,8 @@ export default async function startModel() {
                 }
                 if (!response.destroyed) {
                     const content = lifecycle === "approval" && visit === 1 ? "```sh\nprintf approved\n```"
+                        : lifecycle === "conversation" && visit === 1
+                            ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (worker://user/identity.md) <1,2>\n```"
                         : `\`\`\`SEND [200]\nCompleted ${lifecycle}.\n\`\`\``;
                     frame({ content });
                     const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);
