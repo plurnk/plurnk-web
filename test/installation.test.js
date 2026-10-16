@@ -19,6 +19,7 @@ import verifySessions from "./sessions-browser.js";
 import verifyAccount from "./account-browser.js";
 import verifyTokens from "./tokens-browser.js";
 import verifyWorkerPage from "./worker-browser.js";
+import verifyStaticAssets from "./static-assets.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -103,6 +104,8 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
 
     await t.test("{§web-host} discovery, default floor and route precedence", async (discovery) => {
         await withDaemon({}, async (base) => {
+            await discovery.test("{§web-asset-encoding} packed assets negotiate exact compressed bytes", () =>
+                verifyStaticAssets(base, pathToFileURL(`${plugin}/ai.plurnk/`)));
             const page = await fetch(base);
             assert.equal(page.status, 200);
             assert.match(await page.text(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);

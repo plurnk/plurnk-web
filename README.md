@@ -157,6 +157,9 @@ specimens as a development dependency only; no daemon code enters the browser bu
 Its public type declarations currently require Node typings, including for type-only
 browser consumers; these declarations are erased, not bundled.
 The generated asset inventory tells the plugin which production files to serve.
+Static assets negotiate build-time Brotli/gzip representations when smaller, with
+identity delivery available. Private documents and AG-UI streams are not compressed
+by the plugin; no request-time compression or additional browser dependency is added.
 Build output is packed but not committed. [SPEC.md](SPEC.md) defines the contract.
 
 The `web/styles/index.css` import entry composes the four source layers in order

@@ -6,6 +6,7 @@ import { parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
 import { privateHeaders, redirect, RequestError } from "./http.js";
+import { readAsset, sendAsset } from "./static-assets.js";
 
 /** @typedef {Pick<import("@plurnk/plurnk-contracts").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers">} Port */
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
@@ -23,7 +24,7 @@ export default function createModule() {
         async setup({ credentials }) {
             if (!authenticate) return;
             // {§web-authorization-style} The same built stylesheet serves both document owners.
-            /** @type {[string, string, string][]} */
+            /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
             const stylesheets = inventory.filter(([, , mediaType]) => mediaType === "text/css");
             if (stylesheets.length !== 1) throw new Error("The web asset inventory must contain exactly one application stylesheet.");
@@ -36,11 +37,11 @@ export default function createModule() {
                 session = new Session(seam.credentials, registration, face, limits);
             }
             // {§web-assets} Requests select entries, never filesystem paths.
-            /** @type {[string, string, string][]} */
+            /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
-            const resources = new Map(await Promise.all(inventory.map(async ([pathname, file, mediaType]) => /** @type {const} */ ([
+            const resources = new Map(await Promise.all(inventory.map(async ([pathname, file, mediaType, encoded]) => /** @type {const} */ ([
                 pathname,
-                { body: await readFile(new URL(`dist/${file}`, import.meta.url)), mediaType },
+                await readAsset(file, mediaType, encoded),
             ]))));
 
             const root = resources.get("/index.html");
@@ -113,13 +114,7 @@ export default function createModule() {
                     }
                     const resource = resources.get(indexDocument(pathname));
                     if (resource === undefined) throw new RequestError(404, "The requested page or resource does not exist.");
-                    const { body, mediaType } = resource;
-                    res.writeHead(200, {
-                        "content-type": mediaType.startsWith("image/") ? mediaType : `${mediaType}; charset=utf-8`,
-                        "content-length": body.byteLength,
-                        "x-content-type-options": "nosniff",
-                    });
-                    res.end(req.method === "HEAD" ? undefined : body);
+                    sendAsset(req, res, resource);
                 } catch (error) {
                     if (!(error instanceof RequestError)) throw error;
                     const body = token ? Buffer.from(JSON.stringify(Problems.create("web", "token-request-rejected", error.status, error.message)))

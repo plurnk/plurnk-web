@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { ConfigurationError } from "@plurnk/plurnk-meta";
 import createModule from "../ai.plurnk/module.js";
 import verifyDirectories from "./directories.js";
+import verifyStaticAssets from "./static-assets.js";
 
 process.env.PLURNK_AUTH = "0";
 
@@ -64,7 +65,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     for (const [path, file, type] of inventory) {
         const expected = path === "/index.html" ? Buffer.from(indexBody) : await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url));
         for (const method of ["GET", "HEAD"]) {
-            const res = await fetch(`${base}${path}?ignored=yes`, { method });
+            const res = await fetch(`${base}${path}?ignored=yes`, { method, headers: { "accept-encoding": "identity" } });
             assert.equal(res.status, 200, `${method} ${path}`);
             assert.equal(res.headers.get("content-type"), type.startsWith("image/") ? type : `${type}; charset=utf-8`);
             assert.equal(res.headers.get("content-length"), String(expected.byteLength));
@@ -117,14 +118,14 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const directory = await mkdtemp(new URL("../.module-test-", import.meta.url));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const base = pathToFileURL(`${directory}/`);
-    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "session.js", "http.js"]) {
+    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "session.js", "http.js", "static-assets.js"]) {
         await copyFile(new URL(`../ai.plurnk/${file}`, import.meta.url), new URL(file, base));
     }
     await mkdir(new URL("dist/", base));
     const inventory = [
-        ["/index.html", "root.html", "text/html"],
-        ["/nested/index.html", "nested.html", "text/html"],
-        ["/nested/child.txt", "child.txt", "text/plain"],
+        ["/index.html", "root.html", "text/html", {}],
+        ["/nested/index.html", "nested.html", "text/html", {}],
+        ["/nested/child.txt", "child.txt", "text/plain", {}],
     ];
     await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
     await writeFile(new URL("dist/root.html", base), '<title>Plurnk</title><header><template id="session-navigation"></template></header><main><h1>Plurnk</h1></main>');
@@ -138,4 +139,28 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     await verifyDirectories(`http://127.0.0.1:${server.address().port}`);
+    await t.test("{§web-asset-encoding} missing declared bytes fail before route registration", async () => {
+        inventory[2][3] = { br: "missing.txt.br" };
+        await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
+        let registered = false;
+        await assert.rejects(fixtureModule().start({ registerHttpRoute() { registered = true; } }),
+            (error) => error.code === "ENOENT" && error.path.endsWith("missing.txt.br"));
+        assert.equal(registered, false);
+    });
+});
+
+test("{§web-asset-encoding} static negotiation preserves exact bytes and HTTP semantics", async (t) => {
+    let handler;
+    await createModule().start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
+    const server = createServer(handler);
+    t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}`;
+    await verifyStaticAssets(base, new URL("../ai.plurnk/", import.meta.url));
+    server.prependListener("request", (_req, res) => res.setHeader("vary", "Origin"));
+    const varied = await fetch(`${base}/manifest.webmanifest`, { headers: { "accept-encoding": "gzip" } });
+    assert.equal(varied.headers.get("vary"), "Origin, Accept-Encoding");
+    assert.equal(varied.headers.get("content-encoding"), "gzip");
+    assert.equal((await varied.json()).id, "/");
 });
