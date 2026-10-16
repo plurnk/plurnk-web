@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import verifyConversation from "./agui-conversation.js";
 
 // {§web-agui-conformance} Exercise the public observer contract through the official browser SDK.
 export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model }) {
@@ -98,6 +99,8 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         assert.deepEqual(await action("exact-worker", "exact-worker", "workspace.workers"), before,
             "renaming or observing must not fabricate workers");
     });
+
+    await verifyConversation({ tab, t, start, finish, read, event, successful, prompt, model, action, observe, detach });
 
     await t.test("{§web-agui-conformance} live and fresh observers agree on spend and timing across consecutive loops", async (probe) => {
         const mismatches = [];

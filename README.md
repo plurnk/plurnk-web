@@ -139,7 +139,9 @@ The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference is involved. Separate journeys exercise
 the shipped read-only worker page without injecting an SDK or mocking AG-UI.
 It exercises synchronization, observer/control disconnects, approval interrupts,
-shutdown and the real browser sign-in/access-token lifecycle. No AG-UI traffic is
+shutdown and the real browser sign-in/access-token lifecycle. Cross-client prompt
+delivery, exact READ operands and correlated results are compared live and after
+refresh through the SDK's messages, without custom-row reconstruction. No AG-UI traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
 
 `web/index.html` and `web/app.js` are the document and browser entry point.

@@ -44,7 +44,10 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
                 finally { agent.abortRun(); }
             },
             abort(id) { runs.get(id).agent.abortRun(); },
-            close() { for (const { agent } of runs.values()) agent.abortRun(); },
+            async close() {
+                for (const { agent } of runs.values()) agent.abortRun();
+                await Promise.all([...runs.values()].map(({ promise }) => promise));
+            },
         };
     }, token);
     const start = (id, options) => tab.evaluate(({ id, options }) => globalThis.lifecycle.start(id, options), { id, options: { projectRoot, ...options } });
