@@ -72,7 +72,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                             await agent.runAgent({ forwardedProps: { plurnk: { workspace: "tokens", action: { kind: "worker.child.set", selector: null } } } }, {
                                 onEvent: ({ event }) => events.push(event),
                             });
-                            return { terminal: events.at(-1), action: events.find(({ name }) => name === "plurnk.action.result")?.value };
+                            return { terminal: events.at(-1), action: events.at(-1).result };
                         },
                         observe(token) {
                             this.agent = new Observer({ url: new URL("/agui/connect", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });

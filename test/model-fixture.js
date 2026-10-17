@@ -23,7 +23,7 @@ export default async function startModel() {
             assert.equal(body.model, "browser-fixture");
             assert.equal(body.stream, true);
             const packet = JSON.stringify(body.messages);
-            const lifecycle = /Lifecycle fixture: ([a-z-]+)/u.exec(packet)?.[1];
+            const lifecycle = Array.from(packet.matchAll(/Lifecycle fixture: ([a-z-]+)/gu)).at(-1)?.[1];
             if (lifecycle) {
                 const visit = (visits.get(lifecycle) ?? 0) + 1;
                 visits.set(lifecycle, visit);

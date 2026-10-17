@@ -5,22 +5,22 @@ import { httpFailure } from "./browser-diagnostics.js";
 // {§web-agui-conformance} Exercise the public observer contract through the official browser SDK.
 export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser, action, detach, observe }) {
 
-    await action("observer-world", "named-worker", "worker.model.set", { selector: "browser" });
+    await action("observer-workspace", "named-worker", "worker.model.set", { selector: "browser" });
     // A real client operation creates the runtime journal; workspace attachment no longer fabricates actors.
-    const seeded = await action("observer-world", "named-worker", "op.parse", { text: "```READ (witness.txt)\n```" });
+    const seeded = await action("observer-workspace", "named-worker", "op.parse", { text: "```READ (witness.txt)\n```" });
     assert.deepEqual(seeded.results.map(({ status }) => status), [200]);
     assert.match(seeded.results[0].content, /cobalt heron/u);
 
     await t.test("{§web-agui-conformance} explicit observation refuses absent and internal targets without mutation", async () => {
         const beforeCalls = model.requests.length;
-        const before = await action("observer-world", "named-worker", "workspace.workers");
+        const before = await action("observer-workspace", "named-worker", "workspace.workers");
         const workspaces = await action(undefined, "observer-census", "workspace.list");
         const internal = before.workers.find(({ origin }) => origin === "_plurnk");
         assert.ok(internal);
         for (const [workspace, worker, code] of [
-            ["missing-observer-world", "named-worker", "workspace-not-found"],
-            ["observer-world", "absent-worker", "worker-not-found"],
-            ["observer-world", internal.name, "worker-not-found"],
+            ["missing-observer-workspace", "named-worker", "workspace-not-found"],
+            ["observer-workspace", "absent-worker", "worker-not-found"],
+            ["observer-workspace", internal.name, "worker-not-found"],
         ]) {
             const id = `missing-${workspace}-${worker}`;
             await start(id, { workspace, threadId: worker, observe: true });
@@ -40,11 +40,11 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         // More than a browser's per-origin HTTP/1 connection limit: detachment must release transport too.
         for (let visit = 0; visit < 8; visit++) {
             const id = `existing-explicit-${visit}`;
-            const result = await observe(id, "observer-world", "named-worker");
+            const result = await observe(id, "observer-workspace", "named-worker");
             assert.deepEqual(result.messages, [], "administrative receipts do not enter the model's history");
             await detach(id);
         }
-        assert.deepEqual(await action("observer-world", "named-worker", "workspace.workers"), before);
+        assert.deepEqual(await action("observer-workspace", "named-worker", "workspace.workers"), before);
         assert.deepEqual(await action(undefined, "observer-census", "workspace.list"), workspaces);
         assert.equal(model.requests.length, beforeCalls);
     });
@@ -99,7 +99,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         };
         const gauge = ({ lifecycle, loopId, packetCount, claimedAt, terminatedAt, spend }) =>
             ({ lifecycle, loopId, packetCount, claimedAt, terminatedAt, spend });
-        const workspace = "observer-world";
+        const workspace = "observer-workspace";
         const worker = "named-worker";
         const zero = await observe("continuity", workspace, worker);
         assert.equal(zero.state.plurnk.status.loopId, null);
@@ -148,7 +148,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
             assert.equal(fresh.state.plurnk.status.spend.requests, turn);
             assert.equal(fresh.state.plurnk.status.spend.usage.inputTokens, 400 * turn);
             assert.equal(fresh.state.plurnk.status.spend.costUsd, null, "unknown fixture pricing is not free");
-            assert.equal(fresh.events.some(({ name }) => name === "plurnk.terminated"), false, "a snapshot is not a new completion");
+            assert.equal(fresh.events.some(({ type }) => type === "RUN_FINISHED" || type === "RUN_ERROR"), false, "a snapshot is not a new completion");
             await detach(`fresh-${turn}`);
             priorLoop = status.loopId;
         }

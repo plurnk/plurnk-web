@@ -6,8 +6,8 @@ import { elapsed, gauges } from "./worker-status.js";
  * @param {HTMLElement} element
  */
 export default function observeWorker(element) {
-    const { workspace, worker, auth } = element.dataset;
-    if (!workspace || !worker || (auth !== "session" && auth !== "none")) throw new Error("Worker document metadata is incomplete.");
+    const { threadId, auth } = element.dataset;
+    if (!threadId || (auth !== "session" && auth !== "none")) throw new Error("Worker document metadata is incomplete.");
     /** @type {AbortController | undefined} */
     let page;
 
@@ -36,12 +36,12 @@ export default function observeWorker(element) {
                     headers.Authorization = `Bearer ${token.access_token}`;
                 }
                 signal.throwIfAborted();
-                const agent = new WorkerAgent({ url: "/agui/connect", threadId: worker, headers });
+                const agent = new WorkerAgent({ url: "/agui/connect", threadId, headers });
                 agent.abortController = controller;
                 let terminated = false;
                 /** @type {number | undefined} */
                 let problem;
-                await agent.connectAgent({ forwardedProps: { plurnk: { workspace } } }, {
+                await agent.connectAgent({}, {
                     onStateChanged: ({ state }) => {
                         const next = /** @type {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState}} */ (state).plurnk?.status;
                         if (!next || signal.aborted) return;
@@ -49,9 +49,11 @@ export default function observeWorker(element) {
                         connected = true;
                         the(element, { ...gauges(next), elapsed: elapsed(next, Date.now()), connection: "connected", connectionLabel: "Connected" });
                     },
-                    onCustomEvent: ({ event }) => {
-                        if (event.name === "plurnk.terminated") terminated = true;
-                        if (event.name === "plurnk.problem") problem = event.value?.status ?? 500;
+                    onRunFinishedEvent: ({ outcome }) => { terminated = outcome !== "interrupt"; },
+                    onRunErrorEvent: ({ event }) => {
+                        const details = /** @type {{plurnk?: {terminal?: unknown, problem?: {status: number}}} | undefined} */ (event.metadata)?.plurnk;
+                        terminated = details?.terminal !== undefined;
+                        problem = details?.problem?.status;
                     },
                 });
                 signal.throwIfAborted();
