@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 export default async function verifyConversation({ t, tab, start, finish, read, event, successful, prompt, model, action, observe, detach }) {
     await t.test("{§web-agui-conformance} pre-attached, submitting, late and refreshed browsers receive the same conversation", async (probe) => {
         probe.after(() => tab.evaluate(() => globalThis.lifecycle.close()));
-        const workspace = "conversation-world";
+        const workspace = "conversation-workspace";
         const worker = "user";
         await action(workspace, worker, "worker.model.set", { selector: "browser" });
         await action("conversation-elsewhere", worker, "worker.model.set", { selector: "browser" });
@@ -18,7 +18,7 @@ export default async function verifyConversation({ t, tab, start, finish, read, 
         const late = await observe("conversation-late", workspace, worker);
 
         for (const result of [await read("conversation-live"), await read("conversation-submitter"), late]) {
-            assert.deepEqual(result.messages.filter(({ role }) => role === "user"), messages,
+            assert.deepEqual(result.messages.filter(({ role }) => role === "user").map(({ id, role, content }) => ({ id, role, content })), messages,
                 "the arriving prompt is present once, with its exact identity and text, before inference completes");
         }
         assert.deepEqual((await read("conversation-foreign")).messages, [], "another workspace's same-named worker receives nothing");
@@ -31,7 +31,11 @@ export default async function verifyConversation({ t, tab, start, finish, read, 
 
         for (const result of [...completed, fresh]) {
             const { messages: conversation } = result;
-            assert.deepEqual(conversation.filter(({ role }) => role === "user"), messages);
+            assert.deepEqual(conversation.filter(({ role }) => role === "user").map(({ id, role, content }) => ({ id, role, content })), messages);
+            const arrival = conversation.find(({ role }) => role === "user").metadata.plurnk;
+            assert.equal(arrival.op, "SEND");
+            assert.equal(arrival.source, "agui://operator/threads/user/messages/message-conversation");
+            assert.ok(Number.isSafeInteger(arrival.id));
             assert.equal(new Set(conversation.map(({ id }) => id)).size, conversation.length, "message identities do not duplicate");
             assert.deepEqual(conversation.filter(({ role }) => role === "reasoning").map(({ content }) => content),
                 ["Considering conversation.", "Considering conversation."], "both accepted reasoning turns survive");

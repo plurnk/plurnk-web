@@ -83,7 +83,7 @@ export default async function aguiSession(tab, { token, projectRoot }) {
         await start(id, { workspace, threadId, action: { kind, ...parameters } });
         const result = await finish(id);
         successful(result);
-        const outcome = result.events.find(({ name }) => name === "plurnk.action.result")?.value;
+        const outcome = result.events.at(-1).result;
         assert.equal(outcome?.ok, true, JSON.stringify(outcome));
         return outcome.result;
     };

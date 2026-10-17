@@ -32,7 +32,7 @@ const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lif
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
-    await t.test("{§web-worker-observer} the actual page observes two loops without owning or replaying work", async () => {
+    await t.test("{§web-worker-observer} the actual page observes consecutive loops, cancellation and workspace rename without owning work", async () => {
         const model = await startModel();
         const secret = crypto.randomUUID();
         try {
@@ -43,12 +43,14 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const agent = await controller(base, secret);
                     let result;
                     await agent.runAgent({ forwardedProps: { plurnk: { workspace: selected, action: { kind, ...parameters } } } }, {
-                        onCustomEvent: ({ event }) => { if (event.name === "plurnk.action.result") result = event.value; },
+                        onRunFinishedEvent: ({ event }) => { result = event.result; },
                     });
                     assert.equal(result?.ok, true, JSON.stringify(result));
                     return result.result;
                 };
                 await action("worker.model.set", { selector: "browser" });
+                const { workspaces } = await action("workspace.list");
+                const identity = `${workspaces.find(({ name }) => name === workspace).id}#${threadId}`;
                 const before = await action("workspace.workers");
                 const browser = await chromium.launch();
                 try {
@@ -130,10 +132,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
 
                     assert.ok(observations.length >= 5, "loop terminals, refresh and navigation reopen passive observations");
                     for (const input of observations) {
-                        assert.equal(input.threadId, threadId);
+                        assert.equal(input.threadId, identity);
                         assert.deepEqual(input.messages, []);
                         assert.deepEqual(input.tools, []);
-                        assert.deepEqual(input.forwardedProps, { plurnk: { workspace } });
+                        assert.equal(input.forwardedProps?.plurnk?.workspace, undefined);
+                        assert.equal(input.forwardedProps?.plurnk?.control, undefined);
                         assert.equal(input.resume, undefined);
                     }
                     assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
@@ -146,6 +149,19 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
 
                     const renamed = "renamed observer";
                     await action("workspace.rename", { name: renamed });
+                    const afterRename = await controller(base, secret, prompt("held-page-rename"));
+                    afterRename.threadId = identity;
+                    const readyAfterRename = Promise.withResolvers();
+                    const completionAfterRename = afterRename.runAgent({}, {
+                        onReasoningMessageContentEvent: () => { readyAfterRename.resolve(); },
+                    });
+                    await readyAfterRename.promise;
+                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "running");
+                    model.release("held-page-rename");
+                    await completionAfterRename;
+                    await page.waitForFunction(() => document.querySelector('[data-text="requests"]')?.textContent === "4");
+                    await connected();
+                    assert.equal(observations.at(-1).threadId, identity, "the open page reattaches by ID after another client renames its workspace");
                     const attempts = observations.length;
                     assert.equal((await page.reload()).status(), 404, "an old named URL is not an identity alias");
                     checkBrowser([httpFailure(path, 404)]);
@@ -153,11 +169,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const renamedPath = directoryPath({ kind: "worker", workspace: renamed, worker: threadId });
                     await page.goto(new URL(renamedPath, base).href);
                     await connected();
-                    assert.equal(observations.at(-1).forwardedProps.plurnk.workspace, renamed);
-                    assert.equal(await value("lifecycle"), "failed");
-                    assert.deepEqual((await action("workspace.workers", {}, renamed)).workers, after.workers,
-                        "old-name refusal and new-name navigation preserve the existing worker identities and settings");
-                    assert.equal(model.requests.length, 3);
+                    assert.equal(observations.at(-1).threadId, identity);
+                    assert.equal(await value("lifecycle"), "completed");
+                    const stableWorkers = (workers) => workers.map(({ lifecycle, ...identity }) => identity);
+                    assert.deepEqual(stableWorkers((await action("workspace.workers", {}, renamed)).workers), stableWorkers(after.workers),
+                        "qualified control and named navigation preserve worker identities, lineage and ownership; only the loop lifecycle changes");
+                    assert.equal(model.requests.length, 4);
                     assert.deepEqual(model.errors, []);
                     checkBrowser();
                 } finally { await browser.close(); }
@@ -213,13 +230,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
         } finally { await model.close(); }
     });
 
-    await t.test("{§web-worker-observer} anonymous passive pages survive approval and expose network loss and shutdown", async () => {
+    await t.test("{§web-worker-observer} anonymous passive pages leave approval to a capable client and expose network loss and shutdown", async () => {
         const model = await startModel();
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base, daemon) => {
                 const run = await controller(base, undefined, prompt("approval"));
-                const parameters = { tools: [{ name: "request_approval", description: "Review operations", parameters: { type: "object" } }],
-                    forwardedProps: { plurnk: { workspace: "observer-approval" } } };
+                const parameters = { forwardedProps: { plurnk: { workspace: "observer-approval" } } };
                 await run.runAgent(parameters);
                 assert.equal(run.pendingInterrupts.length, 1);
                 const browser = await chromium.launch();
@@ -233,8 +249,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.goto(new URL("/~/", proxy.url).href);
                     assert.equal(requests.some((request) => /worker-.*\.js|\/auth\/token|\/agui/u.test(request.url())), false, "directory navigation needs no worker runtime");
                     await page.goto(new URL("/~/observer-approval@user/", proxy.url).href);
-                    await connected(page);
-                    assert.equal(await page.locator('#worker-status [role="alert"]').isVisible(), false);
+                    await connection(page, "disconnected");
+                    assert.equal(await page.locator('#worker-status [role="alert"]').isVisible(), true, "this read-only page cannot answer its owner's interrupt");
                     assert.equal(model.requests.length, 1, "the approval remains pending");
                     assert.equal(requests.filter((request) => new URL(request.url()).pathname === "/agui/connect").length, 1);
                     assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);
@@ -242,6 +258,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await run.runAgent({ ...parameters, resume: [{ interruptId: run.pendingInterrupts[0].id, status: "resolved", payload: { decision: "accept" } }] });
                     assert.equal(run.pendingInterrupts.length, 0);
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed approval.");
+                    await page.getByRole("link", { name: "Reconnect", exact: true }).click();
                     await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "completed");
                     await connected(page);
                     assert.equal(model.requests.length, 2);

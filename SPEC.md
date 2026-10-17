@@ -264,7 +264,9 @@ worker page may observe it under {§web-worker-observer}, never control it.
 ## §web-worker-observer Read-only worker status
 
 The server renders a semantic status section only for an existing model worker,
-with exact workspace/worker names and whether access requires a browser session.
+with the daemon's qualified thread identity (`<workspace ID>#<worker name>`) and
+whether access requires a browser session. URLs and breadcrumbs retain readable names;
+renaming a workspace does not redirect an already-open observation to another worker.
 No credential appears in the document. JavaScript enhances that section; other
 pages neither load HttpAgent nor request access credentials or AG-UI streams.
 Without JavaScript the identity and navigation remain usable, with an explicit
@@ -286,9 +288,9 @@ stateDiagram-v2
 
 | Boundary | Contract |
 |---|---|
-| Transport | Official HttpAgent via its public connection hook, using `/agui/connect`, `threadId` as the worker name and `forwardedProps.plurnk.workspace` as the workspace name. Empty messages/tools; no action, resume, control claim or capability replacement. SDK owns event parsing, replay and state patches. |
+| Transport | Official HttpAgent via its public connection hook, using `/agui/connect` and the qualified `threadId` supplied by the document. Empty messages/tools; no forwarded workspace, action, resume, control claim or capability replacement. SDK owns event parsing, replay and state patches. |
 | Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/SDK instance and are released on departure. |
-| Continuity | A daemon `plurnk.terminated` event identifies normal worker completion, including failure or cancellation; reconnect passively to watch subsequent work. Never submit messages, retry work or infer completion from transport closure. |
+| Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, identifies worker completion; reconnect passively to watch subsequent work. A protocol/credential failure or unsupported interrupt stops observation. Never submit messages, retry work or infer completion from transport closure. |
 | Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card, retain clearly stale last-observed values, and offer a native reload link. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
 | Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
 | Projection | `plurnk.status` is authoritative for lifecycle, latest loop, packet count and spend. Usage/cost cover the worker and descendants; absent values read “Unknown”, not zero or a known subtotal presented as a total. The browser keeps no accounting ledger or transcript cache. |
@@ -440,6 +442,7 @@ worker page is exercised separately under {§web-worker-observer}, without SDK i
 
 | Boundary under verification | Required observation |
 |---|---|
+| Ordinary client | Stock HttpAgent creates, continues and reconstructs a conversation using only standard inputs and authentication. No Plurnk actions, selectors, metadata interpretation or tool declarations. Independent threads remain isolated; sending retained history adds no prompt or inference. |
 | Standard Run | Bearer rejection, discovery, reasoning, correlated native tool/results, Plurnk receipts, state, assistant replies and provider failures survive the official SDK. |
 | State ownership | Preparation and activity belong to workspace state. Runs without a model worker expose neither worker status nor budget. |
 | Synchronization | Authoritative messages/state without inference or borrowed history from another workspace. Retained reasoning and operation/result evidence must not disappear on a fresh connection. |
@@ -447,11 +450,11 @@ worker page is exercised separately under {§web-worker-observer}, without SDK i
 | Operation fidelity | Standard tool-call arguments preserve the authored resource address (including its host), scope, pattern and aside. Successful and failed READs retain their attempted operands and exactly one correlated result, live and after refresh. No custom-row reconstruction supplies missing conversation facts. |
 | Execution results | Real commands' stdout/stderr observations answer the native execution call, retaining output, terminal status and exit code, including nonzero exits. Pre-attached, submitting, late and refreshed SDK consumers retain the same ordered messages and identities; a start receipt is not the command's output. |
 | Run outcomes | Successful loops end with standard `RUN_FINISHED`, `outcome: success`, their result and aggregate reported token usage. Cancellation is `RUN_FINISHED` with `outcome: cancelled`, not `RUN_ERROR`; unreported usage stays absent. Provider failures remain `RUN_ERROR`, not successful completion. Command exit codes and overall loop outcomes remain distinct. |
-| Observation | Passive `/agui/connect` selects an existing worker by `threadId` in the named workspace, remains open while idle and can detach/reconnect without cancelling another connection's work. The test adapter uses HttpAgent's public connection hook and sends no retained messages back as new input. |
-| Exact target | Passive existing-worker selection preserves identity when workspace and worker names coincide. Missing/internal targets and renamed-away workspace names fail without creating or claiming anything, including on cached bindings. |
+| Observation | Passive `/agui/connect` selects an existing worker by qualified `threadId`, remains open while idle and can detach/reconnect without cancelling another connection's work. HttpAgent's public connection hook forwards its input unchanged: retained messages synchronize rather than resubmit work. |
+| Exact target | Passive existing-worker selection preserves identity across workspace rename. URLs still select names: a renamed-away URL is 404, while the new URL supplies the same thread identity. Missing/internal targets fail without creating or claiming anything. |
 | Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |
 | Control | Disconnecting the controlling request cancels its work; an observer receives the cancellation. |
-| Approval | Native interrupts resume through the SDK; a different owner or consumed interrupt cannot resolve the gate. Test-only handlers do not advertise capabilities in the shipped page. |
+| Approval | Native interrupts refer to the gated operation's call and carry review facts in `metadata.plurnk.proposal`; no approval tool declaration is needed. SDK resume yields the operation's actual result, not a decision acknowledgement. A different owner or consumed interrupt cannot resolve the gate. The shipped page never answers approvals. |
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |
 | Credentials | Real password/PKCE sign-in, browser access, expiry, concurrent refresh and revocation compose with the SDK. Revocation terminates admitted connections without cancelling their workers. |
 

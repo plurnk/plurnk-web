@@ -32,9 +32,10 @@ export default async function verifyExecution(browser, base, token, projectRoot,
                     for (const result of completed) successful(result);
                     for (const result of [...completed, fresh]) {
                         const { messages } = result;
-                        assert.deepEqual(messages.filter(({ role }) => role === "user"), prompt(name));
+                        assert.deepEqual(messages.filter(({ role }) => role === "user").map(({ id, role, content }) => ({ id, role, content })), prompt(name));
                         const calls = messages.flatMap(({ toolCalls }) => toolCalls ?? []);
-                        assert.deepEqual(calls.map(({ function: fn }) => fn.name), ["sh"]);
+                        assert.deepEqual(calls.map(({ function: fn }) => fn.name), ["sh", "WAIT"],
+                            "every authored operation remains visible, including a bodiless WAIT");
                         const [command] = calls;
                         const args = JSON.parse(command.function.arguments);
                         assert.equal(args.body, `printf '${name} stdout\\n'; printf '${name} stderr\\n' >&2; exit ${exitCode}`,

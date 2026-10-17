@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import verifyLifecycle from "./agui-lifecycle.js";
+import verifyOrdinary from "./agui-ordinary.js";
 import httpAgentBundle from "./http-agent-bundle.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
@@ -64,7 +65,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             const result = await run({ token, plurnk: { action: { kind: "discover" } } });
             assert.deepEqual(result.failures, []);
             assert.equal(result.rejected, undefined);
-            const action = result.events.find(({ name }) => name === "plurnk.action.result")?.value;
+            const action = result.events.at(-1).result;
             assert.equal(action?.kind, "discover");
             assert.equal(action.ok, true);
             assert.equal(action.result.actions["workspace.list"].scope, "daemon");
@@ -84,7 +85,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(result.rejected, undefined);
             assert.equal(result.events[0].type, "RUN_STARTED");
             assert.equal(result.events.at(-1).type, "RUN_FINISHED", JSON.stringify(result.events.filter((event) =>
-                event.type === "RUN_ERROR" || (event.name === "plurnk.row" && event.value.origin === "model"))));
+                event.type === "RUN_ERROR" || event.type === "TOOL_CALL_RESULT")));
             assert.deepEqual(result.events.at(-1).outcome, { type: "success" });
             assert.equal(result.events.at(-1).result?.status, 200);
             assert.deepEqual(result.events.at(-1).usage, [{ provider: "provider:browser-fixture", model: "browser-fixture",
@@ -104,10 +105,11 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             const readResult = JSON.parse(receipt.content);
             assert.equal(readResult.status, 200);
             assert.match(readResult.content, /cobalt heron/u);
-            assert.ok(result.events.some(({ name, value }) => name === "plurnk.row"
-                && value.origin === "model" && value.op === "READ"
-                && value.tx.target.raw === "witness.txt" && value.rx.content === readResult.content),
-                "Plurnk receipts remain available alongside the native projection");
+            const projected = result.events.find(({ type, toolCallId }) => type === "TOOL_CALL_RESULT" && toolCallId === read.id);
+            assert.equal(projected.metadata.plurnk.op, "READ");
+            assert.equal(projected.metadata.plurnk.address, "witness.txt");
+            assert.equal(projected.metadata.plurnk.status, 200);
+            assert.deepEqual(JSON.parse(projected.content), readResult, "receipt facts accompany their standard operation result");
             assert.ok(result.events.some(({ type }) => type === "STATE_SNAPSHOT"));
             assert.ok(result.events.some(({ type }) => type === "STATE_DELTA"));
             assert.equal(result.state.plurnk.workspace.name, "browser-conformance");
@@ -128,7 +130,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             } });
             assert.equal(result.rejected, undefined);
             assert.deepEqual(result.failures, []);
-            const action = result.events.find(({ name }) => name === "plurnk.action.result")?.value;
+            const action = result.events.at(-1).result;
             assert.equal(action?.kind, "workspace.workers");
             assert.equal(action.ok, true);
             assert.equal(result.events.at(-1).type, "RUN_FINISHED");
@@ -156,6 +158,8 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(model.requests.length, 3, "a provider refusal is not retried");
         });
 
+        checkBrowser();
+        await verifyOrdinary(tab, token, model, t);
         checkBrowser();
         await verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser });
         assert.deepEqual(model.errors, []);

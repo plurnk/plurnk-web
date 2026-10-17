@@ -9,7 +9,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
     try {
         await t.test("{§web-agui-conformance} synchronization is authoritative and inference-free", async () => {
             const before = model.requests.length;
-            await start("sync", { workspace: "browser-conformance", mode: "sync" });
+            await start("sync", { workspace: "browser-conformance" });
             const result = await finish("sync");
             successful(result);
             const snapshot = result.events.find(({ type }) => type === "MESSAGES_SNAPSHOT");
@@ -33,8 +33,8 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             await start("other-create", { workspace: "other-workspace", threadId: "browser-conformance", action: { kind: "worker.model.set", selector: "browser" } });
             const created = await finish("other-create");
             successful(created);
-            assert.equal(created.events.find(({ name }) => name === "plurnk.action.result")?.value.ok, true);
-            await start("other", { workspace: "other-workspace", threadId: "browser-conformance", mode: "sync" });
+            assert.equal(created.events.at(-1).result.ok, true);
+            await start("other", { workspace: "other-workspace", threadId: "browser-conformance" });
             const result = await finish("other");
             successful(result);
             assert.deepEqual(result.messages, []);
@@ -89,26 +89,31 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal(result.events.some(({ type }) => type === "RUN_ERROR"), false);
             assert.equal(Object.hasOwn(result.events.at(-1), "usage"), false,
                 "an interrupted request with no provider usage does not report zero tokens");
-            const terminal = result.events.find(({ name }) => name === "plurnk.terminated")?.value;
+            const terminal = result.events.at(-1).metadata.plurnk.terminal;
             assert.equal(terminal?.result.status, 499);
             assert.equal(terminal?.result.problem.reason, "client_disconnected");
             assert.equal(result.running, false);
         });
         await t.test("{§web-agui-conformance} native approval interrupts and resumes once through the official SDK", async () => {
             const before = model.requests.length;
-            const tools = [{ name: "request_approval", description: "Review operations", parameters: { type: "object" } }];
-            await start("approval", { workspace: "approval-live", messages: prompt("approval"), tools });
+            await start("approval", { workspace: "approval-live", messages: prompt("approval") });
             const paused = await finish("approval");
             assert.equal(paused.failure, null);
             assert.equal(paused.events.at(-1).outcome?.type, "interrupt", JSON.stringify({
-                events: paused.events.filter(({ name, type, value }) => type === "RUN_ERROR" || name === "plurnk.notice" || (name === "plurnk.row" && value.origin === "model")),
+                events: paused.events.filter(({ name, type }) => type === "RUN_ERROR" || name === "plurnk.notice" || type === "TOOL_CALL_START"),
             }));
             assert.equal(paused.running, false);
             assert.equal(paused.interrupts.length, 1);
             const interrupt = paused.interrupts[0];
             assert.ok(interrupt.id);
+            const call = paused.messages.flatMap(({ toolCalls }) => toolCalls ?? []).find(({ id }) => id === interrupt.toolCallId);
+            assert.equal(call?.function.name, "sh", "the interrupt belongs to the gated operation, not a fabricated approval tool");
+            assert.equal(JSON.parse(call.function.arguments).body, "printf approved");
+            assert.ok(interrupt.metadata.plurnk.proposal);
+            assert.equal(paused.messages.some(({ role, toolCallId }) => role === "tool" && toolCallId === interrupt.toolCallId), false,
+                "a pending approval has no invented execution result");
             const resume = [{ interruptId: interrupt.id, status: "resolved", payload: { decision: "accept" } }];
-            await start("wrong-owner", { workspace: "approval-live", threadId: "observer", resume, tools });
+            await start("wrong-owner", { workspace: "approval-live", threadId: "observer", resume });
             const refused = await finish("wrong-owner");
             assert.equal(refused.events.at(-1).type, "RUN_ERROR");
             await tab.evaluate(({ resume }) => globalThis.lifecycle.resume("approval", resume), { resume });
@@ -116,9 +121,14 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             successful(completed);
             assert.deepEqual(completed.interrupts, []);
             assert.equal(completed.messages.findLast(({ role }) => role === "assistant").content, "Completed approval.");
-            const acknowledgement = completed.events.find(({ type, toolCallId }) => type === "TOOL_CALL_RESULT" && toolCallId === interrupt.toolCallId);
-            assert.deepEqual(JSON.parse(acknowledgement?.content ?? "null"), { status: "resolved", payload: { decision: "accept" } });
-            await start("duplicate", { workspace: "approval-live", resume, tools });
+            const receipts = completed.events.filter(({ type, toolCallId }) => type === "TOOL_CALL_RESULT" && toolCallId === interrupt.toolCallId);
+            assert.equal(receipts.length, 1, "the approved operation has one actual result, not an invented approval acknowledgement");
+            const output = JSON.parse(receipts[0].content);
+            assert.equal(output.status, 200);
+            assert.equal(output.content, "approved");
+            assert.equal(output.exitCode, 0);
+            assert.equal(output.terminal, true);
+            await start("duplicate", { workspace: "approval-live", resume });
             assert.equal((await finish("duplicate")).events.at(-1).type, "RUN_ERROR");
             assert.equal(model.requests.length, before + 2, "one proposed command and one answer, without a model retry");
         });

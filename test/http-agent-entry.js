@@ -7,6 +7,6 @@ export { HttpAgent };
 export class Observer extends HttpAgent {
     connect(input) {
         this.abortController = new AbortController();
-        return super.run({ ...input, messages: [] });
+        return super.run(input);
     }
 }

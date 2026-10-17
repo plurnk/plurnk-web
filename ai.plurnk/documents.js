@@ -146,15 +146,15 @@ export default class Documents {
     }
 
     /** {§web-worker-observer} Identity and navigation belong to the document; status arrives through AG-UI.
-     * @param {import("./directory-addresses.js").Directory & {kind: "worker"}} directory @param {boolean} authenticated
+     * @param {import("./directory-addresses.js").Directory & {kind: "worker"}} directory @param {number} workspaceId @param {boolean} authenticated
      */
-    #workerStatus(directory, authenticated) {
+    #workerStatus(directory, workspaceId, authenticated) {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted worker must have a directory address.");
         const fields = [["lifecycle", "Worker"], ["loop", "Loop"], ["turns", "Turns"], ["elapsed", "Elapsed"],
             ["requests", "Requests"], ["input", "Input tokens"], ["output", "Output tokens"], ["cost", "Cost (USD)"]];
-        return `<section id="worker-status" aria-label="Worker status" data-workspace="${escapeHtml(directory.workspace)}"`
-            + ` data-worker="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-connection="initial">`
+        return `<section id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
+            + ` data-auth="${authenticated ? "session" : "none"}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}</dl>`
             + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
@@ -199,6 +199,6 @@ export default class Documents {
             : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
         const title = `${workspace.name}@${directory.worker}`;
         return render(title, (parent === null ? ""
-            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`) + this.#workerStatus(directory, authenticated));
+            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`) + this.#workerStatus(directory, workspace.id, authenticated));
     }
 }

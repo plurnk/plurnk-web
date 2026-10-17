@@ -5,6 +5,19 @@ import Documents from "../ai.plurnk/documents.js";
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({ id, name, parentWorkerId, origin, owner });
 
+test("{§web-worker-observer} readable names never select the worker's live thread identity", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
+    for (const name of ["~/project", "42#alice", "renamed workspace"]) {
+        const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, {
+            listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null }],
+            listWorkers: async () => [worker(9, "user")],
+        }, false)).toString();
+        assert.match(html, /data-thread-id="7#user"/u);
+        assert.doesNotMatch(html, /data-workspace=|data-worker=/u);
+        assert.ok(html.includes(`${name}@user — Plurnk`));
+    }
+});
+
 test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish workspace names from literal daemon folder labels", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
     for (const [name, project_root, project_label, icon, label, separateFolder] of [
