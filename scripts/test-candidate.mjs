@@ -15,6 +15,6 @@ const run = (args) => new Promise((accept, reject) => {
 
 // Candidate public declarations and authorization specimens; the lockfile remains a registry graph.
 await run(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", "--package-lock=false",
-    ...archives.filter((file) => /\/plurnk-plurnk-(?:agui|contracts|modules)-/u.test(file)),
+    ...archives,
 ]);
 await run(["test"]);
