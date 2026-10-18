@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import { chromium, firefox, webkit } from "playwright";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
@@ -14,7 +13,7 @@ const interrupt = (id, op = "sh") => ({
     } } },
 });
 
-test("{§web-worker-approval} native review controls project complete SDK interrupt sets", { timeout: 60_000 }, async (t) => {
+export default async function verifyApproval(t) {
     const fixture = await conversationFixture(new URL("./approval-entry.js", import.meta.url));
     try {
         for (const engine of [chromium, firefox, webkit]) {
@@ -26,12 +25,12 @@ test("{§web-worker-approval} native review controls project complete SDK interr
                     const page = await context.newPage();
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.review === "function");
-                    const form = page.getByRole("form", { name: "Review operations", exact: true });
+                    const form = page.getByRole("form", { name: "Review requests", exact: true });
                     assert.equal(await form.isVisible(), false);
                     const gates = [interrupt("id[0]#one"), interrupt("quote\"<two>", "EDIT")];
                     gates[1].metadata.plurnk.proposal.body = '<form action="/auth/logout"><button data-text="proposal-worker">Injected</button></form>\n' + "x".repeat(400);
                     assert.equal(await page.evaluate((values) => window.review(values), gates), true);
-                    const groups = form.locator("[data-proposals] > fieldset");
+                    const groups = form.locator("[data-requests] > fieldset");
                     assert.equal(await groups.count(), 2);
                     assert.deepEqual(await groups.evaluateAll((nodes) => nodes.map((node) => node.dataset.interruptId)), gates.map(({ id }) => id));
                     assert.equal(await groups.nth(1).locator('[data-text="proposal-body"]').textContent(), gates[1].metadata.plurnk.proposal.body);
@@ -43,13 +42,13 @@ test("{§web-worker-approval} native review controls project complete SDK interr
                     assert.equal(await groups.nth(1).getByRole("radio", { name: "Reject", exact: true }).isChecked(), true);
                     assert.equal(await page.evaluate((values) => window.review(values), gates), true);
                     await groups.nth(0).getByRole("radio", { name: "Accept", exact: true }).check();
-                    await form.getByRole("button", { name: "Submit decisions", exact: true }).click();
+                    await form.getByRole("button", { name: "Submit responses", exact: true }).click();
                     assert.deepEqual(await page.evaluate(() => window.responses), [], "native form validation protects complete-set submission");
                     assert.equal(await groups.nth(1).getByRole("radio", { name: "Accept", exact: true }).evaluate((input) => input === document.activeElement), true);
                     // Native validation focuses the unanswered group; the native radio keyboard behavior answers it.
                     await page.keyboard.press("ArrowDown");
                     assert.equal(await groups.nth(1).getByRole("radio", { name: "Reject", exact: true }).isChecked(), true);
-                    await form.getByRole("button", { name: "Submit decisions", exact: true }).click();
+                    await form.getByRole("button", { name: "Submit responses", exact: true }).click();
                     assert.deepEqual(await page.evaluate(() => window.responses), [[
                         { interruptId: gates[0].id, status: "resolved", payload: { decision: "accept" } },
                         { interruptId: gates[1].id, status: "resolved", payload: { decision: "reject" } },
@@ -67,4 +66,4 @@ test("{§web-worker-approval} native review controls project complete SDK interr
             });
         }
     } finally { await fixture.server.close(); }
-});
+}

@@ -29,9 +29,9 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
             const requests = requestsFrom(page);
             const name = `approval-${decision}`;
             await requestApproval(page, name);
-            const review = page.getByRole("form", { name: "Review operations", exact: true });
+            const review = page.getByRole("form", { name: "Review requests", exact: true });
             assert.equal(await review.count(), 1);
-            assert.equal(await review.locator("[data-proposals] > fieldset").count(), 1);
+            assert.equal(await review.locator("[data-requests] > fieldset").count(), 1);
             assert.equal(await review.locator('[data-text="proposal-worker"]').innerText(), "user");
             assert.equal(await review.locator('[data-text="proposal-op"]').innerText(), "sh");
             assert.equal(await review.locator('[data-text="proposal-body"]').textContent(), "[sh] printf approved");
@@ -40,19 +40,19 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
             assert.equal(projection.body, "[sh] printf approved");
             assert.equal(projection.disposition.decision, "review");
             assert.equal(await review.locator("input:checked").count(), 0, "permission has no preselected answer");
-            await review.getByRole("button", { name: "Submit decisions", exact: true }).click();
+            await review.getByRole("button", { name: "Submit responses", exact: true }).click();
             assert.equal(requests.length, 1, "native required controls prevent an unanswered review");
             assert.equal(model.requests.length, 1);
             await page.getByRole("textbox", { name: "Message", exact: true }).fill("Keep this newer draft.");
             await review.getByRole("radio", { name: decision, exact: false }).check();
-            await review.getByRole("button", { name: "Submit decisions", exact: true }).click();
+            await review.getByRole("button", { name: "Submit responses", exact: true }).click();
             await page.getByText(`Completed ${name}.`, { exact: true }).waitFor();
             await connected(page);
             assert.equal(model.requests.length, 2);
             assert.equal(requests.length, 2);
             const resume = requests[1];
             assert.equal(resume.threadId, requests[0].threadId);
-            assert.deepEqual(resume.tools, []);
+            assert.deepEqual(resume.tools.map(({ name }) => name), ["question", "mcp_input_required"]);
             assert.equal(resume.resume.length, 1);
             assert.deepEqual(resume.resume[0].payload, { decision });
             assert.equal(resume.resume[0].status, "resolved");
@@ -89,26 +89,26 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
         other.setDefaultTimeout(5000);
         await other.goto(path);
         await interrupted(other);
-        const before = await page.locator('[data-proposals] > fieldset').getAttribute("data-interrupt-id");
+        const before = await page.locator('[data-requests] > fieldset').getAttribute("data-interrupt-id");
         await page.getByRole("radio", { name: "Reject", exact: true }).check();
         await page.reload();
         await interrupted(page);
-        assert.notEqual(await page.locator('[data-proposals] > fieldset').getAttribute("data-interrupt-id"), before);
-        assert.equal(await page.locator('[data-proposals] input:checked').count(), 0, "refresh does not replay an unsubmitted choice");
+        assert.notEqual(await page.locator('[data-requests] > fieldset').getAttribute("data-interrupt-id"), before);
+        assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "refresh does not replay an unsubmitted choice");
         assert.equal(model.requests.length, 1);
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-tabs.", { exact: true }).waitFor();
         await other.getByRole("radio", { name: "Reject", exact: true }).check();
-        await other.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await other.getByRole("button", { name: "Submit responses", exact: true }).click();
         await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
-        assert.match(await other.locator('[data-text="command-error"]').textContent(), /Approval could not be confirmed:.*unknown interrupt presentation/u);
-        assert.equal(await other.getByRole("button", { name: "Submit decisions", exact: true }).isDisabled(), true);
+        assert.match(await other.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*unknown interrupt presentation/u);
+        assert.equal(await other.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(model.requests.length, 2, "a stale rejection cannot undo the accepted operation or start another turn");
         await other.getByRole("button", { name: "Reconnect", exact: true }).click();
         await other.getByText("Completed approval-tabs.", { exact: true }).waitFor();
         await connected(other);
-        assert.equal(await other.getByRole("form", { name: "Review operations", exact: true }).isVisible(), false);
+        assert.equal(await other.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
         assert.equal(await other.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
         assert.equal(requests.length, 2);
         checkBrowser();
@@ -117,16 +117,16 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
     await t.test("{§web-worker-approval} serial operations present fresh gates without inheriting a prior decision", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-batch");
-        const groups = page.locator('[data-proposals] > fieldset');
+        const groups = page.locator('[data-requests] > fieldset');
         assert.equal(await groups.count(), 1, "dispatch waits for the first proposal before reaching the next operation");
         assert.equal(await groups.locator('[data-text="proposal-body"]').textContent(), "[sh] printf first");
         const first = await groups.getAttribute("data-interrupt-id");
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         assert.equal(requests.length, 1, "an unanswered proposal cannot resume");
         await groups.getByRole("radio", { name: "Accept", exact: true }).check();
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction((id) => {
-            const group = document.querySelector("[data-proposals] > fieldset");
+            const group = document.querySelector("[data-requests] > fieldset");
             return document.querySelector("#worker-status")?.dataset.connection === "interrupted"
                 && group && group.dataset.interruptId !== id;
         }, first);
@@ -135,7 +135,7 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
         assert.equal(await groups.locator("input:checked").count(), 0);
         assert.equal(model.requests.length, 1, "both operations belong to the same model turn");
         await groups.getByRole("radio", { name: "Reject", exact: true }).check();
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-batch.", { exact: true }).waitFor();
         await connected(page);
         assert.equal(requests.length, 3);
@@ -182,7 +182,7 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
         const seen = [];
         for (let index = 0; index < 2; index++) {
             await interrupted(page);
-            const group = page.locator('[data-proposals] > fieldset');
+            const group = page.locator('[data-requests] > fieldset');
             assert.equal(await group.count(), 1, "one requesting worker per presentation");
             const worker = await group.locator('[data-text="proposal-worker"]').innerText();
             assert.ok(["one", "two"].includes(worker), worker);
@@ -190,7 +190,7 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
             seen.push(worker);
             assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isDisabled(), true, "the idle parent's Stop cannot cancel a child");
             await group.getByRole("radio", { name: "Accept", exact: true }).check();
-            await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+            await page.getByRole("button", { name: "Submit responses", exact: true }).click();
             // Each accepted child finishes independently of the owner's already-finished loop.
             const childPage = await context.newPage();
             await childPage.goto(path.replace("@user/", `@${worker}/`));
@@ -213,10 +213,10 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
         await requestApproval(page, "approval-transport");
         await page.route("**/agui", (route) => route.abort("failed"), { times: 1 });
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
-        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Approval could not be confirmed:.*Failed to fetch/u);
-        assert.equal(await page.getByRole("button", { name: "Submit decisions", exact: true }).isDisabled(), true);
+        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*Failed to fetch/u);
+        assert.equal(await page.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 2);
         checkBrowser([
@@ -225,11 +225,11 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
         ]);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await interrupted(page);
-        assert.equal(await page.locator('[data-proposals] input:checked').count(), 0);
+        assert.equal(await page.locator('[data-requests] input:checked').count(), 0);
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 2, "rediscovery does not retry the decision");
         await page.getByRole("radio", { name: "Reject", exact: true }).check();
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-transport.", { exact: true }).waitFor();
         await connected(page);
         assert.equal(model.requests.length, 2);
@@ -261,14 +261,14 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
             }
         }, { times: 1 });
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
-        await Promise.all([page.getByRole("button", { name: "Submit decisions", exact: true }).click(), truncated.promise]);
+        await Promise.all([page.getByRole("button", { name: "Submit responses", exact: true }).click(), truncated.promise]);
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
-        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Approval could not be confirmed: Delivery ended without a worker outcome/u);
+        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed: Delivery ended without a worker outcome/u);
         assert.equal(model.requests.length, 2);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await page.getByText("Completed approval-lost-settlement.", { exact: true }).waitFor();
         await connected(page);
-        assert.equal(await page.getByRole("form", { name: "Review operations", exact: true }).isVisible(), false);
+        assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
         assert.equal(await page.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
         assert.equal(requests.length, 2);
         assert.equal(model.requests.length, 2, "rediscovery starts no replacement work");
@@ -282,7 +282,7 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
             const requests = requestsFrom(page);
             await requestApproval(page, name);
             await page.getByRole("radio", { name: "Accept", exact: true }).check();
-            await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+            await page.getByRole("button", { name: "Submit responses", exact: true }).click();
             await page.getByText(`Considering ${name}.`, { exact: true }).nth(1).waitFor({ state: "attached" });
             assert.equal(model.requests.length, 2, "the accepted operation has released the next model call");
             if (departure === "navigate") await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
@@ -307,9 +307,9 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
         const logout = await context.request.post(new URL("/auth/logout", base).href, { headers: { Origin: new URL(base).origin }, maxRedirects: 0 });
         assert.equal(logout.status(), 303);
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "signed-out");
-        assert.equal(await page.getByRole("button", { name: "Submit decisions", exact: true }).isDisabled(), true);
+        assert.equal(await page.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(await page.getByRole("link", { name: "Sign in", exact: true }).isVisible(), true);
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 1, "no resume is sent without a fresh credential");
@@ -319,9 +319,9 @@ export default async function verifyWorkerApproval({ t, withDaemon }) {
         await page.getByRole("button", { name: "Continue", exact: true }).click();
         await page.waitForURL(path);
         await interrupted(page);
-        assert.equal(await page.locator('[data-proposals] input:checked').count(), 0);
+        assert.equal(await page.locator('[data-requests] input:checked').count(), 0);
         await page.getByRole("radio", { name: "Reject", exact: true }).check();
-        await page.getByRole("button", { name: "Submit decisions", exact: true }).click();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-revoked.", { exact: true }).waitFor();
         assert.equal(model.requests.length, 2);
         checkBrowser();

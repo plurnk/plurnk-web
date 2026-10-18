@@ -88,12 +88,12 @@ table {
 }
 
 /* {§web-worker-approval} Fieldsets must not force literal evidence wider than the viewport. */
-#main [aria-label="Review operations"] fieldset {
+#main [aria-label="Review requests"] fieldset {
     min-inline-size: 0;
 }
 
 #worker-conversation pre,
-#main [aria-label="Review operations"] pre,
+#main [aria-label="Review requests"] pre,
 #worker-conversation [data-math],
 #worker-conversation [data-diagram-viewport] {
     max-inline-size: 100%;

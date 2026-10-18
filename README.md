@@ -11,7 +11,7 @@ internal actors. Bookkeeping workers are omitted. Worker pages show identity,
 breadcrumbs, their actual parent, live status and conversation, without a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
 the worker's current work. Pending operations have native Accept/Reject review forms;
-question responses remain unimplemented.
+questions and MCP input share the same review and resume path.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -71,10 +71,17 @@ only after the daemon acknowledges it; newer typing is preserved. A failed or
 uncertain submission is never retried automatically. **Stop** preserves unsent
 text; closing the page is not Stop. An approval names its requesting worker and
 shows the exact operation and review evidence. Choose Accept or Reject for every
-presented operation, then **Submit decisions**. Nothing is preselected. Refresh
+presented operation, then **Submit responses**. No permission decision is preselected. Refresh
 rediscovers pending work; stale or uncertain decisions require **Reconnect** and
 are never automatically retried. Unimplemented interactions remain pending with
 an explicit notice, never an automatic decision.
+
+Questions show their request and full response schema. Simple fields use native
+controls; nested or conditional answers use an **Answer (JSON)** editor without
+discarding schema rules. Optional fields have an inclusion checkbox. Answers are
+validated before submission and by the daemon; local errors preserve your input.
+**Cancel this request** cancels that question, not the worker's other work.
+Refresh rediscovers pending questions but does not retain unsubmitted answers.
 
 Messages follow HttpAgent's order. Reasoning, calls and results use native collapsed
 disclosures; opening one does not start work. Markdown is sanitized, raw HTML stays
@@ -179,7 +186,7 @@ deterministic local model; no paid inference is involved. Separate journeys exer
 the shipped worker page and native input/review forms without injecting an SDK or mocking AG-UI.
 It exercises synchronization, observer/control handoff with one SDK history,
 admitted work surviving request abortion, navigation and page close, explicit
-cancellation, approval interruption and rediscovery,
+cancellation, approval and question interruption and rediscovery,
 shutdown and the real browser sign-in/access-token lifecycle. Cross-client prompt
 delivery, exact READ operands and real command stdout/stderr results are compared live and after
 refresh through the SDK's messages, without custom-row reconstruction. Standard success,

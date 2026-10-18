@@ -49,15 +49,51 @@
         </section>
     </template>
     <!-- {§web-worker-approval} One explicit decision per operation, one complete resume. -->
-    <template id="worker-approval">
-        <form aria-label="Review operations" data-proposal-count="0">
+    <template id="worker-review">
+        <form aria-label="Review requests" data-request-count="0">
             <fieldset disabled data-bind="disabled:review-unavailable">
-                <legend data-i18n="approval-required">Approval required</legend>
-                <div data-proposals></div>
-                <button type="submit" data-i18n="submit-decisions">Submit decisions</button>
+                <legend data-i18n="input-required">Input required</legend>
+                <div data-requests></div>
+                <button type="submit" data-i18n="submit-responses">Submit responses</button>
             </fieldset>
         </form>
     </template>
+    <!-- {§web-worker-questions} Request data never supplies markup or application bindings. -->
+    <template id="worker-question">
+        <fieldset data-question data-response-error="">
+            <legend><code data-text="request-tool">Question</code></legend>
+            <p data-text="request-message">Provide the requested input.</p>
+            <details>
+                <summary data-i18n="request-details">Request details</summary>
+                <pre><code data-text="request-arguments">Request details</code></pre>
+            </details>
+            <details>
+                <summary data-i18n="response-schema">Response schema</summary>
+                <pre><code data-text="request-schema">Response schema</code></pre>
+            </details>
+            <label><input type="checkbox" data-answer-cancel> <span data-i18n="cancel-request">Cancel this request</span></label>
+            <fieldset data-answer-fields></fieldset>
+            <p role="alert" data-response-error data-text="response-error">Answer validation failed.</p>
+        </fieldset>
+    </template>
+    <template id="answer-field">
+        <fieldset>
+            <legend data-text="field-title">Answer field</legend>
+            <p data-text="field-description">Field description</p>
+            <label data-optional-answer><input type="checkbox" data-answer-include> <span data-i18n="include-answer">Include this answer</span></label>
+            <fieldset data-answer-value></fieldset>
+        </fieldset>
+    </template>
+    <template id="answer-text"><textarea rows="2" data-bind="aria-label:answer-label"></textarea></template>
+    <template id="answer-number"><input type="number" step="any" required data-bind="aria-label:answer-label"></template>
+    <template id="answer-boolean" data-otm-dynamic>
+        <select required data-bind="aria-label:answer-label"><option value="" data-i18n="choose-answer">Choose an answer</option><option value="true" data-i18n="yes">Yes</option><option value="false" data-i18n="no">No</option></select>
+    </template>
+    <template id="answer-select" data-otm-dynamic>
+        <select required data-bind="aria-label:answer-label"><option value="" data-i18n="choose-answer">Choose an answer</option></select>
+    </template>
+    <template id="answer-option"><option data-bind="value:option-value" data-text="option-label">Option</option></template>
+    <template id="answer-json"><label><span data-i18n="json-answer">Answer (JSON)</span><textarea rows="6" spellcheck="false" required></textarea></label></template>
     <template id="worker-proposal">
         <fieldset>
             <legend><span data-text="proposal-worker">Worker</span> <code data-text="proposal-op">Operation</code></legend>

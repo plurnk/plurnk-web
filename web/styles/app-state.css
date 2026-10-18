@@ -14,7 +14,14 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 /* {§web-worker-approval} No review is implied by an empty or unsupported interrupt set. */
-[aria-label="Review operations"][data-proposal-count="0"] {
+[aria-label="Review requests"][data-request-count="0"] {
+    display: none;
+}
+
+/* {§web-worker-questions} Omission and diagnostics are explicit document state. */
+[data-field-optional="false"] > [data-optional-answer],
+[data-field-description=""] > [data-text="field-description"],
+[data-question][data-response-error=""] > [data-response-error] {
     display: none;
 }
 

@@ -4,12 +4,12 @@ import { chromium } from "playwright";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1" } = {}) {
+export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {} } = {}) {
     const model = await startModel();
     const secret = crypto.randomUUID();
     const workspace = `input-${crypto.randomUUID()}`;
     try {
-        await withDaemon({ ...model.env, PLURNK_AUTH: authenticated ? "1" : "0", PLURNK_PASS: "compose-password", PLURNK_SECRET: secret }, async (base) => {
+        await withDaemon({ ...model.env, ...env, PLURNK_AUTH: authenticated ? "1" : "0", PLURNK_PASS: "compose-password", PLURNK_SECRET: secret }, async (base) => {
             const headers = {};
             if (authenticated) {
                 const response = await fetch(new URL("/oauth/token", base), {
@@ -35,7 +35,11 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                     await page.waitForURL(path);
                 }
                 await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-                await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers });
+                try { await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers }); }
+                catch (cause) {
+                    const document = page.isClosed() ? "Page closed" : await page.locator("main").textContent();
+                    throw new Error(`Worker journey failed: ${JSON.stringify({ document, modelErrors: model.errors.map(String) })}`, { cause });
+                }
                 assert.deepEqual(model.errors, []);
             } finally { await browser.close(); }
         });
@@ -107,7 +111,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     assert.equal(await send.isEnabled(), true, "a running worker can receive a follow-up");
                     assert.equal(await stop.isEnabled(), true);
                     assert.equal(inputs[0].messages.at(-1).content, body);
-                    assert.deepEqual(inputs[0].tools, []);
+                    assert.deepEqual(inputs[0].tools.map(({ name }) => name), ["question", "mcp_input_required"]);
                     assert.equal(inputs[0].forwardedProps?.plurnk?.interactive, true);
                     assert.equal(inputs[0].forwardedProps?.plurnk?.workspace, undefined);
 
@@ -183,8 +187,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     assert.equal(await text.inputValue(), "");
                     assert.equal(await send.isDisabled(), true);
                     assert.equal(await stop.isEnabled(), true);
-                    assert.equal(await page.getByRole("form", { name: "Review operations", exact: true }).isVisible(), true);
-                    assert.equal(await page.locator('[data-proposals] input:checked').count(), 0, "only the user can choose a decision");
+                    assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
+                    assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "only the user can choose a decision");
                     assert.equal(model.requests.length, 1);
                     assert.equal(await page.locator('[data-message-role="tool"]').count(), 0, "no approval is fabricated");
                     await page.reload();
