@@ -81,3 +81,17 @@ table {
 #worker-status dd {
     margin-inline-start: 0;
 }
+
+/* {§web-worker-conversation} The browser owns scrolling; stream updates do not move focus. */
+#worker-conversation li {
+    min-inline-size: 0;
+}
+
+#worker-conversation [data-message-body] {
+    overflow-x: auto;
+}
+
+#worker-conversation pre {
+    max-inline-size: 100%;
+    overflow-x: auto;
+}

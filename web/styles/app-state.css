@@ -13,3 +13,17 @@ header nav button:is(:hover, :focus-visible) {
 #worker-status[data-connection="signed-out"] [data-reconnect] {
     display: none;
 }
+
+/* {§web-worker-conversation} Empty slots are native document state, not JavaScript styling. */
+#worker-conversation [data-text="message-error"] {
+    color: var(--pico-del-color);
+}
+
+#worker-conversation:has([data-messages] > li) > [data-empty-conversation],
+#worker-conversation [data-calls]:empty,
+#worker-conversation [data-message-author=""] [data-text="message-author"],
+#worker-conversation [data-message-attribution=""] [data-text="message-attribution"],
+#worker-conversation [data-message-error=""] [data-text="message-error"],
+#worker-conversation [data-call-href=""] [data-call-link] {
+    display: none;
+}

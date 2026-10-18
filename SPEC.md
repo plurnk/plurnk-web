@@ -208,7 +208,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: an HTML `ul/li/a` list of exact names. Prefix each name with ☁️ when `project_root` is null, otherwise 📁; accessible image labels identify folderless/project workspaces. Never infer folder presence from the name. |
 | Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listWorkers(id)` census rendered under {§web-worker-directory}. |
-| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}, plus passive status under {§web-worker-observer}. |
+| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}, plus passive status under {§web-worker-observer} and conversation under {§web-worker-conversation}. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
 
@@ -223,8 +223,7 @@ router, client-side list fetch, duplicate English dictionary or extra UI library
 
 Vite development/preview continue to serve frontend documents only: dynamic
 directory/auth routes require a daemon. The installation gate accepts explicitly
-supplied candidate package archives to verify the unreleased public contract;
-it must not substitute a published service missing that contract.
+supplied published or candidate platform archives to verify the public contract.
 
 ## §web-workspace-folder Workspace and folder labels
 
@@ -297,8 +296,30 @@ stateDiagram-v2
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
 | Presentation | Native definition list and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection status and errors are announced; the ticking elapsed value is not a live announcement. |
 
-There is no conversation, composer, operation control or approval interface. An
+There is no composer, operation control or approval interface. An
 unexpected interrupt stops observation rather than being resolved or retried.
+
+## §web-worker-conversation Read-only conversation
+
+| Boundary | Contract |
+|---|---|
+| Authority | The existing passive HttpAgent's ordered `messages` collection supplies the conversation. No CUSTOM-row reconstruction, second transcript store, browser persistence or event parser. Observation submits no input and never answers a tool call. |
+| Identity | One OTM template instance per message ID, in SDK order. Snapshots replace membership and order; streaming changes update the existing instance. Unchanged bodies and native disclosure state survive updates and passive reconnections. Rendered-node lookup comes from the DOM; a per-outlet last-render cache avoids replacing unchanged Markdown, but holds no separate message collection. A page reload reads fresh authority state, not browser history. |
+| User and assistant | Role-labelled semantic articles, with optional supplied author name. Text is rendered as Markdown. Assistant calls remain attached to their containing message. Empty content does not imply a fabricated answer. |
+| Reasoning | A native disclosure in message order, initially collapsed. Its Markdown body remains readable; no automatic opening, forced scrolling or repeated live-region announcements. |
+| Calls and results | Native disclosures show the exact function name and argument text. Each result retains its place in the sequence and links to its call using `toolCallId` when present in the collection. Results and activity payloads are literal, inspectable data, not executable instructions or application state. Standard tool errors are shown alongside any partial content. |
+| Other messages | System/developer messages and structured activity remain labelled disclosures. Non-text content parts remain inspectable in their original order; this slice adds no inline media player, download action or attachment service. Subagent invocation IDs remain visible as attribution, not mistaken for the parent's output. |
+| Layout | Native ordered list, articles, details/summary, code and preformatted data, using Pico and the existing four CSS layers. No duplicate worker heading, chat bubbles, application classes or virtual-DOM framework. Long code, tables and payloads scroll within their content region on narrow screens. |
+| Connection | The existing connection notice governs whether displayed history is live. An empty collection says “No messages.”; a transport failure is never presented as an empty or successfully completed conversation. |
+
+## §web-conversation-content Untrusted message content
+
+| Boundary | Contract |
+|---|---|
+| Markdown | Marked parses ordinary text, code, links, lists and tables. Raw HTML is escaped. Images become links rather than automatic network requests. Diagrams remain code; no syntax highlighter or embedded application is implied. |
+| DOM admission | DOMPurify sanitizes the generated HTML into a fragment before insertion. Only Markdown presentation elements and their necessary attributes are admitted; no application data attributes, IDs, styles, scripts, forms, frames, SVG or active controls. GFM task checkboxes remain disabled. Links use the sanitizer's URI checks; no model-supplied HTML bypasses sanitization. |
+| Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly, not transformed by a second HTML processor. |
+| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. |
 
 ## §web-page-shell Native page shell
 
@@ -328,7 +349,7 @@ bright enough for contrast. Native color-scheme selection is preserved; typograp
 uses Pico's system monospace stack. Content and styling
 work without JavaScript.
 There is no theme switcher, client routing, persistent browser storage, external
-asset request or conversation interface. The root links to the directory index. Protected
+asset request. The root links to the directory index. Protected
 directory documents supply daemon identities as escaped HTML, never credentials.
 
 Source stylesheets load in this order, with one concern per file. Production
@@ -357,7 +378,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Concern | Owner |
 |---|---|
 | Document structure and ordinary navigation | Semantic HTML, real links, lists and native forms; not a JavaScript-created application shell. |
-| Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Only read-only status observation is implemented under {§web-worker-observer}. |
+| Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Read-only status and conversation use {§web-worker-observer} and {§web-worker-conversation}. |
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
 | Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. Browser code consumes the public client types with DOM libraries and no Node globals; the application port remains server-only. |

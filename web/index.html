@@ -30,5 +30,36 @@
         </nav>
     </header>
     <main id="main" tabindex="-1" data-page="home"></main>
+    <!-- {§web-worker-conversation} Inert document-owned structure; HttpAgent supplies its values. -->
+    <template id="conversation-message">
+        <li>
+            <article>
+                <header><strong data-text="message-label">Message</strong> <span data-text="message-author">Author</span> <small data-text="message-attribution">Subagent</small></header>
+                <div data-message-body></div>
+                <ul data-calls></ul>
+            </article>
+        </li>
+    </template>
+    <template id="conversation-detail">
+        <li>
+            <details>
+                <summary><strong data-text="message-label">Message</strong> <span data-text="message-author">Author</span> <small data-text="message-attribution">Subagent</small></summary>
+                <p data-text="message-error">Tool failed.</p>
+                <p data-call-link><a data-bind="href:call-href" data-i18n="view-call">View call</a></p>
+                <div data-message-body></div>
+            </details>
+        </li>
+    </template>
+    <template id="conversation-call">
+        <li data-bind="id:call-anchor">
+            <details>
+                <summary><code data-text="call-name">Tool call</code></summary>
+                <pre><code data-text="call-arguments">No arguments.</code></pre>
+            </details>
+        </li>
+    </template>
+    <template id="conversation-literal">
+        <pre><code data-text="literal-content">No content.</code></pre>
+    </template>
 </body>
 </html>

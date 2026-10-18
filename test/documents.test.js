@@ -5,6 +5,22 @@ import Documents from "../ai.plurnk/documents.js";
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({ id, name, parentWorkerId, origin, owner });
 
+test("{§web-worker-conversation} only a worker document supplies the passive conversation outlet", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
+    const port = {
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+        listWorkers: async () => [worker(9, "user")],
+    };
+    const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
+    assert.match(html, /<section id="worker-conversation" aria-label="Conversation">/u);
+    assert.match(html, /<ol[^>]*data-messages[^>]*><\/ol>/u);
+    assert.match(html, /Conversation requires JavaScript\./u);
+    assert.doesNotMatch(html, /<textarea|contenteditable|<h1\b/u);
+    for (const directory of [{ kind: "daemon" }, { kind: "workspace", workspace: "work" }]) {
+        assert.doesNotMatch((await document.read(directory, port, false)).toString(), /id="worker-conversation"/u);
+    }
+});
+
 test("{§web-worker-observer} readable names never select the worker's live thread identity", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
     for (const name of ["~/project", "42#alice", "renamed workspace"]) {
