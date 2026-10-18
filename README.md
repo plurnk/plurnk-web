@@ -162,6 +162,8 @@ cancellation, failure and reported token usage are checked separately. No AG-UI 
 mocked and no client-owned replay cache hides differences from the daemon's history.
 Browser journeys also check console warnings/errors and uncaught exceptions;
 deliberately tested failures require explicit diagnostic expectations.
+Adversarial content checks exercise rich-text roles, NOTE bodies, literal tool data,
+streaming and replay against the production content policy in all three engines.
 
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies

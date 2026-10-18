@@ -6,7 +6,7 @@ import { setTimeout } from "node:timers/promises";
 import { HttpAgent } from "@ag-ui/client";
 import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
-import startModel from "./model-fixture.js";
+import startModel, { contentAttack } from "./model-fixture.js";
 import disconnectProxy from "./disconnect-proxy.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
@@ -35,6 +35,65 @@ const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lif
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
+    await t.test("{§web-conversation-content} hostile model output stays inert through authenticated SDK delivery and replay", async () => {
+        const model = await startModel();
+        const secret = crypto.randomUUID();
+        try {
+            await withDaemon({ ...model.env, PLURNK_PASS: "content-password", PLURNK_SECRET: secret }, async (base) => {
+                const setup = await controller(base, secret);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "content-security", action: { kind: "worker.model.set", selector: "browser" } } } });
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    const unexpected = [];
+                    await context.route("**/*", (route) => {
+                        const url = new URL(route.request().url());
+                        if (url.origin === new URL(base).origin && url.pathname !== "/security-probe") return route.continue();
+                        unexpected.push(url.href);
+                        return route.abort();
+                    });
+                    const path = new URL("/~/content-security@user/", base).href;
+                    await page.goto(path);
+                    await page.getByLabel("Password", { exact: true }).fill("content-password");
+                    await page.getByRole("button", { name: "Continue", exact: true }).click();
+                    await page.waitForURL(path);
+                    await connected(page);
+                    const header = await page.locator("body > header").evaluate((element) => element.outerHTML);
+                    const run = await controller(base, secret, prompt("content-security"));
+                    await run.runAgent({ forwardedProps: { plurnk: { workspace: "content-security" } } });
+                    assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, contentAttack, "the protocol preserves the source; the browser owns its interpretation");
+                    const verify = async () => {
+                        await connected(page);
+                        await page.waitForFunction(() => [...document.querySelectorAll('[data-message-role="assistant"] > article > [data-message-body] strong')].some((element) => element.textContent === "Readable evidence"));
+                        const note = page.locator('[data-call-kind="note"]');
+                        assert.equal(await note.count(), 1);
+                        assert.equal(JSON.parse(await note.locator("[data-text=call-arguments]").textContent()).body, contentAttack);
+                        assert.equal(await note.locator("[data-message-body] strong").textContent(), "Readable evidence");
+                        assert.equal(await page.locator("[data-message-body] script, [data-message-body] img, [data-message-body] form, [data-message-body] [data-bind], [data-message-body] [id]").count(), 0);
+                        assert.equal(await page.locator('[data-message-role="assistant"] [data-message-body] [data-text]').count(), 0, "rich content cannot add bindings; literal result templates retain their owned text slot");
+                        assert.equal(await page.locator('[data-message-body] a[href^="javascript:"]').count(), 0);
+                        assert.equal(await page.locator("#worker-status").count(), 1);
+                        assert.equal(await page.locator("body > header").evaluate((element) => element.outerHTML), header);
+                        assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
+                        assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
+                        await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "completed");
+                        assert.equal(await value(page, "lifecycle"), "completed");
+                    };
+                    await verify();
+                    await page.reload();
+                    await verify();
+                    assert.equal(page.url(), path);
+                    assert.equal(model.requests.length, 1, "refresh replays evidence without executing work");
+                    assert.deepEqual(model.errors, []);
+                    assert.deepEqual(unexpected, [], "neither live output nor replay requests authored media");
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
     await t.test("{§web-working-notes} packed NOTE calls retain quiet bodies, arguments and results live and on replay", async () => {
         const model = await startModel();
         try {
