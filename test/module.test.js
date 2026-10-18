@@ -31,13 +31,17 @@ test("{§web-authorization-style} the registered browser client uses the package
     process.env.PLURNK_AUTH = "1";
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     const stylesheets = inventory.filter(([, , type]) => type === "text/css");
-    assert.equal(stylesheets.length, 1);
+    assert.ok(stylesheets.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "the inventory also contains independently loaded renderer CSS");
+    const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
+    const stylesheet = /<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/u.exec(html)?.[1];
+    assert.ok(stylesheet);
+    assert.doesNotMatch(stylesheet, /math-renderer/u);
     const registrations = [];
     await createModule().setup({ credentials: { registerClient(options) {
         registrations.push(options);
         return { clientId: options.id, clientSecret: "test-only" };
     } } });
-    assert.deepEqual(registrations, [{ id: "plurnk-web", redirectPaths: ["/auth/callback"], scopes: ["agui"], stylesheetPath: stylesheets[0][0] }]);
+    assert.deepEqual(registrations, [{ id: "plurnk-web", redirectPaths: ["/auth/callback"], scopes: ["agui"], stylesheetPath: stylesheet }]);
 });
 
 test("{§web-assets} exact public resources and HTTP method matrix", async (t) => {
@@ -67,7 +71,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}?ignored=yes`, { method, headers: { "accept-encoding": "identity" } });
             assert.equal(res.status, 200, `${method} ${path}`);
-            assert.equal(res.headers.get("content-type"), type.startsWith("image/") ? type : `${type}; charset=utf-8`);
+            assert.equal(res.headers.get("content-type"), type.startsWith("text/") ? `${type}; charset=utf-8` : type);
             assert.equal(res.headers.get("content-length"), String(expected.byteLength));
             assert.equal(res.headers.get("x-content-type-options"), "nosniff");
             const body = Buffer.from(await res.arrayBuffer());

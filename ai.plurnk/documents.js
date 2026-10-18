@@ -9,6 +9,17 @@ export default class Documents {
     #afterMain;
     #home;
 
+    /** {§web-authorization-style} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
+     * @param {string} document
+     */
+    static stylesheet(document) {
+        const links = [...document.split("</head>")[0].matchAll(/<link\b(?=[^>]*\brel="stylesheet")[^>]*>/gu)];
+        if (links.length !== 1) throw new Error("The web document must declare exactly one application stylesheet.");
+        const path = /\bhref="(\/[^"]+)"/u.exec(links[0][0])?.[1];
+        if (!path || path.startsWith("//")) throw new Error("The application stylesheet must have an origin-relative path.");
+        return path;
+    }
+
     /** @param {string} document */
     constructor(document) {
         const parts = document.split(/<main\b[^>]*>|<\/main>/u);

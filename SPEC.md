@@ -175,7 +175,7 @@ persistent browser state or additional session registry.
 
 | Boundary | Contract |
 |---|---|
-| Registration | At setup the module registers the single compiled CSS resource from its asset inventory as its client's `stylesheetPath`. It does not add an alias route, second stylesheet or theme setting. Missing or multiple application stylesheets are build-contract faults. |
+| Registration | At setup the module registers the single stylesheet declared in the compiled document's head as its client's `stylesheetPath`, verifying its presence in the asset inventory. Missing or multiple document stylesheets are build-contract faults. Lazy content-renderer styles are independent assets, never authorization-page dependencies; no alias route or theme setting is added. |
 | Document ownership | The authority owns sign-in, setup/error, consent and session documents, credential validation and security policy. Web supplies neither a form nor an HTML rewrite. The authority selects the stylesheet from the trusted client registration, never arbitrary request input. |
 | Presentation | The same Pico Classless Green, monospace, 65ch measure, light/dark colors, native controls and article cards apply to authorization and web documents. Ordinary authorization pages work without JavaScript. |
 | Production pruning | The public `authorizationDocumentSpecimens()` export from `@plurnk/plurnk-agui` supplies the authority's markup to PurgeCSS. No copied templates or private daemon-source scan. This is a development dependency, not a browser/runtime import. |
@@ -316,10 +316,29 @@ unexpected interrupt stops observation rather than being resolved or retried.
 
 | Boundary | Contract |
 |---|---|
-| Markdown | Marked parses ordinary text, code, links, lists and tables. Raw HTML is escaped. Images become links rather than automatic network requests. Diagrams remain code; no syntax highlighter or embedded application is implied. |
+| Markdown | Marked parses ordinary text, code, links, lists and tables. Raw HTML is escaped. Images become links rather than automatic network requests. Tables have native figure containers. Diagrams remain code; no syntax highlighter or embedded application is implied. Math follows {§web-math-content}. |
 | DOM admission | DOMPurify sanitizes the generated HTML into a fragment before insertion. Only Markdown presentation elements and their necessary attributes are admitted; no application data attributes, IDs, styles, scripts, forms, frames, SVG or active controls. GFM task checkboxes remain disabled. Links use the sanitizer's URI checks; no model-supplied HTML bypasses sanitization. |
-| Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly, not transformed by a second HTML processor. |
-| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. |
+| Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly; only recognized math outlets receive the bounded enhancement below. |
+| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
+
+## §web-math-content Native mathematics
+
+| Boundary | Contract |
+|---|---|
+| Delimiters | Marked extensions recognize `$…$`, `$$…$$`, `\(…\)` and `\[…\]` outside inline/fenced/indented code. Single-dollar math stays on one line, has no whitespace immediately inside either delimiter, and cannot end immediately before a digit; ordinary currency such as `$50 and $100` remains text. Escaped delimiters remain literal. Block forms can span lines. |
+| Interpretation | Temml's public DOM renderer produces native MathML, with an annotation retaining the TeX source. No TeX document engine, cross-expression macro state, global equation numbering or browser-specific renderer. |
+| Admission | Untrusted mode rejects TeX HTML/media/link extensions. DOMPurify sanitizes renderer-owned DOM in place, without serializing styles back through HTML. Renderer-required classes and layout styles remain inside this content boundary; IDs, navigation attributes and application bindings do not. The Markdown allowlist is not widened to accept authored MathML or HTML. |
+| Failure and streaming | Incomplete delimiters stay text. Unsupported/malformed complete formulas retain their exact delimited source with a concise local error. The source remains readable while the renderer loads or if loading fails. Detached outlets cannot overwrite a newer message. Unchanged bodies retain their existing MathML and native selection. Unexpected implementation failures remain diagnostics, not concealed parse errors. |
+
+## §web-content-reflow Constrained and changing viewports
+
+Ordinary prose and controls reflow at 320 CSS pixels without page-wide horizontal
+scrolling. Code, tables and formulas that intrinsically require two dimensions
+scroll within their own content boundary, not the whole message. Keep readable
+font sizes and native zoom; do not shrink content or rewrite diagram orientation.
+Native document flow responds to viewport changes without a JavaScript layout
+controller, fixed-height conversation pane or forced scrolling. Browser rendering
+limitations do not introduce a second renderer or compatibility polyfill.
 
 ## §web-page-shell Native page shell
 

@@ -19,6 +19,12 @@ header nav button:is(:hover, :focus-visible) {
     color: var(--pico-del-color);
 }
 
+/* {§web-math-content} A failed formula keeps its literal source and a local diagnostic. */
+#worker-conversation [data-math-error]::after {
+    content: " (" attr(data-math-error) ")";
+    color: var(--pico-del-color);
+}
+
 #worker-conversation:has([data-messages] > li) > [data-empty-conversation],
 #worker-conversation [data-calls]:empty,
 #worker-conversation [data-message-author=""] [data-text="message-author"],
