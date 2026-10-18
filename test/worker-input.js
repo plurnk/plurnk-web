@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-async function inputPage(withDaemon, verify, authenticated = false) {
+async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1" } = {}) {
     const model = await startModel();
     const secret = crypto.randomUUID();
     const workspace = `input-${crypto.randomUUID()}`;
@@ -20,12 +20,14 @@ async function inputPage(withDaemon, verify, authenticated = false) {
             }
             const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user", headers });
             await setup.runAgent({ forwardedProps: { plurnk: { workspace, action: { kind: "worker.model.set", selector: "browser" } } } });
-            const browser = await chromium.launch();
+            const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${hostname} 127.0.0.1`, "--no-proxy-server"] });
             try {
                 const context = await browser.newContext();
                 const checkBrowser = browserDiagnostics(context);
                 const page = await context.newPage();
-                const path = new URL(`/~/${workspace}@user/`, base).href;
+                const address = new URL(`/~/${workspace}@user/`, base);
+                address.hostname = hostname;
+                const path = address.href;
                 await page.goto(path);
                 if (authenticated) {
                     await page.getByLabel("Password", { exact: true }).fill("compose-password");
@@ -42,6 +44,33 @@ async function inputPage(withDaemon, verify, authenticated = false) {
 
 // {§web-worker-input} Exercise the shipped controls against the real daemon, not an injected SDK.
 export default async function verifyWorkerInput({ t, withDaemon }) {
+    for (const hostname of ["127.0.0.1", "plurnk-browser.test"]) {
+        await t.test(`{§web-worker-input} native Send retains distinct message identities on HTTP ${hostname}`, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            const secure = hostname === "127.0.0.1";
+            assert.deepEqual(await page.evaluate(() => ({ secure: isSecureContext, uuid: typeof crypto.randomUUID })),
+                { secure, uuid: secure ? "function" : "undefined" }, "exercise the browser's real origin rules, without changing its APIs");
+            page.on("pageerror", (error) => t.diagnostic(error.message));
+            const inputs = [];
+            page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON()); });
+            const field = page.getByRole("textbox", { name: "Message", exact: true });
+            for (const name of ["origin-first", "origin-second"]) {
+                await field.fill(`Lifecycle fixture: ${name}.`);
+                await page.getByRole("button", { name: "Send", exact: true }).click();
+                await page.getByText(`Completed ${name}.`, { exact: true }).waitFor({ timeout: 5000 });
+                await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+                assert.equal(await field.inputValue(), "", "authoritative admission clears the draft");
+            }
+            const ids = inputs.map((input) => input.messages.at(-1).id);
+            assert.equal(inputs.length, 2);
+            assert.equal(new Set(ids).size, 2);
+            for (const id of ids) assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+            await page.reload();
+            await page.getByText("Completed origin-second.", { exact: true }).waitFor();
+            assert.deepEqual(await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), ids);
+            assert.equal(model.requests.length, 2, "rediscovery does not repeat either submission");
+            checkBrowser();
+        }, { hostname }));
+    }
     await t.test("{§web-worker-input} native Send continues an observed worker and Stop explicitly cancels its work", async () => {
         const model = await startModel();
         try {
@@ -225,7 +254,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await observer.getByText("Completed held-close-input.", { exact: true }).waitFor();
         assert.equal(await observer.locator('[data-message-role="user"]').count(), 3);
         checkBrowser();
-    }, true));
+    }, { authenticated: true }));
 
     await t.test("{§web-worker-input} refused delivery keeps its draft through explicit reconnection without retrying", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = [];
@@ -239,6 +268,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.equal(await text.inputValue(), "Lifecycle fixture: delivery-retry.");
         assert.equal(await send.isDisabled(), true);
         assert.match(await page.locator('[aria-label="Worker controls"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
+        assert.match(await page.locator('#worker-status [role="alert"]').innerText(), /Failed to fetch/u, "the transport failure remains visible beside the stale state");
         assert.equal(model.requests.length, 0);
         assert.equal(requests.length, 1);
         checkBrowser([
@@ -257,6 +287,31 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.equal(requests[0].messages.at(-1).id, requests[1].messages.at(-1).id, "a deliberate retry retains the message's idempotency key");
         checkBrowser();
     }));
+
+    for (const [label, status, body, explanation] of [
+        ["HTTP failure", 502, '{"access_token":"not-a-diagnostic"}', "Access credential request failed (502)."],
+        ["invalid JSON", 200, '{"access_token":"not-a-diagnostic",', "Access credential response is not valid JSON."],
+        ["invalid shape", 200, '{"access_token":"not-a-diagnostic","token_type":"Unknown"}', "Invalid access credential response."],
+        ["null response", 200, "null", "Invalid access credential response."],
+    ]) {
+        await t.test(`{§web-worker-observer} ${label} retains safe failure detail and never exposes credential bytes`, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            await page.route("**/auth/token", (route) => route.fulfill({ status, contentType: "application/json", body }), { times: 1 });
+            const field = page.getByRole("textbox", { name: "Message", exact: true });
+            await field.fill("Keep this draft on credential failure.");
+            await page.getByRole("button", { name: "Send", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
+            assert.ok((await page.locator('#worker-status [role="alert"]').innerText()).includes(explanation));
+            assert.doesNotMatch(await page.locator("body").innerText(), /not-a-diagnostic/u);
+            assert.equal(await field.inputValue(), "Keep this draft on credential failure.");
+            assert.equal(model.requests.length, 0);
+            checkBrowser(status === 200 ? [] : [httpFailure("/auth/token", status)]);
+            await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            assert.equal(await field.inputValue(), "Keep this draft on credential failure.");
+            assert.equal(model.requests.length, 0, "reconnection repairs delivery, not resubmits the draft");
+            checkBrowser();
+        }, { authenticated: true }));
+    }
 
     await t.test("{§web-worker-input} expired browser authority cannot submit or silently replace a draft", () => inputPage(withDaemon, async ({ page, context, base, model, checkBrowser }) => {
         const reached = Promise.withResolvers();
@@ -280,7 +335,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isDisabled(), true);
         assert.equal(await page.getByRole("link", { name: "Sign in", exact: true }).isVisible(), true);
         checkBrowser([httpFailure("/auth/token", 401)]);
-    }, true));
+    }, { authenticated: true }));
 
     await t.test("{§web-worker-input} delivery lost before acknowledgement is rediscovered without submitting again", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = [];
@@ -307,6 +362,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
         assert.equal(await text.inputValue(), "Lifecycle fixture: lost-acknowledgement.");
         assert.match(await page.locator('[aria-label="Worker controls"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
+        assert.match(await page.locator('#worker-status [role="alert"]').innerText(), /Delivery ended without a worker outcome\./u);
         assert.equal(model.requests.length, 1, "the work completed, but this page has not received its acknowledgement");
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await page.getByText("Completed lost-acknowledgement.", { exact: true }).waitFor();

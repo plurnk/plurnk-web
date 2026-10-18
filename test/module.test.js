@@ -11,7 +11,7 @@ import verifyStaticAssets from "./static-assets.js";
 
 process.env.PLURNK_AUTH = "0";
 
-test("{§web-host} configuration admits only an enabled root owner", (t) => {
+test("{§web-host} {§web-configuration} configuration admits only an enabled root owner", (t) => {
     const original = process.env.PLURNK_WEB_ENABLED;
     t.after(() => { process.env.PLURNK_WEB_ENABLED = original; });
     process.env.PLURNK_WEB_ENABLED = "1";
@@ -22,6 +22,32 @@ test("{§web-host} configuration admits only an enabled root owner", (t) => {
         process.env.PLURNK_WEB_ENABLED = value;
         assert.throws(createModule, (error) => error instanceof ConfigurationError
             && error.key === "PLURNK_WEB_ENABLED" && error.message.includes("must be 0 or 1"));
+    }
+});
+
+test("{§web-configuration} missing and invalid limits never select code defaults; disabled web ignores them", (t) => {
+    const keys = ["PLURNK_WEB_ENABLED", "PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_LOGIN_PENDING"];
+    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    t.after(() => {
+        for (const [key, value] of Object.entries(original)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    });
+    process.env.PLURNK_WEB_ENABLED = "1";
+    for (const key of keys.slice(1)) {
+        assert.ok(original[key], "the package test runs on the real environment floor");
+        delete process.env[key];
+        assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
+        for (const value of ["", "0", "-1", "1.5", "unbounded"]) {
+            process.env[key] = value;
+            assert.throws(createModule, (error) => error instanceof ConfigurationError
+                && error.key === key && error.message.includes("safe integer of at least 1"));
+        }
+        process.env.PLURNK_WEB_ENABLED = "0";
+        assert.deepEqual(createModule(), {});
+        process.env.PLURNK_WEB_ENABLED = "1";
+        process.env[key] = original[key];
     }
 });
 

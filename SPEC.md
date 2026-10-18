@@ -16,6 +16,15 @@ The daemon owns routing precedence, startup readiness and shutdown.
 The package's .env.defaults owns the default. Installation is opt-in; the service
 does not depend on this package. More-specific mounts retain their ownership.
 
+## §web-configuration Configuration boundary
+
+| Boundary | Contract |
+|---|---|
+| Module choices | `ai.plurnk/.env.defaults` declares enablement and pending sign-in limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
+| Invalid input | Refuse the affected module through the host's configuration diagnostic. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. Disabled web does not inspect unused web settings. |
+| Other owners | Consume daemon authentication and credential policy through their existing configuration and public seams, never web-owned substitutes. |
+| Browser | Receives only explicit public document projections, not the environment, credentials or a second set of deployment defaults. Vite compiles assets independently of operator configuration. |
+
 ## §web-assets Static resources
 
 | Request | Response |
@@ -293,7 +302,7 @@ stateDiagram-v2
 | Transport | A fresh official HttpAgent via its public connection hook, using `/agui/connect` and the qualified `threadId` supplied by the document. Empty messages/tools; no forwarded workspace, action, resume, control claim or capability replacement. SDK owns event parsing, replay and state patches; each attachment rediscovers current conversation and interrupt continuations. |
 | Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/SDK instance and are released on departure. |
 | Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, identifies worker completion; reconnect passively to watch subsequent work. A protocol/credential failure stops observation. An interrupt stops delivery with an explicit input-required notice under {§web-worker-input}. Never retry work or infer completion from transport closure. |
-| Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card, retain clearly stale last-observed values, and offer a native Reconnect form. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
+| Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card with the failure's diagnostic, retain clearly stale last-observed values, and offer a native Reconnect form. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
 | Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
 | Projection | `plurnk.status` is authoritative for lifecycle, latest loop, packet count and spend. Usage/cost cover the worker and descendants; absent values read “Unknown”, not zero or a known subtotal presented as a total. The browser keeps no accounting ledger or transcript cache. |
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
@@ -307,7 +316,7 @@ belong to {§web-worker-input}; neither is a consequence of observation.
 | Boundary | Contract |
 |---|---|
 | Document | A document-owned OTM template supplies a labelled native textarea, Send form and separate Stop form. JavaScript mounts them only on worker pages. Native multiline editing, validation, focus and Pico presentation; no keyboard shortcut, attachment picker, forced scrolling or chat layout. |
-| Send | Submit exact nonblank text as one standard user message to `/agui`, on the document's qualified thread. New text gets a new ID; a deliberate retry of the same unconfirmed draft retains its ID for daemon idempotency. Only explicit submission attaches control. Declare an attended client and no unimplemented tools; server permissions remain unchanged. |
+| Send | Submit exact nonblank text as one standard user message to `/agui`, on the document's qualified thread. New text gets a new ID; a deliberate retry of the same unconfirmed draft retains its ID for daemon idempotency. Message identity generation works on ordinary HTTP as well as secure contexts; it does not change transport security or authentication policy. Only explicit submission attaches control. Declare an attended client and no unimplemented tools; server permissions remain unchanged. |
 | Handoff | One current HttpAgent owns the displayed messages. Close and await the preceding delivery before using its received history for a message Run; passive reattachment starts fresh under {§web-worker-observer}, not with obsolete interrupt continuations. Follow-ups during live work use the same ordinary message admission; no parallel transcript, injection endpoint, automatic retry or offline queue. |
 | Admission | The daemon's `status.inbox`, user-message snapshot or user-message arrival confirms acceptance by message ID; local SDK insertion never does. Acceptance precedes model observation: queued follow-ups remain discoverable during inference, after reconnect and after cancellation before observation. Their eventual arrival retains the same ID and does not repeat text. |
 | Draft | Prevent another submission until acceptance or explicit rediscovery after a failed delivery. Clear the submitted text only if the textarea still contains it, preserving newer typing. A refusal or uncertain connection failure retains the draft, explains uncertainty and requires explicit reconnection before another submission. Reattachment may confirm acceptance; absence is not proof of refusal, so a deliberate unchanged retry retains its idempotency key. No automatic resend, browser persistence or guarantee across full reloads is implied. |
@@ -447,7 +456,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Status, conversation and explicit input use {§web-worker-observer}, {§web-worker-conversation} and {§web-worker-input}. |
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
-| Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. Browser code consumes the public client types with DOM libraries and no Node globals; the application port remains server-only. |
+| Static checks | General JavaScript correctness and modern-idiom rules cover the server module, browser, tests and build tooling. OTM HTML/JavaScript/CSS rules and unsafe-HTML sink checks cover browser authoring. Separate browser/server type checks enforce public client types with DOM libraries and no Node globals in browser code; the application port remains server-only. |
 
 ## §web-browser-security Browser execution and diagnostics
 
