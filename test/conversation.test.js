@@ -160,6 +160,95 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await page.evaluate(() => getSelection().toString()), before,
                             "Unchanged OTM projections must preserve selection; upstream https://repo.possumtech.com/possumtech/on_the_money.js/issues/11");
                     });
+
+                    await t.test("{§web-conversation-content} standard fences preserve nested examples without repairing malformed prose", async () => {
+                        const valid = [
+                            "````markdown", "# Literal heading", "```mermaid", "flowchart LR", " A --> B", "```", "Literal tail.", "````",
+                            "", "## Visible heading", "", "| Unicode | Value |", "| --- | --- |", "| e\u0301 | 日本語 🐹 |", "",
+                            "> Quoted **evidence**.", "", "- [x] complete", "- [ ] pending", "", "<kbd>Ctrl</kbd>",
+                        ].join("\n");
+                        await present([{ id: "markup", role: "assistant", content: valid }]);
+                        const content = row("markup").locator("[data-message-body]");
+                        assert.equal(await content.locator("h1").count(), 0);
+                        assert.equal(await content.locator("h2").innerText(), "Visible heading");
+                        assert.equal(await content.locator("pre code").textContent(), "# Literal heading\n```mermaid\nflowchart LR\n A --> B\n```\nLiteral tail.\n");
+                        assert.equal(await content.locator("figure table").count(), 1);
+                        assert.deepEqual(await content.locator("td").allTextContents(), ["e\u0301", "日本語 🐹"]);
+                        assert.equal(await content.locator("blockquote strong").innerText(), "evidence");
+                        assert.equal(await content.locator("input:disabled").count(), 2);
+                        assert.match(await content.textContent(), /<kbd>Ctrl<\/kbd>/u);
+                        assert.equal(await content.locator("kbd, svg").count(), 0);
+
+                        const malformed = valid.replaceAll("````", "```");
+                        await present([{ id: "markup", role: "assistant", content: malformed }]);
+                        assert.equal(await content.locator("h2, table").count(), 0, "the model's closing fence opened a new code block; do not guess where it intended to close");
+                        assert.equal(await content.locator("pre code").count(), 2);
+                        assert.match(await content.locator("pre code").last().textContent(), /## Visible heading/u);
+                        assert.match(await content.locator("pre code").last().textContent(), /日本語 🐹/u);
+                    });
+
+                    await t.test("{§web-working-notes} NOTE is collapsed working material, retaining the call and result", async () => {
+                        const argumentsText = JSON.stringify({ aside: "idea", body: "A **provisional hypothesis**, not an answer.\n\n<script>window.pwned = true</script>" });
+                        const call = { id: "note-call", type: "function", function: { name: "NOTE", arguments: argumentsText }, metadata: { plurnk: { op: "NOTE" } } };
+                        const note = { id: "note", role: "assistant", content: "", subagentRunId: "child-run", toolCalls: [call] };
+                        const result = { id: "note-result", role: "tool", toolCallId: call.id, content: "**Literal receipt**", error: "Note storage failed" };
+                        await present([note, result]);
+                        const item = row("note").locator("[data-call-id=note-call]");
+                        assert.equal(await item.locator(":scope > details").getAttribute("open"), null);
+                        assert.equal(await item.locator("summary").first().innerText(), "NOTE idea");
+                        assert.equal(await item.locator("[data-message-body]").isVisible(), false);
+                        assert.equal(await row("note").getAttribute("data-message-role"), "assistant");
+                        assert.equal(await row("note").locator("[data-text=message-attribution]").innerText(), "Subagent child-run");
+                        await item.locator("summary").first().click();
+                        assert.equal(await item.locator("[data-message-body] strong").innerText(), "provisional hypothesis");
+                        assert.equal(await item.locator("script").count(), 0);
+                        assert.equal(await item.locator("[data-text=call-arguments]").textContent(), argumentsText);
+                        assert.equal(await item.locator("details details").getAttribute("open"), null);
+                        assert.equal(await row("note-result").locator("[data-message-body] code").textContent(), "**Literal receipt**");
+                        assert.equal(await row("note-result").locator("[data-text=message-error]").textContent(), "Note storage failed");
+                        assert.equal(await row("note-result").locator("[data-call-link] a").evaluate((link) => {
+                            return document.getElementById(decodeURIComponent(new URL(link.href).hash.slice(1)))?.dataset.callId;
+                        }), call.id);
+                        await item.locator("[data-message-body] strong").evaluate((element) => {
+                            window.noteText = element.firstChild;
+                            const range = document.createRange();
+                            range.selectNodeContents(element);
+                            getSelection().removeAllRanges();
+                            getSelection().addRange(range);
+                        });
+                        await present(structuredClone([note, result]));
+                        assert.equal(await item.locator("[data-message-body] strong").evaluate((element) => element.firstChild === window.noteText), true);
+                        assert.equal(await page.evaluate(() => getSelection().toString()), "provisional hypothesis");
+                        assert.equal(await item.locator(":scope > details").evaluate((element) => element.open), true);
+                        assert.deepEqual(await ids(), [note.id, result.id]);
+                    });
+
+                    await t.test("{§web-working-notes} argument streaming is literal until complete, never repaired or guessed", async () => {
+                        const display = async (argumentsText, metadata = { plurnk: { op: "NOTE" } }, name = "NOTE") => {
+                            await present([{ id: "streamed-note", role: "assistant", toolCalls: [{ id: "streamed-call", type: "function", function: { name, arguments: argumentsText }, metadata }] }]);
+                        };
+                        const item = row("streamed-note").locator("[data-call-id=streamed-call]");
+                        await display('{"body":"**unfinished');
+                        await item.locator("summary").click();
+                        for (const argumentsText of ['{"body":"**unfinished', "null", "[]", '{"body":42}', '{"body":{"raw":"**not a string**"}}', '{"body":"text","aside":[]}']) {
+                            await display(argumentsText);
+                            assert.equal(await item.locator("[data-message-body]").count(), 0);
+                            assert.equal(await item.locator("[data-text=call-arguments]").textContent(), argumentsText);
+                            assert.equal(await item.locator(":scope > details").evaluate((element) => element.open), true);
+                        }
+                        const complete = '{"body":"**Now complete**","aside":"fact"}';
+                        await display(complete);
+                        assert.equal(await item.locator("[data-message-body] strong").innerText(), "Now complete");
+                        assert.equal(await item.locator(":scope > details").evaluate((element) => element.open), true);
+                        for (const [metadata, name] of [[{}, "NOTE"], [{ plurnk: { op: "error" } }, "NOTE"], [{ plurnk: { op: "NOTE" } }, "lookup"]]) {
+                            await display(complete, metadata, name);
+                            assert.equal(await item.locator("[data-message-body]").count(), 0);
+                            assert.equal(await item.locator("[data-text=call-arguments]").textContent(), complete);
+                        }
+                        await display('{"body":"","aside":null}');
+                        assert.equal(await item.locator("[data-message-body]").textContent(), "");
+                        assert.equal(await item.locator("summary").first().innerText(), "NOTE");
+                    });
                     checkBrowser();
                 } finally { await browser.close(); }
             });

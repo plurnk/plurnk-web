@@ -65,6 +65,8 @@ use **Reconnect** or, after revocation, **Sign in**. No automatic work retries o
 Messages follow HttpAgent's order. Reasoning, calls and results use native collapsed
 disclosures; opening one does not start work. Markdown is sanitized, raw HTML stays
 text and images become links. Tool results remain literal inspectable data.
+NOTE is collapsed working material, not an answer: its category is visible,
+with its Markdown body and exact arguments available inside the disclosure.
 The browser keeps no separate transcript or persistent conversation cache.
 
 Math uses locally bundled Temml and native MathML: `$…$`, `$$…$$`, `\(…\)` and

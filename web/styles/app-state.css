@@ -27,6 +27,7 @@ header nav button:is(:hover, :focus-visible) {
 
 #worker-conversation:has([data-messages] > li) > [data-empty-conversation],
 #worker-conversation [data-calls]:empty,
+#worker-conversation [data-call-aside=""] [data-text="call-aside"],
 #worker-conversation [data-message-author=""] [data-text="message-author"],
 #worker-conversation [data-message-attribution=""] [data-text="message-attribution"],
 #worker-conversation [data-message-error=""] [data-text="message-error"],

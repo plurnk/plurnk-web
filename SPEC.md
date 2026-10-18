@@ -308,6 +308,7 @@ unexpected interrupt stops observation rather than being resolved or retried.
 | User and assistant | Role-labelled semantic articles, with optional supplied author name. Text is rendered as Markdown. Assistant calls remain attached to their containing message. Empty content does not imply a fabricated answer. |
 | Reasoning | A native disclosure in message order, initially collapsed. Its Markdown body remains readable; no automatic opening, forced scrolling or repeated live-region announcements. |
 | Calls and results | Native disclosures show the exact function name and argument text. Each result retains its place in the sequence and links to its call using `toolCallId` when present in the collection. Results and activity payloads are literal, inspectable data, not executable instructions or application state. Standard tool errors are shown alongside any partial content. |
+| Working notes | NOTE calls follow {§web-working-notes}; they remain calls, not answers or provider reasoning. |
 | Other messages | System/developer messages and structured activity remain labelled disclosures. Non-text content parts remain inspectable in their original order; this slice adds no inline media player, download action or attachment service. Subagent invocation IDs remain visible as attribution, not mistaken for the parent's output. |
 | Layout | Native ordered list, articles, details/summary, code and preformatted data, using Pico and the existing four CSS layers. No duplicate worker heading, chat bubbles, application classes or virtual-DOM framework. Long code, tables and payloads scroll within their content region on narrow screens. |
 | Connection | The existing connection notice governs whether displayed history is live. An empty collection says “No messages.”; a transport failure is never presented as an empty or successfully completed conversation. |
@@ -316,10 +317,26 @@ unexpected interrupt stops observation rather than being resolved or retried.
 
 | Boundary | Contract |
 |---|---|
-| Markdown | Marked parses ordinary text, code, links, lists and tables. Raw HTML is escaped. Images become links rather than automatic network requests. Tables have native figure containers. Diagrams remain code; no syntax highlighter or embedded application is implied. Math follows {§web-math-content}. |
+| Markdown | Marked parses ordinary text, code, links, lists and tables. Raw HTML is escaped. Images become links rather than automatic network requests. Tables have native figure containers. Diagrams remain code; no syntax highlighter or embedded application is implied. Malformed fences follow the parser's ordinary Markdown semantics, without operation-style recovery or inferred intent. Math follows {§web-math-content}. |
 | DOM admission | DOMPurify sanitizes the generated HTML into a fragment before insertion. Only Markdown presentation elements and their necessary attributes are admitted; no application data attributes, IDs, styles, scripts, forms, frames, SVG or active controls. GFM task checkboxes remain disabled. Links use the sanitizer's URI checks; no model-supplied HTML bypasses sanitization. |
 | Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly; only recognized math outlets receive the bounded enhancement below. |
 | Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
+
+## §web-working-notes Inspectable working material
+
+A standard call whose function name and `metadata.plurnk.op` are both `NOTE`
+may present its string `body` as sanitized Markdown inside its initially
+collapsed disclosure. The optional string `aside` labels the note beside its
+name; no body preview or automatic expansion promotes working material to an
+answer. Exact argument text remains available in a nested native disclosure.
+Incomplete JSON, non-object arguments, non-string bodies or invalid asides retain
+the ordinary literal call presentation, without repair or inferred content.
+
+The enclosing assistant message, call identity, attribution and correlated result
+remain in the SDK's order and roles. Changes to argument shape preserve the
+call's disclosure state; unchanged bodies retain their nodes and selection.
+Generic tool calls and results do not acquire Markdown interpretation from their
+name or content. This presentation adds no conversation store or protocol role.
 
 ## §web-math-content Native mathematics
 
