@@ -169,8 +169,8 @@ export default class Documents {
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}</dl>`
             + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
-            + '<p data-text="connection-detail">Displayed values are no longer live.</p><p>'
-            + `<a data-reconnect href="${escapeHtml(path)}" data-i18n="reconnect">Reconnect</a>`
+            + '<p data-text="connection-detail">Displayed values are no longer live.</p>'
+            + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-i18n="sign-in">Sign in</a>`
             + '</p></article></section>'
             + '<section id="worker-conversation" aria-label="Conversation">'

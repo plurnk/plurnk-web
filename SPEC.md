@@ -278,6 +278,9 @@ stateDiagram-v2
     Connected --> Connecting: worker terminal
     Connecting --> Disconnected: refusal / transport failure
     Connected --> Disconnected: shutdown / transport failure
+    Connected --> Interrupted: input required
+    Interrupted --> Connecting: explicit reconnect / Stop
+    Disconnected --> Connecting: explicit reconnect
     Connecting --> SignedOut: sign-in refused
     Connected --> SignedOut: credential revoked
     Connecting --> Closed: page departure
@@ -287,23 +290,36 @@ stateDiagram-v2
 
 | Boundary | Contract |
 |---|---|
-| Transport | Official HttpAgent via its public connection hook, using `/agui/connect` and the qualified `threadId` supplied by the document. Empty messages/tools; no forwarded workspace, action, resume, control claim or capability replacement. SDK owns event parsing, replay and state patches. |
+| Transport | A fresh official HttpAgent via its public connection hook, using `/agui/connect` and the qualified `threadId` supplied by the document. Empty messages/tools; no forwarded workspace, action, resume, control claim or capability replacement. SDK owns event parsing, replay and state patches; each attachment rediscovers current conversation and interrupt continuations. |
 | Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/SDK instance and are released on departure. |
-| Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, identifies worker completion; reconnect passively to watch subsequent work. A protocol/credential failure or unsupported interrupt stops observation. Never submit messages, retry work or infer completion from transport closure. |
-| Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card, retain clearly stale last-observed values, and offer a native reload link. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
+| Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, identifies worker completion; reconnect passively to watch subsequent work. A protocol/credential failure stops observation. An interrupt stops delivery with an explicit input-required notice under {§web-worker-input}. Never retry work or infer completion from transport closure. |
+| Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card, retain clearly stale last-observed values, and offer a native Reconnect form. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
 | Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
 | Projection | `plurnk.status` is authoritative for lifecycle, latest loop, packet count and spend. Usage/cost cover the worker and descendants; absent values read “Unknown”, not zero or a known subtotal presented as a total. The browser keeps no accounting ledger or transcript cache. |
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
 | Presentation | Native definition list and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection status and errors are announced; the ticking elapsed value is not a live announcement. |
 
-There is no composer, operation control or approval interface. An
-unexpected interrupt stops observation rather than being resolved or retried.
+Opening the page remains passive. Message submission and explicit cancellation
+belong to {§web-worker-input}; neither is a consequence of observation.
 
-## §web-worker-conversation Read-only conversation
+## §web-worker-input Message composer and explicit Stop
 
 | Boundary | Contract |
 |---|---|
-| Authority | The existing passive HttpAgent's ordered `messages` collection supplies the conversation. No CUSTOM-row reconstruction, second transcript store, browser persistence or event parser. Observation submits no input and never answers a tool call. |
+| Document | A document-owned OTM template supplies a labelled native textarea, Send form and separate Stop form. JavaScript mounts them only on worker pages. Native multiline editing, validation, focus and Pico presentation; no keyboard shortcut, attachment picker, forced scrolling or chat layout. |
+| Send | Submit exact nonblank text as one standard user message to `/agui`, on the document's qualified thread. New text gets a new ID; a deliberate retry of the same unconfirmed draft retains its ID for daemon idempotency. Only explicit submission attaches control. Declare an attended client and no unimplemented tools; server permissions remain unchanged. |
+| Handoff | One current HttpAgent owns the displayed messages. Close and await the preceding delivery before using its received history for a message Run; passive reattachment starts fresh under {§web-worker-observer}, not with obsolete interrupt continuations. Follow-ups during live work use the same ordinary message admission; no parallel transcript, injection endpoint, automatic retry or offline queue. |
+| Admission | The daemon's `status.inbox`, user-message snapshot or user-message arrival confirms acceptance by message ID; local SDK insertion never does. Acceptance precedes model observation: queued follow-ups remain discoverable during inference, after reconnect and after cancellation before observation. Their eventual arrival retains the same ID and does not repeat text. |
+| Draft | Prevent another submission until acceptance or explicit rediscovery after a failed delivery. Clear the submitted text only if the textarea still contains it, preserving newer typing. A refusal or uncertain connection failure retains the draft, explains uncertainty and requires explicit reconnection before another submission. Reattachment may confirm acceptance; absence is not proof of refusal, so a deliberate unchanged retry retains its idempotency key. No automatic resend, browser persistence or guarantee across full reloads is implied. |
+| Stop | Explicit submission invokes public `loop.cancel` for the same thread through an independent management Run, with no conversation messages. Its acknowledgement requests cancellation; only worker status/terminal events establish the outcome. Stop preserves unsent text, targets no unrelated worker, and is unavailable without known live work. A pending follow-up does not prevent stopping already-running work. |
+| Interrupt | Retain the SDK's pending interrupt and call evidence, stop automatic observation, and explain that this page cannot answer approvals or interactions yet. Send is unavailable until rediscovery or settlement; explicit Stop remains available for live work on this worker. Never synthesize a decision or advertise an unimplemented question tool. |
+| Failure and departure | Request failure is visible, never a successful send or cancellation. Refresh, navigation, page close and delivery handoff only release browser resources: they cannot cancel admitted work. No message or cancellation is automatically resubmitted after reconnect. |
+
+## §web-worker-conversation Conversation projection
+
+| Boundary | Contract |
+|---|---|
+| Authority | The worker HttpAgent's ordered `messages` collection supplies the conversation. No CUSTOM-row reconstruction, second transcript store, browser persistence or event parser. Observation submits no input and never answers a tool call; authored input follows {§web-worker-input}. |
 | Identity | One OTM template instance per message ID, in SDK order. Snapshots replace membership and order; streaming changes update the existing instance. Unchanged bodies and native disclosure state survive updates and passive reconnections. Rendered-node lookup comes from the DOM; a per-outlet last-render cache avoids replacing unchanged Markdown, but holds no separate message collection. A page reload reads fresh authority state, not browser history. |
 | User and assistant | Role-labelled semantic articles, with optional supplied author name. Text is rendered as Markdown. Assistant calls remain attached to their containing message. Empty content does not imply a fabricated answer. |
 | Reasoning | A native disclosure in message order, initially collapsed. Its Markdown body remains readable; no automatic opening, forced scrolling or repeated live-region announcements. |
@@ -428,7 +444,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Concern | Owner |
 |---|---|
 | Document structure and ordinary navigation | Semantic HTML, real links, lists and native forms; not a JavaScript-created application shell. |
-| Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Read-only status and conversation use {§web-worker-observer} and {§web-worker-conversation}. |
+| Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Status, conversation and explicit input use {§web-worker-observer}, {§web-worker-conversation} and {§web-worker-input}. |
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
 | Static checks | OTM HTML, JavaScript and CSS rules, unsafe-HTML sink checks, and separate browser/server JavaScript type checks. Browser code consumes the public client types with DOM libraries and no Node globals; the application port remains server-only. |
@@ -526,7 +542,7 @@ worker page is exercised separately under {§web-worker-observer}, without SDK i
 | Exact target | Passive existing-worker selection preserves identity across workspace rename. URLs still select names: a renamed-away URL is 404, while the new URL supplies the same thread identity. Missing/internal targets fail without creating or claiming anything. |
 | Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |
 | Disconnect | After admission, aborting the submitting SDK request, navigating away or closing its page ends delivery only. Observers and fresh connections retain the same work, message identities, natural completion and reported usage; no duplicate prompt or inference. Transport closure is not a worker outcome. |
-| Explicit cancellation | The public `loop.cancel` action requests cancellation. Submitter and observers receive the daemon's cancelled terminal result; request abortion alone proves no cancellation. Unreported usage stays unknown. The shipped page observes that outcome without exposing a Stop control. |
+| Explicit cancellation | The public `loop.cancel` action requests cancellation. Submitter and observers receive the daemon's cancelled terminal result; request abortion alone proves no cancellation. Unreported usage stays unknown. The shipped Stop form uses that action under {§web-worker-input}. |
 | Transport handoff | One official SDK history can detach passive observation, submit a new message through Run, and return to observation. Retained history is not admitted as new input; replay retains identities and call/result correspondence. Neither transport role owns the worker's lifetime. |
 | Approval | Native interrupts refer to the gated operation's call and carry review facts in `metadata.plurnk.proposal`; no approval tool declaration is needed. Leaving the submitting page neither resolves nor cancels a pending gate; reconnection rediscovers it. SDK resume yields the operation's actual result, not a decision acknowledgement. A different owner or consumed interrupt cannot resolve the gate. The shipped page never answers approvals. |
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |

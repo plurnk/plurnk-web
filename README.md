@@ -8,8 +8,9 @@ No additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
-breadcrumbs, their actual parent, live read-only status and conversation, without a
-duplicate page heading. There is no composer, approval or operation-control UI.
+breadcrumbs, their actual parent, live status and conversation, without a
+duplicate page heading. A native message form sends text; Stop explicitly cancels
+the worker's current work. Approval and interaction responses are not yet implemented.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -60,7 +61,15 @@ elapsed time, turns, request/token totals and cost from the daemon; unavailable
 accounting stays **Unknown**, not zero. A finished loop leaves the page watching
 for the next one. Closing, refreshing or navigating away never cancels work.
 Connection failure stops observation and marks the displayed values as stale;
-use **Reconnect** or, after revocation, **Sign in**. No automatic work retries occur.
+use **Reconnect** or, after revocation, **Sign in**. Reconnect preserves the current
+draft without resubmitting it; full page reloads do not persist drafts.
+No automatic work retries occur.
+
+**Send** also supports follow-ups while the worker is running. The draft clears
+only after the daemon acknowledges it; newer typing is preserved. A failed or
+uncertain submission is never retried automatically. **Stop** preserves unsent
+text; closing the page is not Stop. A pending approval or interaction remains
+pending with an explicit notice, never an automatic decision.
 
 Messages follow HttpAgent's order. Reasoning, calls and results use native collapsed
 disclosures; opening one does not start work. Markdown is sanitized, raw HTML stays
