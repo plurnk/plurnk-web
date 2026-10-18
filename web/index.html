@@ -48,6 +48,29 @@
             </article>
         </section>
     </template>
+    <!-- {§web-worker-approval} One explicit decision per operation, one complete resume. -->
+    <template id="worker-approval">
+        <form aria-label="Review operations" data-proposal-count="0">
+            <fieldset disabled data-bind="disabled:review-unavailable">
+                <legend data-i18n="approval-required">Approval required</legend>
+                <div data-proposals></div>
+                <button type="submit" data-i18n="submit-decisions">Submit decisions</button>
+            </fieldset>
+        </form>
+    </template>
+    <template id="worker-proposal">
+        <fieldset>
+            <legend><span data-text="proposal-worker">Worker</span> <code data-text="proposal-op">Operation</code></legend>
+            <pre><code data-text="proposal-target">Target</code></pre>
+            <pre><code data-text="proposal-body">Operation body</code></pre>
+            <details>
+                <summary data-i18n="review-details">Review details</summary>
+                <pre><code data-text="proposal-details">Proposal evidence</code></pre>
+            </details>
+            <label><input type="radio" value="accept" required data-bind="name:proposal-choice"> <span data-i18n="accept">Accept</span></label>
+            <label><input type="radio" value="reject" required data-bind="name:proposal-choice"> <span data-i18n="reject">Reject</span></label>
+        </fieldset>
+    </template>
     <!-- {§web-worker-conversation} Inert document-owned structure; HttpAgent supplies its values. -->
     <template id="conversation-message">
         <li>

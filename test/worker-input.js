@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1" } = {}) {
+export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1" } = {}) {
     const model = await startModel();
     const secret = crypto.randomUUID();
     const workspace = `input-${crypto.randomUUID()}`;
@@ -35,7 +35,7 @@ async function inputPage(withDaemon, verify, { authenticated = false, hostname =
                     await page.waitForURL(path);
                 }
                 await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-                await verify({ page, context, path, base, model, checkBrowser });
+                await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers });
                 assert.deepEqual(model.errors, []);
             } finally { await browser.close(); }
         });
@@ -183,7 +183,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     assert.equal(await text.inputValue(), "");
                     assert.equal(await send.isDisabled(), true);
                     assert.equal(await stop.isEnabled(), true);
-                    assert.match(await page.locator('#worker-status [role="alert"]').innerText(), /cannot answer approvals or interactions yet/u);
+                    assert.equal(await page.getByRole("form", { name: "Review operations", exact: true }).isVisible(), true);
+                    assert.equal(await page.locator('[data-proposals] input:checked').count(), 0, "only the user can choose a decision");
                     assert.equal(model.requests.length, 1);
                     assert.equal(await page.locator('[data-message-role="tool"]').count(), 0, "no approval is fabricated");
                     await page.reload();
