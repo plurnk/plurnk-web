@@ -11,6 +11,8 @@ export const contentAttack = [
     '[unsafe](javascript:alert%281%29)',
 ].join("\n\n");
 
+export const diagramContent = "```mermaid\nflowchart LR\n Client --> Daemon\n```";
+
 export default async function startModel() {
     const requests = [];
     const errors = [];
@@ -58,6 +60,7 @@ export default async function startModel() {
                         : lifecycle.startsWith("execution-") && visit === 1
                             ? `\`\`\`sh\nprintf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}\n\`\`\`\n\`\`\`WAIT\n\`\`\``
                         : lifecycle === "math" ? "```SEND [200]\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
+                        : lifecycle === "diagrams" ? `\`\`\`\`SEND [200]\n${diagramContent}\n\`\`\`\``
                         : lifecycle === "notes" ? "```NOTE <!-- fact -->\nA **working fact**, not the answer.\n```\n```NOTE <!-- idea -->\nA provisional hypothesis.\n```\n```NOTE <!-- plan -->\nCheck the hypothesis.\n```\n```SEND [200]\nCompleted notes.\n```"
                         : lifecycle === "content-security" ? `\`\`\`NOTE <!-- fact -->\n${contentAttack}\n\`\`\`\n\`\`\`SEND [200]\n${contentAttack}\n\`\`\``
                         : `\`\`\`SEND [200]\nCompleted ${lifecycle}.\n\`\`\``;

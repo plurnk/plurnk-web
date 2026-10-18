@@ -5,6 +5,7 @@ import browserDiagnostics from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 import { verifyMath, verifyUnavailableMath } from "./math-browser.js";
 import verifyContentSecurity from "./content-security-browser.js";
+import { verifyMermaid, verifyUnavailableMermaid } from "./mermaid-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -113,7 +114,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         const hostile = [
                             "# Heading", "**Strong** and *emphasis*", "- [x] completed", "- [ ] incomplete",
                             "| Name | Value |\n| --- | --- |\n| File | cobalt |",
-                            "```mermaid\nflowchart LR\n A --> B\n```",
+                            "```text\nflowchart LR\n A --> B\n```",
                             '<script>window.pwned = true</script>', '<div data-text="connection-label" id="worker-status" onclick="alert(1)">HTML remains text</div>',
                             '<form action="/auth/logout"><button>Injected sign out</button></form>',
                             '[unsafe](javascript:alert%281%29)', '![image](https://example.invalid/image.png "Image")',
@@ -261,3 +262,5 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);
 test("{§web-conversation-content} {§web-browser-security} adversarial content across roles, streaming and replay", { timeout: 60_000 }, verifyContentSecurity);
+test("{§web-diagram-content} {§web-content-reflow} static Mermaid images through the real conversation outlet", { timeout: 60_000 }, verifyMermaid);
+test("{§web-diagram-content} a missing diagram chunk preserves source and ordinary messages", verifyUnavailableMermaid);

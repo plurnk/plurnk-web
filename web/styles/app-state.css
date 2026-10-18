@@ -19,9 +19,14 @@ header nav button:is(:hover, :focus-visible) {
     color: var(--pico-del-color);
 }
 
-/* {§web-math-content} A failed formula keeps its literal source and a local diagnostic. */
+/* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
 #worker-conversation [data-math-error]::after {
     content: " (" attr(data-math-error) ")";
+    color: var(--pico-del-color);
+}
+
+#worker-conversation [data-diagram-error]::after {
+    content: " (" attr(data-diagram-error) ")";
     color: var(--pico-del-color);
 }
 

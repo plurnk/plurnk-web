@@ -317,11 +317,11 @@ unexpected interrupt stops observation rather than being resolved or retried.
 
 | Boundary | Contract |
 |---|---|
-| Markdown | Marked parses ordinary text, code, links, lists and tables. Raw HTML is escaped. Images become links rather than automatic network requests. Tables have native figure containers. Diagrams remain code; no syntax highlighter or embedded application is implied. Malformed fences follow the parser's ordinary Markdown semantics, without operation-style recovery or inferred intent. Math follows {§web-math-content}. |
+| Markdown | Marked parses ordinary text, code, links, lists and tables. Raw HTML is escaped. Authored images become links rather than automatic network requests. Tables have native figure containers. Mermaid follows {§web-diagram-content}; no syntax highlighter or embedded application is implied. Malformed fences follow the parser's ordinary Markdown semantics, without operation-style recovery or inferred intent. Math follows {§web-math-content}. |
 | DOM admission | DOMPurify sanitizes the generated HTML into a fragment before insertion. Only Markdown presentation elements and their necessary attributes are admitted; no application data attributes, IDs, styles, scripts, forms, frames, SVG or active controls. GFM task checkboxes remain disabled. Links use the sanitizer's URI checks; no model-supplied HTML bypasses sanitization. |
-| Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly; only recognized math outlets receive the bounded enhancement below. |
+| Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly; only recognized math and diagram outlets receive their bounded enhancements. |
 | Continuity | The same admission boundary applies to every rich-text role and NOTE body, including partial updates and replay. Message identities, author/category labels, call arguments, errors and structured payloads remain data, never markup. Rendering performs no model-directed navigation or resource request; ordinary links require user activation. |
-| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
+| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Diagram code loads only for recognized Mermaid blocks. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
 
 ## §web-working-notes Inspectable working material
 
@@ -348,10 +348,23 @@ name or content. This presentation adds no conversation store or protocol role.
 | Admission | Untrusted mode rejects TeX HTML/media/link extensions. DOMPurify sanitizes renderer-owned DOM in place, without serializing styles back through HTML. Renderer-required classes and layout styles remain inside this content boundary; IDs, navigation attributes and application bindings do not. The Markdown allowlist is not widened to accept authored MathML or HTML. |
 | Failure and streaming | Incomplete delimiters stay text. Unsupported/malformed complete formulas retain their exact delimited source with a concise local error. The source remains readable while the renderer loads or if loading fails. Detached outlets cannot overwrite a newer message. Unchanged bodies retain their existing MathML and native selection. Unexpected implementation failures remain diagnostics, not concealed parse errors. |
 
+## §web-diagram-content Static diagram images
+
+| Boundary | Contract |
+|---|---|
+| Recognition | Marked code blocks whose first language word is `mermaid` (case-insensitive) are eligible. Inline code, indented code and nested fenced examples retain ordinary Markdown meaning. No inferred fence repair, orientation rewrite or alternate parser. |
+| Interpretation | The locally bundled `beautiful-mermaid` public SVG renderer supports its flowchart, state, sequence, class, ER and XY syntax subset. Use its standalone appearance, not an application theme system. No DOM-dependent Mermaid runtime, server rendering endpoint or headless browser. |
+| Image boundary | Generated SVG becomes a data-URI source of a native `img` in a document-owned OTM template. Never insert SVG markup into the application DOM or an embedded document. Native SVG image restrictions prevent scripts and external resource loading, including renderer font imports; the application CSP is unchanged. Authored Markdown images and raw SVG receive no new permission. |
+| Source and failure | Source remains readable while the module loads. A successful image has an accessible label and an adjacent native source disclosure. Unsupported syntax or rendering/decoding failure retains the source with a concise local diagnostic and the original error available as its title. A failed module load also reports the original browser error. No rewriting, alternate renderer or automatic retry. |
+| Continuity | Detached outlets cannot publish a late image into a newer message. Unchanged bodies retain their image and native source-disclosure state. Diagrams are static presentation, not interactive links or controls; the image/source boundary applies to every rich-text role and NOTE body. |
+| Viewport | Keep intrinsic diagram dimensions and browser zoom. Wide images scroll inside their own viewport without shrinking labels or widening the whole page; source remains selectable text. |
+
+Reference: [SVG image restrictions](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image#restrictions).
+
 ## §web-content-reflow Constrained and changing viewports
 
 Ordinary prose and controls reflow at 320 CSS pixels without page-wide horizontal
-scrolling. Code, tables and formulas that intrinsically require two dimensions
+scrolling. Code, tables, formulas and diagrams that intrinsically require two dimensions
 scroll within their own content boundary, not the whole message. Keep readable
 font sizes and native zoom; do not shrink content or rewrite diagram orientation.
 Native document flow responds to viewport changes without a JavaScript layout
