@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import verifyObserver from "./agui-observer.js";
 import aguiSession from "./agui-session.js";
+import verifyHandoff from "./agui-handoff.js";
 
 // {§web-agui-conformance} The fixture uses only the official SDK and the daemon's public wire.
 export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser }) {
@@ -132,6 +133,8 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal((await finish("duplicate")).events.at(-1).type, "RUN_ERROR");
             assert.equal(model.requests.length, before + 2, "one proposed command and one answer, without a model retry");
         });
+        await verifyHandoff({ ...session, t, model });
+        checkBrowser();
         await verifyObserver({ ...session, t, model, checkBrowser });
         await t.test("{§web-agui-conformance} an idle observer receives daemon shutdown as a terminal error", async () => {
             await start("shutdown", { workspace: "browser-conformance", observe: true });

@@ -9,7 +9,6 @@ export default async function aguiSession(tab, { token, projectRoot }) {
             run.events = [];
             run.failure = null;
             run.settled = false;
-            run.parameters = parameters;
             run.promise = run.agent[observe ? "connectAgent" : "runAgent"](parameters, {
                 onEvent: ({ event }) => { run.events.push(event); },
             }).catch((error) => {
@@ -22,13 +21,28 @@ export default async function aguiSession(tab, { token, projectRoot }) {
                     url: new URL(observe ? "/agui/connect" : "/agui", location.href).href,
                     threadId, headers: { Authorization: `Bearer ${token}` }, initialMessages: messages,
                 });
-                const run = { agent, events: [], failure: null, settled: false };
-                runs.set(id, run);
                 const parameters = { tools, forwardedProps: { plurnk: { workspace, ...plurnk } }, ...(resume ? { resume } : {}) };
+                const run = { agent, parameters, events: [], failure: null, settled: false };
+                runs.set(id, run);
                 execute(run, parameters, observe);
             },
-            resume(id, resume) { const run = runs.get(id); execute(run, { ...run.parameters, resume }); },
-            reconnect(id) { const run = runs.get(id); execute(run, run.parameters, true); },
+            send(id, messages) {
+                const run = runs.get(id);
+                if (!run.settled) throw new Error("Detach observation before submitting input.");
+                run.agent.url = new URL("/agui", location.href).href;
+                run.agent.addMessages(messages);
+                execute(run, run.parameters);
+            },
+            resume(id, resume) {
+                const run = runs.get(id);
+                run.agent.url = new URL("/agui", location.href).href;
+                execute(run, { ...run.parameters, resume });
+            },
+            reconnect(id) {
+                const run = runs.get(id);
+                run.agent.url = new URL("/agui/connect", location.href).href;
+                execute(run, run.parameters, true);
+            },
             async finish(id) { await runs.get(id).promise; return this.read(id); },
             read(id) {
                 const run = runs.get(id);

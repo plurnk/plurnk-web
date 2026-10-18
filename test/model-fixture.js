@@ -54,7 +54,7 @@ export default async function startModel() {
                     pending.delete(lifecycle);
                 }
                 if (!response.destroyed) {
-                    const content = lifecycle === "approval" && visit === 1 ? "```sh\nprintf approved\n```"
+                    const content = lifecycle.startsWith("approval") && visit === 1 ? "```sh\nprintf approved\n```"
                         : lifecycle === "conversation" && visit === 1
                             ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (worker://user/identity.md) <1,2>\n```"
                         : lifecycle.startsWith("execution-") && visit === 1
