@@ -87,11 +87,24 @@ table {
     min-inline-size: 0;
 }
 
-#worker-conversation [data-message-body] {
+#worker-conversation pre,
+#worker-conversation [data-math] {
+    max-inline-size: 100%;
     overflow-x: auto;
 }
 
-#worker-conversation pre {
-    max-inline-size: 100%;
-    overflow-x: auto;
+/* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */
+#worker-conversation [data-math="inline"] {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+#worker-conversation [data-math="block"] {
+    display: block;
+    margin-block: var(--pico-spacing);
+}
+
+#worker-conversation [data-math] > math {
+    inline-size: max-content;
+    min-inline-size: 100%;
 }

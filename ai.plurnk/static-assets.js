@@ -31,7 +31,7 @@ export function sendAsset(req, res, asset) {
     const body = asset.representations.get(encoding);
     if (body === undefined) throw new Error("Negotiated an undeclared asset representation.");
     res.writeHead(200, {
-        "content-type": asset.mediaType.startsWith("image/") ? asset.mediaType : `${asset.mediaType}; charset=utf-8`,
+        "content-type": asset.mediaType.startsWith("text/") ? `${asset.mediaType}; charset=utf-8` : asset.mediaType,
         "content-length": body.byteLength,
         "x-content-type-options": "nosniff",
         ...(encoding === "identity" ? {} : { "content-encoding": encoding }),

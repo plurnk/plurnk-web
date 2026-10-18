@@ -101,7 +101,11 @@ test("{§web-build} production HTML references compiled assets, not development 
     assert.ok(inventory.some(([path]) => path === "/manifest.webmanifest"));
     const license = await readFile(new URL("../ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt", import.meta.url), "utf8");
     assert.match(license, /@ag-ui\/client/u);
+    assert.match(license, /temml - 0\.14\.0 \(MIT\)/u);
     assert.match(license, /MIT/u);
+    assert.ok(inventory.some(([path, , type]) => /\/Temml-[^/]+\.woff2$/u.test(path) && type === "font/woff2"));
+    assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.js$/u.test(path)), "math remains a separate lazy chunk");
+    assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "renderer styles remain separate from the application stylesheet");
 });
 
 test("{§web-build} production prunes unused CSS without dropping native state selectors", async () => {

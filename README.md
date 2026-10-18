@@ -67,6 +67,13 @@ disclosures; opening one does not start work. Markdown is sanitized, raw HTML st
 text and images become links. Tool results remain literal inspectable data.
 The browser keeps no separate transcript or persistent conversation cache.
 
+Math uses locally bundled Temml and native MathML: `$…$`, `$$…$$`, `\(…\)` and
+`\[…\]` outside code. Unsupported formulas keep their source and a short error;
+raw HTML and TeX link/media extensions cannot create controls or fetch content.
+The math renderer and its styles load only when needed. Mermaid remains readable fenced source.
+Prose reflows on narrow screens; wide code, tables and formulas scroll locally
+without shrinking the text or widening the page. Native zoom remains available.
+
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
 picker or stored preferences. Ordinary navigation and forms
@@ -181,7 +188,9 @@ before production pruning, so references between layers remain visible:
 | `app-style.css` | Substrate token overrides; brand accents and system monospace. |
 | `app-state.css` | Worker page width, connection state and native focus visibility. |
 
-Authored CSS is checked with OTM's Stylelint rules. No remote fonts are required.
+Authored CSS is checked with OTM's Stylelint rules. Content-renderer dependencies
+load their own vendor styles separately; sign-in uses only the page stylesheet.
+No remote fonts are required.
 
 Code: MIT. The hamster artwork derives from Google's Noto Emoji under Apache-2.0,
 with glasses and a green bow added. See [artwork attribution](web/public/icons/NOTO-NOTICE.txt).

@@ -26,9 +26,11 @@ export default function createModule() {
             // {§web-authorization-style} The same built stylesheet serves both document owners.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
-            const stylesheets = inventory.filter(([, , mediaType]) => mediaType === "text/css");
-            if (stylesheets.length !== 1) throw new Error("The web asset inventory must contain exactly one application stylesheet.");
-            registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["agui"], stylesheetPath: stylesheets[0][0] });
+            const root = inventory.find(([path]) => path === "/index.html");
+            if (!root) throw new Error("The web asset inventory must include index.html.");
+            const stylesheetPath = Documents.stylesheet((await readAsset(root[1], root[2], root[3])).body.toString("utf8"));
+            if (!inventory.some(([path, , type]) => path === stylesheetPath && type === "text/css")) throw new Error("The application stylesheet is absent from the web asset inventory.");
+            registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["agui"], stylesheetPath });
         },
         async start(seam) {
             if (authenticate) {

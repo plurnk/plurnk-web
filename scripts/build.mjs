@@ -19,6 +19,7 @@ const types = {
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".txt": "text/plain",
+    ".woff2": "font/woff2",
 };
 const output = fileURLToPath(new URL("../ai.plurnk/dist/", import.meta.url));
 const files = (await readdir(output, { recursive: true, withFileTypes: true }))

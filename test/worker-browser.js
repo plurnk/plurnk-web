@@ -35,6 +35,41 @@ const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lif
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
+    await t.test("{§web-math-content} the packed worker receives real messages and loads only local math assets", async () => {
+        const model = await startModel();
+        try {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
+                const setup = await controller(base);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "math", action: { kind: "worker.model.set", selector: "browser" } } } });
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    const requests = [];
+                    page.on("request", (request) => requests.push(request.url()));
+                    await page.goto(new URL("/~/math@user/", base).href);
+                    await connected(page);
+                    assert.ok(!requests.some((path) => /math-renderer-|Temml-/u.test(path)), "no math code, style or font load before a formula exists");
+                    const run = await controller(base, undefined, prompt("math"));
+                    await run.runAgent({ forwardedProps: { plurnk: { workspace: "math" } } });
+                    await page.locator("math mfrac").waitFor();
+                    assert.equal(await page.locator("math annotation").textContent(), String.raw`\mathscr{F}=\frac{a}{b}`);
+                    await page.evaluate(() => document.fonts.ready);
+                    assert.ok(requests.some((path) => /\/Temml-[^/]+\.woff2$/u.test(path)));
+                    assert.ok(requests.every((path) => new URL(path).origin === new URL(base).origin));
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                    await page.reload();
+                    await connected(page);
+                    await page.locator("math mfrac").waitFor();
+                    assert.equal(model.requests.length, 1, "refresh renders retained math without inference");
+                    assert.deepEqual(model.errors, []);
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
     await t.test("{§web-worker-conversation} the packed page projects live SDK messages and passive replay without owning work", async () => {
         const projectRoot = await mkdtemp(join(tmpdir(), "plurnk-web-conversation-"));
         const model = await startModel();

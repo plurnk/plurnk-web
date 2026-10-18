@@ -32,6 +32,8 @@ export default defineConfig(({ command }) => ({
                 content: [
                     fileURLToPath(new URL("./web/**/*.{html,js}", import.meta.url)),
                     fileURLToPath(new URL("./ai.plurnk/documents.js", import.meta.url)),
+                    // {§web-math-content} The dynamic renderer, not application markup, owns these selectors.
+                    fileURLToPath(import.meta.resolve("temml/dist/Temml-Local.css")),
                     ...authorizationDocumentSpecimens().map((raw) => ({ raw, extension: "html" })),
                 ],
                 defaultExtractor: (content) => content.match(/[A-Za-z0-9_-]+/gu) ?? [],
