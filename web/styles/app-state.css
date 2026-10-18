@@ -7,8 +7,14 @@ header nav button:is(:hover, :focus-visible) {
     text-decoration: underline;
 }
 
+/* {§web-worker-input} Native controls and document state own their presentation. */
+[aria-label="Worker controls"][data-command-error=""] > article,
+[aria-label="Worker controls"][data-message-status=""] > [role="status"] {
+    display: none;
+}
+
 /* {§web-worker-observer} Failed connections expose native recovery, never stale live indicators. */
-#worker-status:not([data-connection="disconnected"], [data-connection="signed-out"]) > article,
+#worker-status:not([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]) > article,
 #worker-status:not([data-connection="signed-out"]) [data-sign-in],
 #worker-status[data-connection="signed-out"] [data-reconnect] {
     display: none;

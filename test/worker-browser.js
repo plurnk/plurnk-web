@@ -502,7 +502,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(run.isRunning, true);
                     assert.equal(await page.getByRole("alert").isVisible(), true);
                     assert.equal(await page.getByRole("link", { name: "Sign in", exact: true }).isVisible(), true);
-                    assert.equal(await page.getByRole("link", { name: "Reconnect", exact: true }).isVisible(), false);
+                    assert.equal(await page.getByRole("button", { name: "Reconnect", exact: true }).isVisible(), false);
                     await setTimeout(1100);
                     assert.equal(await value(page, "elapsed"), frozen, "a disconnected clock cannot pretend to be live");
                     assert.equal(attempts, 1, "revocation does not start a reconnection loop");
@@ -537,8 +537,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.goto(new URL("/~/", proxy.url).href);
                     assert.equal(requests.some((request) => /worker-.*\.js|\/auth\/token|\/agui/u.test(request.url())), false, "directory navigation needs no worker runtime");
                     await page.goto(new URL("/~/observer-approval@user/", proxy.url).href);
-                    await connection(page, "disconnected");
-                    assert.equal(await page.locator('#worker-status [role="alert"]').isVisible(), true, "this read-only page cannot answer its owner's interrupt");
+                    await connection(page, "interrupted");
+                    assert.equal(await page.locator('#worker-status [role="alert"]').isVisible(), true, "this page cannot yet answer its owner's interrupt");
                     assert.equal(model.requests.length, 1, "the approval remains pending");
                     assert.equal(requests.filter((request) => new URL(request.url()).pathname === "/agui/connect").length, 1);
                     assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);
@@ -546,7 +546,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await run.runAgent({ ...parameters, resume: [{ interruptId: run.pendingInterrupts[0].id, status: "resolved", payload: { decision: "accept" } }] });
                     assert.equal(run.pendingInterrupts.length, 0);
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed approval.");
-                    await page.getByRole("link", { name: "Reconnect", exact: true }).click();
+                    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "completed");
                     await connected(page);
                     assert.equal(model.requests.length, 2);
@@ -573,7 +573,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         /^error \/agui\/connect: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
                         /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: network error$/u,
                     ]);
-                    const card = page.getByRole("alert");
+                    const card = page.locator('#worker-status [role="alert"]');
                     assert.equal(await card.isVisible(), true);
                     for (const colorScheme of ["light", "dark"]) {
                         await page.emulateMedia({ colorScheme });
@@ -581,7 +581,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         assert.ok(parseFloat(style.padding) > 0);
                         assert.notEqual(style.shadow, "none");
                     }
-                    await page.getByRole("link", { name: "Reconnect", exact: true }).click();
+                    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
                     assert.equal(await value(page, "requests"), "2");
                     await daemon.stop();
