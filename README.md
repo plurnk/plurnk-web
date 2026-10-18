@@ -72,8 +72,14 @@ The browser keeps no separate transcript or persistent conversation cache.
 Math uses locally bundled Temml and native MathML: `$…$`, `$$…$$`, `\(…\)` and
 `\[…\]` outside code. Unsupported formulas keep their source and a short error;
 raw HTML and TeX link/media extensions cannot create controls or fetch content.
-The math renderer and its styles load only when needed. Mermaid remains readable fenced source.
-Prose reflows on narrow screens; wide code, tables and formulas scroll locally
+The math renderer and its styles load only when needed.
+
+Mermaid fences become static SVG images using locally bundled `beautiful-mermaid`:
+flowcharts, state, sequence, class, ER and XY diagrams, within its supported syntax.
+The renderer loads only when needed. Source remains available in a disclosure;
+unsupported or invalid diagrams keep their source and a short error. There are no
+interactive diagrams, remote rendering services or external font requests.
+Prose reflows on narrow screens; wide code, tables, formulas and diagrams scroll locally
 without shrinking the text or widening the page. Native zoom remains available.
 
 English is rendered in the document, not filled in by JavaScript. The current

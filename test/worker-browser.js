@@ -6,7 +6,7 @@ import { setTimeout } from "node:timers/promises";
 import { HttpAgent } from "@ag-ui/client";
 import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
-import startModel, { contentAttack } from "./model-fixture.js";
+import startModel, { contentAttack, diagramContent } from "./model-fixture.js";
 import disconnectProxy from "./disconnect-proxy.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
@@ -169,6 +169,61 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await connected(page);
                     await page.locator("math mfrac").waitFor();
                     assert.equal(model.requests.length, 1, "refresh renders retained math without inference");
+                    assert.deepEqual(model.errors, []);
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
+    await t.test("{§web-diagram-content} authenticated delivery and replay produce local static images", async () => {
+        const model = await startModel();
+        const secret = crypto.randomUUID();
+        try {
+            await withDaemon({ ...model.env, PLURNK_PASS: "diagram-password", PLURNK_SECRET: secret }, async (base) => {
+                const setup = await controller(base, secret);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "diagrams", action: { kind: "worker.model.set", selector: "browser" } } } });
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    const requests = [];
+                    const unexpected = [];
+                    page.on("request", (request) => requests.push(request.url()));
+                    await context.route("**/*", (route) => {
+                        const url = new URL(route.request().url());
+                        if (url.origin === new URL(base).origin) return route.continue();
+                        unexpected.push(url.href);
+                        return route.abort();
+                    });
+                    const path = new URL("/~/diagrams@user/", base).href;
+                    await page.goto(path);
+                    await page.getByLabel("Password", { exact: true }).fill("diagram-password");
+                    await page.getByRole("button", { name: "Continue", exact: true }).click();
+                    await page.waitForURL(path);
+                    await connected(page);
+                    assert.ok(!requests.some((path) => /mermaid-renderer-/u.test(path)), "an idle worker loads no diagram code");
+                    const run = await controller(base, secret, prompt("diagrams"));
+                    await run.runAgent({ forwardedProps: { plurnk: { workspace: "diagrams" } } });
+                    assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, diagramContent);
+                    const verify = async () => {
+                        const figure = page.locator('[data-message-role="assistant"] [data-diagram]:not([hidden])');
+                        await figure.waitFor();
+                        assert.equal(await figure.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0 && image.src.startsWith("data:image/svg+xml;")), true);
+                        assert.equal(await figure.locator("details").evaluate((element) => element.open), false);
+                        await figure.getByText("Diagram source", { exact: true }).click();
+                        assert.equal(await figure.locator("pre code").innerText(), "flowchart LR\n Client --> Daemon\n");
+                        assert.equal(await page.locator("[data-message-body] svg, [data-message-body] iframe, [data-message-body] style").count(), 0);
+                        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                    };
+                    await verify();
+                    await page.reload();
+                    await connected(page);
+                    await verify();
+                    assert.ok(requests.some((path) => /mermaid-renderer-/u.test(path)));
+                    assert.deepEqual(unexpected, [], "no remote renderer or font requests");
+                    assert.equal(model.requests.length, 1, "refresh renders retained diagrams without inference");
                     assert.deepEqual(model.errors, []);
                     checkBrowser();
                 } finally { await browser.close(); }

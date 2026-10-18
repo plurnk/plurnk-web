@@ -88,9 +88,15 @@ table {
 }
 
 #worker-conversation pre,
-#worker-conversation [data-math] {
+#worker-conversation [data-math],
+#worker-conversation [data-diagram-viewport] {
     max-inline-size: 100%;
     overflow-x: auto;
+}
+
+/* {§web-diagram-content} Preserve readable intrinsic labels; wide images scroll locally. */
+#worker-conversation [data-diagram-viewport] > img {
+    max-inline-size: none;
 }
 
 /* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */

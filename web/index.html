@@ -73,5 +73,15 @@
     <template id="conversation-literal">
         <pre><code data-text="literal-content">No content.</code></pre>
     </template>
+    <!-- {§web-diagram-content} Only the generated data-URI image enters this template. -->
+    <template id="conversation-diagram">
+        <figure data-diagram hidden>
+            <div data-diagram-viewport><img data-bind="src:diagram-url" alt="Mermaid diagram; source below."></div>
+            <details>
+                <summary data-i18n="diagram-source">Diagram source</summary>
+                <pre><code data-text="diagram-source">Diagram source</code></pre>
+            </details>
+        </figure>
+    </template>
 </body>
 </html>
