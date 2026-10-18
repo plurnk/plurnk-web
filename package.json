@@ -36,14 +36,14 @@
         "oauth4webapi": "3.8.8"
     },
     "peerDependencies": {
-        "@plurnk/plurnk-contracts": "^3.2.0",
-        "@plurnk/plurnk-modules": "^3.1.0"
+        "@plurnk/plurnk-contracts": "^4.0.0",
+        "@plurnk/plurnk-modules": "^4.0.0"
     },
     "devDependencies": {
         "@ag-ui/client": "1.0.2",
         "@fullhuman/postcss-purgecss": "8.0.0",
         "@picocss/pico": "2.1.1",
-        "@plurnk/plurnk-agui": "^3.1.0",
+        "@plurnk/plurnk-agui": "^4.0.0",
         "@plurnk/plurnk-spec-check": "0.1.0",
         "@types/node": "^26.1.1",
         "@types/negotiator": "0.6.5",
