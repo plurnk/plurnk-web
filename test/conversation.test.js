@@ -4,6 +4,7 @@ import { chromium, firefox, webkit } from "playwright";
 import browserDiagnostics from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 import { verifyMath, verifyUnavailableMath } from "./math-browser.js";
+import verifyContentSecurity from "./content-security-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -259,3 +260,4 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
 // One browser-test entry point owns renderer lifetimes; checks retain cold documents.
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);
+test("{§web-conversation-content} {§web-browser-security} adversarial content across roles, streaming and replay", { timeout: 60_000 }, verifyContentSecurity);
