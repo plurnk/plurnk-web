@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { HttpAgent } from "@ag-ui/client";
 import { chromium } from "playwright";
@@ -32,6 +35,91 @@ const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lif
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
+    await t.test("{§web-worker-conversation} the packed page projects live SDK messages and passive replay without owning work", async () => {
+        const projectRoot = await mkdtemp(join(tmpdir(), "plurnk-web-conversation-"));
+        const model = await startModel();
+        await writeFile(join(projectRoot, "witness.txt"), "cobalt heron\n");
+        try {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_MEMBERS_witness: "witness.txt" }, async (base) => {
+                const setup = await controller(base);
+                let created;
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "conversation", projectRoot,
+                    action: { kind: "worker.model.set", selector: "browser" },
+                } } }, { onRunFinishedEvent: ({ event }) => { created = event.result; } });
+                assert.equal(created?.ok, true, JSON.stringify(created));
+                const run = await controller(base, undefined, prompt("conversation"));
+                let completion;
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext({ viewport: { width: 420, height: 700 } });
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    const requests = [];
+                    page.on("request", (request) => requests.push(request));
+                    await page.goto(new URL("/~/conversation@user/", base).href);
+                    await connected(page);
+                    assert.equal(model.requests.length, 0, "viewing an idle worker starts no inference");
+                    completion = run.runAgent({ forwardedProps: { plurnk: { workspace: "conversation" } } });
+                    const reasoning = page.locator('[data-message-role="reasoning"]').filter({ hasText: "Considering conversation." }).first();
+                    await reasoning.waitFor();
+                    assert.equal(await reasoning.locator("details").getAttribute("open"), null);
+                    await reasoning.locator("summary").click();
+                    await reasoning.evaluate((element) => { window.observedReasoning = element; });
+                    assert.equal(model.requests.length, 1, "only the controlling request starts inference");
+                    model.release("conversation");
+                    await completion;
+                    await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-message-role="assistant"] [data-message-body]'))
+                        .some((element) => element.textContent === "Completed conversation.\n"));
+                    await connected(page);
+                    assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed conversation.");
+                    assert.equal(await reasoning.evaluate((element) => element === window.observedReasoning), true, "passive replay retains the existing row");
+                    assert.equal(await reasoning.locator("details").evaluate((element) => element.open), true, "native disclosure choice survives replay");
+                    const ids = () => page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
+                    const beforeReload = await ids();
+                    assert.equal(beforeReload.length, new Set(beforeReload).size, "reconnect does not duplicate messages");
+                    const calls = await page.locator("[data-call-id]").evaluateAll((rows) => rows.map((row) => ({
+                        id: row.dataset.callId, name: row.dataset.callName, arguments: row.dataset.callArguments,
+                    })));
+                    const reads = calls.filter(({ name }) => name === "READ");
+                    assert.equal(reads.length, 2);
+                    assert.ok(reads.some(({ arguments: args }) => args.includes("witness.txt")), "exact daemon arguments reach the template");
+                    const receipts = page.locator('[data-message-role="tool"]');
+                    const receiptBodies = await receipts.locator("[data-message-body]").allTextContents();
+                    assert.ok(receiptBodies.some((body) => body.includes("cobalt heron")), "the real file result is inspectable");
+                    assert.ok(receiptBodies.some((body) => body.includes("Entry not found")), "the real operation failure is inspectable");
+                    for (const link of await receipts.locator("[data-call-link] a").all()) {
+                        assert.equal(await link.evaluate((element) => Boolean(document.getElementById(decodeURIComponent(new URL(element.href).hash.slice(1))))), true);
+                    }
+                    for (const colorScheme of ["light", "dark"]) {
+                        await page.emulateMedia({ colorScheme });
+                        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "long literal receipts do not widen the viewport");
+                    }
+                    await page.reload();
+                    await connected(page);
+                    await page.waitForFunction((count) => document.querySelectorAll("[data-messages] > li").length === count, beforeReload.length);
+                    assert.deepEqual(await ids(), beforeReload, "a fresh page reads the same SDK snapshot, without a browser history store");
+                    assert.equal(model.requests.length, 2, "neither replay nor refresh creates a model call");
+                    assert.deepEqual(model.errors, []);
+                    assert.equal(await page.locator("#worker-conversation form, #worker-conversation textarea, #worker-conversation [contenteditable]").count(), 0);
+                    for (const request of requests.filter((request) => new URL(request.url()).pathname === "/agui/connect")) {
+                        const input = request.postDataJSON();
+                        assert.deepEqual(input.messages, []);
+                        assert.deepEqual(input.tools, []);
+                        assert.equal(input.resume, undefined);
+                    }
+                    checkBrowser();
+                } finally {
+                    run.abortRun();
+                    await completion;
+                    await browser.close();
+                }
+            });
+        } finally {
+            await model.close();
+            await rm(projectRoot, { recursive: true, force: true });
+        }
+    });
+
     await t.test("{§web-worker-observer} the actual page observes consecutive loops, cancellation and workspace rename without owning work", async () => {
         const model = await startModel();
         const secret = crypto.randomUUID();

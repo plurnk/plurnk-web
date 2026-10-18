@@ -161,7 +161,11 @@ export default class Documents {
             + '<p data-text="connection-detail">Displayed values are no longer live.</p><p>'
             + `<a data-reconnect href="${escapeHtml(path)}" data-i18n="reconnect">Reconnect</a>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-i18n="sign-in">Sign in</a>`
-            + '</p></article></section>';
+            + '</p></article></section>'
+            + '<section id="worker-conversation" aria-label="Conversation">'
+            + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
+            + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'
+            + '<ol data-messages></ol></section>';
     }
 
     /**

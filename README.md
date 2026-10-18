@@ -4,12 +4,12 @@ An optional Plurnk daemon plugin serving native OTM documents at `/`.
 Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
 Requires a current stable browser; no legacy-browser compatibility layer is shipped.
-No chat interface or additional server. The root links to the daemon's workspace
+No additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
-breadcrumbs, their actual parent, and live read-only status, without a duplicate page
-heading. There is no conversation UI.
+breadcrumbs, their actual parent, live read-only status and conversation, without a
+duplicate page heading. There is no composer, approval or operation-control UI.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -62,10 +62,15 @@ for the next one. Closing, refreshing or navigating away never cancels work.
 Connection failure stops observation and marks the displayed values as stale;
 use **Reconnect** or, after revocation, **Sign in**. No automatic work retries occur.
 
+Messages follow HttpAgent's order. Reasoning, calls and results use native collapsed
+disclosures; opening one does not start work. Markdown is sanitized, raw HTML stays
+text and images become links. Tool results remain literal inspectable data.
+The browser keeps no separate transcript or persistent conversation cache.
+
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
 picker or stored preferences. Ordinary navigation and forms
-remain native HTML; live worker status requires JavaScript.
+remain native HTML; live worker status and conversation require JavaScript.
 
 ## Install from source
 
@@ -75,7 +80,7 @@ workspace-label APIs
 including sign-in inventory, shared browser/module revocation, password-only login,
 and registered authorization-page styles, plus daemon-supplied folder labels).
 Use packed platform packages for development and installed-browser verification.
-The web plugin itself is not yet published; its conversation UI remains deferred.
+The web plugin itself is not yet published.
 
 ```sh
 npm ci --no-audit --no-fund
@@ -134,8 +139,9 @@ installs their public type declarations without rewriting the lockfile,
 then runs the full gate with `PLURNK_WEB_TEST_PACKAGES` naming the archive directory.
 The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
-Chromium. Install that test browser with `npx playwright install chromium` if
-necessary. The operator's daemon and configuration are not used.
+Chromium. Component coverage also exercises native conversation behavior in Firefox
+and WebKit. Install the test browsers with `npx playwright install chromium firefox webkit`
+if necessary. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference is involved. Separate journeys exercise
 the shipped read-only worker page without injecting an SDK or mocking AG-UI.

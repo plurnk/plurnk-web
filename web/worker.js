@@ -1,6 +1,7 @@
-import { the } from "on_the_money";
+import { $, the } from "on_the_money";
 import WorkerAgent from "./worker-agent.js";
 import { elapsed, gauges } from "./worker-status.js";
+import conversation from "./conversation.js";
 
 /** {§web-worker-observer} One page owns a passive subscription, not the worker's lifetime.
  * @param {HTMLElement} element
@@ -8,6 +9,9 @@ import { elapsed, gauges } from "./worker-status.js";
 export default function observeWorker(element) {
     const { threadId, auth } = element.dataset;
     if (!threadId || (auth !== "session" && auth !== "none")) throw new Error("Worker document metadata is incomplete.");
+    const history = $("#worker-conversation");
+    if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
+    const present = conversation(history);
     /** @type {AbortController | undefined} */
     let page;
 
@@ -42,6 +46,7 @@ export default function observeWorker(element) {
                 /** @type {number | undefined} */
                 let problem;
                 await agent.connectAgent({}, {
+                    onMessagesChanged: ({ messages }) => { if (!signal.aborted) present(messages); },
                     onStateChanged: ({ state }) => {
                         const next = /** @type {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState}} */ (state).plurnk?.status;
                         if (!next || signal.aborted) return;
