@@ -161,7 +161,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
         checkBrowser();
         await verifyOrdinary(tab, token, model, t);
         checkBrowser();
-        await verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser });
+        await verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser, mount, base });
         assert.deepEqual(model.errors, []);
         checkBrowser();
         assert.ok(requests.every((url) => new URL(url).origin === new URL(base).origin));

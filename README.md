@@ -161,7 +161,8 @@ The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference is involved. Separate journeys exercise
 the shipped read-only worker page without injecting an SDK or mocking AG-UI.
 It exercises synchronization, observer/control handoff with one SDK history,
-disconnects, approval interruption and rediscovery,
+admitted work surviving request abortion, navigation and page close, explicit
+cancellation, approval interruption and rediscovery,
 shutdown and the real browser sign-in/access-token lifecycle. Cross-client prompt
 delivery, exact READ operands and real command stdout/stderr results are compared live and after
 refresh through the SDK's messages, without custom-row reconstruction. Standard success,

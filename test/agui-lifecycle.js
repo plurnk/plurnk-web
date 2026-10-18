@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import verifyObserver from "./agui-observer.js";
 import aguiSession from "./agui-session.js";
 import verifyHandoff from "./agui-handoff.js";
+import verifyDisconnect from "./agui-disconnect.js";
 
 // {§web-agui-conformance} The fixture uses only the official SDK and the daemon's public wire.
-export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser }) {
+export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser, mount, base }) {
     const session = await aguiSession(tab, { token, projectRoot });
-    const { start, finish, read, event, successful, prompt } = session;
+    const { start, finish, read, event, successful, prompt, action } = session;
     try {
         await t.test("{§web-agui-conformance} synchronization is authoritative and inference-free", async () => {
             const before = model.requests.length;
@@ -76,14 +77,22 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             successful(observer);
             assert.equal(observer.messages.findLast(({ role }) => role === "assistant").content, "Completed held-observe.");
         });
-        await t.test("{§web-agui-conformance} controlling disconnect cancels its work and an observer sees that outcome", async () => {
+        await verifyDisconnect({ ...session, t, model, token, projectRoot, mount, base });
+        checkBrowser();
+        await t.test("{§web-agui-conformance} explicit cancellation reaches the submitter and observer as a worker outcome", async () => {
             await start("cancel-controller", { workspace: "cancel-live", messages: prompt("held-cancel") });
             await event("cancel-controller", "REASONING_MESSAGE_CONTENT");
             await start("cancel-observer", { workspace: "cancel-live", observe: true });
             await event("cancel-observer", "MESSAGES_SNAPSHOT");
-            await tab.evaluate(() => globalThis.lifecycle.abort("cancel-controller"));
-            await finish("cancel-controller");
+            await start("cancel-unrelated", { workspace: "cancel-other", messages: prompt("held-cancel-unrelated") });
+            await event("cancel-unrelated", "REASONING_MESSAGE_CONTENT");
+            assert.deepEqual(await action("cancel-live", "cancel-live", "loop.cancel", { reason: "browser-stop" }), { cancelled: true });
+            const controller = await finish("cancel-controller");
             const result = await finish("cancel-observer");
+            assert.equal(controller.failure, null);
+            assert.equal(controller.events.at(-1).type, "RUN_FINISHED");
+            assert.deepEqual(controller.events.at(-1).outcome, { type: "cancelled" });
+            assert.deepEqual(controller.events.at(-1).metadata.plurnk.terminal, result.events.at(-1).metadata.plurnk.terminal);
             assert.equal(result.failure, null);
             assert.equal(result.events.at(-1).type, "RUN_FINISHED");
             assert.deepEqual(result.events.at(-1).outcome, { type: "cancelled" });
@@ -92,8 +101,11 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
                 "an interrupted request with no provider usage does not report zero tokens");
             const terminal = result.events.at(-1).metadata.plurnk.terminal;
             assert.equal(terminal?.result.status, 499);
-            assert.equal(terminal?.result.problem.reason, "client_disconnected");
+            assert.equal(terminal?.result.problem.reason, "browser-stop");
             assert.equal(result.running, false);
+            assert.equal((await read("cancel-unrelated")).settled, false, "explicit Stop targets its worker, not another active loop");
+            model.release("held-cancel-unrelated");
+            successful(await finish("cancel-unrelated"));
         });
         await t.test("{§web-agui-conformance} native approval interrupts and resumes once through the official SDK", async () => {
             const before = model.requests.length;

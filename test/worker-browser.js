@@ -402,13 +402,17 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
 
                     const cancelled = await controller(base, secret, prompt("held-page-cancel"));
                     const ready = Promise.withResolvers();
+                    let terminal;
                     const cancellation = cancelled.runAgent({ forwardedProps: { plurnk: { workspace } } }, {
                         onReasoningMessageContentEvent: () => { ready.resolve(); },
-                    }).catch((error) => { assert.equal(error.name, "AbortError"); });
+                        onRunFinishedEvent: ({ event }) => { terminal = event; },
+                    });
                     await ready.promise;
                     await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "running");
-                    cancelled.abortRun();
+                    assert.deepEqual(await action("loop.cancel", { reason: "browser-stop" }), { cancelled: true });
                     await cancellation;
+                    assert.deepEqual(terminal?.outcome, { type: "cancelled" });
+                    assert.equal(terminal.metadata.plurnk.terminal.result.problem.reason, "browser-stop");
                     await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "failed");
                     await connected();
                     assert.equal(await page.getByRole("alert").isVisible(), false, "a cancelled worker is not a disconnected observer");
