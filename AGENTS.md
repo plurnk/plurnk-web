@@ -24,7 +24,7 @@ compilation; the module serves only the built ai.plurnk/dist/ asset inventory.
 Keep Vite out of runtime dependencies. Generated assets are packed, not committed.
 
 Run `npm ci --no-audit --no-fund`, then `npm run test:candidate -- <packed-platform-directory>`
-while the module-client API is unpublished. This installs candidate public type
+with published or candidate platform archives. This installs their public type
 declarations without changing the lockfile and runs `npm test`, including a packed
 installation on an isolated daemon; it must not touch the operator's service.
 Commit verified changes with the registered agent as author and the operator as

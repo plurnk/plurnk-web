@@ -69,13 +69,13 @@ remain native HTML; live worker status requires JavaScript.
 
 ## Install from source
 
-Requires Node.js 26+ and a Plurnk service with the module-client credential and
+Requires Node.js 26+ and Plurnk service 4.x with its module-client credential and
 workspace-label APIs
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
 including sign-in inventory, shared browser/module revocation, password-only login,
 and registered authorization-page styles, plus daemon-supplied folder labels).
-These APIs are not in the current published service;
-use packed candidate packages for development and verification.
+Use packed platform packages for development and installed-browser verification.
+The web plugin itself is not yet published; its conversation UI remains deferred.
 
 ```sh
 npm ci --no-audit --no-fund
@@ -128,8 +128,9 @@ production server. Vite is development tooling only.
 `npm test` checks specification tags and witnesses using Plurnk's shared
 development checker, server and browser JavaScript, OTM's HTML/JavaScript/CSS
 contracts and the module, then packs and installs the plugin
-with packed candidate service packages in a temporary directory. `test:candidate`
-installs the candidate public type declarations without rewriting the lockfile,
+with packed platform packages in a temporary directory. These may be published
+archives obtained with `npm pack` or locally built candidates. `test:candidate`
+installs their public type declarations without rewriting the lockfile,
 then runs the full gate with `PLURNK_WEB_TEST_PACKAGES` naming the archive directory.
 The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
@@ -155,8 +156,9 @@ dependencies' license notices. Production prunes unused CSS rules, variables and
 the browser and server-rendered document sources, plus the authority's publicly
 exported document specimens, before minification. The AG-UI package supplies those
 specimens as a development dependency only; no daemon code enters the browser bundle.
-Its public type declarations currently require Node typings, including for type-only
-browser consumers; these declarations are erased, not bundled.
+Browser type checking uses the public runtime-neutral client entry without Node
+globals. The module's server-side port types use their separate public entry;
+type declarations are erased, not bundled.
 The generated asset inventory tells the plugin which production files to serve.
 Static assets negotiate build-time Brotli/gzip representations when smaller, with
 identity delivery available. Private documents and AG-UI streams are not compressed
