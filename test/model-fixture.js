@@ -49,6 +49,7 @@ export default async function startModel() {
                         : lifecycle.startsWith("execution-") && visit === 1
                             ? `\`\`\`sh\nprintf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}\n\`\`\`\n\`\`\`WAIT\n\`\`\``
                         : lifecycle === "math" ? "```SEND [200]\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
+                        : lifecycle === "notes" ? "```NOTE <!-- fact -->\nA **working fact**, not the answer.\n```\n```NOTE <!-- idea -->\nA provisional hypothesis.\n```\n```NOTE <!-- plan -->\nCheck the hypothesis.\n```\n```SEND [200]\nCompleted notes.\n```"
                         : `\`\`\`SEND [200]\nCompleted ${lifecycle}.\n\`\`\``;
                     frame({ content });
                     const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);

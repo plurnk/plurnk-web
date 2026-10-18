@@ -125,9 +125,9 @@ export async function verifyUnavailableMath() {
         const context = await browser.newContext();
         const checkBrowser = browserDiagnostics(context);
         const page = await context.newPage();
-        let missing;
+        const refused = [];
         await page.route("**/math-renderer-*.js", (route) => {
-            missing = new URL(route.request().url()).pathname;
+            refused.push(new URL(route.request().url()).pathname);
             return route.fulfill({ status: 404, contentType: "text/plain", body: "Not found" });
         });
         await page.goto(url);
@@ -138,7 +138,10 @@ export async function verifyUnavailableMath() {
         assert.equal(await page.locator("math").count(), 0);
         await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
         assert.equal(await page.locator("[data-message-body] strong").textContent(), "Still connected");
-        // The preload and subsequent module import each report the deliberate refusal.
-        checkBrowser([httpFailure(missing, 404), httpFailure(missing, 404), /^exception: Failed to fetch dynamically imported module: http:\/\/127\.0\.0\.1:\d+\/assets\/math-renderer-[^/]+\.js$/u]);
+        // The browser may reuse the failed preload instead of requesting the import separately.
+        assert.ok(refused.length > 0, "the renderer's chunk was actually refused");
+        assert.equal(new Set(refused).size, 1, "only the intended chunk was refused");
+        checkBrowser([...refused.map((path) => httpFailure(path, 404)),
+            new RegExp(`^exception: Failed to fetch dynamically imported module: ${RegExp.escape(new URL(refused[0], url).href)}$`, "u")]);
     } finally { await browser.close(); await server.close(); }
 }

@@ -53,10 +53,22 @@
     <template id="conversation-call">
         <li data-bind="id:call-anchor">
             <details>
-                <summary><code data-text="call-name">Tool call</code></summary>
-                <pre><code data-text="call-arguments">No arguments.</code></pre>
+                <summary><code data-text="call-name">Tool call</code> <small data-text="call-aside">Category</small></summary>
+                <div data-call-content></div>
             </details>
         </li>
+    </template>
+    <template id="conversation-arguments">
+        <pre><code data-text="call-arguments">No arguments.</code></pre>
+    </template>
+    <template id="conversation-note">
+        <section>
+            <div data-message-body></div>
+            <details>
+                <summary data-i18n="note-arguments">Arguments</summary>
+                <pre><code data-text="call-arguments">No arguments.</code></pre>
+            </details>
+        </section>
     </template>
     <template id="conversation-literal">
         <pre><code data-text="literal-content">No content.</code></pre>

@@ -7,6 +7,23 @@ import markdown from "./markdown.js";
 /** @param {string} id */
 const callId = (id) => `call-${encodeURIComponent(id)}`;
 
+/** {§web-working-notes} Interpret only a confirmed operation's complete display fields.
+ * @param {ToolCall} call
+ * @returns {{body: string, aside: string} | null}
+ */
+function workingNote(call) {
+    if (call.function.name !== "NOTE" || call.metadata?.plurnk?.op !== "NOTE") return null;
+    let args;
+    try { args = JSON.parse(call.function.arguments); }
+    catch (error) {
+        if (error instanceof SyntaxError) return null;
+        throw error;
+    }
+    if (!args || typeof args !== "object" || Array.isArray(args) || typeof args.body !== "string"
+        || (args.aside != null && typeof args.aside !== "string")) return null;
+    return { body: args.body, aside: args.aside ?? "" };
+}
+
 /** {§web-worker-conversation} DOM identities are presentation state, never a second conversation.
  * @param {HTMLElement} root
  */
@@ -17,7 +34,7 @@ export default function conversation(root) {
     /** @type {WeakMap<Element, {source: string, rich: boolean}>} */
     const painted = new WeakMap();
 
-    /** @param {HTMLElement} row @param {unknown} content @param {boolean} rich */
+    /** @param {Element} row @param {unknown} content @param {boolean} rich */
     function body(row, content, rich) {
         const outlet = $(row, "[data-message-body]");
         if (!outlet) throw new Error("Message template has no content outlet.");
@@ -42,7 +59,18 @@ export default function conversation(root) {
         for (const [id, child] of present) if (!id || !identities.has(id)) child.remove();
         for (const [index, call] of calls.entries()) {
             const item = present.get(call.id) ?? $.clone(container, "#conversation-call");
-            the(item, { callId: call.id, callAnchor: callId(call.id), callName: call.function.name, callArguments: call.function.arguments });
+            const note = workingNote(call);
+            const kind = note ? "note" : "literal";
+            if (the(item, "callKind") !== kind) {
+                const content = $(item, "[data-call-content]");
+                if (!content) throw new Error("Call template has no content outlet.");
+                content.replaceChildren();
+                if (note) $.clone(content, "#conversation-note");
+                else $.clone(content, "#conversation-arguments");
+            }
+            the(item, { callId: call.id, callAnchor: callId(call.id), callName: call.function.name,
+                callArguments: call.function.arguments, callKind: kind, callAside: note?.aside ?? "" });
+            if (note) body(item, note.body, true);
             if (container.children[index] !== item) container.insertBefore(item, container.children[index] ?? null);
         }
     }
