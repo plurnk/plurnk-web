@@ -10,7 +10,8 @@ collapsed child branches and a “Background work” section for branches beneat
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
 breadcrumbs, their actual parent, live status and conversation, without a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
-the worker's current work. Approval and interaction responses are not yet implemented.
+the worker's current work. Pending operations have native Accept/Reject review forms;
+question responses remain unimplemented.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -68,8 +69,12 @@ No automatic work retries occur.
 **Send** also supports follow-ups while the worker is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
 uncertain submission is never retried automatically. **Stop** preserves unsent
-text; closing the page is not Stop. A pending approval or interaction remains
-pending with an explicit notice, never an automatic decision.
+text; closing the page is not Stop. An approval names its requesting worker and
+shows the exact operation and review evidence. Choose Accept or Reject for every
+presented operation, then **Submit decisions**. Nothing is preselected. Refresh
+rediscovers pending work; stale or uncertain decisions require **Reconnect** and
+are never automatically retried. Unimplemented interactions remain pending with
+an explicit notice, never an automatic decision.
 
 Messages follow HttpAgent's order. Reasoning, calls and results use native collapsed
 disclosures; opening one does not start work. Markdown is sanitized, raw HTML stays
@@ -171,7 +176,7 @@ and WebKit. Install the test browsers with `npx playwright install chromium fire
 if necessary. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference is involved. Separate journeys exercise
-the shipped read-only worker page without injecting an SDK or mocking AG-UI.
+the shipped worker page and native input/review forms without injecting an SDK or mocking AG-UI.
 It exercises synchronization, observer/control handoff with one SDK history,
 admitted work surviving request abortion, navigation and page close, explicit
 cancellation, approval interruption and rediscovery,

@@ -45,7 +45,9 @@ export default async function startModel() {
                 })}\n\n`);
                 const reasoning = `Considering ${lifecycle}.`;
                 frame({ reasoning_content: reasoning });
-                if (lifecycle.startsWith("held-") || ((lifecycle === "conversation" || lifecycle.startsWith("execution-")) && visit === 1)) {
+                if ((lifecycle.startsWith("held-") && (!lifecycle.startsWith("held-approval-") || visit === 1))
+                    || ((lifecycle === "conversation" || lifecycle.startsWith("execution-")) && visit === 1)
+                    || (lifecycle.startsWith("approval-resumed-") && visit === 2)) {
                     assert.ok(!pending.has(lifecycle), "a lifecycle request is not duplicated");
                     const release = Promise.withResolvers();
                     pending.set(lifecycle, release);
@@ -54,7 +56,8 @@ export default async function startModel() {
                     pending.delete(lifecycle);
                 }
                 if (!response.destroyed) {
-                    const content = lifecycle.startsWith("approval") && visit === 1 ? "```sh\nprintf approved\n```"
+                    const content = lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
+                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? "```sh\nprintf approved\n```"
                         : lifecycle === "conversation" && visit === 1
                             ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (worker://user/identity.md) <1,2>\n```"
                         : lifecycle.startsWith("execution-") && visit === 1

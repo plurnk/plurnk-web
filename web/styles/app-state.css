@@ -13,6 +13,11 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
+/* {§web-worker-approval} No review is implied by an empty or unsupported interrupt set. */
+[aria-label="Review operations"][data-proposal-count="0"] {
+    display: none;
+}
+
 /* {§web-worker-observer} Failed connections expose native recovery, never stale live indicators. */
 #worker-status:not([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]) > article,
 #worker-status:not([data-connection="signed-out"]) [data-sign-in],

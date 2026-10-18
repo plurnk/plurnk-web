@@ -288,7 +288,7 @@ stateDiagram-v2
     Connecting --> Disconnected: refusal / transport failure
     Connected --> Disconnected: shutdown / transport failure
     Connected --> Interrupted: input required
-    Interrupted --> Connecting: explicit reconnect / Stop
+    Interrupted --> Connecting: explicit review / reconnect / Stop
     Disconnected --> Connecting: explicit reconnect
     Connecting --> SignedOut: sign-in refused
     Connected --> SignedOut: credential revoked
@@ -321,8 +321,20 @@ belong to {§web-worker-input}; neither is a consequence of observation.
 | Admission | The daemon's `status.inbox`, user-message snapshot or user-message arrival confirms acceptance by message ID; local SDK insertion never does. Acceptance precedes model observation: queued follow-ups remain discoverable during inference, after reconnect and after cancellation before observation. Their eventual arrival retains the same ID and does not repeat text. |
 | Draft | Prevent another submission until acceptance or explicit rediscovery after a failed delivery. Clear the submitted text only if the textarea still contains it, preserving newer typing. A refusal or uncertain connection failure retains the draft, explains uncertainty and requires explicit reconnection before another submission. Reattachment may confirm acceptance; absence is not proof of refusal, so a deliberate unchanged retry retains its idempotency key. No automatic resend, browser persistence or guarantee across full reloads is implied. |
 | Stop | Explicit submission invokes public `loop.cancel` for the same thread through an independent management Run, with no conversation messages. Its acknowledgement requests cancellation; only worker status/terminal events establish the outcome. Stop preserves unsent text, targets no unrelated worker, and is unavailable without known live work. A pending follow-up does not prevent stopping already-running work. |
-| Interrupt | Retain the SDK's pending interrupt and call evidence, stop automatic observation, and explain that this page cannot answer approvals or interactions yet. Send is unavailable until rediscovery or settlement; explicit Stop remains available for live work on this worker. Never synthesize a decision or advertise an unimplemented question tool. |
+| Interrupt | Retain the SDK's pending interrupts and call evidence and stop automatic observation. Proposals use {§web-worker-approval}; unsupported interactions remain pending with an explicit notice. Send is unavailable until rediscovery or settlement; explicit Stop remains available for live work on this worker. Never synthesize a decision or advertise an unimplemented question tool. |
 | Failure and departure | Request failure is visible, never a successful send or cancellation. Refresh, navigation, page close and delivery handoff only release browser resources: they cannot cancel admitted work. No message or cancellation is automatically resubmitted after reconnect. |
+
+## §web-worker-approval Explicit operation review
+
+| Boundary | Contract |
+|---|---|
+| Authority | The current HttpAgent's `pendingInterrupts` supplies the complete presented set. `metadata.plurnk.proposal` supplies daemon-owned review facts. No client approval registry, permission rules, inferred ownership, or reconstruction from conversation calls. A delegated proposal need not have a `toolCallId` on its owner's thread. |
+| Document | One document-owned native form, a fieldset per operation, and required Accept/Reject radio choices with neither selected. Show the requesting worker, operation, target and exact body; retain the complete proposal in a native details disclosure. All review facts are literal text, never Markdown, executable controls or application bindings. |
+| Decision | Only explicit submission sends the complete presented set in one standard HttpAgent `resume` to `/agui`, retaining its opaque interrupt IDs and current thread. Each entry has resolved status and the chosen decision. No new message, approval tool, synthetic tool result, body editing or automatic choice. The daemon owns validation, settlement and the operation's actual result. |
+| Handoff | Disable review during submission, then follow the ordinary SDK conversation and outcomes. A subsequent gate is a new review with unselected choices; otherwise return to passive observation. Keep unsent message text. Stop remains explicit cancellation of the page's worker, not rejection of a proposal or cancellation of another requesting worker. |
+| Refresh and concurrency | Reconnection rediscovers current gates and fresh continuations. Never replay unsubmitted choices after refresh or retry a decision automatically. A stale, expired, refused or uncertain submission is visible and requires explicit rediscovery; no failure means acceptance. Concurrent tabs are settled at most once by the daemon. |
+| Departure | Refresh, navigation, page close and lost delivery cannot reject a proposal, cancel work or undo an accepted decision. They release browser delivery only. |
+| Unsupported sets | If any presented interrupt is not a review proposal, do not submit a partial set or guess its response schema. Explain that the interaction is not implemented and leave it pending. Declare no question tool until its interface exists. |
 
 ## §web-worker-conversation Conversation projection
 
@@ -553,7 +565,7 @@ worker page is exercised separately under {§web-worker-observer}, without SDK i
 | Disconnect | After admission, aborting the submitting SDK request, navigating away or closing its page ends delivery only. Observers and fresh connections retain the same work, message identities, natural completion and reported usage; no duplicate prompt or inference. Transport closure is not a worker outcome. |
 | Explicit cancellation | The public `loop.cancel` action requests cancellation. Submitter and observers receive the daemon's cancelled terminal result; request abortion alone proves no cancellation. Unreported usage stays unknown. The shipped Stop form uses that action under {§web-worker-input}. |
 | Transport handoff | One official SDK history can detach passive observation, submit a new message through Run, and return to observation. Retained history is not admitted as new input; replay retains identities and call/result correspondence. Neither transport role owns the worker's lifetime. |
-| Approval | Native interrupts refer to the gated operation's call and carry review facts in `metadata.plurnk.proposal`; no approval tool declaration is needed. Leaving the submitting page neither resolves nor cancels a pending gate; reconnection rediscovers it. SDK resume yields the operation's actual result, not a decision acknowledgement. A different owner or consumed interrupt cannot resolve the gate. The shipped page never answers approvals. |
+| Approval | Native interrupts carry review facts in `metadata.plurnk.proposal`, with a call reference only when that conversation is present. No approval tool declaration is needed. Leaving the submitting page neither resolves nor cancels a pending gate; reconnection rediscovers it. SDK resume yields the operation's actual result, not a decision acknowledgement. A different owner or consumed interrupt cannot resolve the gate. The shipped native forms use {§web-worker-approval}. |
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |
 | Credentials | Real password/PKCE sign-in, browser access, expiry, concurrent refresh and revocation compose with the SDK. Revocation terminates admitted connections without cancelling their workers. |
 

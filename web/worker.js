@@ -2,6 +2,9 @@ import { $, on, the } from "on_the_money";
 import WorkerAgent, { randomUUID } from "./worker-agent.js";
 import { elapsed, gauges } from "./worker-status.js";
 import conversation from "./conversation.js";
+import approvals from "./worker-approval.js";
+
+/** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
 // {§web-worker-observer} Repaint at the elapsed label's whole-second precision; no network polling.
 const ELAPSED_TICK_MS = 1000;
@@ -15,6 +18,7 @@ export default function observeWorker(element) {
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
     const controls = $.clone("#main", "#worker-controls");
+    const review = approvals(controls);
     const compose = $(controls, "#worker-compose");
     const stop = $(controls, "#worker-stop");
     const field = $(controls, "#worker-message");
@@ -41,6 +45,7 @@ export default function observeWorker(element) {
             sendUnavailable: current === "connected" && (!pending || pending.retryable) && !cancellation ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
         });
+        the(review.form, "review-unavailable", current === "interrupted" && !cancellation ? null : "");
     }
 
     /** @param {string} current @param {string} label */
@@ -76,8 +81,8 @@ export default function observeWorker(element) {
         availability();
     }
 
-    /** @param {AbortController} controller @param {{id: string, role: "user", content: string}} [message] */
-    async function follow(controller, message) {
+    /** @param {AbortController} controller @param {Submission} [submission] */
+    async function follow(controller, submission) {
         const { signal } = controller;
         const timer = setInterval(() => {
             if (the(element, "connection") === "connected" && status) the(element, "elapsed", elapsed(status, Date.now()));
@@ -85,12 +90,13 @@ export default function observeWorker(element) {
         try {
             while (!signal.aborted) {
                 connection("connecting", "Connecting…");
-                if (!message) agent = new WorkerAgent({ url: "/agui/connect", threadId });
+                if (!submission) agent = new WorkerAgent({ url: "/agui/connect", threadId });
+                if (!submission?.resume) review.present([]);
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
-                agent.url = message ? "/agui" : "/agui/connect";
+                agent.url = submission ? "/agui" : "/agui/connect";
                 agent.abortController = controller;
-                if (message) agent.addMessage(message);
+                if (submission?.message) agent.addMessage(submission.message);
                 let terminal = false;
                 let interrupted = false;
                 /** @type {number | undefined} */
@@ -106,7 +112,7 @@ export default function observeWorker(element) {
                     onMessagesSnapshotEvent: ({ event }) => {
                         if (signal.aborted || !pending) return;
                         if (event.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
-                        else if (!message) {
+                        else if (!submission) {
                             pending.retryable = true;
                             the(controls, { messageStatus: "Delivery remains unconfirmed. You may retry this draft.", commandError: "" });
                             availability();
@@ -133,16 +139,17 @@ export default function observeWorker(element) {
                         else refusal = event.message;
                     },
                 };
-                if (message) await agent.runAgent({ abortController: controller, forwardedProps: { plurnk: { interactive: true } } }, subscriber);
+                if (submission) await agent.runAgent({ abortController: controller, resume: submission.resume, forwardedProps: { plurnk: { interactive: true } } }, subscriber);
                 else await agent.connectAgent({}, subscriber);
                 signal.throwIfAborted();
                 if (interrupted) {
+                    const supported = review.present(agent.pendingInterrupts);
                     connection("interrupted", "Input required");
-                    the(element, "connection-detail", "This page cannot answer approvals or interactions yet. Work remains pending.");
+                    the(element, "connection-detail", supported ? "Review the pending operations below." : "This page cannot answer this interaction yet. Work remains pending.");
                     return;
                 }
                 if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });
-                message = undefined;
+                submission = undefined;
             }
         } catch (error) {
             if (signal.aborted) return;
@@ -151,27 +158,31 @@ export default function observeWorker(element) {
             const guidance = signedOut ? "Sign in to connect to this worker again." : "Displayed values are no longer live. Reconnect to check the worker.";
             the(element, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
             if (pending) the(controls, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
+            if (submission?.resume) the(controls, { messageStatus: "", commandError: `Approval could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         } finally {
             clearInterval(timer);
             agent.headers = {};
         }
     }
 
-    /** @param {{id: string, role: "user", content: string}} [message] */
-    function connect(message) {
+    /** @param {Submission} [submission] */
+    function connect(submission) {
         const previous = delivery;
         previous?.controller.abort();
         const controller = new AbortController();
         connection("connecting", "Connecting…");
         delivery = { controller, done: (async () => {
             await previous?.done;
-            if (!controller.signal.aborted) await follow(controller, message);
+            if (!controller.signal.aborted) await follow(controller, submission);
         })() };
     }
 
     on(element, "submit", "#worker-reconnect", (event) => {
         event.preventDefault();
-        if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) connect();
+        if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) {
+            the(controls, "command-error", "");
+            connect();
+        }
     });
     on(compose, "input", "textarea", () => draft.setCustomValidity(""));
     on(compose, "submit", "form", (event) => {
@@ -186,7 +197,16 @@ export default function observeWorker(element) {
             : { id: randomUUID(), role: /** @type {const} */ ("user"), content: draft.value };
         pending = { message, retryable: false };
         the(controls, { messageStatus: "Sending…", commandError: "" });
-        connect(message);
+        connect({ message });
+    });
+
+    on(review.form, "submit", "form", (event) => {
+        event.preventDefault();
+        if (the(review.form, "review-unavailable") !== null || the(review.form, "proposal-count") === "0") return;
+        const resume = review.decisions(agent.pendingInterrupts);
+        if (!resume) return;
+        the(controls, { messageStatus: "", commandError: "" });
+        connect({ resume });
     });
 
     on(stop, "submit", "form", async (event) => {

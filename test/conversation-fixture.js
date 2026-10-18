@@ -6,13 +6,13 @@ import Documents from "../ai.plurnk/documents.js";
 import { privateHeaders } from "../ai.plurnk/http.js";
 
 // A component fixture using the real document and browser modules, not a second HTML implementation.
-export default async function conversationFixture() {
+export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url)) {
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, type]) =>
         [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), type }])));
     const { output } = await build({
         logLevel: "error",
-        build: { write: false, rolldownOptions: { input: fileURLToPath(new URL("./conversation-entry.js", import.meta.url)) } },
+        build: { write: false, rolldownOptions: { input: fileURLToPath(entryURL) } },
     });
     for (const entry of output) assets.set(`/${entry.fileName}`, {
         body: entry.type === "chunk" ? entry.code : entry.source,
@@ -20,6 +20,8 @@ export default async function conversationFixture() {
     });
     const entry = output.find((entry) => entry.type === "chunk" && entry.isEntry);
     const template = assets.get("/index.html").body.toString()
+        // The component entry has its own module graph, not the production entry's preloads.
+        .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
         .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
     const documents = new Documents(template);
     const document = await documents.read({ kind: "worker", workspace: "conversation", worker: "user" }, {
