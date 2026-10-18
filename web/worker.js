@@ -1,7 +1,10 @@
 import { $, on, the } from "on_the_money";
-import WorkerAgent from "./worker-agent.js";
+import WorkerAgent, { randomUUID } from "./worker-agent.js";
 import { elapsed, gauges } from "./worker-status.js";
 import conversation from "./conversation.js";
+
+// {§web-worker-observer} Repaint at the elapsed label's whole-second precision; no network polling.
+const ELAPSED_TICK_MS = 1000;
 
 /** {§web-worker-observer} {§web-worker-input} Delivery changes never own the worker's lifetime.
  * @param {HTMLElement} element
@@ -50,9 +53,15 @@ export default function observeWorker(element) {
     async function credentials(signal) {
         if (auth === "none") return {};
         const response = await fetch("/auth/token", { method: "POST", signal });
-        if (!response.ok) throw Object.assign(new Error("Access credential unavailable."), { status: response.status });
-        const token = await response.json();
-        if (token.token_type !== "Bearer" || typeof token.access_token !== "string" || !token.access_token) {
+        if (!response.ok) throw Object.assign(new Error(`Access credential request failed (${response.status}).`), { status: response.status });
+        let token;
+        try {
+            token = await response.json();
+        } catch (cause) {
+            // A JSON parser's message may contain credential bytes; preserve it only as the cause.
+            throw new Error("Access credential response is not valid JSON.", { cause });
+        }
+        if (!token || token.token_type !== "Bearer" || typeof token.access_token !== "string" || !token.access_token) {
             throw new Error("Invalid access credential response.");
         }
         return { Authorization: `Bearer ${token.access_token}` };
@@ -72,7 +81,7 @@ export default function observeWorker(element) {
         const { signal } = controller;
         const timer = setInterval(() => {
             if (the(element, "connection") === "connected" && status) the(element, "elapsed", elapsed(status, Date.now()));
-        }, 1000);
+        }, ELAPSED_TICK_MS);
         try {
             while (!signal.aborted) {
                 connection("connecting", "Connecting…");
@@ -86,6 +95,8 @@ export default function observeWorker(element) {
                 let interrupted = false;
                 /** @type {number | undefined} */
                 let problem;
+                /** @type {string | undefined} */
+                let refusal;
                 /** @type {import("@ag-ui/client").AgentSubscriber} */
                 const subscriber = {
                     onMessagesChanged: ({ messages }) => { if (!signal.aborted) present(messages); },
@@ -119,6 +130,7 @@ export default function observeWorker(element) {
                         terminal = details?.terminal !== undefined;
                         problem = details?.problem?.status;
                         if (terminal) the(controls, "command-error", event.message);
+                        else refusal = event.message;
                     },
                 };
                 if (message) await agent.runAgent({ abortController: controller, forwardedProps: { plurnk: { interactive: true } } }, subscriber);
@@ -129,14 +141,15 @@ export default function observeWorker(element) {
                     the(element, "connection-detail", "This page cannot answer approvals or interactions yet. Work remains pending.");
                     return;
                 }
-                if (!terminal) throw Object.assign(new Error("Delivery ended without a worker outcome."), { status: problem });
+                if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });
                 message = undefined;
             }
         } catch (error) {
             if (signal.aborted) return;
             const signedOut = Reflect.get(Object(error), "status") === 401;
             connection(signedOut ? "signed-out" : "disconnected", signedOut ? "Sign-in ended" : "Disconnected");
-            the(element, "connection-detail", signedOut ? "Sign in to connect to this worker again." : "Displayed values are no longer live. Reconnect to check the worker.");
+            const guidance = signedOut ? "Sign in to connect to this worker again." : "Displayed values are no longer live. Reconnect to check the worker.";
+            the(element, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
             if (pending) the(controls, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
         } finally {
             clearInterval(timer);
@@ -170,7 +183,7 @@ export default function observeWorker(element) {
             return;
         }
         const message = pending?.message.content === draft.value ? pending.message
-            : { id: crypto.randomUUID(), role: /** @type {const} */ ("user"), content: draft.value };
+            : { id: randomUUID(), role: /** @type {const} */ ("user"), content: draft.value };
         pending = { message, retryable: false };
         the(controls, { messageStatus: "Sending…", commandError: "" });
         connect(message);

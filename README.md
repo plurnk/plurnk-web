@@ -139,6 +139,9 @@ cache workspace data, or provide offline operation. Browser and OS support varie
 
 ## Development
 
+Read [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, configuration and verification
+boundaries. Web follows the platform's engineering discipline through public contracts.
+
 ```sh
 npm ci --no-audit --no-fund
 npm run dev

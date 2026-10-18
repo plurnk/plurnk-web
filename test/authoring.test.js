@@ -38,7 +38,7 @@ test("{§web-language} source-only HTML passes the shipped OTM linter without a 
 
 test("{§web-authoring} browser lint admits native forms and rejects replacement mechanisms", async () => {
     const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
-    const source = 'import { on, the } from "on_the_money"; on("form", "submit", "form", (event, form) => { event.preventDefault(); submit(the.form(form)); });';
+    const source = 'import { on, the } from "on_the_money"; on("form", "submit", "form", (event, form) => { event.preventDefault(); the(form, the.form(form)); });';
     const [valid] = await lint.lintText(source, { filePath: "web/authoring-specimen.js" });
     assert.deepEqual(valid.messages, []);
     for (const [code, rule] of [
@@ -52,4 +52,49 @@ test("{§web-authoring} browser lint admits native forms and rejects replacement
         const [result] = await lint.lintText(code, { filePath: "web/authoring-specimen.js" });
         assert.ok(result.messages.some(({ ruleId, severity }) => ruleId === rule && severity === 2), `${rule}: ${JSON.stringify(result.messages)}`);
     }
+});
+
+test("{§web-authoring} all owned JavaScript is checked without imposing browser rules on Node", async () => {
+    const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
+    for (const filePath of ["ai.plurnk/specimen.js", "web/specimen.js", "scripts/specimen.mjs", "test/specimen.js", "vite.config.js"]) {
+        for (const [code, rule] of [
+            ['var value = 1; console.log(value);', "no-var"],
+            ['let value = 1; console.log(value);', "prefer-const"],
+            ['try { throw new Error("failed"); } catch (error) {}', "no-empty"],
+            ['unbound();', "no-undef"],
+        ]) {
+            const [result] = await lint.lintText(code, { filePath });
+            assert.ok(result.messages.some(({ ruleId, severity }) => ruleId === rule && severity === 2), `${filePath} ${rule}: ${JSON.stringify(result.messages)}`);
+        }
+    }
+    for (const [filePath, code] of [
+        ["ai.plurnk/specimen.js", 'import { readFile } from "node:fs/promises"; await readFile(new URL("assets.json", import.meta.url));'],
+        ["web/specimen.js", 'console.log(document.documentElement.lang);'],
+        ["test/specimen.js", 'const browser = { evaluate: (fn) => fn() }; await browser.evaluate(() => document.title); console.log(process.version);'],
+    ]) {
+        const [result] = await lint.lintText(code, { filePath });
+        assert.deepEqual(result.messages, [], filePath);
+    }
+    const [browser] = await lint.lintText('console.log(process.env);', { filePath: "web/specimen.js" });
+    assert.ok(browser.messages.some(({ ruleId }) => ruleId === "no-undef"), "browser code has no Node environment");
+});
+
+test("{§web-authoring} runtime timers need an owner, not a blanket ban on numbers", async () => {
+    const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
+    for (const filePath of ["ai.plurnk/specimen.js", "web/specimen.js"]) {
+        const [timer] = await lint.lintText('setInterval(() => console.log("tick"), 1000);', { filePath });
+        assert.ok(timer.messages.some(({ ruleId }) => ruleId === "no-restricted-syntax"), filePath);
+        const [named] = await lint.lintText('const DISPLAY_SECOND_MS = 1000; setInterval(() => console.log("tick"), DISPLAY_SECOND_MS);', { filePath });
+        assert.deepEqual(named.messages, [], filePath);
+        const [units] = await lint.lintText('console.log(Date.now() / 1000);', { filePath });
+        assert.deepEqual(units.messages, [], "unit conversions are mechanisms");
+    }
+});
+
+test("{§web-browser-security} browser SDK imports cannot bypass schema initialization", async () => {
+    const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
+    const [result] = await lint.lintText('import { randomUUID } from "@ag-ui/client"; console.log(randomUUID());', { filePath: "web/specimen.js" });
+    assert.ok(result.messages.some(({ ruleId }) => ruleId === "no-restricted-imports"));
+    const [valid] = await lint.lintText('import { randomUUID } from "./worker-agent.js"; console.log(randomUUID());', { filePath: "web/specimen.js" });
+    assert.deepEqual(valid.messages, []);
 });

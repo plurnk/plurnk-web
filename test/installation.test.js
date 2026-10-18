@@ -88,20 +88,19 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     });
     const withDaemon = async (overrides, verify) => {
         const daemon = await start(overrides);
-        let failure;
+        const failures = [];
         try {
             await verify(new URL("/", daemon.url).href, daemon);
         } catch (error) {
-            failure = error;
-            throw error;
-        } finally {
-            try {
-                assert.deepEqual(await daemon.stop(), { code: 0, signal: null }, daemon.stderr());
-            } catch (error) {
-                if (failure !== undefined) throw new AggregateError([failure, error], "Verification and daemon cleanup failed", { cause: failure });
-                throw error;
-            }
+            failures.push(error);
         }
+        try {
+            assert.deepEqual(await daemon.stop(), { code: 0, signal: null }, daemon.stderr());
+        } catch (error) {
+            failures.push(error);
+        }
+        if (failures.length === 1) throw failures[0];
+        if (failures.length > 1) throw new AggregateError(failures, "Verification and daemon cleanup failed", { cause: failures[0] });
     };
 
     await t.test("{§web-host} discovery, default floor and route precedence", async (discovery) => {

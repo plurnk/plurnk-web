@@ -587,6 +587,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await daemon.stop();
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
                     assert.equal(await card.isVisible(), true);
+                    assert.match(await card.innerText(), /The PLURNK service is shutting down\./u, "the protocol failure is retained, not replaced with generic transport closure");
                     assert.equal(model.requests.length, 2);
                     assert.deepEqual(model.errors, []);
                     checkBrowser();
