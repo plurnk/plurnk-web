@@ -538,8 +538,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(requests.some((request) => /worker-.*\.js|\/auth\/token|\/agui/u.test(request.url())), false, "directory navigation needs no worker runtime");
                     await page.goto(new URL("/~/observer-approval@user/", proxy.url).href);
                     await connection(page, "interrupted");
-                    assert.equal(await page.getByRole("form", { name: "Review operations", exact: true }).isVisible(), true);
-                    assert.equal(await page.locator('[data-proposals] input:checked').count(), 0, "passive discovery chooses nothing");
+                    assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
+                    assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "passive discovery chooses nothing");
                     assert.equal(model.requests.length, 1, "the approval remains pending");
                     assert.equal(requests.filter((request) => new URL(request.url()).pathname === "/agui/connect").length, 1);
                     assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);

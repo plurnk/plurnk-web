@@ -1,8 +1,8 @@
 import { $, on, the } from "on_the_money";
-import WorkerAgent, { randomUUID } from "./worker-agent.js";
+import WorkerAgent, { interactionTools, randomUUID } from "./worker-agent.js";
 import { elapsed, gauges } from "./worker-status.js";
 import conversation from "./conversation.js";
-import approvals from "./worker-approval.js";
+import reviewRequests from "./worker-review.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -18,7 +18,7 @@ export default function observeWorker(element) {
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
     const controls = $.clone("#main", "#worker-controls");
-    const review = approvals(controls);
+    const review = reviewRequests(controls);
     const compose = $(controls, "#worker-compose");
     const stop = $(controls, "#worker-stop");
     const field = $(controls, "#worker-message");
@@ -139,13 +139,13 @@ export default function observeWorker(element) {
                         else refusal = event.message;
                     },
                 };
-                if (submission) await agent.runAgent({ abortController: controller, resume: submission.resume, forwardedProps: { plurnk: { interactive: true } } }, subscriber);
+                if (submission) await agent.runAgent({ abortController: controller, resume: submission.resume, tools: interactionTools, forwardedProps: { plurnk: { interactive: true } } }, subscriber);
                 else await agent.connectAgent({}, subscriber);
                 signal.throwIfAborted();
                 if (interrupted) {
-                    const supported = review.present(agent.pendingInterrupts);
+                    const supported = review.present(agent.pendingInterrupts, agent.messages);
                     connection("interrupted", "Input required");
-                    the(element, "connection-detail", supported ? "Review the pending operations below." : "This page cannot answer this interaction yet. Work remains pending.");
+                    the(element, "connection-detail", supported ? "Review the pending requests below." : "This page cannot answer this interaction. Work remains pending.");
                     return;
                 }
                 if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });
@@ -158,7 +158,7 @@ export default function observeWorker(element) {
             const guidance = signedOut ? "Sign in to connect to this worker again." : "Displayed values are no longer live. Reconnect to check the worker.";
             the(element, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
             if (pending) the(controls, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
-            if (submission?.resume) the(controls, { messageStatus: "", commandError: `Approval could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            if (submission?.resume) the(controls, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         } finally {
             clearInterval(timer);
             agent.headers = {};
@@ -200,13 +200,18 @@ export default function observeWorker(element) {
         connect({ message });
     });
 
-    on(review.form, "submit", "form", (event) => {
+    on(review.form, "submit", "form", async (event) => {
         event.preventDefault();
-        if (the(review.form, "review-unavailable") !== null || the(review.form, "proposal-count") === "0") return;
-        const resume = review.decisions(agent.pendingInterrupts);
-        if (!resume) return;
-        the(controls, { messageStatus: "", commandError: "" });
-        connect({ resume });
+        if (the(review.form, "review-unavailable") !== null || the(review.form, "request-count") === "0") return;
+        const current = agent;
+        const reading = review.decisions(current.pendingInterrupts);
+        the(review.form, "review-unavailable", "");
+        try {
+            const resume = await reading;
+            if (!resume || current !== agent || cancellation || the(element, "connection") !== "interrupted") return;
+            the(controls, { messageStatus: "", commandError: "" });
+            connect({ resume });
+        } finally { availability(); }
     });
 
     on(stop, "submit", "form", async (event) => {

@@ -22,6 +22,7 @@ import verifyTokens from "./tokens-browser.js";
 import verifyWorkerPage from "./worker-browser.js";
 import verifyWorkerInput from "./worker-input.js";
 import verifyWorkerApproval from "./worker-approval.js";
+import verifyWorkerQuestions from "./worker-questions.js";
 import verifyStaticAssets from "./static-assets.js";
 
 const run = promisify(execFile);
@@ -230,6 +231,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     await verifyWorkerPage({ t, withDaemon });
     await verifyWorkerInput({ t, withDaemon });
     await verifyWorkerApproval({ t, withDaemon });
+    await verifyWorkerQuestions({ t, withDaemon });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
         for (const value of ["0", "invalid"]) {
