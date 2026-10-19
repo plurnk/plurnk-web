@@ -63,6 +63,18 @@ Dependency code stays behind its owning boundary. Bundle locally, load optional
 renderers on demand, and retain licenses. A framework-specific requirement does
 not justify weakening CSP or adding a compatibility system.
 
+### Accepted development dependency exposure
+
+The build-only Stylelint → micromatch → braces chain retains
+[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), a
+stack-exhaustion risk from deeply nested glob patterns. The lint command supplies
+the repository-owned `web/styles/*.css` pattern; these packages are absent from
+the production dependency graph and browser bundle. Keep normal audit reporting
+without a fork, override or suppression. Reassess when the upstream chain changes
+or a consumer begins accepting untrusted patterns. This accepts the bounded
+development exposure, not the dependency's correctness; [#9](https://repo.possumtech.com/plurnk/plurnk-web/issues/9)
+retains the investigation and dependency evidence.
+
 ## Failure and lifetime
 
 An expected boundary failure retains the user's draft or readable source and
