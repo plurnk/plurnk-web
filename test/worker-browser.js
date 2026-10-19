@@ -518,10 +518,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
         } finally { await model.close(); }
     });
 
-    await t.test("{§web-worker-observer} passive pages leave approvals undecided and expose network loss and shutdown", async () => {
+    await t.test("{§web-worker-observer} manual-mode pages leave approvals undecided and expose network loss and shutdown", async () => {
         const model = await startModel();
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base, daemon) => {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base, daemon) => {
                 const run = await controller(base, undefined, prompt("approval"));
                 const parameters = { forwardedProps: { plurnk: { workspace: "observer-approval" } } };
                 await run.runAgent(parameters);

@@ -8,6 +8,7 @@ export default class Documents {
     #beforeMain;
     #afterMain;
     #home;
+    #yolo;
 
     /** {§web-authorization-style} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -20,8 +21,9 @@ export default class Documents {
         return path;
     }
 
-    /** @param {string} document */
-    constructor(document) {
+    /** @param {string} document @param {boolean} yolo */
+    constructor(document, yolo) {
+        this.#yolo = yolo;
         const parts = document.split(/<main\b[^>]*>|<\/main>/u);
         if (parts.length !== 3) throw new Error("The web document must contain exactly one main element.");
         const title = parts[0].split(/<title\b[^>]*>|<\/title>/u);
@@ -165,8 +167,9 @@ export default class Documents {
         const fields = [["lifecycle", "Worker"], ["loop", "Loop"], ["turns", "Turns"], ["elapsed", "Elapsed"],
             ["requests", "Requests"], ["input", "Input tokens"], ["output", "Output tokens"], ["cost", "Cost (USD)"]];
         return `<section id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
-            + ` data-auth="${authenticated ? "session" : "none"}" data-connection="initial">`
+            + ` data-auth="${authenticated ? "session" : "none"}" data-yolo="${this.#yolo ? "1" : "0"}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
+            + `<p><span data-i18n="approval-mode">Approvals:</span> <span data-text="approval-mode">${this.#yolo ? "Automatic" : "Manual"}</span></p>`
             + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}</dl>`
             + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
             + '<p data-text="connection-detail">Displayed values are no longer live.</p>'

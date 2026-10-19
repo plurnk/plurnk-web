@@ -5,6 +5,19 @@ import Documents from "../ai.plurnk/documents.js";
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({ id, name, parentWorkerId, origin, owner });
 
+test("{§web-worker-approval} the worker document projects its resolved approval mode", async () => {
+    for (const yolo of [true, false]) {
+        const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo);
+        const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+            listWorkers: async () => [worker(9, "user")],
+        }, false)).toString();
+        assert.ok(html.includes(`data-yolo="${yolo ? "1" : "0"}"`));
+        assert.ok(html.includes(`<span data-text="approval-mode">${yolo ? "Automatic" : "Manual"}</span>`));
+        assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
+    }
+});
+
 test("{§web-authorization-style} the compiled head names one origin-relative application stylesheet", () => {
     assert.equal(Documents.stylesheet('<head><link rel="modulepreload" href="/worker.js"><link crossorigin href="/assets/app.css" rel="stylesheet"></head><template><link rel="stylesheet" href="/other.css"></template>'), "/assets/app.css");
     for (const head of ["", '<link rel="stylesheet" href="/a.css"><link rel="stylesheet" href="/b.css">']) {
@@ -16,7 +29,7 @@ test("{§web-authorization-style} the compiled head names one origin-relative ap
 });
 
 test("{§web-worker-conversation} only a worker document supplies the passive conversation outlet", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false);
     const port = {
         listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
         listWorkers: async () => [worker(9, "user")],
@@ -32,7 +45,7 @@ test("{§web-worker-conversation} only a worker document supplies the passive co
 });
 
 test("{§web-worker-observer} readable names never select the worker's live thread identity", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false);
     for (const name of ["~/project", "42#alice", "renamed workspace"]) {
         const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, {
             listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null }],
@@ -45,7 +58,7 @@ test("{§web-worker-observer} readable names never select the worker's live thre
 });
 
 test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish workspace names from literal daemon folder labels", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false);
     for (const [name, project_root, project_label, icon, label, separateFolder] of [
         ["~/looks-like-a-folder", null, null, "☁️", "Folderless workspace", false],
         ["~/project", "/home/daemon/project", "~/project", "📁", "Project workspace", false],
@@ -82,7 +95,7 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
 });
 
 test("{§web-worker-directory} model lineage is complete, collapsed and independent of names and approval owners", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false);
     const workers = [
         worker(1, "_plurnk", null, "_plurnk"),
         worker(6, "review", 4, "model", "agui://owner"),
@@ -123,7 +136,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
 });
 
 test("{§web-worker-directory} empty and internal-only workspaces have no empty navigation controls", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false);
     for (const workers of [[], [worker(1, "_plurnk", null, "_plurnk")], [worker(3, "user")]]) {
         const html = (await document.read({ kind: "workspace", workspace: "work" }, {
             listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers,
@@ -135,7 +148,7 @@ test("{§web-worker-directory} empty and internal-only workspaces have no empty 
 });
 
 test("{§web-worker-directory} inconsistent topology fails rather than dropping workers", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false);
     for (const [workers, message] of [
         [[worker(1, "first"), worker(1, "second")], "Worker directory contains duplicate identities."],
         [[worker(1, "missing", 2)], "Worker 1 has an absent parent 2."],
@@ -149,7 +162,7 @@ test("{§web-worker-directory} inconsistent topology fails rather than dropping 
 });
 
 test("{§web-directory-documents} workspace markers describe folder presence without interpreting names", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false);
     const html = (await document.read({ kind: "daemon" }, {
         listWorkspaces: async () => [
             { id: 1, name: "~/looks-like-a-folder", project_root: null, project_label: null },
@@ -173,7 +186,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
         },
         listWorkers: async (id) => { calls.push(id); return [worker(1, "user")]; },
     };
-    const document = new Documents(`<!doctype html><title>Plurnk</title><header>${navigation}</header><main>Home</main><script src="/app.js"></script>`);
+    const document = new Documents(`<!doctype html><title>Plurnk</title><header>${navigation}</header><main>Home</main><script src="/app.js"></script>`, false);
     const index = (await document.read({ kind: "daemon" }, port, true)).toString();
     assert.match(index, /<ul><li><span role="img" aria-label="Folderless workspace">☁️<\/span> <a href="\/~\/~\/a%26%3Cscript%3E%40%22b\/"/u);
     assert.match(index, /~\/a&amp;&lt;script&gt;@&quot;b/u);
@@ -195,7 +208,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
 
 test("{§web-directory-documents} a broken document outlet fails at load", () => {
     for (const html of ["", "<main>unclosed", "<main>a</main><main>b</main>"]) {
-        assert.throws(() => new Documents(html), /exactly one main element/u);
+        assert.throws(() => new Documents(html, false), /exactly one main element/u);
     }
 });
 
@@ -205,7 +218,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
         listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null }],
         listWorkers: async () => [worker(1, "user")],
     };
-    const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" tabindex="-1" data-page="home">Home</main></body></html>`);
+    const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" tabindex="-1" data-page="home">Home</main></body></html>`, false);
     const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, port, true)).toString();
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
@@ -217,7 +230,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
 });
 
 test("{§web-page-shell} empty lists and request failures are useful native documents", async () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false);
     const port = { listWorkspaces: async () => [], listWorkers: async () => [] };
     const empty = (await document.read({ kind: "daemon" }, port, false)).toString();
     assert.match(empty, /<title[^>]*>Workspaces — Plurnk<\/title>/u);
@@ -240,21 +253,21 @@ test("{§web-page-shell} empty lists and request failures are useful native docu
 
 test("{§web-page-shell} a missing or duplicate document title fails at load", () => {
     for (const html of ["<main>Home</main>", "<title>A</title><title>B</title><main>Home</main>"]) {
-        assert.throws(() => new Documents(html), /exactly one title element/u);
+        assert.throws(() => new Documents(html, false), /exactly one title element/u);
     }
-    assert.throws(() => new Documents('<title>Plurnk</title><main>Home</main>'), /exactly one session-navigation template/u);
+    assert.throws(() => new Documents('<title>Plurnk</title><main>Home</main>', false), /exactly one session-navigation template/u);
 });
 
 test("{§web-page-shell} an absent or ambiguous breadcrumb insertion boundary fails at load", () => {
     for (const closing of ["", "</header></header>"]) {
-        assert.throws(() => new Documents(`<title>Plurnk</title><header>${navigation}${closing}<main></main>`), {
+        assert.throws(() => new Documents(`<title>Plurnk</title><header>${navigation}${closing}<main></main>`, false), {
             name: "Error", message: "The web document must close its header once after session navigation and before main.",
         });
     }
 });
 
 test("{§web-account} Account offers native navigation without a fictional profile or inline session inventory", () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`);
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false);
     const html = document.account().toString();
     assert.match(html, /<title[^>]*>Account — Plurnk<\/title>/u);
     assert.match(html, /<article[\s\S]*<h1[^>]*>Account<\/h1>/u);
@@ -263,7 +276,7 @@ test("{§web-account} Account offers native navigation without a fictional profi
 });
 
 test("{§web-account} Sessions renders authority facts in a native table without invented device facts", () => {
-    const document = new Documents('<title>Plurnk</title><header><template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template></header><main>Home</main>');
+    const document = new Documents('<title>Plurnk</title><header><template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template></header><main>Home</main>', false);
     const html = document.sessions({ family: "current", sessions: [
         { family: "current", createdAt: 0, expiresAt: 60_000, clients: ["browser", "plurnk-web"] },
         { family: "other&family", createdAt: 1000, expiresAt: 61_000, clients: ["browser", "a<script>"] },

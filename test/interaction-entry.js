@@ -3,12 +3,12 @@ import reviewRequests from "../web/worker-review.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
 const controls = $.clone("#main", "#worker-controls");
-const review = reviewRequests(controls);
+const review = reviewRequests(controls, false);
 let interrupts = [];
 window.responses = [];
 window.review = (values, messages) => {
     interrupts = values;
-    const supported = review.present(values, messages);
+    const supported = review.present(values, messages) === "manual";
     the(review.form, "review-unavailable", supported ? null : "");
     return supported;
 };

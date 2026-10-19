@@ -3,14 +3,15 @@ import reviewRequests from "../web/worker-review.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
 const controls = $.clone("#main", "#worker-controls");
-const review = reviewRequests(controls);
+const review = reviewRequests(controls, new URL(location.href).searchParams.get("yolo") === "1");
 let interrupts = [];
 window.responses = [];
-window.review = (values) => {
+window.review = async (values, messages) => {
     interrupts = values;
-    const supported = review.present(values);
-    the(review.form, "review-unavailable", supported ? null : "");
-    return supported;
+    const mode = review.present(values, messages);
+    the(review.form, "review-unavailable", mode === "manual" ? null : "");
+    if (mode === "automatic") window.responses.push(await review.decisions(interrupts));
+    return mode !== "unsupported";
 };
 on(review.form, "submit", "form", async (event) => {
     event.preventDefault();
