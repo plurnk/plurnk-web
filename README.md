@@ -77,7 +77,8 @@ Choose Accept or Reject for every presented operation, then **Submit responses**
 neither choice is preselected. Questions and MCP input always need a human answer.
 Other authorized clients can settle the same request; every view withdraws the
 answered controls and follows the work. Refresh rediscovers what remains pending.
-Failed or uncertain decisions are reported, never automatically retried;
+An answer overtaken by another answer is reported as refused while observation
+continues. Failed or uncertain decisions are reported, never automatically retried;
 an actual connection failure requires **Reconnect**. Unimplemented interactions remain pending with
 an explicit notice, never an automatic decision.
 

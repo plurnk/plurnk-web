@@ -536,18 +536,20 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     page.on("request", (request) => requests.push(request));
                     await page.goto(new URL("/~/", proxy.url).href);
                     assert.equal(requests.some((request) => /worker-.*\.js|\/auth\/token|\/agui/u.test(request.url())), false, "directory navigation needs no worker runtime");
+                    const holding = page.waitForResponse((response) => new URL(response.url()).pathname === "/agui/connect"
+                        && response.request().postDataJSON().forwardedProps?.plurnk?.interrupts?.length > 0);
                     await page.goto(new URL("/~/observer-approval@user/", proxy.url).href);
                     await connection(page, "interrupted");
+                    await holding;
                     assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
                     assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "passive discovery chooses nothing");
                     assert.equal(model.requests.length, 1, "the approval remains pending");
-                    assert.equal(requests.filter((request) => new URL(request.url()).pathname === "/agui/connect").length, 1);
+                    assert.equal(requests.filter((request) => new URL(request.url()).pathname === "/agui/connect").length, 2, "discovery then one held observation");
                     assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);
                     for (const request of requests) assert.equal(request.headers().authorization, undefined);
                     await run.runAgent({ ...parameters, resume: [{ interruptId: run.pendingInterrupts[0].id, status: "resolved", payload: { decision: "accept" } }] });
                     assert.equal(run.pendingInterrupts.length, 0);
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed approval.");
-                    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "completed");
                     await connected(page);
                     assert.equal(model.requests.length, 2);

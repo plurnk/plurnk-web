@@ -3,7 +3,6 @@ import { HttpAgent } from "@ag-ui/client";
 import { inputPage } from "./worker-input.js";
 import { answerSchema, exactAnswer } from "./question-fixture.js";
 import startMcp from "./mcp-fixture.js";
-import { httpFailure } from "./browser-diagnostics.js";
 
 const interrupted = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -102,15 +101,16 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
                 seen.push(id);
             }
             await submit(page);
-            await page.waitForFunction((ids) => {
+            const observed = await page.waitForFunction((ids) => {
                 const status = document.querySelector("#worker-status");
                 const state = status?.dataset.connection;
                 const next = [...document.querySelectorAll("[data-question]")].map((row) => row.dataset.interruptId);
-                return ["disconnected", "signed-out"].includes(state)
+                const settled = ["disconnected", "signed-out"].includes(state)
                     || (state === "connected" && status.dataset.lifecycle === "completed")
                     || (state === "interrupted" && next.length > 0 && JSON.stringify(next) !== JSON.stringify(ids));
+                return settled ? state : null;
             }, ids);
-            assert.ok(["interrupted", "connected"].includes(await page.locator("#worker-status").getAttribute("data-connection")),
+            assert.ok(["interrupted", "connected"].includes(await observed.jsonValue()),
                 `every issued complete presentation must be answerable: ${await page.locator('[data-text="command-error"]').textContent()}`);
         }
         await page.getByText("Completed question-batch.", { exact: true }).waitFor();
@@ -197,11 +197,12 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await answer(page);
         const logout = await context.request.post(new URL("/auth/logout", base).href, { headers: { Origin: new URL(base).origin }, maxRedirects: 0 });
         assert.equal(logout.status(), 303);
-        await submit(page);
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "signed-out");
+        assert.match(await page.locator('[data-text="connection-detail"]').textContent(), /credential.*revoked/iu);
+        assert.equal(await review(page).getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(requests.length, 1, "no unauthenticated resume is sent");
         assert.equal(model.requests.length, 1);
-        checkBrowser([httpFailure("/auth/token", 401)]);
+        checkBrowser();
         await page.getByRole("link", { name: "Sign in", exact: true }).click();
         await page.getByLabel("Password", { exact: true }).fill("compose-password");
         await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -245,7 +246,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await childPage.goto(path.replace("@user/", "@child/"));
         await childPage.getByText("Completed held-question-child.", { exact: true }).waitFor();
         assert.deepEqual(JSON.parse((await questionResult(childPage)).content), { action: "accept", content: exactAnswer });
-        assert.equal(model.requests.length, 3);
+        assert.equal(model.requests.length, 3, JSON.stringify(model.requests.map(({ messages }) => messages.map(({ role, content }) => ({ role, content: String(content).slice(-1200) })))));
         assert.equal(await page.locator('[data-message-role="user"]').count(), 1, "the child request does not admit a new owner prompt");
         checkBrowser();
     }));

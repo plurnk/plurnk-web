@@ -17,17 +17,19 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
     const names = ['~/repo with space/@%2F/<script>&"', "folderless", "/root//project/", "分析", "%2E%2E", `~/project/${"long-name-".repeat(12)}`];
     const projectRoot = join(consumer, "directory-project");
     const homeFolders = [
-        [join(consumer, "..", "home", 'project @<draft>&"'), null],
-        [join(consumer, "..", "home", "renamed-project"), "renamed workspace"],
+        ['project @<draft>&"', null],
+        ["renamed-project", "renamed workspace"],
     ];
     await mkdir(projectRoot);
-    for (const [folder] of homeFolders) await mkdir(folder);
     await mkdir(fixture);
     await writeFile(join(fixture, "package.json"), JSON.stringify({
         name: "@plurnk/web-directory-fixture", version: "1.0.0", type: "module",
         exports: { "./module": "./module.js" }, plurnk: { kind: "module", module: "./module" },
     }));
-    await writeFile(join(fixture, "module.js"), `export default { mounts: ["/__fixture"], async start(port) {
+    await writeFile(join(fixture, "module.js"), `import { mkdir } from "node:fs/promises";
+    import { homedir } from "node:os";
+    import { join } from "node:path";
+    export default { mounts: ["/__fixture"], async start(port) {
         for (const name of ${JSON.stringify(names)}) {
             const existing = (await port.listWorkspaces()).find((workspace) => workspace.name === name);
             const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
@@ -49,7 +51,9 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 await port.createWorker({ workspaceId, name: "background-peer", parentWorkerId: runtime });
             }
         }
-        for (const [projectRoot, name] of ${JSON.stringify(homeFolders)}) {
+        for (const [folder, name] of ${JSON.stringify(homeFolders)}) {
+            const projectRoot = join(homedir(), folder);
+            await mkdir(projectRoot, { recursive: true });
             const existing = (await port.listWorkspaces()).find((workspace) => workspace.project_root === projectRoot);
             const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
             if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
