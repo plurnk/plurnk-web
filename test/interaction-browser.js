@@ -27,9 +27,16 @@ export default async function verifyInteractions(t) {
                         choice: { type: "string", enum: ["", "other"], enumNames: ["Empty value", "Free response"] },
                         optional: { type: "string" },
                     }, required: ["text", "count", "enabled", "choice"], additionalProperties: false };
-                    assert.equal(await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), request(schema)), true,
+                    const attributed = request(schema);
+                    attributed.interrupts[0].metadata = { plurnk: { interaction: {
+                        interactionId: 1, workerId: 23, loopId: 7, turnId: 9, recipient: "agui://owner",
+                        request: { toolName: "question", arguments: {}, responseSchema: schema },
+                    } } };
+                    assert.equal(await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), attributed), true,
                         "a schema-shaped question is a supported SDK interrupt");
                     const form = page.getByRole("form", { name: "Review requests", exact: true });
+                    assert.equal(await form.locator("[data-request-origin]").isVisible(), true);
+                    assert.equal(await form.locator('[data-text="request-worker"]').textContent(), "23");
                     await form.getByRole("textbox", { name: "Exact text", exact: true }).fill("  keep this\nverbatim  ");
                     await form.getByRole("spinbutton", { name: "count", exact: true }).fill("0");
                     await form.getByRole("combobox", { name: "enabled", exact: true }).selectOption("false");
@@ -41,6 +48,7 @@ export default async function verifyInteractions(t) {
                     } }]);
 
                     assert.equal(await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), request(schema)), true);
+                    assert.equal(await form.locator("[data-request-origin]").isVisible(), false, "generic questions need no Plurnk metadata");
                     await form.getByRole("checkbox", { name: "Cancel this request", exact: true }).check();
                     await form.getByRole("button", { name: "Submit responses", exact: true }).click();
                     await page.waitForFunction(() => window.responses.length === 2);
@@ -85,12 +93,14 @@ export default async function verifyInteractions(t) {
                     const injected = '<script>window.schemaExecuted=true</script><form action="/auth/logout">';
                     const unsafe = request({ $ref: "https://schema.invalid/not-fetched.json", description: injected });
                     unsafe.interrupts[0].message = injected;
+                    unsafe.interrupts[0].metadata = { plurnk: { interaction: { workerId: injected } } };
                     unsafe.messages[0].toolCalls[0].function.arguments = injected;
                     const external = [];
                     page.on("request", (network) => { if (new URL(network.url()).hostname === "schema.invalid") external.push(network.url()); });
                     await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), unsafe);
                     assert.equal(await form.locator('[data-text="request-message"]').textContent(), injected);
                     assert.equal(await form.locator('[data-text="request-arguments"]').textContent(), injected);
+                    assert.equal(await form.locator('[data-text="request-worker"]').textContent(), injected);
                     assert.equal(await form.locator("script, form").count(), 0);
                     await json.fill("{}");
                     await form.getByRole("button", { name: "Submit responses", exact: true }).click();

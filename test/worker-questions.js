@@ -236,6 +236,10 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         model.release("held-question-child");
         await interrupted(page);
         assert.equal(await review(page).isVisible(), true);
+        assert.equal(await review(page).locator('[data-text="request-worker"]').textContent(), String(result.result.workerId));
+        await page.reload();
+        await interrupted(page);
+        assert.equal(await review(page).locator('[data-text="request-worker"]').textContent(), String(result.result.workerId), "rediscovery retains the requesting child's identity");
         assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isDisabled(), true);
         await answer(page);
         await submit(page);

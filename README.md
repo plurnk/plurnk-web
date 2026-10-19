@@ -76,7 +76,8 @@ rediscovers pending work; stale or uncertain decisions require **Reconnect** and
 are never automatically retried. Unimplemented interactions remain pending with
 an explicit notice, never an automatic decision.
 
-Questions show their request and full response schema. Simple fields use native
+Questions show their request, full response schema, and requesting worker ID when
+the daemon supplies it. Simple fields use native
 controls; nested or conditional answers use an **Answer (JSON)** editor without
 discarding schema rules. Optional fields have an inclusion checkbox. Answers are
 validated before submission and by the daemon; local errors preserve your input.

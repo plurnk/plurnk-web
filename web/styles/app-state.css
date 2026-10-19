@@ -21,6 +21,7 @@ header nav button:is(:hover, :focus-visible) {
 /* {§web-worker-questions} Omission and diagnostics are explicit document state. */
 [data-field-optional="false"] > [data-optional-answer],
 [data-field-description=""] > [data-text="field-description"],
+[data-request-worker=""] [data-request-origin],
 [data-question][data-response-error=""] > [data-response-error] {
     display: none;
 }

@@ -34,9 +34,11 @@ export default function reviewRequests(controls) {
                 if (facts === undefined) {
                     const call = calls.find(({ id }) => id === interrupt.toolCallId);
                     if (!call || !interrupt.responseSchema) throw new Error("Question interrupt has no request contract.");
+                    const interaction = /** @type {import("@plurnk/plurnk-contracts").ClientInteractionProjection | undefined} */ (interrupt.metadata?.plurnk?.interaction);
                     const row = $.clone(list, "#worker-question");
                     the(row, {
                         interruptId: interrupt.id,
+                        requestWorker: interaction?.workerId ?? "",
                         requestTool: call.function.name,
                         requestMessage: interrupt.message ?? "Provide the requested input.",
                         requestArguments: call.function.arguments,
