@@ -24,6 +24,8 @@ export default async function verifyWorkerDirectory(page, workspace) {
         assert.deepEqual(await backgroundSection.locator(":scope > ul > li > a").allTextContents(), background.map(({ name }) => name));
     }
     for (const worker of models) {
+        assert.equal(await entry(worker).locator(':scope > small > [data-text="worker-kind"]').textContent(), worker.kind);
+        assert.equal(await entry(worker).locator(':scope > small > [data-text="worker-lifecycle"]').textContent(), worker.lifecycle);
         const parent = parentOf(worker);
         const enclosing = await link(worker).evaluate((element) => element.parentElement.parentElement.closest("li")?.querySelector(":scope > a")?.getAttribute("href") ?? null);
         assert.equal(enclosing, parent?.origin === "model" ? path(parent) : null, `${worker.name}: immediate model parent`);
@@ -91,6 +93,14 @@ export default async function verifyWorkerDirectory(page, workspace) {
     await link(evidence).click();
     assert.equal(new URL(page.url()).pathname, path(evidence));
     assert.equal(await page.locator("main > p").innerText(), "Parent: review");
+    const tree = page.locator("#worker-directory");
+    assert.equal(await tree.getAttribute("open"), null);
+    await tree.locator(":scope > summary").click();
+    assert.equal(await link(evidence).isVisible(), true, "the selected path is open, without a transcript subscription");
+    assert.equal(await link(evidence).getAttribute("aria-current"), "page");
+    assert.equal(await tree.locator('[aria-current="page"]').count(), 1);
+    assert.deepEqual((await tree.locator("li > a").allTextContents()).toSorted(), models.map(({ name }) => name).toSorted());
+    assert.equal(await tree.locator('nav > details').getAttribute("open"), null, "unrelated background branches stay collapsed");
     await page.locator("main > p").getByRole("link", { name: "review", exact: true }).click();
     assert.equal(new URL(page.url()).pathname, path(review));
     await page.goto(directory);
@@ -101,5 +111,8 @@ export default async function verifyWorkerDirectory(page, workspace) {
     await link(incoming).click();
     assert.equal(await page.locator("main > p").innerText(), "Parent: _plurnk");
     assert.equal(await page.locator("main > p > a").count(), 0);
+    await tree.locator(":scope > summary").click();
+    assert.equal(await link(incoming).isVisible(), true, "a selected background worker's branch opens too");
+    assert.equal(await link(incoming).getAttribute("aria-current"), "page");
     await page.goto(directory);
 }

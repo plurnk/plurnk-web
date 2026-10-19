@@ -3,6 +3,7 @@ import WorkerAgent, { interactionTools, randomUUID } from "./worker-agent.js";
 import { elapsed, gauges } from "./worker-status.js";
 import conversation from "./conversation.js";
 import reviewRequests from "./worker-review.js";
+import diagnostics from "./worker-diagnostics.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -35,6 +36,9 @@ export default function observeWorker(element) {
     const draft = field;
     the(controls, "message-status", "");
     const present = conversation(history);
+    const diagnosticList = $("#worker-diagnostics");
+    if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
+    const diagnose = diagnostics(diagnosticList);
     let agent = new WorkerAgent({ url: "/agui/connect", threadId });
     /** @type {import("@plurnk/plurnk-agui/client").AguiStatusState | undefined} */
     let status;
@@ -114,6 +118,7 @@ export default function observeWorker(element) {
                 let refusal;
                 /** @type {import("@ag-ui/client").AgentSubscriber} */
                 const subscriber = {
+                    onCustomEvent: async ({ event }) => { if (!signal.aborted) await diagnose(event); },
                     onMessagesChanged: ({ messages }) => { if (!signal.aborted) present(messages); },
                     onTextMessageStartEvent: ({ event }) => {
                         if (!signal.aborted && event.role === "user") acknowledged(event.messageId);

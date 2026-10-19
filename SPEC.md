@@ -259,9 +259,11 @@ workspace with a separate folder must not claim it is folderless.
 | Membership | Every `origin: model` worker appears once, regardless of owner, lifecycle or name spelling. The runtime bookkeeping worker has no directory row or worker page; its direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
 | Roots | Model workers with `parentWorkerId: null` form the primary list. |
 | Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
+| Row facts | Show the daemon's worker kind and lifecycle beside its name. These are directory facts at page load, not a locally inferred or continuously updated status. |
 | Background | Model workers with an immediate non-model parent begin branches in one collapsed “Background work” section. Omit it when empty. No A2A-specific classification or reparenting. |
 | Disclosure | Native nested `ul/li` lists. Each name is a real link; a separate `details/summary` shows the direct model-child count. Initially collapsed; leaves have no disclosure. Link navigation and disclosure are separate keyboard/pointer actions, including without JavaScript. |
 | Parent on worker page | Show the actual parent's name: a link for a model parent, escaped text for a bookkeeping parent. Roots omit the parent line. URL breadcrumbs remain workspace/worker navigation, not invented lineage paths. |
+| Tree on worker page | A native “Workers at page load” disclosure contains the same workspace tree. Mark the selected worker's link with `aria-current="page"`; open its branch and ancestor branches, including Background work when applicable. Other branches remain collapsed. This navigation snapshot neither requests descendant transcripts nor claims live topology. Native navigation obtains a fresh directory. |
 | Integrity | Duplicate identities, absent referenced parents and cyclic model parentage are internal contract failures; never silently omit or invent workers. |
 
 Rendering and expansion perform no attachment, inference, ownership change or
@@ -313,6 +315,15 @@ stateDiagram-v2
 Opening the page submits no message and cancels no work. Existing owner proposals
 may receive the configured response under {§web-worker-approval}. Message
 submission and explicit cancellation belong to {§web-worker-input}.
+
+## §web-worker-diagnostics Observed notices and Problems
+
+| Boundary | Contract |
+|---|---|
+| Intake | The current HttpAgent's `onCustomEvent` receives `plurnk.notice` and `plurnk.problem`. Validate each through its public contracts validator. Unknown custom events are not interpreted as diagnostics. These nonterminal events never change lifecycle, end observation, resume an interrupt or enter the SDK conversation. |
+| Document | A separate native list shows the producer's Notice severity/source/kind/message or the Problem's title/detail/recovery, with the exact payload in a details disclosure. All values are literal text, never Markdown, executable links or controls. Preserve supplied subagent attribution. Hide the section when it has no entries. |
+| Retention | The page retains distinct observed diagnostics across delivery changes and reconnects. An exact repeat of the event name, payload serialization and subagent attribution reuses its existing entry without closing an open disclosure. This is neither an occurrence count nor a durable diagnostic history: reload starts from what the daemon supplies again. No browser storage, transcript reconstruction or inferred error resolution. |
+| Authority | Notice severity is producer-supplied; an error-level Notice or nonterminal Problem is not a failed worker. Connection errors and operation results keep their existing owners. The diagnostic list does not claim to contain events from before attachment or from unobserved children. |
 
 ## §web-worker-input Message composer and explicit Stop
 

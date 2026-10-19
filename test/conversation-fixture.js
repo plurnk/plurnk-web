@@ -26,7 +26,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     const documents = new Documents(template, false);
     const document = await documents.read({ kind: "worker", workspace: "conversation", worker: "user" }, {
         listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null }],
-        listWorkers: async () => [{ id: 9, name: "user", parentWorkerId: null, origin: "model", owner: "_plurnk" }],
+        listWorkers: async () => [{ id: 9, name: "user", parentWorkerId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle" }],
     }, false);
     const server = createServer((request, response) => {
         const path = new URL(request.url, "http://fixture.invalid").pathname;

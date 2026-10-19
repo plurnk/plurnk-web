@@ -9,6 +9,7 @@ import { verifyMermaid, verifyUnavailableMermaid } from "./mermaid-browser.js";
 import verifyApproval from "./approval-browser.js";
 import verifyInteractions from "./interaction-browser.js";
 import verifyFootnotes from "./footnotes-browser.js";
+import verifyDiagnostics from "./diagnostics-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -277,6 +278,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
 });
 
 // One browser-test entry point owns browser lifetimes; checks retain cold documents.
+test("{§web-worker-diagnostics} public notices and Problems remain visible outside conversation", { timeout: 60_000 }, verifyDiagnostics);
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);

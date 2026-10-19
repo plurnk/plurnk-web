@@ -93,11 +93,11 @@ export default class Documents {
             + `<tbody>${entries}</tbody></table></figure>${others ? `<footer>${others}</footer>` : ""}</article>`, "account", true, breadcrumb);
     }
 
-    /** @param {string} label @param {import("./directory-addresses.js").Directory} directory */
-    #link(label, directory) {
+    /** @param {string} label @param {import("./directory-addresses.js").Directory} directory @param {boolean} [current] */
+    #link(label, directory, current = false) {
         const path = directoryPath(directory);
         return path === null ? `<span data-text="name">${escapeHtml(label)}</span>`
-            : `<a href="${escapeHtml(path)}" data-text="name">${escapeHtml(label)}</a>`;
+            : `<a href="${escapeHtml(path)}" data-text="name"${current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</a>`;
     }
 
     /** @param {string | null} projectRoot */
@@ -131,11 +131,17 @@ export default class Documents {
     /** {§web-worker-directory}
      * @param {string} workspace
      * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
+     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection} [selected]
      */
-    #workerTree(workspace, workers) {
+    #workerTree(workspace, workers, selected) {
         const models = [...workers.values()].filter(({ origin }) => origin === "model");
         if (models.length === 0) return '<p data-i18n="no-workers">No workers.</p>';
         const children = Map.groupBy(models, ({ parentWorkerId }) => parentWorkerId);
+        const lineage = new Set();
+        for (let worker = selected ?? null; worker !== null; worker = this.#parent(worker, workers)) {
+            if (lineage.has(worker.id)) throw new Error("Worker directory contains cyclic model parentage.");
+            lineage.add(worker.id);
+        }
         const background = models.filter((worker) => {
             const parent = this.#parent(worker, workers);
             return parent !== null && parent.origin !== "model";
@@ -146,13 +152,14 @@ export default class Documents {
             : `<ul>${entries.map((worker) => {
                 rendered++;
                 const descendants = children.get(worker.id) ?? [];
-                const link = this.#link(worker.name, { kind: "worker", workspace, worker: worker.name });
-                const disclosure = descendants.length === 0 ? "" : '<details><summary data-text="child-workers">'
+                const link = this.#link(worker.name, { kind: "worker", workspace, worker: worker.name }, worker.id === selected?.id);
+                const facts = ` <small><span data-text="worker-kind">${escapeHtml(worker.kind)}</span> · <span data-text="worker-lifecycle">${escapeHtml(worker.lifecycle)}</span></small>`;
+                const disclosure = descendants.length === 0 ? "" : `<details${lineage.has(worker.id) ? " open" : ""}><summary data-text="child-workers">`
                     + `${descendants.length} child worker${descendants.length === 1 ? "" : "s"}</summary>${list(descendants)}</details>`;
-                return `<li>${link}${disclosure}</li>`;
+                return `<li>${link}${facts}${disclosure}</li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
-        const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
+        const other = background.length === 0 ? "" : `<details${background.some(({ id }) => lineage.has(id)) ? " open" : ""}><summary data-i18n="background-work">Background work</summary>`
             + `${list(background)}</details>`;
         if (rendered !== models.length) throw new Error("Worker directory contains cyclic model parentage.");
         return roots + other;
@@ -176,6 +183,7 @@ export default class Documents {
             + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-i18n="sign-in">Sign in</a>`
             + '</p></article></section>'
+            + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ol></ol></section>'
             + '<section id="worker-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
             + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'
@@ -216,7 +224,9 @@ export default class Documents {
             ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
             : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
         const title = `${workspace.name}@${directory.worker}`;
+        const tree = '<details id="worker-directory"><summary data-i18n="workers-at-page-load">Workers at page load</summary>'
+            + `<nav aria-label="Workers">${this.#workerTree(workspace.name, byId, worker)}</nav></details>`;
         return render(title, (parent === null ? ""
-            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`) + this.#workerStatus(directory, workspace.id, authenticated));
+            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`) + tree + this.#workerStatus(directory, workspace.id, authenticated));
     }
 }
