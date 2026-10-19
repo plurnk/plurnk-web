@@ -1,11 +1,12 @@
 import { $, the } from "on_the_money";
 import markdown from "./markdown.js";
+import anchor from "./anchor.js";
 
 /** @typedef {import("@ag-ui/client").Message} Message */
 /** @typedef {NonNullable<import("@ag-ui/client").AssistantMessage["toolCalls"]>[number]} ToolCall */
 
 /** @param {string} id */
-const callId = (id) => `call-${encodeURIComponent(id)}`;
+const callId = (id) => anchor("call", id);
 
 /** {§web-working-notes} Interpret only a confirmed operation's complete display fields.
  * @param {ToolCall} call
@@ -34,15 +35,15 @@ export default function conversation(root) {
     /** @type {WeakMap<Element, {source: string, rich: boolean}>} */
     const painted = new WeakMap();
 
-    /** @param {Element} row @param {unknown} content @param {boolean} rich */
-    function body(row, content, rich) {
+    /** @param {Element} row @param {unknown} content @param {boolean} rich @param {string} scope */
+    function body(row, content, rich, scope) {
         const outlet = $(row, "[data-message-body]");
         if (!outlet) throw new Error("Message template has no content outlet.");
         const source = typeof content === "string" ? content : JSON.stringify(content, null, 2) ?? "";
         rich &&= typeof content === "string";
         const previous = painted.get(outlet);
         if (previous?.source === source && previous.rich === rich) return;
-        if (rich) outlet.replaceChildren(markdown(source));
+        if (rich) outlet.replaceChildren(markdown(source, scope));
         else {
             outlet.replaceChildren();
             if (source) the($.clone(outlet, "#conversation-literal"), "literalContent", source);
@@ -70,7 +71,7 @@ export default function conversation(root) {
             }
             the(item, { callId: call.id, callAnchor: callId(call.id), callName: call.function.name,
                 callArguments: call.function.arguments, callKind: kind, callAside: note?.aside ?? "" });
-            if (note) body(item, note.body, true);
+            if (note) body(item, note.body, true, `call-${call.id}`);
             if (container.children[index] !== item) container.insertBefore(item, container.children[index] ?? null);
         }
     }
@@ -107,9 +108,9 @@ export default function conversation(root) {
                 messageAuthor: "name" in message ? message.name ?? "" : "",
                 messageAttribution: message.subagentRunId ? `Subagent ${message.subagentRunId}` : "",
                 messageError: message.role === "tool" ? message.error ?? "" : "",
-                callHref: call ? `#${encodeURIComponent(callId(call.id))}` : "",
+                callHref: call ? `#${callId(call.id)}` : "",
             });
-            body(row, message.content, message.role !== "tool" && message.role !== "activity");
+            body(row, message.content, message.role !== "tool" && message.role !== "activity", `message-${message.id}`);
             tools(row, message.role === "assistant" ? message.toolCalls ?? [] : []);
             if (list.children[index] !== row) list.insertBefore(row, list.children[index] ?? null);
         }

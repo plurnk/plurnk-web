@@ -1,7 +1,8 @@
 node_modules/
 ai.plurnk/dist/
 ai.plurnk/assets.json
-web/public/vendor/
+web/public/vendor/*
+!web/public/vendor/MARKED-FOOTNOTE-LICENSE.txt
 web/styles/app-vendor.css
 web/public/icons/plurnk-maskable.svg
 *.tgz

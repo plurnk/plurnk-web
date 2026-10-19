@@ -6,7 +6,7 @@ import { setTimeout } from "node:timers/promises";
 import { HttpAgent } from "@ag-ui/client";
 import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
-import startModel, { contentAttack, diagramContent } from "./model-fixture.js";
+import startModel, { contentAttack, diagramContent, footnoteAnswer } from "./model-fixture.js";
 import disconnectProxy from "./disconnect-proxy.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
@@ -122,9 +122,14 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         assert.equal(args.body, "A **working fact**, not the answer.");
                         assert.equal(args.aside, "fact");
                         const id = await note.getAttribute("data-call-id");
-                        const href = `#${encodeURIComponent(`call-${encodeURIComponent(id)}`)}`;
+                        const anchor = await note.getAttribute("id");
+                        assert.ok(anchor);
+                        const href = `#${anchor}`;
                         const result = page.locator('[data-message-role="tool"]').filter({ has: page.locator(`[data-call-link] a[href="${href}"]`) });
                         assert.equal(await result.count(), 1, "the real correlated result remains in SDK order");
+                        await result.locator("summary").click();
+                        await result.locator("[data-call-link] a").click();
+                        assert.equal(await page.locator(":target").getAttribute("data-call-id"), id);
                         assert.ok(await page.locator('[data-message-role="assistant"] > article > [data-message-body]').filter({ hasText: "Completed notes." }).count());
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                         return notes.evaluateAll((items) => items.map((item) => item.dataset.callId));
@@ -134,6 +139,57 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await connected(page);
                     assert.deepEqual(await verify(), ids);
                     assert.equal(model.requests.length, 1, "replay starts no inference");
+                    assert.deepEqual(model.errors, []);
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
+    await t.test("{§web-footnote-content} packed SDK delivery and replay retain message-local native footnotes", async () => {
+        const model = await startModel();
+        try {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
+                const setup = await controller(base);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "footnotes", action: { kind: "worker.model.set", selector: "browser" } } } });
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    await page.goto(new URL("/~/footnotes@user/", base).href);
+                    await connected(page);
+                    const run = await controller(base, undefined, prompt("footnotes"));
+                    await run.runAgent({ forwardedProps: { plurnk: { workspace: "footnotes" } } });
+                    assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, footnoteAnswer);
+                    const verify = async () => {
+                        await connected(page);
+                        await page.waitForFunction(() => document.querySelectorAll('section[aria-label="Footnotes"]').length === 2);
+                        const answer = page.locator('[data-message-role="assistant"] > article > [data-message-body]').filter({ has: page.locator("section") });
+                        const note = page.locator('[data-call-kind="note"]');
+                        assert.equal(await note.locator(":scope > details").getAttribute("open"), null);
+                        assert.equal(JSON.parse(await note.locator("[data-text=call-arguments]").textContent()).body, footnoteAnswer);
+                        const ids = await page.locator("[data-message-body] [id]").evaluateAll((elements) => elements.map(({ id }) => id));
+                        assert.equal(ids.length, 10);
+                        assert.equal(new Set(ids).size, ids.length);
+                        for (const body of [answer, note.locator("[data-message-body]")]) {
+                            assert.deepEqual(await body.locator('section > ol > li > p:first-child').allTextContents(), ["First definition.", "Second definition."]);
+                            assert.equal(await body.locator("sup > a").count(), 3);
+                        }
+                        const reference = answer.locator("sup > a").nth(1);
+                        const referenceId = await reference.getAttribute("id");
+                        await reference.click();
+                        assert.equal(await answer.locator(":target").count(), 1, "navigation stays in the answer rather than the identical NOTE");
+                        await answer.getByRole("link", { name: "Back to reference 1.2", exact: true }).click();
+                        assert.equal(await page.locator(":target").getAttribute("id"), referenceId);
+                        assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "connected");
+                        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                        return ids;
+                    };
+                    const ids = await verify();
+                    await page.reload();
+                    assert.deepEqual(await verify(), ids);
+                    assert.equal(model.requests.length, 1, "navigation and replay do not start inference");
                     assert.deepEqual(model.errors, []);
                     checkBrowser();
                 } finally { await browser.close(); }
