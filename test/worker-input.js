@@ -4,8 +4,8 @@ import { chromium } from "playwright";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {} } = {}) {
-    const model = await startModel();
+export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {} } = {}) {
+    const model = await startModel(modelOptions);
     const secret = crypto.randomUUID();
     const workspace = `input-${crypto.randomUUID()}`;
     try {
@@ -35,10 +35,13 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                     await page.waitForURL(path);
                 }
                 await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-                try { await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers }); }
+                try { await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers, secret }); }
                 catch (cause) {
                     const document = page.isClosed() ? "Page closed" : await page.locator("main").textContent();
-                    throw new Error(`Worker journey failed: ${JSON.stringify({ document, modelErrors: model.errors.map(String) })}`, { cause });
+                    const message = `Worker journey failed: ${JSON.stringify({ document, modelErrors: model.errors.map(String) })}`;
+                    try { checkBrowser(); }
+                    catch (diagnostic) { throw new AggregateError([cause, diagnostic], message, { cause: diagnostic }); }
+                    throw new Error(message, { cause });
                 }
                 assert.deepEqual(model.errors, []);
             } finally { await browser.close(); }

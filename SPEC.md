@@ -553,6 +553,11 @@ document and its complete browser dependency graph, including OTM, Pico, HttpAge
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside candidate service archives in an isolated environment and exercises actual module
 discovery, routing and browser execution.
+Shared-client review verification installs the terminal client archive beside the
+same platform and web archives. A real PTY and headless terminal exercise both
+manual/YOLO choices against the browser; tests observe one execution, convergent
+results and withdrawn review controls, without another prompt or reconnection.
+These drivers are test tooling, not runtime dependencies or a client transport.
 
 Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-modules/SPEC.md),
 [Agent Plugins](https://agent-plugins.org/), and OTM's installed README.

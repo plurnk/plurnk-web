@@ -178,7 +178,7 @@ production server. Vite is development tooling only.
 `npm test` checks specification tags and witnesses using Plurnk's shared
 development checker, server and browser JavaScript, OTM's HTML/JavaScript/CSS
 contracts and the module, then packs and installs the plugin
-with packed platform packages in a temporary directory. These may be published
+with packed platform packages and the terminal client in a temporary directory. These may be published
 archives obtained with `npm pack` or locally built candidates. `test:candidate`
 installs their public type declarations without rewriting the lockfile,
 then runs the full gate with `PLURNK_WEB_TEST_PACKAGES` naming the archive directory.
@@ -190,6 +190,9 @@ if necessary. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference is involved. Separate journeys exercise
 the shipped worker page and native input/review forms without injecting an SDK or mocking AG-UI.
+Shared review journeys drive the installed terminal through a PTY alongside the
+browser, covering both clients' manual/YOLO combinations and either manual responder.
+The terminal emulator and PTY driver are test-only dependencies.
 It exercises synchronization, observer/control handoff with one SDK history,
 admitted work surviving request abortion, navigation and page close, explicit
 cancellation, approval and question interruption and rediscovery,
