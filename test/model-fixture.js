@@ -14,7 +14,7 @@ export const contentAttack = [
 
 export const diagramContent = "```mermaid\nflowchart LR\n Client --> Daemon\n```";
 
-export default async function startModel() {
+export default async function startModel({ approvalCommand = "printf approved" } = {}) {
     const requests = [];
     const errors = [];
     const pending = new Map();
@@ -58,7 +58,7 @@ export default async function startModel() {
                 }
                 if (!response.destroyed) {
                     const content = lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
-                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? "```sh\nprintf approved\n```"
+                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `\`\`\`sh\n${approvalCommand}\n\`\`\``
                         : lifecycle === "question-batch" && visit === 1 ? `${questionOperation}\n${questionOperation}`
                         : /^(question|held-question)-/u.test(lifecycle) && visit === 1 ? questionOperation
                         : lifecycle.startsWith("mcp-question-") && visit === 1 ? "```fixture (batch)\n{}\n```\n```WAIT\n```"

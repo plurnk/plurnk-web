@@ -9,6 +9,13 @@ import reviewRequests from "./worker-review.js";
 // {§web-worker-observer} Repaint at the elapsed label's whole-second precision; no network polling.
 const ELAPSED_TICK_MS = 1000;
 
+// {§web-worker-approval} These refusals require fresh observation, never replay of the answer.
+const SETTLED_INTERRUPTS = new Set([
+    "https://problems.plurnk.xyz/agui/interrupt/interrupt-not-pending",
+    "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
+    "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending",
+]);
+
 /** {§web-worker-observer} {§web-worker-input} Delivery changes never own the worker's lifetime.
  * @param {HTMLElement} element
  */
@@ -84,14 +91,15 @@ export default function observeWorker(element) {
     /** @param {AbortController} controller @param {Submission} [submission] */
     async function follow(controller, submission) {
         const { signal } = controller;
+        let holding = false;
         const timer = setInterval(() => {
-            if (the(element, "connection") === "connected" && status) the(element, "elapsed", elapsed(status, Date.now()));
+            if (["connected", "interrupted"].includes(the(element, "connection") ?? "") && status) the(element, "elapsed", elapsed(status, Date.now()));
         }, ELAPSED_TICK_MS);
         try {
             while (!signal.aborted) {
-                connection("connecting", "Connecting…");
-                if (!submission) agent = new WorkerAgent({ url: "/agui/connect", threadId });
-                if (!submission?.resume) review.present([]);
+                if (!holding) connection("connecting", "Connecting…");
+                if (!submission && !holding) agent = new WorkerAgent({ url: "/agui/connect", threadId });
+                if (!submission?.resume && !holding) review.present([]);
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
                 agent.url = submission ? "/agui" : "/agui/connect";
@@ -99,6 +107,7 @@ export default function observeWorker(element) {
                 if (submission?.message) agent.addMessage(submission.message);
                 let terminal = false;
                 let interrupted = false;
+                let settled = false;
                 /** @type {number | undefined} */
                 let problem;
                 /** @type {string | undefined} */
@@ -124,7 +133,7 @@ export default function observeWorker(element) {
                         status = next;
                         if (pending && next.inbox.some(({ id }) => id === pending?.message.id)) acknowledged(pending.message.id);
                         the(element, { ...gauges(next), elapsed: elapsed(next, Date.now()) });
-                        connection("connected", "Connected");
+                        if (!holding) connection("connected", "Connected");
                     },
                     onRunFinishedEvent: ({ outcome }) => {
                         terminal = outcome !== "interrupt";
@@ -132,17 +141,19 @@ export default function observeWorker(element) {
                     },
                     onRunErrorEvent: ({ event }) => {
                         if (signal.aborted) return;
-                        const details = /** @type {{plurnk?: {terminal?: unknown, problem?: {status: number}}} | undefined} */ (event.metadata)?.plurnk;
+                        const details = /** @type {{plurnk?: {terminal?: unknown, problem?: {status: number, type: string}}} | undefined} */ (event.metadata)?.plurnk;
                         terminal = details?.terminal !== undefined;
                         problem = details?.problem?.status;
+                        settled = problem === 409 && SETTLED_INTERRUPTS.has(details?.problem?.type ?? "");
                         if (terminal) the(controls, "command-error", event.message);
                         else refusal = event.message;
                     },
                 };
                 if (submission) await agent.runAgent({ abortController: controller, resume: submission.resume, tools: interactionTools, forwardedProps: { plurnk: { interactive: true } } }, subscriber);
-                else await agent.connectAgent({}, subscriber);
+                else await agent.connectAgent(holding ? { forwardedProps: { plurnk: { interrupts: agent.pendingInterrupts.map(({ id }) => id) } } } : {}, subscriber);
                 signal.throwIfAborted();
                 if (interrupted) {
+                    holding = false;
                     const mode = review.present(agent.pendingInterrupts, agent.messages);
                     if (mode === "automatic") {
                         const resume = await review.decisions(agent.pendingInterrupts);
@@ -152,9 +163,13 @@ export default function observeWorker(element) {
                     }
                     connection("interrupted", "Input required");
                     the(element, "connection-detail", mode === "manual" ? "Review the pending requests below." : "This page cannot answer this interaction. Work remains pending.");
-                    return;
+                    holding = true;
+                    submission = undefined;
+                    continue;
                 }
-                if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });
+                if (settled && submission?.resume) the(controls, "command-error", `Response not accepted: ${refusal}`);
+                else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });
+                holding = false;
                 submission = undefined;
             }
         } catch (error) {

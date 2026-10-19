@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { HttpAgent } from "@ag-ui/client";
 import { inputPage } from "./worker-input.js";
-import { httpFailure } from "./browser-diagnostics.js";
 
 const interrupted = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -130,12 +129,13 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         }, { authenticated: true }));
     }
 
-    await t.test("{§web-worker-approval} refresh rediscovers an unchosen proposal and a competing tab cannot apply its stale decision", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-worker-approval} shared views withdraw settled approval forms and follow work without manual reconnection", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-tabs");
         const other = await context.newPage();
         other.setDefaultTimeout(5000);
+        const otherRequests = requestsFrom(other);
         await other.goto(path);
         await interrupted(other);
         const before = await page.locator('[data-requests] > fieldset').getAttribute("data-interrupt-id");
@@ -148,18 +148,73 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-tabs.", { exact: true }).waitFor();
-        await other.getByRole("radio", { name: "Reject", exact: true }).check();
-        await other.getByRole("button", { name: "Submit responses", exact: true }).click();
-        await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
-        assert.match(await other.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*unknown interrupt presentation/u);
-        assert.equal(await other.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
-        assert.equal(model.requests.length, 2, "a stale rejection cannot undo the accepted operation or start another turn");
-        await other.getByRole("button", { name: "Reconnect", exact: true }).click();
         await other.getByText("Completed approval-tabs.", { exact: true }).waitFor();
         await connected(other);
         assert.equal(await other.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
         assert.equal(await other.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
         assert.equal(requests.length, 2);
+        assert.equal(model.requests.length, 2, "external settlement does not repeat execution or inference");
+        assert.equal(otherRequests.some(({ resume }) => resume?.length > 0), false, "the second view observes the decision; it does not answer again");
+        checkBrowser();
+    }, { authenticated: true }));
+
+    await t.test("{§web-worker-approval} held review retains unsent choices and live elapsed time without repeated presentations", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        const holds = [];
+        page.on("request", (request) => {
+            if (new URL(request.url()).pathname !== "/agui/connect") return;
+            const input = request.postDataJSON();
+            if (input.forwardedProps?.plurnk?.interrupts?.length) holds.push(input);
+        });
+        await requestApproval(page, "approval-held");
+        const id = await page.locator('[data-requests] > fieldset').getAttribute("data-interrupt-id");
+        await page.getByRole("radio", { name: "Reject", exact: true }).check();
+        await page.getByRole("textbox", { name: "Message", exact: true }).fill("Keep this draft while deciding.");
+        const elapsed = await page.locator('[data-text="elapsed"]').textContent();
+        await page.waitForFunction((before) => document.querySelector('[data-text="elapsed"]')?.textContent !== before, elapsed);
+        assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "interrupted");
+        assert.equal(await page.locator('[data-requests] > fieldset').getAttribute("data-interrupt-id"), id);
+        assert.equal(await page.getByRole("radio", { name: "Reject", exact: true }).isChecked(), true);
+        assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this draft while deciding.");
+        assert.equal(holds.length, 1, "one held connection, not a presentation/reconnect loop");
+        assert.deepEqual(holds[0].forwardedProps, { plurnk: { interrupts: [id] } });
+        assert.equal(holds[0].resume, undefined);
+        assert.equal(model.requests.length, 1, "waiting does not answer or run another inference");
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
+        await page.getByText("Completed approval-held.", { exact: true }).waitFor();
+        await connected(page);
+        assert.equal(model.requests.length, 2);
+        checkBrowser();
+    }));
+
+    await t.test("{§web-worker-approval} an answer overtaken in transit remains refused while the browser follows settled work", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+        await requestApproval(page, "approval-late");
+        const other = await context.newPage();
+        other.setDefaultTimeout(5000);
+        await other.goto(path);
+        await interrupted(other);
+        const requests = requestsFrom(other);
+        const sent = Promise.withResolvers();
+        await other.route("**/agui", (route) => { sent.resolve(route); }, { times: 1 });
+        await other.getByRole("radio", { name: "Reject", exact: true }).check();
+        await other.getByRole("button", { name: "Submit responses", exact: true }).click();
+        const delayed = await sent.promise;
+        await page.getByRole("radio", { name: "Accept", exact: true }).check();
+        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
+        await page.getByText("Completed approval-late.", { exact: true }).waitFor();
+        const refused = other.waitForResponse((response) => new URL(response.url()).pathname === "/agui");
+        await delayed.continue();
+        const events = (await (await refused).text()).split("\n\n").filter((frame) => frame.startsWith("data: ")).map((frame) => JSON.parse(frame.slice(6)));
+        const problem = events.find(({ type }) => type === "RUN_ERROR")?.metadata?.plurnk?.problem;
+        assert.equal(problem?.status, 409);
+        assert.equal(problem?.type, "https://problems.plurnk.xyz/agui/interrupt/interrupt-not-pending");
+        await other.getByText("Completed approval-late.", { exact: true }).waitFor();
+        await connected(other);
+        assert.match(await other.locator('[data-text="command-error"]').textContent(), /^Response not accepted: /u);
+        assert.equal(await other.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
+        assert.equal(requests.length, 1, "a refused decision is never retried");
+        assert.equal(requests[0].resume[0].payload.decision, "reject", "the refused answer differs from the accepted answer");
+        assert.equal(model.requests.length, 2, "only the accepted decision continues the model");
+        assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"));
         checkBrowser();
     }, { authenticated: true }));
 
@@ -353,16 +408,16 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
     await t.test("{§web-worker-approval} revoked browser authority cannot decide and fresh sign-in rediscovers the gate", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, base, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-revoked");
+        await page.getByRole("radio", { name: "Accept", exact: true }).check();
         const logout = await context.request.post(new URL("/auth/logout", base).href, { headers: { Origin: new URL(base).origin }, maxRedirects: 0 });
         assert.equal(logout.status(), 303);
-        await page.getByRole("radio", { name: "Accept", exact: true }).check();
-        await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "signed-out");
+        assert.match(await page.locator('[data-text="connection-detail"]').textContent(), /credential.*revoked/iu);
         assert.equal(await page.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(await page.getByRole("link", { name: "Sign in", exact: true }).isVisible(), true);
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 1, "no resume is sent without a fresh credential");
-        checkBrowser([httpFailure("/auth/token", 401)]);
+        checkBrowser();
         await page.getByRole("link", { name: "Sign in", exact: true }).click();
         await page.getByLabel("Password", { exact: true }).fill("compose-password");
         await page.getByRole("button", { name: "Continue", exact: true }).click();

@@ -23,6 +23,7 @@ import verifyWorkerPage from "./worker-browser.js";
 import verifyWorkerInput from "./worker-input.js";
 import verifyWorkerApproval from "./worker-approval.js";
 import verifyWorkerQuestions from "./worker-questions.js";
+import verifySharedReview from "./shared-review.js";
 import verifyStaticAssets from "./static-assets.js";
 
 const run = promisify(execFile);
@@ -70,17 +71,17 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
         assert.equal(path, "/~/~/project%20%40%25/index.html@user/");
         assert.deepEqual(parseDirectory(new URL(path, "https://example.test").pathname), directory);
     });
-    const start = (overrides = {}) => Launch.start({
+    const start = (overrides = {}, userHome = home) => Launch.start({
         command: [daemonBin, "start"],
         cwd: consumer,
         env: {
             PATH: process.env.PATH,
-            HOME: home,
-            XDG_CONFIG_HOME: join(home, ".config"),
-            XDG_DATA_HOME: join(home, ".local", "share"),
-            XDG_STATE_HOME: join(home, ".local", "state"),
-            XDG_CACHE_HOME: join(home, ".cache"),
-            XDG_RUNTIME_DIR: join(home, "run"),
+            HOME: userHome,
+            XDG_CONFIG_HOME: join(userHome, ".config"),
+            XDG_DATA_HOME: join(userHome, ".local", "share"),
+            XDG_STATE_HOME: join(userHome, ".local", "state"),
+            XDG_CACHE_HOME: join(userHome, ".cache"),
+            XDG_RUNTIME_DIR: join(userHome, "run"),
             ...overrides,
         },
         host: "127.0.0.1",
@@ -89,7 +90,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
         stopGraceMs: 10_000,
     });
     const withDaemon = async (overrides, verify) => {
-        const daemon = await start(overrides);
+        const daemon = await start(overrides, await mkdtemp(join(directory, "scenario-")));
         const failures = [];
         try {
             await verify(new URL("/", daemon.url).href, daemon);
@@ -232,6 +233,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     await verifyWorkerInput({ t, withDaemon });
     await verifyWorkerApproval({ t, withDaemon });
     await verifyWorkerQuestions({ t, withDaemon });
+    await verifySharedReview({ t, withDaemon, consumer });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
         for (const value of ["0", "invalid"]) {
