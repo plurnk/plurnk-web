@@ -1,14 +1,15 @@
 import { $, on, the } from "on_the_money";
 import WorkerAgent, { interactionTools, randomUUID } from "./worker-agent.js";
-import { elapsed, gauges } from "./worker-status.js";
+import { clocks } from "./worker-status.js";
+import workerState from "./worker-state.js";
 import conversation from "./conversation.js";
 import reviewRequests from "./worker-review.js";
 import diagnostics from "./worker-diagnostics.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
-// {§web-worker-observer} Repaint at the elapsed label's whole-second precision; no network polling.
-const ELAPSED_TICK_MS = 1000;
+// {§web-worker-status} Repaint elapsed and WAIT at whole-second precision; no network polling.
+const CLOCK_TICK_MS = 1000;
 
 // {§web-worker-approval} These refusals require fresh observation, never replay of the answer.
 const SETTLED_INTERRUPTS = new Set([
@@ -39,6 +40,7 @@ export default function observeWorker(element) {
     const diagnosticList = $("#worker-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
+    const presentState = workerState(element);
     let agent = new WorkerAgent({ url: "/agui/connect", threadId });
     /** @type {import("@plurnk/plurnk-agui/client").AguiStatusState | undefined} */
     let status;
@@ -97,8 +99,8 @@ export default function observeWorker(element) {
         const { signal } = controller;
         let holding = false;
         const timer = setInterval(() => {
-            if (["connected", "interrupted"].includes(the(element, "connection") ?? "") && status) the(element, "elapsed", elapsed(status, Date.now()));
-        }, ELAPSED_TICK_MS);
+            if (["connected", "interrupted"].includes(the(element, "connection") ?? "") && status) the(element, clocks(status, Date.now()));
+        }, CLOCK_TICK_MS);
         try {
             while (!signal.aborted) {
                 if (!holding) connection("connecting", "Connecting…");
@@ -133,11 +135,13 @@ export default function observeWorker(element) {
                         }
                     },
                     onStateChanged: ({ state }) => {
-                        const next = /** @type {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState}} */ (state).plurnk?.status;
-                        if (!next || signal.aborted) return;
+                        if (signal.aborted) return;
+                        const snapshot = /** @type {Parameters<typeof presentState>[0]} */ (state);
+                        presentState(snapshot, Date.now());
+                        const next = snapshot.plurnk?.status;
+                        if (!next) return;
                         status = next;
                         if (pending && next.inbox.some(({ id }) => id === pending?.message.id)) acknowledged(pending.message.id);
-                        the(element, { ...gauges(next), elapsed: elapsed(next, Date.now()) });
                         if (!holding) connection("connected", "Connected");
                     },
                     onRunFinishedEvent: ({ outcome }) => {

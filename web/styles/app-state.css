@@ -33,6 +33,14 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
+/* {§web-worker-identity} {§web-worker-status} Optional supplied facts, not guessed activity. */
+#worker-folder[data-project-label=""],
+#worker-status [data-preparation]:empty,
+#worker-inbox ol:empty,
+#worker-status [data-text="activity-message"]:empty {
+    display: none;
+}
+
 /* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
 #worker-diagnostics:not(:has(ol > li)),
 [data-diagnostic-message=""] [data-text="diagnostic-message"],

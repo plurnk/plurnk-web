@@ -8,14 +8,23 @@ import { build, createServer, preview } from "vite";
 import verifyDirectories from "./directories.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
+async function copySources(directory) {
+    const root = join(directory, "web");
+    await cp(new URL("../web/", import.meta.url), root, { recursive: true });
+    await mkdir(join(directory, "ai.plurnk"));
+    for (const name of ["directory-addresses.js", "index-document.js"]) {
+        await cp(new URL(`../ai.plurnk/${name}`, import.meta.url), join(directory, "ai.plurnk", name));
+    }
+    return root;
+}
+
 test("{§web-build} development reloads HTML and hot-updates CSS without the daemon", { timeout: 30_000 }, async () => {
     // Keep dependency resolution local while editing only a disposable source copy.
     const directory = await mkdtemp(new URL("../.vite-test-", import.meta.url));
     let server;
     let browser;
     try {
-        const root = join(directory, "web");
-        await cp(new URL("../web/", import.meta.url), root, { recursive: true });
+        const root = await copySources(directory);
         server = await createServer({
             configFile: fileURLToPath(new URL("../vite.config.js", import.meta.url)),
             root,
@@ -67,7 +76,7 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
     let compiled;
     let browser;
     try {
-        await cp(new URL("../web/", import.meta.url), root, { recursive: true });
+        await copySources(directory);
         const template = await readFile(join(root, "index.html"), "utf8");
         await writeFile(join(root, "index.html"), template.replace("</main>", '<a href="nested/?q=one%2Ftwo#greeting" data-i18n="child">Nested document</a></main>'));
         await mkdir(join(root, "nested"));
