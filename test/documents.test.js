@@ -111,7 +111,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     ];
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
-    const link = (name) => `<a href="/~/work@${name}/" data-text="name">${name}</a>`;
+    const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-worker-name="${name}" data-bind="href:worker-path">${name}</a>`;
     const facts = (kind) => ` <small><span data-text="worker-kind">${kind}</span> · <span data-text="worker-lifecycle">completed</span></small>`;
     const children = (count, list) => `<details><summary data-text="child-workers">${count} child worker${count === 1 ? "" : "s"}</summary><ul>${list}</ul></details>`;
     assert.ok(html.includes([
@@ -131,7 +131,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
         assert.equal(await document.read({ kind: "worker", workspace: "work", worker: internal.name }, port, false), null);
     }
     const child = (await document.read({ kind: "worker", workspace: "work", worker: "review" }, port, false)).toString();
-    assert.match(child, /<p><span data-i18n="parent-worker">Parent:<\/span> <a href="\/~\/work@user\/" data-text="name">user<\/a><\/p>/u);
+    assert.ok(child.includes(`<p><span data-i18n="parent-worker">Parent:</span> ${link("user")}</p>`));
     const background = (await document.read({ kind: "worker", workspace: "work", worker: "incoming" }, port, false)).toString();
     assert.match(background, /<p><span data-i18n="parent-worker">Parent:<\/span> <span data-text="name">_plurnk<\/span><\/p>/u);
     const root = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
@@ -152,7 +152,7 @@ test("{§web-worker-directory} worker-page navigation identifies the selected br
     for (const selected of ["parent", "child", "grandchild", "background-child"]) {
         const html = (await document.read({ kind: "worker", workspace: "work", worker: selected }, port, false)).toString();
         assert.match(html, /<details id="worker-directory"><summary[^>]*>Workers at page load<\/summary><nav aria-label="Workers">/u);
-        assert.ok(html.includes(`<a href="/~/work@${selected}/" data-text="name" aria-current="page">${selected}</a>`));
+        assert.ok(html.includes(`<a href="/~/work@${selected}/" data-text="name" data-worker-name="${selected}" data-bind="href:worker-path" aria-current="page">${selected}</a>`));
         const tree = html.split('<nav aria-label="Workers">')[1].split("</nav>")[0];
         assert.equal((tree.match(/aria-current="page"/gu) ?? []).length, 1);
         assert.equal((tree.match(/<details open>/gu) ?? []).length, selected === "parent" ? 1 : 2);
@@ -253,7 +253,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" tabindex="-1" data-page="worker">/u);
-    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
+    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template|<footer/iu);
     assert.equal(html.match(/<main\b/gu).length, 1);
     assert.doesNotMatch(html, /<h1\b/u, "the breadcrumb and document title identify the worker without a duplicate heading");

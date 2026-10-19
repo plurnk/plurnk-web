@@ -308,13 +308,35 @@ stateDiagram-v2
 | Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, ends the delivery; reconnect passively to watch subsequent work. A held observation may finish when its gate settles, before the worker concludes: only daemon status/terminal evidence establishes the worker outcome. A protocol/credential failure stops observation. An interrupt applies {§web-worker-input}: configured approval or explicit input required. Never retry work or infer completion from transport closure. |
 | Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card with the failure's diagnostic, retain clearly stale last-observed values, and offer a native Reconnect form. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
 | Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
-| Projection | `plurnk.status` is authoritative for lifecycle, latest loop, packet count and spend. Usage/cost cover the worker and descendants; absent values read “Unknown”, not zero or a known subtotal presented as a total. The browser keeps no accounting ledger or transcript cache. |
+| Projection | Public state supplies identity under {§web-worker-identity} and status under {§web-worker-status}. The browser keeps no accounting ledger, topology reconstruction or transcript cache. |
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
 | Presentation | Native definition list and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection status and errors are announced; the ticking elapsed value is not a live announcement. |
 
 Opening the page submits no message and cancels no work. Existing owner proposals
 may receive the configured response under {§web-worker-approval}. Message
 submission and explicit cancellation belong to {§web-worker-input}.
+
+## §web-worker-identity Current names, fixed observation
+
+| Boundary | Contract |
+|---|---|
+| Binding | The document's qualified thread ID is immutable for its lifetime. Workspace state must identify that same workspace; a different ID is a contract failure, not permission to retarget observation. |
+| Names and navigation | Each supplied workspace state refreshes the workspace breadcrumb, document title, project-folder label and workspace-relative navigation destinations using the shared directory codec. Worker names and page-load tree membership remain document facts. An idle connection does not discover a rename until the daemon supplies updated state or a new attachment snapshot. No polling or browser name registry. |
+| Folder | Apply {§web-workspace-folder} on worker pages too: compare the supplied name and folder label exactly, never abbreviate or resolve filesystem paths in the browser. |
+| Location | Keep the current URL and history unchanged. Current breadcrumb, worker-directory and parent links use the latest supplied workspace name; sign-in and reconnect destinations follow it too. An old URL still returns 404 after a rename, rather than becoming an identity alias. |
+
+## §web-worker-status Live worker and workspace facts
+
+| Surface | Projection |
+|---|---|
+| Worker | `plurnk.status`: lifecycle, resolved model alias and provider/model route, supplied effort and its source, latest loop, packet count, and alive **direct** children. A null model is “Not selected”; absent effort is “Unspecified”. No inferred subtree size, blocked-on-gate status or provider fallback. |
+| Clocks | Elapsed follows {§web-worker-observer}. WAIT shows the supplied absolute deadline and whole seconds remaining, rounded up and clamped to zero. A null deadline clears it. Expiry neither changes lifecycle nor claims that work has finished or resumed. Both clocks repaint only while connected or awaiting input, and freeze when delivery is unavailable. |
+| Packet gauges | Root `budget` supplies context occupancy/capacity and curation weight/budget. Preserve each number; absent or null fields are “Unknown”, including after a fresh snapshot. Do not substitute accounting totals, retain an older snapshot's budget, or derive a budget from model configuration. |
+| Accounting | Preserve daemon cumulative worker-and-descendant requests, usage and USD decimal strings. A native details table exposes reported total/input/output, uncached/cache-read/cache-write and text/reasoning token quantities. Missing complete quantities stay “Unknown”; independently supplied known subtotals have their own column, never promoted to totals. Omit a redundant subtotal when that complete field is known. No summing, cost estimation, rounding or inferred token partitions. |
+| Workspace preparation | `plurnk.workspace.preparation` supplies the current family, optional alias, preparing/publishing phase and start timestamp. A native list shows those facts literally. An empty list clears them. This is workspace activity, not a worker lifecycle or conversation message. |
+| Workspace indexing | `plurnk.workspace.activity` supplies phase, completed/total, percentage and message. Show those fields without calculating replacement progress; null clears the activity, including previous failures. A worker terminal alone does not clear workspace activity. |
+| Inbox | A native disclosure lists `status.inbox` in supplied order, showing each immutable message address, optional client message ID, loop and lifecycle. These are accepted messages not yet observed, not a fabricated conversation or a promise that a terminated loop will consume them. Empty state clears the list. |
+| Continuity and admission | Project the SDK's complete state after snapshots and deltas. Native disclosures remain open across updates; names, messages and other supplied strings are literal text. Disconnected values remain visibly stale under {§web-worker-observer}. Observation, timer ticks and disclosure do not submit actions or initiate extra network requests. |
 
 ## §web-worker-diagnostics Observed notices and Problems
 

@@ -35,6 +35,124 @@ const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lif
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
+    await t.test("{§web-worker-status} direct children and cumulative descendant spend come from the daemon", async () => {
+        const model = await startModel();
+        try {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
+                const workspace = "family-status";
+                const setup = await controller(base);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace, action: { kind: "worker.model.set", selector: "browser" } } } });
+                const workspaceId = setup.state.plurnk.workspace.id;
+                const fork = async (worker, name) => {
+                    const request = await controller(base);
+                    request.threadId = `${workspaceId}#${worker}`;
+                    const { result } = await request.runAgent({ forwardedProps: { plurnk: { action: { kind: "run.fork", name } } } });
+                    assert.equal(result.ok, true, JSON.stringify(result));
+                    assert.equal(result.result.workerName, name);
+                };
+                await fork("user", "child");
+                await fork("child", "grandchild");
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    await page.goto(new URL("/~/family-status@user/", base).href);
+                    await connected(page);
+                    assert.equal(await value(page, "children"), "0");
+                    const running = [];
+                    for (const name of ["child", "grandchild"]) {
+                        const request = await controller(base, undefined, prompt(`status-${name}`));
+                        request.threadId = `${workspaceId}#${name}`;
+                        const ready = Promise.withResolvers();
+                        let calls = 0;
+                        const completion = request.runAgent({}, {
+                            onReasoningMessageContentEvent: () => { if (++calls === 2) ready.resolve(); },
+                        });
+                        running.push({ name, completion });
+                        await ready.promise;
+                    }
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="children"]')?.textContent === "1");
+                    assert.equal(await value(page, "lifecycle"), "idle", "child activity does not invent a parent loop");
+                    await page.reload();
+                    await connected(page);
+                    assert.equal(await value(page, "children"), "1", "two active descendants are one direct child");
+                    for (const { name, completion } of running.toReversed()) {
+                        model.release(`status-${name}`);
+                        await completion;
+                    }
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="children"]')?.textContent === "0"
+                        && document.querySelector('#worker-status [data-text="requests"]')?.textContent === "5");
+                    assert.equal(await value(page, "input"), "2000", "descendant usage is the daemon's cumulative projection");
+                    assert.equal(await value(page, "cost"), "Unknown");
+                    assert.equal(await value(page, "lifecycle"), "idle");
+                    assert.equal(model.requests.length, 5, "two calls per descendant plus the child's observation of its grandchild's result; no root inference");
+                    assert.deepEqual(model.errors, []);
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
+    await t.test("{§web-worker-status} an actual WAIT counts down, freezes on disconnect and resumes from authoritative state", async () => {
+        const model = await startModel();
+        try {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
+                const setup = await controller(base);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "wait-status", action: { kind: "worker.model.set", selector: "browser" } } } });
+                const browser = await chromium.launch();
+                const proxy = await disconnectProxy(base);
+                try {
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    const observations = [];
+                    page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui/connect") observations.push(request.postDataJSON()); });
+                    await page.goto(new URL("/~/wait-status@user/", proxy.url).href);
+                    await connected(page);
+                    await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
+                    await page.getByRole("button", { name: "Send", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "parked");
+                    await model.streamStarted;
+                    await connected(page);
+                    const deadline = await value(page, "wait-at");
+                    assert.ok(Date.parse(deadline) > Date.now());
+                    const countdown = await value(page, "wait");
+                    await page.waitForFunction((previous) => document.querySelector('#worker-status [data-text="wait"]')?.textContent !== previous, countdown);
+                    assert.equal(await value(page, "lifecycle"), "parked");
+                    const liveConnectionCount = observations.length;
+                    const next = await value(page, "elapsed");
+                    await page.waitForFunction((previous) => document.querySelector('#worker-status [data-text="elapsed"]')?.textContent !== previous, next);
+                    assert.equal(observations.length, liveConnectionCount, "clock repaint does not poll the daemon");
+                    proxy.drop();
+                    await connection(page, "disconnected");
+                    const frozen = { elapsed: await value(page, "elapsed"), wait: await value(page, "wait") };
+                    await setTimeout(1100);
+                    assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
+                    assert.equal(model.requests.length, 1, "delivery loss does not wake or cancel work");
+                    checkBrowser([
+                        /^error \/agui: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
+                        /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: network error$/u,
+                    ]);
+                    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+                    await connected(page);
+                    assert.equal(await value(page, "lifecycle"), "parked");
+                    assert.equal(await value(page, "wait-at"), deadline, "reattachment keeps the daemon deadline, not a new local timeout");
+                    assert.notEqual(await value(page, "wait"), frozen.wait);
+                    model.release("status-stream");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "completed");
+                    await connected(page);
+                    assert.equal(await value(page, "wait"), "None");
+                    assert.equal(await value(page, "wait-at"), "");
+                    assert.equal(await value(page, "input"), "800");
+                    assert.equal(model.requests.length, 2);
+                    assert.deepEqual(model.errors, []);
+                    checkBrowser();
+                } finally { await browser.close(); await proxy.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
     await t.test("{§web-worker-diagnostics} packed notices and Problems stay visible without stopping healthy work", async () => {
         const model = await startModel();
         try {
@@ -451,7 +569,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(result?.ok, true, JSON.stringify(result));
                     return result.result;
                 };
-                await action("worker.model.set", { selector: "browser" });
+                const selected = await action("worker.model.set", { selector: "browser" });
                 const { workspaces } = await action("workspace.list");
                 const identity = `${workspaces.find(({ name }) => name === workspace).id}#${threadId}`;
                 const before = await action("workspace.workers");
@@ -482,6 +600,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await value("requests"), "0");
                     assert.equal(await value("cost"), "0");
                     assert.equal(await value("elapsed"), "Unknown");
+                    assert.equal(await value("model"), `browser — ${selected.provider}/${selected.model}`);
+                    assert.equal(await value("effort"), selected.effort === undefined ? "Unspecified" : `${selected.effort} (${selected.effortSource})`);
+                    assert.equal(await value("wait"), "None");
+                    assert.equal(await value("children"), "0");
+                    await page.locator("#workspace-activity > summary").click();
+                    assert.equal(await value("preparation-count"), "0");
                     assert.deepEqual(await action("workspace.workers"), before);
                     assert.equal(model.requests.length, 0);
 
@@ -569,6 +693,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.waitForFunction(() => document.querySelector('[data-text="requests"]')?.textContent === "4");
                     await connected();
                     assert.equal(observations.at(-1).threadId, identity, "the open page reattaches by ID after another client renames its workspace");
+                    assert.equal(await page.locator("#worker-workspace [data-text=workspace-name]").textContent(), renamed);
+                    assert.equal(await page.locator("#worker-workspace a").getAttribute("href"), directoryPath({ kind: "workspace", workspace: renamed }));
+                    assert.equal(await page.locator("#worker-directory [aria-current=page]").getAttribute("href"), directoryPath({ kind: "worker", workspace: renamed, worker: threadId }));
+                    assert.equal(await page.title(), `${renamed}@user — Plurnk`);
+                    assert.equal(page.url(), new URL(path, base).href, "a live rename does not rewrite browser history");
                     const attempts = observations.length;
                     assert.equal((await page.reload()).status(), 404, "an old named URL is not an identity alias");
                     checkBrowser([httpFailure(path, 404)]);

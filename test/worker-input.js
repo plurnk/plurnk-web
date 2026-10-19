@@ -123,18 +123,23 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     await page.waitForFunction(() => document.querySelector("#worker-message")?.value === "", undefined, { timeout: 1000 });
                     assert.equal(await send.isEnabled(), true, "accepted input is acknowledged before the next model turn");
                     assert.equal(model.requests.length, 1, "handoff neither restarts nor cancels the running inference");
+                    assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "1");
+                    assert.equal(await page.locator('#worker-inbox [data-text="inbox-id"]').textContent(), inputs[1].messages.at(-1).id);
                     const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
                     assert.equal(accepted.length, 2);
                     await page.reload();
                     await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).waitFor();
                     assert.deepEqual(await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), accepted);
                     assert.equal(model.requests.length, 1, "fresh replay includes the accepted follow-up without resubmitting it");
+                    assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "1", "accepted-unobserved state survives attachment");
                     model.release("held-input");
                     await page.getByText("Completed follow-up.", { exact: true }).waitFor();
                     assert.equal(await text.inputValue(), "");
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected"
                         && document.querySelector('[data-text="lifecycle"]')?.textContent === "completed");
                     assert.equal(model.requests.length, 2);
+                    assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "0");
+                    assert.equal(await page.locator("#worker-inbox li").count(), 0, "observed messages leave the pending list");
                     assert.equal(await page.locator('[data-message-role="user"]').count(), 2);
                     assert.equal(await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).count(), 1, "arrival does not repeat accepted text");
                     assert.equal(inputs.length, 2);
@@ -401,6 +406,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await page.getByText("Lifecycle fixture: unobserved-follow-up.", { exact: true }).waitFor();
         assert.deepEqual(await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), accepted);
         assert.equal(model.requests.length, 1, "rediscovery neither erases nor resubmits cancelled input");
+        assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "1");
+        assert.equal(await page.locator('#worker-inbox [data-text="inbox-lifecycle"]').textContent(), "failed", "the inbox never implies cancelled input is still executing");
         checkBrowser();
     }));
 

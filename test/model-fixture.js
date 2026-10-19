@@ -20,6 +20,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
     const errors = [];
     const pending = new Map();
     const visits = new Map();
+    const streamStarted = Promise.withResolvers();
     const programs = [
         { reasoning: "I will read the requested project file.", content: "```READ (witness.txt)\n```" },
         { reasoning: "The file confirms the browser connection.", content: "```SEND [200]\nBrowser connection verified: cobalt heron.\n```" },
@@ -27,6 +28,16 @@ export default async function startModel({ approvalCommand = "printf approved" }
     let turn = 0;
     const server = createServer(async (request, response) => {
         try {
+            if (request.method === "GET" && request.url === "/status-stream") {
+                const release = Promise.withResolvers();
+                pending.set("status-stream", release);
+                response.once("close", () => release.resolve());
+                streamStarted.resolve();
+                await release.promise;
+                pending.delete("status-stream");
+                if (!response.destroyed) response.end("Stream completed.");
+                return;
+            }
             assert.equal(request.method, "POST");
             assert.equal(request.url, "/v1/chat/completions");
             let json = "";
@@ -48,6 +59,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
                 const reasoning = `Considering ${lifecycle}.`;
                 frame({ reasoning_content: reasoning });
                 if ((lifecycle.startsWith("held-") && (!/^held-(approval|question)-/u.test(lifecycle) || visit === 1))
+                    || (lifecycle.startsWith("status-") && visit === 2)
                     || ((lifecycle === "conversation" || lifecycle.startsWith("execution-")) && visit === 1)
                     || (/^(approval|question)-resumed-/u.test(lifecycle) && visit === 2)) {
                     assert.ok(!pending.has(lifecycle), "a lifecycle request is not duplicated");
@@ -58,7 +70,10 @@ export default async function startModel({ approvalCommand = "printf approved" }
                     pending.delete(lifecycle);
                 }
                 if (!response.destroyed) {
-                    const content = lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
+                    const content = lifecycle === "wait-status" && visit === 1
+                        ? `\`\`\`sh\nnode --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'\n\`\`\`\n\`\`\`WAIT <60>\n\`\`\``
+                        : lifecycle.startsWith("status-") && visit === 1 ? "```READ (worker://user/identity.md)\n```"
+                        : lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
                         : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `\`\`\`sh\n${approvalCommand}\n\`\`\``
                         : lifecycle === "question-batch" && visit === 1 ? `${questionOperation}\n${questionOperation}`
                         : /^(question|held-question)-/u.test(lifecycle) && visit === 1 ? questionOperation
@@ -110,6 +125,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
     return {
         requests,
         errors,
+        streamStarted: streamStarted.promise,
         release(name) {
             const gate = pending.get(name);
             assert.ok(gate, `the ${name} request reached the controlled model`);

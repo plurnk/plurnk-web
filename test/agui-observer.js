@@ -143,7 +143,8 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
             const status = observed.state.plurnk.status;
             assert.equal(status.lifecycle, "completed");
             compare(gauge(status), gauge(fresh.state.plurnk.status), `loop ${turn}: live and fresh after completion`);
-            probe.diagnostic(JSON.stringify({ phase: "completed", turn, live: gauge(status), fresh: gauge(fresh.state.plurnk.status) }));
+            probe.diagnostic(JSON.stringify({ phase: "completed", turn, live: gauge(status), fresh: gauge(fresh.state.plurnk.status),
+                budget: { live: observed.state.budget, fresh: fresh.state.budget } }));
             assert.ok(fresh.state.plurnk.status.terminatedAt >= fresh.state.plurnk.status.claimedAt);
             assert.equal(fresh.state.plurnk.status.spend.requests, turn);
             assert.equal(fresh.state.plurnk.status.spend.usage.inputTokens, 400 * turn);

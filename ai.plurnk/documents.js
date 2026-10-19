@@ -97,7 +97,7 @@ export default class Documents {
     #link(label, directory, current = false) {
         const path = directoryPath(directory);
         return path === null ? `<span data-text="name">${escapeHtml(label)}</span>`
-            : `<a href="${escapeHtml(path)}" data-text="name"${current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</a>`;
+            : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "worker" ? ` data-worker-name="${escapeHtml(directory.worker)}" data-bind="href:worker-path"` : ""}${current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</a>`;
     }
 
     /** @param {string | null} projectRoot */
@@ -112,7 +112,9 @@ export default class Documents {
         const items = [directory.kind === "daemon" ? current("Workspaces") : this.#link("Workspaces", { kind: "daemon" })];
         if (directory.kind === "workspace") items.push(`${marker} ${current(directory.workspace)}`);
         if (directory.kind === "worker") {
-            items.push(this.#link(directory.workspace, { kind: "workspace", workspace: directory.workspace }), current(directory.worker));
+            const path = directoryPath({ kind: "workspace", workspace: directory.workspace });
+            if (path === null) throw new Error("An admitted worker must have a workspace directory address.");
+            items.push(`<span id="worker-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, current(directory.worker));
         }
         return `<nav aria-label="breadcrumb"><ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul></nav>`;
     }
@@ -171,17 +173,33 @@ export default class Documents {
     #workerStatus(directory, workspaceId, authenticated) {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted worker must have a directory address.");
-        const fields = [["lifecycle", "Worker"], ["loop", "Loop"], ["turns", "Turns"], ["elapsed", "Elapsed"],
+        const fields = [["lifecycle", "State"], ["model", "Model"], ["effort", "Effort"], ["loop", "Loop"], ["turns", "Turns"], ["elapsed", "Elapsed"],
+            ["children", "Active direct children"], ["context", "Context tokens / capacity"], ["curation", "Curation weight / budget"],
             ["requests", "Requests"], ["input", "Input tokens"], ["output", "Output tokens"], ["cost", "Cost (USD)"]];
+        const accounting = [["input", "Input tokens"], ["output", "Output tokens"], ["total", "Total tokens"],
+            ["uncached", "Uncached input"], ["cache-read", "Cache-read input"], ["cache-write", "Cache-write input"],
+            ["text", "Text output"], ["reasoning", "Reasoning output"], ["cost", "Cost (USD)"]];
         return `<section id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
-            + ` data-auth="${authenticated ? "session" : "none"}" data-yolo="${this.#yolo ? "1" : "0"}" data-connection="initial">`
+            + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-yolo="${this.#yolo ? "1" : "0"}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + `<p><span data-i18n="approval-mode">Approvals:</span> <span data-text="approval-mode">${this.#yolo ? "Automatic" : "Manual"}</span></p>`
-            + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}</dl>`
+            + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}`
+            + '<div><dt data-i18n="worker-wait">WAIT remaining</dt><dd><span data-text="wait">Unknown</span> <time data-text="wait-at" data-bind="datetime:wait-at"></time></dd></div></dl>'
+            + '<details id="worker-accounting"><summary data-i18n="accounting-details">Accounting details</summary>'
+            + '<p data-i18n="accounting-scope">Worker and descendants, cumulative since this worker began. Unknown totals remain unknown; known subtotals are incomplete evidence.</p>'
+            + '<figure><table><thead><tr><th scope="col" data-i18n="quantity">Quantity</th><th scope="col" data-i18n="complete-total">Complete total</th><th scope="col" data-i18n="known-subtotal">Known subtotal</th></tr></thead><tbody>'
+            + accounting.map(([key, label]) => `<tr><th scope="row" data-i18n="usage-${key}">${label}</th><td data-text="usage-${key}">Unknown</td><td data-text="known-${key}">Unknown</td></tr>`).join("") + '</tbody></table></figure></details>'
+            + '<details id="workspace-activity"><summary data-i18n="workspace-activity">Workspace activity</summary>'
+            + '<p><span data-i18n="preparing-capabilities">Capabilities preparing:</span> <span data-text="preparation-count">Unknown</span></p><ul data-preparation></ul>'
+            + '<section data-derivation><dl><div><dt data-i18n="indexing-phase">Indexing</dt><dd data-text="activity-phase">Unknown</dd></div>'
+            + '<div><dt data-i18n="indexing-completed">Completed / total</dt><dd data-text="activity-counts">Unknown</dd></div>'
+            + '<div><dt data-i18n="indexing-percent">Percent</dt><dd data-text="activity-percent">Unknown</dd></div></dl><p data-text="activity-message"></p></section></details>'
+            + '<details id="worker-inbox"><summary><span data-i18n="unobserved-messages">Unobserved messages:</span> <span data-text="inbox">Unknown</span></summary>'
+            + '<p data-i18n="inbox-scope">Accepted messages the worker has not observed. Each retains the lifecycle of its receiving loop.</p><ol></ol></details>'
             + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
             + '<p data-text="connection-detail">Displayed values are no longer live.</p>'
-            + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
-            + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-i18n="sign-in">Sign in</a>`
+            + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-bind="action:worker-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
+            + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
             + '</p></article></section>'
             + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ol></ol></section>'
             + '<section id="worker-conversation" aria-label="Conversation">'
@@ -226,7 +244,11 @@ export default class Documents {
         const title = `${workspace.name}@${directory.worker}`;
         const tree = '<details id="worker-directory"><summary data-i18n="workers-at-page-load">Workers at page load</summary>'
             + `<nav aria-label="Workers">${this.#workerTree(workspace.name, byId, worker)}</nav></details>`;
-        return render(title, (parent === null ? ""
-            : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`) + tree + this.#workerStatus(directory, workspace.id, authenticated));
+        const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
+        const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
+        const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "📁" : "☁️"}</span>`;
+        return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">📁</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
+            + (parent === null ? "" : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`)
+            + tree + this.#workerStatus(directory, workspace.id, authenticated), marker);
     }
 }
