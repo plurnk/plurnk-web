@@ -74,9 +74,11 @@ text; closing the page is not Stop. Browser approval defaults to automatic
 manual review. The worker page shows the active mode. In manual mode, each approval
 names its requesting worker and shows the exact operation and review evidence.
 Choose Accept or Reject for every presented operation, then **Submit responses**;
-neither choice is preselected. Questions and MCP input always need a human answer. Refresh
-rediscovers pending work; stale or uncertain decisions require **Reconnect** and
-are never automatically retried. Unimplemented interactions remain pending with
+neither choice is preselected. Questions and MCP input always need a human answer.
+Other authorized clients can settle the same request; every view withdraws the
+answered controls and follows the work. Refresh rediscovers what remains pending.
+Failed or uncertain decisions are reported, never automatically retried;
+an actual connection failure requires **Reconnect**. Unimplemented interactions remain pending with
 an explicit notice, never an automatic decision.
 
 Questions show their request, full response schema, and requesting worker ID when

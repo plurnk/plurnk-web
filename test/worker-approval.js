@@ -130,12 +130,13 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         }, { authenticated: true }));
     }
 
-    await t.test("{§web-worker-approval} refresh rediscovers an unchosen proposal and a competing tab cannot apply its stale decision", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-worker-approval} shared views withdraw settled approval forms and follow work without manual reconnection", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-tabs");
         const other = await context.newPage();
         other.setDefaultTimeout(5000);
+        const otherRequests = requestsFrom(other);
         await other.goto(path);
         await interrupted(other);
         const before = await page.locator('[data-requests] > fieldset').getAttribute("data-interrupt-id");
@@ -148,18 +149,13 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-tabs.", { exact: true }).waitFor();
-        await other.getByRole("radio", { name: "Reject", exact: true }).check();
-        await other.getByRole("button", { name: "Submit responses", exact: true }).click();
-        await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
-        assert.match(await other.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*unknown interrupt presentation/u);
-        assert.equal(await other.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
-        assert.equal(model.requests.length, 2, "a stale rejection cannot undo the accepted operation or start another turn");
-        await other.getByRole("button", { name: "Reconnect", exact: true }).click();
         await other.getByText("Completed approval-tabs.", { exact: true }).waitFor();
         await connected(other);
         assert.equal(await other.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
         assert.equal(await other.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
         assert.equal(requests.length, 2);
+        assert.equal(model.requests.length, 2, "external settlement does not repeat execution or inference");
+        assert.equal(otherRequests.some(({ resume }) => resume?.length > 0), false, "the second view observes the decision; it does not answer again");
         checkBrowser();
     }, { authenticated: true }));
 

@@ -122,7 +122,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         checkBrowser();
     }));
 
-    await t.test("{§web-worker-questions} refresh and competing answers rediscover one pending question without replay", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-worker-questions} shared views withdraw answered questions and follow work without manual reconnection", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         await ask(page, "question-tabs");
         await answer(page);
         const first = await page.locator("[data-question]").getAttribute("data-interrupt-id");
@@ -132,21 +132,19 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         assert.equal(await review(page).getByRole("textbox", { name: "Exact answer", exact: true }).inputValue(), "");
         const other = await context.newPage();
         other.setDefaultTimeout(5000);
+        const otherRequests = requestsFrom(other);
         await other.goto(path);
         await interrupted(other);
         assert.equal(model.requests.length, 1);
         await answer(page);
         await submit(page);
         await page.getByText("Completed question-tabs.", { exact: true }).waitFor();
-        await cancel(other);
-        await submit(other);
-        await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
-        assert.match(await other.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*unknown interrupt presentation/u);
-        assert.equal(model.requests.length, 2);
-        await other.getByRole("button", { name: "Reconnect", exact: true }).click();
         await other.getByText("Completed question-tabs.", { exact: true }).waitFor();
         await connected(other);
         assert.equal(await review(other).isVisible(), false);
+        assert.equal(await other.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
+        assert.equal(model.requests.length, 2, "the answered question creates no duplicate inference");
+        assert.equal(otherRequests.some(({ resume }) => resume?.length > 0), false, "the second view never answers an already settled question");
         checkBrowser();
     }, { authenticated: true }));
 
