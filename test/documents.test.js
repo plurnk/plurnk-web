@@ -3,7 +3,9 @@ import test from "node:test";
 import Documents from "../ai.plurnk/documents.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
-const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({ id, name, parentWorkerId, origin, owner });
+const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({
+    id, name, parentWorkerId, origin, owner, kind: parentWorkerId === null ? "root" : "work", lifecycle: "completed",
+});
 
 test("{§web-worker-approval} the worker document projects its resolved approval mode", async () => {
     for (const yolo of [true, false]) {
@@ -110,15 +112,16 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name">${name}</a>`;
+    const facts = (kind) => ` <small><span data-text="worker-kind">${kind}</span> · <span data-text="worker-lifecycle">completed</span></small>`;
     const children = (count, list) => `<details><summary data-text="child-workers">${count} child worker${count === 1 ? "" : "s"}</summary><ul>${list}</ul></details>`;
     assert.ok(html.includes([
         "<ul>",
-        `<li>${link("2bb6a400-7106-4299-ae47-66daea5d6077")}</li>`,
-        `<li>${link("user")}${children(2, `<li>${link("review")}${children(1, `<li>${link("evidence")}</li>`)}</li><li>${link("research")}</li>`)}</li>`,
+        `<li>${link("2bb6a400-7106-4299-ae47-66daea5d6077")}${facts("root")}</li>`,
+        `<li>${link("user")}${facts("root")}${children(2, `<li>${link("review")}${facts("work")}${children(1, `<li>${link("evidence")}${facts("work")}</li>`)}</li><li>${link("research")}${facts("work")}</li>`)}</li>`,
         "</ul>",
         '<details><summary data-i18n="background-work">Background work</summary><ul>',
-        `<li>${link("incoming")}${children(1, `<li>${link("incoming-child")}</li>`)}</li>`,
-        `<li>${link("other")}</li>`,
+        `<li>${link("incoming")}${facts("work")}${children(1, `<li>${link("incoming-child")}${facts("work")}</li>`)}</li>`,
+        `<li>${link("other")}${facts("work")}</li>`,
         "</ul></details>",
     ].join("")), html);
     const names = [...html.matchAll(/href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
@@ -133,6 +136,33 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     assert.match(background, /<p><span data-i18n="parent-worker">Parent:<\/span> <span data-text="name">_plurnk<\/span><\/p>/u);
     const root = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
     assert.doesNotMatch(root, /parent-worker/u);
+});
+
+test("{§web-worker-directory} worker-page navigation identifies the selected branch without acquiring transcripts", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false);
+    const workers = [worker(1, "_plurnk", null, "_plurnk"), { ...worker(2, "parent"), lifecycle: "running" },
+        { ...worker(3, "child", 2), kind: "fork", lifecycle: "failed" },
+        { ...worker(4, "grandchild", 3), lifecycle: "parked" }, { ...worker(5, "sibling", 2), lifecycle: "queued" },
+        worker(6, "incoming", 1), worker(7, "background-child", 6)];
+    let reads = 0;
+    const port = {
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+        listWorkers: async () => { reads++; return workers; },
+    };
+    for (const selected of ["parent", "child", "grandchild", "background-child"]) {
+        const html = (await document.read({ kind: "worker", workspace: "work", worker: selected }, port, false)).toString();
+        assert.match(html, /<details id="worker-directory"><summary[^>]*>Workers at page load<\/summary><nav aria-label="Workers">/u);
+        assert.ok(html.includes(`<a href="/~/work@${selected}/" data-text="name" aria-current="page">${selected}</a>`));
+        const tree = html.split('<nav aria-label="Workers">')[1].split("</nav>")[0];
+        assert.equal((tree.match(/aria-current="page"/gu) ?? []).length, 1);
+        assert.equal((tree.match(/<details open>/gu) ?? []).length, selected === "parent" ? 1 : 2);
+        assert.equal(tree.includes('<details open><summary data-i18n="background-work">'), selected === "background-child");
+        for (const { name, kind, lifecycle } of workers.filter(({ origin }) => origin === "model")) {
+            assert.ok(tree.includes(`>${name}</a> <small><span data-text="worker-kind">${kind}</span> · <span data-text="worker-lifecycle">${lifecycle}</span></small>`));
+        }
+        assert.doesNotMatch(tree, /transcript|agui|_plurnk/u);
+    }
+    assert.equal(reads, 4, "one authoritative directory read per document; no second client-side directory");
 });
 
 test("{§web-worker-directory} empty and internal-only workspaces have no empty navigation controls", async () => {

@@ -8,10 +8,12 @@ No additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
-breadcrumbs, their actual parent, live status and conversation, without a
+breadcrumbs, their actual parent, a native worker-tree disclosure, live status and conversation, without a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
 the worker's current work. Pending operations have native Accept/Reject review forms;
 questions and MCP input share the same review and resume path.
+The tree shows daemon-supplied kinds and lifecycles at page load, with the current
+worker's branch open. It is navigation, not a live subscription to child transcripts.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -65,6 +67,9 @@ Connection failure stops observation and marks the displayed values as stale;
 use **Reconnect** or, after revocation, **Sign in**. Reconnect preserves the current
 draft without resubmitting it; full page reloads do not persist drafts.
 No automatic work retries occur.
+Daemon notices and nonterminal Problems appear separately under **Observed diagnostics**,
+with their exact details available. Distinct observations remain through reconnects
+on that page; they are not an archive or an indication that the worker has stopped.
 
 **Send** also supports follow-ups while the worker is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or

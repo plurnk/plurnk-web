@@ -33,6 +33,18 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
+/* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
+#worker-diagnostics:not(:has(ol > li)),
+[data-diagnostic-message=""] [data-text="diagnostic-message"],
+[data-diagnostic-recovery=""] [data-text="diagnostic-recovery"],
+[data-diagnostic-attribution=""] [data-text="diagnostic-attribution"] {
+    display: none;
+}
+
+#worker-diagnostics [data-diagnostic-level="error"] > article > header {
+    color: var(--pico-del-color);
+}
+
 /* {§web-worker-conversation} Empty slots are native document state, not JavaScript styling. */
 #worker-conversation [data-text="message-error"] {
     color: var(--pico-del-color);

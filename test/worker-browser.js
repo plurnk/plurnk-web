@@ -35,6 +35,69 @@ const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lif
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
+    await t.test("{§web-worker-diagnostics} packed notices and Problems stay visible without stopping healthy work", async () => {
+        const model = await startModel();
+        try {
+            await withDaemon({
+                ...model.env, PLURNK_AUTH: "0", PLURNK_SERVICE_EXEC_CONCURRENCY: "invalid",
+                PLURNK_MODEL_unavailable: "browser-fixture/browser-fixture", PLURNK_PROVIDERS_EFFORT_unavailable: "invalid",
+            }, async (base) => {
+                const setup = await controller(base);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "diagnostics", action: { kind: "worker.model.set", selector: "browser" } } } });
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    await page.goto(new URL("/~/diagnostics@user/", base).href);
+                    await connected(page);
+                    const rows = page.locator("#worker-diagnostics ol > li");
+                    const notice = rows.filter({ hasText: "PLURNK_SERVICE_EXEC_CONCURRENCY" });
+                    const problem = rows.filter({ hasText: "PLURNK_PROVIDERS_EFFORT" });
+                    await notice.waitFor();
+                    await problem.waitFor();
+                    assert.equal(await notice.getAttribute("data-diagnostic-type"), "plurnk.notice");
+                    assert.equal(await notice.getAttribute("data-diagnostic-level"), "warn");
+                    assert.equal(await problem.getAttribute("data-diagnostic-type"), "plurnk.problem");
+                    assert.equal(await problem.getAttribute("data-diagnostic-level"), "error");
+                    const details = JSON.parse(await problem.locator("code").textContent());
+                    assert.equal(await problem.locator('[data-text="diagnostic-title"]').textContent(), details.title);
+                    assert.equal(await problem.locator('[data-text="diagnostic-message"]').textContent(), details.detail);
+                    assert.match(details.detail, /unavailable.*effort|effort.*unavailable/u);
+                    assert.equal(await page.locator("[data-messages] > li").count(), 0, "configuration evidence is not a fabricated conversation");
+                    await notice.locator("summary").click();
+                    const count = await rows.count();
+                    const reattached = page.waitForRequest((request) => new URL(request.url()).pathname === "/agui/connect");
+                    const run = await controller(base, undefined, prompt("diagnostics"));
+                    await run.runAgent({ forwardedProps: { plurnk: { workspace: "diagnostics" } } });
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "completed");
+                    await reattached;
+                    await connected(page);
+                    assert.equal(await notice.count(), 1, "a replayed warning keeps its existing entry");
+                    assert.equal(await problem.count(), 1, "a replayed Problem keeps its existing entry");
+                    const progress = rows.filter({ hasText: "engine:turn:turn_generated" });
+                    assert.equal(await progress.getAttribute("data-diagnostic-level"), "info");
+                    assert.equal(JSON.parse(await progress.locator("code").textContent()).accounting.inputTokens, 400);
+                    assert.equal(await rows.filter({ hasText: "engine:turn:turn_awaiting_model" }).count(), 1);
+                    assert.equal(await rows.count(), count + 2, "new turn progress remains inspectable alongside replayed configuration evidence");
+                    assert.equal(await notice.locator("details").evaluate((element) => element.open), true);
+                    assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed diagnostics.");
+                    assert.equal(model.requests.length, 1);
+                    await page.reload();
+                    await connected(page);
+                    await notice.waitFor();
+                    await problem.waitFor();
+                    assert.equal(await notice.count(), 1, "a fresh page projects the daemon's configuration warning again");
+                    assert.equal(await problem.count(), 1, "a fresh page projects the daemon's catalog Problem again");
+                    assert.equal(await notice.locator("details").getAttribute("open"), null, "page-local disclosure state is not persisted");
+                    assert.equal(model.requests.length, 1, "diagnostics and refresh never execute work");
+                    assert.deepEqual(model.errors, []);
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
     await t.test("{§web-conversation-content} hostile model output stays inert through authenticated SDK delivery and replay", async () => {
         const model = await startModel();
         const secret = crypto.randomUUID();

@@ -30,6 +30,20 @@
         </nav>
     </header>
     <main id="main" tabindex="-1" data-page="home"></main>
+    <!-- {§web-worker-diagnostics} Diagnostic values are text, never actions or conversation messages. -->
+    <template id="worker-diagnostic">
+        <li>
+            <article>
+                <header><span aria-hidden="true" data-text="diagnostic-icon">⚠️</span> <strong data-text="diagnostic-title">Diagnostic</strong> <small data-text="diagnostic-attribution">Subagent</small></header>
+                <p data-text="diagnostic-message">Diagnostic message</p>
+                <p data-text="diagnostic-recovery">Recovery</p>
+                <details>
+                    <summary data-i18n="diagnostic-details">Details</summary>
+                    <pre><code data-text="diagnostic-details">Diagnostic evidence</code></pre>
+                </details>
+            </article>
+        </li>
+    </template>
     <!-- {§web-worker-input} Native form structure; the worker SDK owns delivery. -->
     <template id="worker-controls">
         <section aria-label="Worker controls" data-command-error="">
