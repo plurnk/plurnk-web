@@ -103,8 +103,13 @@ test("{§web-build} production HTML references compiled assets, not development 
     assert.match(license, /@ag-ui\/client/u);
     assert.match(license, /temml - 0\.14\.0 \(MIT\)/u);
     assert.match(license, /beautiful-mermaid - 1\.1\.3 \(MIT\)/u);
+    assert.match(license, /marked-footnote - 1\.4\.0 \(MIT\)/u);
     assert.match(license, /elkjs/u);
     assert.match(license, /MIT/u);
+    const footnoteLicense = await readFile(new URL("../ai.plurnk/dist/vendor/MARKED-FOOTNOTE-LICENSE.txt", import.meta.url), "utf8");
+    assert.match(footnoteLicense, /Copyright \(c\) 2023-2024 Stilearning/u);
+    assert.match(footnoteLicense, /The above copyright notice and this permission notice shall be included/u);
+    assert.ok(inventory.some(([path]) => path === "/vendor/MARKED-FOOTNOTE-LICENSE.txt"));
     assert.ok(inventory.some(([path, , type]) => /\/Temml-[^/]+\.woff2$/u.test(path) && type === "font/woff2"));
     assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.js$/u.test(path)), "math remains a separate lazy chunk");
     assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "renderer styles remain separate from the application stylesheet");

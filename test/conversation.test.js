@@ -8,6 +8,7 @@ import verifyContentSecurity from "./content-security-browser.js";
 import { verifyMermaid, verifyUnavailableMermaid } from "./mermaid-browser.js";
 import verifyApproval from "./approval-browser.js";
 import verifyInteractions from "./interaction-browser.js";
+import verifyFootnotes from "./footnotes-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -78,6 +79,21 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await page.evaluate(() => getSelection().toString()), "the evidence");
                         assert.equal(await page.evaluate(() => scrollY), beforeScroll);
                         assert.match(await row("thought").locator("[data-message-body]").textContent(), /Now I have evidence\./u);
+                    });
+
+                    await t.test("native result links distinguish encoded-looking call identities", async () => {
+                        const calls = ["call/a", "call%2Fa"].map((id) => ({
+                            id, type: "function", function: { name: "READ", arguments: '{"path":"evidence.txt"}' },
+                        }));
+                        await present([{ id: "operations", role: "assistant", content: "", toolCalls: calls },
+                            ...calls.map(({ id }, index) => ({ id: `result-${index}`, role: "tool", toolCallId: id, content: "Evidence" }))]);
+                        for (const [index, call] of calls.entries()) {
+                            const result = row(`result-${index}`);
+                            await result.locator("summary").click();
+                            await result.locator("[data-call-link] a").click();
+                            assert.equal(await page.locator(":target").getAttribute("data-call-id"), call.id,
+                                "native navigation, not a hand-decoded lookup, must find the intended call");
+                        }
                     });
 
                     await t.test("snapshots replace membership and order instead of maintaining another history", async () => {
@@ -261,6 +277,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
 });
 
 // One browser-test entry point owns browser lifetimes; checks retain cold documents.
+test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);
 test("{§web-conversation-content} {§web-browser-security} adversarial content across roles, streaming and replay", { timeout: 60_000 }, verifyContentSecurity);

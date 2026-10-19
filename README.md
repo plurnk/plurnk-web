@@ -97,6 +97,10 @@ NOTE is collapsed working material, not an answer: its category is visible,
 with its Markdown body and exact arguments available inside the disclosure.
 The browser keeps no separate transcript or persistent conversation cache.
 
+Markdown footnotes use native reference and back-links within each message or NOTE.
+Repeated references retain separate return links; definitions never leak between
+messages. Code and unresolved references remain readable source.
+
 Math uses locally bundled Temml and native MathML: `$…$`, `$$…$$`, `\(…\)` and
 `\[…\]` outside code. Unsupported formulas keep their source and a short error;
 raw HTML and TeX link/media extensions cannot create controls or fetch content.
