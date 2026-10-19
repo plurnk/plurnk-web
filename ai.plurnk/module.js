@@ -12,6 +12,7 @@ import { readAsset, sendAsset } from "./static-assets.js";
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
+    const yolo = Knob.flag("PLURNK_WEB_YOLO");
     const authenticate = Knob.flag("PLURNK_AUTH");
     const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1), pending: Knob.integer("PLURNK_WEB_LOGIN_PENDING", 1) };
     /** @type {{ clientId: string, clientSecret: string } | null} */
@@ -48,7 +49,7 @@ export default function createModule() {
 
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"));
+            const documents = new Documents(root.body.toString("utf8"), yolo);
 
             seam.registerHttpRoute("/", async (req, res) => {
                 const pathname = (req.url ?? "").split("?")[0];

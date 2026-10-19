@@ -69,9 +69,12 @@ No automatic work retries occur.
 **Send** also supports follow-ups while the worker is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
 uncertain submission is never retried automatically. **Stop** preserves unsent
-text; closing the page is not Stop. An approval names its requesting worker and
-shows the exact operation and review evidence. Choose Accept or Reject for every
-presented operation, then **Submit responses**. No permission decision is preselected. Refresh
+text; closing the page is not Stop. Browser approval defaults to automatic
+(`PLURNK_WEB_YOLO=1`), subject to daemon permissions. Set `PLURNK_WEB_YOLO=0` for
+manual review. The worker page shows the active mode. In manual mode, each approval
+names its requesting worker and shows the exact operation and review evidence.
+Choose Accept or Reject for every presented operation, then **Submit responses**;
+neither choice is preselected. Questions and MCP input always need a human answer. Refresh
 rediscovers pending work; stale or uncertain decisions require **Reconnect** and
 are never automatically retried. Unimplemented interactions remain pending with
 an explicit notice, never an automatic decision.
@@ -137,7 +140,7 @@ The plugin inherits the daemon's host and port, and leaves more-specific routes
 alone. It does not install or start a service.
 
 Set `PLURNK_WEB_ENABLED=0` in the service environment and restart to disable the
-module without uninstalling it. The module and pending-sign-in limits are documented in
+module without uninstalling it. Module settings, browser approval mode and pending-sign-in limits are documented in
 [ai.plurnk/.env.defaults](ai.plurnk/.env.defaults).
 
 ## Install as an app

@@ -83,9 +83,10 @@ violations remain visible with useful evidence; do not replace them with an
 apparently healthy empty view. Never print credentials or credential responses.
 
 The browser owns delivery and its local resources, not admitted work. Navigation,
-disconnection and teardown are not cancellation. Retry, approval and cancellation
-are explicit actions under the daemon's existing authority, not inferred browser
-policy. Resource cleanup must preserve both the original failure and cleanup
+disconnection and teardown are not cancellation. Retry and cancellation are
+explicit actions; approval follows the configured client choice under
+{§web-worker-approval}, never an inferred permission or a replacement for daemon
+authority. Resource cleanup must preserve both the original failure and cleanup
 failures.
 
 ## Documentation and proof

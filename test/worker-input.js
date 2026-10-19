@@ -166,10 +166,10 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         } finally { await model.close(); }
     });
 
-    await t.test("{§web-worker-input} an approval stays pending; Stop and a subsequent message need no approval-state workaround", async () => {
+    await t.test("{§web-worker-input} a manual approval stays pending; Stop and a subsequent message need no approval-state workaround", async () => {
         const model = await startModel();
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
                 const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user" });
                 await setup.runAgent({ forwardedProps: { plurnk: { workspace: "review", action: { kind: "worker.model.set", selector: "browser" } } } });
                 const browser = await chromium.launch();

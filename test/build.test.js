@@ -14,7 +14,7 @@ test("{§web-page-shell} breadcrumb placement responds to content and available 
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), contentType }])));
-    const documents = new Documents(assets.get("/index.html").body.toString());
+    const documents = new Documents(assets.get("/index.html").body.toString(), false);
     const browser = await chromium.launch();
     t.after(() => browser.close());
     for (const javaScriptEnabled of [false, true]) {

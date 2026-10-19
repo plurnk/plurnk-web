@@ -61,6 +61,34 @@ export default async function verifyApproval(t) {
                     assert.equal(await groups.count(), 0);
                     assert.equal(await page.evaluate(() => window.review([])), false);
                     assert.equal(await form.isVisible(), false);
+
+                    await page.goto(`${fixture.url}?yolo=1`);
+                    await page.waitForFunction(() => typeof window.review === "function");
+                    await page.evaluate((values) => window.review(values), gates);
+                    assert.deepEqual(await page.evaluate(() => window.responses), [gates.map(({ id }) => ({
+                        interruptId: id, status: "resolved", payload: { decision: "accept", outcome: "client_yolo" },
+                    }))]);
+                    assert.equal(await form.isVisible(), false, "automatic approval does not display manual controls");
+                    const question = { id: "question", reason: "tool_call", toolCallId: "question-call", responseSchema: {
+                        type: "object", properties: { answer: { type: "string", minLength: 1 } }, required: ["answer"],
+                    } };
+                    const mixed = [...gates, question];
+                    const messages = [{ id: "question-message", role: "assistant", toolCalls: [{
+                        id: "question-call", type: "function", function: { name: "question", arguments: "{}" },
+                    }] }];
+                    await page.evaluate(({ mixed, messages }) => window.review(mixed, messages), { mixed, messages });
+                    assert.equal(await form.isVisible(), true);
+                    assert.equal(await groups.count(), 1, "only the question needs a manual answer in YOLO mode");
+                    assert.equal(await page.evaluate(() => window.responses.length), 1, "YOLO cannot answer questions or submit partial sets");
+                    await form.getByRole("textbox", { name: "answer", exact: true }).fill("operator answer");
+                    await form.getByRole("button", { name: "Submit responses", exact: true }).click();
+                    await page.waitForFunction(() => window.responses.length === 2);
+                    assert.deepEqual(await page.evaluate(() => window.responses[1]), [
+                        ...gates.map(({ id }) => ({ interruptId: id, status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } })),
+                        { interruptId: "question", status: "resolved", payload: { answer: "operator answer" } },
+                    ]);
+                    assert.equal(await page.evaluate((values) => window.review(values), [...gates, { id: "unknown" }]), false);
+                    assert.equal(await page.evaluate(() => window.responses.length), 2, "unsupported sets are not partially auto-approved");
                     checkBrowser();
                 } finally { await browser.close(); }
             });

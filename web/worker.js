@@ -13,12 +13,12 @@ const ELAPSED_TICK_MS = 1000;
  * @param {HTMLElement} element
  */
 export default function observeWorker(element) {
-    const { threadId, auth } = element.dataset;
-    if (!threadId || (auth !== "session" && auth !== "none")) throw new Error("Worker document metadata is incomplete.");
+    const { threadId, auth, yolo } = element.dataset;
+    if (!threadId || (auth !== "session" && auth !== "none") || (yolo !== "1" && yolo !== "0")) throw new Error("Worker document metadata is incomplete.");
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
     const controls = $.clone("#main", "#worker-controls");
-    const review = reviewRequests(controls);
+    const review = reviewRequests(controls, yolo === "1");
     const compose = $(controls, "#worker-compose");
     const stop = $(controls, "#worker-stop");
     const field = $(controls, "#worker-message");
@@ -143,9 +143,15 @@ export default function observeWorker(element) {
                 else await agent.connectAgent({}, subscriber);
                 signal.throwIfAborted();
                 if (interrupted) {
-                    const supported = review.present(agent.pendingInterrupts, agent.messages);
+                    const mode = review.present(agent.pendingInterrupts, agent.messages);
+                    if (mode === "automatic") {
+                        const resume = await review.decisions(agent.pendingInterrupts);
+                        if (!resume) throw new Error("Automatic approval did not resolve its presented set.");
+                        submission = { resume };
+                        continue;
+                    }
                     connection("interrupted", "Input required");
-                    the(element, "connection-detail", supported ? "Review the pending requests below." : "This page cannot answer this interaction. Work remains pending.");
+                    the(element, "connection-detail", mode === "manual" ? "Review the pending requests below." : "This page cannot answer this interaction. Work remains pending.");
                     return;
                 }
                 if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });

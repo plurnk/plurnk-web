@@ -51,6 +51,29 @@ test("{§web-configuration} missing and invalid limits never select code default
     }
 });
 
+test("{§web-configuration} browser YOLO uses the assembled floor and validates its switch", (t) => {
+    const original = { yolo: process.env.PLURNK_WEB_YOLO, enabled: process.env.PLURNK_WEB_ENABLED };
+    t.after(() => {
+        if (original.yolo === undefined) delete process.env.PLURNK_WEB_YOLO;
+        else process.env.PLURNK_WEB_YOLO = original.yolo;
+        process.env.PLURNK_WEB_ENABLED = original.enabled;
+    });
+    assert.equal(original.yolo, "1", "automatic approval is the package default, not a browser fallback");
+    for (const value of ["0", "1"]) {
+        process.env.PLURNK_WEB_YOLO = value;
+        assert.deepEqual(createModule().mounts, ["/"]);
+    }
+    for (const value of ["", "true", "2"]) {
+        process.env.PLURNK_WEB_YOLO = value;
+        assert.throws(createModule, (error) => error instanceof ConfigurationError
+            && error.key === "PLURNK_WEB_YOLO" && error.message.includes("must be 0 or 1"));
+    }
+    delete process.env.PLURNK_WEB_YOLO;
+    assert.throws(createModule, { message: "PLURNK_WEB_YOLO is missing from the assembled environment floor." });
+    process.env.PLURNK_WEB_ENABLED = "0";
+    assert.deepEqual(createModule(), {}, "disabled web does not require its unused approval setting");
+});
+
 test("{§web-authorization-style} the registered browser client uses the packaged application stylesheet", async (t) => {
     const original = process.env.PLURNK_AUTH;
     t.after(() => { process.env.PLURNK_AUTH = original; });

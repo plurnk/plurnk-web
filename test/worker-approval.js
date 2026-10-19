@@ -22,7 +22,56 @@ async function requestApproval(page, name) {
 }
 
 // {§web-worker-approval} The real native form is the only review UI in these installed journeys.
-export default async function verifyWorkerApproval({ t, withDaemon }) {
+export default async function verifyWorkerApproval({ t, withDaemon: startDaemon }) {
+    const withDaemon = (env, verify) => startDaemon({ ...env, PLURNK_WEB_YOLO: "0" }, verify);
+    await t.test("{§web-worker-approval} configured YOLO accepts review once without another user message", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+        page.setDefaultTimeout(5000);
+        const requests = requestsFrom(page);
+        assert.equal(await page.locator("#worker-status").getAttribute("data-yolo"), "1");
+        assert.equal(await page.locator('[data-text="approval-mode"]').textContent(), "Automatic");
+        await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-automatic.");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await page.getByText("Completed approval-automatic.", { exact: true }).waitFor();
+        await connected(page);
+        assert.equal(model.requests.length, 2);
+        assert.equal(requests.length, 2, "one message and one decision, with no retry");
+        assert.deepEqual(requests[1].resume.map(({ status, payload }) => ({ status, payload })), [
+            { status: "resolved", payload: { decision: "accept", outcome: "client_yolo" } },
+        ]);
+        assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
+        assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
+        assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"), "the executor actually ran");
+        checkBrowser();
+    }));
+    await t.test("{§web-worker-approval} configured YOLO cannot override daemon rejection", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+        page.setDefaultTimeout(5000);
+        const requests = requestsFrom(page);
+        await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-server-reject.");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await page.getByText("Completed approval-server-reject.", { exact: true }).waitFor();
+        await connected(page);
+        assert.equal(model.requests.length, 2);
+        assert.equal(requests.length, 1, "daemon policy settles the operation without asking the client");
+        const results = await page.locator('[data-message-role="tool"] [data-message-body]').allTextContents();
+        assert.ok(results.some((body) => JSON.parse(body).problem?.type === "https://problems.plurnk.xyz/proposal/rejected"), JSON.stringify(results));
+        checkBrowser();
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "reject" } }));
+    await t.test("{§web-worker-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+        page.setDefaultTimeout(5000);
+        const requests = requestsFrom(page);
+        await page.route("**/agui", (route) => route.request().postDataJSON().resume ? route.abort() : route.continue());
+        await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-auto-failure.");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
+        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:/u);
+        assert.equal(model.requests.length, 1);
+        assert.equal(requests.length, 2, "a failed automatic decision is not retried");
+        assert.equal(await page.getByRole("button", { name: "Reconnect", exact: true }).isVisible(), true);
+        checkBrowser([
+            /^error \/agui: Failed to load resource: net::ERR_FAILED$/u,
+            /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: Failed to fetch$/u,
+        ]);
+    }));
     for (const decision of ["accept", "reject"]) {
         await t.test(`{§web-worker-approval} explicit ${decision} resumes the exact proposal and preserves the operation's result`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 700 });

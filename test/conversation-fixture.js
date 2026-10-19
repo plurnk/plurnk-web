@@ -23,13 +23,14 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         // The component entry has its own module graph, not the production entry's preloads.
         .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
         .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
-    const documents = new Documents(template);
+    const documents = new Documents(template, false);
     const document = await documents.read({ kind: "worker", workspace: "conversation", worker: "user" }, {
         listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null }],
         listWorkers: async () => [{ id: 9, name: "user", parentWorkerId: null, origin: "model", owner: "_plurnk" }],
     }, false);
     const server = createServer((request, response) => {
-        const asset = request.url === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(request.url);
+        const path = new URL(request.url, "http://fixture.invalid").pathname;
+        const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);
         response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.type ?? "text/plain" });
         response.end(asset?.body ?? "Not found");
     });

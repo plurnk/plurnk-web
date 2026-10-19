@@ -6,10 +6,10 @@ import answerForm from "./answer-form.js";
 /** @param {Interrupts[number]} interrupt */
 const proposal = (interrupt) => /** @type {import("@plurnk/plurnk-contracts").ProposalProjection | undefined} */ (interrupt.metadata?.plurnk?.proposal);
 
-/** {§web-worker-approval} {§web-worker-questions} The form projects SDK interrupts, not policy.
- * @param {Element} controls
+/** {§web-worker-approval} {§web-worker-questions} Apply the configured client choice to the SDK's complete set.
+ * @param {Element} controls @param {boolean} yolo
  */
-export default function reviewRequests(controls) {
+export default function reviewRequests(controls, yolo) {
     const form = $.clone(controls, "#worker-review", { position: "afterbegin" });
     const list = $(form, "[data-requests]");
     if (!(form instanceof HTMLFormElement) || !list) throw new Error("Review template is incomplete.");
@@ -27,10 +27,14 @@ export default function reviewRequests(controls) {
                     : interrupt.reason === "tool_call" && interrupt.responseSchema !== undefined
                         && calls.some(({ id }) => id === interrupt.toolCallId);
             });
-            the(form, "request-count", supported ? interrupts.length : 0);
+            const manual = supported ? interrupts.filter((interrupt) => !yolo || proposal(interrupt) === undefined).length : 0;
+            the(form, "request-count", manual);
             list.replaceChildren();
             responses = (supported ? interrupts : []).map((interrupt, index) => {
                 const facts = proposal(interrupt);
+                if (facts !== undefined && yolo) return async () => ({
+                    interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision: "accept", outcome: "client_yolo" },
+                });
                 if (facts === undefined) {
                     const call = calls.find(({ id }) => id === interrupt.toolCallId);
                     if (!call || !interrupt.responseSchema) throw new Error("Question interrupt has no request contract.");
@@ -68,7 +72,7 @@ export default function reviewRequests(controls) {
                     return { interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision } };
                 };
             });
-            return supported;
+            return !supported ? "unsupported" : manual > 0 ? "manual" : "automatic";
         },
         /** @param {Interrupts} interrupts */
         async decisions(interrupts) {
