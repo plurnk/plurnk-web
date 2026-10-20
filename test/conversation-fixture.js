@@ -4,9 +4,17 @@ import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import Documents from "../ai.plurnk/documents.js";
 import { privateHeaders } from "../ai.plurnk/http.js";
+import createModule from "../ai.plurnk/module.js";
 
 // A component fixture using the real document and browser modules, not a second HTML implementation.
 export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url)) {
+    const original = process.env.PLURNK_AUTH;
+    process.env.PLURNK_AUTH = "0";
+    const module = createModule();
+    if (original === undefined) delete process.env.PLURNK_AUTH;
+    else process.env.PLURNK_AUTH = original;
+    let serve;
+    await module.start({ registerHttpRoute(_path, handler) { serve = handler; } });
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, type]) =>
         [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), type }])));
@@ -30,11 +38,12 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     }, false);
     const server = createServer((request, response) => {
         const path = new URL(request.url, "http://fixture.invalid").pathname;
+        if (path === "/render/mermaid") { void serve(request, response); return; }
         const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);
         response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.type ?? "text/plain" });
         response.end(asset?.body ?? "Not found");
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    return { server: { close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) },
+    return { server: { close: async () => { await module.close(); await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); } },
         url: `http://127.0.0.1:${server.address().port}/conversation-test` };
 }

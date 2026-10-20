@@ -10,6 +10,11 @@ export const diagrams = [
     "classDiagram\n class Worker {\n +String name\n +run()\n }",
     "erDiagram\n WORKSPACE ||--o{ WORKER : contains\n WORKER {\n string name\n }",
     "xychart-beta\n x-axis [Jan, Feb, Mar]\n y-axis 0 --> 10\n bar [3, 7, 5]",
+    'pie\n title Counts\n "A" : 2\n "B" : 3',
+    "gantt\n title Work\n dateFormat YYYY-MM-DD\n section Tasks\n Build :2026-10-19, 2d",
+    "mindmap\n root((Plurnk))\n  Workers\n  Messages",
+    "gitGraph\n commit\n branch feature\n commit\n checkout main\n merge feature",
+    "timeline\n title Project\n 2025 : Started\n 2026 : Improved",
 ];
 const fenced = (source) => `\`\`\`mermaid\n${source}\n\`\`\``;
 
@@ -31,10 +36,10 @@ export async function verifyMermaid(t) {
                     const body = page.locator("[data-message-body]");
 
                     await t.test("lazy rendering cannot resurrect replaced content", async () => {
-                        assert.ok(!requests.some((path) => /mermaid-renderer-/u.test(path)));
+                        assert.ok(!requests.some((path) => path.endsWith("/render/mermaid")));
                         const release = Promise.withResolvers();
-                        const arrived = page.waitForRequest("**/mermaid-renderer-*.js");
-                        await page.route("**/mermaid-renderer-*.js", async (route) => { await release.promise; await route.continue(); });
+                        const arrived = page.waitForRequest("**/render/mermaid");
+                        await page.route("**/render/mermaid", async (route) => { await release.promise; await route.continue(); });
                         try {
                             await present(fenced("flowchart LR\n Old --> Gone"));
                             await arrived;
@@ -44,17 +49,17 @@ export async function verifyMermaid(t) {
                             await body.locator("figure[data-diagram]:not([hidden]) img").waitFor();
                             assert.equal(await body.locator("[data-diagram]").count(), 1);
                             assert.equal(await body.locator("pre code").textContent(), diagrams[0] + "\n");
-                        } finally { release.resolve(); await page.unroute("**/mermaid-renderer-*.js"); }
+                        } finally { release.resolve(); await page.unroute("**/render/mermaid"); }
                     });
 
-                    await t.test("all supported diagram families are decoded images with inspectable source", async () => {
+                    await t.test("representative diagram families are decoded images with inspectable source", async () => {
                         await present(diagrams.map(fenced).join("\n\n"));
-                        await page.waitForFunction(() => document.querySelectorAll("[data-diagram]:not([hidden])").length === 6);
+                        await page.waitForFunction((count) => document.querySelectorAll("[data-diagram]:not([hidden])").length === count, diagrams.length);
                         const images = await body.locator("img").evaluateAll((items) => items.map((image) => ({
                             complete: image.complete, width: image.naturalWidth, height: image.naturalHeight,
                             source: image.src.startsWith("data:image/svg+xml;"), label: image.alt,
                         })));
-                        assert.equal(images.length, 6);
+                        assert.equal(images.length, diagrams.length);
                         assert.ok(images.every(({ complete, width, height, source, label }) => complete && width > 0 && height > 0 && source && label));
                         assert.deepEqual(await body.locator("pre code").allTextContents(), diagrams.map((source) => source + "\n"));
                         assert.equal(await body.locator("details[open]").count(), 0);
@@ -75,7 +80,7 @@ export async function verifyMermaid(t) {
                         assert.equal(await body.locator("script, style, svg, iframe, form, [onclick]").count(), 0);
                         assert.equal(await body.locator("img").count(), 1);
                         assert.equal(await body.getByRole("link", { name: "authored" }).getAttribute("href"), "/authored-image");
-                        assert.deepEqual(requests.slice(before).filter((path) => !path.startsWith("data:")), []);
+                        assert.deepEqual(requests.slice(before).filter((path) => !path.startsWith("data:")), [new URL("/render/mermaid", url).href]);
                     });
 
                     await t.test("rich roles and NOTE share one image boundary; tool results remain literal", async () => {
@@ -93,14 +98,33 @@ export async function verifyMermaid(t) {
                         assert.equal(await page.locator('[data-message-id="result"] pre code').textContent(), content);
                     });
 
+                    await t.test("even active SVG response bytes remain inert inside a native image", async () => {
+                        const before = requests.length;
+                        await page.route("**/render/mermaid", (route) => route.fulfill({ contentType: "image/svg+xml", body:
+                            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><script>window.diagramExecuted=true</script>'
+                            + '<style>@import url("/svg-style-trap");</style><image href="/svg-image-trap" width="10" height="10"/>'
+                            + '<rect width="100" height="40" fill="green"/></svg>' }));
+                        try {
+                            await present(fenced("flowchart LR\n Inert --> Image"));
+                            const image = body.locator("[data-diagram]:not([hidden]) img");
+                            await image.waitFor();
+                            assert.equal(await image.evaluate((image) => image.complete && image.naturalWidth === 100), true);
+                            assert.equal(await page.evaluate(() => window.diagramExecuted), undefined);
+                            assert.equal(await body.locator("svg, script, iframe, object, embed, style").count(), 0);
+                            assert.deepEqual(requests.slice(before).filter((path) => !path.startsWith("data:")), [new URL("/render/mermaid", url).href]);
+                        } finally { await page.unroute("**/render/mermaid"); }
+                    });
+
                     await t.test("unsupported and malformed diagrams retain source; ordinary code is never promoted", async () => {
-                        const invalid = ["notMermaid\n A-->B", "flowchart WRONG\n A-->B", "pie\n title Counts\n \"A\" : 2"];
+                        checkBrowser();
+                        const invalid = ["notMermaid\n A-->B", "flowchart WRONG\n A-->B", "flowchart LR\n A[Unclosed"];
                         await present(invalid.map(fenced).join("\n\n") + "\n\n````markdown\n" + fenced(diagrams[0]) + "\n````\n\n`mermaid`\n\n    flowchart LR\n    A-->B");
                         await page.waitForFunction(() => document.querySelectorAll("[data-diagram-error]").length === 3);
                         assert.equal(await body.locator("img").count(), 0);
                         assert.deepEqual(await body.locator("[data-diagram-error] code").allTextContents(), invalid.map((source) => source + "\n"));
                         assert.ok((await body.locator("[data-diagram-error]").evaluateAll((items) => items.map((item) => item.title))).every(Boolean));
                         assert.equal(await body.locator("[data-diagram-error]").count(), 3, "examples and indented code are not interpreted as diagrams");
+                        checkBrowser(engine === firefox ? [] : invalid.map(() => httpFailure("/render/mermaid", 422)));
                     });
 
                     await t.test("wide diagrams scroll locally at intrinsic size without changing on viewport or palette changes", async () => {
@@ -120,6 +144,7 @@ export async function verifyMermaid(t) {
                         }
                     });
                     assert.ok(requests.every((address) => address.startsWith("data:") || new URL(address).origin === new URL(url).origin));
+                    assert.ok(!requests.some((path) => /mermaid-renderer|\.wasm$/u.test(path)), "no browser compiler or WebAssembly download");
                     checkBrowser();
                 } finally { await browser.close(); }
             });
@@ -135,21 +160,21 @@ export async function verifyUnavailableMermaid() {
         const checkBrowser = browserDiagnostics(context);
         const page = await context.newPage();
         const refused = [];
-        await page.route("**/mermaid-renderer-*.js", (route) => {
+        await page.route("**/render/mermaid", (route) => {
             refused.push(new URL(route.request().url()).pathname);
-            return route.fulfill({ status: 404, contentType: "text/plain", body: "Not found" });
+            return route.fulfill({ status: 503, contentType: "application/problem+json", body: JSON.stringify({ status: 503, detail: "Diagram service unavailable." }) });
         });
         await page.goto(url);
         await page.waitForFunction(() => typeof window.present === "function");
         await page.evaluate((content) => window.present([{ id: "diagram", role: "assistant", content }]), fenced(diagrams[0]));
-        await page.locator('[data-diagram-error="Diagram unavailable"]').waitFor();
+        await page.locator('[data-diagram-error="Diagram failed to render"]').waitFor();
+        assert.equal(await page.locator("[data-diagram-error]").getAttribute("title"), "Error: Diagram service unavailable.");
         assert.equal(await page.locator("[data-mermaid] code").textContent(), diagrams[0] + "\n");
         assert.equal(await page.locator("[data-message-body] img").count(), 0);
         await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
         assert.equal(await page.locator("[data-message-body] strong").textContent(), "Still connected");
         assert.ok(refused.length > 0);
         assert.equal(new Set(refused).size, 1);
-        checkBrowser([...refused.map((path) => httpFailure(path, 404)),
-            new RegExp(`^exception: Failed to fetch dynamically imported module: ${RegExp.escape(new URL(refused[0], url).href)}$`, "u")]);
+        checkBrowser(refused.map((path) => httpFailure(path, 503)));
     } finally { await browser.close(); await server.close(); }
 }

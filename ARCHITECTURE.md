@@ -15,7 +15,8 @@ do not confer ownership of daemon policy, identity or lifecycle.
 | AG-UI events, messages, interrupts and replay | HttpAgent | Use public SDK behavior; do not maintain a parallel protocol reducer or transcript. |
 | Document structure and ordinary interaction | Semantic HTML and native controls | Templates, links, lists, forms and disclosures. |
 | Presentation state | OTM attributes and native element state | Project facts; CSS handles visual consequences. JavaScript handles behavior CSS cannot express. |
-| Asset compilation and packaging | Vite and the module's build | Ship a complete local asset inventory; no runtime compiler or CDN. |
+| Asset compilation and packaging | Vite and the module's build | Ship a complete local asset inventory; no runtime asset build or CDN. |
+| Dynamic diagrams | Ondine in web-owned Node worker threads | Compile bounded source to standalone SVG; the browser displays a native image, not renderer markup. |
 
 Missing platform or OTM functionality is a request to its owner, not permission
 to build a compensating subsystem here. Prefer directly explainable ownership

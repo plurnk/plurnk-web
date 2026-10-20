@@ -20,7 +20,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 
 | Boundary | Contract |
 |---|---|
-| Module choices | `ai.plurnk/.env.defaults` declares enablement, browser approval mode and pending sign-in limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
+| Module choices | `ai.plurnk/.env.defaults` declares enablement, browser approval mode, pending sign-in limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
 | Invalid input | Refuse the affected module through the host's configuration diagnostic. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. Disabled web does not inspect unused web settings. |
 | Other owners | Consume daemon authentication and credential policy through their existing configuration and public seams, never web-owned substitutes. |
 | Browser | Receives only explicit public document projections, not the environment, credentials or a second set of deployment defaults. Vite compiles assets independently of operator configuration. |
@@ -409,7 +409,7 @@ submission and explicit cancellation belong to {§web-worker-input}.
 | DOM admission | DOMPurify sanitizes the generated HTML into a fragment before insertion. Only Markdown presentation elements and their necessary attributes are admitted; no application data attributes, authored IDs, styles, scripts, forms, frames, SVG or active controls. Generated footnote anchors and accessible labels are presentation, not permission to interpret authored HTML. GFM task checkboxes remain disabled. Links use the sanitizer's URI checks; no model-supplied HTML bypasses sanitization. |
 | Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly; only recognized math and diagram outlets receive their bounded enhancements. |
 | Continuity | The same admission boundary applies to every rich-text role and NOTE body, including partial updates and replay. Message identities, author/category labels, call arguments, errors and structured payloads remain data, never markup. Rendering performs no model-directed navigation or resource request; ordinary links require user activation. |
-| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Diagram code loads only for recognized Mermaid blocks. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
+| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Only recognized Mermaid blocks request server compilation. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
 
 ## §web-working-notes Inspectable working material
 
@@ -451,13 +451,24 @@ name or content. This presentation adds no conversation store or protocol role.
 | Boundary | Contract |
 |---|---|
 | Recognition | Marked code blocks whose first language word is `mermaid` (case-insensitive) are eligible. Inline code, indented code and nested fenced examples retain ordinary Markdown meaning. No inferred fence repair, orientation rewrite or alternate parser. |
-| Interpretation | The locally bundled `beautiful-mermaid` public SVG renderer supports its flowchart, state, sequence, class, ER and XY syntax subset. Use its standalone appearance, not an application theme system. No DOM-dependent Mermaid runtime, server rendering endpoint or headless browser. |
+| Interpretation | The web module compiles source through Ondine's public Node compiler under {§web-diagram-service}. Supported syntax belongs to the pinned compiler, not a second parser or a promise of complete Mermaid conformance. Preserve authored direction and intrinsic dimensions; use standalone appearance, not an application theme system. No browser compiler, DOM-dependent runtime or headless browser. |
 | Image boundary | Generated SVG becomes a data-URI source of a native `img` in a document-owned OTM template. Never insert SVG markup into the application DOM or an embedded document. Native SVG image restrictions prevent scripts and external resource loading, including renderer font imports; the application CSP is unchanged. Authored Markdown images and raw SVG receive no new permission. |
-| Source and failure | Source remains readable while the module loads. A successful image has an accessible label and an adjacent native source disclosure. Unsupported syntax or rendering/decoding failure retains the source with a concise local diagnostic and the original error available as its title. A failed module load also reports the original browser error. No rewriting, alternate renderer or automatic retry. |
+| Source and failure | Source remains readable while compilation is pending. A successful image has an accessible label and an adjacent native source disclosure. Unsupported syntax, HTTP or rendering/decoding failure retains the source with a concise local diagnostic and the returned diagnostic or original error available as its title. No rewriting, alternate renderer or automatic retry. |
 | Continuity | Detached outlets cannot publish a late image into a newer message. Unchanged bodies retain their image and native source-disclosure state. Diagrams are static presentation, not interactive links or controls; the image/source boundary applies to every rich-text role and NOTE body. |
 | Viewport | Keep intrinsic diagram dimensions and browser zoom. Wide images scroll inside their own viewport without shrinking labels or widening the whole page; source remains selectable text. |
 
 Reference: [SVG image restrictions](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image#restrictions).
+
+## §web-diagram-service Diagram compilation boundary
+
+| Boundary | Contract |
+|---|---|
+| HTTP | `POST /render/mermaid` accepts UTF-8 `application/json` containing one `source` string and returns standalone `image/svg+xml`. Other methods return 405 with `Allow: POST`; other media types return 415; invalid UTF-8, JSON or shape returns 400. No CORS admission, simple form submission, external source URL or filesystem path. Browser fetch metadata must be same-origin when present. |
+| Admission | With daemon authentication enabled, require the existing valid web session, otherwise 401 without a login redirect. Explicitly disabled daemon authentication admits anonymous compilation. This is presentation, not an agent operation or an AG-UI extension. |
+| Isolation | Ondine executes in a bounded Node worker pool, never on the daemon event loop. The environment owns concurrency, admitted render count, queue-inclusive execution deadline, request-byte limit, compiler edge limit and SVG-byte limit. Request-body transport deadlines remain the HTTP host's concern. Compiler limits and worker termination are not an OS memory sandbox. |
+| Failure | Oversized input returns 413; unsupported or invalid diagrams and compiler/output limits return 422; full admission returns 429; execution deadline returns 408; module shutdown returns 503. Failures are Problems, not images. Preserve unexpected compiler failures for the host's normal error path. |
+| Lifetime | Start compiler workers only on demand. Expired or disconnected render requests stop their pending or active compilation. Module close rejects outstanding compilation and awaits worker termination. Neither browser departure nor renderer failure changes agent work. No persisted render cache or temporary files. |
+| Output | Responses are private and not cached. SVG has `nosniff` and a sandboxed CSP denying scripts and external resource loads, including when opened as a document. The browser consumes it only through {§web-diagram-content}, without changing the application's CSP. |
 
 ## §web-content-reflow Constrained and changing viewports
 
