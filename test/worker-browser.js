@@ -263,7 +263,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         assert.equal(await note.count(), 1);
                         assert.equal(JSON.parse(await note.locator("[data-text=call-arguments]").textContent()).body, contentAttack);
                         assert.equal(await note.locator("[data-message-body] strong").textContent(), "Readable evidence");
-                        assert.equal(await page.locator("[data-message-body] script, [data-message-body] img, [data-message-body] form, [data-message-body] [data-bind], [data-message-body] [id]").count(), 0);
+                        assert.equal(await page.locator("[data-message-body] script, [data-message-body] img, [data-message-body] form, [data-message-body] [id]").count(), 0);
+                        assert.deepEqual(await page.locator("[data-message-body] [data-bind]").evaluateAll((elements) => elements.map((element) => ({
+                            tag: element.tagName, binding: element.dataset.bind, action: element.dataset.action,
+                            role: element.closest("[data-message-role]").dataset.messageRole,
+                        }))), [{ tag: "BUTTON", binding: "disabled:body-pending", action: "read-body", role: "reasoning" }],
+                        "the only binding is the document-owned reasoning read control, never authored content");
                         assert.equal(await page.locator('[data-message-role="assistant"] [data-message-body] [data-text]').count(), 0, "rich content cannot add bindings; literal result templates retain their owned text slot");
                         assert.equal(await page.locator('[data-message-body] a[href^="javascript:"]').count(), 0);
                         assert.equal(await page.locator("#worker-status").count(), 1);
@@ -509,11 +514,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await connected(page);
                     assert.equal(model.requests.length, 0, "viewing an idle worker starts no inference");
                     completion = run.runAgent({ forwardedProps: { plurnk: { workspace: "conversation" } } });
-                    const reasoning = page.locator('[data-message-role="reasoning"]').filter({ hasText: "Considering conversation." }).first();
-                    await reasoning.waitFor();
-                    assert.equal(await reasoning.locator("details").getAttribute("open"), null);
-                    await reasoning.locator("summary").click();
-                    await reasoning.evaluate((element) => { window.observedReasoning = element; });
+                    const preview = page.locator("[data-reasoning-preview]");
+                    await preview.getByText("Considering conversation.", { exact: true }).waitFor();
+                    assert.equal(await page.locator('[data-message-role="reasoning"]').count(), 0,
+                        "{§web-worker-reasoning} live text is a preview, not history");
                     assert.equal(model.requests.length, 1, "only the controlling request starts inference");
                     model.release("conversation");
                     await completion;
@@ -521,11 +525,19 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         .some((element) => element.textContent === "Completed conversation.\n"));
                     await connected(page);
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed conversation.");
-                    assert.equal(await reasoning.evaluate((element) => element === window.observedReasoning), true, "passive replay retains the existing row");
-                    assert.equal(await reasoning.locator("details").evaluate((element) => element.open), true, "native disclosure choice survives replay");
+                    assert.equal(await preview.isVisible(), false);
+                    assert.equal(await preview.locator('[data-text="reasoning-text"]').textContent(), "");
+                    const reasoning = page.locator('[data-message-role="reasoning"]').first();
+                    await reasoning.waitFor();
+                    assert.equal(await reasoning.locator("details").getAttribute("open"), null);
+                    assert.equal(requests.some((request) => /\/reasoning\//u.test(new URL(request.url()).pathname)), false,
+                        "completed reasoning is a reference, not an automatic fetch");
+                    await reasoning.locator("summary").click();
+                    await reasoning.getByRole("button", { name: "Read body", exact: true }).click();
+                    await reasoning.locator('[data-body-state="loaded"]').waitFor();
+                    assert.equal(await reasoning.locator('[data-text="body-content"]').textContent(), "Considering conversation.");
+                    await reasoning.evaluate((element) => { window.observedReasoning = element; window.observedBody = element.querySelector("pre[data-body-content]"); });
                     const ids = () => page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
-                    const beforeReload = await ids();
-                    assert.equal(beforeReload.length, new Set(beforeReload).size, "reconnect does not duplicate messages");
                     const calls = await page.locator("[data-call-id]").evaluateAll((rows) => rows.map((row) => ({
                         id: row.dataset.callId, name: row.dataset.callName, arguments: row.dataset.callArguments,
                     })));
@@ -546,11 +558,35 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         await page.emulateMedia({ colorScheme });
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "long literal receipts do not widen the viewport");
                     }
+                    await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: reasoning-followup.");
+                    await page.getByRole("button", { name: "Send", exact: true }).click();
+                    await page.getByText("Completed reasoning-followup.", { exact: true }).waitFor();
+                    await connected(page);
+                    const upload = requests.find((request) => new URL(request.url()).pathname === "/agui")?.postDataJSON();
+                    assert.ok(upload, "the browser sent the follow-up through its real SDK");
+                    assert.equal(upload.forwardedProps.plurnk.reasoning, "link");
+                    const uploadedReasoning = upload.messages.filter(({ role }) => role === "reasoning");
+                    assert.equal(uploadedReasoning.length, 2);
+                    for (const message of uploadedReasoning) {
+                        assert.equal(message.content, "");
+                        assert.equal(message.metadata.plurnk.body.mimeType, "text/plain");
+                    }
+                    assert.equal(JSON.stringify(upload.messages).includes("Considering conversation."), false,
+                        "neither preview nor inspected full reasoning enters a later Run upload");
+                    assert.equal(await reasoning.evaluate((element) => element === window.observedReasoning), true, "passive replay retains the existing row");
+                    assert.equal(await reasoning.locator("pre[data-body-content]").evaluate((element) => element === window.observedBody), true);
+                    assert.equal(await reasoning.locator("details").evaluate((element) => element.open), true, "native disclosure choice survives replay");
+                    const beforeReload = await ids();
+                    assert.equal(beforeReload.length, new Set(beforeReload).size, "reconnect does not duplicate messages");
                     await page.reload();
                     await connected(page);
                     await page.waitForFunction((count) => document.querySelectorAll("[data-messages] > li").length === count, beforeReload.length);
                     assert.deepEqual(await ids(), beforeReload, "a fresh page reads the same SDK snapshot, without a browser history store");
-                    assert.equal(model.requests.length, 2, "neither replay nor refresh creates a model call");
+                    assert.equal(model.requests.length, 3, "two original calls and one explicit follow-up; replay and refresh create none");
+                    assert.equal(await preview.isVisible(), false);
+                    assert.equal(await page.locator('[data-message-role="reasoning"] [data-body-state="loaded"]').count(), 0);
+                    assert.equal(requests.filter((request) => /\/reasoning\//u.test(new URL(request.url()).pathname)).length, 1,
+                        "refresh does not re-fetch an inspected reasoning body");
                     assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 1,
                         "reload does not automatically re-fetch an inspected body");
                     assert.deepEqual(model.errors, []);
@@ -560,6 +596,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         assert.deepEqual(input.messages, []);
                         assert.deepEqual(input.tools, []);
                         assert.equal(input.resume, undefined);
+                        assert.equal(input.forwardedProps.plurnk.reasoning, "link");
                     }
                     checkBrowser();
                 } finally {
@@ -648,11 +685,15 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                             await connected();
                             assert.equal(run.isRunning, true, "refresh does not cancel the controlling request");
                             assert.equal(await value("lifecycle"), "running");
+                            assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
+                                "{§web-worker-reasoning} a new attachment never reconstructs the ongoing attempt's preview");
                             await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
                             assert.equal(run.isRunning, true, "native navigation leaves the worker running");
                             await page.goBack();
                             await connected();
                             assert.equal(await value("lifecycle"), "running");
+                            assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
+                                "history restoration does not resurrect a departed preview");
                         }
                         model.release("held-worker-page");
                         await completion;

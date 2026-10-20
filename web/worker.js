@@ -7,6 +7,7 @@ import reviewRequests from "./worker-review.js";
 import diagnostics from "./worker-diagnostics.js";
 import accessHeaders from "./access-headers.js";
 import readBody from "./read-body.js";
+import reasoningPreview from "./reasoning-preview.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -40,6 +41,7 @@ export default function observeWorker(element) {
     the(controls, "message-status", "");
     let resources = new AbortController();
     const present = conversation(history, (address) => readBody(address, auth, resources.signal));
+    const preview = reasoningPreview(history, Number(element.dataset.reasoningPreviewChars));
     const diagnosticList = $("#worker-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
@@ -108,6 +110,7 @@ export default function observeWorker(element) {
                 let refusal;
                 /** @type {import("@ag-ui/client").AgentSubscriber} */
                 const subscriber = {
+                    onEvent: ({ event }) => { if (!signal.aborted) preview.consume(event); },
                     onCustomEvent: async ({ event }) => { if (!signal.aborted) await diagnose(event); },
                     onMessagesChanged: ({ messages }) => { if (!signal.aborted) present(messages); },
                     onTextMessageStartEvent: ({ event }) => {
@@ -178,6 +181,7 @@ export default function observeWorker(element) {
             if (pending) the(controls, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
             if (submission?.resume) the(controls, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         } finally {
+            preview.clear();
             clearInterval(timer);
             agent.headers = {};
         }
@@ -187,6 +191,7 @@ export default function observeWorker(element) {
     function connect(submission) {
         const previous = delivery;
         previous?.controller.abort();
+        preview.clear();
         const controller = new AbortController();
         connection("connecting", "Connecting…");
         delivery = { controller, done: (async () => {
@@ -259,6 +264,7 @@ export default function observeWorker(element) {
     });
 
     window.onpagehide = () => {
+        preview.clear();
         resources.abort();
         delivery?.controller.abort();
         cancellation?.abort();

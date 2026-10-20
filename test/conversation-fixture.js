@@ -31,7 +31,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         // The component entry has its own module graph, not the production entry's preloads.
         .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
         .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
-    const documents = new Documents(template, false);
+    const documents = new Documents(template, false, 64);
     const document = await documents.read({ kind: "worker", workspace: "conversation", worker: "user" }, {
         listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null }],
         listWorkers: async () => [{ id: 9, name: "user", parentWorkerId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle" }],

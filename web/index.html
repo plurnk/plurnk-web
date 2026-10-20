@@ -42,7 +42,7 @@
       <details><summary><span data-i18n="descendant-children">Children:</span> <span data-text="descendant-children"></span></summary><ul></ul></details>
     </template>
     <template id="conversation-body-reference">
-      <section data-body-reference aria-label="Result body">
+      <section data-body-reference aria-label="Body">
         <p><code data-text="body-address">Body address</code> <small data-text="body-mime">Content type</small></p>
         <button type="button" data-action="read-body" data-bind="disabled:body-pending" data-i18n="read-body">Read body</button>
         <p data-body-loading role="status" data-i18n="reading-body">Reading body…</p>
@@ -157,6 +157,12 @@
         </fieldset>
     </template>
     <!-- {§web-worker-conversation} Inert document-owned structure; HttpAgent supplies its values. -->
+    <template id="worker-reasoning-preview">
+        <section data-reasoning-preview aria-label="Live reasoning">
+            <p data-i18n="live-reasoning">Live reasoning</p>
+            <pre><code data-text="reasoning-text"></code></pre>
+        </section>
+    </template>
     <template id="conversation-message">
         <li>
             <article>

@@ -9,6 +9,7 @@ export default class Documents {
     #afterMain;
     #home;
     #yolo;
+    #reasoningPreviewChars;
 
     /** {§web-authorization-style} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -21,9 +22,10 @@ export default class Documents {
         return path;
     }
 
-    /** @param {string} document @param {boolean} yolo */
-    constructor(document, yolo) {
+    /** @param {string} document @param {boolean} yolo @param {number} reasoningPreviewChars */
+    constructor(document, yolo, reasoningPreviewChars) {
         this.#yolo = yolo;
+        this.#reasoningPreviewChars = reasoningPreviewChars;
         const parts = document.split(/<main\b[^>]*>|<\/main>/u);
         if (parts.length !== 3) throw new Error("The web document must contain exactly one main element.");
         const title = parts[0].split(/<title\b[^>]*>|<\/title>/u);
@@ -180,7 +182,7 @@ export default class Documents {
             ["uncached", "Uncached input"], ["cache-read", "Cache-read input"], ["cache-write", "Cache-write input"],
             ["text", "Text output"], ["reasoning", "Reasoning output"], ["cost", "Cost (USD)"]];
         return `<section id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
-            + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-yolo="${this.#yolo ? "1" : "0"}" data-connection="initial">`
+            + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-yolo="${this.#yolo ? "1" : "0"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + `<p><span data-i18n="approval-mode">Approvals:</span> <span data-text="approval-mode">${this.#yolo ? "Automatic" : "Manual"}</span></p>`
             + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}`

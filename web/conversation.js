@@ -92,12 +92,15 @@ export default function conversation(root, readBody) {
     return (messages) => {
         const identities = new Set(messages.map(({ id }) => id));
         if (identities.size !== messages.length) throw new Error("Conversation has duplicate message identities.");
+        // {§web-worker-reasoning} An empty live reasoning message is not a transcript body.
+        const visible = messages.filter((message) => message.role !== "reasoning" || message.content || message.metadata?.plurnk?.body !== undefined);
+        const visibleIds = new Set(visible.map(({ id }) => id));
         const calls = new Map(messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []).map((call) => [call.id, call]));
         const rows = new Map(Array.from(list.children, (child) => [/** @type {HTMLElement} */ (child).dataset.messageId, /** @type {HTMLElement} */ (child)]));
         for (const [id, row] of rows) {
-            if (!id || !identities.has(id)) row.remove();
+            if (!id || !visibleIds.has(id)) row.remove();
         }
-        for (const [index, message] of messages.entries()) {
+        for (const [index, message] of visible.entries()) {
             const disclosure = message.role !== "user" && message.role !== "assistant";
             let row = rows.get(message.id);
             if (row && Boolean($(row, ":scope > details")) !== disclosure) {
@@ -122,7 +125,12 @@ export default function conversation(root, readBody) {
                 messageError: message.role === "tool" ? message.error ?? "" : "",
                 callHref: call ? `#${callId(call.id)}` : "",
             });
-            body(row, message.content, message.role !== "tool" && message.role !== "activity", `message-${message.id}`);
+            const linked = message.role === "reasoning" ? message.metadata?.plurnk?.body : undefined;
+            if (linked !== undefined && (typeof linked?.url !== "string" || typeof linked?.mimeType !== "string")) {
+                throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
+            }
+            const content = linked ? [{ type: "document", source: { type: "url", value: linked.url, mimeType: linked.mimeType } }] : message.content;
+            body(row, content, message.role !== "tool" && message.role !== "activity", `message-${message.id}`);
             tools(row, message.role === "assistant" ? message.toolCalls ?? [] : []);
             if (list.children[index] !== row) list.insertBefore(row, list.children[index] ?? null);
         }
