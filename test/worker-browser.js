@@ -418,6 +418,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
         const secret = crypto.randomUUID();
         try {
             await withDaemon({ ...model.env, PLURNK_PASS: "diagram-password", PLURNK_SECRET: secret }, async (base) => {
+                const denied = await fetch(new URL("/render/mermaid", base), { method: "POST",
+                    headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "flowchart LR\n A-->B" }) });
+                assert.equal(denied.status, 401, "the packed compiler uses web session admission");
+                assert.equal((await denied.json()).status, 401);
                 const setup = await controller(base, secret);
                 await setup.runAgent({ forwardedProps: { plurnk: { workspace: "diagrams", action: { kind: "worker.model.set", selector: "browser" } } } });
                 const browser = await chromium.launch();
@@ -440,7 +444,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.getByRole("button", { name: "Continue", exact: true }).click();
                     await page.waitForURL(path);
                     await connected(page);
-                    assert.ok(!requests.some((path) => /mermaid-renderer-/u.test(path)), "an idle worker loads no diagram code");
+                    assert.ok(!requests.some((path) => path.endsWith("/render/mermaid")), "an idle worker requests no compilation");
                     const run = await controller(base, secret, prompt("diagrams"));
                     await run.runAgent({ forwardedProps: { plurnk: { workspace: "diagrams" } } });
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, diagramContent);
@@ -458,7 +462,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.reload();
                     await connected(page);
                     await verify();
-                    assert.ok(requests.some((path) => /mermaid-renderer-/u.test(path)));
+                    assert.ok(requests.some((path) => path.endsWith("/render/mermaid")));
+                    assert.ok(!requests.some((path) => /mermaid-renderer|\.wasm$/u.test(path)), "compiler stays on the daemon");
                     assert.deepEqual(unexpected, [], "no remote renderer or font requests");
                     assert.equal(model.requests.length, 1, "refresh renders retained diagrams without inference");
                     assert.deepEqual(model.errors, []);

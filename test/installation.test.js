@@ -49,6 +49,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/index-document.js"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/directory-addresses.js"));
+    for (const name of ["diagrams.js", "diagram-compiler.js"]) assert.ok(archive.files.some(({ path }) => path === `ai.plurnk/${name}`));
     for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable.svg", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt"]) {
         assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), path);
     }

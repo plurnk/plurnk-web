@@ -287,6 +287,6 @@ test("{§web-math-content} {§web-content-reflow} math through the real conversa
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);
 test("{§web-conversation-content} {§web-browser-security} adversarial content across roles, streaming and replay", { timeout: 60_000 }, verifyContentSecurity);
 test("{§web-diagram-content} {§web-content-reflow} static Mermaid images through the real conversation outlet", { timeout: 60_000 }, verifyMermaid);
-test("{§web-diagram-content} a missing diagram chunk preserves source and ordinary messages", verifyUnavailableMermaid);
+test("{§web-diagram-content} unavailable diagram compilation preserves source and ordinary messages", verifyUnavailableMermaid);
 test("{§web-worker-approval} native review controls project complete SDK interrupt sets", { timeout: 60_000 }, verifyApproval);
 test("{§web-worker-questions} native and JSON answers preserve the full response contract", { timeout: 60_000 }, verifyInteractions);

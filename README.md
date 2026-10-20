@@ -117,8 +117,12 @@ Math uses locally bundled Temml and native MathML: `$…$`, `$$…$$`, `\(…\)`
 raw HTML and TeX link/media extensions cannot create controls or fetch content.
 The math renderer and its styles load only when needed.
 
-Mermaid fences become static SVG images using locally bundled `beautiful-mermaid`:
-flowcharts, state, sequence, class, ER and XY diagrams, within its supported syntax.
+Mermaid fences become static SVG images compiled by the web module's pinned
+[Ondine](https://github.com/wevm/ondine) dependency, within its supported syntax.
+The compiler runs in bounded Node worker threads; no compiler or WebAssembly is
+sent to the browser. Compilation uses the existing browser session (or the daemon's
+explicitly unauthenticated mode). `PLURNK_WEB_DIAGRAM_*` limits are documented in
+`ai.plurnk/.env.defaults`.
 The renderer loads only when needed. Source remains available in a disclosure;
 unsupported or invalid diagrams keep their source and a short error. There are no
 interactive diagrams, remote rendering services or external font requests.

@@ -7,6 +7,7 @@ import Documents from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
 import { privateHeaders, redirect, RequestError } from "./http.js";
 import { readAsset, sendAsset } from "./static-assets.js";
+import Diagrams from "./diagrams.js";
 
 /** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers">} Port */
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
@@ -15,6 +16,7 @@ export default function createModule() {
     const yolo = Knob.flag("PLURNK_WEB_YOLO");
     const authenticate = Knob.flag("PLURNK_AUTH");
     const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1), pending: Knob.integer("PLURNK_WEB_LOGIN_PENDING", 1) };
+    const diagrams = new Diagrams();
     /** @type {{ clientId: string, clientSecret: string } | null} */
     let registration = null;
     /** @type {Session | null} */
@@ -60,11 +62,17 @@ export default function createModule() {
                 const revoke = /^\/account\/sessions\/([^/]+)\/revoke$/u.exec(pathname);
                 const others = pathname === "/account/sessions/revoke-others";
                 const token = pathname === "/auth/token";
+                const diagram = pathname === "/render/mermaid";
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
                 try {
                     const inventory = sessions ? session?.account(req) : null;
                     admitted = sessions ? inventory != null : session?.admitted(req) ?? false;
+                    if (diagram) {
+                        if (session !== null && !admitted) throw new RequestError(401, "Sign in to render diagrams.");
+                        await diagrams.serve(req, res);
+                        return;
+                    }
                     if (token && session === null) throw new RequestError(404, "Access credentials are unavailable while authentication is disabled.");
                     if (auth && session !== null) {
                         const expected = token || pathname === "/auth/logout" ? "POST" : "GET";
@@ -120,13 +128,20 @@ export default function createModule() {
                     sendAsset(req, res, resource);
                 } catch (error) {
                     if (!(error instanceof RequestError)) throw error;
-                    const body = token ? Buffer.from(JSON.stringify(Problems.create("web", "token-request-rejected", error.status, error.message)))
+                    const body = token || diagram ? Buffer.from(JSON.stringify(Problems.create("web", diagram ? "diagram-request-rejected" : "token-request-rejected", error.status, error.message)))
                         : documents.error(error.status, error.message, admitted);
-                    res.writeHead(error.status, { ...privateHeaders, "content-type": token ? "application/problem+json" : "text/html; charset=utf-8", "content-length": body.byteLength });
+                    res.writeHead(error.status, { ...privateHeaders, "content-type": token || diagram ? "application/problem+json" : "text/html; charset=utf-8", "content-length": body.byteLength });
                     res.end(req.method === "HEAD" ? undefined : body);
+                } finally {
+                    if (diagram) req.resume();
                 }
             });
         },
-        close() { session?.close(); },
+        async close() {
+            const cleanup = new AsyncDisposableStack();
+            cleanup.defer(() => session?.close());
+            cleanup.defer(() => diagrams.close());
+            await cleanup.disposeAsync();
+        },
     };
 }

@@ -26,7 +26,9 @@ test("{§web-host} {§web-configuration} configuration admits only an enabled ro
 });
 
 test("{§web-configuration} missing and invalid limits never select code defaults; disabled web ignores them", (t) => {
-    const keys = ["PLURNK_WEB_ENABLED", "PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_LOGIN_PENDING"];
+    const keys = ["PLURNK_WEB_ENABLED", "PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_LOGIN_PENDING",
+        "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_DIAGRAM_PENDING", "PLURNK_WEB_DIAGRAM_TIMEOUT_MS",
+        "PLURNK_WEB_DIAGRAM_INPUT_BYTES", "PLURNK_WEB_DIAGRAM_OUTPUT_BYTES", "PLURNK_WEB_DIAGRAM_EDGES"];
     const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
     t.after(() => {
         for (const [key, value] of Object.entries(original)) {
@@ -72,6 +74,15 @@ test("{§web-configuration} browser YOLO uses the assembled floor and validates 
     assert.throws(createModule, { message: "PLURNK_WEB_YOLO is missing from the assembled environment floor." });
     process.env.PLURNK_WEB_ENABLED = "0";
     assert.deepEqual(createModule(), {}, "disabled web does not require its unused approval setting");
+});
+
+test("{§web-configuration} diagram deadlines cannot overflow Node's timer range", (t) => {
+    const key = "PLURNK_WEB_DIAGRAM_TIMEOUT_MS";
+    const original = process.env[key];
+    t.after(() => { process.env[key] = original; });
+    process.env[key] = String(2 ** 31);
+    assert.throws(createModule, (error) => error instanceof ConfigurationError && error.key === key
+        && error.message.includes("must not exceed 2147483647 milliseconds"));
 });
 
 test("{§web-authorization-style} the registered browser client uses the packaged application stylesheet", async (t) => {
@@ -173,7 +184,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const directory = await mkdtemp(new URL("../.module-test-", import.meta.url));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const base = pathToFileURL(`${directory}/`);
-    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "session.js", "http.js", "static-assets.js"]) {
+    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
         await copyFile(new URL(`../ai.plurnk/${file}`, import.meta.url), new URL(file, base));
     }
     await mkdir(new URL("dist/", base));
