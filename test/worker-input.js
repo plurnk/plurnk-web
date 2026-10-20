@@ -116,6 +116,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     assert.equal(inputs[0].messages.at(-1).content, body);
                     assert.deepEqual(inputs[0].tools.map(({ name }) => name), ["question", "mcp_input_required"]);
                     assert.equal(inputs[0].forwardedProps?.plurnk?.interactive, true);
+                    assert.equal(inputs[0].forwardedProps?.plurnk?.reasoning, "link");
                     assert.equal(inputs[0].forwardedProps?.plurnk?.workspace, undefined);
 
                     await text.fill("Lifecycle fixture: follow-up.");
@@ -123,6 +124,9 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     await page.waitForFunction(() => document.querySelector("#worker-message")?.value === "", undefined, { timeout: 1000 });
                     assert.equal(await send.isEnabled(), true, "accepted input is acknowledged before the next model turn");
                     assert.equal(model.requests.length, 1, "handoff neither restarts nor cancels the running inference");
+                    assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
+                        "{§web-worker-reasoning} delivery handoff clears the old live preview");
+                    assert.equal(JSON.stringify(inputs[1].messages).includes("Considering held-input."), false);
                     assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "1");
                     assert.equal(await page.locator('#worker-inbox [data-text="inbox-id"]').textContent(), inputs[1].messages.at(-1).id);
                     const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
@@ -164,6 +168,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     const action = inputs.at(-1);
                     assert.equal(action.threadId, inputs[0].threadId);
                     assert.equal(action.forwardedProps.plurnk.action.kind, "loop.cancel");
+                    assert.equal(action.forwardedProps.plurnk.reasoning, "link");
+                    assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false);
                     assert.deepEqual(action.messages, [], "cancellation does not resubmit conversation history");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);

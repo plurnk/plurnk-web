@@ -12,8 +12,17 @@ export const interactionTools = [
 
 /** {§web-worker-observer} HttpAgent's public hook also accepts the passive connection endpoint. */
 export default class WorkerAgent extends HttpAgent {
+    /** {§web-worker-reasoning} One negotiation boundary for every browser request.
+     * @param {Parameters<HttpAgent["run"]>[0]} input
+     */
+    run(input) {
+        return super.run({ ...input, forwardedProps: { ...input.forwardedProps,
+            plurnk: { ...input.forwardedProps?.plurnk, reasoning: "link" },
+        } });
+    }
+
     /** @param {Parameters<HttpAgent["run"]>[0]} input */
     connect(input) {
-        return super.run(input);
+        return this.run(input);
     }
 }

@@ -14,6 +14,7 @@ import Diagrams from "./diagrams.js";
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
     const yolo = Knob.flag("PLURNK_WEB_YOLO");
+    const reasoningPreviewChars = Knob.integer("PLURNK_WEB_REASONING_PREVIEW_CHARS", 1);
     const authenticate = Knob.flag("PLURNK_AUTH");
     const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1), pending: Knob.integer("PLURNK_WEB_LOGIN_PENDING", 1) };
     const diagrams = new Diagrams();
@@ -51,7 +52,7 @@ export default function createModule() {
 
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), yolo);
+            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars);
 
             seam.registerHttpRoute("/", async (req, res) => {
                 const pathname = (req.url ?? "").split("?")[0];

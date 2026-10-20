@@ -83,6 +83,7 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
+[data-reasoning-preview][data-reasoning-text=""],
 [data-body-reference]:not([data-body-state="error"]) [data-body-failure],
 [data-body-reference]:not([data-body-state="loading"]) [data-body-loading],
 [data-body-reference]:not([data-body-state="loaded"]) [data-body-content],

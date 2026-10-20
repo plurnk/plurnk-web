@@ -12,6 +12,7 @@ import verifyFootnotes from "./footnotes-browser.js";
 import verifyDiagnostics from "./diagnostics-browser.js";
 import verifyStatus from "./status-browser.js";
 import verifyBodies from "./body-browser.js";
+import verifyReasoning from "./reasoning-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -286,6 +287,7 @@ test("{§web-worker-diagnostics} public notices and Problems remain visible outs
 
 test("{§web-worker-status} {§web-worker-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
 test("{§web-result-bodies} referenced bodies require explicit authenticated reads", { timeout: 60_000 }, verifyBodies);
+test("{§web-worker-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);

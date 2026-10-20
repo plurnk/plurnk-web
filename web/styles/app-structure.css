@@ -87,6 +87,14 @@ table {
     min-inline-size: 0;
 }
 
+/* {§web-worker-reasoning} The preview follows its tail within its own bounded outlet. */
+[data-reasoning-preview] pre {
+    max-block-size: calc(100dvh / 3);
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 /* {§web-worker-approval} Fieldsets must not force literal evidence wider than the viewport. */
 #main [aria-label="Review requests"] fieldset {
     min-inline-size: 0;

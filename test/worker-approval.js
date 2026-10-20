@@ -92,6 +92,12 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             await review.getByRole("button", { name: "Submit responses", exact: true }).click();
             assert.equal(requests.length, 1, "native required controls prevent an unanswered review");
             assert.equal(model.requests.length, 1);
+            const reasoning = page.locator('[data-message-role="reasoning"]').first();
+            await reasoning.locator("summary").click();
+            await reasoning.getByRole("button", { name: "Read body", exact: true }).click();
+            await reasoning.locator('[data-body-state="loaded"]').waitFor();
+            assert.equal(await reasoning.locator('[data-text="body-content"]').textContent(), `Considering ${name}.`,
+                "{§web-worker-reasoning} authenticated inspection uses the real protected reasoning resource");
             await page.getByRole("textbox", { name: "Message", exact: true }).fill("Keep this newer draft.");
             await review.getByRole("radio", { name: decision, exact: false }).check();
             await review.getByRole("button", { name: "Submit responses", exact: true }).click();
@@ -106,6 +112,11 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             assert.deepEqual(resume.resume[0].payload, { decision });
             assert.equal(resume.resume[0].status, "resolved");
             assert.equal(resume.forwardedProps.plurnk.interactive, true);
+            assert.equal(resume.forwardedProps.plurnk.reasoning, "link");
+            assert.ok(resume.messages.some(({ role }) => role === "reasoning"));
+            assert.ok(resume.messages.filter(({ role }) => role === "reasoning").every(({ content }) => content === ""));
+            assert.equal(JSON.stringify(resume.messages).includes(`Considering ${name}.`), false,
+                "explicitly inspected reasoning never enters the approval resume upload");
             assert.equal(resume.forwardedProps.plurnk.action, undefined);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this newer draft.");
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1, "review is not another user message");
@@ -174,7 +185,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         assert.equal(await page.getByRole("radio", { name: "Reject", exact: true }).isChecked(), true);
         assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this draft while deciding.");
         assert.equal(holds.length, 1, "one held connection, not a presentation/reconnect loop");
-        assert.deepEqual(holds[0].forwardedProps, { plurnk: { interrupts: [id] } });
+        assert.deepEqual(holds[0].forwardedProps, { plurnk: { interrupts: [id], reasoning: "link" } });
         assert.equal(holds[0].resume, undefined);
         assert.equal(model.requests.length, 1, "waiting does not answer or run another inference");
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
@@ -388,7 +399,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             await requestApproval(page, name);
             await page.getByRole("radio", { name: "Accept", exact: true }).check();
             await page.getByRole("button", { name: "Submit responses", exact: true }).click();
-            await page.getByText(`Considering ${name}.`, { exact: true }).nth(1).waitFor({ state: "attached" });
+            await page.locator("[data-reasoning-preview]").getByText(`Considering ${name}.`, { exact: true }).waitFor();
             assert.equal(model.requests.length, 2, "the accepted operation has released the next model call");
             if (departure === "navigate") await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
             else await page.close();

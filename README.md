@@ -81,6 +81,12 @@ Operation receipts stay in the conversation; **Read body** fetches a referenced
 result only when requested. Inspected bodies are literal text and are never added
 to client-uploaded conversation history or saved in browser storage.
 
+Live reasoning appears in one temporary plain-text preview, cleared when the
+attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bounds
+its retained tail (4096 Unicode code points by default). Completed turns keep
+their reasoning links in collapsed disclosures; **Read body** retrieves the full
+trace explicitly, without adding it to later Run uploads.
+
 **Send** also supports follow-ups while the worker is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
 uncertain submission is never retried automatically. **Stop** preserves unsent

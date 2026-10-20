@@ -179,7 +179,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         assert.equal(model.requests.length, 1, "navigation neither answers nor cancels a question");
         await answer(page);
         await submit(page);
-        await page.getByText("Considering question-resumed-departure.", { exact: true }).nth(1).waitFor({ state: "attached" });
+        await page.locator("[data-reasoning-preview]").getByText("Considering question-resumed-departure.", { exact: true }).waitFor();
         await page.close();
         model.release("question-resumed-departure");
         const observer = await context.newPage();
