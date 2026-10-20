@@ -93,7 +93,7 @@ export async function verifyMermaid(t) {
                         ]), { content, roles });
                         await page.waitForFunction(() => document.querySelectorAll("[data-diagram]:not([hidden])").length === 6);
                         for (const role of roles) assert.equal(await page.locator(`[data-message-id="${role}"] [data-diagram]`).count(), 1);
-                        assert.equal(await page.locator('[data-call-kind="note"] [data-diagram]').count(), 1);
+                        assert.equal(await page.locator('[data-plurnk-note] [data-diagram]').count(), 1);
                         assert.equal(await page.locator('[data-message-id="result"] img').count(), 0);
                         assert.equal(await page.locator('[data-message-id="result"] pre code').textContent(), content);
                     });

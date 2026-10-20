@@ -1,4 +1,4 @@
-import { $, $$, the } from "on_the_money";
+import { $, the } from "on_the_money";
 import bodyReferences from "./body-references.js";
 
 /** @typedef {{url: string, mimeType?: string}} Reference */
@@ -18,16 +18,20 @@ export default function activity(root, read) {
     const list = $(root, ":scope > ol");
     if (!(list instanceof HTMLOListElement)) throw new Error("Worker activity has no list.");
     const inspect = bodyReferences(root, read);
+    /** @type {Map<string, Element>} */
+    const rows = new Map();
+    /** @type {WeakMap<Element, string>} */
+    const references = new WeakMap();
 
-    /** @param {Element} row @param {string} selector @param {Reference | undefined} source */
-    function reference(row, selector, source) {
+    /** @param {Element} row @param {string} selector @param {Reference | undefined} source @param {string} label */
+    function reference(row, selector, source, label) {
         const outlet = $(row, selector);
         if (!outlet) throw new Error("Activity template has no body outlet.");
         const revision = JSON.stringify(source ?? null);
-        if (the(outlet, "activity-reference") === revision) return;
+        if (references.get(outlet) === revision) return;
         outlet.replaceChildren();
-        if (source) inspect(outlet, { value: source.url, mimeType: source.mimeType });
-        the(outlet, "activity-reference", revision);
+        if (source) inspect(outlet, { value: source.url, mimeType: source.mimeType }, label);
+        references.set(outlet, revision);
     }
 
     /** @param {import("@ag-ui/client").CustomEvent} event */
@@ -41,12 +45,13 @@ export default function activity(root, read) {
                 throw new TypeError("Outside text requires its coordinate, text and token count.");
             }
             const key = JSON.stringify([event.name, attribution, value.coordinate]);
-            const row = $$(list, ":scope > li").find((item) => the(item, "activity-key") === key)
-                ?? $.clone(list, "#worker-outside");
+            const row = rows.get(key) ?? $.clone(list, "#worker-outside");
             the(row, {
-                activityKey: key, activityCoordinate: value.coordinate, activityAttribution: attribution,
-                activityText: value.text, activityTokens: value.tokens,
+                activityKind: "outside", activityLabel: ["Outside operations", attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
+                plurnkCoordinate: value.coordinate, subagentRunId: attribution || null,
+                activityText: value.text, plurnkTokens: value.tokens,
             });
+            rows.set(key, row);
             return;
         }
         if (!value || !Number.isSafeInteger(value.id) || value.id <= 0
@@ -61,17 +66,20 @@ export default function activity(root, read) {
         const reasoning = referenceOf(typeof value.reasoning === "string" ? undefined : value.reasoning);
         if (value.origin === "_plurnk" && value.op === "READ" && value.attrs?.kind === "emission") return;
         const key = JSON.stringify([event.name, attribution, value.worker_id, value.id]);
-        const row = $$(list, ":scope > li").find((item) => the(item, "activity-key") === key)
-            ?? $.clone(list, "#worker-ambient");
+        const row = rows.get(key) ?? $.clone(list, "#worker-ambient");
+        const operation = value.op ?? (value.attrs?.kind === "emissionAttempt" ? "Rejected emission" : "Log entry");
+        const coordinate = `${value.loop_seq}/${value.turn_seq}/${value.sequence}`;
         the(row, {
-            activityKey: key, activityWorker: value.worker_id, activityOrigin: value.origin,
-            activityCoordinate: `${value.loop_seq}/${value.turn_seq}/${value.sequence}`,
-            activityOperation: value.op ?? (value.attrs?.kind === "emissionAttempt" ? "Rejected emission" : "Log entry"),
-            activityState: value.state, activityStatus: value.status_rx, activityAt: value.at,
-            activitySource: value.source ?? "", activityAttribution: attribution,
-            activityEvidence: JSON.stringify(value, null, 2),
+            activityKind: "ambient", activityOperation: operation,
+            activityLabel: [operation, `Worker ${value.worker_id}`, coordinate, value.state, String(value.status_rx),
+                attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
+            plurnkRow: value.id, plurnkWorker: value.worker_id, plurnkOrigin: value.origin,
+            plurnkCoordinate: coordinate, plurnkType: value.op, plurnkState: value.state,
+            plurnkStatus: value.status_rx, plurnkAt: value.at,
+            plurnkSource: value.source, subagentRunId: attribution || null,
         });
-        reference(row, "[data-activity-body]", body);
-        reference(row, "[data-activity-reasoning]", reasoning);
+        reference(row, "[data-activity-body]", body, "Receipt body");
+        reference(row, "[data-activity-reasoning]", reasoning, "Reasoning");
+        rows.set(key, row);
     };
 }

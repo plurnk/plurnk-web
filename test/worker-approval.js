@@ -120,7 +120,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             assert.equal(resume.forwardedProps.plurnk.action, undefined);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this newer draft.");
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1, "review is not another user message");
-            const call = page.locator('[data-calls] > li').filter({ has: page.locator('[data-text="call-name"]', { hasText: /^sh$/u }) });
+            const call = page.locator('[data-call-name="sh"]');
             assert.equal(await call.count(), 1);
             const bodies = await inspectRenderedResults(page);
             if (decision === "accept") assert.ok(bodies.some((body) => body.content === "approved"), JSON.stringify(bodies));
@@ -319,7 +319,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         assert.equal(requests.filter(({ resume }) => resume?.length).length, 2);
         assert.ok(requests.filter(({ resume }) => resume?.length).every((input) => input.threadId === threadId));
         assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
-        assert.equal(await page.locator('[data-calls] [data-text="call-name"]').allTextContents().then((names) => names.includes("sh")), false,
+        assert.equal(await page.locator('[data-call-name="sh"]').count(), 0,
             "independent child calls do not become the owner's own conversation");
         checkBrowser();
     }));

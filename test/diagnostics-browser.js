@@ -29,25 +29,26 @@ export default async function verifyDiagnostics(t) {
                     } };
                     await receive(notice);
                     assert.equal(await list.isVisible(), true);
-                    assert.equal(await rows.first().locator('[data-text="diagnostic-title"]').textContent(), "engine:provider:provider_unavailable");
+                    assert.equal(await rows.first().getByRole("article", { name: "Warning · engine:provider:provider_unavailable", exact: true }).count(), 1);
                     assert.equal(await rows.first().locator('[data-text="diagnostic-message"]').textContent(), notice.value.message);
                     assert.equal(await rows.first().getAttribute("data-diagnostic-level"), "warn");
-                    await rows.first().locator("summary").click();
-                    assert.deepEqual(JSON.parse(await rows.first().locator("code").textContent()), notice.value);
+                    assert.equal(await rows.first().locator("header, details, code").count(), 0);
+                    assert.equal(await rows.first().getAttribute("data-diagnostic-details"), null);
+                    await rows.first().evaluate((element) => { window.retainedDiagnostic = element; });
                     await receive(structuredClone(notice));
                     assert.equal(await rows.count(), 1, "reconnection replay is not another claimed occurrence");
-                    assert.equal(await rows.first().locator("details").evaluate((element) => element.open), true);
+                    assert.equal(await rows.first().evaluate((element) => element === window.retainedDiagnostic), true);
                     await receive({ ...notice, value: { ...notice.value, message: "Retrying in 10s." } });
                     await receive({ ...notice, subagentRunId: "ops://child/7" });
                     assert.equal(await rows.count(), 3, "changed facts and different producers retain their own evidence");
-                    assert.equal(await rows.nth(2).locator('[data-text="diagnostic-attribution"]').textContent(), "ops://child/7");
+                    assert.equal(await rows.nth(2).getAttribute("data-subagent-run-id"), "ops://child/7");
                     for (const level of ["info", "error"]) await receive({ ...notice, value: { source: "fixture", kind: level, level } });
                     const problem = { type: "CUSTOM", name: "plurnk.problem", value: {
                         type: "https://problems.plurnk.xyz/fixture/unavailable", title: "Catalog unavailable", status: 503,
                         detail: "Configured catalog is unavailable.", recovery: "Check the model configuration.", retryable: false,
                     } };
                     await receive(problem);
-                    assert.equal(await rows.last().locator('[data-text="diagnostic-title"]').textContent(), problem.value.title);
+                    assert.equal(await rows.last().getByRole("article", { name: `Error · ${problem.value.title}`, exact: true }).count(), 1);
                     assert.equal(await rows.last().locator('[data-text="diagnostic-recovery"]').textContent(), problem.value.recovery);
                     assert.equal(await list.locator("img, script, form, a").count(), 0, "diagnostic data cannot create actions or network requests");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "diagnostics never fabricate conversation messages");

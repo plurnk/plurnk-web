@@ -84,11 +84,11 @@ subtotals; **Workspace activity** and **Unobserved messages** expose preparation
 indexing and accepted input awaiting observation. Workspace names and folder labels
 follow supplied state without changing the observed worker or rewriting the URL.
 Daemon notices and nonterminal Problems appear separately under **Observed diagnostics**,
-with their exact details available. Distinct observations remain through reconnects
+as literal messages and recovery guidance. Distinct observations remain through reconnects
 on that page; they are not an archive or an indication that the worker has stopped.
 **Observed activity** exposes non-conversation log rows and text emitted outside
-operations, with their source coordinates and supplied worker attribution. Native
-disclosures retain the exact evidence; referenced receipt bodies and reasoning are
+operations, retaining source coordinates and supplied worker attribution as entry
+semantics and accessible names. Referenced receipt bodies and reasoning are
 read only on request. These observations survive reconnects on the same page, not
 reloads; they are not replies or a complete activity history.
 Operation receipts stay in the conversation; **Read body** fetches a referenced
@@ -134,11 +134,12 @@ validated before submission and by the daemon; local errors preserve your input.
 Refresh rediscovers pending questions but does not retain unsubmitted answers.
 
 Messages follow HttpAgent's order; unknown history is not shown as empty.
-Reasoning, calls and results use native collapsed
-disclosures; opening one does not start work. Markdown is sanitized, raw HTML stays
-text and images become links. Tool results remain literal inspectable data.
-NOTE is collapsed working material, not an answer: its category is visible,
-with its Markdown body and exact arguments available inside the disclosure.
+Content and calls are direct semantic entries with accessible names and
+presentation-relevant metadata, not nested protocol inspectors. Reasoning retains
+its native disclosure; opening it does not start work. Markdown is sanitized, raw
+HTML stays text and images become links. Tool arguments and results remain literal
+content. NOTE presents its Markdown body with category and attribution semantics,
+without an enclosing assistant article or a duplicate arguments view.
 The browser keeps no separate transcript or persistent conversation cache.
 
 Markdown footnotes use native reference and back-links within each message or NOTE.

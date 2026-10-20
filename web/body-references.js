@@ -22,9 +22,9 @@ export default function bodyReferences(root, read) {
         }
     });
 
-    /** @param {Element} outlet @param {{value: string, mimeType?: string}} source */
-    return (outlet, source) => {
+    /** @param {Element} outlet @param {{value: string, mimeType?: string}} source @param {string} label */
+    return (outlet, source, label = "Body") => {
         const row = $.clone(outlet, "#conversation-body-reference");
-        the(row, { bodyAddress: source.value, bodyMime: source.mimeType ?? "", bodyState: "idle", bodyError: "", bodyContent: "" });
+        the(row, { bodyLabel: label, bodyAddress: source.value, bodyMime: source.mimeType ?? "", bodyState: "idle", bodyError: "", bodyContent: "" });
     };
 }

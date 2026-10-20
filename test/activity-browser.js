@@ -51,12 +51,15 @@ export default async function verifyActivity(t) {
                     await receive(ambient);
                     await activity.locator(":scope > summary").click();
                     const row = rows.first();
-                    await row.locator(":scope > details > summary").click();
-                    assert.equal(await row.locator("[data-text=activity-worker]").textContent(), "9");
-                    assert.equal(await row.locator("[data-text=activity-coordinate]").textContent(), "1/2/3");
-                    assert.equal(await row.locator("[data-text=activity-state]").textContent(), "resolved");
-                    assert.equal(await row.locator("[data-text=activity-status]").textContent(), "200");
-                    assert.deepEqual(JSON.parse(await row.locator("[data-text=activity-evidence]").textContent()), ambient.value);
+                    assert.equal(await row.getAttribute("data-plurnk-worker"), "9");
+                    assert.equal(await row.getAttribute("data-plurnk-coordinate"), "1/2/3");
+                    assert.equal(await row.getAttribute("data-plurnk-state"), "resolved");
+                    assert.equal(await row.getAttribute("data-plurnk-status"), "200");
+                    assert.equal(await row.getByRole("article", { name: "READ · Worker 9 · 1/2/3 · resolved · 200", exact: true }).count(), 1);
+                    assert.equal(await row.locator("details, dl").count(), 0);
+                    assert.equal(await row.getAttribute("data-activity-evidence"), null);
+                    assert.equal(await row.getAttribute("data-activity-key"), null);
+                    assert.doesNotMatch(await row.innerHTML(), /Literal request/u, "unused protocol objects remain out of markup and attributes");
                     assert.equal(reads.length, 0);
                     assert.equal(credentials, 0, "projection and disclosures neither fetch nor obtain credentials");
                     const body = row.locator("[data-activity-body] [data-body-reference]");
@@ -66,12 +69,12 @@ export default async function verifyActivity(t) {
                     await page.evaluate(() => { window.bodyNode = document.querySelector("#worker-activity [data-body-content]"); });
                     await receive(structuredClone(ambient));
                     assert.equal(await rows.count(), 1);
-                    assert.equal(await row.locator(":scope > details").getAttribute("open"), "");
+                    assert.equal(await row.getByRole("region", { name: "Receipt body", exact: true }).count(), 1);
                     assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("#worker-activity [data-body-content]")), true);
                     await receive({ ...ambient, value: { ...ambient.value, state: "failed", status_rx: 409, source: "message://child/1" } });
                     assert.equal(await rows.count(), 1, "a row update is not a new event history");
-                    assert.equal(await row.locator("[data-text=activity-state]").textContent(), "failed");
-                    assert.equal(await row.locator("[data-text=activity-source]").textContent(), "message://child/1");
+                    assert.equal(await row.getAttribute("data-plurnk-state"), "failed");
+                    assert.equal(await row.getAttribute("data-plurnk-source"), "message://child/1");
                     assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("#worker-activity [data-body-content]")), true);
                     assert.equal(reads.length, 1);
 
@@ -83,9 +86,9 @@ export default async function verifyActivity(t) {
                     await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12,
                         reasoning: { url: new URL("/agui/7/12/reasoning/1/2", url).href, mimeType: "text/plain" } } });
                     const child = rows.nth(2);
-                    await child.locator(":scope > details > summary").click();
-                    assert.equal(await child.locator("[data-text=activity-worker]").textContent(), "12");
-                    assert.equal(await child.locator("[data-text=activity-attribution]").textContent(), "ops://child/7");
+                    assert.equal(await child.getAttribute("data-plurnk-worker"), "12");
+                    assert.equal(await child.getAttribute("data-subagent-run-id"), "ops://child/7");
+                    assert.equal(await child.getByRole("region", { name: "Reasoning", exact: true }).count(), 1);
                     assert.equal(await child.locator("[data-activity-reasoning] [data-text=body-address]").textContent(),
                         new URL("/agui/7/12/reasoning/1/2", url).href);
                     assert.equal(reads.length, 1, "foreign reasoning is not automatically fetched");
@@ -94,13 +97,13 @@ export default async function verifyActivity(t) {
                     await receive(outside);
                     await receive(outside);
                     const prose = rows.nth(3);
-                    await prose.locator(":scope > details > summary").click();
                     assert.equal(await prose.locator("[data-text=activity-text]").textContent(), source);
-                    assert.equal(await prose.locator("[data-text=activity-tokens]").textContent(), "21");
+                    assert.equal(await prose.getAttribute("data-plurnk-tokens"), "21");
+                    assert.equal(await prose.getByRole("article", { name: "Outside operations", exact: true }).count(), 1);
                     await receive({ ...outside, value: { ...outside.value, text: "Changed evidence", tokens: 3 } });
                     assert.equal(await rows.count(), 4);
                     assert.equal(await prose.locator("[data-text=activity-text]").textContent(), "Changed evidence");
-                    assert.equal(await prose.locator(":scope > details").getAttribute("open"), "");
+                    assert.equal(await prose.getAttribute("data-plurnk-tokens"), "3");
                     assert.equal(await activity.locator("img, script, form, a").count(), 0);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
                     assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial");
