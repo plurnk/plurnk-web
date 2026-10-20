@@ -134,5 +134,6 @@ export default function conversation(root, readBody) {
             tools(row, message.role === "assistant" ? message.toolCalls ?? [] : []);
             if (list.children[index] !== row) list.insertBefore(row, list.children[index] ?? null);
         }
+        the(root, "conversation-empty", messages.length === 0);
     };
 }

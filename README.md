@@ -133,7 +133,8 @@ validated before submission and by the daemon; local errors preserve your input.
 **Cancel this request** cancels that question, not the worker's other work.
 Refresh rediscovers pending questions but does not retain unsubmitted answers.
 
-Messages follow HttpAgent's order. Reasoning, calls and results use native collapsed
+Messages follow HttpAgent's order; unknown history is not shown as empty.
+Reasoning, calls and results use native collapsed
 disclosures; opening one does not start work. Markdown is sanitized, raw HTML stays
 text and images become links. Tool results remain literal inspectable data.
 NOTE is collapsed working material, not an answer: its category is visible,
