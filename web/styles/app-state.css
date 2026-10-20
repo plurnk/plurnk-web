@@ -53,6 +53,14 @@ header nav button:is(:hover, :focus-visible) {
     color: var(--pico-del-color);
 }
 
+/* {§web-worker-activity} Native disclosures expose only supplied non-conversation evidence. */
+#worker-activity:not(:has(> ol > li)),
+[data-activity-source=""] [data-activity-source],
+[data-activity-attribution=""] [data-activity-attribution],
+#worker-activity section:has(> [data-activity-body]:empty, > [data-activity-reasoning]:empty) {
+    display: none;
+}
+
 /* {§web-worker-streams} Census and local inspection state control native disclosures. */
 #worker-streams:not([data-stream-count="0"]) [data-no-streams],
 [data-stream-outcomes]:not(:has(ol > li)),

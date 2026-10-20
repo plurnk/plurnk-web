@@ -14,6 +14,7 @@ export const contentAttack = [
 
 export const diagramContent = "```mermaid\nflowchart LR\n Client --> Daemon\n```";
 export const footnoteAnswer = "**Footnote witness**[^a], repeated[^a], distinct[^a-2].\n\n[^a]: First definition.\n\n[^a-2]: Second definition.";
+export const outsideText = "Outside evidence, not the final answer.";
 
 export default async function startModel({ approvalCommand = "printf approved" } = {}) {
     const requests = [];
@@ -72,6 +73,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
                 if (!response.destroyed) {
                     const content = lifecycle === "wait-status" && visit === 1
                         ? `\`\`\`sh\nnode --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'\n\`\`\`\n\`\`\`WAIT <60>\n\`\`\``
+                        : lifecycle === "activity" && visit === 1 ? outsideText
                         : lifecycle.startsWith("status-") && visit === 1 ? "```READ (worker://user/identity.md)\n```"
                         : lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
                         : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `\`\`\`sh\n${approvalCommand}\n\`\`\``

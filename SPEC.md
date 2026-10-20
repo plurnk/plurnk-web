@@ -357,6 +357,16 @@ submission and explicit cancellation belong to {§web-worker-input}.
 | Retention | The page retains distinct observed diagnostics across delivery changes and reconnects. An exact repeat of the event name, payload serialization and subagent attribution reuses its existing entry without closing an open disclosure. This is neither an occurrence count nor a durable diagnostic history: reload starts from what the daemon supplies again. No browser storage, transcript reconstruction or inferred error resolution. |
 | Authority | Notice severity is producer-supplied; an error-level Notice or nonterminal Problem is not a failed worker. Connection errors and operation results keep their existing owners. The diagnostic list does not claim to contain events from before attachment or from unobserved children. |
 
+## §web-worker-activity Observed non-conversation activity
+
+| Boundary | Contract |
+|---|---|
+| Intake | The current HttpAgent supplies `CUSTOM plurnk.ambient` client-facing log rows and `CUSTOM plurnk.outside` text emitted outside operations. They remain separate from SDK messages, reasoning previews, diagnostics, approvals and lifecycle. Unknown event families are ignored. Invalid identity or displayed fields fail at intake, not as empty activity. |
+| Document | A native “Observed activity” disclosure contains an ordered list. Ambient rows show their supplied worker ID, origin, log coordinate, operation (or rejected-emission label), row state, receipt status, time and optional source/subagent attribution. Outside text shows its supplied coordinate, exact token count and literal text, explicitly labelled “Outside operations”, never “Assistant”. Each ambient row exposes its complete supplied evidence in a native disclosure. No inferred names, worker tree, operation parsing or executable markup. |
+| Duplication | Ambient rows use their worker and row IDs plus supplied subagent attribution; outside text uses its coordinate plus attribution. Repeated delivery updates that entry in first-observation order. Unchanged evidence preserves its nodes, open disclosures and inspected bodies. Changed references replace only their inspection outlets. The `_plurnk` READ row with `attrs.kind=emission` is omitted because its announced operations already have their own conversation representation; rejected emissions and other ambient rows are not suppressed. |
+| Inspection | Supplied body and reasoning references use the existing explicit authenticated reader under {§web-result-bodies}; they are separately labelled, literal snapshots, not automatic downloads. Opening an activity disclosure makes no request. Inspection never adds text to future conversation uploads. |
+| Retention | Observations belong to this page, not a durable history. Delivery changes and reconnects retain them; reload starts with only what the daemon supplies again. Do not reconstruct past ambient/outside events from messages, poll for them, persist them in browser storage or imply unseen activity was absent. Disconnection retains visibly stale evidence under {§web-worker-observer}; neither events nor browser departure cancel or complete work. |
+
 ## §web-worker-streams Executor observation
 
 | Boundary | Contract |

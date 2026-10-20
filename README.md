@@ -77,6 +77,11 @@ follow supplied state without changing the observed worker or rewriting the URL.
 Daemon notices and nonterminal Problems appear separately under **Observed diagnostics**,
 with their exact details available. Distinct observations remain through reconnects
 on that page; they are not an archive or an indication that the worker has stopped.
+**Observed activity** exposes non-conversation log rows and text emitted outside
+operations, with their source coordinates and supplied worker attribution. Native
+disclosures retain the exact evidence; referenced receipt bodies and reasoning are
+read only on request. These observations survive reconnects on the same page, not
+reloads; they are not replies or a complete activity history.
 Operation receipts stay in the conversation; **Read body** fetches a referenced
 result only when requested. Inspected bodies are literal text and are never added
 to client-uploaded conversation history or saved in browser storage.
