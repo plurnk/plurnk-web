@@ -41,7 +41,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
             for (const view of [page, other]) {
                 await view.waitForFunction(() => {
                     const status = document.querySelector("#worker-status");
-                    return status?.dataset.connection === "connected" && status.dataset.lifecycle === "failed";
+                    return status?.dataset.connection === "connected" && status.dataset.lifecycle === "cancelled";
                 });
                 assert.equal(await view.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
                 assert.equal(await view.locator('[data-message-role="user"]').count(), 1);

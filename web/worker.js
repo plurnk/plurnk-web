@@ -11,6 +11,8 @@ import reasoningPreview from "./reasoning-preview.js";
 import workerStreams from "./worker-streams.js";
 import readEntry from "./read-entry.js";
 import activity from "./worker-activity.js";
+import managementAction from "./management-action.js";
+import workerCommands, { isCommand } from "./worker-commands.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -64,12 +66,32 @@ export default function observeWorker(element) {
     let delivery;
     /** @type {AbortController | undefined} */
     let cancellation;
+    /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
+    const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, threadId, auth, signal);
+    const runCommand = workerCommands(controls, {
+        call: action,
+        stop: cancelWork,
+        async toggleYolo() {
+            const enabled = the(element, "yolo") !== "1";
+            the(element, { yolo: enabled ? "1" : "0", approvalMode: enabled ? "Automatic" : "Manual" });
+            const mode = review.automatic(enabled);
+            const current = agent;
+            if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
+                const resume = await review.decisions(current.pendingInterrupts);
+                if (resume && current === agent && the(element, "connection") === "interrupted" && !cancellation) connect({ resume });
+            }
+            availability();
+            return enabled;
+        },
+    });
 
     function availability() {
         const current = the(element, "connection");
         const live = status && ["queued", "running", "parked"].includes(status.lifecycle);
+        const commandPending = the(controls, "command-pending") !== null;
         the(controls, {
-            sendUnavailable: current === "connected" && (!pending || pending.retryable) && !cancellation ? null : "",
+            sendUnavailable: (isCommand(draft.value) ? !commandPending
+                : current === "connected" && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
         });
         the(review.form, "review-unavailable", current === "interrupted" && !cancellation ? null : "");
@@ -226,10 +248,22 @@ export default function observeWorker(element) {
             connect();
         }
     });
-    on(compose, "input", "textarea", () => draft.setCustomValidity(""));
-    on(compose, "submit", "form", (event) => {
+    on(compose, "input", "textarea", () => { draft.setCustomValidity(""); availability(); });
+    on(compose, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(controls, "send-unavailable") !== null) return;
+        if (isCommand(draft.value)) {
+            const text = draft.value;
+            the(controls, "command-pending", "");
+            availability();
+            try {
+                if (await runCommand(text, resources.signal) && draft.value === text) draft.value = "";
+            } finally {
+                the(controls, "command-pending", null);
+                availability();
+            }
+            return;
+        }
         if (!draft.value.trim()) {
             draft.setCustomValidity("Enter a message.");
             draft.reportValidity();
@@ -256,29 +290,32 @@ export default function observeWorker(element) {
         } finally { availability(); }
     });
 
-    on(stop, "submit", "form", async (event) => {
-        event.preventDefault();
-        if (the(controls, "stop-unavailable") !== null) return;
+    // {§web-worker-commands} The button and slash command have one explicit cancellation path.
+    async function cancelWork() {
+        if (cancellation) throw new Error("Stop is already pending.");
         const controller = new AbortController();
         cancellation = controller;
         availability();
-        the(controls, { messageStatus: "Requesting Stop…", commandError: "" });
-        const command = new WorkerAgent({ url: "/agui", threadId });
         try {
-            command.headers = await credentials(controller.signal);
+            const outcome = /** @type {{cancelled: boolean}} */ (
+                await action("loop.cancel", {}, controller.signal));
             controller.signal.throwIfAborted();
-            const { result } = await command.runAgent({ abortController: controller, forwardedProps: { plurnk: { action: { kind: "loop.cancel" } } } });
-            controller.signal.throwIfAborted();
-            const outcome = /** @type {{ok?: boolean, result?: {cancelled?: boolean}} | undefined} */ (result);
-            if (outcome?.ok !== true || typeof outcome.result?.cancelled !== "boolean") throw new Error("Stop was not acknowledged.");
-            the(controls, "message-status", outcome.result.cancelled ? "Stop requested." : "No active work to stop.");
+            if (typeof outcome?.cancelled !== "boolean") throw new Error("Stop was not acknowledged.");
             if (the(element, "connection") === "interrupted") connect();
-        } catch (error) {
-            if (!controller.signal.aborted) the(controls, { messageStatus: "", commandError: `Stop could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            return outcome.cancelled ? "Stop requested." : "No active work to stop.";
         } finally {
-            command.headers = {};
             cancellation = undefined;
             availability();
+        }
+    }
+
+    on(stop, "submit", "form", async (event) => {
+        event.preventDefault();
+        if (the(controls, "stop-unavailable") !== null) return;
+        the(controls, { messageStatus: "Requesting Stop…", commandError: "" });
+        try { the(controls, "message-status", await cancelWork()); }
+        catch (error) {
+            if (!resources.signal.aborted) the(controls, { messageStatus: "", commandError: `Stop could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         }
     });
 

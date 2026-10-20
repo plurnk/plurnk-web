@@ -11,35 +11,76 @@ const proposal = (interrupt) => /** @type {import("@plurnk/plurnk-contracts").Pr
  */
 export default function reviewRequests(controls, yolo) {
     const form = $.clone(controls, "#worker-review", { position: "afterbegin" });
-    const list = $(form, "[data-requests]");
-    if (!(form instanceof HTMLFormElement) || !list) throw new Error("Review template is incomplete.");
+    const outlet = $(form, "[data-requests]");
+    if (!(form instanceof HTMLFormElement) || !outlet) throw new Error("Review template is incomplete.");
+    const list = outlet;
     /** @type {Array<() => Promise<NonNullable<import("@ag-ui/client").RunAgentParameters["resume"]>[number] | undefined>>} */
     let responses = [];
+    /** @type {Interrupts} */
+    let current = [];
+    let supported = false;
+    /** @type {Map<string, Element>} */
+    const rows = new Map();
+    function mode() {
+        const manual = supported ? current.filter((interrupt) => !yolo || proposal(interrupt) === undefined).length : 0;
+        the(form, "request-count", manual);
+        return !supported ? "unsupported" : manual > 0 ? "manual" : "automatic";
+    }
+    /** @param {Interrupts[number]} interrupt @param {number} index @param {Element} [before] */
+    function presentProposal(interrupt, index, before) {
+        const facts = proposal(interrupt);
+        if (!facts) throw new Error("Proposal presentation has no facts.");
+        const row = before ? $.clone(before, "#worker-proposal", { position: "beforebegin" }) : $.clone(list, "#worker-proposal");
+        rows.set(interrupt.id, row);
+        the(row, {
+            interruptId: interrupt.id, proposalChoice: `decision-${index}`, proposalWorker: facts.worker,
+            proposalOp: facts.op, proposalTarget: JSON.stringify(facts.target, null, 2),
+            proposalBody: facts.body, proposalDetails: JSON.stringify(facts, null, 2),
+        });
+    }
     the(form, { requestCount: 0, reviewUnavailable: "" });
     return {
         form,
+        /** {§web-worker-commands} Change only proposal controls; question answers remain in their original nodes.
+         * @param {boolean} value
+         */
+        automatic(value) {
+            yolo = value;
+            if (supported) {
+                for (let index = current.length - 1; index >= 0; index--) {
+                    const interrupt = current[index];
+                    if (!proposal(interrupt)) continue;
+                    if (yolo) {
+                        rows.get(interrupt.id)?.remove();
+                        rows.delete(interrupt.id);
+                    } else if (!rows.has(interrupt.id)) {
+                        const next = current.slice(index + 1).map(({ id }) => rows.get(id)).find(Boolean);
+                        presentProposal(interrupt, index, next);
+                    }
+                }
+            }
+            return mode();
+        },
         /** @param {Interrupts} interrupts @param {import("@ag-ui/client").HttpAgent["messages"]} [messages] */
         present(interrupts, messages = []) {
+            current = interrupts;
             const calls = messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []);
-            const supported = interrupts.length > 0 && interrupts.every((interrupt) => {
+            supported = interrupts.length > 0 && interrupts.every((interrupt) => {
                 const facts = proposal(interrupt);
                 return facts !== undefined ? facts.disposition.decision === "review"
                     : interrupt.reason === "tool_call" && interrupt.responseSchema !== undefined
                         && calls.some(({ id }) => id === interrupt.toolCallId);
             });
-            const manual = supported ? interrupts.filter((interrupt) => !yolo || proposal(interrupt) === undefined).length : 0;
-            the(form, "request-count", manual);
             list.replaceChildren();
+            rows.clear();
             responses = (supported ? interrupts : []).map((interrupt, index) => {
                 const facts = proposal(interrupt);
-                if (facts !== undefined && yolo) return async () => ({
-                    interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision: "accept", outcome: "client_yolo" },
-                });
                 if (facts === undefined) {
                     const call = calls.find(({ id }) => id === interrupt.toolCallId);
                     if (!call || !interrupt.responseSchema) throw new Error("Question interrupt has no request contract.");
                     const interaction = /** @type {import("@plurnk/plurnk-contracts").ClientInteractionProjection | undefined} */ (interrupt.metadata?.plurnk?.interaction);
                     const row = $.clone(list, "#worker-question");
+                    rows.set(interrupt.id, row);
                     the(row, {
                         interruptId: interrupt.id,
                         requestWorker: interaction?.workerId ?? "",
@@ -55,24 +96,18 @@ export default function reviewRequests(controls, yolo) {
                         return result && { interruptId: interrupt.id, ...result };
                     };
                 }
-                const row = $.clone(list, "#worker-proposal");
-                the(row, {
-                    interruptId: interrupt.id,
-                    proposalChoice: `decision-${index}`,
-                    proposalWorker: facts.worker,
-                    proposalOp: facts.op,
-                    proposalTarget: JSON.stringify(facts.target, null, 2),
-                    proposalBody: facts.body,
-                    proposalDetails: JSON.stringify(facts, null, 2),
-                });
+                if (!yolo) presentProposal(interrupt, index);
                 return async () => {
+                    if (yolo) return {
+                        interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision: "accept", outcome: "client_yolo" },
+                    };
                     const values = new FormData(form);
                     const decision = values.get(`decision-${index}`);
                     if (decision !== "accept" && decision !== "reject") throw new Error("Approval form has no decision.");
                     return { interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision } };
                 };
             });
-            return !supported ? "unsupported" : manual > 0 ? "manual" : "automatic";
+            return mode();
         },
         /** @param {Interrupts} interrupts */
         async decisions(interrupts) {

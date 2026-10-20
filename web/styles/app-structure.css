@@ -103,6 +103,7 @@ table {
 #worker-conversation pre,
 #worker-streams pre,
 #worker-activity pre,
+#worker-command-results pre,
 #main [aria-label="Review requests"] pre,
 #worker-conversation [data-math],
 #worker-conversation [data-diagram-viewport] {

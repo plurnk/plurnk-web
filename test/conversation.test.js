@@ -15,6 +15,7 @@ import verifyBodies from "./body-browser.js";
 import verifyReasoning from "./reasoning-browser.js";
 import verifyStreams from "./streams-browser.js";
 import verifyActivity from "./activity-browser.js";
+import verifyCommands from "./commands-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -292,6 +293,7 @@ test("{§web-result-bodies} referenced bodies require explicit authenticated rea
 test("{§web-worker-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
 test("{§web-worker-streams} current executor state and explicit output inspection", { timeout: 60_000 }, verifyStreams);
 test("{§web-worker-activity} non-conversation observations retain identity and explicit inspection", { timeout: 60_000 }, verifyActivity);
+test("{§web-worker-commands} isolated command delivery and literal results", { timeout: 60_000 }, verifyCommands);
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);

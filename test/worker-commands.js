@@ -1,0 +1,178 @@
+import assert from "node:assert/strict";
+import { inputPage } from "./worker-input.js";
+
+function composer(page) {
+    page.setDefaultTimeout(5000);
+    const field = page.getByRole("textbox", { name: "Message", exact: true });
+    const rows = page.locator("#worker-command-results > ol > li");
+    const send = async (text) => {
+        await field.fill(text);
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+    };
+    return { field, rows, send, submit: async (text, expected = "done") => {
+        const index = await rows.count();
+        await send(text);
+        const row = rows.nth(index);
+        await row.locator(`[data-command-state="${expected}"]`).waitFor();
+        return row;
+    } };
+}
+
+const reasoning = {
+    PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_REASONING_EFFORT_PATH: "/reasoning_effort",
+    PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_REASONING_EFFORTS: "low,high",
+};
+
+// {§web-worker-commands} Real shipped composer and public daemon actions, never model-authored commands.
+export default async function verifyWorkerCommands({ t, withDaemon }) {
+    await t.test("{§web-worker-commands} slash commands remain outside model messages and preserve daemon truth", () =>
+        inputPage(withDaemon, async ({ page, model, checkBrowser, setup, workspace }) => {
+            const sent = [];
+            page.on("request", (request) => {
+                if (new URL(request.url()).pathname === "/agui") sent.push(request.postDataJSON());
+            });
+            const { field, submit } = composer(page);
+            const help = await submit("/help");
+            const names = await help.locator("[data-command-name]").evaluateAll((items) => items.map((item) => item.dataset.commandName));
+            assert.deepEqual(names, ["help", "models", "model", "effort", "capabilities", "yolo", "stop"]);
+            assert.equal(sent.length, 0);
+            for (const text of ["/quit", "/import anything", "/model a b c", "/effort low high", "/yolo yes", "/capabilities {"]) {
+                await submit(text, "error");
+                assert.equal(await field.inputValue(), text);
+            }
+            assert.equal(sent.length, 0, "bad command syntax does not become a daemon action or prompt");
+            const catalog = await submit("/models");
+            assert.match(await catalog.textContent(), /browser-fixture/u);
+            assert.ok(await catalog.locator("table").count());
+            const current = await submit("/model");
+            assert.match(await current.textContent(), /browser-fixture\/browser-fixture/u);
+            const effort = await submit("/effort");
+            assert.match(await effort.textContent(), /Supported/u);
+            await submit("/effort low");
+            assert.match(await (await submit("/effort")).textContent(), /low \(explicit\)/u);
+            await submit("/effort invented", "error");
+            const absent = await submit("/model nonexistent-web-route", "error");
+            assert.ok((await absent.locator("[data-text=command-problem]").textContent()).length > 0);
+            const selected = await submit("/model browser high");
+            assert.match(await selected.textContent(), /browser-fixture\/browser-fixture/u);
+            assert.match(await (await submit("/effort")).textContent(), /high \(explicit\)/u);
+            await page.reload();
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high (explicit)");
+            assert.equal(await page.locator("#worker-command-results > ol > li").count(), 0, "command history is page-local");
+            const capabilities = await submit("/capabilities");
+            assert.deepEqual(await capabilities.locator("dt").allTextContents(), ["Service", "Workspace", "Effective"]);
+            const policy = { deny: [{ runtime: "sh" }] };
+            await submit(`/capabilities ${JSON.stringify(policy)}`);
+            const { result } = await setup.runAgent({ forwardedProps: { plurnk: { workspace, action: { kind: "workspace.capabilities.get" } } } });
+            assert.equal(result.ok, true, JSON.stringify(result));
+            assert.deepEqual(result.result.workspace, policy);
+            await submit("/capabilities {}");
+            await submit("/stop");
+            assert.equal(model.requests.length, 0);
+            assert.equal(await page.locator("[data-messages] > li").count(), 0);
+            for (const input of sent) {
+                assert.deepEqual(input.messages, []);
+                assert.deepEqual(input.tools, []);
+                assert.ok(input.forwardedProps.plurnk.action.kind);
+                assert.equal(input.forwardedProps.plurnk.interactive, undefined);
+            }
+            await field.fill("Lifecycle fixture: command-followup.");
+            await page.getByRole("button", { name: "Send", exact: true }).click();
+            await page.getByText("Completed command-followup.", { exact: true }).waitFor();
+            assert.equal(model.requests.length, 1);
+            assert.doesNotMatch(JSON.stringify(sent.at(-1).messages), /nonexistent-web-route|\/capabilities|\/models/u);
+            checkBrowser();
+        }, { authenticated: true, env: reasoning }));
+
+    await t.test("{§web-worker-commands} a modelless worker selects its route without inference", () =>
+        inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            const { submit } = composer(page);
+            const before = await submit("/model");
+            assert.match(await before.textContent(), /Not selected/u);
+            await submit("/model browser low");
+            const after = await submit("/effort");
+            assert.match(await after.textContent(), /low \(explicit\)/u);
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent.includes("browser-fixture")
+                && document.querySelector("#worker-status [data-text=effort]")?.textContent === "low (explicit)");
+            await page.reload();
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent.includes("browser-fixture"));
+            assert.equal(await page.locator("#worker-status [data-text=effort]").textContent(), "low (explicit)");
+            assert.equal(model.requests.length, 0);
+            checkBrowser();
+        }, { selector: null, env: { ...reasoning, PLURNK_MODEL: "" } }));
+
+    // https://repo.possumtech.com/plurnk/plurnk-service/issues/1194 owns authoritative idle updates.
+    await t.test("{§web-worker-commands} live model controls agree with fresh observation in every open view", () =>
+        inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+            const { submit } = composer(page);
+            const other = await context.newPage();
+            await other.goto(path);
+            await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            assert.equal(await other.locator("#worker-status [data-text=effort]").textContent(), "adaptive (default)");
+            await submit("/effort low");
+            const fresh = await context.newPage();
+            await fresh.goto(path);
+            await fresh.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            assert.equal(await fresh.locator("#worker-status [data-text=effort]").textContent(), "low (explicit)",
+                "a fresh authoritative snapshot confirms the mutation");
+            await Promise.all([page, other].map((view) => view.waitForFunction(
+                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "low (explicit)", undefined, { timeout: 5000 })));
+            await submit("/model browser high");
+            await Promise.all([page, other, fresh].map((view) => view.waitForFunction(
+                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high (explicit)", undefined, { timeout: 5000 })));
+            assert.equal(model.requests.length, 0);
+            checkBrowser();
+        }, { env: reasoning }));
+
+    await t.test("{§web-worker-commands} pending review accepts page-local YOLO and active work retains daemon restrictions", () =>
+        inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            const { submit, send, field, rows } = composer(page);
+            await send("Lifecycle fixture: approval-command.");
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
+            const form = page.getByRole("form", { name: "Review requests", exact: true });
+            assert.equal(await form.isVisible(), true);
+            await submit("/help stop");
+            assert.equal(await form.isVisible(), true, "an informational command never settles review");
+            await submit("/yolo");
+            await page.getByText("Completed approval-command.", { exact: true }).waitFor();
+            assert.equal(await page.locator("#worker-status").getAttribute("data-yolo"), "1");
+            assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"));
+            await page.reload();
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            assert.equal(await page.locator("#worker-status").getAttribute("data-yolo"), "0", "reload restores configured client policy");
+            await send("Lifecycle fixture: held-command.");
+            await page.getByText("Considering held-command.", { exact: true }).waitFor({ state: "attached" });
+            const failed = await submit("/effort low", "error");
+            const problem = JSON.parse(await failed.locator("[data-text=command-problem]").textContent());
+            assert.equal(problem.status, 409);
+            assert.match(problem.type, /worker-loop-active$/u);
+            await submit("/help");
+            const delivery = Promise.withResolvers();
+            const hold = async (route) => {
+                if (route.request().postDataJSON().forwardedProps?.plurnk?.action?.kind === "worker.model.get") await delivery.promise;
+                await route.continue();
+            };
+            await page.route("**/agui", hold);
+            try {
+                const receiving = page.waitForRequest((request) => new URL(request.url()).pathname === "/agui"
+                    && request.postDataJSON().forwardedProps?.plurnk?.action?.kind === "worker.model.get");
+                await send("/model");
+                await receiving;
+                await field.fill("/help effort");
+                assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isDisabled(), true);
+                assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isEnabled(), true,
+                    "explicit cancellation remains reachable while an inspection is pending");
+                delivery.resolve();
+                await rows.last().locator("[data-command-state=done]").waitFor();
+                assert.equal(await field.inputValue(), "/help effort", "a delayed result cannot clear newer typing");
+            } finally {
+                delivery.resolve();
+                await page.unroute("**/agui", hold);
+            }
+            const stopped = await submit("/stop");
+            assert.match(await stopped.textContent(), /Stop requested/u);
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.lifecycle === "cancelled");
+            assert.equal(model.requests.length, 3, "commands did not start another inference");
+            checkBrowser();
+        }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
+}

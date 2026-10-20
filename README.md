@@ -12,6 +12,15 @@ breadcrumbs, their actual parent, a native worker-tree disclosure, live status a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
 the worker's current work. Pending operations have native Accept/Reject review forms;
 questions and MCP input share the same review and resume path.
+The message box also accepts `/help`, `/models [search]`, `/model [selector] [effort]`,
+`/effort [policy]`, `/capabilities [json]`, `/yolo`, and `/stop`. Commands never go
+to the model: their results appear separately from conversation. Model, effort
+and capability changes use daemon actions and retain its validation and active-work
+restrictions. `/capabilities` shows service, workspace and effective policy; a JSON
+argument replaces the workspace policy. `/yolo` changes only this page's automatic
+approval preference, including pending proposals; questions still require answers.
+Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending review.
+`/models` lists aliases and a bounded catalog page; narrow its search for more matches.
 The workspace navigation tree shows kinds and lifecycles at page load, with the current
 worker's branch open. It is navigation, not a live subscription to child transcripts.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.

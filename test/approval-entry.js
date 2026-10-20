@@ -13,6 +13,11 @@ window.review = async (values, messages) => {
     if (mode === "automatic") window.responses.push(await review.decisions(interrupts));
     return mode !== "unsupported";
 };
+window.automatic = (value) => {
+    const mode = review.automatic(value);
+    the(review.form, "review-unavailable", mode === "manual" ? null : "");
+    return mode;
+};
 on(review.form, "submit", "form", async (event) => {
     event.preventDefault();
     const response = await review.decisions(interrupts);

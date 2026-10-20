@@ -18,6 +18,20 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
+/* {§web-worker-commands} Results have their own literal, non-conversation outlet. */
+#worker-command-results:not(:has(ol > li)),
+#worker-command-results [data-command-message=""] > [role="status"],
+#worker-command-results [data-command-evidence=""] > [data-command-evidence],
+#worker-command-results [data-command-problem=""] > [data-command-problem],
+#worker-command-results [data-model-more=""] [data-text="model-more"],
+#worker-command-results section:not([data-alias-count="0"]) > [data-no-aliases] {
+    display: none;
+}
+
+#worker-command-results [data-command-state="error"] > [role="status"] {
+    color: var(--pico-del-color);
+}
+
 /* {§web-worker-questions} Omission and diagnostics are explicit document state. */
 [data-field-optional="false"] > [data-optional-answer],
 [data-field-description=""] > [data-text="field-description"],
