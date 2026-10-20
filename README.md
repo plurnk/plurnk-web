@@ -81,6 +81,14 @@ Operation receipts stay in the conversation; **Read body** fetches a referenced
 result only when requested. Inspected bodies are literal text and are never added
 to client-uploaded conversation history or saved in browser storage.
 
+**Open streams** lists the worker's current executors, including silent streams,
+with lifetime and channel state. **Read output** explicitly fetches a literal
+snapshot of all channels; click again to refresh it. Progress shows only the last
+observed length, not a guessed count. **Observed stream outcomes** retains exact
+conclusions seen on this page, separately from worker completion and conversation
+receipts. Reconnect refreshes current membership; neither inspection nor navigation
+cancels execution.
+
 Live reasoning appears in one temporary plain-text preview, cleared when the
 attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bounds
 its retained tail (4096 Unicode code points by default). Completed turns keep
@@ -231,6 +239,8 @@ delivery, exact READ operands and real command stdout/stderr results are compare
 refresh through the SDK's messages, without custom-row reconstruction. Standard success,
 cancellation, failure and reported token usage are checked separately. No AG-UI traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
+Stream journeys also exercise silent executors, never-written channels, explicit
+authenticated output inspection, completion during absence, cancellation and nonzero exit.
 Browser journeys also check console warnings/errors and uncaught exceptions;
 deliberately tested failures require explicit diagnostic expectations.
 Adversarial content checks exercise rich-text roles, NOTE bodies, literal tool data,

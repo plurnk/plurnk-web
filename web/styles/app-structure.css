@@ -101,6 +101,7 @@ table {
 }
 
 #worker-conversation pre,
+#worker-streams pre,
 #main [aria-label="Review requests"] pre,
 #worker-conversation [data-math],
 #worker-conversation [data-diagram-viewport] {

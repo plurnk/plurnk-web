@@ -357,6 +357,18 @@ submission and explicit cancellation belong to {§web-worker-input}.
 | Retention | The page retains distinct observed diagnostics across delivery changes and reconnects. An exact repeat of the event name, payload serialization and subagent attribution reuses its existing entry without closing an open disclosure. This is neither an occurrence count nor a durable diagnostic history: reload starts from what the daemon supplies again. No browser storage, transcript reconstruction or inferred error resolution. |
 | Authority | Notice severity is producer-supplied; an error-level Notice or nonterminal Problem is not a failed worker. Connection errors and operation results keep their existing owners. The diagnostic list does not claim to contain events from before attachment or from unobserved children. |
 
+## §web-worker-streams Executor observation
+
+| Boundary | Contract |
+|---|---|
+| Membership | `status.streams` is the complete ordered census of the bound worker's open subscriptions, including silent streams and detached lifetimes. Replace membership from that state; never infer it from calls, output, connection state or a channel's closure. Descendants require their own worker page. An explicit empty census means no open streams. |
+| Document | Native disclosures and lists show canonical target, initiating worker, supplied lifetime and every supplied channel's name, state and MIME type. Preserve unchanged rows, open disclosures and inspected output by entry identity. Removing a stream removes its current-stream row. All supplied values are literal text. |
+| Progress | `CUSTOM plurnk.stream` channel updates supply the last observed output length in Unicode code points. Retain only the latest count per entry/channel for the current delivery, including updates arriving before their census row. This presentation evidence never adds a stream to the census or changes its channel state. A new Run clears counts to “Not observed”; no count is guessed from absent events or old output. |
+| Outcomes | A stream conclusion is separately retained as a page-local observed outcome: producer, resource, scheme, exact result and supplied summary, with Problem details when supplied. Identical repeated conclusions reuse the existing disclosure. Channel closure, command exit and worker outcome are distinct. Reconnection retains observed outcomes; reload does not reconstruct them from conversation history. |
+| Inspection | A native Read output control makes one explicit public `entry.read` management Run for that target and the page's immutable thread. Acquire fresh same-origin credentials; declare no tools or control claim and upload no conversation. Validate the public `EntryReadResult`. Render every returned channel's exact text, state, MIME type and code-point length as a labelled output snapshot, never Markdown or executable content. The control remains available for an explicit refresh. |
+| Failure and lifetime | Pending reads disable their own control. Failed reads preserve prior output, show the diagnostic and allow explicit retry; a disappeared row cannot receive a late response. Page departure aborts browser-owned reads, never execution. New state replaces stale membership after reconnect; disconnection retains visibly stale evidence under {§web-worker-observer}. No automatic output fetching, polling, stream cancellation or browser persistence. |
+| Separation | Stream counts, inspected output and outcomes stay outside SDK messages and future conversation uploads. Ordinary tool results remain authoritative conversation evidence. A stream failure neither completes the worker nor ends its observation. |
+
 ## §web-worker-input Message composer and explicit Stop
 
 | Boundary | Contract |

@@ -205,6 +205,11 @@ export default class Documents {
             + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-bind="action:worker-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
             + '</p></article></section>'
+            + '<section id="worker-streams" aria-label="Executor streams">'
+            + '<details><summary><span data-i18n="open-streams">Open streams:</span> <span data-text="stream-count">Unknown</span></summary>'
+            + '<p data-no-streams data-i18n="no-open-streams">No open streams.</p><ul data-open-streams></ul></details>'
+            + '<details data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
+            + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ol></ol></details></section>'
             + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ol></ol></section>'
             + '<section id="worker-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'

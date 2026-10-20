@@ -8,6 +8,8 @@ import diagnostics from "./worker-diagnostics.js";
 import accessHeaders from "./access-headers.js";
 import readBody from "./read-body.js";
 import reasoningPreview from "./reasoning-preview.js";
+import workerStreams from "./worker-streams.js";
+import readEntry from "./read-entry.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -45,6 +47,9 @@ export default function observeWorker(element) {
     const diagnosticList = $("#worker-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
+    const streamList = $("#worker-streams");
+    if (!(streamList instanceof HTMLElement)) throw new Error("Worker document has no stream outlet.");
+    const streams = workerStreams(streamList, (target) => readEntry(target, threadId, auth, resources.signal));
     const presentState = workerState(element);
     let agent = new WorkerAgent({ url: "/agui/connect", threadId });
     /** @type {import("@plurnk/plurnk-agui/client").AguiStatusState | undefined} */
@@ -110,8 +115,16 @@ export default function observeWorker(element) {
                 let refusal;
                 /** @type {import("@ag-ui/client").AgentSubscriber} */
                 const subscriber = {
-                    onEvent: ({ event }) => { if (!signal.aborted) preview.consume(event); },
-                    onCustomEvent: async ({ event }) => { if (!signal.aborted) await diagnose(event); },
+                    onEvent: ({ event }) => {
+                        if (signal.aborted) return;
+                        preview.consume(event);
+                        if (event.type === "RUN_STARTED") streams.reset();
+                    },
+                    onCustomEvent: async ({ event }) => {
+                        if (signal.aborted) return;
+                        await diagnose(event);
+                        await streams.consume(event);
+                    },
                     onMessagesChanged: ({ messages }) => { if (!signal.aborted) present(messages); },
                     onTextMessageStartEvent: ({ event }) => {
                         if (!signal.aborted && event.role === "user") acknowledged(event.messageId);
@@ -132,6 +145,7 @@ export default function observeWorker(element) {
                         const next = snapshot.plurnk?.status;
                         if (!next) return;
                         status = next;
+                        streams.present(next.streams);
                         if (pending && next.inbox.some(({ id }) => id === pending?.message.id)) acknowledged(pending.message.id);
                         if (!holding) connection("connected", "Connected");
                     },
