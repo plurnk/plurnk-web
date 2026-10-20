@@ -52,7 +52,7 @@ export default async function verifyFootnotes(t) {
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (messages) => page.evaluate((messages) => window.present(messages), messages);
                     const rows = page.locator("[data-messages] > li");
-                    const body = () => rows.first().locator(":scope > article > [data-message-body]");
+                    const body = () => rows.first().locator(":scope > article[data-message-body]");
 
                     await t.test("repeated references and label collisions have unique message-local destinations", async () => {
                         const messages = ["same/label", "same%2Flabel"].map((id) => ({ id, role: "assistant", content: footnoteContent }));
@@ -138,7 +138,7 @@ export default async function verifyFootnotes(t) {
                             ids.push(...graph.ids);
                         }
                         assert.equal(new Set(ids).size, ids.length);
-                        assert.equal(await page.locator('[data-call-kind="note"] > details[open]').count(), 0);
+                        assert.equal(await page.locator('[data-plurnk-note] > article[data-message-body]').count(), 2);
                         assert.equal(await rows.last().locator("[data-message-body] code").textContent(), content);
                         assert.equal(await rows.last().locator("[data-message-body] sup").count(), 0);
                     });

@@ -1,4 +1,4 @@
-import { $, $$, the } from "on_the_money";
+import { $, the } from "on_the_money";
 
 /** @param {import("@plurnk/plurnk-contracts").Notice} notice */
 const noticeFields = (notice) => ({
@@ -22,23 +22,25 @@ const problemFields = (problem) => ({
 export default function diagnostics(root) {
     const list = $(root, "ol");
     if (!(list instanceof HTMLOListElement)) throw new Error("Worker diagnostics have no list.");
+    const observed = new Set();
     /** @param {import("@ag-ui/client").CustomEvent} event */
     return async (event) => {
         if (event.name !== "plurnk.notice" && event.name !== "plurnk.problem") return;
         const { Validator } = await import("@plurnk/plurnk-contracts");
         const fields = event.name === "plurnk.notice" ? noticeFields(Validator.assertNotice(event.value))
             : problemFields(Validator.assertProblemDetails(event.value));
-        const details = JSON.stringify(event.value, null, 2);
         const attribution = event.subagentRunId ?? "";
-        if ($$(list, ":scope > li").some((row) => the(row, "diagnostic-type") === event.name
-            && the(row, "diagnostic-attribution") === attribution && the(row, "diagnostic-details") === details)) return;
-        const level = fields.diagnosticLevel;
+        const key = JSON.stringify([event.name, attribution, event.value]);
+        if (observed.has(key)) return;
+        const { diagnosticTitle, ...content } = fields;
+        const severity = { info: "Information", warn: "Warning", error: "Error" }[fields.diagnosticLevel];
         the($.clone(list, "#worker-diagnostic"), {
-            ...fields,
+            ...content,
+            diagnosticMessage: fields.diagnosticMessage || diagnosticTitle,
             diagnosticType: event.name,
-            diagnosticIcon: level === "info" ? "📌" : level === "warn" ? "⚠️" : "❌",
-            diagnosticAttribution: attribution,
-            diagnosticDetails: details,
+            diagnosticLabel: [severity, diagnosticTitle, attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
+            subagentRunId: attribution || null,
         });
+        observed.add(key);
     };
 }

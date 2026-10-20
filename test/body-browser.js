@@ -54,7 +54,6 @@ export default async function verifyBodies(t) {
                     ] }];
                     await page.evaluate((messages) => { window.messages = messages; window.present(messages); }, messages);
                     const result = page.locator('[data-message-id="result"]');
-                    await result.locator(":scope > details > summary").click();
                     assert.equal(await result.locator("[data-message-body] > pre code").textContent(), '{"status":200,"path":"file.html"}');
                     assert.equal(await result.getByRole("button", { name: "Read body", exact: true }).count(), 1);
                     assert.equal(await result.locator("[data-text=body-address]").textContent(), address);

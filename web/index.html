@@ -98,7 +98,7 @@
         </li>
     </template>
     <template id="conversation-body-reference">
-      <section data-body-reference aria-label="Body">
+      <section data-body-reference data-bind="aria-label:body-label">
         <p><code data-text="body-address">Body address</code> <small data-text="body-mime">Content type</small></p>
         <button type="button" data-action="read-body" data-bind="disabled:body-pending" data-i18n="read-body">Read body</button>
         <p data-body-loading role="status" data-i18n="reading-body">Reading body…</p>
@@ -124,45 +124,25 @@
     <!-- {§web-worker-diagnostics} Diagnostic values are text, never actions or conversation messages. -->
     <template id="worker-diagnostic">
         <li>
-            <article>
-                <header><span aria-hidden="true" data-text="diagnostic-icon">⚠️</span> <strong data-text="diagnostic-title">Diagnostic</strong> <small data-text="diagnostic-attribution">Subagent</small></header>
+            <article data-bind="aria-label:diagnostic-label">
                 <p data-text="diagnostic-message">Diagnostic message</p>
                 <p data-text="diagnostic-recovery">Recovery</p>
-                <details>
-                    <summary data-i18n="diagnostic-details">Details</summary>
-                    <pre><code data-text="diagnostic-details">Diagnostic evidence</code></pre>
-                </details>
             </article>
         </li>
     </template>
     <!-- {§web-worker-activity} Observations are literal evidence, not replies or executable markup. -->
     <template id="worker-ambient">
         <li>
-            <details>
-                <summary><span data-text="activity-operation">Log entry</span> <code data-text="activity-coordinate">Coordinate</code>
-                    <span data-i18n="activity-worker">Worker:</span> <span data-text="activity-worker">Worker</span></summary>
-                <dl>
-                    <div><dt data-i18n="activity-origin">Origin</dt><dd data-text="activity-origin">Origin</dd></div>
-                    <div><dt data-i18n="activity-state">Row state</dt><dd data-text="activity-state">State</dd></div>
-                    <div><dt data-i18n="activity-status">Receipt status</dt><dd data-text="activity-status">Status</dd></div>
-                    <div><dt data-i18n="activity-time">Time</dt><dd><time data-text="activity-at" data-bind="datetime:activity-at">Time</time></dd></div>
-                    <div data-activity-source><dt data-i18n="activity-source">Source</dt><dd data-text="activity-source">Source</dd></div>
-                    <div data-activity-attribution><dt data-i18n="activity-attribution">Subagent</dt><dd data-text="activity-attribution">Subagent</dd></div>
-                </dl>
-                <details><summary data-i18n="activity-evidence">Row details</summary><pre><code data-text="activity-evidence">Row evidence</code></pre></details>
-                <section aria-label="Receipt body"><p data-i18n="activity-body">Receipt body</p><div data-activity-body></div></section>
-                <section aria-label="Reasoning"><p data-i18n="activity-reasoning">Reasoning</p><div data-activity-reasoning></div></section>
-            </details>
+            <article data-bind="aria-label:activity-label">
+                <p data-text="activity-operation">Log entry</p>
+                <div data-activity-body></div>
+                <div data-activity-reasoning></div>
+            </article>
         </li>
     </template>
     <template id="worker-outside">
         <li>
-            <details>
-                <summary><span data-i18n="outside-operations">Outside operations</span> <code data-text="activity-coordinate">Coordinate</code></summary>
-                <p data-activity-attribution><span data-i18n="activity-attribution">Subagent:</span> <span data-text="activity-attribution">Subagent</span></p>
-                <p><span data-i18n="activity-tokens">Tokens:</span> <span data-text="activity-tokens">0</span></p>
-                <pre><code data-text="activity-text">Outside-operation text</code></pre>
-            </details>
+            <article data-bind="aria-label:activity-label"><pre><code data-text="activity-text">Outside-operation text</code></pre></article>
         </li>
     </template>
     <!-- {§web-worker-input} Native form structure; the worker SDK owns delivery. -->
@@ -334,43 +314,26 @@
         </section>
     </template>
     <template id="conversation-message">
-        <li>
-            <article>
-                <header><strong data-text="message-label">Message</strong> <span data-text="message-author">Author</span> <small data-text="message-attribution">Subagent</small></header>
-                <div data-message-body></div>
-                <ul data-calls></ul>
-            </article>
+        <li data-bind="id:call-anchor">
+            <article data-message-body data-bind="aria-label:message-label"></article>
         </li>
     </template>
     <template id="conversation-detail">
         <li>
             <details>
-                <summary><strong data-text="message-label">Message</strong> <span data-text="message-author">Author</span> <small data-text="message-attribution">Subagent</small></summary>
-                <p data-text="message-error">Tool failed.</p>
-                <p data-call-link><a data-bind="href:call-href" data-i18n="view-call">View call</a></p>
+                <summary data-text="message-label">Reasoning</summary>
                 <div data-message-body></div>
             </details>
         </li>
     </template>
-    <template id="conversation-call">
-        <li data-bind="id:call-anchor">
-            <details>
-                <summary><code data-text="call-name">Tool call</code> <small data-text="call-aside">Category</small></summary>
-                <div data-call-content></div>
-            </details>
+    <template id="conversation-result">
+        <li>
+            <article data-bind="aria-label:message-label">
+                <p data-text="message-error">Tool failed.</p>
+                <a data-call-link data-bind="href:call-href" data-i18n="view-call">View call</a>
+                <div data-message-body></div>
+            </article>
         </li>
-    </template>
-    <template id="conversation-arguments">
-        <pre><code data-text="call-arguments">No arguments.</code></pre>
-    </template>
-    <template id="conversation-note">
-        <section>
-            <div data-message-body></div>
-            <details>
-                <summary data-i18n="note-arguments">Arguments</summary>
-                <pre><code data-text="call-arguments">No arguments.</code></pre>
-            </details>
-        </section>
     </template>
     <template id="conversation-literal">
         <pre><code data-text="literal-content">No content.</code></pre>

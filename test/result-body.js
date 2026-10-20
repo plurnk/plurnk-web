@@ -24,8 +24,6 @@ export async function inspectRenderedResults(page) {
         const receipt = JSON.parse(await row.locator("[data-message-body] > pre > code").textContent());
         const body = row.locator("[data-body-reference]");
         if (await body.count()) {
-            const disclosure = row.locator(":scope > details");
-            if (!await disclosure.evaluate((element) => element.open)) await disclosure.locator(":scope > summary").click();
             if (await body.getAttribute("data-body-state") !== "loaded") {
                 await body.getByRole("button", { name: "Read body", exact: true }).click();
                 await body.locator('[data-body-content]').waitFor({ state: "visible" });

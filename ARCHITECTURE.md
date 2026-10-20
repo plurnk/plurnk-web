@@ -55,6 +55,14 @@ CSS for layout and visual state, OTM for projection, and the SDK for protocol.
 Use JavaScript for integration and behavior those mechanisms do not express.
 Do not recreate a substrate's rules at each call site.
 
+The document projects content, not protocol envelopes. Keep entries minimal and
+directly addressable; nesting in SDK objects does not require nested HTML.
+`data-*` carries only semantics needed for presentation or interaction, never a
+second serialized dataset. Accessible names need no duplicate visible labels;
+decorative glyphs and arrangement belong to CSS. Structured records and rendering
+bookkeeping stay in JavaScript. Add elements for meaning or native behavior, not
+merely because a field is available.
+
 Current browsers are the target. That does not imply every API is available on
 every origin: secure-context and permission requirements are independent of
 browser age. Test the deployment surface a feature actually supports. A missing

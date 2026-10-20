@@ -81,7 +81,7 @@ export default async function verifyContentSecurity(t) {
                             // A stripped executable URL remains inert even when the user activates its label.
                             await body.locator("a:not([href])").evaluateAll((links) => links.forEach((link) => link.click()));
                         }
-                        assert.equal(await page.locator("[data-text=call-aside]").textContent(), injection);
+                        assert.equal(await page.locator("[data-plurnk-note]").getAttribute("data-plurnk-note"), injection);
                     });
 
                     await t.test("identity, call arguments, result errors and structured payloads remain literal", async () => {
@@ -93,8 +93,8 @@ export default async function verifyContentSecurity(t) {
                             { id: "parts", role: "user", content: [{ type: "text", text: hostile }, { type: "binary", mimeType: "image/svg+xml", url: "https://example.invalid/media.svg" }] },
                         ];
                         await present(messages);
-                        assert.equal(await page.locator("[data-text=call-name]").textContent(), injection);
-                        assert.equal(await page.locator("[data-text=call-arguments]").textContent(), hostile);
+                        assert.equal(await page.locator("[data-call-id]").getAttribute("data-call-name"), injection);
+                        assert.equal(await page.locator("[data-call-id] [data-message-body] code").textContent(), hostile);
                         assert.equal(await page.locator("[data-message-id=result] [data-text=message-error]").textContent(), injection);
                         assert.equal(await page.locator("[data-message-id=result] [data-message-body] code").textContent(), hostile);
                         assert.equal(await page.locator("[data-message-id=activity] [data-message-body] code").textContent(), JSON.stringify({ html: hostile }, null, 2));
@@ -103,7 +103,7 @@ export default async function verifyContentSecurity(t) {
                         assert.equal(await page.locator("[data-message-id=parts] [data-message-body] > pre code").textContent(), JSON.stringify(messages[3].content[1], null, 2),
                             "unsupported parts remain exact literal data, not an image or implicit fetch");
                         assert.equal(await page.locator("#worker-conversation script, #worker-conversation img, #worker-conversation form").count(), 0);
-                        assert.equal(await page.locator("[data-call-link] a").first().evaluate((link) => document.getElementById(decodeURIComponent(new URL(link.href).hash.slice(1)))?.dataset.callId), call.id);
+                        assert.equal(await page.locator("[data-call-link]").first().evaluate((link) => document.getElementById(decodeURIComponent(new URL(link.href).hash.slice(1)))?.dataset.callId), call.id);
                     });
 
                     await t.test("streaming and replay cannot activate partial markup or escaped code", async () => {

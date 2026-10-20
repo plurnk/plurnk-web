@@ -58,20 +58,13 @@ header nav button:is(:hover, :focus-visible) {
 /* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
 #worker-diagnostics:not(:has(ol > li)),
 [data-diagnostic-message=""] [data-text="diagnostic-message"],
-[data-diagnostic-recovery=""] [data-text="diagnostic-recovery"],
-[data-diagnostic-attribution=""] [data-text="diagnostic-attribution"] {
+[data-diagnostic-recovery=""] [data-text="diagnostic-recovery"] {
     display: none;
 }
 
-#worker-diagnostics [data-diagnostic-level="error"] > article > header {
-    color: var(--pico-del-color);
-}
-
-/* {§web-worker-activity} Native disclosures expose only supplied non-conversation evidence. */
+/* {§web-worker-activity} Empty observations and inspection outlets have no presentation. */
 #worker-activity:not(:has(> ol > li)),
-[data-activity-source=""] [data-activity-source],
-[data-activity-attribution=""] [data-activity-attribution],
-#worker-activity section:has(> [data-activity-body]:empty, > [data-activity-reasoning]:empty) {
+#worker-activity :is([data-activity-body], [data-activity-reasoning]):empty {
     display: none;
 }
 
@@ -102,12 +95,8 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 #worker-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation],
-#worker-conversation [data-calls]:empty,
-#worker-conversation [data-call-aside=""] [data-text="call-aside"],
-#worker-conversation [data-message-author=""] [data-text="message-author"],
-#worker-conversation [data-message-attribution=""] [data-text="message-attribution"],
-#worker-conversation [data-message-error=""] [data-text="message-error"],
-#worker-conversation [data-call-href=""] [data-call-link] {
+#worker-conversation li:not([data-message-error]) [data-text="message-error"],
+#worker-conversation li:not([data-call-href]) [data-call-link] {
     display: none;
 }
 

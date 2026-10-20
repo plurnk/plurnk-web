@@ -19,21 +19,21 @@ export default async function verifyWorkerActivity({ t, withDaemon }) {
             const outside = rows.filter({ has: page.locator('[data-text="activity-text"]') });
             assert.equal(await outside.count(), 1, "live outside-operation text is not dropped");
             await activity.locator(":scope > summary").click();
-            await outside.locator(":scope > details > summary").click();
             assert.equal(await outside.locator("[data-text=activity-text]").textContent(), outsideText);
-            assert.ok(Number(await outside.locator("[data-text=activity-tokens]").textContent()) > 0);
+            assert.ok(Number(await outside.getAttribute("data-plurnk-tokens")) > 0);
             assert.equal(await page.locator("[data-messages]").getByText(outsideText, { exact: true }).count(), 0);
             assert.ok(await rows.count() > 1, "daemon-owned ambient rows are also visible");
             const receipt = rows.filter({ has: page.locator("[data-activity-body] [data-body-reference]") }).first();
-            await receipt.locator(":scope > details > summary").click();
-            const evidence = JSON.parse(await receipt.locator("[data-text=activity-evidence]").textContent());
-            assert.equal(await receipt.locator("[data-text=activity-worker]").textContent(), String(evidence.worker_id));
+            assert.ok(Number(await receipt.getAttribute("data-plurnk-worker")) > 0);
+            assert.match(await receipt.getAttribute("data-plurnk-coordinate"), /^\d+\/\d+\/\d+$/u);
+            assert.equal(await receipt.locator("details, dl").count(), 0);
             const reference = receipt.locator("[data-activity-body] [data-body-reference]");
             await reference.getByRole("button", { name: "Read body", exact: true }).click();
             await reference.locator("[data-body-content]").waitFor();
             assert.ok((await reference.locator("[data-text=body-content]").textContent()).length > 0);
             assert.equal(model.requests.length, 2, "inspection does not initiate inference");
-            const keys = await rows.evaluateAll((items) => items.map((item) => item.dataset.activityKey));
+            const keys = await rows.evaluateAll((items) => items.map(({ dataset: d }) =>
+                JSON.stringify([d.activityKind, d.plurnkRow, d.plurnkWorker, d.plurnkCoordinate, d.subagentRunId])));
             assert.equal(new Set(keys).size, keys.length, "automatic delivery handoff duplicates no activity");
 
             const fresh = await context.newPage();
@@ -54,7 +54,7 @@ export default async function verifyWorkerActivity({ t, withDaemon }) {
             }
             assert.equal(await activity.getAttribute("open"), "");
             assert.equal(await outside.count(), 1);
-            assert.equal(await outside.locator(":scope > details").getAttribute("open"), "");
+            assert.equal(await outside.getByRole("article", { name: "Outside operations", exact: true }).count(), 1);
             checkBrowser();
         }, { authenticated: true }));
 }

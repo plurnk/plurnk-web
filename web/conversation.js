@@ -5,6 +5,7 @@ import bodyReferences from "./body-references.js";
 
 /** @typedef {import("@ag-ui/client").Message} Message */
 /** @typedef {NonNullable<import("@ag-ui/client").AssistantMessage["toolCalls"]>[number]} ToolCall */
+/** @typedef {{message: Readonly<Message>, call?: ToolCall}} Entry */
 
 /** @param {string} id */
 const callId = (id) => anchor("call", id);
@@ -63,75 +64,80 @@ export default function conversation(root, readBody) {
         painted.set(outlet, { source, rich });
     }
 
-    /** @param {HTMLElement} row @param {readonly ToolCall[]} calls */
-    function tools(row, calls) {
-        const container = $(row, "[data-calls]");
-        if (!container) return;
-        const present = new Map(Array.from(container.children, (child) => [/** @type {HTMLElement} */ (child).dataset.callId, child]));
-        const identities = new Set(calls.map(({ id }) => id));
-        for (const [id, child] of present) if (!id || !identities.has(id)) child.remove();
-        for (const [index, call] of calls.entries()) {
-            const item = present.get(call.id) ?? $.clone(container, "#conversation-call");
-            const note = workingNote(call);
-            const kind = note ? "note" : "literal";
-            if (the(item, "callKind") !== kind) {
-                const content = $(item, "[data-call-content]");
-                if (!content) throw new Error("Call template has no content outlet.");
-                content.replaceChildren();
-                if (note) $.clone(content, "#conversation-note");
-                else $.clone(content, "#conversation-arguments");
-            }
-            the(item, { callId: call.id, callAnchor: callId(call.id), callName: call.function.name,
-                callArguments: call.function.arguments, callKind: kind, callAside: note?.aside ?? "" });
-            if (note) body(item, note.body, true, `call-${call.id}`);
-            if (container.children[index] !== item) container.insertBefore(item, container.children[index] ?? null);
-        }
-    }
-
     /** @param {readonly Readonly<Message>[]} messages */
     return (messages) => {
         const identities = new Set(messages.map(({ id }) => id));
         if (identities.size !== messages.length) throw new Error("Conversation has duplicate message identities.");
-        // {§web-worker-reasoning} An empty live reasoning message is not a transcript body.
-        const visible = messages.filter((message) => message.role !== "reasoning" || message.content || message.metadata?.plurnk?.body !== undefined);
-        const visibleIds = new Set(visible.map(({ id }) => id));
-        const calls = new Map(messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []).map((call) => [call.id, call]));
-        const rows = new Map(Array.from(list.children, (child) => [/** @type {HTMLElement} */ (child).dataset.messageId, /** @type {HTMLElement} */ (child)]));
+        const suppliedCalls = messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []);
+        const calls = new Map(suppliedCalls.map((call) => [call.id, call]));
+        if (calls.size !== suppliedCalls.length) throw new Error("Conversation has duplicate call identities.");
+        const entries = messages.flatMap((message) => {
+            // {§web-worker-reasoning} An empty live reasoning message is not a transcript body.
+            if (message.role === "reasoning" && !message.content && message.metadata?.plurnk?.body === undefined) return [];
+            const operations = message.role === "assistant" ? message.toolCalls ?? [] : [];
+            const hasContent = Array.isArray(message.content) ? message.content.length > 0 : Boolean(message.content);
+            /** @type {Entry[]} */
+            const content = hasContent || !operations.length ? [{ message }] : [];
+            return [...content, ...operations.map((call) => ({ message, call }))];
+        });
+        const keys = entries.map(({ message, call }) => JSON.stringify([message.id, call?.id ?? null]));
+        const visibleIds = new Set(keys);
+        const rows = new Map(Array.from(list.children, (child) => {
+            const row = /** @type {HTMLElement} */ (child);
+            return [JSON.stringify([row.dataset.messageId, row.dataset.callId ?? null]), row];
+        }));
         for (const [id, row] of rows) {
-            if (!id || !visibleIds.has(id)) row.remove();
+            if (!visibleIds.has(id)) row.remove();
         }
-        for (const [index, message] of visible.entries()) {
-            const disclosure = message.role !== "user" && message.role !== "assistant";
-            let row = rows.get(message.id);
-            if (row && Boolean($(row, ":scope > details")) !== disclosure) {
+        for (const [index, { message, call }] of entries.entries()) {
+            let row = rows.get(keys[index]);
+            if (row && row.dataset.messageRole !== message.role) {
                 row.remove();
                 row = undefined;
             }
             if (!row) {
-                const element = disclosure ? $.clone(list, "#conversation-detail") : $.clone(list, "#conversation-message");
+                const element = message.role === "reasoning" ? $.clone(list, "#conversation-detail")
+                    : message.role === "tool" ? $.clone(list, "#conversation-result") : $.clone(list, "#conversation-message");
                 if (!(element instanceof HTMLElement)) throw new Error("Conversation template must contain an HTML element.");
                 row = element;
             }
-            const call = message.role === "tool" ? calls.get(message.toolCallId) : undefined;
+            const answered = message.role === "tool" ? calls.get(message.toolCallId) : undefined;
+            const note = call ? workingNote(call) : null;
+            const category = note ? note.aside || "note" : null;
+            const facts = (call ? call.metadata : message.metadata)?.plurnk;
             const labels = { user: "User", assistant: "Assistant", reasoning: "Reasoning", tool: "Result", activity: "Activity", system: "System", developer: "Developer" };
-            const label = message.role === "tool" ? `Result · ${call?.function.name ?? message.toolCallId}`
+            const label = call ? [call.function.name, category].filter(Boolean).join(" · ")
+                : message.role === "tool" ? `Result · ${answered?.function.name ?? message.toolCallId}`
                 : message.role === "activity" ? message.activityType : labels[message.role];
+            const author = "name" in message ? message.name : undefined;
             the(row, {
                 messageId: message.id,
                 messageRole: message.role,
-                messageLabel: label,
-                messageAuthor: "name" in message ? message.name ?? "" : "",
-                messageAttribution: message.subagentRunId ? `Subagent ${message.subagentRunId}` : "",
-                messageError: message.role === "tool" ? message.error ?? "" : "",
-                callHref: call ? `#${callId(call.id)}` : "",
+                messageLabel: [label, author, message.subagentRunId ? `Subagent ${message.subagentRunId}` : null].filter(Boolean).join(" · "),
+                messageAuthor: author ?? null,
+                subagentRunId: message.subagentRunId ?? null,
+                messageError: message.role === "tool" ? message.error || null : null,
+                toolCallId: message.role === "tool" ? message.toolCallId : null,
+                callId: call?.id ?? null,
+                callName: call?.function.name ?? null,
+                callAnchor: call ? callId(call.id) : null,
+                callHref: answered ? `#${callId(answered.id)}` : null,
+                plurnkType: facts?.op ?? null,
+                plurnkNote: category,
+                plurnkCoordinate: facts?.coordinate ?? null,
+                plurnkWorker: facts?.worker ?? null,
+                plurnkAddress: facts?.address ?? null,
+                plurnkStatus: facts?.status ?? null,
+                plurnkState: facts?.state ?? null,
             });
             const linked = message.role === "reasoning" ? message.metadata?.plurnk?.body : undefined;
             if (linked !== undefined && (typeof linked?.url !== "string" || typeof linked?.mimeType !== "string")) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
             }
-            const content = linked ? [{ type: "document", source: { type: "url", value: linked.url, mimeType: linked.mimeType } }] : message.content;
-            body(row, content, message.role !== "tool" && message.role !== "activity", `message-${message.id}`);
-            tools(row, message.role === "assistant" ? message.toolCalls ?? [] : []);
+            const content = call ? note?.body ?? call.function.arguments
+                : linked ? [{ type: "document", source: { type: "url", value: linked.url, mimeType: linked.mimeType } }] : message.content;
+            const rich = call ? note !== null : message.role !== "tool" && message.role !== "activity";
+            body(row, content, rich, call ? `call-${call.id}` : `message-${message.id}`);
             if (list.children[index] !== row) list.insertBefore(row, list.children[index] ?? null);
         }
         the(root, "conversation-empty", messages.length === 0);
