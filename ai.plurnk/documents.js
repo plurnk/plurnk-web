@@ -174,7 +174,7 @@ export default class Documents {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted worker must have a directory address.");
         const fields = [["lifecycle", "State"], ["model", "Model"], ["effort", "Effort"], ["loop", "Loop"], ["turns", "Turns"], ["elapsed", "Elapsed"],
-            ["children", "Active direct children"], ["context", "Context tokens / capacity"], ["curation", "Curation weight / budget"],
+            ["children", "Active direct children"], ["gated", "Descendants awaiting input"], ["context", "Context tokens / capacity"], ["curation", "Curation weight / budget"],
             ["requests", "Requests"], ["input", "Input tokens"], ["output", "Output tokens"], ["cost", "Cost (USD)"]];
         const accounting = [["input", "Input tokens"], ["output", "Output tokens"], ["total", "Total tokens"],
             ["uncached", "Uncached input"], ["cache-read", "Cache-read input"], ["cache-write", "Cache-write input"],
@@ -185,6 +185,8 @@ export default class Documents {
             + `<p><span data-i18n="approval-mode">Approvals:</span> <span data-text="approval-mode">${this.#yolo ? "Automatic" : "Manual"}</span></p>`
             + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}`
             + '<div><dt data-i18n="worker-wait">WAIT remaining</dt><dd><span data-text="wait">Unknown</span> <time data-text="wait-at" data-bind="datetime:wait-at"></time></dd></div></dl>'
+            + '<details id="worker-descendants"><summary><span data-i18n="worker-descendants">Descendants:</span> <span data-text="descendants">Unknown</span></summary>'
+            + '<p data-no-descendants data-i18n="no-descendants">No descendants.</p><ul></ul></details>'
             + '<details id="worker-accounting"><summary data-i18n="accounting-details">Accounting details</summary>'
             + '<p data-i18n="accounting-scope">Worker and descendants, cumulative since this worker began. Unknown totals remain unknown; known subtotals are incomplete evidence.</p>'
             + '<figure><table><thead><tr><th scope="col" data-i18n="quantity">Quantity</th><th scope="col" data-i18n="complete-total">Complete total</th><th scope="col" data-i18n="known-subtotal">Known subtotal</th></tr></thead><tbody>'

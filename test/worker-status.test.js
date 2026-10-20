@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { elapsed, gauges, clocks, workspaceIdentity } from "../web/worker-status.js";
+import { elapsed, gauges, clocks, workspaceIdentity, descendantTree } from "../web/worker-status.js";
 
-const idle = { lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, children: 0, inbox: [],
+const idle = { lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, descendants: [], inbox: [],
     claimedAt: null, terminatedAt: null,
     spend: { requests: 0, usage: { inputTokens: 0, outputTokens: 0 }, knownUsage: { inputTokens: 0, outputTokens: 0 }, costUsd: "0", knownCostUsd: "0" } };
 
@@ -52,16 +52,39 @@ test("{§web-worker-status} model identity, effort, direct children and budgets 
     assert.equal(unselected.context, "Unknown / Unknown");
     assert.equal(unselected.curation, "Unknown / Unknown");
     const selected = gauges({ ...idle, model: { alias: "local", provider: "host", model: "qwen", effort: "high", effortSource: "explicit" },
-        children: 2, inbox: [{ path: "message://user/one", id: "one", loopId: 2, lifecycle: "queued" }] },
+        descendants: [
+            { id: 2, name: "first", parentWorkerId: 1, kind: "work", lifecycle: "queued", gates: 0 },
+            { id: 3, name: "nested", parentWorkerId: 2, kind: "work", lifecycle: "running", gates: 2 },
+            { id: 4, name: "second", parentWorkerId: 1, kind: "fork", lifecycle: "parked", gates: 0 },
+            { id: 5, name: "finished", parentWorkerId: 1, kind: "bare", lifecycle: "completed", gates: 0 },
+        ], inbox: [{ path: "message://user/one", id: "one", loopId: 2, lifecycle: "queued" }] },
     { contextTokens: 0, contextCapacity: 32768, curationWeight: 4200, curationBudget: 8000 });
     assert.equal(selected.model, "local — host/qwen");
     assert.equal(selected.effort, "high (explicit)");
     assert.equal(selected.children, "2");
+    assert.equal(selected.gated, "1", "count workers awaiting input, not gates");
+    assert.equal(selected.descendants, "4", "the census includes completed descendants");
     assert.equal(selected.context, "0 / 32768");
     assert.equal(selected.curation, "4200 / 8000");
     assert.equal(selected.inbox, "1");
     assert.equal(gauges({ ...idle, model: { provider: "host", model: "other" } }).model, "host/other");
     assert.equal(gauges(idle).context, "Unknown / Unknown", "absence is not an inherited previous budget");
+});
+
+test("{§web-worker-descendants} nesting preserves supplied parentage and sibling order", () => {
+    const worker = (id, parentWorkerId) => ({ id, parentWorkerId, name: `worker-${id}`, kind: "work", lifecycle: "idle", gates: 0 });
+    const rows = [worker(2, 1), worker(4, 2), worker(7, 4), worker(5, 2), worker(3, 1)];
+    const tree = descendantTree(rows);
+    const identities = (nodes) => nodes.map(({ worker, children }) => [worker.id, identities(children)]);
+    assert.deepEqual(identities(tree), [[2, [[4, [[7, []]]], [5, []]]], [3, []]]);
+    assert.equal(tree[0].worker, rows[0], "render the supplied facts without a second state representation");
+    assert.deepEqual(descendantTree([]), []);
+    for (const invalid of [
+        [worker(2, 1), worker(2, 1)],
+        [worker(2, 1), worker(3, 8)],
+        [worker(2, 3), worker(3, 2)],
+        [worker(2, 1), worker(3, 4), worker(4, 3)],
+    ]) assert.throws(() => descendantTree(invalid), /Descendant census is not one worker tree\./u);
 });
 
 test("{§web-worker-status} accounting details preserve exact reported fields without reconstructing totals", () => {

@@ -283,6 +283,9 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         model.release("held-approval-one");
         model.release("held-approval-two");
         await interrupted(page);
+        await page.waitForFunction(() => document.querySelector('#worker-status [data-text="gated"]')?.textContent === "2");
+        assert.equal(await page.locator('#worker-status [data-text="lifecycle"]').textContent(), "completed",
+            "pending descendant requests do not change the owner's own lifecycle");
         const seen = [];
         for (let index = 0; index < 2; index++) {
             await interrupted(page);
@@ -303,6 +306,8 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             await childPage.close();
         }
         await connected(page);
+        await page.waitForFunction(() => document.querySelector('#worker-status [data-text="gated"]')?.textContent === "0");
+        assert.deepEqual(await page.locator("#worker-descendants [data-text=descendant-gates]").allTextContents(), ["0", "0"]);
         assert.equal(model.requests.length, 5);
         assert.equal(requests.filter(({ resume }) => resume?.length).length, 2);
         assert.ok(requests.filter(({ resume }) => resume?.length).every((input) => input.threadId === threadId));

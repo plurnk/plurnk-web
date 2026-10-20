@@ -31,6 +31,16 @@
     </header>
     <main id="main" tabindex="-1" data-page="home"></main>
     <!-- {§web-worker-status} Public state supplies literal list values, not document markup. -->
+    <template id="worker-descendant">
+      <li>
+        <a data-text="descendant-name" data-bind="href:descendant-path"></a>
+        <small><span data-text="descendant-kind"></span> <span data-i18n="descendant-separator">·</span> <span data-text="descendant-lifecycle"></span>
+          <span data-i18n="descendant-pending-gates">· Pending requests:</span> <span data-text="descendant-gates"></span></small>
+      </li>
+    </template>
+    <template id="worker-descendant-children">
+      <details><summary><span data-i18n="descendant-children">Children:</span> <span data-text="descendant-children"></span></summary><ul></ul></details>
+    </template>
     <template id="worker-preparation">
         <li><code data-text="preparation-family">Capability</code> <span data-text="preparation-alias">Alias</span>
             <span data-text="preparation-phase">Preparing</span> <time data-text="preparation-since" data-bind="datetime:preparation-since">Start time</time></li>

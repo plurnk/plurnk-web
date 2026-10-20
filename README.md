@@ -67,8 +67,9 @@ Connection failure stops observation and marks the displayed values as stale;
 use **Reconnect** or, after revocation, **Sign in**. Reconnect preserves the current
 draft without resubmitting it; full page reloads do not persist drafts.
 No automatic work retries occur.
-Status shows the selected model/effort, direct active children, context/curation
-and the daemon's WAIT countdown. The countdown is an observation deadline, not a
+Status shows the selected model/effort, direct active children, descendants awaiting
+input, context/curation gauges and the daemon's WAIT countdown. A live descendant
+tree provides native links and disclosures. The countdown is an observation deadline, not a
 promise of completion. **Accounting details** separates complete totals from known
 subtotals; **Workspace activity** and **Unobserved messages** expose preparation,
 indexing and accepted input awaiting observation. Workspace names and folder labels

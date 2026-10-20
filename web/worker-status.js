@@ -1,5 +1,28 @@
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 
+/** @typedef {{worker: import("@plurnk/plurnk-agui/client").AguiDescendant, children: DescendantNode[]}} DescendantNode */
+
+/** {§web-worker-descendants} Nest one supplied census, not an accumulated browser topology.
+ * @param {readonly import("@plurnk/plurnk-agui/client").AguiDescendant[]} workers
+ * @returns {DescendantNode[]}
+ */
+export function descendantTree(workers) {
+    if (workers.length === 0) return [];
+    const ids = new Set(workers.map(({ id }) => id));
+    const parents = new Set(workers.filter(({ parentWorkerId }) => !ids.has(parentWorkerId)).map(({ parentWorkerId }) => parentWorkerId));
+    if (ids.size !== workers.length || parents.size !== 1) throw new Error("Descendant census is not one worker tree.");
+    const byParent = Map.groupBy(workers, ({ parentWorkerId }) => parentWorkerId);
+    let visited = 0;
+    /** @param {number} parent @returns {DescendantNode[]} */
+    const nest = (parent) => (byParent.get(parent) ?? []).map((worker) => {
+        visited++;
+        return { worker, children: nest(worker.id) };
+    });
+    const tree = nest([...parents][0]);
+    if (visited !== workers.length) throw new Error("Descendant census is not one worker tree.");
+    return tree;
+}
+
 /** @param {number} seconds */
 function duration(seconds) {
     const hours = Math.floor(seconds / 3600);
@@ -43,6 +66,7 @@ function quantities(usage) {
  */
 export function gauges(status, budget) {
     const { model, spend } = status;
+    const tree = descendantTree(status.descendants);
     const complete = { ...quantities(spend.usage), cost: spend.costUsd };
     const known = { ...quantities(spend.knownUsage), cost: spend.knownCostUsd };
     return {
@@ -55,7 +79,9 @@ export function gauges(status, budget) {
         cost: status.spend.costUsd ?? "Unknown",
         model: model === null ? "Not selected" : `${model.alias ? `${model.alias} — ` : ""}${model.provider}/${model.model}`,
         effort: model?.effort === undefined ? "Unspecified" : `${model.effort}${model.effortSource ? ` (${model.effortSource})` : ""}`,
-        children: String(status.children),
+        children: String(tree.filter(({ worker }) => ["queued", "running", "parked"].includes(worker.lifecycle)).length),
+        descendants: String(status.descendants.length),
+        gated: String(status.descendants.filter(({ gates }) => gates > 0).length),
         context: `${budget?.contextTokens ?? "Unknown"} / ${budget?.contextCapacity ?? "Unknown"}`,
         curation: `${budget?.curationWeight ?? "Unknown"} / ${budget?.curationBudget ?? "Unknown"}`,
         inbox: String(status.inbox.length),

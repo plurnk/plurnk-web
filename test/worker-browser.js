@@ -65,19 +65,26 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         const request = await controller(base, undefined, prompt(`status-${name}`));
                         request.threadId = `${workspaceId}#${name}`;
                         const ready = Promise.withResolvers();
-                        let calls = 0;
                         const completion = request.runAgent({}, {
-                            onReasoningMessageContentEvent: () => { if (++calls === 2) ready.resolve(); },
+                            onReasoningMessageContentEvent: () => { ready.resolve(); },
                         });
-                        running.push({ name, completion });
+                        running.push({ name, completion, request });
                         await ready.promise;
                     }
                     await page.waitForFunction(() => document.querySelector('#worker-status [data-text="children"]')?.textContent === "1");
+                    assert.equal(await value(page, "descendants"), "2");
+                    await page.locator("#worker-descendants > summary").click();
+                    assert.deepEqual(await page.locator("#worker-descendants > ul > li > a").allTextContents(), ["child"]);
+                    assert.equal(await page.locator("#worker-descendants ul ul > li > a").textContent(), "grandchild");
                     assert.equal(await value(page, "lifecycle"), "idle", "child activity does not invent a parent loop");
                     await page.reload();
                     await connected(page);
                     assert.equal(await value(page, "children"), "1", "two active descendants are one direct child");
-                    for (const { name, completion } of running.toReversed()) {
+                    for (const { name, completion, request } of running.toReversed()) {
+                        const second = Promise.withResolvers();
+                        request.subscribe({ onReasoningMessageContentEvent: () => { second.resolve(); } });
+                        model.release(`status-${name}`);
+                        await second.promise;
                         model.release(`status-${name}`);
                         await completion;
                     }
@@ -86,6 +93,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await value(page, "input"), "2000", "descendant usage is the daemon's cumulative projection");
                     assert.equal(await value(page, "cost"), "Unknown");
                     assert.equal(await value(page, "lifecycle"), "idle");
+                    assert.equal(await value(page, "descendants"), "2", "completed workers remain navigable");
+                    assert.deepEqual(await page.locator("#worker-descendants [data-text=descendant-lifecycle]").allTextContents(), ["completed", "completed"]);
                     assert.equal(model.requests.length, 5, "two calls per descendant plus the child's observation of its grandchild's result; no root inference");
                     assert.deepEqual(model.errors, []);
                     checkBrowser();
