@@ -407,9 +407,19 @@ submission and explicit cancellation belong to {§web-worker-input}.
 | Reasoning | A native disclosure in message order, initially collapsed. Its Markdown body remains readable; no automatic opening, forced scrolling or repeated live-region announcements. |
 | Calls and results | Native disclosures show the exact function name and argument text. Each result retains its place in the sequence and links to its call using `toolCallId` when present in the collection. Generated DOM anchors use deterministic URL-safe identities, so literal and percent-decoded fragment lookup cannot select different targets; SDK identities remain unchanged. Results and activity payloads are literal, inspectable data, not executable instructions or application state. Standard tool errors are shown alongside any partial content. |
 | Working notes | NOTE calls follow {§web-working-notes}; they remain calls, not answers or provider reasoning. |
-| Other messages | System/developer messages and structured activity remain labelled disclosures. Non-text content parts remain inspectable in their original order; this slice adds no inline media player, download action or attachment service. Subagent invocation IDs remain visible as attribution, not mistaken for the parent's output. |
+| Other messages | System/developer messages and structured activity remain labelled disclosures. Content parts retain their original order: text follows the role's presentation, document URLs follow {§web-result-bodies}, and unsupported parts remain literal data. No inline media player or attachment service. Subagent invocation IDs remain visible as attribution, not mistaken for the parent's output. |
 | Layout | Native ordered list, articles, details/summary, code and preformatted data, using Pico and the existing four CSS layers. No duplicate worker heading, chat bubbles, application classes or virtual-DOM framework. Long code, tables and payloads scroll within their content region on narrow screens. |
 | Connection | The existing connection notice governs whether displayed history is live. An empty collection says “No messages.”; a transport failure is never presented as an empty or successfully completed conversation. |
+
+## §web-result-bodies Results by reference
+
+| Boundary | Contract |
+|---|---|
+| Intake | Standard `document` parts with `source.type: "url"` show their literal address and supplied MIME type beside a native Read body control. Text parts remain visible as the receipt. The SDK's parts remain unchanged; neither attachment, replay, opening a result disclosure nor a state update fetches a body. |
+| Fetch | Only explicit activation reads the named URL. Require a same-origin HTTP(S) URL without embedded credentials; reject redirects. Use a fresh session access credential through {§web-access-token}, or none for explicitly anonymous documents. Never put a bearer in a URL, forward it to another origin, substitute a guessed URL or start an AG-UI Run. |
+| Content | Show fetched bytes decoded as text in a literal preformatted outlet, even for HTML, SVG or Markdown. A body cannot create controls, application bindings, scripts or further requests. This read-only inspection is not an attachment editor or a second Markdown rendering policy. |
+| Failure | Keep the receipt and reference, show the specific failed-read diagnostic in a native error card, and permit an explicit retry. No automatic retries or silent empty success. Concurrent activations of the same pending read are disabled. |
+| Lifetime | Fetched text belongs only to its existing DOM outlet. Unchanged replay preserves it; replacing/removing the content invalidates late results. It never enters SDK messages, subsequent Run uploads, browser storage or a separate cache. Page departure aborts these browser-owned fetches, not daemon work. |
 
 ## §web-conversation-content Untrusted message content
 

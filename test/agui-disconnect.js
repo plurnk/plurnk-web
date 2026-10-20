@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import aguiSession from "./agui-session.js";
 
 // {§web-agui-conformance} Close real submitting transports; the daemon still owns admitted work.
-export default async function verifyDisconnect({ tab, t, model, base, mount, token, projectRoot, action, observe, read, finish, detach, successful, prompt }) {
+export default async function verifyDisconnect({ tab, t, model, base, mount, token, projectRoot, action, observe, read, finish, detach, successful, prompt, inspect }) {
     for (const departure of ["abort", "navigate", "close"]) {
         await t.test(`{§web-agui-conformance} submitting ${departure} preserves admitted work and authoritative replay`, async () => {
             const workspace = `disconnect-${departure}`;
@@ -95,7 +95,7 @@ export default async function verifyDisconnect({ tab, t, model, base, mount, tok
             assert.deepEqual(completed.interrupts, []);
             const receipts = completed.events.filter(({ type, toolCallId }) => type === "TOOL_CALL_RESULT" && toolCallId === current.toolCallId);
             assert.equal(receipts.length, 1);
-            const { status, content, exitCode, terminal } = JSON.parse(receipts[0].content);
+            const { status, content, exitCode, terminal } = await inspect(receipts[0].content);
             assert.deepEqual({ status, content, exitCode, terminal }, { status: 200, content: "approved", exitCode: 0, terminal: true });
             assert.equal(completed.messages.findLast(({ role }) => role === "assistant").content, `Completed ${workspace}.`);
             assert.equal(model.requests.length, before + 2);

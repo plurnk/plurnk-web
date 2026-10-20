@@ -3,7 +3,7 @@ import verifyConversation from "./agui-conversation.js";
 import { httpFailure } from "./browser-diagnostics.js";
 
 // {§web-agui-conformance} Exercise the public observer contract through the official browser SDK.
-export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser, action, detach, observe }) {
+export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser, action, detach, observe, inspect }) {
 
     await action("observer-workspace", "named-worker", "worker.model.set", { selector: "browser" });
     // A real client operation creates the runtime journal; workspace attachment no longer fabricates actors.
@@ -86,7 +86,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
             "renaming or observing must not fabricate workers");
     });
 
-    await verifyConversation({ tab, t, start, finish, read, event, successful, prompt, model, action, observe, detach });
+    await verifyConversation({ tab, t, start, finish, read, event, successful, prompt, model, action, observe, detach, inspect });
 
     await t.test("{§web-agui-conformance} live and fresh observers agree on spend and timing across consecutive loops", async (probe) => {
         const mismatches = [];

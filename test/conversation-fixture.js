@@ -7,7 +7,7 @@ import { privateHeaders } from "../ai.plurnk/http.js";
 import createModule from "../ai.plurnk/module.js";
 
 // A component fixture using the real document and browser modules, not a second HTML implementation.
-export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url)) {
+export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url), routes = new Map()) {
     const original = process.env.PLURNK_AUTH;
     process.env.PLURNK_AUTH = "0";
     const module = createModule();
@@ -38,6 +38,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     }, false);
     const server = createServer((request, response) => {
         const path = new URL(request.url, "http://fixture.invalid").pathname;
+        if (routes.has(path)) { routes.get(path)(request, response); return; }
         if (path === "/render/mermaid") { void serve(request, response); return; }
         const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);
         response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.type ?? "text/plain" });

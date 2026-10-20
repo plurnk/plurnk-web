@@ -1,6 +1,7 @@
 import { $, the } from "on_the_money";
 import markdown from "./markdown.js";
 import anchor from "./anchor.js";
+import bodyReferences from "./body-references.js";
 
 /** @typedef {import("@ag-ui/client").Message} Message */
 /** @typedef {NonNullable<import("@ag-ui/client").AssistantMessage["toolCalls"]>[number]} ToolCall */
@@ -26,27 +27,38 @@ function workingNote(call) {
 }
 
 /** {§web-worker-conversation} DOM identities are presentation state, never a second conversation.
- * @param {HTMLElement} root
+ * @param {HTMLElement} root @param {(address: string) => Promise<string>} readBody
  */
-export default function conversation(root) {
+export default function conversation(root, readBody) {
     const list = $(root, "[data-messages]");
     if (!(list instanceof HTMLOListElement)) throw new Error("Conversation document has no message list.");
+    const reference = bodyReferences(root, readBody);
     // Replacing unchanged Markdown would discard native selection inside the body.
     /** @type {WeakMap<Element, {source: string, rich: boolean}>} */
     const painted = new WeakMap();
+
+    /** @param {Element} outlet @param {string} source @param {boolean} rich @param {string} scope */
+    function text(outlet, source, rich, scope) {
+        if (rich) outlet.append(markdown(source, scope));
+        else if (source) the($.clone(outlet, "#conversation-literal"), "literalContent", source);
+    }
 
     /** @param {Element} row @param {unknown} content @param {boolean} rich @param {string} scope */
     function body(row, content, rich, scope) {
         const outlet = $(row, "[data-message-body]");
         if (!outlet) throw new Error("Message template has no content outlet.");
         const source = typeof content === "string" ? content : JSON.stringify(content, null, 2) ?? "";
-        rich &&= typeof content === "string";
         const previous = painted.get(outlet);
         if (previous?.source === source && previous.rich === rich) return;
-        if (rich) outlet.replaceChildren(markdown(source, scope));
-        else {
-            outlet.replaceChildren();
-            if (source) the($.clone(outlet, "#conversation-literal"), "literalContent", source);
+        outlet.replaceChildren();
+        if (Array.isArray(content)) {
+            for (const [index, part] of content.entries()) {
+                if (part?.type === "text" && typeof part.text === "string") text(outlet, part.text, rich, `${scope}-part-${index}`);
+                else if (part?.type === "document" && part.source?.type === "url" && typeof part.source.value === "string") reference(outlet, part.source);
+                else text(outlet, JSON.stringify(part, null, 2) ?? "", false, `${scope}-part-${index}`);
+            }
+        } else {
+            text(outlet, source, rich && typeof content === "string", scope);
         }
         painted.set(outlet, { source, rich });
     }

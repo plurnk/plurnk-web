@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 // {§web-agui-conformance} The SDK's messages, not CUSTOM rows, are the conversation.
-export default async function verifyConversation({ t, tab, start, finish, read, event, successful, prompt, model, action, observe, detach }) {
+export default async function verifyConversation({ t, tab, start, finish, read, event, successful, prompt, model, action, observe, detach, inspect }) {
     await t.test("{§web-agui-conformance} pre-attached, submitting, late and refreshed browsers receive the same conversation", async (probe) => {
         probe.after(() => tab.evaluate(() => globalThis.lifecycle.close()));
         const workspace = "conversation-workspace";
@@ -50,11 +50,11 @@ export default async function verifyConversation({ t, tab, start, finish, read, 
             assert.equal(hosted.target.raw, "worker://user/identity.md");
             assert.equal(hosted.target.hostname, "user", "a host is part of the requested address");
             assert.deepEqual(hosted.lineMarker.marks, [1, 2]);
-            const receipts = calls.map(({ id }) => {
+            const receipts = await Promise.all(calls.map(({ id }) => {
                 const matching = conversation.filter(({ role, toolCallId }) => role === "tool" && toolCallId === id);
                 assert.equal(matching.length, 1, "each attempted operation has exactly one correlated receipt");
-                return JSON.parse(matching[0].content);
-            });
+                return inspect(matching[0].content);
+            }));
             assert.equal(receipts[0].status, 200);
             assert.equal(receipts[0].content, "cobalt heron");
             assert.equal(receipts[1].status, 404);

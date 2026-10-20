@@ -9,6 +9,7 @@ import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import startModel, { contentAttack, diagramContent, footnoteAnswer } from "./model-fixture.js";
 import disconnectProxy from "./disconnect-proxy.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
+import { inspectRenderedResults } from "./result-body.js";
 
 async function controller(base, secret, messages = []) {
     const headers = {};
@@ -532,9 +533,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(reads.length, 2);
                     assert.ok(reads.some(({ arguments: args }) => args.includes("witness.txt")), "exact daemon arguments reach the template");
                     const receipts = page.locator('[data-message-role="tool"]');
-                    const receiptBodies = await receipts.locator("[data-message-body]").allTextContents();
-                    assert.ok(receiptBodies.some((body) => body.includes("cobalt heron")), "the real file result is inspectable");
-                    assert.ok(receiptBodies.some((body) => body.includes("Entry not found")), "the real operation failure is inspectable");
+                    assert.equal(requests.some((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)), false,
+                        "the shipped page does not prefetch receipt bodies");
+                    const receiptBodies = await inspectRenderedResults(page);
+                    assert.ok(receiptBodies.some((body) => body.content === "cobalt heron"), "the real file result is inspectable by explicit read");
+                    assert.ok(receiptBodies.some((body) => body.problem?.title === "Entry not found"), "the real operation failure is inspectable");
+                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 1);
                     for (const link of await receipts.locator("[data-call-link] a").all()) {
                         assert.equal(await link.evaluate((element) => Boolean(document.getElementById(decodeURIComponent(new URL(element.href).hash.slice(1))))), true);
                     }
@@ -547,6 +551,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.waitForFunction((count) => document.querySelectorAll("[data-messages] > li").length === count, beforeReload.length);
                     assert.deepEqual(await ids(), beforeReload, "a fresh page reads the same SDK snapshot, without a browser history store");
                     assert.equal(model.requests.length, 2, "neither replay nor refresh creates a model call");
+                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 1,
+                        "reload does not automatically re-fetch an inspected body");
                     assert.deepEqual(model.errors, []);
                     assert.equal(await page.locator("#worker-conversation form, #worker-conversation textarea, #worker-conversation [contenteditable]").count(), 0);
                     for (const request of requests.filter((request) => new URL(request.url()).pathname === "/agui/connect")) {

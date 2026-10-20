@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { inspectRenderedResults } from "./result-body.js";
 import { HttpAgent } from "@ag-ui/client";
 import { inputPage } from "./worker-input.js";
 
@@ -110,13 +111,10 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1, "review is not another user message");
             const call = page.locator('[data-calls] > li').filter({ has: page.locator('[data-text="call-name"]', { hasText: /^sh$/u }) });
             assert.equal(await call.count(), 1);
-            const results = page.locator('[data-message-role="tool"] [data-message-body]');
-            const bodies = await results.allTextContents();
-            if (decision === "accept") assert.ok(bodies.some((body) => JSON.parse(body).content === "approved"), JSON.stringify(bodies));
-            else assert.ok(bodies.some((body) => {
-                const result = JSON.parse(body);
-                return result.status === 400 && result.problem?.type === "https://problems.plurnk.xyz/proposal/rejected";
-            }), JSON.stringify(bodies));
+            const bodies = await inspectRenderedResults(page);
+            if (decision === "accept") assert.ok(bodies.some((body) => body.content === "approved"), JSON.stringify(bodies));
+            else assert.ok(bodies.some((result) => result.status === 400
+                && result.problem?.type === "https://problems.plurnk.xyz/proposal/rejected"), JSON.stringify(bodies));
             assert.equal(await review.isVisible(), false);
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
@@ -248,13 +246,11 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             { status: "resolved", payload: { decision: "accept" } },
             { status: "resolved", payload: { decision: "reject" } },
         ]);
-        const results = await page.locator('[data-message-role="tool"] [data-message-body]').allTextContents();
-        assert.ok(results.some((body) => JSON.parse(body).content === "first"));
-        assert.ok(results.some((body) => {
-            const result = JSON.parse(body);
-            return result.status === 400 && result.problem?.type === "https://problems.plurnk.xyz/proposal/rejected";
-        }), JSON.stringify(results));
-        assert.equal(results.some((body) => JSON.parse(body).content === "second"), false);
+        const results = await inspectRenderedResults(page);
+        assert.ok(results.some((body) => body.content === "first"));
+        assert.ok(results.some((result) => result.status === 400
+            && result.problem?.type === "https://problems.plurnk.xyz/proposal/rejected"), JSON.stringify(results));
+        assert.equal(results.some((body) => body.content === "second"), false);
         assert.equal(model.requests.length, 2);
         checkBrowser();
     }));
