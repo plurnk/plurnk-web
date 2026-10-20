@@ -64,12 +64,13 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     for (const name of ["child", "grandchild"]) {
                         const request = await controller(base, undefined, prompt(`status-${name}`));
                         request.threadId = `${workspaceId}#${name}`;
-                        const ready = Promise.withResolvers();
+                        const starts = [Promise.withResolvers(), Promise.withResolvers()];
+                        let call = 0;
                         const completion = request.runAgent({}, {
-                            onReasoningMessageContentEvent: () => { ready.resolve(); },
+                            onReasoningMessageContentEvent: () => { starts[call++]?.resolve(); },
                         });
-                        running.push({ name, completion, request });
-                        await ready.promise;
+                        running.push({ name, completion, second: starts[1].promise });
+                        await Promise.race([starts[0].promise, completion.then(() => assert.fail(`${name} completed before its first call began`))]);
                     }
                     await page.waitForFunction(() => document.querySelector('#worker-status [data-text="children"]')?.textContent === "1");
                     assert.equal(await value(page, "descendants"), "2");
@@ -80,11 +81,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.reload();
                     await connected(page);
                     assert.equal(await value(page, "children"), "1", "two active descendants are one direct child");
-                    for (const { name, completion, request } of running.toReversed()) {
-                        const second = Promise.withResolvers();
-                        request.subscribe({ onReasoningMessageContentEvent: () => { second.resolve(); } });
+                    for (const { name, completion, second } of running) {
                         model.release(`status-${name}`);
-                        await second.promise;
+                        await Promise.race([second, completion.then(() => assert.fail(`${name} completed before its second call began`))]);
+                    }
+                    for (const { name, completion } of running.toReversed()) {
                         model.release(`status-${name}`);
                         await completion;
                     }
