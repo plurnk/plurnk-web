@@ -135,6 +135,36 @@
             </article>
         </li>
     </template>
+    <!-- {§web-worker-activity} Observations are literal evidence, not replies or executable markup. -->
+    <template id="worker-ambient">
+        <li>
+            <details>
+                <summary><span data-text="activity-operation">Log entry</span> <code data-text="activity-coordinate">Coordinate</code>
+                    <span data-i18n="activity-worker">Worker:</span> <span data-text="activity-worker">Worker</span></summary>
+                <dl>
+                    <div><dt data-i18n="activity-origin">Origin</dt><dd data-text="activity-origin">Origin</dd></div>
+                    <div><dt data-i18n="activity-state">Row state</dt><dd data-text="activity-state">State</dd></div>
+                    <div><dt data-i18n="activity-status">Receipt status</dt><dd data-text="activity-status">Status</dd></div>
+                    <div><dt data-i18n="activity-time">Time</dt><dd><time data-text="activity-at" data-bind="datetime:activity-at">Time</time></dd></div>
+                    <div data-activity-source><dt data-i18n="activity-source">Source</dt><dd data-text="activity-source">Source</dd></div>
+                    <div data-activity-attribution><dt data-i18n="activity-attribution">Subagent</dt><dd data-text="activity-attribution">Subagent</dd></div>
+                </dl>
+                <details><summary data-i18n="activity-evidence">Row details</summary><pre><code data-text="activity-evidence">Row evidence</code></pre></details>
+                <section aria-label="Receipt body"><p data-i18n="activity-body">Receipt body</p><div data-activity-body></div></section>
+                <section aria-label="Reasoning"><p data-i18n="activity-reasoning">Reasoning</p><div data-activity-reasoning></div></section>
+            </details>
+        </li>
+    </template>
+    <template id="worker-outside">
+        <li>
+            <details>
+                <summary><span data-i18n="outside-operations">Outside operations</span> <code data-text="activity-coordinate">Coordinate</code></summary>
+                <p data-activity-attribution><span data-i18n="activity-attribution">Subagent:</span> <span data-text="activity-attribution">Subagent</span></p>
+                <p><span data-i18n="activity-tokens">Tokens:</span> <span data-text="activity-tokens">0</span></p>
+                <pre><code data-text="activity-text">Outside-operation text</code></pre>
+            </details>
+        </li>
+    </template>
     <!-- {§web-worker-input} Native form structure; the worker SDK owns delivery. -->
     <template id="worker-controls">
         <section aria-label="Worker controls" data-command-error="">

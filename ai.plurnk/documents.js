@@ -211,6 +211,8 @@ export default class Documents {
             + '<details data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
             + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ol></ol></details></section>'
             + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ol></ol></section>'
+            + '<details id="worker-activity"><summary data-i18n="observed-activity">Observed activity</summary>'
+            + '<p data-i18n="activity-scope">Non-conversation evidence observed on this page, not a complete history.</p><ol></ol></details>'
             + '<section id="worker-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
             + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'

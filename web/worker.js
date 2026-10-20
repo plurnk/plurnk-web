@@ -10,6 +10,7 @@ import readBody from "./read-body.js";
 import reasoningPreview from "./reasoning-preview.js";
 import workerStreams from "./worker-streams.js";
 import readEntry from "./read-entry.js";
+import activity from "./worker-activity.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -47,6 +48,9 @@ export default function observeWorker(element) {
     const diagnosticList = $("#worker-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
+    const activityList = $("#worker-activity");
+    if (!(activityList instanceof HTMLElement)) throw new Error("Worker document has no activity outlet.");
+    const observeActivity = activity(activityList, (address) => readBody(address, auth, resources.signal));
     const streamList = $("#worker-streams");
     if (!(streamList instanceof HTMLElement)) throw new Error("Worker document has no stream outlet.");
     const streams = workerStreams(streamList, (target) => readEntry(target, threadId, auth, resources.signal));
@@ -124,6 +128,7 @@ export default function observeWorker(element) {
                         if (signal.aborted) return;
                         await diagnose(event);
                         await streams.consume(event);
+                        observeActivity(event);
                     },
                     onMessagesChanged: ({ messages }) => { if (!signal.aborted) present(messages); },
                     onTextMessageStartEvent: ({ event }) => {
