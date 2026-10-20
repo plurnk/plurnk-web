@@ -249,11 +249,11 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
         listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null }],
         listWorkers: async () => [worker(1, "user")],
     };
-    const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" tabindex="-1" data-page="home">Home</main></body></html>`, false, 128);
+    const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" data-page="home">Home</main></body></html>`, false, 128);
     const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, port, true)).toString();
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
-    assert.match(html, /<main id="main" tabindex="-1" data-page="worker">/u);
+    assert.match(html, /<main id="main" data-page="worker">/u);
     assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template|<footer/iu);
     assert.equal(html.match(/<main\b/gu).length, 1);

@@ -60,6 +60,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const page = await context.newPage();
                     await page.goto(new URL("/~/family-status@user/", base).href);
                     await connected(page);
+                    await page.getByText("No messages.", { exact: true }).waitFor();
                     assert.equal(await value(page, "children"), "0");
                     const running = [];
                     for (const name of ["child", "grandchild"]) {
@@ -880,6 +881,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await nativePage.goto(new URL("/~/observer-approval@user/", base).href);
                     assert.equal(await nativePage.getByText("Live status requires JavaScript.", { exact: true }).isVisible(), true);
                     assert.equal(await value(nativePage, "lifecycle"), "Unknown");
+                    assert.equal(await nativePage.getByText("No messages.", { exact: true }).isVisible(), false,
+                        "a native document without conversation delivery cannot claim the existing history is empty");
                     assert.equal(nativeRequests.some((url) => /\/agui|\/auth\/token/u.test(url)), false);
                     checkNative();
                     await native.close();

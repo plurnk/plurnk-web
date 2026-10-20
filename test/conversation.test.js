@@ -45,6 +45,21 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                     const ids = () => page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
                     const row = (id) => page.locator(`[data-message-id="${id}"]`);
 
+                    await t.test("empty history requires a supplied empty collection, not an empty rendered list", async () => {
+                        const empty = page.getByText("No messages.", { exact: true });
+                        assert.equal(await empty.isVisible(), false, "history is unknown before its first SDK projection");
+                        await present([]);
+                        assert.equal(await empty.isVisible(), true, "a supplied empty collection confirms empty history");
+                        await present([{ id: "pending-reasoning", role: "reasoning", content: "" }]);
+                        assert.deepEqual(await ids(), [], "a live reasoning placeholder has no transcript body");
+                        assert.equal(await empty.isVisible(), false, "unrendered working material is not an empty history");
+                        await present([{ id: "answer", role: "assistant", content: "Confirmed answer." }]);
+                        assert.equal(await row("answer").locator("[data-message-body] p").textContent(), "Confirmed answer.");
+                        assert.equal(await empty.isVisible(), false);
+                        await present([]);
+                        assert.equal(await empty.isVisible(), true, "a later empty snapshot clears the conversation");
+                    });
+
                     await t.test("roles, exact calls and results retain SDK order and native disclosure structure", async () => {
                         await present(messages);
                         assert.deepEqual(await ids(), messages.map(({ id }) => id));

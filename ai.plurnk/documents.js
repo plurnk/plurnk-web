@@ -44,7 +44,7 @@ export default class Documents {
     #render(title, body, kind, authenticated = false, breadcrumb = "") {
         const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
-        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" tabindex="-1" data-page="${kind}">${body}</main>${this.#afterMain}`);
+        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}">${body}</main>${this.#afterMain}`);
     }
 
     /** @param {boolean} authenticated */

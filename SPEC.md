@@ -456,7 +456,7 @@ capability, persistence or execution policy. Commands require no inference.
 | Working notes | NOTE calls follow {§web-working-notes}; they remain calls, not answers or provider reasoning. |
 | Other messages | System/developer messages and structured activity remain labelled disclosures. Content parts retain their original order: text follows the role's presentation, document URLs follow {§web-result-bodies}, and unsupported parts remain literal data. No inline media player or attachment service. Subagent invocation IDs remain visible as attribution, not mistaken for the parent's output. |
 | Layout | Native ordered list, articles, details/summary, code and preformatted data, using Pico and the existing four CSS layers. No duplicate worker heading, chat bubbles, application classes or virtual-DOM framework. Long code, tables and payloads scroll within their content region on narrow screens. |
-| Connection | The existing connection notice governs whether displayed history is live. An empty collection says “No messages.”; a transport failure is never presented as an empty or successfully completed conversation. |
+| Connection | The existing connection notice governs whether displayed history is live. Only a supplied empty SDK collection says “No messages.” Unknown history and deliberately unrendered reasoning placeholders do not imply emptiness. A transport failure retains the last observed projection, never an invented empty or successfully completed conversation. |
 
 ## §web-result-bodies Results by reference
 
@@ -725,5 +725,5 @@ worker page is exercised separately under {§web-worker-observer}, without SDK i
 | Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |
 | Credentials | Real password/PKCE sign-in, browser access, expiry, concurrent refresh and revocation compose with the SDK. Revocation terminates admitted connections without cancelling their workers. |
 
-This establishes protocol prerequisites, not a conversation interface. There is no
-client-owned replay cache, second event parser or automatic retry of work.
+Protocol and shipped-page checks share the public SDK. There is no client-owned
+replay cache, second event parser or automatic retry of work.
