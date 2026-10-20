@@ -81,6 +81,16 @@ export default async function verifyApproval(t) {
                     assert.equal(await groups.count(), 1, "only the question needs a manual answer in YOLO mode");
                     assert.equal(await page.evaluate(() => window.responses.length), 1, "YOLO cannot answer questions or submit partial sets");
                     await form.getByRole("textbox", { name: "answer", exact: true }).fill("operator answer");
+                    await page.evaluate(() => { window.answerNode = document.querySelector("[data-requests] textarea"); });
+                    assert.equal(await page.evaluate(() => window.automatic(false)), "manual");
+                    assert.deepEqual(await groups.evaluateAll((nodes) => nodes.map((node) => node.dataset.interruptId)), mixed.map(({ id }) => id));
+                    assert.equal(await form.getByRole("textbox", { name: "answer", exact: true }).inputValue(), "operator answer");
+                    assert.equal(await page.evaluate(() => window.answerNode === document.querySelector("[data-requests] textarea")), true);
+                    assert.equal(await form.locator('input[type="radio"]:checked').count(), 0);
+                    assert.equal(await page.evaluate(() => window.automatic(true)), "manual");
+                    assert.equal(await groups.count(), 1);
+                    assert.equal(await form.getByRole("textbox", { name: "answer", exact: true }).inputValue(), "operator answer");
+                    assert.equal(await page.evaluate(() => window.responses.length), 1, "changing approval policy never answers the question");
                     await form.getByRole("button", { name: "Submit responses", exact: true }).click();
                     await page.waitForFunction(() => window.responses.length === 2);
                     assert.deepEqual(await page.evaluate(() => window.responses[1]), [

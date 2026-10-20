@@ -170,7 +170,8 @@
         <section aria-label="Worker controls" data-command-error="">
             <form id="worker-compose">
                 <label for="worker-message" data-i18n="message">Message</label>
-                <textarea id="worker-message" name="message" rows="3" required></textarea>
+                <textarea id="worker-message" name="message" rows="3" required aria-describedby="worker-command-hint"></textarea>
+                <small id="worker-command-hint" data-i18n="command-hint">Use /help for worker commands.</small>
                 <button type="submit" disabled data-bind="disabled:send-unavailable" data-i18n="send">Send</button>
             </form>
             <form id="worker-stop">
@@ -182,6 +183,90 @@
                 <p data-text="command-error">The request could not be confirmed.</p>
             </article>
         </section>
+    </template>
+    <!-- {§web-worker-commands} Command results are local presentation, not conversation messages. -->
+    <template id="command-results">
+        <section id="worker-command-results" aria-label="Command results">
+            <ol></ol>
+        </section>
+    </template>
+    <template id="worker-command-result">
+        <li>
+            <article data-command-state="pending" data-bind="aria-busy:command-busy">
+                <header><code data-text="command-input">Command</code></header>
+                <p role="status" data-text="command-message">Running…</p>
+                <div data-command-output></div>
+                <details data-command-evidence>
+                    <summary data-i18n="command-evidence">Daemon result</summary>
+                    <pre><code data-text="command-evidence">Result</code></pre>
+                </details>
+                <details data-command-problem>
+                    <summary data-i18n="command-problem">Error details</summary>
+                    <pre><code data-text="command-problem">Problem</code></pre>
+                </details>
+            </article>
+        </li>
+    </template>
+    <template id="command-help">
+        <ul aria-label="Supported commands">
+            <li data-command-name="help"><code data-i18n="command-help-usage">/help [command]</code> <span data-i18n="command-help-summary">Show these commands or one command's usage.</span></li>
+            <li data-command-name="models"><code data-i18n="command-models-usage">/models [search]</code> <span data-i18n="command-models-summary">List aliases and search the available model catalog.</span></li>
+            <li data-command-name="model"><code data-i18n="command-model-usage">/model [selector] [effort]</code> <span data-i18n="command-model-summary">Inspect or select this worker's model.</span></li>
+            <li data-command-name="effort"><code data-i18n="command-effort-usage">/effort [policy]</code> <span data-i18n="command-effort-summary">Inspect or select this worker's reasoning effort.</span></li>
+            <li data-command-name="capabilities"><code data-i18n="command-capabilities-usage">/capabilities [json]</code> <span data-i18n="command-capabilities-summary">Inspect or replace the workspace capability policy.</span></li>
+            <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle automatic approval on this page.</span></li>
+            <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this worker's active work.</span></li>
+        </ul>
+    </template>
+    <template id="command-models">
+        <section aria-label="Available models">
+            <h2 data-i18n="model-aliases">Aliases</h2>
+            <p data-no-aliases data-i18n="no-aliases">No matching aliases.</p>
+            <ul data-model-aliases></ul>
+            <h2 data-i18n="model-catalog">Model catalog</h2>
+            <p>
+                <span data-i18n="model-offset">Offset:</span> <span data-text="model-offset">0</span>
+                <span data-i18n="models-shown">Shown:</span> <span data-text="model-count">0</span>
+                <span data-i18n="models-total">Total:</span> <span data-text="model-total">0</span>
+            </p>
+            <p data-text="model-more">Narrow the search for more matches.</p>
+            <figure>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="model-selector">Selector</th>
+                        <th scope="col" data-i18n="model-name">Name</th>
+                        <th scope="col" data-i18n="model-context">Context</th>
+                        <th scope="col" data-i18n="model-efforts">Efforts</th>
+                        <th scope="col" data-i18n="model-readiness">Readiness</th>
+                    </tr></thead>
+                    <tbody></tbody>
+                </table>
+            </figure>
+        </section>
+    </template>
+    <template id="command-alias">
+        <li>
+            <code data-text="alias-name">Alias</code>
+            <span data-text="alias-route">Provider/model</span>
+            <span data-text="alias-effort">Effort</span>
+            <span data-text="alias-active">Default</span>
+        </li>
+    </template>
+    <template id="command-model">
+        <tr>
+            <th scope="row"><code data-text="model-selector">Provider/model</code></th>
+            <td data-text="model-name">Model</td>
+            <td data-text="model-context">0</td>
+            <td data-text="model-efforts">Efforts</td>
+            <td data-text="model-readiness">Readiness</td>
+        </tr>
+    </template>
+    <template id="command-capabilities">
+        <dl>
+            <dt data-i18n="capability-service">Service</dt><dd><pre><code data-text="capability-service">Policy</code></pre></dd>
+            <dt data-i18n="capability-workspace">Workspace</dt><dd><pre><code data-text="capability-workspace">Policy</code></pre></dd>
+            <dt data-i18n="capability-effective">Effective</dt><dd><pre><code data-text="capability-effective">Policy</code></pre></dd>
+        </dl>
     </template>
     <!-- {§web-worker-approval} One explicit decision per operation, one complete resume. -->
     <template id="worker-review">

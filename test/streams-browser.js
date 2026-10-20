@@ -35,7 +35,7 @@ export default async function verifyStreams(t) {
                         if (held) await held.promise;
                         await route.fulfill({ contentType: "text/event-stream", body: [
                             { type: "RUN_STARTED", threadId: input.threadId, runId: input.runId },
-                            { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, result },
+                            { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, result: { kind: "entry.read", ...result } },
                         ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
                     });
                     await page.goto(url);

@@ -22,6 +22,7 @@ import verifyTokens from "./tokens-browser.js";
 import verifyWorkerPage from "./worker-browser.js";
 import verifyWorkerStreams from "./worker-streams.js";
 import verifyWorkerActivity from "./worker-activity.js";
+import verifyWorkerCommands from "./worker-commands.js";
 import verifyWorkerInput from "./worker-input.js";
 import verifyWorkerApproval from "./worker-approval.js";
 import verifyWorkerQuestions from "./worker-questions.js";
@@ -31,7 +32,7 @@ import verifyStaticAssets from "./static-assets.js";
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
 
-test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000 }, async (t) => {
+test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000 }, async (t) => {
     const packages = await candidatePackages();
     const directory = await mkdtemp(join(tmpdir(), "plurnk-web-install-"));
     t.after(() => rm(directory, { recursive: true, force: true }));
@@ -235,6 +236,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 240_000
     await verifyWorkerPage({ t, withDaemon });
     await verifyWorkerStreams({ t, withDaemon });
     await verifyWorkerActivity({ t, withDaemon });
+    await verifyWorkerCommands({ t, withDaemon });
     await verifyWorkerInput({ t, withDaemon });
     await verifyWorkerApproval({ t, withDaemon });
     await verifyWorkerQuestions({ t, withDaemon });

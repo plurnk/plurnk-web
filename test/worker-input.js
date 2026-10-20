@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {} } = {}) {
+export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser" } = {}) {
     const model = await startModel(modelOptions);
     const secret = crypto.randomUUID();
     const workspace = `input-${crypto.randomUUID()}`;
@@ -19,7 +19,10 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                 headers.Authorization = `Bearer ${(await response.json()).access_token}`;
             }
             const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user", headers });
-            await setup.runAgent({ forwardedProps: { plurnk: { workspace, action: { kind: "worker.model.set", selector: "browser" } } } });
+            const initialized = await setup.runAgent({ forwardedProps: { plurnk: { workspace,
+                action: selector === null ? { kind: "worker.child.set", selector: null } : { kind: "worker.model.set", selector },
+            } } });
+            assert.equal(initialized.result.ok, true, JSON.stringify(initialized.result));
             const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${hostname} 127.0.0.1`, "--no-proxy-server"] });
             try {
                 const context = await browser.newContext();
