@@ -725,7 +725,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await cancellation;
                     assert.deepEqual(terminal?.outcome, { type: "cancelled" });
                     assert.equal(terminal.metadata.plurnk.terminal.result.problem.reason, "browser-stop");
-                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "failed");
+                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "cancelled");
                     await connected();
                     assert.equal(await page.getByRole("alert").isVisible(), false, "a cancelled worker is not a disconnected observer");
                     assert.equal(model.requests.length, 3);

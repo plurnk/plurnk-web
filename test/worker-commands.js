@@ -92,6 +92,8 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await submit("/model browser low");
             const after = await submit("/effort");
             assert.match(await after.textContent(), /low \(explicit\)/u);
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent.includes("browser-fixture")
+                && document.querySelector("#worker-status [data-text=effort]")?.textContent === "low (explicit)");
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent.includes("browser-fixture"));
             assert.equal(await page.locator("#worker-status [data-text=effort]").textContent(), "low (explicit)");
@@ -115,6 +117,9 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
                 "a fresh authoritative snapshot confirms the mutation");
             await Promise.all([page, other].map((view) => view.waitForFunction(
                 () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "low (explicit)", undefined, { timeout: 5000 })));
+            await submit("/model browser high");
+            await Promise.all([page, other, fresh].map((view) => view.waitForFunction(
+                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high (explicit)", undefined, { timeout: 5000 })));
             assert.equal(model.requests.length, 0);
             checkBrowser();
         }, { env: reasoning }));
@@ -166,7 +171,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             }
             const stopped = await submit("/stop");
             assert.match(await stopped.textContent(), /Stop requested/u);
-            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.lifecycle === "failed");
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.lifecycle === "cancelled");
             assert.equal(model.requests.length, 3, "commands did not start another inference");
             checkBrowser();
         }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));

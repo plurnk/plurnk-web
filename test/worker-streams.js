@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { HttpAgent } from "@ag-ui/client";
-import { lifecycleOfLoopStatus } from "@plurnk/plurnk-contracts";
 import { inputPage } from "./worker-input.js";
 
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -66,7 +65,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                 assert.equal(readCount, 1);
                 if (cancelled) {
                     await page.getByRole("button", { name: "Stop", exact: true }).click();
-                    await settled(page, lifecycleOfLoopStatus(499));
+                    await settled(page, "cancelled");
                     await page.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ol > li").length === 1);
                 } else {
                     const observer = await context.newPage();
