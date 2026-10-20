@@ -170,8 +170,7 @@
         <section aria-label="Worker controls" data-command-error="">
             <form id="worker-compose">
                 <label for="worker-message" data-i18n="message">Message</label>
-                <textarea id="worker-message" name="message" rows="3" required aria-describedby="worker-command-hint"></textarea>
-                <small id="worker-command-hint" data-i18n="command-hint">Use /help for worker commands.</small>
+                <textarea id="worker-message" name="message" rows="3" required></textarea>
                 <button type="submit" disabled data-bind="disabled:send-unavailable" data-i18n="send">Send</button>
             </form>
             <form id="worker-stop">
