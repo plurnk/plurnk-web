@@ -11,6 +11,7 @@ import verifyInteractions from "./interaction-browser.js";
 import verifyFootnotes from "./footnotes-browser.js";
 import verifyDiagnostics from "./diagnostics-browser.js";
 import verifyStatus from "./status-browser.js";
+import verifyBodies from "./body-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -123,7 +124,9 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.deepEqual(await ids(), other.map(({ id }) => id));
                         assert.equal(await row("activity").locator("summary").innerText(), "progress");
                         assert.equal(await row("activity").locator("code").textContent(), JSON.stringify({ percent: 25 }, null, 2));
-                        assert.equal(await row("parts").locator("code").textContent(), JSON.stringify(other[3].content, null, 2));
+                        assert.equal(await row("parts").locator("[data-message-body] > p").textContent(), "First");
+                        assert.equal(await row("parts").locator("code").textContent(), JSON.stringify(other[3].content[1], null, 2));
+                        assert.deepEqual(await row("parts").locator("[data-message-body] > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["P", "PRE"]);
                         assert.equal(await row("child").locator("[data-text=message-attribution]").innerText(), "Subagent child-run");
                         assert.equal(await row("orphan").locator("[data-call-link]").isVisible(), false);
                     });
@@ -282,6 +285,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
 test("{§web-worker-diagnostics} public notices and Problems remain visible outside conversation", { timeout: 60_000 }, verifyDiagnostics);
 
 test("{§web-worker-status} {§web-worker-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
+test("{§web-result-bodies} referenced bodies require explicit authenticated reads", { timeout: 60_000 }, verifyBodies);
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);

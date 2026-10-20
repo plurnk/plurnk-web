@@ -3,6 +3,7 @@ import { HttpAgent } from "@ag-ui/client";
 import { inputPage } from "./worker-input.js";
 import { answerSchema, exactAnswer } from "./question-fixture.js";
 import startMcp from "./mcp-fixture.js";
+import { inspectRenderedResults } from "./result-body.js";
 
 const interrupted = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -33,8 +34,7 @@ async function answer(page, form = review(page)) {
 }
 
 const questionResult = async (page) => {
-    const bodies = await page.locator('[data-message-role="tool"] [data-message-body]').allTextContents();
-    return bodies.map((body) => JSON.parse(body)).find((result) => result.content?.includes('"action"'));
+    return (await inspectRenderedResults(page)).find((result) => result.content?.includes('"action"'));
 };
 
 // {§web-worker-questions} The real daemon requests input; shipped forms and HttpAgent settle it.

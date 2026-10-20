@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { inspectResult } from "./result-body.js";
 
 // {§web-agui-conformance} One browser fixture drives the official SDK; it owns no protocol reducer.
 export default async function aguiSession(tab, { token, projectRoot }) {
@@ -116,5 +117,6 @@ export default async function aguiSession(tab, { token, projectRoot }) {
     };
     const prompt = (name) => [{ id: `message-${name}`, role: "user", content: `Lifecycle fixture: ${name}.` }];
     const close = () => tab.evaluate(() => globalThis.lifecycle.close());
-    return { tab, start, finish, read, event, successful, action, detach, observe, prompt, close };
+    const inspect = (content) => inspectResult(content, token, tab.url());
+    return { tab, start, finish, read, event, successful, action, detach, observe, prompt, close, inspect };
 }

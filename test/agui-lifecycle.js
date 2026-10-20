@@ -7,7 +7,7 @@ import verifyDisconnect from "./agui-disconnect.js";
 // {§web-agui-conformance} The fixture uses only the official SDK and the daemon's public wire.
 export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser, mount, base }) {
     const session = await aguiSession(tab, { token, projectRoot });
-    const { start, finish, read, event, successful, prompt, action } = session;
+    const { start, finish, read, event, successful, prompt, action, inspect } = session;
     try {
         await t.test("{§web-agui-conformance} synchronization is authoritative and inference-free", async () => {
             const before = model.requests.length;
@@ -28,7 +28,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.ok(readCall, "a refresh must not discard the READ that the connected client received");
             const receipt = result.messages.find(({ role, toolCallId }) => role === "tool" && toolCallId === readCall.id);
             assert.ok(receipt, "replay retains the correlated operation result");
-            assert.match(JSON.parse(receipt.content).content, /cobalt heron/u);
+            assert.match((await inspect(receipt.content)).content, /cobalt heron/u);
         });
         await t.test("{§web-agui-conformance} a repeated thread name in another workspace has no borrowed history", async () => {
             const before = model.requests.length;
@@ -136,7 +136,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal(completed.messages.findLast(({ role }) => role === "assistant").content, "Completed approval.");
             const receipts = completed.events.filter(({ type, toolCallId }) => type === "TOOL_CALL_RESULT" && toolCallId === interrupt.toolCallId);
             assert.equal(receipts.length, 1, "the approved operation has one actual result, not an invented approval acknowledgement");
-            const output = JSON.parse(receipts[0].content);
+            const output = await inspect(receipts[0].content);
             assert.equal(output.status, 200);
             assert.equal(output.content, "approved");
             assert.equal(output.exitCode, 0);

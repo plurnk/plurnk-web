@@ -5,6 +5,8 @@ import workerState from "./worker-state.js";
 import conversation from "./conversation.js";
 import reviewRequests from "./worker-review.js";
 import diagnostics from "./worker-diagnostics.js";
+import accessHeaders from "./access-headers.js";
+import readBody from "./read-body.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -36,7 +38,8 @@ export default function observeWorker(element) {
     }
     const draft = field;
     the(controls, "message-status", "");
-    const present = conversation(history);
+    let resources = new AbortController();
+    const present = conversation(history, (address) => readBody(address, auth, resources.signal));
     const diagnosticList = $("#worker-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
@@ -68,22 +71,7 @@ export default function observeWorker(element) {
     }
 
     /** @param {AbortSignal} signal @returns {Promise<Record<string, string>>} */
-    async function credentials(signal) {
-        if (auth === "none") return {};
-        const response = await fetch("/auth/token", { method: "POST", signal });
-        if (!response.ok) throw Object.assign(new Error(`Access credential request failed (${response.status}).`), { status: response.status });
-        let token;
-        try {
-            token = await response.json();
-        } catch (cause) {
-            // A JSON parser's message may contain credential bytes; preserve it only as the cause.
-            throw new Error("Access credential response is not valid JSON.", { cause });
-        }
-        if (!token || token.token_type !== "Bearer" || typeof token.access_token !== "string" || !token.access_token) {
-            throw new Error("Invalid access credential response.");
-        }
-        return { Authorization: `Bearer ${token.access_token}` };
-    }
+    const credentials = (signal) => accessHeaders(auth, signal);
 
     /** @param {string} id */
     function acknowledged(id) {
@@ -271,10 +259,16 @@ export default function observeWorker(element) {
     });
 
     window.onpagehide = () => {
+        resources.abort();
         delivery?.controller.abort();
         cancellation?.abort();
         connection("closed", "Not connected.");
     };
-    window.onpageshow = (event) => { if (event.persisted) connect(); };
+    window.onpageshow = (event) => {
+        if (event.persisted) {
+            resources = new AbortController();
+            connect();
+        }
+    };
     connect();
 }

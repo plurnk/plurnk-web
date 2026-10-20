@@ -12,7 +12,7 @@ breadcrumbs, their actual parent, a native worker-tree disclosure, live status a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
 the worker's current work. Pending operations have native Accept/Reject review forms;
 questions and MCP input share the same review and resume path.
-The tree shows daemon-supplied kinds and lifecycles at page load, with the current
+The workspace navigation tree shows kinds and lifecycles at page load, with the current
 worker's branch open. It is navigation, not a live subscription to child transcripts.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
@@ -67,8 +67,9 @@ Connection failure stops observation and marks the displayed values as stale;
 use **Reconnect** or, after revocation, **Sign in**. Reconnect preserves the current
 draft without resubmitting it; full page reloads do not persist drafts.
 No automatic work retries occur.
-Status shows the selected model/effort, direct active children, context/curation
-and the daemon's WAIT countdown. The countdown is an observation deadline, not a
+Status shows the selected model/effort, direct active children, descendants awaiting
+input, context/curation gauges and the daemon's WAIT countdown. A live descendant
+tree provides native links and disclosures. The countdown is an observation deadline, not a
 promise of completion. **Accounting details** separates complete totals from known
 subtotals; **Workspace activity** and **Unobserved messages** expose preparation,
 indexing and accepted input awaiting observation. Workspace names and folder labels
@@ -76,6 +77,9 @@ follow supplied state without changing the observed worker or rewriting the URL.
 Daemon notices and nonterminal Problems appear separately under **Observed diagnostics**,
 with their exact details available. Distinct observations remain through reconnects
 on that page; they are not an archive or an indication that the worker has stopped.
+Operation receipts stay in the conversation; **Read body** fetches a referenced
+result only when requested. Inspected bodies are literal text and are never added
+to client-uploaded conversation history or saved in browser storage.
 
 **Send** also supports follow-ups while the worker is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or

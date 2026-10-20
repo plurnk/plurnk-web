@@ -78,3 +78,14 @@ header nav button:is(:hover, :focus-visible) {
 #worker-conversation [data-call-href=""] [data-call-link] {
     display: none;
 }
+
+#worker-status:not([data-descendants="0"]) [data-no-descendants] {
+    display: none;
+}
+
+[data-body-reference]:not([data-body-state="error"]) [data-body-failure],
+[data-body-reference]:not([data-body-state="loading"]) [data-body-loading],
+[data-body-reference]:not([data-body-state="loaded"]) [data-body-content],
+[data-body-reference][data-body-state="loaded"] > button {
+    display: none;
+}

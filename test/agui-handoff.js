@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 // {§web-agui-conformance} The same official SDK history crosses each transport boundary.
-export default async function verifyHandoff({ tab, t, model, start, finish, read, event, successful, prompt, action, detach, observe }) {
+export default async function verifyHandoff({ tab, t, model, start, finish, read, event, successful, prompt, action, detach, observe, inspect }) {
     await t.test("{§web-agui-conformance} one SDK history moves from observation to a message Run and back without replaying input", async () => {
         const before = model.requests.length;
         const initial = await observe("handoff", "browser-conformance", "browser-conformance");
@@ -68,7 +68,7 @@ export default async function verifyHandoff({ tab, t, model, start, finish, read
         assert.deepEqual(completed.interrupts, []);
         const receipts = completed.events.filter(({ type, toolCallId }) => type === "TOOL_CALL_RESULT" && toolCallId === current.toolCallId);
         assert.equal(receipts.length, 1);
-        assert.equal(JSON.parse(receipts[0].content).content, "approved");
+        assert.equal((await inspect(receipts[0].content)).content, "approved");
         assert.equal(completed.messages.findLast(({ role }) => role === "assistant").content, "Completed approval-handoff.");
         assert.equal(model.requests.length, before + 2);
 

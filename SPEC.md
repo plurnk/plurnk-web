@@ -308,7 +308,7 @@ stateDiagram-v2
 | Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, ends the delivery; reconnect passively to watch subsequent work. A held observation may finish when its gate settles, before the worker concludes: only daemon status/terminal evidence establishes the worker outcome. A protocol/credential failure stops observation. An interrupt applies {§web-worker-input}: configured approval or explicit input required. Never retry work or infer completion from transport closure. |
 | Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card with the failure's diagnostic, retain clearly stale last-observed values, and offer a native Reconnect form. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
 | Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
-| Projection | Public state supplies identity under {§web-worker-identity} and status under {§web-worker-status}. The browser keeps no accounting ledger, topology reconstruction or transcript cache. |
+| Projection | Public state supplies identity under {§web-worker-identity}, status under {§web-worker-status}, and the complete descendant census under {§web-worker-descendants}. The browser keeps no accounting ledger, inferred topology or transcript cache. |
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
 | Presentation | Native definition list and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection status and errors are announced; the ticking elapsed value is not a live announcement. |
 
@@ -329,7 +329,7 @@ submission and explicit cancellation belong to {§web-worker-input}.
 
 | Surface | Projection |
 |---|---|
-| Worker | `plurnk.status`: lifecycle, resolved model alias and provider/model route, supplied effort and its source, latest loop, packet count, and alive **direct** children. A null model is “Not selected”; absent effort is “Unspecified”. No inferred subtree size, blocked-on-gate status or provider fallback. |
+| Worker | `plurnk.status`: lifecycle, resolved model alias and provider/model route, supplied effort and its source, latest loop and packet count. A null model is “Not selected”; absent effort is “Unspecified”. Descendant counts and pending gates follow {§web-worker-descendants}; neither changes the bound worker's lifecycle. No provider fallback. |
 | Clocks | Elapsed follows {§web-worker-observer}. WAIT shows the supplied absolute deadline and whole seconds remaining, rounded up and clamped to zero. A null deadline clears it. Expiry neither changes lifecycle nor claims that work has finished or resumed. Both clocks repaint only while connected or awaiting input, and freeze when delivery is unavailable. |
 | Packet gauges | Root `budget` supplies context occupancy/capacity and curation weight/budget. Preserve each number; absent or null fields are “Unknown”, including after a fresh snapshot. Do not substitute accounting totals, retain an older snapshot's budget, or derive a budget from model configuration. |
 | Accounting | Preserve daemon cumulative worker-and-descendant requests, usage and USD decimal strings. A native details table exposes reported total/input/output, uncached/cache-read/cache-write and text/reasoning token quantities. Missing complete quantities stay “Unknown”; independently supplied known subtotals have their own column, never promoted to totals. Omit a redundant subtotal when that complete field is known. No summing, cost estimation, rounding or inferred token partitions. |
@@ -337,6 +337,16 @@ submission and explicit cancellation belong to {§web-worker-input}.
 | Workspace indexing | `plurnk.workspace.activity` supplies phase, completed/total, percentage and message. Show those fields without calculating replacement progress; null clears the activity, including previous failures. A worker terminal alone does not clear workspace activity. |
 | Inbox | A native disclosure lists `status.inbox` in supplied order, showing each immutable message address, optional client message ID, loop and lifecycle. These are accepted messages not yet observed, not a fabricated conversation or a promise that a terminated loop will consume them. Empty state clears the list. |
 | Continuity and admission | Project the SDK's complete state after snapshots and deltas. Native disclosures remain open across updates; names, messages and other supplied strings are literal text. Disconnected values remain visibly stale under {§web-worker-observer}. Observation, timer ticks and disclosure do not submit actions or initiate extra network requests. |
+
+## §web-worker-descendants Live descendant navigation
+
+| Boundary | Contract |
+|---|---|
+| Authority | `status.descendants` is the daemon's complete census beneath the bound worker. Render every supplied worker once, nested by `parentWorkerId`, preserving sibling order; do not infer workers or activity from transcripts, query the directory, or merge successive censuses. This live subtree is distinct from the workspace navigation snapshot under {§web-worker-directory}. |
+| Counts | Alive direct children are roots of that census whose lifecycle is queued, running or parked. “Descendants awaiting input” counts workers at any depth with `gates > 0`, not the number of gates. Show each worker's exact gate count beside its kind and lifecycle; a pending gate does not change its lifecycle locally. |
+| Document | A native “Descendants” disclosure contains nested `ul/li` lists, real named worker links and separate child disclosures. Leaves have no child disclosure. An empty census says “No descendants.” Names and facts are literal text. Destinations use the current supplied workspace name and the shared directory codec. |
+| Continuity | A replacement census updates membership, facts and counts. Preserve open native child disclosures by worker identity for surviving branches; new branches start collapsed. Unchanged projections retain their nodes. Workspace renames update links without retargeting the bound worker or changing browser history. Disconnection leaves visibly stale evidence, not an invented empty tree. |
+| Integrity | Duplicate identities, cycles, or roots pointing to different absent parents are contract failures. A census may reference only its one excluded bound worker as the roots' parent. No silent reparenting, dropped workers, hierarchy inferred from names or client-owned lifecycle. |
 
 ## §web-worker-diagnostics Observed notices and Problems
 
@@ -397,9 +407,19 @@ submission and explicit cancellation belong to {§web-worker-input}.
 | Reasoning | A native disclosure in message order, initially collapsed. Its Markdown body remains readable; no automatic opening, forced scrolling or repeated live-region announcements. |
 | Calls and results | Native disclosures show the exact function name and argument text. Each result retains its place in the sequence and links to its call using `toolCallId` when present in the collection. Generated DOM anchors use deterministic URL-safe identities, so literal and percent-decoded fragment lookup cannot select different targets; SDK identities remain unchanged. Results and activity payloads are literal, inspectable data, not executable instructions or application state. Standard tool errors are shown alongside any partial content. |
 | Working notes | NOTE calls follow {§web-working-notes}; they remain calls, not answers or provider reasoning. |
-| Other messages | System/developer messages and structured activity remain labelled disclosures. Non-text content parts remain inspectable in their original order; this slice adds no inline media player, download action or attachment service. Subagent invocation IDs remain visible as attribution, not mistaken for the parent's output. |
+| Other messages | System/developer messages and structured activity remain labelled disclosures. Content parts retain their original order: text follows the role's presentation, document URLs follow {§web-result-bodies}, and unsupported parts remain literal data. No inline media player or attachment service. Subagent invocation IDs remain visible as attribution, not mistaken for the parent's output. |
 | Layout | Native ordered list, articles, details/summary, code and preformatted data, using Pico and the existing four CSS layers. No duplicate worker heading, chat bubbles, application classes or virtual-DOM framework. Long code, tables and payloads scroll within their content region on narrow screens. |
 | Connection | The existing connection notice governs whether displayed history is live. An empty collection says “No messages.”; a transport failure is never presented as an empty or successfully completed conversation. |
+
+## §web-result-bodies Results by reference
+
+| Boundary | Contract |
+|---|---|
+| Intake | Standard `document` parts with `source.type: "url"` show their literal address and supplied MIME type beside a native Read body control. Text parts remain visible as the receipt. The SDK's parts remain unchanged; neither attachment, replay, opening a result disclosure nor a state update fetches a body. |
+| Fetch | Only explicit activation reads the named URL. Require a same-origin HTTP(S) URL without embedded credentials; reject redirects. Use a fresh session access credential through {§web-access-token}, or none for explicitly anonymous documents. Never put a bearer in a URL, forward it to another origin, substitute a guessed URL or start an AG-UI Run. |
+| Content | Show fetched bytes decoded as text in a literal preformatted outlet, even for HTML, SVG or Markdown. A body cannot create controls, application bindings, scripts or further requests. This read-only inspection is not an attachment editor or a second Markdown rendering policy. |
+| Failure | Keep the receipt and reference, show the specific failed-read diagnostic in a native error card, and permit an explicit retry. No automatic retries or silent empty success. Concurrent activations of the same pending read are disabled. |
+| Lifetime | Fetched text belongs only to its existing DOM outlet. Unchanged replay preserves it; replacing/removing the content invalidates late results. It never enters SDK messages, subsequent Run uploads, browser storage or a separate cache. Page departure aborts these browser-owned fetches, not daemon work. |
 
 ## §web-conversation-content Untrusted message content
 

@@ -98,7 +98,10 @@ export default async function verifyContentSecurity(t) {
                         assert.equal(await page.locator("[data-message-id=result] [data-text=message-error]").textContent(), injection);
                         assert.equal(await page.locator("[data-message-id=result] [data-message-body] code").textContent(), hostile);
                         assert.equal(await page.locator("[data-message-id=activity] [data-message-body] code").textContent(), JSON.stringify({ html: hostile }, null, 2));
-                        assert.equal(await page.locator("[data-message-id=parts] [data-message-body] code").textContent(), JSON.stringify(messages[3].content, null, 2));
+                        assert.equal(await page.locator("[data-message-id=parts] [data-message-body] strong").textContent(), "Readable evidence",
+                            "standard text parts use the role's same sanitized renderer");
+                        assert.equal(await page.locator("[data-message-id=parts] [data-message-body] > pre code").textContent(), JSON.stringify(messages[3].content[1], null, 2),
+                            "unsupported parts remain exact literal data, not an image or implicit fetch");
                         assert.equal(await page.locator("#worker-conversation script, #worker-conversation img, #worker-conversation form").count(), 0);
                         assert.equal(await page.locator("[data-call-link] a").first().evaluate((link) => document.getElementById(decodeURIComponent(new URL(link.href).hash.slice(1)))?.dataset.callId), call.id);
                     });

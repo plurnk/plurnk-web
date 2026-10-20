@@ -59,7 +59,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
                 const reasoning = `Considering ${lifecycle}.`;
                 frame({ reasoning_content: reasoning });
                 if ((lifecycle.startsWith("held-") && (!/^held-(approval|question)-/u.test(lifecycle) || visit === 1))
-                    || (lifecycle.startsWith("status-") && visit === 2)
+                    || (lifecycle.startsWith("status-") && visit <= 2)
                     || ((lifecycle === "conversation" || lifecycle.startsWith("execution-")) && visit === 1)
                     || (/^(approval|question)-resumed-/u.test(lifecycle) && visit === 2)) {
                     assert.ok(!pending.has(lifecycle), "a lifecycle request is not duplicated");

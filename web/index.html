@@ -31,6 +31,28 @@
     </header>
     <main id="main" tabindex="-1" data-page="home"></main>
     <!-- {§web-worker-status} Public state supplies literal list values, not document markup. -->
+    <template id="worker-descendant">
+      <li>
+        <a data-text="descendant-name" data-bind="href:descendant-path"></a>
+        <small><span data-text="descendant-kind"></span> <span data-i18n="descendant-separator">·</span> <span data-text="descendant-lifecycle"></span>
+          <span data-i18n="descendant-pending-gates">· Pending requests:</span> <span data-text="descendant-gates"></span></small>
+      </li>
+    </template>
+    <template id="worker-descendant-children">
+      <details><summary><span data-i18n="descendant-children">Children:</span> <span data-text="descendant-children"></span></summary><ul></ul></details>
+    </template>
+    <template id="conversation-body-reference">
+      <section data-body-reference aria-label="Result body">
+        <p><code data-text="body-address">Body address</code> <small data-text="body-mime">Content type</small></p>
+        <button type="button" data-action="read-body" data-bind="disabled:body-pending" data-i18n="read-body">Read body</button>
+        <p data-body-loading role="status" data-i18n="reading-body">Reading body…</p>
+        <article data-body-failure role="alert">
+          <header><span aria-hidden="true" data-i18n="body-warning">⚠️</span> <strong data-i18n="body-read-failed">Body read failed</strong></header>
+          <p data-text="body-error">The body could not be read.</p>
+        </article>
+        <pre data-body-content><code data-text="body-content"></code></pre>
+      </section>
+    </template>
     <template id="worker-preparation">
         <li><code data-text="preparation-family">Capability</code> <span data-text="preparation-alias">Alias</span>
             <span data-text="preparation-phase">Preparing</span> <time data-text="preparation-since" data-bind="datetime:preparation-since">Start time</time></li>

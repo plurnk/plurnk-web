@@ -1,6 +1,7 @@
 import { $, $$, the } from "on_the_money";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import { clocks, gauges, workspaceIdentity } from "./worker-status.js";
+import workerDescendants from "./worker-descendants.js";
 
 /** {§web-worker-status} {§web-worker-identity} Project the SDK's state; retain no separate daemon state.
  * @param {HTMLElement} element
@@ -13,6 +14,7 @@ export default function workerState(element) {
     const preparation = $(element, "[data-preparation]");
     const inbox = $(element, "#worker-inbox ol");
     if (!breadcrumb || !folder || !preparation || !inbox) throw new Error("Worker status document is incomplete.");
+    const presentDescendants = workerDescendants(element);
     /** @param {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState, budget?: import("@plurnk/plurnk-agui/client").AguiBudgetState}} state
      * @param {number} now
      */
@@ -45,7 +47,9 @@ export default function workerState(element) {
             });
         }
         if (status) {
+            if (!workspace) throw new Error("Worker state has no workspace identity.");
             the(element, { ...gauges(status, state.budget), ...clocks(status, now) });
+            presentDescendants(status.descendants, workspace.name);
             $.cloneEach(inbox, "#worker-pending-message", status.inbox, (row, item) => {
                 the(row, { inboxPath: item.path, inboxId: item.id ?? "None", inboxLoop: item.loopId, inboxLifecycle: item.lifecycle });
             });

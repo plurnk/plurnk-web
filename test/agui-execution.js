@@ -13,7 +13,7 @@ export default async function verifyExecution(browser, base, token, projectRoot,
         await mount(tab, base);
         await tab.goto(base);
         const session = await aguiSession(tab, { token, projectRoot });
-        const { start, finish, event, successful, action, observe, detach, prompt } = session;
+        const { start, finish, event, successful, action, observe, detach, prompt, inspect } = session;
         try {
             for (const [name, exitCode] of [["execution-success", 0], ["execution-failure", 7]]) {
                 await t.test(`{§web-agui-conformance} command exit ${exitCode} retains stdout/stderr live and after refresh`, async () => {
@@ -42,8 +42,8 @@ export default async function verifyExecution(browser, base, token, projectRoot,
                             "the native call retains the command being executed");
                         const outputs = messages.filter(({ role, toolCallId }) => role === "tool" && toolCallId === command.id);
                         assert.equal(outputs.length, 2, "stdout and stderr answer the command, not a synthetic READ or its start receipt");
-                        assert.deepEqual(outputs.map(({ content }) => {
-                            const { status, exitCode, terminal, content: output } = JSON.parse(content);
+                        const inspected = await Promise.all(outputs.map(({ content }) => inspect(content)));
+                        assert.deepEqual(inspected.map(({ status, exitCode, terminal, content: output }) => {
                             return { status, exitCode, terminal, output };
                         }).toSorted((left, right) => left.output.localeCompare(right.output)), [
                             { status: 200, exitCode, terminal: true, output: `${name} stderr\n` },

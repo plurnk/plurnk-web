@@ -3,6 +3,7 @@ import verifyLifecycle from "./agui-lifecycle.js";
 import verifyOrdinary from "./agui-ordinary.js";
 import httpAgentBundle from "./http-agent-bundle.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
+import { inspectResult } from "./result-body.js";
 
 export default async function verifyAgui(browser, base, token, projectRoot, model, t, stop) {
     const mount = await httpAgentBundle();
@@ -102,14 +103,15 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.ok(read, "READ survives the official SDK's native tool-call projection");
             const receipt = result.messages.find(({ role, toolCallId }) => role === "tool" && toolCallId === read.id);
             assert.ok(receipt, "the native tool result retains its call correlation");
-            const readResult = JSON.parse(receipt.content);
+            const readResult = await inspectResult(receipt.content, token, base);
             assert.equal(readResult.status, 200);
             assert.match(readResult.content, /cobalt heron/u);
             const projected = result.events.find(({ type, toolCallId }) => type === "TOOL_CALL_RESULT" && toolCallId === read.id);
-            assert.equal(projected.metadata.plurnk.op, "READ");
-            assert.equal(projected.metadata.plurnk.address, "witness.txt");
-            assert.equal(projected.metadata.plurnk.status, 200);
-            assert.deepEqual(JSON.parse(projected.content), readResult, "receipt facts accompany their standard operation result");
+            assert.equal(read.metadata.plurnk.op, "READ");
+            assert.equal(read.metadata.plurnk.address, "witness.txt");
+            assert.equal(read.metadata.plurnk.status, 200);
+            assert.equal(projected.metadata, undefined, "the call's own result does not repeat its row facts");
+            assert.deepEqual(projected.content, receipt.content, "live and replay preserve the same standard parts");
             assert.ok(result.events.some(({ type }) => type === "STATE_SNAPSHOT"));
             assert.ok(result.events.some(({ type }) => type === "STATE_DELTA"));
             assert.equal(result.state.plurnk.workspace.name, "browser-conformance");

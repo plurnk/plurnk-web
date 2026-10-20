@@ -3,7 +3,7 @@ import verifyConversation from "./agui-conversation.js";
 import { httpFailure } from "./browser-diagnostics.js";
 
 // {§web-agui-conformance} Exercise the public observer contract through the official browser SDK.
-export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser, action, detach, observe }) {
+export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser, action, detach, observe, inspect }) {
 
     await action("observer-workspace", "named-worker", "worker.model.set", { selector: "browser" });
     // A real client operation creates the runtime journal; workspace attachment no longer fabricates actors.
@@ -86,7 +86,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
             "renaming or observing must not fabricate workers");
     });
 
-    await verifyConversation({ tab, t, start, finish, read, event, successful, prompt, model, action, observe, detach });
+    await verifyConversation({ tab, t, start, finish, read, event, successful, prompt, model, action, observe, detach, inspect });
 
     await t.test("{§web-agui-conformance} live and fresh observers agree on spend and timing across consecutive loops", async (probe) => {
         const mismatches = [];
@@ -128,6 +128,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
             const active = await read("continuity");
             assert.equal(late.state.plurnk.status.lifecycle, "running");
             compare(gauge(active.state.plurnk.status), gauge(late.state.plurnk.status), `loop ${turn}: live and late while running`);
+            compare(active.state.budget, late.state.budget, `loop ${turn}: live and late packet gauges`);
             probe.diagnostic(JSON.stringify({ phase: "running", turn, live: gauge(active.state.plurnk.status), fresh: gauge(late.state.plurnk.status) }));
             assert.notEqual(late.state.plurnk.status.loopId, priorLoop);
             assert.ok(Number.isSafeInteger(late.state.plurnk.status.claimedAt));
@@ -143,6 +144,9 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
             const status = observed.state.plurnk.status;
             assert.equal(status.lifecycle, "completed");
             compare(gauge(status), gauge(fresh.state.plurnk.status), `loop ${turn}: live and fresh after completion`);
+            compare(observed.state.budget, fresh.state.budget, `loop ${turn}: live and fresh packet gauges`);
+            assert.equal(fresh.state.budget.contextTokens, 400);
+            assert.ok(fresh.state.budget.curationWeight > 0);
             probe.diagnostic(JSON.stringify({ phase: "completed", turn, live: gauge(status), fresh: gauge(fresh.state.plurnk.status),
                 budget: { live: observed.state.budget, fresh: fresh.state.budget } }));
             assert.ok(fresh.state.plurnk.status.terminatedAt >= fresh.state.plurnk.status.claimedAt);
