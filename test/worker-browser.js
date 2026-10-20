@@ -135,8 +135,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const next = await value(page, "elapsed");
                     await page.waitForFunction((previous) => document.querySelector('#worker-status [data-text="elapsed"]')?.textContent !== previous, next);
                     assert.equal(observations.length, liveConnectionCount, "clock repaint does not poll the daemon");
+                    const stream = await page.locator("[data-open-streams] > li").getAttribute("data-stream-target");
+                    assert.match(stream, /^sh:\/\/\/.+/u);
                     proxy.drop();
                     await connection(page, "disconnected");
+                    assert.equal(await page.locator("[data-open-streams] > li").getAttribute("data-stream-target"), stream,
+                        "{§web-worker-streams} transport loss preserves visibly stale stream evidence");
                     const frozen = { elapsed: await value(page, "elapsed"), wait: await value(page, "wait") };
                     await setTimeout(1100);
                     assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
@@ -147,12 +151,15 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     ]);
                     await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
+                    assert.equal(await page.locator("[data-open-streams] > li").getAttribute("data-stream-target"), stream,
+                        "{§web-worker-streams} reconnect replaces the census without inventing or losing silent work");
                     assert.equal(await value(page, "lifecycle"), "parked");
                     assert.equal(await value(page, "wait-at"), deadline, "reattachment keeps the daemon deadline, not a new local timeout");
                     assert.notEqual(await value(page, "wait"), frozen.wait);
                     model.release("status-stream");
                     await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "completed");
                     await connected(page);
+                    assert.equal(await page.locator("[data-open-streams] > li").count(), 0, "{§web-worker-streams} completed work leaves the current census");
                     assert.equal(await value(page, "wait"), "None");
                     assert.equal(await value(page, "wait-at"), "");
                     assert.equal(await value(page, "input"), "800");
