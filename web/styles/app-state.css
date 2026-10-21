@@ -72,6 +72,11 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
     display: none;
 }
 
+/* {§web-worker-status} Native interaction retains the row; unfocused live work remains observable. */
+#worker-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"])) > [data-status-line] {
+    display: none;
+}
+
 /* {§web-worker-reasoning} Coordinates are content; the reasoning glyph is presentation. */
 [data-message-role="reasoning"] > article > details > summary::before,
 [data-reasoning-preview] > header::before {

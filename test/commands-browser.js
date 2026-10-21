@@ -120,10 +120,13 @@ export default async function verifyCommands(t) {
                     const modelButton = page.getByRole("button", { name: "Model", exact: true });
                     const modelPanel = page.locator("#worker-model-settings");
                     const selectModel = modelPanel.getByRole("combobox", { name: "Search Models", exact: true });
+                    const statusLine = page.locator("#worker-status > [data-status-line]");
                     result = { kind: "worker.model.get", ok: true, result: { model: null } };
+                    await page.getByRole("textbox", { name: "Message", exact: true }).focus();
                     await modelButton.press("Enter");
                     await modelPanel.locator('datalist option[value="fixture/small"]').waitFor({ state: "attached" });
                     assert.equal(await modelButton.getAttribute("aria-expanded"), "true");
+                    assert.equal(await statusLine.isVisible(), true, "open settings retain status while focus is in main");
                     assert.equal(await selectModel.inputValue(), "");
                     assert.equal(await selectModel.getAttribute("placeholder"), "Search Models");
                     assert.equal(await modelPanel.locator('datalist option[value="fixture/small"]').textContent(), `${source} — Not configured`);
@@ -168,6 +171,7 @@ export default async function verifyCommands(t) {
                     await modelPanel.waitFor({ state: "hidden" });
                     assert.equal(await modelButton.getAttribute("aria-expanded"), "false");
                     assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true);
+                    assert.equal(await statusLine.isVisible(), true, "successful selection retains focus and status");
                     const effortButton = page.getByRole("button", { name: "Effort", exact: true });
                     const effortPanel = page.locator("#worker-effort-settings");
                     result = { kind: "worker.effort.get", ok: true, result: { effort: null, source: "default", supportedEfforts: [] } };
@@ -179,6 +183,15 @@ export default async function verifyCommands(t) {
                     assert.equal(await effortPanel.getByRole("combobox").locator('option[value=""]').textContent(), "Reasoning Effort");
                     await effortPanel.getByRole("button", { name: "Cancel", exact: true }).click();
                     assert.equal(await effortButton.evaluate((button) => document.activeElement === button), true);
+                    assert.equal(await statusLine.isVisible(), true, "Cancel retains focus and status");
+                    await page.locator("body > header > a").focus();
+                    assert.equal(await statusLine.isVisible(), false, "closed selectors no longer pin idle status");
+                    await page.getByRole("textbox", { name: "Message", exact: true }).focus();
+                    await modelButton.click();
+                    await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
+                    assert.equal(await modelPanel.isVisible(), true, "pointer activation survives moving focus out of the composer");
+                    await modelPanel.getByRole("button", { name: "Cancel", exact: true }).click();
+                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true);
                     catalog.page = { items: [], offset: 0, total: 0 };
                     assert.equal(await command("/models absent"), true);
                     assert.equal(await rows.last().locator("[data-no-aliases]").isVisible(), true);

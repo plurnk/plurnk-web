@@ -79,7 +79,7 @@ export default function workerSettings(main, status, call, lifetime) {
             else article.focus();
             await load();
         });
-        on(article, "click", "[data-cancel-settings]", () => { panel.close(); button.focus(); });
+        on(article, "click", "[data-cancel-settings]", () => { button.focus(); panel.close(); });
         if (field instanceof HTMLInputElement) on(article, "input", 'input[name="selection"]', load);
         on(article, "submit", "form", async (event) => {
             event.preventDefault();
@@ -93,8 +93,8 @@ export default function workerSettings(main, status, call, lifetime) {
                 if (kind === "model") await workerModel(invoke, field.value);
                 else await workerEffort(invoke, field.value);
                 signal.throwIfAborted();
-                panel.close();
                 button.focus();
+                panel.close();
             } catch (error) { the(article, await failure(error, signal)); }
             finally { the(article, { settingsPending: null, selectionUnavailable: available() ? null : "" }); }
         });
