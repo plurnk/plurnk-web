@@ -88,7 +88,8 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#worker-status > ul [aria-live], #worker-status > ul [role=status]").count(), 0, "ticking gauges do not announce every second");
                     assert.equal(await page.locator("#worker-workspace [data-text=workspace-name]").textContent(), active.plurnk.workspace.name);
                     assert.equal(await page.locator("#worker-workspace a").getAttribute("href"), "/~/review%20%3Cscript%3E%26%40%25/");
-                    assert.equal(await page.locator("#worker-directory [aria-current=page]").getAttribute("href"), "/~/review%20%3Cscript%3E%26%40%25@user/");
+                    assert.equal(await page.locator('#worker-directory').count(), 0);
+                    assert.equal(await page.locator('nav[aria-label="breadcrumb"] [aria-current="page"]').textContent(), "user");
                     assert.equal(await page.locator("#worker-reconnect").getAttribute("action"), "/~/review%20%3Cscript%3E%26%40%25@user/");
                     assert.equal(new URL(await page.locator("[data-sign-in]").getAttribute("href"), url).searchParams.get("return"), "/~/review%20%3Cscript%3E%26%40%25@user/");
                     assert.equal(await page.title(), `${active.plurnk.workspace.name}@user — Plurnk`);

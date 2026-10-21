@@ -94,17 +94,12 @@ export default async function verifyWorkerDirectory(page, workspace) {
     assert.equal(new URL(page.url()).pathname, path(evidence));
     const parentLink = page.locator('main > p:has([data-i18n="parent-worker"])');
     assert.equal(await parentLink.innerText(), "Parent: review");
-    const tree = page.locator("#worker-directory");
-    assert.equal(await tree.getAttribute("open"), null);
-    await tree.locator(":scope > summary").click();
-    assert.equal(await link(evidence).isVisible(), true, "the selected path is open, without a transcript subscription");
-    assert.equal(await link(evidence).getAttribute("aria-current"), "page");
-    assert.equal(await tree.locator('[aria-current="page"]').count(), 1);
-    assert.deepEqual((await tree.locator("li > a").allTextContents()).toSorted(), models.map(({ name }) => name).toSorted());
-    assert.equal(await tree.locator('nav > details').getAttribute("open"), null, "unrelated background branches stay collapsed");
+    assert.equal(await page.locator("#worker-directory").count(), 0);
+    assert.equal(await page.locator('[aria-current="page"]').textContent(), evidence.name);
     await parentLink.getByRole("link", { name: "review", exact: true }).click();
     assert.equal(new URL(page.url()).pathname, path(review));
-    await page.goto(directory);
+    await page.locator(`nav a[href=${JSON.stringify(new URL(directory).pathname)}]`).click();
+    assert.equal(page.url(), directory, "the workspace breadcrumb returns to the complete worker tree");
     await backgroundSection.locator(":scope > summary").click();
     const incoming = models.find(({ name }) => name === "incoming");
     assert.equal(await link(incoming).isVisible(), true);
@@ -112,8 +107,7 @@ export default async function verifyWorkerDirectory(page, workspace) {
     await link(incoming).click();
     assert.equal(await parentLink.innerText(), "Parent: _plurnk");
     assert.equal(await parentLink.locator("a").count(), 0);
-    await tree.locator(":scope > summary").click();
-    assert.equal(await link(incoming).isVisible(), true, "a selected background worker's branch opens too");
-    assert.equal(await link(incoming).getAttribute("aria-current"), "page");
-    await page.goto(directory);
+    assert.equal(await page.locator("#worker-directory").count(), 0);
+    assert.equal(await page.locator('[aria-current="page"]').textContent(), incoming.name);
+    await page.locator(`nav a[href=${JSON.stringify(new URL(directory).pathname)}]`).click();
 }

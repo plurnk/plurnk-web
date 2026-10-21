@@ -144,7 +144,6 @@ export default function observeWorker(element) {
                     onEvent: ({ event }) => {
                         if (signal.aborted) return;
                         preview.consume(event);
-                        if (event.type === "RUN_STARTED") streams.reset();
                     },
                     onCustomEvent: async ({ event }) => {
                         if (signal.aborted) return;
@@ -172,7 +171,6 @@ export default function observeWorker(element) {
                         const next = snapshot.plurnk?.status;
                         if (!next) return;
                         status = next;
-                        streams.present(next.streams);
                         if (pending && next.inbox.some(({ id }) => id === pending?.message.id)) acknowledged(pending.message.id);
                         if (!holding) connection("connected", "Connected");
                     },
