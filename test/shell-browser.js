@@ -23,6 +23,14 @@ export default async function verifyShell(t) {
                 }, budget: { contextTokens: 1200, contextCapacity: 32768, curationWeight: null, curationBudget: null } }, 2000));
                 await page.evaluate(() => window.present([{ id: "long", role: "assistant", content: "A readable paragraph.\n\n".repeat(200) }]));
                 const draft = page.getByRole("textbox", { name: "Message", exact: true });
+                const sameHeight = async () => {
+                    const field = await draft.boundingBox();
+                    for (const name of ["Stop", "Send"]) {
+                        const button = await page.getByRole("button", { name, exact: true }).boundingBox();
+                        assert.ok(Math.abs(button.y - field.y) < 1 && Math.abs(button.height - field.height) < 1,
+                            `${name} stretches to the textarea's full height`);
+                    }
+                };
                 for (const viewport of [{ width: 320, height: 700 }, { width: 1440, height: 900 }, { width: 390, height: 400 }]) {
                     await page.setViewportSize(viewport);
                     await draft.fill("One line");
@@ -32,16 +40,19 @@ export default async function verifyShell(t) {
                     const joiningMargin = await page.getByRole("button", { name: "Send", exact: true }).evaluate((button) => parseFloat(getComputedStyle(button).marginInlineStart));
                     assert.ok(stop.x + stop.width <= before.x + 1 && Math.abs(before.x + before.width + joiningMargin - send.x) < 1, "Stop / draft / Send in document and visual order");
                     assert.ok(Math.abs(stop.y + stop.height - before.y - before.height) < 1 && Math.abs(send.y + send.height - before.y - before.height) < 1);
+                    await sameHeight();
                     await draft.press("End");
                     await draft.press("Enter");
                     await draft.pressSequentially("Second line");
                     assert.equal(await draft.inputValue(), "One line\nSecond line", "Enter is native multiline editing, not Send");
                     const grown = await draft.boundingBox();
                     assert.ok(grown.height > before.height, `${engine.name()}: native textarea grows with content`);
+                    await sameHeight();
                     await draft.fill("Many draft lines\n".repeat(50));
                     const bounded = await draft.boundingBox();
                     assert.ok(bounded.height <= viewport.height / 3 + 1, "draft growth is viewport-bounded");
                     assert.equal(await draft.evaluate((element) => element.scrollHeight > element.clientHeight), true);
+                    await sameHeight();
                     const header = await page.locator("body > header").boundingBox();
                     const footer = await page.locator("body > footer").boundingBox();
                     const main = await page.locator("main").boundingBox();

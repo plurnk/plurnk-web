@@ -33,7 +33,8 @@ folder, if any. Folder labels use the daemon's home abbreviation, not the browse
 Home and account/error pages keep a 65ch reading width. Workspaces, Workspace and
 Worker share full-width article lists and a stationary header around scrolling
 main content. Worker status and the Stop / multiline message / Send row stay at
-the bottom. The message field grows with its content; Enter remains a newline.
+the bottom. The message field and buttons grow together; Enter remains a newline,
+and Ctrl+Enter sends through the same form as Send.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.
 Header controls: 🗃️ workspace breadcrumb, ⚙️ Account, ✖ Sign out.

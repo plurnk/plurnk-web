@@ -269,6 +269,12 @@ export default function observeWorker(element) {
         }
     });
     on(compose, "input", "textarea", () => { draft.setCustomValidity(""); availability(); });
+    on(compose, "keydown", "textarea", (event) => {
+        if (!(event instanceof KeyboardEvent) || event.key !== "Enter" || !event.ctrlKey
+            || event.altKey || event.metaKey || event.shiftKey || event.isComposing || event.repeat) return;
+        event.preventDefault();
+        compose.requestSubmit();
+    });
     on(compose, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(controls, "send-unavailable") !== null) return;
