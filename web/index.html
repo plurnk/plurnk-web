@@ -102,18 +102,6 @@
     <template id="conversation-body-retry">
         <form><button type="submit" data-i18n="retry-body">Retry</button></form>
     </template>
-    <template id="worker-preparation">
-        <li><code data-text="preparation-family">Capability</code> <span data-text="preparation-alias">Alias</span>
-            <span data-text="preparation-phase">Preparing</span> <time data-text="preparation-since" data-bind="datetime:preparation-since">Start time</time></li>
-    </template>
-    <template id="worker-pending-message">
-        <li><dl>
-            <div><dt data-i18n="message-address">Address</dt><dd><code data-text="inbox-path">Message address</code></dd></div>
-            <div><dt data-i18n="client-message-id">Client message ID</dt><dd data-text="inbox-id">None</dd></div>
-            <div><dt data-i18n="message-loop">Loop</dt><dd data-text="inbox-loop">Unknown</dd></div>
-            <div><dt data-i18n="message-lifecycle">State</dt><dd data-text="inbox-lifecycle">Unknown</dd></div>
-        </dl></li>
-    </template>
     <!-- {§web-worker-diagnostics} Diagnostic values are text, never actions or conversation messages. -->
     <template id="worker-diagnostic">
         <li>

@@ -72,19 +72,35 @@ table {
     overflow-wrap: normal;
 }
 
-#worker-status dl {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--pico-spacing);
-}
-
-#worker-status dd {
-    margin-inline-start: 0;
-}
-
 /* {§web-worker-conversation} The browser owns scrolling; stream updates do not move focus. */
 #worker-conversation li {
     min-inline-size: 0;
+}
+
+#worker-status > ul {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25em 0.75em;
+    padding: 0;
+    margin: 0;
+    font-size: 0.875em;
+    color: var(--pico-muted-color);
+}
+
+#worker-status > ul > li {
+    list-style: none;
+    min-inline-size: 0;
+    margin: 0;
+}
+
+#worker-descendants,
+#worker-descendants > summary {
+    margin: 0;
+}
+
+#worker-descendants > ul {
+    margin-block-start: var(--pico-spacing);
 }
 
 /* {§web-worker-reasoning} The preview follows its tail within its own bounded outlet. */

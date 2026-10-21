@@ -16,7 +16,7 @@ test("{§web-worker-approval} the worker document projects its resolved approval
         }, false)).toString();
         assert.ok(html.includes(`data-yolo="${yolo ? "1" : "0"}"`));
         assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-worker-reasoning} the document carries its supplied preview limit");
-        assert.ok(html.includes(`<span data-text="approval-mode">${yolo ? "Automatic" : "Manual"}</span>`));
+        assert.ok(html.includes('data-status-field="yolo" aria-label="Automatic approval"'));
         assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
     }
 });
@@ -237,6 +237,22 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.deepEqual(calls, ["workspaces", "workspaces", "workspaces", 7, "workspaces", 7, "workspaces", 7]);
 });
 
+test("{§web-worker-status} status is a compact footer after conversation, not a metadata inventory", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, true, 128);
+    const html = (await document.read({ kind: "worker", workspace: "review", worker: "user" }, {
+        listWorkspaces: async () => [{ id: 7, name: "review", project_root: null, project_label: null }],
+        listWorkers: async () => [worker(1, "user")],
+    }, false)).toString();
+    assert.match(html, /<footer id="worker-status"[^>]*>/u);
+    assert.ok(html.indexOf('id="worker-status"') > html.indexOf('id="worker-conversation"'));
+    const footer = html.slice(html.indexOf('<footer id="worker-status"'));
+    assert.match(footer, /<ul aria-label="Worker status">/u);
+    assert.match(footer, /<details id="worker-descendants"><summary/u);
+    assert.match(footer, /data-bind="aria-label:lifecycle title:lifecycle"/u);
+    assert.doesNotMatch(footer, /<dl|<table|id="(?:worker-accounting|workspace-activity|worker-inbox)"|data-text="(?:requests|turns|loop)"/u);
+    assert.match(footer, /<article role="alert">[\s\S]*id="worker-reconnect"/u);
+});
+
 test("{§web-directory-documents} a broken document outlet fails at load", () => {
     for (const html of ["", "<main>unclosed", "<main>a</main><main>b</main>"]) {
         assert.throws(() => new Documents(html, false, 128), /exactly one main element/u);
@@ -255,7 +271,8 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" data-page="worker">/u);
     assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
-    assert.doesNotMatch(html, /<script>|<template|<footer/iu);
+    assert.doesNotMatch(html, /<script>|<template/iu);
+    assert.equal(html.match(/<footer\b/gu).length, 1, "the worker status footer is the only footer");
     assert.equal(html.match(/<main\b/gu).length, 1);
     assert.doesNotMatch(html, /<h1\b/u, "the breadcrumb and document title identify the worker without a duplicate heading");
 });

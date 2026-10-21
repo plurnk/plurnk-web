@@ -31,7 +31,11 @@ async function connection(page, state) {
     }
 }
 const connected = (page) => connection(page, "connected");
-const value = (page, key) => page.locator(`#worker-status [data-text="${key}"]`).innerText();
+const value = (page, key) => key === "lifecycle"
+    ? page.locator('#worker-status [data-status-field="lifecycle"]').getAttribute("aria-label")
+    : page.locator(`#worker-status [data-text="${key}"]`).textContent();
+const family = (page) => page.locator("#worker-descendants > summary").getAttribute("aria-label");
+const deadline = (page) => page.locator('#worker-status [data-text="wait"]').getAttribute("datetime");
 const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: ${name}.` }];
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
@@ -61,7 +65,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.goto(new URL("/~/family-status@user/", base).href);
                     await connected(page);
                     await page.getByText("No messages.", { exact: true }).waitFor();
-                    assert.equal(await value(page, "children"), "0");
+                    assert.equal(await family(page), "Descendant workers: 2; active direct children: 0");
+                    assert.equal(await page.locator("#worker-descendants > ul").isVisible(), false);
                     const running = [];
                     for (const name of ["child", "grandchild"]) {
                         const request = await controller(base, undefined, prompt(`status-${name}`));
@@ -74,7 +79,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         running.push({ name, completion, second: starts[1].promise });
                         await Promise.race([starts[0].promise, completion.then(() => assert.fail(`${name} completed before its first call began`))]);
                     }
-                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="children"]')?.textContent === "1");
+                    await page.waitForFunction(() => document.querySelector("#worker-descendants > summary")?.getAttribute("aria-label") === "Descendant workers: 2; active direct children: 1");
                     assert.equal(await value(page, "descendants"), "2");
                     await page.locator("#worker-descendants > summary").click();
                     assert.deepEqual(await page.locator("#worker-descendants > ul > li > a").allTextContents(), ["child"]);
@@ -82,7 +87,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await value(page, "lifecycle"), "idle", "child activity does not invent a parent loop");
                     await page.reload();
                     await connected(page);
-                    assert.equal(await value(page, "children"), "1", "two active descendants are one direct child");
+                    assert.equal(await family(page), "Descendant workers: 2; active direct children: 1", "two active descendants are one direct child");
                     for (const { name, completion, second } of running) {
                         model.release(`status-${name}`);
                         await Promise.race([second, completion.then(() => assert.fail(`${name} completed before its second call began`))]);
@@ -91,10 +96,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         model.release(`status-${name}`);
                         await completion;
                     }
-                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="children"]')?.textContent === "0"
-                        && document.querySelector('#worker-status [data-text="requests"]')?.textContent === "5");
-                    assert.equal(await value(page, "input"), "2000", "descendant usage is the daemon's cumulative projection");
-                    assert.equal(await value(page, "cost"), "Unknown");
+                    await page.waitForFunction(() => document.querySelector("#worker-descendants > summary")?.getAttribute("aria-label") === "Descendant workers: 2; active direct children: 0"
+                        && document.querySelector('#worker-status [data-text="input"]')?.textContent === "2k");
+                    assert.equal(await value(page, "input"), "2k", "descendant usage is the daemon's cumulative projection");
+                    assert.match(await page.locator('[data-status-field="usage"]').getAttribute("aria-label"), /Input: 2000\./u);
+                    assert.equal(await value(page, "cost"), "$?");
                     assert.equal(await value(page, "lifecycle"), "idle");
                     assert.equal(await value(page, "descendants"), "2", "completed workers remain navigable");
                     assert.deepEqual(await page.locator("#worker-descendants [data-text=descendant-lifecycle]").allTextContents(), ["completed", "completed"]);
@@ -124,11 +130,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await connected(page);
                     await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
                     await page.getByRole("button", { name: "Send", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "parked");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "parked");
                     await model.streamStarted;
                     await connected(page);
-                    const deadline = await value(page, "wait-at");
-                    assert.ok(Date.parse(deadline) > Date.now());
+                    const until = await deadline(page);
+                    assert.ok(Date.parse(until) > Date.now());
                     const countdown = await value(page, "wait");
                     await page.waitForFunction((previous) => document.querySelector('#worker-status [data-text="wait"]')?.textContent !== previous, countdown);
                     assert.equal(await value(page, "lifecycle"), "parked");
@@ -155,14 +161,14 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await page.locator("[data-open-streams] > li").getAttribute("data-stream-target"), stream,
                         "{§web-worker-streams} reconnect replaces the census without inventing or losing silent work");
                     assert.equal(await value(page, "lifecycle"), "parked");
-                    assert.equal(await value(page, "wait-at"), deadline, "reattachment keeps the daemon deadline, not a new local timeout");
+                    assert.equal(await deadline(page), until, "reattachment keeps the daemon deadline, not a new local timeout");
                     assert.notEqual(await value(page, "wait"), frozen.wait);
                     model.release("status-stream");
-                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "completed");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     await connected(page);
                     assert.equal(await page.locator("[data-open-streams] > li").count(), 0, "{§web-worker-streams} completed work leaves the current census");
-                    assert.equal(await value(page, "wait"), "None");
-                    assert.equal(await value(page, "wait-at"), "");
+                    assert.equal(await value(page, "wait"), "");
+                    assert.equal(await deadline(page), null);
                     assert.equal(await value(page, "input"), "800");
                     assert.equal(model.requests.length, 2);
                     assert.deepEqual(model.errors, []);
@@ -207,7 +213,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const reattached = page.waitForRequest((request) => new URL(request.url()).pathname === "/agui/connect");
                     const run = await controller(base, undefined, prompt("diagnostics"));
                     await run.runAgent({ forwardedProps: { plurnk: { workspace: "diagnostics" } } });
-                    await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "completed");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     await reattached;
                     await connected(page);
                     assert.equal(await notice.count(), 1, "a replayed warning keeps its existing entry");
@@ -284,7 +290,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         assert.equal(await page.locator("body > header").evaluate((element) => element.outerHTML), header);
                         assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
                         assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
-                        await page.waitForFunction(() => document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === "completed");
+                        await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                         assert.equal(await value(page, "lifecycle"), "completed");
                     };
                     await verify();
@@ -661,19 +667,24 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.waitForURL(new URL(path, base).href);
                     assert.equal(await page.locator("#worker-status").count(), 1, "the packed worker page supplies the status surface");
                     const connected = () => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-                    const value = (key) => page.locator(`#worker-status [data-text="${key}"]`).innerText();
+                    const value = (key) => key === "lifecycle"
+                        ? page.locator('#worker-status [data-status-field="lifecycle"]').getAttribute("aria-label")
+                        : page.locator(`#worker-status [data-text="${key}"]`).textContent();
                     await connected();
                     checkBrowser();
                     assert.equal(await value("lifecycle"), "idle");
-                    assert.equal(await value("requests"), "0");
-                    assert.equal(await value("cost"), "0");
-                    assert.equal(await value("elapsed"), "Unknown");
-                    assert.equal(await value("model"), `browser — ${selected.provider}/${selected.model}`);
-                    assert.equal(await value("effort"), selected.effort === undefined ? "Unspecified" : `${selected.effort} (${selected.effortSource})`);
-                    assert.equal(await value("wait"), "None");
-                    assert.equal(await value("children"), "0");
-                    await page.locator("#workspace-activity > summary").click();
-                    assert.equal(await value("preparation-count"), "0");
+                    assert.equal(await value("input"), "0");
+                    assert.equal(await value("cost"), "$0.0000");
+                    assert.equal(await value("elapsed"), "");
+                    assert.equal(await value("model"), "browser");
+                    assert.ok((await page.locator('[data-status-field="model"]').getAttribute("aria-label")).includes(`${selected.provider}/${selected.model}`));
+                    assert.equal(await value("effort"), selected.effort ?? "");
+                    assert.equal(await value("wait"), "");
+                    assert.equal(await family(page), "Descendant workers: 0; active direct children: 0");
+                    assert.equal(await page.locator("#worker-descendants").isVisible(), false);
+                    assert.equal(await page.locator('[data-status-field="preparation"]').isVisible(), false);
+                    assert.equal(await page.locator("#worker-status").evaluate((footer) => Boolean(document.querySelector('[aria-label="Worker controls"]').compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)), true,
+                        "the status footer follows the real composer in normal document flow");
                     assert.deepEqual(await action("workspace.workers"), before);
                     assert.equal(model.requests.length, 0);
 
@@ -684,11 +695,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                             onReasoningMessageContentEvent: () => { ready.resolve(); },
                         });
                         await ready.promise;
-                        await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "running");
+                        await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "running");
                         const elapsed = await value("elapsed");
                         await page.waitForFunction((previous) => {
                             const value = document.querySelector('[data-text="elapsed"]')?.textContent;
-                            return value !== "Unknown" && value !== previous;
+                            return value !== "" && value !== previous;
                         }, elapsed);
                         if (turn === 1) {
                             await page.reload();
@@ -707,11 +718,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         }
                         model.release("held-worker-page");
                         await completion;
-                        await page.waitForFunction((count) => document.querySelector('[data-text="requests"]')?.textContent === String(count), turn);
+                        await page.waitForFunction((count) => document.querySelector('[data-text="input"]')?.textContent === String(400 * count)
+                            && document.querySelector('[data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed", turn);
                         await connected();
                         assert.equal(await value("lifecycle"), "completed");
                         assert.equal(await value("input"), String(400 * turn));
-                        assert.equal(await value("cost"), "Unknown");
+                        assert.equal(await value("cost"), "$?");
                         assert.equal(model.requests.length, turn, "observation never submits a prompt");
                     }
 
@@ -723,12 +735,12 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         onRunFinishedEvent: ({ event }) => { terminal = event; },
                     });
                     await ready.promise;
-                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "running");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "running");
                     assert.deepEqual(await action("loop.cancel", { reason: "browser-stop" }), { cancelled: true });
                     await cancellation;
                     assert.deepEqual(terminal?.outcome, { type: "cancelled" });
                     assert.equal(terminal.metadata.plurnk.terminal.result.problem.reason, "browser-stop");
-                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "cancelled");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled");
                     await connected();
                     assert.equal(await page.getByRole("alert").isVisible(), false, "a cancelled worker is not a disconnected observer");
                     assert.equal(model.requests.length, 3);
@@ -759,10 +771,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         onReasoningMessageContentEvent: () => { readyAfterRename.resolve(); },
                     });
                     await readyAfterRename.promise;
-                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "running");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "running");
                     model.release("held-page-rename");
                     await completionAfterRename;
-                    await page.waitForFunction(() => document.querySelector('[data-text="requests"]')?.textContent === "4");
+                    await page.waitForFunction(() => document.querySelector('[data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     await connected();
                     assert.equal(observations.at(-1).threadId, identity, "the open page reattaches by ID after another client renames its workspace");
                     assert.equal(await page.locator("#worker-workspace [data-text=workspace-name]").textContent(), renamed);
@@ -870,7 +882,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await run.runAgent({ ...parameters, resume: [{ interruptId: run.pendingInterrupts[0].id, status: "resolved", payload: { decision: "accept" } }] });
                     assert.equal(run.pendingInterrupts.length, 0);
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed approval.");
-                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "completed");
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     await connected(page);
                     assert.equal(model.requests.length, 2);
                     checkBrowser();
@@ -882,7 +894,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     nativePage.on("request", (request) => nativeRequests.push(request.url()));
                     await nativePage.goto(new URL("/~/observer-approval@user/", base).href);
                     assert.equal(await nativePage.getByText("Live status requires JavaScript.", { exact: true }).isVisible(), true);
-                    assert.equal(await value(nativePage, "lifecycle"), "Unknown");
+                    assert.equal(await nativePage.locator("#worker-status > ul").isVisible(), false, "without delivery the footer cannot invent worker state");
+                    assert.equal(await value(nativePage, "lifecycle"), null);
                     assert.equal(await nativePage.getByText("No messages.", { exact: true }).isVisible(), false,
                         "a native document without conversation delivery cannot claim the existing history is empty");
                     assert.equal(nativeRequests.some((url) => /\/agui|\/auth\/token/u.test(url)), false);
@@ -908,7 +921,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     }
                     await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
-                    assert.equal(await value(page, "requests"), "2");
+                    assert.equal(await value(page, "input"), "800");
                     await daemon.stop();
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
                     assert.equal(await card.isVisible(), true);

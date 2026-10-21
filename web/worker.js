@@ -34,7 +34,7 @@ export default function observeWorker(element) {
     if (!threadId || (auth !== "session" && auth !== "none") || (yolo !== "1" && yolo !== "0")) throw new Error("Worker document metadata is incomplete.");
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
-    const controls = $.clone("#main", "#worker-controls");
+    const controls = $.clone(element, "#worker-controls", { position: "beforebegin" });
     const review = reviewRequests(controls, yolo === "1");
     const compose = $(controls, "#worker-compose");
     const stop = $(controls, "#worker-stop");
@@ -73,7 +73,7 @@ export default function observeWorker(element) {
         stop: cancelWork,
         async toggleYolo() {
             const enabled = the(element, "yolo") !== "1";
-            the(element, { yolo: enabled ? "1" : "0", approvalMode: enabled ? "Automatic" : "Manual" });
+            the(element, "yolo", enabled ? "1" : "0");
             const mode = review.automatic(enabled);
             const current = agent;
             if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {

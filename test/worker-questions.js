@@ -192,7 +192,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await observer.getByText("Completed question-resumed-departure.", { exact: true }).waitFor();
         await connected(observer);
         assert.equal(model.requests.length, 2);
-        assert.equal(await observer.locator('[data-text="lifecycle"]').textContent(), "completed");
+        assert.equal(await observer.locator('#worker-status [data-status-field="lifecycle"]').getAttribute("aria-label"), "completed");
         checkBrowser();
     }, { authenticated: true }));
 

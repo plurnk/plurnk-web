@@ -11,9 +11,7 @@ export default function workerState(element) {
     if (!threadId || !workerName) throw new Error("Worker identity is incomplete.");
     const breadcrumb = $("#worker-workspace");
     const folder = $("#worker-folder");
-    const preparation = $(element, "[data-preparation]");
-    const inbox = $(element, "#worker-inbox ol");
-    if (!breadcrumb || !folder || !preparation || !inbox) throw new Error("Worker status document is incomplete.");
+    if (!breadcrumb || !folder) throw new Error("Worker status document is incomplete.");
     const presentDescendants = workerDescendants(element);
     /** @param {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState, budget?: import("@plurnk/plurnk-agui/client").AguiBudgetState}} state
      * @param {number} now
@@ -36,23 +34,15 @@ export default function workerState(element) {
                 the(link, "worker-path", directoryPath({ kind: "worker", workspace: workspace.name, worker }));
             }
             the(element, {
-                preparationCount: workspace.preparation.length,
-                activityPhase: workspace.activity?.phase ?? "None",
-                activityCounts: workspace.activity ? `${workspace.activity.completed} / ${workspace.activity.total}` : "—",
-                activityPercent: workspace.activity?.percent ?? "—",
+                preparation: workspace.preparation.map(({ family, alias, phase }) => `${phase} ${family}${alias ? `/${alias}` : ""}`).join("; "),
+                activity: workspace.activity ? `${workspace.activity.phase}${workspace.activity.percent === null ? "" : ` ${workspace.activity.percent}%`}` : "",
                 activityMessage: workspace.activity?.message ?? "",
-            });
-            $.cloneEach(preparation, "#worker-preparation", workspace.preparation, (row, item) => {
-                the(row, { preparationFamily: item.family, preparationAlias: item.alias ?? "", preparationPhase: item.phase, preparationSince: item.since });
             });
         }
         if (status) {
             if (!workspace) throw new Error("Worker state has no workspace identity.");
             the(element, { ...gauges(status, state.budget), ...clocks(status, now) });
             presentDescendants(status.descendants, workspace.name);
-            $.cloneEach(inbox, "#worker-pending-message", status.inbox, (row, item) => {
-                the(row, { inboxPath: item.path, inboxId: item.id ?? "None", inboxLoop: item.loopId, inboxLifecycle: item.lifecycle });
-            });
         }
     };
 }

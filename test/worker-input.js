@@ -131,9 +131,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                         "{§web-worker-reasoning} delivery handoff clears the old live preview");
                     assert.equal(JSON.stringify(inputs[1].messages).includes("Considering held-input."), false);
                     assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "1");
-                    assert.equal(await page.locator('#worker-inbox [data-text="inbox-id"]').textContent(), inputs[1].messages.at(-1).id);
                     const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
-                    assert.equal(accepted.length, 2);
+                    assert.deepEqual(accepted, inputs.map((input) => input.messages.at(-1).id), "accepted message identities belong to their conversation entries, not a second inventory");
                     await page.reload();
                     await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).waitFor();
                     assert.deepEqual(await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), accepted);
@@ -143,10 +142,10 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     await page.getByText("Completed follow-up.", { exact: true }).waitFor();
                     assert.equal(await text.inputValue(), "");
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected"
-                        && document.querySelector('[data-text="lifecycle"]')?.textContent === "completed");
+                        && document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     assert.equal(model.requests.length, 2);
                     assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "0");
-                    assert.equal(await page.locator("#worker-inbox li").count(), 0, "observed messages leave the pending list");
+                    assert.equal(await page.locator('[data-status-field="inbox"]').isVisible(), false, "observed messages clear the pending indicator");
                     assert.equal(await page.locator('[data-message-role="user"]').count(), 2);
                     assert.equal(await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).count(), 1, "arrival does not repeat accepted text");
                     assert.equal(inputs.length, 2);
@@ -163,7 +162,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     await page.getByText("Considering held-input-stop.", { exact: true }).waitFor({ state: "attached" });
                     await text.fill("Unsent draft survives Stop.");
                     await stop.click();
-                    await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "cancelled"
+                    await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled"
                         && document.querySelector("#worker-status")?.dataset.connection === "connected");
                     assert.equal(await text.inputValue(), "Unsent draft survives Stop.");
                     assert.equal(await stop.isDisabled(), true);
@@ -214,7 +213,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     await text.fill("A draft to keep.");
                     await stop.click();
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected"
-                        && document.querySelector('[data-text="lifecycle"]')?.textContent === "cancelled");
+                        && document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled");
                     assert.equal(await text.inputValue(), "A draft to keep.");
                     await text.fill("Lifecycle fixture: after-stop.");
                     await send.click();
@@ -407,7 +406,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
         assert.equal(accepted.length, 2);
         await page.getByRole("button", { name: "Stop", exact: true }).click();
-        await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "cancelled"
+        await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled"
             && document.querySelector("#worker-status")?.dataset.connection === "connected");
         assert.equal(model.requests.length, 1, "cancellation precedes the next model turn");
         assert.equal(await page.getByText("Completed unobserved-follow-up.", { exact: true }).count(), 0);
@@ -416,7 +415,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.deepEqual(await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), accepted);
         assert.equal(model.requests.length, 1, "rediscovery neither erases nor resubmits cancelled input");
         assert.equal(await page.locator('#worker-status [data-text="inbox"]').textContent(), "1");
-        assert.equal(await page.locator('#worker-inbox [data-text="inbox-lifecycle"]').textContent(), "cancelled", "the inbox never implies cancelled input is still executing");
+        assert.equal(await page.locator('[data-status-field="inbox"]').getAttribute("aria-label"), "Accepted messages not yet observed: 1");
+        assert.equal(await page.locator('[data-status-field="lifecycle"]').getAttribute("aria-label"), "cancelled", "a pending message count never implies cancelled input is still executing");
         checkBrowser();
     }));
 
@@ -433,7 +433,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await page.getByRole("button", { name: "Stop", exact: true }).click();
         await page.getByText(/Stop could not be confirmed:/u).waitFor();
         assert.equal(await text.inputValue(), "Keep my next message.");
-        assert.equal(await page.locator('[data-text="lifecycle"]').textContent(), "running");
+        assert.equal(await page.locator('#worker-status [data-status-field="lifecycle"]').getAttribute("aria-label"), "running");
         model.release("held-stop-failure");
         await page.getByText("Completed held-stop-failure.", { exact: true }).waitFor();
         assert.equal(model.requests.length, 1);
@@ -447,7 +447,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         await text.fill("Exercise the rejected browser request.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await page.waitForFunction(() => document.querySelector('[data-text="lifecycle"]')?.textContent === "failed"
+        await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "failed"
             && document.querySelector("#worker-status")?.dataset.connection === "connected");
         assert.equal(await text.inputValue(), "", "admission succeeded even though the model request failed");
         assert.match(await page.locator('[aria-label="Worker controls"] [role="alert"]').innerText(), /Browser fixture deliberately refused this request/u);

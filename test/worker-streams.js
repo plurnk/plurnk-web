@@ -4,7 +4,7 @@ import { inputPage } from "./worker-input.js";
 
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
 const settled = (page, lifecycle) => page.waitForFunction((lifecycle) =>
-    document.querySelector('#worker-status [data-text="lifecycle"]')?.textContent === lifecycle, lifecycle);
+    document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === lifecycle, lifecycle);
 const current = (page) => page.locator("#worker-streams [data-open-streams] > li");
 const outcomes = (page) => page.locator("[data-stream-outcomes] ol > li");
 
