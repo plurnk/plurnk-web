@@ -29,10 +29,14 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             page.setDefaultTimeout(5000);
             const draft = page.getByRole("textbox", { name: "Message", exact: true });
+            const statusLine = page.locator("#worker-status > [data-status-line]");
+            assert.equal(await statusLine.isVisible(), false, "an idle attachment does not occupy status space");
             await draft.fill("Keep this unsent draft.");
+            assert.equal(await statusLine.isVisible(), true);
             await page.getByRole("button", { name: "Model", exact: true }).click();
             const models = page.locator("#worker-model-settings");
             const selection = models.getByRole("combobox", { name: "Search Models", exact: true });
+            assert.equal(await statusLine.isVisible(), true, "inline settings retain the status controls");
             await models.locator('datalist option[value="browser"]').waitFor({ state: "attached" });
             assert.equal(model.requests.length, 0);
             await selection.fill("browser");
@@ -50,6 +54,9 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await effort.waitFor({ state: "hidden" });
             assert.equal(await effort.isVisible(), false);
             assert.equal(await page.getByRole("button", { name: "Effort", exact: true }).evaluate((button) => document.activeElement === button), true);
+            assert.equal(await statusLine.isVisible(), true);
+            await page.locator("body > header > a").focus();
+            assert.equal(await statusLine.isVisible(), false, "leaving the controls releases idle status space");
             assert.equal(await draft.inputValue(), "Keep this unsent draft.");
             assert.equal(await page.locator("#worker-command-results > ul > li").count(), 0);
             assert.equal(model.requests.length, 0);
@@ -61,6 +68,8 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             const { send, field } = composer(page);
             await send("Lifecycle fixture: held-settings.");
             await page.getByText("Considering held-settings.", { exact: true }).waitFor({ state: "attached" });
+            await page.locator("body > header > a").focus();
+            assert.equal(await page.locator("#worker-status > [data-status-line]").isVisible(), true, "live work remains observable without composer focus");
             await field.fill("An untouched next message.");
             await page.getByRole("button", { name: "Effort", exact: true }).click();
             const article = page.locator("#worker-effort-settings");
@@ -84,6 +93,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
             const sent = [];
             page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") sent.push(request.postDataJSON()); });
+            await field.focus();
             assert.equal(await approval.getAttribute("aria-pressed"), "false");
             assert.equal(await approval.getAttribute("title"), "Manual Approval (/yolo)");
             await field.fill("Keep my unsent draft.");
@@ -105,6 +115,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await approval.click();
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            await field.focus();
             assert.equal(await approval.getAttribute("aria-pressed"), "false", "reload restores configured policy");
             await send("Lifecycle fixture: approval-toggle.");
             await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
@@ -231,10 +242,12 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.equal(await form.isVisible(), true, "an informational command never settles review");
             await submit("/yolo");
             await page.getByText("Completed approval-command.", { exact: true }).waitFor();
+            await field.focus();
             assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "true");
             assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"));
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            await field.focus();
             assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "false", "reload restores configured client policy");
             await send("Lifecycle fixture: held-command.");
             await page.getByText("Considering held-command.", { exact: true }).waitFor({ state: "attached" });

@@ -81,6 +81,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     }
                     await page.waitForFunction(() => document.querySelector("#worker-descendants > summary")?.getAttribute("aria-label") === "Descendant workers: 2; active direct children: 1");
                     assert.equal(await value(page, "descendants"), "2");
+                    await page.getByRole("textbox", { name: "Message", exact: true }).focus();
                     await page.locator("#worker-descendants > summary").click();
                     assert.deepEqual(await page.locator("#worker-descendants > ul > li > a").allTextContents(), ["child"]);
                     assert.equal(await page.locator("#worker-descendants ul ul > li > a").textContent(), "grandchild");

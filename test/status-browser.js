@@ -36,6 +36,39 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#worker-status > [data-status-line]").isVisible(), false, "unknown state is not a row of invented zeros");
                     assert.equal(await page.locator("#worker-status > [role=status]").isVisible(), true, "connection state remains visible before a gauge arrives");
                     await receive(initial);
+                    const statusLine = page.locator("#worker-status > [data-status-line]");
+                    const draft = page.getByRole("textbox", { name: "Message", exact: true });
+                    const leave = () => page.locator("body > header > a").focus();
+                    for (const width of [320, 1280]) {
+                        await page.setViewportSize({ width, height: 700 });
+                        assert.equal(await statusLine.isVisible(), false, "idle, unfocused status is hidden");
+                        assert.equal(await statusLine.evaluate((element) => element.getBoundingClientRect().height), 0, "hidden status reserves no space");
+                        assert.equal(await draft.isVisible(), true, "hiding status never hides the composer");
+                        await draft.focus();
+                        assert.equal(await statusLine.isVisible(), true, "focusing the composer reveals status");
+                        await draft.press("Shift+Tab");
+                        assert.equal(await page.evaluate(() => document.activeElement.id), "worker-effort");
+                        assert.equal(await statusLine.isVisible(), true, "keyboard movement into status retains it");
+                        await leave();
+                        assert.equal(await statusLine.isVisible(), false, "leaving the footer hides idle status again");
+                    }
+                    for (const lifecycle of ["idle", "completed", "cancelled", "failed", "queued", "running", "parked"]) {
+                        await receive({ ...initial, plurnk: { ...initial.plurnk, status: { ...initial.plurnk.status, lifecycle } } });
+                        assert.equal(await statusLine.isVisible(), ["queued", "running", "parked"].includes(lifecycle), `${lifecycle}: only live work keeps unfocused status visible`);
+                        await draft.focus();
+                        assert.equal(await statusLine.isVisible(), true, `${lifecycle}: focus reveals the supplied status`);
+                        await leave();
+                    }
+                    await receive(initial);
+                    for (const connection of ["disconnected", "signed-out"]) {
+                        await page.locator("#worker-status").evaluate((element, state) => element.setAttribute("data-connection", state), connection);
+                        assert.equal(await statusLine.isVisible(), false);
+                        assert.equal(await page.locator("#worker-connection").isVisible(), true, "connection recovery is independent of status visibility");
+                        assert.equal(await page.locator("#worker-status > [role=status]").isVisible(), true, "connection feedback is never focus-gated");
+                    }
+                    await page.locator("#worker-status").evaluate((element) => element.setAttribute("data-connection", "initial"));
+                    await page.setViewportSize({ width: 320, height: 700 });
+                    await draft.focus();
                     const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
                     assert.equal(await approval.getAttribute("type"), "button");
                     assert.equal(await approval.getAttribute("aria-pressed"), "false");
@@ -165,6 +198,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("lifecycle"), "parked");
                     assert.equal(await value("descendants"), "5");
 
+                    await draft.focus();
                     for (const lifecycle of ["completed", "failed", "cancelled", "running"]) {
                         await receive({ ...initial, plurnk: { ...initial.plurnk, status: { ...initial.plurnk.status, lifecycle } } });
                         assert.equal(await value("lifecycle"), lifecycle, "hiding completed presentation does not rewrite lifecycle");

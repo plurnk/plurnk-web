@@ -29,6 +29,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
+        await page.getByRole("textbox", { name: "Message", exact: true }).focus();
         assert.equal(await approval.getAttribute("aria-pressed"), "true");
         assert.equal(await approval.isVisible(), true);
         assert.equal(await approval.evaluate((element) => getComputedStyle(element, "::before").content), '"🔥" / ""');
