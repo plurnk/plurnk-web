@@ -25,6 +25,59 @@ const reasoning = {
 
 // {§web-worker-commands} Real shipped composer and public daemon actions, never model-authored commands.
 export default async function verifyWorkerCommands({ t, withDaemon }) {
+    await t.test("{§web-worker-settings} native selectors read without inference, apply explicitly and preserve the draft", () =>
+        inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            page.setDefaultTimeout(5000);
+            const draft = page.getByRole("textbox", { name: "Message", exact: true });
+            await draft.fill("Keep this unsent draft.");
+            await page.getByRole("button", { name: "Model", exact: true }).click();
+            const models = page.locator("#worker-model-settings");
+            const selection = models.getByLabel("Model", { exact: true });
+            await selection.locator('option[value="browser"]').waitFor({ state: "attached" });
+            assert.equal(model.requests.length, 0);
+            await selection.selectOption("browser");
+            await models.getByRole("button", { name: "Apply", exact: true }).click();
+            await models.getByRole("status").filter({ hasText: "Model:" }).waitFor();
+            assert.equal(await draft.inputValue(), "Keep this unsent draft.");
+            await page.getByRole("button", { name: "Effort", exact: true }).click();
+            const effort = page.locator("#worker-effort-settings");
+            assert.equal(await models.isVisible(), false);
+            const choices = effort.getByLabel("Effort", { exact: true });
+            await choices.locator('option[value="low"]').waitFor({ state: "attached" });
+            await choices.selectOption("low");
+            await effort.getByRole("button", { name: "Apply", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=effort]")?.textContent === "low");
+            await effort.getByRole("button", { name: "Close", exact: true }).click();
+            assert.equal(await effort.isVisible(), false);
+            assert.equal(await page.getByRole("button", { name: "Effort", exact: true }).evaluate((button) => document.activeElement === button), true);
+            assert.equal(await draft.inputValue(), "Keep this unsent draft.");
+            assert.equal(await page.locator("#worker-command-results > ul > li").count(), 0);
+            assert.equal(model.requests.length, 0);
+            checkBrowser();
+        }, { env: reasoning }));
+
+    await t.test("{§web-worker-settings} refused effort selection preserves the draft and active work", () =>
+        inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            const { send, field } = composer(page);
+            await send("Lifecycle fixture: held-settings.");
+            await page.getByText("Considering held-settings.", { exact: true }).waitFor({ state: "attached" });
+            await field.fill("An untouched next message.");
+            await page.getByRole("button", { name: "Effort", exact: true }).click();
+            const article = page.locator("#worker-effort-settings");
+            const select = article.getByLabel("Effort", { exact: true });
+            await select.locator('option[value="low"]').waitFor({ state: "attached" });
+            await select.selectOption("low");
+            await article.getByRole("button", { name: "Apply", exact: true }).click();
+            await article.getByRole("status").filter({ hasText: "unfinished tasks" }).waitFor();
+            assert.match(await article.locator("[data-text=settings-recovery]").textContent(), /Conclude or cancel/u);
+            assert.equal(await select.inputValue(), "low");
+            assert.equal(await field.inputValue(), "An untouched next message.");
+            assert.equal(await page.locator("#worker-status").getAttribute("data-lifecycle"), "running");
+            assert.equal(model.requests.length, 1);
+            await page.getByRole("button", { name: "Stop", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.lifecycle === "cancelled");
+            checkBrowser();
+        }, { env: reasoning }));
     await t.test("{§web-worker-approval} native status toggle shares /yolo without submitting a draft or inventing command history", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { field, rows, submit, send } = composer(page);

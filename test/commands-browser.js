@@ -72,10 +72,11 @@ export default async function verifyCommands(t) {
                         const sendBox = await send.boundingBox();
                         const stopBox = await stop.boundingBox();
                         assert.equal(sendBox.y, stopBox.y, "Pico groups both actions on the same row");
-                        const margin = await stop.evaluate((button) => parseFloat(getComputedStyle(button).marginLeft));
-                        assert.ok(sendBox.x < stopBox.x);
-                        assert.equal(Math.round(sendBox.x + sendBox.width + margin), Math.round(stopBox.x),
-                            "controls are adjacent with Pico's native joining margin");
+                        const draftBox = await page.getByRole("textbox", { name: "Message", exact: true }).boundingBox();
+                        const margin = await send.evaluate((button) => parseFloat(getComputedStyle(button).marginInlineStart));
+                        assert.ok(stopBox.x < draftBox.x && draftBox.x < sendBox.x);
+                        assert.equal(Math.round(draftBox.x + draftBox.width + margin), Math.round(sendBox.x),
+                            "Send joins the textarea with Pico's native group margin");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     }
                     await page.setViewportSize({ width: 320, height: 700 });
@@ -112,6 +113,42 @@ export default async function verifyCommands(t) {
                     assert.equal(await rows.last().locator("[data-text=model-readiness]").textContent(), "Not configured");
                     assert.equal(await rows.last().locator("[data-text=model-more]").isVisible(), true);
                     assert.equal(requests.at(-1).forwardedProps.plurnk.action.search, "fixture");
+                    const modelButton = page.getByRole("button", { name: "Model", exact: true });
+                    const modelPanel = page.locator("#worker-model-settings");
+                    const selectModel = modelPanel.getByLabel("Model", { exact: true });
+                    result = { kind: "worker.model.get", ok: true, result: { model: null } };
+                    await modelButton.press("Enter");
+                    await modelPanel.getByRole("status").filter({ hasText: "Model: Not selected." }).waitFor();
+                    assert.equal(await modelButton.getAttribute("aria-expanded"), "true");
+                    assert.equal(await selectModel.inputValue(), "");
+                    assert.equal(await selectModel.locator('option[value="fixture/small"]').textContent(), `fixture/small — ${source} — Not configured`);
+                    assert.equal(await modelPanel.locator("script").count(), 0);
+                    assert.match(await modelPanel.locator("[data-text=catalog-summary]").textContent(), /1 of 2.*Narrow the search/u);
+                    assert.equal(await page.locator("main").evaluate((main) => main.scrollWidth <= main.clientWidth), true, "native model choices fit the narrow main region");
+                    const beforeSearch = requests.length;
+                    await modelPanel.getByRole("searchbox", { name: "Search models", exact: true }).fill("missing");
+                    await modelPanel.getByRole("button", { name: "Search", exact: true }).click();
+                    await page.waitForFunction(() => !document.querySelector("#worker-model-settings").hasAttribute("data-settings-pending"));
+                    assert.deepEqual(requests.slice(beforeSearch).map(({ forwardedProps }) => forwardedProps.plurnk.action.kind), ["providers.list", "models.list"]);
+                    assert.equal(requests.at(-1).forwardedProps.plurnk.action.search, "missing");
+                    assert.equal(await modelPanel.locator('[data-alias-options] > option').count(), 0);
+                    await selectModel.selectOption("fixture/small");
+                    result = { kind: "worker.model.set", ok: false, problem: { type: "https://example.test/problems/config", title: "Not configured", status: 422, detail: "Credential required.", recovery: "Configure this provider." } };
+                    const historyCount = await rows.count();
+                    await modelPanel.getByRole("button", { name: "Apply", exact: true }).click();
+                    await modelPanel.getByRole("status").filter({ hasText: "Credential required." }).waitFor();
+                    assert.equal(await selectModel.inputValue(), "fixture/small");
+                    assert.equal(await modelPanel.locator("[data-text=settings-recovery]").textContent(), "Configure this provider.");
+                    assert.equal(await rows.count(), historyCount, "native selection is not synthetic command history");
+                    const effortButton = page.getByRole("button", { name: "Effort", exact: true });
+                    const effortPanel = page.locator("#worker-effort-settings");
+                    result = { kind: "worker.effort.get", ok: true, result: { effort: null, source: "default", supportedEfforts: [] } };
+                    await effortButton.click();
+                    await effortPanel.getByRole("status").filter({ hasText: "No supported efforts." }).waitFor();
+                    assert.equal(await modelPanel.isVisible(), false);
+                    assert.equal(await effortPanel.getByRole("button", { name: "Apply", exact: true }).isDisabled(), true);
+                    await effortPanel.getByRole("button", { name: "Close", exact: true }).click();
+                    assert.equal(await effortButton.evaluate((button) => document.activeElement === button), true);
                     catalog.page = { items: [], offset: 0, total: 0 };
                     assert.equal(await command("/models absent"), true);
                     assert.equal(await rows.last().locator("[data-no-aliases]").isVisible(), true);

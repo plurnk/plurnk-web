@@ -112,15 +112,19 @@
     </template>
     <!-- {§web-worker-input} Native form structure; the worker SDK owns delivery. -->
     <template id="worker-controls">
-        <section aria-label="Worker controls" data-command-error="">
+        <section aria-label="Worker controls">
             <form id="worker-compose">
-                <textarea id="worker-message" name="message" aria-label="Message" rows="3" required></textarea>
                 <fieldset role="group" aria-label="Worker actions">
-                    <button type="submit" form="worker-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" title="Send"></button>
                     <button type="submit" form="worker-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
+                    <textarea id="worker-message" name="message" aria-label="Message" rows="1" required></textarea>
+                    <button type="submit" form="worker-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" title="Send"></button>
                 </fieldset>
             </form>
             <form id="worker-stop"></form>
+        </section>
+    </template>
+    <template id="worker-feedback">
+        <section aria-label="Message feedback" data-command-error="" data-message-status="">
             <p role="status" data-text="message-status">Connect to send a message.</p>
             <article role="alert" data-command-error>
                 <header><span aria-hidden="true" data-text="warning-icon">⚠️</span> <strong data-i18n="request-failed">Request failed</strong></header>
@@ -128,6 +132,45 @@
             </article>
         </section>
     </template>
+    <!-- {§web-worker-settings} Native disclosures and forms reuse the command action boundary. -->
+    <template id="model-settings">
+        <article id="worker-model-settings" aria-labelledby="model-settings-title" hidden>
+            <header><h2 id="model-settings-title" data-i18n="models">Models</h2></header>
+            <form data-model-search>
+                <label><span data-i18n="search-models">Search models</span><input type="search" name="search"></label>
+                <button type="submit" data-bind="disabled:settings-pending" data-i18n="search">Search</button>
+            </form>
+            <p data-text="catalog-summary"></p>
+            <form data-setting="model">
+                <fieldset disabled data-bind="disabled:selection-unavailable">
+                    <label for="worker-model-choice" data-i18n="model-selector">Model</label><select id="worker-model-choice" name="selection" required>
+                        <option value="" data-i18n="choose-model">Choose a model</option>
+                        <optgroup label="Aliases" data-alias-options></optgroup>
+                        <optgroup label="Catalog" data-catalog-options></optgroup>
+                    </select>
+                    <button type="submit" data-i18n="apply">Apply</button>
+                </fieldset>
+            </form>
+            <p role="status" data-text="settings-message"></p>
+            <p data-text="settings-recovery"></p>
+            <footer><button type="button" data-close-settings data-i18n="close">Close</button></footer>
+        </article>
+    </template>
+    <template id="effort-settings">
+        <article id="worker-effort-settings" aria-labelledby="effort-settings-title" tabindex="-1" hidden>
+            <header><h2 id="effort-settings-title" data-i18n="effort">Effort</h2></header>
+            <form data-setting="effort">
+                <fieldset disabled data-bind="disabled:selection-unavailable">
+                    <label for="worker-effort-choice" data-i18n="effort">Effort</label><select id="worker-effort-choice" name="selection" required></select>
+                    <button type="submit" data-i18n="apply">Apply</button>
+                </fieldset>
+            </form>
+            <p role="status" data-text="settings-message"></p>
+            <p data-text="settings-recovery"></p>
+            <footer><button type="button" data-close-settings data-i18n="close">Close</button></footer>
+        </article>
+    </template>
+    <template id="setting-option"><option data-bind="value:option-value" data-text="option-label"></option></template>
     <!-- {§web-worker-commands} Command results are local presentation, not conversation messages. -->
     <template id="command-results">
         <section id="worker-command-results" aria-label="Command results">

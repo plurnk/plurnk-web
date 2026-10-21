@@ -11,7 +11,8 @@ export default function workerState(element) {
     if (!threadId || !workerName) throw new Error("Worker identity is incomplete.");
     const breadcrumb = $("#worker-workspace");
     const folder = $("#worker-folder");
-    if (!breadcrumb || !folder) throw new Error("Worker status document is incomplete.");
+    const connectionNotice = $("#worker-connection");
+    if (!breadcrumb || !folder || !connectionNotice) throw new Error("Worker status document is incomplete.");
     const presentDescendants = workerDescendants(element);
     /** @param {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState, budget?: import("@plurnk/plurnk-agui/client").AguiBudgetState}} state
      * @param {number} now
@@ -27,7 +28,7 @@ export default function workerState(element) {
                 workspaceIcon: identity.workspaceIcon, workspaceIconLabel: identity.workspaceIconLabel,
             });
             the(folder, "project-label", identity.projectLabel);
-            the(element, { workerPath: identity.workerPath, signInPath: `/auth/login?return=${encodeURIComponent(identity.workerPath)}` });
+            the(connectionNotice, { workerPath: identity.workerPath, signInPath: `/auth/login?return=${encodeURIComponent(identity.workerPath)}` });
             for (const link of $$("main a[data-worker-name]")) {
                 const worker = /** @type {HTMLAnchorElement} */ (link).dataset.workerName;
                 if (!worker) throw new Error("Worker navigation has no identity.");

@@ -1,4 +1,5 @@
 import { $, $$, the } from "on_the_money";
+import { listModels, workerModel, workerEffort, modelLabel } from "./worker-models.js";
 
 /** {§web-worker-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
 const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop"]);
@@ -25,10 +26,7 @@ export function parseCommand(text) {
     return { name, rest, args, policy };
 }
 
-/** @typedef {(kind: string, params?: Record<string, unknown>) => Promise<unknown>} Action */
-/** @typedef {import("@plurnk/plurnk-contracts").ModelRoute} ModelRoute */
-/** @param {ModelRoute | null} model */
-const route = (model) => model === null ? "Not selected" : `${model.alias ? `${model.alias} — ` : ""}${model.provider}/${model.model}`;
+/** @typedef {import("./worker-models.js").Action} Action */
 
 /** {§web-worker-commands} Native, literal results stay outside the observer's messages and state.
  * @param {Element} controls
@@ -40,6 +38,8 @@ export default function workerCommands(controls, actions) {
     if (!list) throw new Error("Command results template is incomplete.");
     /** @param {string} text @param {AbortSignal} signal */
     return async (text, signal) => {
+        /** @type {Action} */
+        const call = (kind, params) => actions.call(kind, params, signal);
         const row = $.clone(list, "#worker-command-result");
         const article = $(row, "article");
         const input = $(row, "header code");
@@ -67,21 +67,12 @@ export default function workerCommands(controls, actions) {
                 const { Validator } = await import("@plurnk/plurnk-contracts");
                 signal.throwIfAborted();
                 if (name === "models") {
-                    const aliases = /** @type {{aliases: Array<ModelRoute & {active: boolean}>}} */ (await actions.call("providers.list"));
-                    if (!Array.isArray(aliases?.aliases)) throw new Error("Alias listing is invalid.");
-                    const catalog = Validator.assertModelCatalogPage(await actions.call("models.list", rest ? { search: rest } : {}));
+                    const { aliases: matches, catalog } = await listModels(call, rest);
                     signal.throwIfAborted();
                     const result = $.clone(body, "#command-models");
                     const aliasList = $(result, "[data-model-aliases]");
                     const entries = $(result, "tbody");
                     if (!aliasList || !entries) throw new Error("Model catalog template is incomplete.");
-                    const matches = aliases.aliases.map((alias) => {
-                        if (typeof alias.alias !== "string" || typeof alias.active !== "boolean") throw new Error("Alias listing is invalid.");
-                        return { ...alias, ...Validator.assertModelRoute({
-                            alias: alias.alias, provider: alias.provider, model: alias.model,
-                            ...(alias.effort === undefined ? {} : { effort: alias.effort, effortSource: alias.effortSource }),
-                        }), alias: alias.alias };
-                    }).filter((alias) => route(alias).toLowerCase().includes(rest.toLowerCase()));
                     $.cloneEach(aliasList, "#command-alias", matches, (item, alias) => the(item, {
                         aliasName: alias.alias, aliasRoute: `${alias.provider}/${alias.model}`,
                         aliasEffort: alias.effort ?? "Unspecified", aliasActive: alias.active ? "Default" : "",
@@ -93,22 +84,15 @@ export default function workerCommands(controls, actions) {
                     the(result, { aliasCount: matches.length, modelTotal: catalog.total, modelCount: catalog.items.length,
                         modelOffset: catalog.offset, modelMore: catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search." });
                 } else if (name === "model") {
-                    const result = await actions.call(rest ? "worker.model.set" : "worker.model.get",
-                        rest ? { selector: args[0], ...(args[1] === undefined ? {} : { effort: args[1] }) } : {});
-                    const projection = /** @type {{model: unknown}} */ (result);
-                    const model = rest ? Validator.assertModelRoute(result) : projection?.model === null ? null : Validator.assertModelRoute(projection?.model);
-                    message = `Model: ${route(model)}${model?.effort === undefined ? "" : ` (${model.effort})`}.`;
+                    const model = await workerModel(call, args[0], args[1]);
+                    message = `Model: ${modelLabel(model)}${model?.effort === undefined ? "" : ` (${model.effort})`}.`;
                 } else if (name === "effort") {
-                    const result = /** @type {{effort: unknown, source: unknown, supportedEfforts: unknown[]}} */ (
-                        await actions.call(rest ? "worker.effort.set" : "worker.effort.get", rest ? { effort: rest } : {}));
-                    if (!["default", "explicit"].includes(String(result?.source)) || !Array.isArray(result?.supportedEfforts)) throw new Error("Effort result is invalid.");
-                    const effort = result.effort === null ? "Unavailable" : Validator.assertEffort(result.effort);
-                    const supported = result.supportedEfforts.map((value) => Validator.assertEffort(value));
-                    message = `Effort: ${effort} (${result.source}). Supported: ${supported.join(", ") || "None"}.`;
+                    const { effort, source, supported } = await workerEffort(call, args[0]);
+                    message = `Effort: ${effort ?? "Unavailable"} (${source}). Supported: ${supported.join(", ") || "None"}.`;
                 } else if (name === "capabilities") {
                     if (rest) Validator.assertCapabilityPolicy(policy);
                     const result = /** @type {import("@plurnk/plurnk-contracts").CapabilityProjection} */ (
-                        await actions.call(rest ? "workspace.capabilities.set" : "workspace.capabilities.get", rest ? { policy } : {}));
+                        await call(rest ? "workspace.capabilities.set" : "workspace.capabilities.get", rest ? { policy } : {}));
                     for (const layer of ["service", "workspace", "effective"]) Validator.assertCapabilityPolicy(Reflect.get(Object(result), layer));
                     signal.throwIfAborted();
                     const projection = $.clone(body, "#command-capabilities");

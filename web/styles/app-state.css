@@ -1,5 +1,5 @@
 /* {§web-page-shell} The worker is a product surface, not a reading column. */
-body:has(> main[data-page="worker"]) > :is(header, main, footer) {
+body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="worker"])) > :is(header, main, footer) {
     max-inline-size: none;
 }
 
@@ -15,8 +15,9 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
     display: none;
 }
 
-[aria-label="Worker controls"][data-command-error=""] > article,
-[aria-label="Worker controls"][data-message-status=""] > [role="status"] {
+[aria-label="Message feedback"][data-command-error=""] > article,
+[aria-label="Message feedback"][data-message-status=""] > [role="status"],
+[aria-label="Message feedback"][data-message-status=""][data-command-error=""] {
     display: none;
 }
 
@@ -34,6 +35,11 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
     display: none;
 }
 
+/* {§web-worker-settings} Empty feedback occupies no page space. */
+:is(#worker-model-settings, #worker-effort-settings) > p:empty {
+    display: none;
+}
+
 /* {§web-worker-questions} Omission and diagnostics are explicit document state. */
 [data-field-optional="false"] > [data-optional-answer],
 [data-field-description=""] > [data-text="field-description"],
@@ -43,15 +49,15 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
 }
 
 /* {§web-worker-observer} Failed connections expose native recovery, never stale live indicators. */
-#worker-status:not([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]) > article,
-#worker-status:not([data-connection="signed-out"]) [data-sign-in],
-#worker-status[data-connection="signed-out"] [data-reconnect] {
+body:not(:has(#worker-status:is([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]))) #worker-connection,
+body:not(:has(#worker-status[data-connection="signed-out"])) [data-sign-in],
+body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
     display: none;
 }
 
 /* {§web-worker-identity} {§web-worker-status} Optional supplied facts, not guessed activity. */
 #worker-folder[data-project-label=""],
-#worker-status:not([data-lifecycle]) > ul,
+#worker-status:not([data-lifecycle]) > [data-status-line],
 #worker-status[data-connection="connected"] > [role="status"],
 #worker-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
 #worker-status:not([data-elapsed]) [data-status-field="elapsed"],
@@ -80,6 +86,7 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
 #worker-status [data-text="output"]::before { content: "↑" / ""; }
 #worker-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }
 #worker-status [data-text="effort"]:not(:empty)::after { content: ")" / ""; }
+#worker-effort:has([data-text="effort"]:empty)::before { content: "(—)" / ""; }
 #worker-descendants > summary::before { content: "🐜 " / ""; }
 #worker-status [data-status-field="gated"]::before { content: "🚦 " / ""; }
 #worker-status [data-status-field="inbox"]::before { content: "✉️ " / ""; }
@@ -139,6 +146,15 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
 [data-plurnk-note="fact"] { --plurnk-operation-glyph: "📊"; }
 [data-plurnk-note="idea"] { --plurnk-operation-glyph: "💡"; }
 [data-plurnk-note="plan"] { --plurnk-operation-glyph: "🚧"; }
+
+/* {§web-page-shell} Directory identity remains accessible without decorative glyphs. */
+[data-directory-entry] > article > header::before {
+    content: var(--directory-glyph) / "";
+    margin-inline-end: 0.5ch;
+}
+[data-directory-entry="worker"] { --directory-glyph: "🐜"; }
+[data-directory-entry="workspace"][data-folder="true"] { --directory-glyph: "🗂️"; }
+[data-directory-entry="workspace"][data-folder="false"] { --directory-glyph: "☁️"; }
 
 /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
 #worker-conversation [data-math-error]::after {

@@ -21,13 +21,18 @@ argument replaces the workspace policy. `/yolo` or the 🔥/🐹 status toggle c
 approval preference, including pending proposals; questions still require answers.
 Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending review.
 `/models` lists aliases and a bounded catalog page; narrow its search for more matches.
+Click the status model or effort to open its native selection form. Search reads
+the catalog; Apply makes the change through the same daemon actions as the commands.
 The workspace navigation tree shows kinds and lifecycles at page load, with child
 branches collapsed. It is navigation, not a live subscription to child transcripts.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 🗂️ line shows its project
 folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
-Non-worker pages use a 65ch reading width; worker pages use the available width.
+Home and account/error pages keep a 65ch reading width. Workspaces, Workspace and
+Worker share full-width article lists and a stationary header around scrolling
+main content. Worker status and the Stop / multiline message / Send row stay at
+the bottom. The message field grows with its content; Enter remains a newline.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.
 Header controls: 🗃️ workspace breadcrumb, ⚙️ Account, ✖ Sign out.
@@ -285,9 +290,9 @@ before production pruning, so references between layers remain visible:
 | File | Concern |
 |---|---|
 | `app-vendor.css` | Generated, unmodified Pico substrate. |
-| `app-structure.css` | Reading width, gutters and wrapping. |
+| `app-structure.css` | Reading width, viewport grid, composer sizing, gutters and wrapping. |
 | `app-style.css` | Substrate token overrides; brand accents and system monospace. |
-| `app-state.css` | Worker page width, connection state and native focus visibility. |
+| `app-state.css` | Directory/worker width, glyphs, connection state and native focus visibility. |
 
 Authored CSS is checked with OTM's Stylelint rules. Content-renderer dependencies
 load their own vendor styles separately; sign-in uses only the page stylesheet.

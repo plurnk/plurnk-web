@@ -11,6 +11,7 @@ import verifyInteractions from "./interaction-browser.js";
 import verifyFootnotes from "./footnotes-browser.js";
 import verifyDiagnostics from "./diagnostics-browser.js";
 import verifyStatus from "./status-browser.js";
+import verifyShell from "./shell-browser.js";
 import verifyBodies from "./body-browser.js";
 import verifyReasoning from "./reasoning-browser.js";
 import verifyStreams from "./streams-browser.js";
@@ -367,6 +368,7 @@ test("{§web-operation-summary} every operation shares its authored summary with
 test("{§web-worker-diagnostics} public notices and Problems remain visible outside conversation", { timeout: 60_000 }, verifyDiagnostics);
 
 test("{§web-worker-status} {§web-worker-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
+test("{§web-page-shell} pinned shell and native multiline composer reflow", { timeout: 60_000 }, verifyShell);
 test("{§web-result-bodies} visible content loads securely without an inspection UI", { timeout: 60_000 }, verifyBodies);
 test("{§web-worker-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
 test("{§web-worker-streams} observed executor outcomes and explicit output inspection", { timeout: 60_000 }, verifyStreams);

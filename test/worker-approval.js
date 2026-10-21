@@ -166,7 +166,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         await other.getByText("Completed approval-tabs.", { exact: true }).waitFor();
         await connected(other);
         assert.equal(await other.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
-        assert.equal(await other.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
+        assert.equal(await other.locator('[aria-label="Message feedback"] [role="alert"]').isVisible(), false);
         assert.equal(requests.length, 2);
         assert.equal(model.requests.length, 2, "external settlement does not repeat execution or inference");
         assert.equal(otherRequests.some(({ resume }) => resume?.length > 0), false, "the second view observes the decision; it does not answer again");
@@ -392,7 +392,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         await page.getByText("Completed approval-lost-settlement.", { exact: true }).waitFor();
         await connected(page);
         assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
-        assert.equal(await page.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
+        assert.equal(await page.locator('[aria-label="Message feedback"] [role="alert"]').isVisible(), false);
         assert.equal(requests.length, 2);
         assert.equal(model.requests.length, 2, "rediscovery starts no replacement work");
         assert.equal(await page.locator('[data-message-role="user"]').count(), 1);

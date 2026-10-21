@@ -33,7 +33,7 @@ export default async function verifyStatus(t) {
                     const value = (key) => key === "lifecycle" ? field(key).getAttribute("aria-label") : page.locator(`#worker-status [data-text="${key}"]`).textContent();
                     const glyph = (key) => field(key).evaluate((element) => getComputedStyle(element, "::before").content);
                     assert.equal(await page.locator("#worker-status").evaluate((element) => element.tagName), "FOOTER");
-                    assert.equal(await page.locator("#worker-status > ul").isVisible(), false, "unknown state is not a row of invented zeros");
+                    assert.equal(await page.locator("#worker-status > [data-status-line]").isVisible(), false, "unknown state is not a row of invented zeros");
                     assert.equal(await page.locator("#worker-status > [role=status]").isVisible(), true, "connection state remains visible before a gauge arrives");
                     await receive(initial);
                     const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
@@ -46,7 +46,7 @@ export default async function verifyStatus(t) {
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "false"));
                     for (const colorScheme of ["light", "dark"]) {
                         await page.emulateMedia({ colorScheme });
-                        const appearance = await page.locator("#worker-status > ul").evaluate((element) => {
+                        const appearance = await page.locator("#worker-status > [data-status-line]").evaluate((element) => {
                             const list = getComputedStyle(element);
                             const parent = getComputedStyle(element.parentElement);
                             return { list: [list.fontSize, list.color], parent: [parent.fontSize, parent.color] };
@@ -105,15 +105,15 @@ export default async function verifyStatus(t) {
                     assert.doesNotMatch(await page.locator("#worker-status").innerHTML(), /message:\/\/user\/first|client-first|data-known-|data-usage-/u);
                     assert.match(await glyph("lifecycle"), /💤/u);
                     assert.equal(await glyph("model"), "none", "model has no decorative dice");
-                    assert.equal(await page.locator("#worker-status > ul > li:last-child").getAttribute("data-status-field"), "cost", "cost is last in document and accessibility order");
+                    assert.equal(await page.locator("#worker-status [aria-label='Worker statistics'] > li:last-child").getAttribute("data-status-field"), "cost", "cost is last in document and accessibility order");
                     for (const width of [320, 1280]) {
                         await page.setViewportSize({ width, height: 700 });
-                        assert.equal(await page.locator("#worker-status > ul").evaluate((element) => getComputedStyle(element).justifyContent), "center");
+                        assert.equal(await page.locator("#worker-status > [data-status-line]").evaluate((element) => getComputedStyle(element).justifyContent), "center");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     }
                     await page.setViewportSize({ width: 320, height: 700 });
                     assert.match(await field("cost").ariaSnapshot(), /unknown total; known subtotal 0.0000000123/u);
-                    assert.equal(await page.locator("#worker-status > ul [aria-live], #worker-status > ul [role=status]").count(), 0, "ticking gauges do not announce every second");
+                    assert.equal(await page.locator("#worker-status > [data-status-line] [aria-live], #worker-status > [data-status-line] [role=status]").count(), 0, "ticking gauges do not announce every second");
                     assert.equal(await page.locator("#worker-workspace [data-text=workspace-name]").textContent(), active.plurnk.workspace.name);
                     assert.equal(await page.locator("#worker-workspace a").getAttribute("href"), "/~/review%20%3Cscript%3E%26%40%25/");
                     assert.equal(await page.locator('#worker-directory').count(), 0);
@@ -190,6 +190,22 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial", "state projection does not own delivery or approval");
                     assert.equal(requests.length, requestCount, "projection and disclosure do not request more state or authored resources");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "status and inbox are not conversation messages");
+                    const long = structuredClone(initial);
+                    long.plurnk.status.model = { provider: "hosted-provider", model: "namespace/" + "long-model-name-".repeat(6), effort: "high", effortSource: "default" };
+                    await page.setViewportSize({ width: 640, height: 700 });
+                    await receive(long);
+                    const controlGroup = page.getByRole("list", { name: "Model controls", exact: true });
+                    const statistics = page.getByRole("list", { name: "Worker statistics", exact: true });
+                    const controlBox = await controlGroup.boundingBox();
+                    const statsBox = await statistics.boundingBox();
+                    assert.ok(controlBox.y + controlBox.height <= statsBox.y, "a long non-alias model wraps above statistics as one control group");
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                    assert.deepEqual(await controlGroup.locator("button").evaluateAll((buttons) => buttons.map(({ id }) => id)), ["worker-yolo", "worker-model", "worker-effort"]);
+                    await page.setViewportSize({ width: 1440, height: 900 });
+                    await receive(initial);
+                    const compactControls = await controlGroup.boundingBox();
+                    const compactStats = await statistics.boundingBox();
+                    assert.ok(Math.abs(compactControls.y - compactStats.y) < 3, "short groups share a row when they fit");
                     checkBrowser();
                 } finally { await browser.close(); }
             });

@@ -7,6 +7,20 @@ const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plu
     id, name, parentWorkerId, origin, owner, kind: parentWorkerId === null ? "root" : "work", lifecycle: "completed",
 });
 
+test("{§web-page-shell} worker status sits outside the scrolling main; directory entries are native articles", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+        listWorkers: async () => [worker(9, "user")] };
+    const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
+    assert.match(html, /<\/main><footer id="worker-status"/u);
+    assert.match(html, /aria-label="Model controls"/u);
+    assert.match(html, /aria-label="Worker statistics"/u);
+    for (const directory of [{ kind: "daemon" }, { kind: "workspace", workspace: "work" }]) {
+        const listing = (await document.read(directory, port, false)).toString();
+        assert.match(listing, /<li[^>]*><article[^>]*><header>/u);
+    }
+});
+
 test("{§web-worker-approval} the worker document projects its resolved approval mode", async () => {
     for (const yolo of [true, false]) {
         const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo, 128);
@@ -113,16 +127,17 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-worker-name="${name}" data-bind="href:worker-path">${name}</a>`;
-    const facts = (kind) => ` <small><span data-text="worker-kind">${kind}</span> · <span data-text="worker-lifecycle">completed</span></small>`;
+    const facts = (kind) => `<p><small><span data-text="worker-kind">${kind}</span> · <span data-text="worker-lifecycle">completed</span></small></p>`;
+    const entry = (name, kind, children = "") => `<li data-directory-entry="worker"><article aria-label="Worker"><header>${link(name)}</header>${facts(kind)}${children}</article></li>`;
     const children = (count, list) => `<details><summary data-text="child-workers">${count} child worker${count === 1 ? "" : "s"}</summary><ul>${list}</ul></details>`;
     assert.ok(html.includes([
         "<ul>",
-        `<li>${link("2bb6a400-7106-4299-ae47-66daea5d6077")}${facts("root")}</li>`,
-        `<li>${link("user")}${facts("root")}${children(2, `<li>${link("review")}${facts("work")}${children(1, `<li>${link("evidence")}${facts("work")}</li>`)}</li><li>${link("research")}${facts("work")}</li>`)}</li>`,
+        entry("2bb6a400-7106-4299-ae47-66daea5d6077", "root"),
+        entry("user", "root", children(2, entry("review", "work", children(1, entry("evidence", "work"))) + entry("research", "work"))),
         "</ul>",
         '<details><summary data-i18n="background-work">Background work</summary><ul>',
-        `<li>${link("incoming")}${facts("work")}${children(1, `<li>${link("incoming-child")}${facts("work")}</li>`)}</li>`,
-        `<li>${link("other")}${facts("work")}</li>`,
+        entry("incoming", "work", children(1, entry("incoming-child", "work"))),
+        entry("other", "work"),
         "</ul></details>",
     ].join("")), html);
     const names = [...html.matchAll(/href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
@@ -207,9 +222,9 @@ test("{§web-directory-documents} workspace markers describe folder presence wit
         ],
         listWorkers: async () => { throw new Error("The workspace index needs no worker lookup."); },
     }, false)).toString();
-    assert.match(html, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <a href="\/~\/~\/looks-like-a-folder\/" data-text="name">~\/looks-like-a-folder<\/a><\/li>/u);
-    assert.match(html, /<li><span role="img" aria-label="Project workspace">🗂️<\/span> <a href="\/~\/research\/" data-text="name">research<\/a><\/li>/u);
-    assert.match(html, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <span data-text="name">\.\.\/legacy<\/span><\/li>/u);
+    assert.match(html, /<li data-directory-entry="workspace" data-folder="false"><article aria-label="Folderless workspace"><header><a href="\/~\/~\/looks-like-a-folder\/" data-text="name">~\/looks-like-a-folder<\/a><\/header><\/article><\/li>/u);
+    assert.match(html, /<li data-directory-entry="workspace" data-folder="true"><article aria-label="Project workspace"><header><a href="\/~\/research\/" data-text="name">research<\/a><\/header><\/article><\/li>/u);
+    assert.match(html, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header><\/article>/u);
     assert.doesNotMatch(html, /\/home\/daemon\/project/u, "the index shows each name once, not a redundant filesystem label");
 });
 
@@ -224,9 +239,9 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     };
     const document = new Documents(`<!doctype html><title>Plurnk</title><header>${navigation}</header><main>Home</main><script src="/app.js"></script>`, false, 128);
     const index = (await document.read({ kind: "daemon" }, port, true)).toString();
-    assert.match(index, /<ul><li><span role="img" aria-label="Folderless workspace">☁️<\/span> <a href="\/~\/~\/a%26%3Cscript%3E%40%22b\/"/u);
+    assert.match(index, /<ul><li data-directory-entry="workspace" data-folder="false"><article aria-label="Folderless workspace"><header><a href="\/~\/~\/a%26%3Cscript%3E%40%22b\/"/u);
     assert.match(index, /~\/a&amp;&lt;script&gt;@&quot;b/u);
-    assert.match(index, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <span data-text="name">\.\.\/legacy<\/span><\/li>/u);
+    assert.match(index, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header><\/article>/u);
     assert.match(index, /<form method="post" action="\/auth\/logout">/u);
     assert.match(index, /<script src="\/app.js"><\/script>/u);
     assert.equal(await document.read({ kind: "workspace", workspace: "missing" }, port, false), null);
@@ -251,11 +266,12 @@ test("{§web-worker-status} status is a compact footer after conversation, not a
     assert.match(html, /<footer id="worker-status"[^>]*>/u);
     assert.ok(html.indexOf('id="worker-status"') > html.indexOf('id="worker-conversation"'));
     const footer = html.slice(html.indexOf('<footer id="worker-status"'));
-    assert.match(footer, /<ul aria-label="Worker status">/u);
+    assert.match(footer, /<ul aria-label="Worker statistics">/u);
     assert.match(footer, /<details id="worker-descendants"><summary/u);
     assert.match(footer, /data-bind="aria-label:lifecycle title:lifecycle"/u);
     assert.doesNotMatch(footer, /<dl|<table|id="(?:worker-accounting|workspace-activity|worker-inbox)"|data-text="(?:requests|turns|loop)"/u);
-    assert.match(footer, /<article role="alert">[\s\S]*id="worker-reconnect"/u);
+    assert.match(html, /<article id="worker-connection" role="alert">[\s\S]*id="worker-reconnect"[\s\S]*<\/main><footer/u);
+    assert.doesNotMatch(footer, /<article|worker-reconnect/u, "detailed connection notices cannot crowd the pinned composer");
 });
 
 test("{§web-directory-documents} a broken document outlet fails at load", () => {

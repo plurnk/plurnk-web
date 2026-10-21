@@ -156,7 +156,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await other.getByText("Completed question-tabs.", { exact: true }).waitFor();
         await connected(other);
         assert.equal(await review(other).isVisible(), false);
-        assert.equal(await other.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
+        assert.equal(await other.locator('[aria-label="Message feedback"] [role="alert"]').isVisible(), false);
         assert.equal(model.requests.length, 2, "the answered question creates no duplicate inference");
         assert.equal(otherRequests.some(({ resume }) => resume?.length > 0), false, "the second view never answers an already settled question");
         checkBrowser();

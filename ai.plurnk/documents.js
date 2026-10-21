@@ -40,11 +40,11 @@ export default class Documents {
         this.#afterMain = parts[2];
     }
 
-    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] */
-    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb()) {
+    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] */
+    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "") {
         const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
-        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}">${body}</main>${this.#afterMain}`);
+        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}">${body}</main>${footer}${this.#afterMain}`);
     }
 
     /** @param {boolean} authenticated */
@@ -161,10 +161,10 @@ export default class Documents {
                 rendered++;
                 const descendants = children.get(worker.id) ?? [];
                 const link = this.#link(worker.name, { kind: "worker", workspace, worker: worker.name });
-                const facts = ` <small><span data-text="worker-kind">${escapeHtml(worker.kind)}</span> · <span data-text="worker-lifecycle">${escapeHtml(worker.lifecycle)}</span></small>`;
+                const facts = `<p><small><span data-text="worker-kind">${escapeHtml(worker.kind)}</span> · <span data-text="worker-lifecycle">${escapeHtml(worker.lifecycle)}</span></small></p>`;
                 const disclosure = descendants.length === 0 ? "" : '<details><summary data-text="child-workers">'
                     + `${descendants.length} child worker${descendants.length === 1 ? "" : "s"}</summary>${list(descendants)}</details>`;
-                return `<li>${link}${facts}${disclosure}</li>`;
+                return `<li data-directory-entry="worker"><article aria-label="Worker"><header>${link}</header>${facts}${disclosure}</article></li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
         const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
@@ -182,10 +182,10 @@ export default class Documents {
         const footer = `<footer id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
             + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
-            + '<ul aria-label="Worker status">'
+            + '<div data-status-line><ul aria-label="Model controls">'
             + `<li data-status-field="yolo"><button type="button" id="worker-yolo" aria-pressed="${this.#yolo}" aria-label="Automatic approval" title="/yolo"></button></li>`
-            + '<li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
-            + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><span data-text="model">No model</span><span data-text="effort"></span></li>'
+            + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="worker-model" aria-label="Model" aria-expanded="false" aria-controls="worker-model-settings"><span data-text="model">No model</span></button><button type="button" id="worker-effort" aria-label="Effort" aria-expanded="false" aria-controls="worker-effort-settings"><span data-text="effort"></span></button></li></ul>'
+            + '<ul aria-label="Worker statistics"><li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
             + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'
             + '<li data-status-field="usage" data-bind="aria-label:usage-label title:usage-label"><span data-text="input">?</span> <span data-text="output">?</span></li>'
             + '<li data-status-field="context" data-bind="aria-label:context-label title:context-label"><span data-text="context"></span></li>'
@@ -195,13 +195,13 @@ export default class Documents {
             + '<li data-status-field="inbox" data-bind="aria-label:inbox-label title:inbox-label"><span data-text="inbox">0</span></li>'
             + '<li data-status-field="preparation" data-text="preparation"></li>'
             + '<li data-status-field="activity" data-text="activity" data-bind="title:activity-message"></li>'
-            + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li></ul>'
-            + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
+            + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li></ul></div></footer>';
+        const content = '<article id="worker-connection" role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
             + '<p data-text="connection-detail">Displayed values are no longer live.</p>'
             + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-bind="action:worker-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
-            + '</p></article></footer>';
-        return '<details id="worker-streams" data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
+            + '</p></article>'
+            + '<details id="worker-streams" data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
             + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ul></ul></details>'
             + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ul></ul></section>'
             + '<details id="worker-activity"><summary data-i18n="observed-activity">Observed activity</summary>'
@@ -209,7 +209,8 @@ export default class Documents {
             + '<section id="worker-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
             + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'
-            + '<ul data-messages></ul></section>' + footer;
+            + '<ul data-messages></ul></section>';
+        return { content, footer };
     }
 
     /**
@@ -218,12 +219,12 @@ export default class Documents {
      * @param {boolean} authenticated
      */
     async read(directory, port, authenticated) {
-        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "") =>
-            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker));
+        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "") =>
+            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
             const items = workspaces.map(({ name, project_root }) =>
-                `<li>${this.#workspaceMarker(project_root)} ${this.#link(name, { kind: "workspace", workspace: name })}</li>`).join("");
+                `<li data-directory-entry="workspace" data-folder="${project_root !== null}"><article aria-label="${project_root === null ? "Folderless workspace" : "Project workspace"}"><header>${this.#link(name, { kind: "workspace", workspace: name })}</header></article></li>`).join("");
             return render("Workspaces", items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>');
         }
         const workspace = workspaces.find(({ name }) => name === directory.workspace);
@@ -249,8 +250,9 @@ export default class Documents {
         const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
+        const status = this.#workerStatus(directory, workspace.id, authenticated);
         return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + (parent === null ? "" : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`)
-            + this.#workerStatus(directory, workspace.id, authenticated), marker);
+            + status.content, marker, status.footer);
     }
 }

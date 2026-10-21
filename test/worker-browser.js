@@ -898,7 +898,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     nativePage.on("request", (request) => nativeRequests.push(request.url()));
                     await nativePage.goto(new URL("/~/observer-approval@user/", base).href);
                     assert.equal(await nativePage.getByText("Live status requires JavaScript.", { exact: true }).isVisible(), true);
-                    assert.equal(await nativePage.locator("#worker-status > ul").isVisible(), false, "without delivery the footer cannot invent worker state");
+                    assert.equal(await nativePage.locator("#worker-status > [data-status-line]").isVisible(), false, "without delivery the footer cannot invent worker state");
                     assert.equal(await value(nativePage, "lifecycle"), null);
                     assert.equal(await nativePage.getByText("No messages.", { exact: true }).isVisible(), false,
                         "a native document without conversation delivery cannot claim the existing history is empty");
@@ -915,7 +915,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         /^error \/agui\/connect: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
                         /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: network error$/u,
                     ]);
-                    const card = page.locator('#worker-status [role="alert"]');
+                    const card = page.locator('#worker-connection');
                     assert.equal(await card.isVisible(), true);
                     for (const colorScheme of ["light", "dark"]) {
                         await page.emulateMedia({ colorScheme });
