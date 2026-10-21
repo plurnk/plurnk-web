@@ -9,48 +9,44 @@ const idle = { lifecycle: "idle", model: null, loopId: null, packetCount: 0, wai
 const emptyBudget = { contextTokens: null, contextCapacity: null, curationWeight: null, curationBudget: null };
 
 test("{§web-worker-observer} elapsed uses daemon bounds, including completion and clock skew", () => {
-    assert.equal(elapsed({ claimedAt: null, terminatedAt: null }, 10_000), "Unknown");
+    assert.equal(elapsed({ claimedAt: null, terminatedAt: null }, 10_000), "");
     assert.equal(elapsed({ claimedAt: 1000, terminatedAt: null }, 2500), "1s");
     assert.equal(elapsed({ claimedAt: 1000, terminatedAt: null }, 500), "0s");
-    assert.equal(elapsed({ claimedAt: 1000, terminatedAt: 62_000 }, 900_000), "1m 1s");
-    assert.equal(elapsed({ claimedAt: 1000, terminatedAt: null }, 3_662_000), "1h 1m 1s");
+    assert.equal(elapsed({ claimedAt: 1000, terminatedAt: 62_000 }, 900_000), "1m01s");
+    assert.equal(elapsed({ claimedAt: 1000, terminatedAt: null }, 3_662_000), "1h1m01s");
 });
 
 test("{§web-worker-observer} unknown accounting is not zero or a known subtotal", () => {
     const zero = gauges(idle, emptyBudget);
-    assert.equal(zero.requests, "0");
     assert.equal(zero.input, "0");
     assert.equal(zero.output, "0");
-    assert.equal(zero.cost, "0");
+    assert.equal(zero.cost, "$0.0000");
     const incomplete = gauges({ ...idle, lifecycle: "failed", loopId: 7, packetCount: 3,
         spend: { requests: 4, usage: null, knownUsage: { inputTokens: 400, outputTokens: 10 }, costUsd: null, knownCostUsd: "0.12" } }, emptyBudget);
     assert.equal(incomplete.lifecycle, "failed");
-    assert.equal(incomplete.loop, "7");
-    assert.equal(incomplete.turns, "3");
-    assert.equal(incomplete.requests, "4");
-    assert.equal(incomplete.input, "Unknown");
-    assert.equal(incomplete.output, "Unknown");
-    assert.equal(incomplete.cost, "Unknown");
-    assert.equal(incomplete["known-input"], "400");
-    assert.equal(incomplete["known-output"], "10");
-    assert.equal(incomplete["known-cost"], "0.12");
+    assert.equal(incomplete.input, "400 + ?");
+    assert.equal(incomplete.output, "10 + ?");
+    assert.equal(incomplete.cost, "$0.1200 + ?");
+    assert.equal(incomplete.usageLabel, "Cumulative tokens, worker and descendants. Input: unknown total; known subtotal 400. Output: unknown total; known subtotal 10.");
+    assert.equal(incomplete.costLabel, "Cumulative USD, worker and descendants: unknown total; known subtotal 0.12.");
     const partial = gauges({ ...idle, spend: { requests: 1, usage: { inputTokens: 12 }, knownUsage: { inputTokens: 12 },
         costUsd: "0.0000000123", knownCostUsd: "0.0000000123" } }, emptyBudget);
     assert.equal(partial.input, "12");
-    assert.equal(partial.output, "Unknown");
-    assert.equal(partial.cost, "0.0000000123");
-    assert.equal(partial["known-input"], "—", "a complete field needs no duplicate subtotal");
-    assert.equal(partial["known-output"], "Unknown", "missing evidence is not zero");
-    assert.equal(partial["known-cost"], "—");
+    assert.equal(partial.output, "?");
+    assert.equal(partial.cost, "<$0.0001", "nonzero expense never rounds to free");
+    assert.equal(partial.costLabel, "Cumulative USD, worker and descendants: 0.0000000123.");
+    const unknown = gauges({ ...idle, spend: { requests: 1, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } });
+    assert.equal(unknown.input, "?");
+    assert.equal(unknown.output, "?");
+    assert.equal(unknown.cost, "$?");
 });
 
 test("{§web-worker-status} model identity, effort, direct children and budgets remain daemon facts", () => {
     const unselected = gauges(idle, emptyBudget);
-    assert.equal(unselected.model, "Not selected");
-    assert.equal(unselected.effort, "Unspecified");
-    assert.equal(unselected.children, "0");
-    assert.equal(unselected.context, "Unknown / Unknown");
-    assert.equal(unselected.curation, "Unknown / Unknown");
+    assert.equal(unselected.model, "No model");
+    assert.equal(unselected.effort, "");
+    assert.equal(unselected.context, "");
+    assert.equal(unselected.curation, "");
     const selected = gauges({ ...idle, model: { alias: "local", provider: "host", model: "qwen", effort: "high", effortSource: "explicit" },
         descendants: [
             { id: 2, name: "first", parentWorkerId: 1, kind: "work", lifecycle: "queued", gates: 0 },
@@ -59,16 +55,22 @@ test("{§web-worker-status} model identity, effort, direct children and budgets 
             { id: 5, name: "finished", parentWorkerId: 1, kind: "bare", lifecycle: "completed", gates: 0 },
         ], inbox: [{ path: "message://user/one", id: "one", loopId: 2, lifecycle: "queued" }] },
     { contextTokens: 0, contextCapacity: 32768, curationWeight: 4200, curationBudget: 8000 });
-    assert.equal(selected.model, "local — host/qwen");
-    assert.equal(selected.effort, "high (explicit)");
-    assert.equal(selected.children, "2");
+    assert.equal(selected.model, "local");
+    assert.equal(selected.effort, "high");
+    assert.equal(selected.modelLabel, "Model: host/qwen; effort: high (explicit)");
+    assert.equal(selected.descendantsLabel, "Descendant workers: 4; active direct children: 2");
     assert.equal(selected.gated, "1", "count workers awaiting input, not gates");
     assert.equal(selected.descendants, "4", "the census includes completed descendants");
-    assert.equal(selected.context, "0 / 32768");
-    assert.equal(selected.curation, "4200 / 8000");
+    assert.equal(selected.context, "0 (0%)");
+    assert.equal(selected.contextLabel, "Current packet context: 0 / 32768 tokens");
+    assert.equal(selected.curation, "4.2k (53%)");
+    assert.equal(selected.curationLabel, "Curation weight: 4200 / 8000");
     assert.equal(selected.inbox, "1");
     assert.equal(gauges({ ...idle, model: { provider: "host", model: "other" } }).model, "host/other");
-    assert.equal(gauges(idle).context, "Unknown / Unknown", "absence is not an inherited previous budget");
+    assert.equal(gauges(idle).context, "", "absence is not an inherited previous budget");
+    for (const budget of [{ contextTokens: 1, contextCapacity: 0 }, { contextTokens: null, contextCapacity: 10 }, { contextTokens: 2 }]) {
+        assert.equal(gauges(idle, budget).context, "", "incomplete or zero-capacity gauges cannot invent a percentage");
+    }
 });
 
 test("{§web-worker-descendants} nesting preserves supplied parentage and sibling order", () => {
@@ -87,32 +89,32 @@ test("{§web-worker-descendants} nesting preserves supplied parentage and siblin
     ]) assert.throws(() => descendantTree(invalid), /Descendant census is not one worker tree\./u);
 });
 
-test("{§web-worker-status} accounting details preserve exact reported fields without reconstructing totals", () => {
-    const result = gauges({ ...idle, spend: { requests: 2, costUsd: null, knownCostUsd: "0",
-        usage: { inputTokens: 19, inputTokenDetails: { cacheReadTokens: 0 } },
-        knownUsage: { inputTokens: 19, outputTokens: 30, inputTokenDetails: { noCacheTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 5 },
-            outputTokenDetails: { textTokens: 6, reasoningTokens: 7 } } } });
-    assert.equal(result["usage-total"], "Unknown", "input plus output is not a replacement for absent total evidence");
-    assert.equal(result["usage-cache-read"], "0");
-    assert.equal(result["known-cache-read"], "—");
-    assert.equal(result["known-uncached"], "4");
-    assert.equal(result["known-cache-write"], "5");
-    assert.equal(result["usage-reasoning"], "Unknown");
-    assert.equal(result["known-reasoning"], "7");
-    assert.equal(result["known-text"], "6");
-    assert.equal(result.cost, "Unknown");
-    assert.equal(result["known-cost"], "0", "known exact zero is evidence, not a missing subtotal");
+test("{§web-worker-status} compact accounting preserves exact accessible values without a second ledger", () => {
+    const status = { ...idle, spend: { requests: 2, costUsd: "0.0326789", knownCostUsd: "0.0326789",
+        usage: { inputTokens: 166123, outputTokens: 7123, inputTokenDetails: { cacheReadTokens: 100000 } },
+        knownUsage: { inputTokens: 166123, outputTokens: 7123 } } };
+    const before = structuredClone(status);
+    const result = gauges(status);
+    assert.equal(result.input, "166.1k");
+    assert.equal(result.output, "7.1k");
+    assert.equal(result.cost, "$0.0327");
+    assert.equal(result.usageLabel, "Cumulative tokens, worker and descendants. Input: 166123. Output: 7123.");
+    assert.equal(result.costLabel, "Cumulative USD, worker and descendants: 0.0326789.");
+    assert.deepEqual(status, before, "formatting never rewrites SDK accounting");
+    assert.equal(Object.hasOwn(result, "requests"), false, "unpresented data stays out of the projection");
+    assert.equal(Object.keys(result).some((key) => key.startsWith("usage-") || key.startsWith("known-")), false);
+    assert.equal(gauges({ ...idle, spend: { ...idle.spend, costUsd: null, knownCostUsd: "0" } }).cost, "$0.0000 + ?");
 });
 
 test("{§web-worker-status} WAIT uses the daemon deadline without changing lifecycle at expiry", () => {
-    assert.deepEqual(clocks(idle, 1000), { elapsed: "Unknown", wait: "None", waitAt: null });
+    assert.deepEqual(clocks(idle, 1000), { elapsed: "", wait: "", waitAt: null });
     const waiting = { ...idle, lifecycle: "parked", claimedAt: 1000, waitUntil: 62_001 };
-    assert.deepEqual(clocks(waiting, 1001), { elapsed: "0s", wait: "1m 1s", waitAt: "1970-01-01T00:01:02.001Z" });
+    assert.deepEqual(clocks(waiting, 1001), { elapsed: "0s", wait: "1m01s", waitAt: "1970-01-01T00:01:02.001Z" });
     assert.equal(clocks(waiting, 62_000).wait, "1s");
     assert.equal(clocks(waiting, 62_001).wait, "0s");
     assert.equal(clocks(waiting, 90_000).wait, "0s");
     assert.equal(waiting.lifecycle, "parked");
-    assert.equal(clocks({ ...waiting, waitUntil: null }, 90_000).wait, "None", "a daemon update clears the previous bound");
+    assert.equal(clocks({ ...waiting, waitUntil: null }, 90_000).wait, "", "a daemon update clears the previous bound");
 });
 
 test("{§web-worker-identity} folder labels are compared, not derived, and names use the shared URL codec", () => {

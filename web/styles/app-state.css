@@ -48,11 +48,41 @@ header nav button:is(:hover, :focus-visible) {
 
 /* {§web-worker-identity} {§web-worker-status} Optional supplied facts, not guessed activity. */
 #worker-folder[data-project-label=""],
-#worker-status [data-preparation]:empty,
-#worker-inbox ol:empty,
-#worker-status [data-text="activity-message"]:empty {
+#worker-status:not([data-lifecycle]) > ul,
+#worker-status[data-connection="connected"] > [role="status"],
+#worker-status:not([data-yolo="1"]) [data-status-field="yolo"],
+#worker-status:not([data-elapsed]) [data-status-field="elapsed"],
+#worker-status[data-elapsed=""] [data-status-field="elapsed"],
+#worker-status[data-context=""] [data-status-field="context"],
+#worker-status[data-curation=""] [data-status-field="curation"],
+#worker-status[data-descendants="0"] [data-status-field="descendants"],
+#worker-status[data-gated="0"] [data-status-field="gated"],
+#worker-status[data-wait=""] [data-status-field="wait"],
+#worker-status[data-inbox="0"] [data-status-field="inbox"],
+#worker-status[data-preparation=""] [data-status-field="preparation"],
+#worker-status[data-activity=""] [data-status-field="activity"] {
     display: none;
 }
+
+/* {§web-worker-status} Status fields remain semantic; CSS owns their compact notation. */
+#worker-status [data-status-field="yolo"]::before { content: "🔥" / ""; }
+#worker-status [data-status-field="model"]::before { content: "🎲 " / ""; }
+#worker-status [data-text="input"]::before { content: "↓" / ""; }
+#worker-status [data-text="output"]::before { content: "↑" / ""; }
+#worker-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }
+#worker-status [data-text="effort"]:not(:empty)::after { content: ")" / ""; }
+#worker-descendants > summary::before { content: "🐜 " / ""; }
+#worker-status [data-status-field="gated"]::before { content: "🚦 " / ""; }
+#worker-status [data-status-field="inbox"]::before { content: "✉️ " / ""; }
+#worker-status [data-status-field="activity"]::before { content: "🧮 " / ""; }
+#worker-status [data-status-field="preparation"]::before { content: "⚙️ " / ""; }
+#worker-status [data-status-field="lifecycle"]::before { content: var(--worker-lifecycle-glyph, "○") / ""; }
+#worker-status[data-lifecycle="running"] { --worker-lifecycle-glyph: "⌛"; }
+#worker-status[data-lifecycle="queued"] { --worker-lifecycle-glyph: "⏳"; }
+#worker-status[data-lifecycle="parked"] { --worker-lifecycle-glyph: "💤"; }
+#worker-status[data-lifecycle="completed"] { --worker-lifecycle-glyph: "⏹️"; }
+#worker-status[data-lifecycle="cancelled"] { --worker-lifecycle-glyph: "🛑"; }
+#worker-status[data-lifecycle="failed"] { --worker-lifecycle-glyph: "❌"; }
 
 /* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
 #worker-diagnostics:not(:has(ol > li)) {
@@ -125,10 +155,6 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 #worker-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
-    display: none;
-}
-
-#worker-status:not([data-descendants="0"]) [data-no-descendants] {
     display: none;
 }
 

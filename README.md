@@ -68,20 +68,21 @@ The same-origin `POST /auth/token` connection primitive supplies short-lived
 AG-UI access credentials to a signed-in browser. OAuth refresh credentials stay
 server-side; rotation and revocation use the daemon's authority.
 
-Worker pages passively connect through the official HttpAgent. They show lifecycle,
-elapsed time, turns, request/token totals and cost from the daemon; unavailable
-accounting stays **Unknown**, not zero. A finished loop leaves the page watching
+Worker pages passively connect through the official HttpAgent. A compact footer
+beside the composer shows approval mode, lifecycle, model/effort, latest-loop
+elapsed time, and cumulative worker-and-descendant tokens and cost. Unknown totals
+stay `?`, not zero; known partial amounts retain `+ ?`. Field descriptions preserve
+exact accounting behind the compact figures. A finished loop leaves the page watching
 for the next one. Closing, refreshing or navigating away never cancels work.
 Connection failure stops observation and marks the displayed values as stale;
 use **Reconnect** or, after revocation, **Sign in**. Reconnect preserves the current
 draft without resubmitting it; full page reloads do not persist drafts.
 No automatic work retries occur.
-Status shows the selected model/effort, direct active children, descendants awaiting
-input, context/curation gauges and the daemon's WAIT countdown. A live descendant
-tree provides native links and disclosures. The countdown is an observation deadline, not a
-promise of completion. **Accounting details** separates complete totals from known
-subtotals; **Workspace activity** and **Unobserved messages** expose preparation,
-indexing and accepted input awaiting observation. Workspace names and folder labels
+Context/curation gauges, pending input, preparation, indexing and the daemon's WAIT
+countdown appear only when relevant. The countdown is an observation deadline, not
+a promise of completion. A collapsed worker-count disclosure opens the live
+descendant tree; no empty tree or metadata inventory occupies the page.
+Workspace names and folder labels
 follow supplied state without changing the observed worker or rewriting the URL.
 Daemon notices and nonterminal Problems appear separately under **Observed diagnostics**,
 as literal messages and recovery guidance. Distinct observations remain through reconnects

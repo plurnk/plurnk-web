@@ -29,7 +29,10 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         assert.equal(await page.locator("#worker-status").getAttribute("data-yolo"), "1");
-        assert.equal(await page.locator('[data-text="approval-mode"]').textContent(), "Automatic");
+        const approval = page.locator('[data-status-field="yolo"]');
+        assert.equal(await approval.getAttribute("aria-label"), "Automatic approval");
+        assert.equal(await approval.isVisible(), true);
+        assert.equal(await approval.evaluate((element) => getComputedStyle(element, "::before").content), '"🔥" / ""');
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-automatic.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.getByText("Completed approval-automatic.", { exact: true }).waitFor();
@@ -298,7 +301,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         model.release("held-approval-two");
         await interrupted(page);
         await page.waitForFunction(() => document.querySelector('#worker-status [data-text="gated"]')?.textContent === "2");
-        assert.equal(await page.locator('#worker-status [data-text="lifecycle"]').textContent(), "completed",
+        assert.equal(await page.locator('#worker-status [data-status-field="lifecycle"]').getAttribute("aria-label"), "completed",
             "pending descendant requests do not change the owner's own lifecycle");
         const seen = [];
         for (let index = 0; index < 2; index++) {
@@ -412,7 +415,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             await observer.goto(path);
             await observer.getByText(`Completed ${name}.`, { exact: true }).waitFor();
             await connected(observer);
-            assert.equal(await observer.locator('[data-text="lifecycle"]').innerText(), "completed");
+            assert.equal(await observer.locator('#worker-status [data-status-field="lifecycle"]').getAttribute("aria-label"), "completed");
             assert.equal(await observer.locator('[data-message-role="user"]').count(), 1);
             assert.equal(model.requests.length, 2);
             assert.equal(requests.length, 2);

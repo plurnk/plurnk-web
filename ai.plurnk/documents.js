@@ -175,37 +175,30 @@ export default class Documents {
     #workerStatus(directory, workspaceId, authenticated) {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted worker must have a directory address.");
-        const fields = [["lifecycle", "State"], ["model", "Model"], ["effort", "Effort"], ["loop", "Loop"], ["turns", "Turns"], ["elapsed", "Elapsed"],
-            ["children", "Active direct children"], ["gated", "Descendants awaiting input"], ["context", "Context tokens / capacity"], ["curation", "Curation weight / budget"],
-            ["requests", "Requests"], ["input", "Input tokens"], ["output", "Output tokens"], ["cost", "Cost (USD)"]];
-        const accounting = [["input", "Input tokens"], ["output", "Output tokens"], ["total", "Total tokens"],
-            ["uncached", "Uncached input"], ["cache-read", "Cache-read input"], ["cache-write", "Cache-write input"],
-            ["text", "Text output"], ["reasoning", "Reasoning output"], ["cost", "Cost (USD)"]];
-        return `<section id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
+        const footer = `<footer id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
             + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-yolo="${this.#yolo ? "1" : "0"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
-            + `<p><span data-i18n="approval-mode">Approvals:</span> <span data-text="approval-mode">${this.#yolo ? "Automatic" : "Manual"}</span></p>`
-            + `<dl>${fields.map(([key, label]) => `<div><dt data-i18n="worker-${key}">${label}</dt><dd data-text="${key}">Unknown</dd></div>`).join("")}`
-            + '<div><dt data-i18n="worker-wait">WAIT remaining</dt><dd><span data-text="wait">Unknown</span> <time data-text="wait-at" data-bind="datetime:wait-at"></time></dd></div></dl>'
-            + '<details id="worker-descendants"><summary><span data-i18n="worker-descendants">Descendants:</span> <span data-text="descendants">Unknown</span></summary>'
-            + '<p data-no-descendants data-i18n="no-descendants">No descendants.</p><ul></ul></details>'
-            + '<details id="worker-accounting"><summary data-i18n="accounting-details">Accounting details</summary>'
-            + '<p data-i18n="accounting-scope">Worker and descendants, cumulative since this worker began. Unknown totals remain unknown; known subtotals are incomplete evidence.</p>'
-            + '<figure><table><thead><tr><th scope="col" data-i18n="quantity">Quantity</th><th scope="col" data-i18n="complete-total">Complete total</th><th scope="col" data-i18n="known-subtotal">Known subtotal</th></tr></thead><tbody>'
-            + accounting.map(([key, label]) => `<tr><th scope="row" data-i18n="usage-${key}">${label}</th><td data-text="usage-${key}">Unknown</td><td data-text="known-${key}">Unknown</td></tr>`).join("") + '</tbody></table></figure></details>'
-            + '<details id="workspace-activity"><summary data-i18n="workspace-activity">Workspace activity</summary>'
-            + '<p><span data-i18n="preparing-capabilities">Capabilities preparing:</span> <span data-text="preparation-count">Unknown</span></p><ul data-preparation></ul>'
-            + '<section data-derivation><dl><div><dt data-i18n="indexing-phase">Indexing</dt><dd data-text="activity-phase">Unknown</dd></div>'
-            + '<div><dt data-i18n="indexing-completed">Completed / total</dt><dd data-text="activity-counts">Unknown</dd></div>'
-            + '<div><dt data-i18n="indexing-percent">Percent</dt><dd data-text="activity-percent">Unknown</dd></div></dl><p data-text="activity-message"></p></section></details>'
-            + '<details id="worker-inbox"><summary><span data-i18n="unobserved-messages">Unobserved messages:</span> <span data-text="inbox">Unknown</span></summary>'
-            + '<p data-i18n="inbox-scope">Accepted messages the worker has not observed. Each retains the lifecycle of its receiving loop.</p><ol></ol></details>'
+            + '<ul aria-label="Worker status">'
+            + '<li data-status-field="yolo" aria-label="Automatic approval" title="Automatic approval"></li>'
+            + '<li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
+            + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><span data-text="model">No model</span><span data-text="effort"></span></li>'
+            + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'
+            + '<li data-status-field="usage" data-bind="aria-label:usage-label title:usage-label"><span data-text="input">?</span> <span data-text="output">?</span></li>'
+            + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li>'
+            + '<li data-status-field="context" data-bind="aria-label:context-label title:context-label"><span data-i18n="context-short">ctx</span> <span data-text="context"></span></li>'
+            + '<li data-status-field="curation" data-bind="aria-label:curation-label title:curation-label"><span data-i18n="curation-short">cur</span> <span data-text="curation"></span></li>'
+            + '<li data-status-field="descendants"><details id="worker-descendants"><summary data-bind="aria-label:descendants-label title:descendants-label"><span data-text="descendants">0</span></summary><ul></ul></details></li>'
+            + '<li data-status-field="gated" data-bind="aria-label:gated-label title:gated-label"><span data-text="gated">0</span></li>'
+            + '<li data-status-field="wait"><span data-i18n="wait-remaining">updates in</span> <time data-text="wait" data-bind="datetime:wait-at title:wait-at"></time></li>'
+            + '<li data-status-field="inbox" data-bind="aria-label:inbox-label title:inbox-label"><span data-text="inbox">0</span></li>'
+            + '<li data-status-field="preparation" data-text="preparation"></li>'
+            + '<li data-status-field="activity" data-text="activity" data-bind="title:activity-message"></li></ul>'
             + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
             + '<p data-text="connection-detail">Displayed values are no longer live.</p>'
             + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-bind="action:worker-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
-            + '</p></article></section>'
-            + '<section id="worker-streams" aria-label="Executor streams">'
+            + '</p></article></footer>';
+        return '<section id="worker-streams" aria-label="Executor streams">'
             + '<details><summary><span data-i18n="open-streams">Open streams:</span> <span data-text="stream-count">Unknown</span></summary>'
             + '<p data-no-streams data-i18n="no-open-streams">No open streams.</p><ul data-open-streams></ul></details>'
             + '<details data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
@@ -216,7 +209,7 @@ export default class Documents {
             + '<section id="worker-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
             + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'
-            + '<ol data-messages></ol></section>';
+            + '<ol data-messages></ol></section>' + footer;
     }
 
     /**

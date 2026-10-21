@@ -29,13 +29,22 @@ export default async function verifyStatus(t) {
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.presentState === "function");
                     const receive = (state, now = 2000) => page.evaluate(({ state, now }) => window.presentState(state, now), { state, now });
-                    const value = (key) => page.locator(`#worker-status [data-text="${key}"]`).textContent();
+                    const field = (key) => page.locator(`#worker-status [data-status-field="${key}"]`);
+                    const value = (key) => key === "lifecycle" ? field(key).getAttribute("aria-label") : page.locator(`#worker-status [data-text="${key}"]`).textContent();
+                    const glyph = (key) => field(key).evaluate((element) => getComputedStyle(element, "::before").content);
+                    assert.equal(await page.locator("#worker-status").evaluate((element) => element.tagName), "FOOTER");
+                    assert.equal(await page.locator("#worker-status > ul").isVisible(), false, "unknown state is not a row of invented zeros");
+                    assert.equal(await page.locator("#worker-status > [role=status]").isVisible(), true, "connection state remains visible before a gauge arrives");
                     await receive(initial);
                     const requestCount = requests.length;
-                    assert.equal(await value("model"), "Not selected");
-                    assert.equal(await value("context"), "Unknown / Unknown");
-                    assert.equal(await value("wait"), "None");
+                    assert.equal(await value("model"), "No model");
+                    assert.equal(await value("context"), "");
+                    assert.equal(await value("wait"), "");
                     assert.equal(await value("inbox"), "0");
+                    for (const key of ["yolo", "elapsed", "context", "curation", "descendants", "gated", "wait", "inbox", "preparation", "activity"]) {
+                        assert.equal(await field(key).isVisible(), false, `${key} has no empty status placeholder`);
+                    }
+                    assert.equal(await page.locator("#worker-status dl, #worker-status table, #worker-accounting, #workspace-activity, #worker-inbox").count(), 0);
                     assert.equal(await page.locator("#worker-folder").isVisible(), false);
                     assert.equal(await page.locator("#worker-workspace [role=img]").getAttribute("aria-label"), "Folderless workspace");
 
@@ -57,22 +66,26 @@ export default async function verifyStatus(t) {
                             costUsd: null, knownCostUsd: "0.0000000123" } };
                     active.budget = { contextTokens: 123, contextCapacity: 999, curationWeight: 432, curationBudget: 1000 };
                     await receive(active);
-                    assert.equal(await value("model"), "local — provider/model");
-                    assert.equal(await value("effort"), "high (default)");
-                    assert.equal(await value("wait"), "1m 3s");
-                    assert.equal(await value("children"), "2");
+                    assert.equal(await value("model"), "local");
+                    assert.equal(await value("effort"), "high");
+                    assert.equal(await field("model").getAttribute("aria-label"), "Model: provider/model; effort: high (default)");
+                    assert.equal(await value("wait"), "1m03s");
+                    assert.equal(await page.locator("#worker-descendants > summary").getAttribute("aria-label"), "Descendant workers: 4; active direct children: 2");
                     assert.equal(await value("gated"), "2");
                     assert.equal(await value("descendants"), "4");
-                    assert.equal(await value("context"), "123 / 999");
-                    assert.equal(await value("curation"), "432 / 1000");
-                    assert.equal(await value("input"), "Unknown");
-                    assert.equal(await value("cost"), "Unknown");
-                    assert.equal(await value("known-cost"), "0.0000000123");
-                    assert.equal(await value("known-reasoning"), "100");
-                    assert.equal(await value("activity-percent"), "65", "display supplied progress, not a local ratio");
+                    assert.equal(await value("context"), "123 (12%)");
+                    assert.equal(await field("context").getAttribute("aria-label"), "Current packet context: 123 / 999 tokens");
+                    assert.equal(await value("curation"), "432 (43%)");
+                    assert.equal(await value("input"), "999 + ?");
+                    assert.equal(await value("cost"), "<$0.0001 + ?");
+                    assert.equal(await field("cost").getAttribute("aria-label"), "Cumulative USD, worker and descendants: unknown total; known subtotal 0.0000000123.");
+                    assert.equal(await value("activity"), "indexing 65%", "display supplied progress, not a local ratio");
                     assert.equal(await value("inbox"), "2");
-                    assert.deepEqual(await page.locator("#worker-inbox [data-text=inbox-loop]").allTextContents(), ["8", "3"]);
-                    assert.deepEqual(await page.locator("#worker-inbox [data-text=inbox-lifecycle]").allTextContents(), ["running", "failed"]);
+                    assert.doesNotMatch(await page.locator("#worker-status").innerHTML(), /message:\/\/user\/first|client-first|data-known-|data-usage-/u);
+                    assert.match(await glyph("lifecycle"), /💤/u);
+                    assert.match(await glyph("model"), /🎲/u);
+                    assert.match(await field("cost").ariaSnapshot(), /unknown total; known subtotal 0.0000000123/u);
+                    assert.equal(await page.locator("#worker-status > ul [aria-live], #worker-status > ul [role=status]").count(), 0, "ticking gauges do not announce every second");
                     assert.equal(await page.locator("#worker-workspace [data-text=workspace-name]").textContent(), active.plurnk.workspace.name);
                     assert.equal(await page.locator("#worker-workspace a").getAttribute("href"), "/~/review%20%3Cscript%3E%26%40%25/");
                     assert.equal(await page.locator("#worker-directory [aria-current=page]").getAttribute("href"), "/~/review%20%3Cscript%3E%26%40%25@user/");
@@ -84,8 +97,10 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#worker-status").getAttribute("data-thread-id"), "7#user");
                     assert.equal(page.url(), url, "names update navigation, not browser history or attachment");
 
-                    for (const id of ["worker-accounting", "workspace-activity", "worker-inbox", "worker-descendants"]) await page.locator(`#${id} > summary`).click();
                     const family = page.locator("#worker-descendants");
+                    assert.equal(await family.evaluate((element) => element.open), false);
+                    assert.equal(await family.locator(":scope > ul").isVisible(), false, "the tree occupies no default visible space");
+                    await family.locator(":scope > summary").click();
                     assert.deepEqual(await family.locator(":scope > ul > li > a").allTextContents(), ["child", "parallel", "finished"]);
                     assert.equal(await family.locator('[data-descendant-id="11"] > details > summary').textContent(), "Children: 1");
                     assert.equal(await family.locator('[data-descendant-id="12"] > a').getAttribute("href"),
@@ -95,9 +110,8 @@ export default async function verifyStatus(t) {
                     assert.equal(await family.locator('[data-descendant-id="14"] > details').count(), 0);
                     await family.locator('[data-descendant-id="11"] > details > summary').click();
                     await page.evaluate(() => { window.descendantLink = document.querySelector('[data-descendant-id="11"] > a'); });
-                    assert.equal(await page.locator("[data-preparation] time").getAttribute("datetime"), "2026-10-19T12:34:56.000Z");
-                    assert.equal(await page.locator("[data-preparation] [data-text=preparation-alias]").textContent(), '<img src="/probe">');
-                    assert.equal(await value("activity-message"), '<script>malicious()</script>');
+                    assert.equal(await value("preparation"), 'publishing mcp/<img src="/probe">');
+                    assert.equal(await field("activity").getAttribute("title"), '<script>malicious()</script>');
                     assert.equal(await page.locator("#worker-status img, #worker-status script, #worker-workspace script").count(), 0);
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "status fits a narrow viewport");
                     await receive(active, 70_000);
@@ -105,7 +119,7 @@ export default async function verifyStatus(t) {
                         "clock updates do not replace a live tree");
                     assert.equal(await value("wait"), "0s");
                     assert.equal(await value("lifecycle"), "parked", "deadline expiry is not a locally authored wake");
-                    for (const id of ["worker-accounting", "workspace-activity", "worker-inbox"]) assert.equal(await page.locator(`#${id}`).evaluate((element) => element.open), true);
+                    assert.equal(await family.evaluate((element) => element.open), true);
                     await assert.rejects(receive({ ...active, plurnk: { ...active.plurnk, workspace: { ...active.plurnk.workspace, id: 8 } } }), /Worker state identifies a different workspace/u);
                     assert.equal(await value("lifecycle"), "parked", "a rejected identity cannot replace valid facts");
 
@@ -123,20 +137,17 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("descendants"), "5");
 
                     await receive(initial);
-                    assert.equal(await value("model"), "Not selected");
-                    assert.equal(await value("effort"), "Unspecified");
-                    assert.equal(await value("wait-at"), "");
-                    assert.equal(await page.locator("[data-text=wait-at]").getAttribute("datetime"), null);
-                    assert.equal(await value("context"), "Unknown / Unknown");
-                    assert.equal(await value("activity-phase"), "None");
-                    assert.equal(await value("activity-message"), "");
-                    assert.equal(await value("preparation-count"), "0");
-                    assert.equal(await page.locator("[data-preparation] li, #worker-inbox li").count(), 0);
-                    assert.equal(await value("known-reasoning"), "Unknown");
-                    assert.equal(await value("children"), "0");
+                    assert.equal(await value("model"), "No model");
+                    assert.equal(await value("effort"), "");
+                    assert.equal(await page.locator("[data-text=wait]").getAttribute("datetime"), null);
+                    assert.equal(await value("context"), "");
+                    assert.equal(await value("activity"), "");
+                    assert.equal(await value("preparation"), "");
+                    assert.equal(await field("activity").isVisible(), false);
+                    assert.equal(await field("preparation").isVisible(), false);
                     assert.equal(await value("gated"), "0");
                     assert.equal(await family.locator("li").count(), 0);
-                    assert.equal(await family.getByText("No descendants.", { exact: true }).isVisible(), true);
+                    assert.equal(await family.isVisible(), false);
                     assert.equal(await family.evaluate((el) => el.open), true, "a census replacement preserves the containing disclosure");
                     assert.equal(await page.locator("#worker-folder").isVisible(), false);
                     assert.equal(await page.locator("#worker-workspace a").getAttribute("href"), "/~/conversation/");

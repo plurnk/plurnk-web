@@ -58,7 +58,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.match(await selected.textContent(), /browser-fixture\/browser-fixture/u);
             assert.match(await (await submit("/effort")).textContent(), /high \(explicit\)/u);
             await page.reload();
-            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high (explicit)");
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high");
             assert.equal(await page.locator("#worker-command-results > ol > li").count(), 0, "command history is page-local");
             const capabilities = await submit("/capabilities");
             assert.deepEqual(await capabilities.locator("dt").allTextContents(), ["Service", "Workspace", "Effective"]);
@@ -93,11 +93,12 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await submit("/model browser low");
             const after = await submit("/effort");
             assert.match(await after.textContent(), /low \(explicit\)/u);
-            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent.includes("browser-fixture")
-                && document.querySelector("#worker-status [data-text=effort]")?.textContent === "low (explicit)");
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent === "browser"
+                && document.querySelector("#worker-status [data-text=effort]")?.textContent === "low");
             await page.reload();
-            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent.includes("browser-fixture"));
-            assert.equal(await page.locator("#worker-status [data-text=effort]").textContent(), "low (explicit)");
+            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent === "browser");
+            assert.equal(await page.locator("#worker-status [data-text=effort]").textContent(), "low");
+            assert.match(await page.locator('#worker-status [data-status-field="model"]').getAttribute("aria-label"), /browser-fixture\/browser-fixture; effort: low \(explicit\)/u);
             assert.equal(model.requests.length, 0);
             checkBrowser();
         }, { selector: null, env: { ...reasoning, PLURNK_MODEL: "" } }));
@@ -109,18 +110,18 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             const other = await context.newPage();
             await other.goto(path);
             await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-            assert.equal(await other.locator("#worker-status [data-text=effort]").textContent(), "adaptive (default)");
+            assert.equal(await other.locator("#worker-status [data-text=effort]").textContent(), "adaptive");
             await submit("/effort low");
             const fresh = await context.newPage();
             await fresh.goto(path);
             await fresh.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-            assert.equal(await fresh.locator("#worker-status [data-text=effort]").textContent(), "low (explicit)",
+            assert.equal(await fresh.locator("#worker-status [data-text=effort]").textContent(), "low",
                 "a fresh authoritative snapshot confirms the mutation");
             await Promise.all([page, other].map((view) => view.waitForFunction(
-                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "low (explicit)", undefined, { timeout: 5000 })));
+                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "low", undefined, { timeout: 5000 })));
             await submit("/model browser high");
             await Promise.all([page, other, fresh].map((view) => view.waitForFunction(
-                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high (explicit)", undefined, { timeout: 5000 })));
+                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high", undefined, { timeout: 5000 })));
             assert.equal(model.requests.length, 0);
             checkBrowser();
         }, { env: reasoning }));
