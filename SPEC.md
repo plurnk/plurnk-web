@@ -471,6 +471,20 @@ capability, persistence or execution policy. Commands require no inference.
 | Layout | Native unnumbered `ul` and content articles, preserving SDK order and authored Markdown list semantics, with details/summary only for intentional disclosure such as reasoning. No wrapper solely to reproduce protocol nesting, duplicate worker heading, chat bubbles, application classes or virtual-DOM framework. Long code, tables and payloads scroll within their content region on narrow screens. |
 | Connection | The existing connection notice governs whether displayed history is live. Only a supplied empty SDK collection says “No messages.” Unknown history and deliberately unrendered reasoning placeholders do not imply emptiness. A transport failure retains the last observed projection, never an invented empty or successfully completed conversation. |
 
+## §web-conversation-surfaces Conversation backgrounds
+
+| Entry | Surface |
+|---|---|
+| User content | Subtle green tint derived from the active Pico theme. |
+| Assistant prose and confirmed SEND bodies, including delivered tool-role replies | Ordinary Pico card surface. |
+| Other conversation entries, including assistant tool calls, NOTE and reasoning; live reasoning preview | Neutral Pico sectioning surface. |
+
+Existing role and operation attributes select the category in CSS; no additional
+markup, presentation field or JavaScript classification. An operation's header
+shares its body's background. Normal text and links retain at least 4.5:1 contrast
+in light and dark modes. Accessible identity and content remain independent of
+color. Non-conversation cards retain their existing Pico presentation.
+
 ## §web-operation-summary Shared operation summary
 
 | Boundary | Contract |
@@ -638,12 +652,13 @@ compilation may combine them without changing their cascade:
 |---|---|
 | `app-vendor.css` | Unmodified pinned Pico Classless Green, copied during build. |
 | `app-structure.css` | Readable page width, gutters and wrapping. |
-| `app-style.css` | Presentation through substrate tokens; brand accents and system monospace. |
-| `app-state.css` | Worker page width, observer connection/error presentation and native focus visibility. |
+| `app-style.css` | Presentation through substrate tokens; brand accents, system monospace and conversation surface colors. |
+| `app-state.css` | Worker page width, semantic background selection, observer connection/error presentation and native focus visibility. |
 
 Worker content, diagnostics and status inherit Pico's typography and colors.
-Additional worker CSS supplies geometry, overflow containment, declared glyphs
-and visibility—not a separate visual hierarchy or component theme. Layout uses
+Additional worker CSS supplies geometry, overflow containment, declared glyphs,
+visibility and the three backgrounds in {§web-conversation-surfaces}, not a
+separate component theme. Layout uses
 the substrate's spacing scale rather than a worker-specific compact scale.
 
 ## §web-language Source language

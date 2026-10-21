@@ -3,6 +3,8 @@
 An optional Plurnk daemon plugin serving native OTM documents at `/`.
 Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
+Conversation cards use a subtle green user tint, ordinary cards for model replies,
+and neutral backgrounds for operations, notes and reasoning.
 Requires a current stable browser; no legacy-browser compatibility layer is shipped.
 No additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
@@ -300,8 +302,8 @@ before production pruning, so references between layers remain visible:
 |---|---|
 | `app-vendor.css` | Generated, unmodified Pico substrate. |
 | `app-structure.css` | Reading width, viewport grid, composer sizing, gutters and wrapping. |
-| `app-style.css` | Substrate token overrides; brand accents and system monospace. |
-| `app-state.css` | Directory/worker width, glyphs, connection state and native focus visibility. |
+| `app-style.css` | Substrate token overrides; brand accents, system monospace and conversation surface colors. |
+| `app-state.css` | Directory/worker width, semantic background selection, glyphs, connection state and native focus visibility. |
 
 Authored CSS is checked with OTM's Stylelint rules. Content-renderer dependencies
 load their own vendor styles separately; sign-in uses only the page stylesheet.

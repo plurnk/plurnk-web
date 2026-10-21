@@ -7,6 +7,24 @@ header nav button:is(:hover, :focus-visible) {
     text-decoration: underline;
 }
 
+/* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
+#worker-conversation {
+    --pico-card-background-color: var(--plurnk-working-surface);
+    --pico-primary: var(--pico-primary-hover);
+}
+
+#worker-conversation :is([data-message-id] > article, [data-reasoning-preview]) {
+    --pico-card-sectioning-background-color: var(--pico-card-background-color);
+}
+
+#worker-conversation [data-message-role="user"] {
+    --pico-card-background-color: var(--plurnk-user-surface);
+}
+
+#worker-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]) {
+    --pico-card-background-color: var(--plurnk-reply-surface);
+}
+
 /* {§web-worker-input} Native controls and document state own their presentation. */
 button[form="worker-compose"]::before { content: "▶️" / ""; }
 button[form="worker-stop"]::before { content: "⏹️" / ""; }
