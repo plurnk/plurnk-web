@@ -58,6 +58,15 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
                 await submit(page);
                 assert.equal(requests.length, 1, "unanswered native required controls prevent a resume");
                 await answer(page);
+                const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
+                const original = await approval.getAttribute("aria-pressed");
+                await approval.click();
+                assert.notEqual(await approval.getAttribute("aria-pressed"), original);
+                await approval.click();
+                assert.equal(await approval.getAttribute("aria-pressed"), original);
+                assert.equal(await review(page).getByRole("textbox", { name: "Exact answer", exact: true }).inputValue(), exactAnswer.content,
+                    "approval mode changes do not clear question answers");
+                assert.equal(requests.length, 1, "toggling YOLO never submits an answered question");
                 await review(page).getByRole("spinbutton", { name: "count", exact: true }).fill("1.5");
                 await submit(page);
                 await review(page).getByRole("alert").filter({ hasText: /does not satisfy/u }).waitFor();

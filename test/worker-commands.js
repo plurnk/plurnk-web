@@ -25,6 +25,44 @@ const reasoning = {
 
 // {§web-worker-commands} Real shipped composer and public daemon actions, never model-authored commands.
 export default async function verifyWorkerCommands({ t, withDaemon }) {
+    await t.test("{§web-worker-approval} native status toggle shares /yolo without submitting a draft or inventing command history", () =>
+        inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            const { field, rows, submit, send } = composer(page);
+            const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
+            const sent = [];
+            page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") sent.push(request.postDataJSON()); });
+            assert.equal(await approval.getAttribute("aria-pressed"), "false");
+            await field.fill("Keep my unsent draft.");
+            await approval.click();
+            assert.equal(await approval.getAttribute("aria-pressed"), "true");
+            await approval.press("Space");
+            assert.equal(await approval.getAttribute("aria-pressed"), "false");
+            await approval.press("Enter");
+            assert.equal(await approval.getAttribute("aria-pressed"), "true");
+            assert.equal(await field.inputValue(), "Keep my unsent draft.");
+            assert.equal(await rows.count(), 0, "a native control needs no synthetic slash-command entry");
+            assert.equal(await page.locator("[data-messages] > li").count(), 0);
+            assert.equal(sent.length, 0);
+            assert.equal(model.requests.length, 0);
+            await submit("/yolo");
+            assert.equal(await approval.getAttribute("aria-pressed"), "false", "the command sees the same native toggle state");
+            await approval.click();
+            await page.reload();
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            assert.equal(await approval.getAttribute("aria-pressed"), "false", "reload restores configured policy");
+            await send("Lifecycle fixture: approval-toggle.");
+            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
+            await field.fill("Keep this draft during approval.");
+            await approval.click();
+            await page.getByText("Completed approval-toggle.", { exact: true }).waitFor();
+            assert.equal(await field.inputValue(), "Keep this draft during approval.");
+            assert.equal(await rows.count(), 0);
+            assert.equal(sent.length, 2, "one authored prompt and its standard approval resume");
+            assert.deepEqual(sent[1].resume.map(({ payload }) => payload), [{ decision: "accept", outcome: "client_yolo" }]);
+            assert.equal(model.requests.length, 2);
+            checkBrowser();
+        }, { env: { PLURNK_WEB_YOLO: "0" } }));
+
     await t.test("{§web-worker-commands} slash commands remain outside model messages and preserve daemon truth", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser, setup, workspace }) => {
             const sent = [];
@@ -137,11 +175,11 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.equal(await form.isVisible(), true, "an informational command never settles review");
             await submit("/yolo");
             await page.getByText("Completed approval-command.", { exact: true }).waitFor();
-            assert.equal(await page.locator("#worker-status").getAttribute("data-yolo"), "1");
+            assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "true");
             assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"));
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-            assert.equal(await page.locator("#worker-status").getAttribute("data-yolo"), "0", "reload restores configured client policy");
+            assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "false", "reload restores configured client policy");
             await send("Lifecycle fixture: held-command.");
             await page.getByText("Considering held-command.", { exact: true }).waitFor({ state: "attached" });
             const failed = await submit("/effort low", "error");

@@ -180,22 +180,22 @@ export default class Documents {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted worker must have a directory address.");
         const footer = `<footer id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
-            + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-yolo="${this.#yolo ? "1" : "0"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
+            + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + '<ul aria-label="Worker status">'
-            + '<li data-status-field="yolo" aria-label="Automatic approval" title="Automatic approval"></li>'
+            + `<li data-status-field="yolo"><button type="button" id="worker-yolo" aria-pressed="${this.#yolo}" aria-label="Automatic approval" title="/yolo"></button></li>`
             + '<li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
             + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><span data-text="model">No model</span><span data-text="effort"></span></li>'
             + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'
             + '<li data-status-field="usage" data-bind="aria-label:usage-label title:usage-label"><span data-text="input">?</span> <span data-text="output">?</span></li>'
-            + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li>'
             + '<li data-status-field="context" data-bind="aria-label:context-label title:context-label"><span data-text="context"></span></li>'
             + '<li data-status-field="descendants"><details id="worker-descendants"><summary data-bind="aria-label:descendants-label title:descendants-label"><span data-text="descendants">0</span></summary><ul></ul></details></li>'
             + '<li data-status-field="gated" data-bind="aria-label:gated-label title:gated-label"><span data-text="gated">0</span></li>'
             + '<li data-status-field="wait"><span data-i18n="wait-remaining">updates in</span> <time data-text="wait" data-bind="datetime:wait-at title:wait-at"></time></li>'
             + '<li data-status-field="inbox" data-bind="aria-label:inbox-label title:inbox-label"><span data-text="inbox">0</span></li>'
             + '<li data-status-field="preparation" data-text="preparation"></li>'
-            + '<li data-status-field="activity" data-text="activity" data-bind="title:activity-message"></li></ul>'
+            + '<li data-status-field="activity" data-text="activity" data-bind="title:activity-message"></li>'
+            + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li></ul>'
             + '<article role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
             + '<p data-text="connection-detail">Displayed values are no longer live.</p>'
             + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-bind="action:worker-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`

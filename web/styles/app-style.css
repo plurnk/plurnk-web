@@ -2,7 +2,8 @@
     --pico-font-family: var(--pico-font-family-monospace);
 }
 
-header nav button {
+header nav button,
+#worker-yolo {
     --pico-primary-background: transparent;
     --pico-primary-border: transparent;
     --pico-primary-hover-background: transparent;

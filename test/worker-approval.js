@@ -28,9 +28,8 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
     await t.test("{§web-worker-approval} configured YOLO accepts review once without another user message", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
-        assert.equal(await page.locator("#worker-status").getAttribute("data-yolo"), "1");
-        const approval = page.locator('[data-status-field="yolo"]');
-        assert.equal(await approval.getAttribute("aria-label"), "Automatic approval");
+        const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
+        assert.equal(await approval.getAttribute("aria-pressed"), "true");
         assert.equal(await approval.isVisible(), true);
         assert.equal(await approval.evaluate((element) => getComputedStyle(element, "::before").content), '"🔥" / ""');
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-automatic.");

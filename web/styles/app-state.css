@@ -53,7 +53,6 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
 #worker-folder[data-project-label=""],
 #worker-status:not([data-lifecycle]) > ul,
 #worker-status[data-connection="connected"] > [role="status"],
-#worker-status:not([data-yolo="1"]) [data-status-field="yolo"],
 #worker-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
 #worker-status:not([data-elapsed]) [data-status-field="elapsed"],
 #worker-status[data-elapsed=""] [data-status-field="elapsed"],
@@ -75,11 +74,10 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
 }
 
 /* {§web-worker-status} Status fields remain semantic; CSS owns their compact notation. */
-#worker-status [data-status-field="yolo"]::before { content: "🔥" / ""; }
-#worker-status [data-status-field="model"]::before { content: "🎲 " / ""; }
+#worker-yolo[aria-pressed="true"]::before { content: "🔥" / ""; }
+#worker-yolo[aria-pressed="false"]::before { content: "🐹" / ""; }
 #worker-status [data-text="input"]::before { content: "↓" / ""; }
 #worker-status [data-text="output"]::before { content: "↑" / ""; }
-#worker-status [data-status-field="context"]::after { content: " 📜" / ""; }
 #worker-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }
 #worker-status [data-text="effort"]:not(:empty)::after { content: ")" / ""; }
 #worker-descendants > summary::before { content: "🐜 " / ""; }

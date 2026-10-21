@@ -17,7 +17,7 @@ The message box also accepts `/help`, `/models [search]`, `/model [selector] [ef
 to the model: their results appear separately from conversation. Model, effort
 and capability changes use daemon actions and retain its validation and active-work
 restrictions. `/capabilities` shows service, workspace and effective policy; a JSON
-argument replaces the workspace policy. `/yolo` changes only this page's automatic
+argument replaces the workspace policy. `/yolo` or the 🔥/🐹 status toggle changes only this page's automatic
 approval preference, including pending proposals; questions still require answers.
 Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending review.
 `/models` lists aliases and a bounded catalog page; narrow its search for more matches.
