@@ -153,6 +153,8 @@ presentation-relevant metadata, not nested protocol inspectors. Reasoning retain
 its native disclosure; opening it does not start work. Markdown is sanitized, raw
 HTML stays text and images become links. SEND bodies use that same Markdown renderer;
 NOTE, reasoning and ordinary operation evidence remain literal preformatted text.
+Long lines wrap and settled entries grow with their content; explicit code, tables,
+formulas and diagrams scroll locally when wider than the viewport.
 NOTE retains category and attribution semantics without an enclosing assistant
 article, a duplicate arguments view or a body copy in attributes.
 HttpAgent owns live messages; archival pages are read-only presentation. Neither
