@@ -312,7 +312,8 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             assert.ok(["one", "two"].includes(worker), worker);
             assert.ok(!seen.includes(worker));
             seen.push(worker);
-            assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isDisabled(), true, "the idle parent's Stop cannot cancel a child");
+            assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).count(), 0, "a child's pending approval does not expose Stop on its idle parent");
+            assert.equal(await page.getByRole("button", { name: "Stop", exact: true, includeHidden: true }).isDisabled(), true, "the idle parent's Stop cannot cancel a child");
             await group.getByRole("radio", { name: "Accept", exact: true }).check();
             await page.getByRole("button", { name: "Submit responses", exact: true }).click();
             // Each accepted child finishes independently of the owner's already-finished loop.

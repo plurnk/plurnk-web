@@ -69,7 +69,7 @@ AG-UI access credentials to a signed-in browser. OAuth refresh credentials stay
 server-side; rotation and revocation use the daemon's authority.
 
 Worker pages passively connect through the official HttpAgent. A compact footer
-beside the composer shows approval mode, lifecycle, model/effort, latest-loop
+above the message field shows approval mode, lifecycle, model/effort, latest-loop
 elapsed time, and cumulative worker-and-descendant tokens and cost. Unknown totals
 stay `?`, not zero; known partial amounts retain `+ ?`. Field descriptions preserve
 exact accounting behind the compact figures. A finished loop leaves the page watching

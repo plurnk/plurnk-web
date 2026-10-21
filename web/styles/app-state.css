@@ -8,8 +8,12 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 /* {§web-worker-input} Native controls and document state own their presentation. */
-#worker-compose button[type="submit"]::before { content: "▶️" / ""; }
-#worker-stop button[type="submit"]::before { content: "⏹️" / ""; }
+button[form="worker-compose"]::before { content: "▶️" / ""; }
+button[form="worker-stop"]::before { content: "⏹️" / ""; }
+
+[aria-label="Worker controls"]:not([data-live-work]) button[form="worker-stop"] {
+    display: none;
+}
 
 [aria-label="Worker controls"][data-command-error=""] > article,
 [aria-label="Worker controls"][data-message-status=""] > [role="status"] {

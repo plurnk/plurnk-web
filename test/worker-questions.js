@@ -244,7 +244,8 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await page.reload();
         await interrupted(page);
         assert.equal(await review(page).locator('[data-text="request-worker"]').textContent(), String(result.result.workerId), "rediscovery retains the requesting child's identity");
-        assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isDisabled(), true);
+        assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).count(), 0, "a child's question does not expose Stop on its idle parent");
+        assert.equal(await page.getByRole("button", { name: "Stop", exact: true, includeHidden: true }).isDisabled(), true);
         await answer(page);
         await submit(page);
         const childPage = await context.newPage();
