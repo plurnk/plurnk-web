@@ -18,6 +18,7 @@ import verifyStreams from "./streams-browser.js";
 import verifyActivity from "./activity-browser.js";
 import verifyCommands from "./commands-browser.js";
 import verifySemanticContent from "./semantic-browser.js";
+import verifyHistory from "./history-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -371,6 +372,7 @@ test("{§web-worker-status} {§web-worker-identity} public state projects throug
 test("{§web-page-shell} pinned shell and native multiline composer reflow", { timeout: 60_000 }, verifyShell);
 test("{§web-result-bodies} visible content loads securely without an inspection UI", { timeout: 60_000 }, verifyBodies);
 test("{§web-worker-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
+test("{§web-worker-history} opaque read-only paging through the official SDK", { timeout: 90_000 }, verifyHistory);
 test("{§web-worker-streams} observed executor outcomes and explicit output inspection", { timeout: 60_000 }, verifyStreams);
 test("{§web-worker-activity} non-conversation observations retain identity and explicit inspection", { timeout: 60_000 }, verifyActivity);
 test("{§web-worker-commands} isolated command delivery and literal results", { timeout: 60_000 }, verifyCommands);

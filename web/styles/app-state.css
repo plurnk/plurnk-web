@@ -177,3 +177,7 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
 [data-reasoning-preview]:has(> pre:empty) {
     display: none;
 }
+
+[data-history-boundary] [data-text="history-error"]:empty {
+    display: none;
+}

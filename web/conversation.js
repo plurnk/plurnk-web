@@ -1,6 +1,7 @@
 import { $, the } from "on_the_money";
 import markdown from "./markdown.js";
 import bodyReferences from "./body-references.js";
+import reasoningCoordinate from "./reasoning-coordinate.js";
 import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
 
 /** @typedef {import("@ag-ui/client").Message} Message */
@@ -73,13 +74,15 @@ export default function conversation(root, readBody) {
         });
         const keys = entries.map(({ message, call }) => JSON.stringify([message.id, call?.id ?? null]));
         const visibleIds = new Set(keys);
-        const rows = new Map(Array.from(list.children, (child) => {
+        const rows = new Map(Array.from(list.querySelectorAll(":scope > [data-message-id]"), (child) => {
             const row = /** @type {HTMLElement} */ (child);
             return [JSON.stringify([row.dataset.messageId, row.dataset.callId ?? null]), row];
         }));
         for (const [id, row] of rows) {
             if (!visibleIds.has(id)) row.remove();
         }
+        /** @type {Element | null} */
+        let previous = null;
         for (const [index, { message, call }] of entries.entries()) {
             let row = rows.get(keys[index]);
             if (row && row.dataset.messageRole !== message.role) {
@@ -132,9 +135,7 @@ export default function conversation(root, readBody) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
             }
             if (message.role === "reasoning") {
-                // {§web-worker-reasoning} The public body route names the durable loop/turn; message IDs do not.
-                const coordinate = linked ? /^\/agui\/\d+\/\d+\/reasoning\/(\d+)\/(\d+)$/u.exec(new URL(linked.url, location.href).pathname) : null;
-                const label = coordinate ? `L${coordinate[1]}/T${coordinate[2]}` : "";
+                const label = reasoningCoordinate(message.metadata?.plurnk?.coordinate);
                 the(row, { reasoningCoordinate: label, reasoningLabel: ["Reasoning", label].filter(Boolean).join(" · ") });
             }
             const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && op !== "SEND" ? ""
@@ -144,7 +145,11 @@ export default function conversation(root, readBody) {
                 : message.role !== "reasoning" && message.role !== "activity";
             body(row, content, rich, summarized ? "" : error, call ? `call-${call.id}` : `message-${message.id}`);
             operationSummary(row, summarized ? operationName : null, args, receipt, facts, error);
-            if (list.children[index] !== row) list.insertBefore(row, list.children[index] ?? null);
+            /** @type {Element | null} */
+            let position = previous === null ? list.firstElementChild : previous.nextElementSibling;
+            while (position && !position.hasAttribute("data-message-id")) position = position.nextElementSibling;
+            if (position !== row) list.insertBefore(row, position ?? null);
+            previous = row;
         }
         reference.prune();
         the(root, "conversation-empty", messages.length === 0);

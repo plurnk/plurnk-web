@@ -31,7 +31,7 @@ export default async function verifyBodies(t) {
                     });
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
-                    const address = new URL("/agui/7/9/log/1/2/3/READ", url).href;
+                    const address = new URL("/agui/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href;
                     const source = '<script>window.bodyExecuted=true</script><img src="/unasked"><form data-action="read-body">Not controls</form>';
                     let failures = 0;
                     const held = Promise.withResolvers();
@@ -79,7 +79,7 @@ export default async function verifyBodies(t) {
                     for (const refused of ["https://elsewhere.invalid/body", "javascript:alert(1)", new URL("/body", url).href.replace("://", "://user:pass@")]) {
                         await presentReference(refused);
                         await result.locator('[data-body-state="error"]').waitFor();
-                        assert.equal(await result.locator("[data-body-reference]").textContent(), "Body address must be on this daemon's origin.");
+                        assert.equal(await result.locator("[data-body-reference]").textContent(), "Read address must be on this daemon's origin.");
                     }
                     assert.equal(credentials, 1, "an inadmissible address obtains no bearer");
                     assert.equal(reads.length, 1);
@@ -87,7 +87,7 @@ export default async function verifyBodies(t) {
                     const missing = new URL("/agui/missing", url).href;
                     await presentReference(missing);
                     await result.locator('[data-body-state="error"]').waitFor();
-                    assert.equal(await result.locator("[data-body-reference]").textContent(), "Body request failed (404).");
+                    assert.equal(await result.locator("[data-body-reference]").textContent(), "Read request failed (404).");
                     // Firefox does not log a handled fetch's HTTP refusal to the console.
                     checkBrowser(engine === firefox ? [] : [httpFailure("/agui/missing", 404)]);
                     await result.getByRole("button", { name: "Retry", exact: true }).click();

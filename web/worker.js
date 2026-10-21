@@ -2,11 +2,12 @@ import { $, on, the } from "on_the_money";
 import WorkerAgent, { interactionTools, randomUUID } from "./worker-agent.js";
 import { clocks } from "./worker-status.js";
 import workerState from "./worker-state.js";
-import conversation from "./conversation.js";
+import workerHistory from "./worker-history.js";
 import reviewRequests from "./worker-review.js";
 import diagnostics from "./worker-diagnostics.js";
 import accessHeaders from "./access-headers.js";
 import readBody from "./read-body.js";
+import readHistory from "./read-history.js";
 import reasoningPreview from "./reasoning-preview.js";
 import workerStreams from "./worker-streams.js";
 import readEntry from "./read-entry.js";
@@ -40,7 +41,7 @@ export default function observeWorker(element) {
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
     const main = $("#main");
-    if (!main) throw new Error("Worker document has no main region.");
+    if (!(main instanceof HTMLElement)) throw new Error("Worker document has no main region.");
     const controls = $.clone(element, "#worker-controls");
     const feedback = $.clone(main, "#worker-feedback", { position: "afterbegin" });
     const notice = $("#worker-connection");
@@ -56,7 +57,8 @@ export default function observeWorker(element) {
     const draft = field;
     the(feedback, "message-status", "");
     let resources = new AbortController();
-    const present = conversation(history, (address) => readBody(address, auth, resources.signal));
+    const transcript = workerHistory(history, main, (address) => readBody(address, auth, resources.signal),
+        (address, signal) => readHistory(address, auth, AbortSignal.any([signal, resources.signal])));
     const preview = reasoningPreview(history, Number(element.dataset.reasoningPreviewChars));
     const diagnosticList = $("#worker-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
@@ -163,12 +165,14 @@ export default function observeWorker(element) {
                         await streams.consume(event);
                         observeActivity(event);
                     },
-                    onMessagesChanged: ({ messages }) => { if (!signal.aborted) present(messages); },
+                    onMessagesChanged: ({ messages }) => { if (!signal.aborted) transcript.present(messages); },
                     onTextMessageStartEvent: ({ event }) => {
                         if (!signal.aborted && event.role === "user") acknowledged(event.messageId);
                     },
                     onMessagesSnapshotEvent: ({ event }) => {
-                        if (signal.aborted || !pending) return;
+                        if (signal.aborted) return;
+                        transcript.snapshot(event);
+                        if (!pending) return;
                         if (event.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
                         else if (!submission) {
                             pending.retryable = true;
@@ -336,6 +340,7 @@ export default function observeWorker(element) {
     });
 
     window.onpagehide = () => {
+        transcript.pause();
         preview.clear();
         resources.abort();
         delivery?.controller.abort();
@@ -345,6 +350,7 @@ export default function observeWorker(element) {
     window.onpageshow = (event) => {
         if (event.persisted) {
             resources = new AbortController();
+            transcript.resume();
             connect();
         }
     };

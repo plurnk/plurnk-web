@@ -274,7 +274,12 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.equal(requests.some((input) => input.forwardedProps?.plurnk?.action), false);
         await observer.reload();
         await observer.getByText("Completed held-close-input.", { exact: true }).waitFor();
-        assert.equal(await observer.locator('[data-message-role="user"]').count(), 3);
+        const arrivals = () => observer.locator('[data-message-role="user"]').evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
+        const sent = requests.map(({ messages }) => messages.at(-1).id);
+        assert.deepEqual(await arrivals(), sent.slice(-2), "reattachment uses the daemon's two-loop window");
+        await observer.getByRole("button", { name: "Load previous loop" }).click();
+        await observer.getByText("Completed admission.", { exact: true }).waitFor();
+        assert.deepEqual(await arrivals(), sent, "every accepted message remains readable after both departures");
         checkBrowser();
     }, { authenticated: true }));
 

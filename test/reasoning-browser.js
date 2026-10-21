@@ -20,7 +20,7 @@ export default async function verifyReasoning(t) {
                         credentials++;
                         return route.fulfill({ json: { token_type: "Bearer", access_token: "reasoning-test" } });
                     });
-                    await page.route("**/agui/7/9/reasoning/1/3", (route) => {
+                    await page.route("**/agui/7/9/entry?target=*", (route) => {
                         reads.push(route.request().headers().authorization);
                         return route.fulfill({ contentType: "text/plain", body });
                     });
@@ -34,7 +34,8 @@ export default async function verifyReasoning(t) {
                     await page.evaluate((message) => window.present([message]), message);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "empty attempt messages are not empty history disclosures");
                     assert.equal(await preview.isVisible(), false);
-                    await consume({ type: "REASONING_MESSAGE_START", messageId: message.id });
+                    await consume({ type: "REASONING_MESSAGE_START", messageId: message.id, metadata: { plurnk: { coordinate: "1/3" } } });
+                    assert.equal(await preview.locator("header").textContent(), "L1/T3");
                     await delta(message.id, "A provisional ");
                     await delta(message.id, "hypothesis.");
                     assert.equal(await preview.isVisible(), true);
@@ -55,7 +56,7 @@ export default async function verifyReasoning(t) {
                     await consume({ type: "REASONING_MESSAGE_END", messageId: message.id });
                     assert.equal(await text.textContent(), "");
                     assert.equal(await preview.isVisible(), false);
-                    const linked = { ...message, metadata: { plurnk: { body: { url: "/agui/7/9/reasoning/1/3", mimeType: "text/plain" } } } };
+                    const linked = { ...message, metadata: { plurnk: { coordinate: "1/3", body: { url: "/agui/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" } } } };
                     await page.evaluate((message) => { window.messages = [message]; window.present(window.messages); }, linked);
                     assert.equal(await page.locator('[data-message-id="attempt"] [data-body-reference]').count(), 1,
                         "late metadata on an empty SDK reasoning message must expose its body");

@@ -1,4 +1,5 @@
 import { $, the } from "on_the_money";
+import reasoningCoordinate from "./reasoning-coordinate.js";
 
 /** {§web-worker-reasoning} One bounded presentation outlet, never SDK message content.
  * @param {HTMLElement} root @param {number} limit
@@ -9,7 +10,7 @@ export default function reasoningPreview(root, limit) {
     const scroll = $(outlet, "pre");
     if (!(scroll instanceof HTMLElement)) throw new Error("Reasoning preview has no text outlet.");
     const clear = () => {
-        the(outlet, "reasoning-id", "");
+        the(outlet, { reasoningId: "", reasoningCoordinate: "" });
         scroll.replaceChildren();
     };
     clear();
@@ -24,7 +25,7 @@ export default function reasoningPreview(root, limit) {
                 const { messageId, metadata } = /** @type {import("@ag-ui/client").ReasoningMessageStartEvent} */ (event);
                 if (!metadata?.plurnk?.body) {
                     clear();
-                    the(outlet, "reasoning-id", messageId);
+                    the(outlet, { reasoningId: messageId, reasoningCoordinate: reasoningCoordinate(metadata?.plurnk?.coordinate) });
                 }
             } else if (event.type === "REASONING_MESSAGE_END") {
                 if (/** @type {import("@ag-ui/client").ReasoningMessageEndEvent} */ (event).messageId === the(outlet, "reasoning-id")) clear();

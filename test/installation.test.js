@@ -24,6 +24,7 @@ import verifyWorkerStreams from "./worker-streams.js";
 import verifyWorkerActivity from "./worker-activity.js";
 import verifyWorkerCommands from "./worker-commands.js";
 import verifyWorkerInput from "./worker-input.js";
+import verifyWorkerHistory from "./worker-history.js";
 import verifyWorkerApproval from "./worker-approval.js";
 import verifyWorkerQuestions from "./worker-questions.js";
 import verifySharedReview from "./shared-review.js";
@@ -238,6 +239,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     await verifyWorkerActivity({ t, withDaemon });
     await verifyWorkerCommands({ t, withDaemon });
     await verifyWorkerInput({ t, withDaemon });
+    await verifyWorkerHistory({ t, withDaemon });
     await verifyWorkerApproval({ t, withDaemon });
     await verifyWorkerQuestions({ t, withDaemon });
     await verifySharedReview({ t, withDaemon, consumer });

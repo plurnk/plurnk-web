@@ -47,7 +47,7 @@ export default async function verifyActivity(t) {
                         origin: "_plurnk", op: "READ", source: null, state: "resolved", status_rx: 200,
                         tx: { target: { raw: "evidence.html" }, aside: "Inspect evidence" },
                         rx: { status: 200, range: { unit: "line", total: 2, requested: [1, -1], returned: [1, 2] } }, attrs: {},
-                        body: { url: new URL("/agui/7/9/log/1/2/3/READ", url).href, mimeType: "text/html" },
+                        body: { url: new URL("/agui/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href, mimeType: "text/html" },
                     } };
                     await receive(ambient);
                     assert.equal(reads.length, 0);
@@ -85,12 +85,12 @@ export default async function verifyActivity(t) {
                     assert.match(await rows.nth(1).locator("article").getAttribute("aria-label"), /^Rejected emission/u);
                     assert.equal(await rows.nth(1).innerText(), "");
                     await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12,
-                        reasoning: { url: new URL("/agui/7/12/reasoning/1/2", url).href, mimeType: "text/plain" } } });
+                        reasoning: { url: new URL("/agui/7/12/entry?target=reasoning%3A%2F%2Fchild%2F1%2F2", url).href, mimeType: "text/plain" } } });
                     const child = rows.nth(2);
                     assert.equal(await child.getAttribute("data-plurnk-worker"), "12");
                     assert.equal(await child.getAttribute("data-subagent-run-id"), "ops://child/7");
                     assert.equal(await child.locator("details > summary").textContent(), "Reasoning");
-                    assert.equal(reads.some((url) => url.includes("/reasoning/")), false, "closed foreign reasoning is not fetched");
+                    assert.equal(reads.some((url) => new URL(url).searchParams.get("target")?.startsWith("reasoning:")), false, "closed foreign reasoning is not fetched");
                     await child.locator("details > summary").click();
                     const body = child.locator("[data-body-reference]");
                     await body.scrollIntoViewIfNeeded();
@@ -129,11 +129,11 @@ export default async function verifyActivity(t) {
                     const beforeCredentials = credentials;
                     await setBody("https://elsewhere.invalid/body");
                     await child.locator('[data-body-state="error"]').waitFor();
-                    assert.equal(await body.textContent(), "Body address must be on this daemon's origin.");
+                    assert.equal(await body.textContent(), "Read address must be on this daemon's origin.");
                     assert.equal(credentials, beforeCredentials);
                     await setBody(new URL("/agui/failed", url).href);
                     await child.locator('[data-body-state="error"]').waitFor();
-                    assert.equal(await body.textContent(), "Body request failed (404).");
+                    assert.equal(await body.textContent(), "Read request failed (404).");
                     checkBrowser(engine === firefox ? [] : [httpFailure("/agui/failed", 404)]);
                     await child.getByRole("button", { name: "Retry", exact: true }).click();
                     await child.locator('[data-body-state="loaded"]').waitFor();
