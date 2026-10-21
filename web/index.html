@@ -134,43 +134,35 @@
     </template>
     <!-- {§web-worker-settings} Native disclosures and forms reuse the command action boundary. -->
     <template id="model-settings">
-        <article id="worker-model-settings" aria-labelledby="model-settings-title" hidden>
-            <header><h2 id="model-settings-title" data-i18n="models">Models</h2></header>
-            <form data-model-search>
-                <label><span data-i18n="search-models">Search models</span><input type="search" name="search"></label>
-                <button type="submit" data-bind="disabled:settings-pending" data-i18n="search">Search</button>
-            </form>
-            <p data-text="catalog-summary"></p>
-            <form data-setting="model">
-                <fieldset disabled data-bind="disabled:selection-unavailable">
-                    <label for="worker-model-choice" data-i18n="model-selector">Model</label><select id="worker-model-choice" name="selection" required>
-                        <option value="" data-i18n="choose-model">Choose a model</option>
-                        <optgroup label="Aliases" data-alias-options></optgroup>
-                        <optgroup label="Catalog" data-catalog-options></optgroup>
-                    </select>
-                    <button type="submit" data-i18n="apply">Apply</button>
+        <article id="worker-model-settings" aria-label="Model selection" tabindex="-1" hidden>
+            <form data-setting="model" data-bind="aria-busy:settings-pending">
+                <input id="worker-model-choice" type="search" name="selection" list="worker-model-options" aria-label="Search Models" placeholder="Search Models" autocomplete="off" spellcheck="false" required data-bind="disabled:settings-pending">
+                <datalist id="worker-model-options"></datalist>
+                <fieldset role="group">
+                    <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
+                    <button type="submit" data-bind="disabled:selection-unavailable" data-i18n="select-model">Select Model</button>
                 </fieldset>
             </form>
             <p role="status" data-text="settings-message"></p>
             <p data-text="settings-recovery"></p>
-            <footer><button type="button" data-close-settings data-i18n="close">Close</button></footer>
         </article>
     </template>
     <template id="effort-settings">
-        <article id="worker-effort-settings" aria-labelledby="effort-settings-title" tabindex="-1" hidden>
-            <header><h2 id="effort-settings-title" data-i18n="effort">Effort</h2></header>
-            <form data-setting="effort">
-                <fieldset disabled data-bind="disabled:selection-unavailable">
-                    <label for="worker-effort-choice" data-i18n="effort">Effort</label><select id="worker-effort-choice" name="selection" required></select>
-                    <button type="submit" data-i18n="apply">Apply</button>
+        <article id="worker-effort-settings" aria-label="Effort selection" tabindex="-1" hidden>
+            <form data-setting="effort" data-bind="aria-busy:settings-pending">
+                <select id="worker-effort-choice" name="selection" aria-label="Reasoning Effort" required disabled data-bind="disabled:selection-unavailable">
+                    <option value="" disabled selected data-i18n="reasoning-effort">Reasoning Effort</option>
+                </select>
+                <fieldset role="group">
+                    <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
+                    <button type="submit" disabled data-bind="disabled:selection-unavailable" data-i18n="select-effort">Select Effort</button>
                 </fieldset>
             </form>
             <p role="status" data-text="settings-message"></p>
             <p data-text="settings-recovery"></p>
-            <footer><button type="button" data-close-settings data-i18n="close">Close</button></footer>
         </article>
     </template>
-    <template id="setting-option"><option data-bind="value:option-value" data-text="option-label"></option></template>
+    <template id="setting-option"><option data-bind="value:option-value disabled:option-disabled" data-text="option-label"></option></template>
     <!-- {§web-worker-commands} Command results are local presentation, not conversation messages. -->
     <template id="command-results">
         <section id="worker-command-results" aria-label="Command results">

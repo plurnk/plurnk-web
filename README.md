@@ -21,8 +21,9 @@ argument replaces the workspace policy. `/yolo` or the 🔥/🐹 status toggle c
 approval preference, including pending proposals; questions still require answers.
 Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending review.
 `/models` lists aliases and a bounded catalog page; narrow its search for more matches.
-Click the status model or effort to open its native selection form. Search reads
-the catalog; Apply makes the change through the same daemon actions as the commands.
+Click the status model or effort to open its form below the conversation. Model
+search offers native suggestions, or accepts an exact alias/provider-model.
+Select Model / Select Effort applies the choice and closes the form; Cancel dismisses it.
 The workspace navigation tree shows kinds and lifecycles at page load, with child
 branches collapsed. It is navigation, not a live subscription to child transcripts.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.

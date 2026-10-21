@@ -30,7 +30,7 @@ test("{§web-worker-approval} the worker document projects its resolved approval
         }, false)).toString();
         assert.ok(html.includes(`id="worker-yolo" aria-pressed="${yolo}"`));
         assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-worker-reasoning} the document carries its supplied preview limit");
-        assert.ok(html.includes('aria-label="Automatic approval" title="/yolo"'));
+        assert.ok(html.includes(`aria-label="Automatic approval" title="${yolo ? "Auto" : "Manual"} Approval (/yolo)"`));
         assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
     }
 });

@@ -4,11 +4,11 @@ import managementAction from "../web/management-action.js";
 import workerSettings from "../web/worker-settings.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
-const controls = $.clone("#main", "#worker-controls");
+$.clone("#worker-status", "#worker-controls");
 const lifetime = new AbortController();
 let automatic = false;
-const call = (kind, params = {}) => managementAction(kind, params, "7#user", "session", lifetime.signal);
-const command = workerCommands(controls, {
+const call = (kind, params = {}, signal = lifetime.signal) => managementAction(kind, params, "7#user", "session", signal);
+const command = workerCommands($("#main"), {
     call,
     toggleYolo: async () => { automatic = !automatic; return automatic; },
     stop: async () => "Stop requested.",
