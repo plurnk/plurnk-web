@@ -115,11 +115,12 @@
         <section aria-label="Worker controls" data-command-error="">
             <form id="worker-compose">
                 <textarea id="worker-message" name="message" aria-label="Message" rows="3" required></textarea>
-                <button type="submit" disabled data-bind="disabled:send-unavailable" aria-label="Send" title="Send"></button>
+                <fieldset role="group" aria-label="Worker actions">
+                    <button type="submit" form="worker-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" title="Send"></button>
+                    <button type="submit" form="worker-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
+                </fieldset>
             </form>
-            <form id="worker-stop">
-                <button type="submit" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
-            </form>
+            <form id="worker-stop"></form>
             <p role="status" data-text="message-status">Connect to send a message.</p>
             <article role="alert" data-command-error>
                 <header><span aria-hidden="true" data-text="warning-icon">⚠️</span> <strong data-i18n="request-failed">Request failed</strong></header>

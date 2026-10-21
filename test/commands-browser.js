@@ -43,11 +43,42 @@ export default async function verifyCommands(t) {
                     assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
                     assert.equal(await page.locator('label[for="worker-message"]').count(), 0, "the textarea keeps its name without a visible title");
                     for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"]]) {
-                        const button = page.getByRole("button", { name, exact: true });
+                        const button = page.getByRole("button", { name, exact: true, includeHidden: true });
                         assert.equal(await button.getAttribute("title"), name);
                         assert.equal(await button.innerText(), "");
                         assert.ok((await button.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
                     }
+                    const send = page.getByRole("button", { name: "Send", exact: true });
+                    const stop = page.getByRole("button", { name: "Stop", exact: true, includeHidden: true });
+                    assert.equal(await stop.isVisible(), false, "no Stop is presented without known live work");
+                    const actions = page.getByRole("group", { name: "Worker actions", exact: true });
+                    assert.equal(await actions.locator("button").count(), 2);
+                    assert.equal(await send.evaluate((button) => button.form.id), "worker-compose");
+                    assert.equal(await stop.evaluate((button) => button.form.id), "worker-stop", "Stop has independent native submission, not reset semantics");
+                    assert.equal(await stop.getAttribute("type"), "submit");
+                    await page.locator('[aria-label="Worker controls"]').evaluate((element) => element.setAttribute("data-live-work", ""));
+                    assert.equal(await stop.isVisible(), true, "known live work remains visible even while Stop is unavailable");
+                    assert.equal(await stop.isDisabled(), true);
+                    for (const colorScheme of ["light", "dark"]) {
+                        await page.emulateMedia({ colorScheme });
+                        assert.equal(await stop.evaluate((button) => {
+                            const style = getComputedStyle(button);
+                            return ["background", "border", "hover-background", "hover-border", "inverse", "focus"]
+                                .every((token) => style.getPropertyValue(`--pico-primary-${token}`) === style.getPropertyValue(`--pico-secondary-${token}`));
+                        }), true, "Stop inherits Pico's secondary palette, including hover and focus");
+                    }
+                    for (const width of [320, 1280]) {
+                        await page.setViewportSize({ width, height: 700 });
+                        const sendBox = await send.boundingBox();
+                        const stopBox = await stop.boundingBox();
+                        assert.equal(sendBox.y, stopBox.y, "Pico groups both actions on the same row");
+                        const margin = await stop.evaluate((button) => parseFloat(getComputedStyle(button).marginLeft));
+                        assert.ok(sendBox.x < stopBox.x);
+                        assert.equal(Math.round(sendBox.x + sendBox.width + margin), Math.round(stopBox.x),
+                            "controls are adjacent with Pico's native joining margin");
+                        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                    }
+                    await page.setViewportSize({ width: 320, height: 700 });
                     const command = (text) => page.evaluate((text) => window.command(text), text);
                     const rows = page.locator("#worker-command-results > ul > li");
                     for (const text of ["/", "  /help /model \n", "/yolo"]) assert.equal(await command(text), true);

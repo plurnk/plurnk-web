@@ -34,7 +34,7 @@ export default function observeWorker(element) {
     if (!threadId || (auth !== "session" && auth !== "none") || (yolo !== "1" && yolo !== "0")) throw new Error("Worker document metadata is incomplete.");
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
-    const controls = $.clone(element, "#worker-controls", { position: "beforebegin" });
+    const controls = $.clone(element, "#worker-controls", { position: "afterend" });
     const review = reviewRequests(controls, yolo === "1");
     const compose = $(controls, "#worker-compose");
     const stop = $(controls, "#worker-stop");
@@ -90,6 +90,7 @@ export default function observeWorker(element) {
         const live = status && ["queued", "running", "parked"].includes(status.lifecycle);
         const commandPending = the(controls, "command-pending") !== null;
         the(controls, {
+            liveWork: live ? "" : null,
             sendUnavailable: (isCommand(draft.value) ? !commandPending
                 : current === "connected" && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",

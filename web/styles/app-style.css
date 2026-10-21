@@ -10,6 +10,16 @@ header nav button {
     --pico-primary-inverse: var(--pico-primary);
 }
 
+/* {§web-worker-input} Cancellation uses Pico's secondary control palette. */
+button[form="worker-stop"] {
+    --pico-primary-background: var(--pico-secondary-background);
+    --pico-primary-border: var(--pico-secondary-border);
+    --pico-primary-hover-background: var(--pico-secondary-hover-background);
+    --pico-primary-hover-border: var(--pico-secondary-hover-border);
+    --pico-primary-inverse: var(--pico-secondary-inverse);
+    --pico-primary-focus: var(--pico-secondary-focus);
+}
+
 :root:not([data-theme="dark"]),
 [data-theme="light"] {
     --pico-primary: #148800;

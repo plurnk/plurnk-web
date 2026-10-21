@@ -138,6 +138,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const countdown = await value(page, "wait");
                     await page.waitForFunction((previous) => document.querySelector('#worker-status [data-text="wait"]')?.textContent !== previous, countdown);
                     assert.equal(await value(page, "lifecycle"), "parked");
+                    assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isEnabled(), true, "parked work remains stoppable");
                     const liveConnectionCount = observations.length;
                     const next = await value(page, "elapsed");
                     await page.waitForFunction((previous) => document.querySelector('#worker-status [data-text="elapsed"]')?.textContent !== previous, next);
@@ -146,6 +147,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     proxy.drop();
                     await connection(page, "disconnected");
                     assert.equal(await value(page, "lifecycle"), "parked", "transport loss never settles the worker");
+                    assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isVisible(), true, "disconnection does not erase known live work");
+                    assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isDisabled(), true);
                     const frozen = { elapsed: await value(page, "elapsed"), wait: await value(page, "wait") };
                     await setTimeout(1100);
                     assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
@@ -157,6 +160,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
                     assert.equal(await value(page, "lifecycle"), "parked");
+                    assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isEnabled(), true, "reconnection restores explicit cancellation");
                     assert.equal(await deadline(page), until, "reattachment keeps the daemon deadline, not a new local timeout");
                     assert.notEqual(await value(page, "wait"), frozen.wait);
                     model.release("status-stream");
@@ -681,8 +685,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await family(page), "Descendant workers: 0; active direct children: 0");
                     assert.equal(await page.locator("#worker-descendants").isVisible(), false);
                     assert.equal(await page.locator('[data-status-field="preparation"]').isVisible(), false);
-                    assert.equal(await page.locator("#worker-status").evaluate((footer) => Boolean(document.querySelector('[aria-label="Worker controls"]').compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)), true,
-                        "the status footer follows the real composer in normal document flow");
+                    assert.equal(await page.locator("#worker-status").evaluate((footer) =>
+                        Boolean(document.querySelector("#worker-conversation").compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)
+                        && Boolean(footer.compareDocumentPosition(document.querySelector('[aria-label="Worker controls"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true,
+                    "status follows conversation and precedes the real composer in document order");
                     assert.deepEqual(await action("workspace.workers"), before);
                     assert.equal(model.requests.length, 0);
 
