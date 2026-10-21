@@ -19,6 +19,7 @@ export default async function verifyCommands(t) {
                     let credentialStatus = 200;
                     let result = { kind: "worker.model.get", ok: true, result: { model: null, spawnModel: null } };
                     let held = undefined;
+                    let delayed = undefined;
                     let catalog = undefined;
                     await page.route("**/auth/token", (route) => {
                         credentials++;
@@ -31,12 +32,15 @@ export default async function verifyCommands(t) {
                         assert.equal(route.request().headers().authorization, "Bearer command-fixture-token");
                         if (held) await held.promise;
                         const kind = input.forwardedProps.plurnk.action.kind;
+                        const wait = kind === "models.list" && input.forwardedProps.plurnk.action.search === delayed?.search ? delayed : undefined;
+                        if (wait) { wait.started.resolve(); await wait.release.promise; }
                         const outcome = catalog && kind === "providers.list" ? { kind, ok: true, result: { aliases: catalog.aliases } }
-                            : catalog && kind === "models.list" ? { kind, ok: true, result: catalog.page } : result;
+                            : catalog && kind === "models.list" ? { kind, ...(wait?.outcome ?? catalog.error ?? { ok: true, result: catalog.page }) } : result;
                         await route.fulfill({ contentType: "text/event-stream", body: [
                             { type: "RUN_STARTED", threadId: input.threadId, runId: input.runId },
                             { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, result: outcome },
                         ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+                        wait?.done.resolve();
                     });
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.command === "function");
@@ -115,39 +119,65 @@ export default async function verifyCommands(t) {
                     assert.equal(requests.at(-1).forwardedProps.plurnk.action.search, "fixture");
                     const modelButton = page.getByRole("button", { name: "Model", exact: true });
                     const modelPanel = page.locator("#worker-model-settings");
-                    const selectModel = modelPanel.getByLabel("Model", { exact: true });
+                    const selectModel = modelPanel.getByRole("combobox", { name: "Search Models", exact: true });
                     result = { kind: "worker.model.get", ok: true, result: { model: null } };
                     await modelButton.press("Enter");
-                    await modelPanel.getByRole("status").filter({ hasText: "Model: Not selected." }).waitFor();
+                    await modelPanel.locator('datalist option[value="fixture/small"]').waitFor({ state: "attached" });
                     assert.equal(await modelButton.getAttribute("aria-expanded"), "true");
                     assert.equal(await selectModel.inputValue(), "");
-                    assert.equal(await selectModel.locator('option[value="fixture/small"]').textContent(), `fixture/small — ${source} — Not configured`);
+                    assert.equal(await selectModel.getAttribute("placeholder"), "Search Models");
+                    assert.equal(await modelPanel.locator('datalist option[value="fixture/small"]').textContent(), `${source} — Not configured`);
                     assert.equal(await modelPanel.locator("script").count(), 0);
-                    assert.match(await modelPanel.locator("[data-text=catalog-summary]").textContent(), /1 of 2.*Narrow the search/u);
+                    assert.equal(await modelPanel.locator("header, footer, label, h2, select, [data-text=catalog-summary]").count(), 0);
+                    assert.deepEqual(await modelPanel.getByRole("button").allTextContents(), ["Cancel", "Select Model"]);
+                    assert.equal(await modelPanel.locator("p:visible").count(), 0, "no success or catalog-summary chatter");
+                    assert.equal(await modelPanel.evaluate((panel) => Boolean(document.querySelector("#worker-conversation").compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
                     assert.equal(await page.locator("main").evaluate((main) => main.scrollWidth <= main.clientWidth), true, "native model choices fit the narrow main region");
+                    delayed = { search: "stale", started: Promise.withResolvers(), release: Promise.withResolvers(), done: Promise.withResolvers(),
+                        outcome: { ok: false, problem: { type: "https://example.test/problems/catalog", title: "Stale search", status: 503, detail: "Stale failure." } } };
+                    await selectModel.fill("stale");
+                    await delayed.started.promise;
                     const beforeSearch = requests.length;
-                    await modelPanel.getByRole("searchbox", { name: "Search models", exact: true }).fill("missing");
-                    await modelPanel.getByRole("button", { name: "Search", exact: true }).click();
-                    await page.waitForFunction(() => !document.querySelector("#worker-model-settings").hasAttribute("data-settings-pending"));
+                    catalog.page = { items: [{ ...catalog.page.items[0], selector: "fixture/beyond-first-page", model: "beyond-first-page" }], offset: 0, total: 1 };
+                    await selectModel.fill("beyond-first-page");
+                    await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
                     assert.deepEqual(requests.slice(beforeSearch).map(({ forwardedProps }) => forwardedProps.plurnk.action.kind), ["providers.list", "models.list"]);
-                    assert.equal(requests.at(-1).forwardedProps.plurnk.action.search, "missing");
-                    assert.equal(await modelPanel.locator('[data-alias-options] > option').count(), 0);
-                    await selectModel.selectOption("fixture/small");
+                    assert.equal(requests.at(-1).forwardedProps.plurnk.action.search, "beyond-first-page");
+                    assert.equal(await modelPanel.locator('datalist option[value="local"]').count(), 0);
+                    delayed.release.resolve();
+                    await delayed.done.promise;
+                    assert.equal(await modelPanel.locator("p:visible").count(), 0, "superseded catalog failure cannot overwrite current suggestions");
+                    assert.equal(await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').count(), 1);
+                    delayed = undefined;
+                    catalog.error = { ok: false, problem: { type: "https://example.test/problems/catalog", title: "Catalog unavailable", status: 503, detail: "Catalog unavailable." } };
+                    await selectModel.fill("unavailable");
+                    await modelPanel.getByRole("status").filter({ hasText: "Catalog unavailable." }).waitFor();
+                    assert.equal(await selectModel.inputValue(), "unavailable");
+                    catalog.error = undefined;
+                    await selectModel.fill("fixture/not-in-catalog");
                     result = { kind: "worker.model.set", ok: false, problem: { type: "https://example.test/problems/config", title: "Not configured", status: 422, detail: "Credential required.", recovery: "Configure this provider." } };
                     const historyCount = await rows.count();
-                    await modelPanel.getByRole("button", { name: "Apply", exact: true }).click();
+                    await modelPanel.getByRole("button", { name: "Select Model", exact: true }).click();
                     await modelPanel.getByRole("status").filter({ hasText: "Credential required." }).waitFor();
-                    assert.equal(await selectModel.inputValue(), "fixture/small");
+                    assert.equal(await selectModel.inputValue(), "fixture/not-in-catalog", "suggestions are not an admission allowlist");
                     assert.equal(await modelPanel.locator("[data-text=settings-recovery]").textContent(), "Configure this provider.");
                     assert.equal(await rows.count(), historyCount, "native selection is not synthetic command history");
+                    assert.equal(await modelPanel.isVisible(), true, "refusal retains the form");
+                    result = { kind: "worker.model.set", ok: true, result: { provider: "fixture", model: "not-in-catalog" } };
+                    await modelPanel.getByRole("button", { name: "Select Model", exact: true }).click();
+                    await modelPanel.waitFor({ state: "hidden" });
+                    assert.equal(await modelButton.getAttribute("aria-expanded"), "false");
+                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true);
                     const effortButton = page.getByRole("button", { name: "Effort", exact: true });
                     const effortPanel = page.locator("#worker-effort-settings");
                     result = { kind: "worker.effort.get", ok: true, result: { effort: null, source: "default", supportedEfforts: [] } };
                     await effortButton.click();
                     await effortPanel.getByRole("status").filter({ hasText: "No supported efforts." }).waitFor();
                     assert.equal(await modelPanel.isVisible(), false);
-                    assert.equal(await effortPanel.getByRole("button", { name: "Apply", exact: true }).isDisabled(), true);
-                    await effortPanel.getByRole("button", { name: "Close", exact: true }).click();
+                    assert.equal(await effortPanel.getByRole("button", { name: "Select Effort", exact: true }).isDisabled(), true);
+                    assert.deepEqual(await effortPanel.getByRole("button").allTextContents(), ["Cancel", "Select Effort"]);
+                    assert.equal(await effortPanel.getByRole("combobox").locator('option[value=""]').textContent(), "Reasoning Effort");
+                    await effortPanel.getByRole("button", { name: "Cancel", exact: true }).click();
                     assert.equal(await effortButton.evaluate((button) => document.activeElement === button), true);
                     catalog.page = { items: [], offset: 0, total: 0 };
                     assert.equal(await command("/models absent"), true);

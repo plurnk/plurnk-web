@@ -183,7 +183,7 @@ export default class Documents {
             + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + '<div data-status-line><ul aria-label="Model controls">'
-            + `<li data-status-field="yolo"><button type="button" id="worker-yolo" aria-pressed="${this.#yolo}" aria-label="Automatic approval" title="/yolo"></button></li>`
+            + `<li data-status-field="yolo"><button type="button" id="worker-yolo" aria-pressed="${this.#yolo}" aria-label="Automatic approval" title="${this.#yolo ? "Auto" : "Manual"} Approval (/yolo)"></button></li>`
             + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="worker-model" aria-label="Model" aria-expanded="false" aria-controls="worker-model-settings"><span data-text="model">No model</span></button><button type="button" id="worker-effort" aria-label="Effort" aria-expanded="false" aria-controls="worker-effort-settings"><span data-text="effort"></span></button></li></ul>'
             + '<ul aria-label="Worker statistics"><li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
             + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'

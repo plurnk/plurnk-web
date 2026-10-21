@@ -42,40 +42,52 @@ ul:has(> [data-directory-entry]) {
     padding: 0;
 }
 
-/* Floats reserve both edges; the intrinsic-width breadcrumb clears them when it cannot fit. */
+/* {§web-page-shell} Breadcrumbs own overflow, never another fixed-header row. */
 body > header {
-    display: flow-root;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "brand breadcrumb menu";
+    align-items: center;
+    gap: var(--pico-spacing);
+    padding-block: var(--pico-nav-link-spacing-vertical);
 }
 
 body > header > a {
     display: flex;
-    float: inline-start;
+    grid-area: brand;
     align-items: center;
-    min-block-size: 4rem;
 }
 
 body > header > nav[aria-label="Main navigation"] {
-    float: inline-end;
-    inline-size: max-content;
+    grid-area: menu;
 }
 
 body > header > nav[aria-label] > ul {
-    min-block-size: 4rem;
+    flex-wrap: nowrap;
     margin-inline: 0;
 }
 
-body > header > nav[aria-label="Main navigation"] > ul {
-    flex-wrap: nowrap;
+body > header > nav[aria-label] li {
+    flex: 0 0 auto;
+    max-inline-size: none;
+    padding-block: 0;
 }
 
 body > header > nav[aria-label="breadcrumb"] {
-    inline-size: max-content;
-    max-inline-size: 100%;
-    margin-inline: auto;
+    position: relative;
+    grid-area: breadcrumb;
+    min-inline-size: 0;
+    overflow-x: auto;
+    white-space: nowrap;
 }
 
 body > header > nav[aria-label="breadcrumb"] > ul {
-    justify-content: center;
+    inline-size: max-content;
+    margin-inline: auto;
+}
+
+body > header > nav[aria-label="breadcrumb"] :is(a, [aria-current="page"]) {
+    display: inline-block;
 }
 
 header nav form,

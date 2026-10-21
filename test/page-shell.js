@@ -72,15 +72,11 @@ export default async function verifyPageShell(page, { title, kind }) {
             assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
             const crumb = await breadcrumb.boundingBox();
             const menu = await navigation.boundingBox();
-            if (Math.abs(crumb.y - logo.y) < 1) {
-                assert.ok(crumb.x >= logo.x + logo.width && crumb.x + crumb.width <= menu.x, "inline breadcrumb clears the controls");
-                const rows = await breadcrumb.locator("li").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().y));
-                assert.ok(Math.max(...rows) - Math.min(...rows) < 1, "inline breadcrumbs remain one complete row");
-            } else {
-                assert.ok(crumb.y >= Math.max(logo.y + logo.height, menu.y + menu.height), "wrapped breadcrumb clears both controls");
-                const header = await page.getByRole("banner").boundingBox();
-                assert.ok(Math.abs(crumb.x + crumb.width / 2 - header.x - header.width / 2) < 1, "wrapped breadcrumb is centered");
-            }
+            assert.ok(crumb.x >= logo.x + logo.width && crumb.x + crumb.width <= menu.x, "breadcrumb clears the controls");
+            assert.ok(Math.abs(crumb.y + crumb.height / 2 - logo.y - logo.height / 2) < 1,
+                "breadcrumb stays centered on the controls' row, never a second header row");
+            const rows = await breadcrumb.locator("li").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().y));
+            assert.ok(Math.max(...rows) - Math.min(...rows) < 1, "breadcrumb contents remain one horizontally scrollable row");
         }
     }
     for (const [role, name, glyph] of [["link", "Account", "⚙️"], ["button", "Sign out", "✖"]]) {

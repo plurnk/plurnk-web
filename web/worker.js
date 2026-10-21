@@ -82,6 +82,7 @@ export default function observeWorker(element) {
     const toggleYolo = async () => {
         const enabled = approval.getAttribute("aria-pressed") !== "true";
         approval.setAttribute("aria-pressed", String(enabled));
+        approval.title = `${enabled ? "Auto" : "Manual"} Approval (/yolo)`;
         const mode = review.automatic(enabled);
         const current = agent;
         if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
