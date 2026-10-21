@@ -63,6 +63,11 @@ decorative glyphs and arrangement belong to CSS. Structured records and renderin
 bookkeeping stay in JavaScript. Add elements for meaning or native behavior, not
 merely because a field is available.
 
+Structural work does not authorize an appearance pass. Preserve the substrate
+and explicitly agreed presentation; propose new visual choices separately.
+Putting a choice in classless CSS does not make it structural. The current
+styling boundary is {§web-document}.
+
 Current browsers are the target. That does not imply every API is available on
 every origin: secure-context and permission requirements are independent of
 browser age. Test the deployment surface a feature actually supports. A missing

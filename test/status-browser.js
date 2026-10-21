@@ -36,6 +36,15 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#worker-status > ul").isVisible(), false, "unknown state is not a row of invented zeros");
                     assert.equal(await page.locator("#worker-status > [role=status]").isVisible(), true, "connection state remains visible before a gauge arrives");
                     await receive(initial);
+                    for (const colorScheme of ["light", "dark"]) {
+                        await page.emulateMedia({ colorScheme });
+                        const appearance = await page.locator("#worker-status > ul").evaluate((element) => {
+                            const list = getComputedStyle(element);
+                            const parent = getComputedStyle(element.parentElement);
+                            return { list: [list.fontSize, list.color], parent: [parent.fontSize, parent.color] };
+                        });
+                        assert.deepEqual(appearance.list, appearance.parent, `${colorScheme}: the status inherits Pico typography and color`);
+                    }
                     const requestCount = requests.length;
                     assert.equal(await value("model"), "No model");
                     assert.equal(await value("context"), "");
