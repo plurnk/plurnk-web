@@ -1,5 +1,10 @@
 :root {
     --pico-font-family: var(--pico-font-family-monospace);
+
+    /* {§web-conversation-surfaces} Resolve theme surfaces before per-entry overrides. */
+    --plurnk-user-surface: color-mix(in srgb, var(--pico-primary) 8%, var(--pico-card-background-color));
+    --plurnk-reply-surface: var(--pico-card-background-color);
+    --plurnk-working-surface: var(--pico-card-sectioning-background-color);
 }
 
 header nav button,
