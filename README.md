@@ -138,7 +138,13 @@ validated before submission and by the daemon; local errors preserve your input.
 **Cancel this request** cancels that question, not the worker's other work.
 Refresh rediscovers pending questions but does not retain unsubmitted answers.
 
-Messages follow HttpAgent's order; unknown history is not shown as empty.
+The daemon supplies the recent conversation window. **Load previous loop** reads
+older history without adding it to model requests. Loaded pages remain for this
+visit; any gap after reconnection has the same explicit loading control. Prepending
+history preserves your reading position. New output follows the bottom only while
+you are there. Reloading starts from the current daemon window.
+
+Messages preserve daemon chronology; unknown history is not shown as empty.
 Content and calls are direct semantic entries with accessible names and
 presentation-relevant metadata, not nested protocol inspectors. Reasoning retains
 its native disclosure; opening it does not start work. Markdown is sanitized, raw
@@ -146,7 +152,8 @@ HTML stays text and images become links. SEND bodies use that same Markdown rend
 NOTE, reasoning and ordinary operation evidence remain literal preformatted text.
 NOTE retains category and attribution semantics without an enclosing assistant
 article, a duplicate arguments view or a body copy in attributes.
-The browser keeps no separate transcript or persistent conversation cache.
+HttpAgent owns live messages; archival pages are read-only presentation. Neither
+is saved in browser storage.
 
 Markdown footnotes use native reference and back-links within each rich message or SEND.
 Repeated references retain separate return links; definitions never leak between

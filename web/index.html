@@ -296,9 +296,17 @@
         </fieldset>
     </template>
     <!-- {§web-worker-conversation} Inert document-owned structure; HttpAgent supplies its values. -->
+    <template id="conversation-history">
+        <li data-history-boundary>
+            <form data-bind="aria-busy:history-pending">
+                <button type="submit" data-bind="disabled:history-pending" data-i18n="load-previous-loop">Load previous loop</button>
+                <p role="alert" data-text="history-error"></p>
+            </form>
+        </li>
+    </template>
     <template id="worker-reasoning-preview">
         <article data-reasoning-preview aria-label="Live reasoning">
-            <header></header>
+            <header data-text="reasoning-coordinate"></header>
             <pre></pre>
         </article>
     </template>

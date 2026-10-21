@@ -37,6 +37,10 @@ const value = (page, key) => key === "lifecycle"
 const family = (page) => page.locator("#worker-descendants > summary").getAttribute("aria-label");
 const deadline = (page) => page.locator('#worker-status [data-text="wait"]').getAttribute("datetime");
 const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: ${name}.` }];
+const entryRequest = (request, scheme) => {
+    const url = new URL(request.url());
+    return /\/agui\/\d+\/\d+\/entry$/u.test(url.pathname) && url.searchParams.get("target")?.startsWith(`${scheme}:`);
+};
 
 // {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
@@ -543,7 +547,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const reasoning = page.locator('[data-message-role="reasoning"]').first();
                     await reasoning.waitFor();
                     assert.equal(await reasoning.locator("details").getAttribute("open"), null);
-                    assert.equal(requests.some((request) => /\/reasoning\//u.test(new URL(request.url()).pathname)), false,
+                    assert.equal(requests.some((request) => entryRequest(request, "reasoning")), false,
                         "completed reasoning is a reference, not an automatic fetch");
                     await reasoning.locator("summary").click();
                     await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();
@@ -571,7 +575,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         .map(({ content }) => JSON.parse(content)).find(({ problem }) => problem?.title === "Entry not found");
                     assert.ok(missing, "the fixture actually produced a missing-entry Problem");
                     assert.ok((await readRows.locator('[data-plurnk-field="outcome"]').allTextContents()).some((text) => text.includes(missing.problem.detail)), "the real operation diagnostic is visible content");
-                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 0, "the browser does not fetch READ bodies for its summary");
+                    assert.equal(requests.filter((request) => entryRequest(request, "log")).length, 0, "the browser does not fetch READ bodies for its summary");
                     assert.equal(await readRows.locator("a, button, [data-body-reference]").count(), 0);
                     for (const colorScheme of ["light", "dark"]) {
                         await page.emulateMedia({ colorScheme });
@@ -604,9 +608,9 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(model.requests.length, 3, "two original calls and one explicit follow-up; replay and refresh create none");
                     assert.equal(await preview.isVisible(), false);
                     assert.equal(await page.locator('[data-message-role="reasoning"] [data-body-state="loaded"]').count(), 0);
-                    assert.equal(requests.filter((request) => /\/reasoning\//u.test(new URL(request.url()).pathname)).length, 1,
+                    assert.equal(requests.filter((request) => entryRequest(request, "reasoning")).length, 1,
                         "refresh does not re-fetch an inspected reasoning body");
-                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 0,
+                    assert.equal(requests.filter((request) => entryRequest(request, "log")).length, 0,
                         "reload does not fetch receipt bodies for summaries");
                     assert.deepEqual(model.errors, []);
                     assert.equal(await page.locator("#worker-conversation form, #worker-conversation textarea, #worker-conversation [contenteditable]").count(), 0);

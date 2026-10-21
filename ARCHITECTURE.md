@@ -12,7 +12,8 @@ do not confer ownership of daemon policy, identity or lifecycle.
 | Listener, mounts, module startup/shutdown | Plurnk host | Register through the public module seam; release module resources. |
 | Workspaces, workers, permissions, work and accounting | Daemon | Select and display supplied identities and facts; request explicit actions. |
 | Credential issuance, expiry, revocation and sign-in inventory | Daemon credential authority | Mediate the browser's grant; never create a second issuer or account database. |
-| AG-UI events, messages, interrupts and replay | HttpAgent | Use public SDK behavior; do not maintain a parallel protocol reducer or transcript. |
+| AG-UI events, live messages, interrupts and replay | HttpAgent | Use public SDK behavior; do not maintain a parallel protocol reducer. |
+| Conversation history boundaries and pages | Daemon | Display explicitly fetched read-only pages alongside the SDK window; never upload archival presentation as agent input. |
 | Document structure and ordinary interaction | Semantic HTML and native controls | Templates, links, lists, forms and disclosures. |
 | Presentation state | OTM attributes and native element state | Project facts; CSS handles visual consequences. JavaScript handles behavior CSS cannot express. |
 | Asset compilation and packaging | Vite and the module's build | Ship a complete local asset inventory; no runtime asset build or CDN. |
