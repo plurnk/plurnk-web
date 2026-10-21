@@ -13,6 +13,7 @@ import readEntry from "./read-entry.js";
 import activity from "./worker-activity.js";
 import managementAction from "./management-action.js";
 import workerCommands, { isCommand } from "./worker-commands.js";
+import workerSettings from "./worker-settings.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -38,8 +39,14 @@ export default function observeWorker(element) {
     }
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
-    const controls = $.clone(element, "#worker-controls", { position: "afterend" });
-    const review = reviewRequests(controls, approval.getAttribute("aria-pressed") === "true");
+    const main = $("#main");
+    if (!main) throw new Error("Worker document has no main region.");
+    const controls = $.clone(element, "#worker-controls");
+    const feedback = $.clone(main, "#worker-feedback", { position: "afterbegin" });
+    const notice = $("#worker-connection");
+    if (!notice) throw new Error("Worker document has no connection notice.");
+    const connectionNotice = notice;
+    const review = reviewRequests(main, approval.getAttribute("aria-pressed") === "true");
     const compose = $(controls, "#worker-compose");
     const stop = $(controls, "#worker-stop");
     const field = $(controls, "#worker-message");
@@ -47,7 +54,7 @@ export default function observeWorker(element) {
         throw new Error("Worker controls are incomplete.");
     }
     const draft = field;
-    the(controls, "message-status", "");
+    the(feedback, "message-status", "");
     let resources = new AbortController();
     const present = conversation(history, (address) => readBody(address, auth, resources.signal));
     const preview = reasoningPreview(history, Number(element.dataset.reasoningPreviewChars));
@@ -84,7 +91,8 @@ export default function observeWorker(element) {
         availability();
         return enabled;
     };
-    const runCommand = workerCommands(controls, { call: action, stop: cancelWork, toggleYolo });
+    const runCommand = workerCommands(main, { call: action, stop: cancelWork, toggleYolo });
+    workerSettings(main, element, action, () => resources.signal);
 
     function availability() {
         const current = the(element, "connection");
@@ -102,6 +110,7 @@ export default function observeWorker(element) {
     /** @param {string} current @param {string} label */
     function connection(current, label) {
         the(element, { connection: current, connectionLabel: label });
+        the(connectionNotice, "connection-label", label);
         availability();
     }
 
@@ -113,7 +122,7 @@ export default function observeWorker(element) {
         if (pending?.message.id !== id) return;
         if (draft.value === pending.message.content) draft.value = "";
         pending = undefined;
-        the(controls, { messageStatus: "", commandError: "" });
+        the(feedback, { messageStatus: "", commandError: "" });
         availability();
     }
 
@@ -162,7 +171,7 @@ export default function observeWorker(element) {
                         if (event.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
                         else if (!submission) {
                             pending.retryable = true;
-                            the(controls, { messageStatus: "Delivery remains unconfirmed. You may retry this draft.", commandError: "" });
+                            the(feedback, { messageStatus: "Delivery remains unconfirmed. You may retry this draft.", commandError: "" });
                             availability();
                         }
                     },
@@ -186,7 +195,7 @@ export default function observeWorker(element) {
                         terminal = details?.terminal !== undefined;
                         problem = details?.problem?.status;
                         settled = problem === 409 && SETTLED_INTERRUPTS.has(details?.problem?.type ?? "");
-                        if (terminal) the(controls, "command-error", event.message);
+                        if (terminal) the(feedback, "command-error", event.message);
                         else refusal = event.message;
                     },
                 };
@@ -203,12 +212,12 @@ export default function observeWorker(element) {
                         continue;
                     }
                     connection("interrupted", "Input required");
-                    the(element, "connection-detail", mode === "manual" ? "Review the pending requests below." : "This page cannot answer this interaction. Work remains pending.");
+                    the(connectionNotice, "connection-detail", mode === "manual" ? "Review the pending requests." : "This page cannot answer this interaction. Work remains pending.");
                     holding = true;
                     submission = undefined;
                     continue;
                 }
-                if (settled && submission?.resume) the(controls, "command-error", `Response not accepted: ${refusal}`);
+                if (settled && submission?.resume) the(feedback, "command-error", `Response not accepted: ${refusal}`);
                 else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });
                 holding = false;
                 submission = undefined;
@@ -218,9 +227,9 @@ export default function observeWorker(element) {
             const signedOut = Reflect.get(Object(error), "status") === 401;
             connection(signedOut ? "signed-out" : "disconnected", signedOut ? "Sign-in ended" : "Disconnected");
             const guidance = signedOut ? "Sign in to connect to this worker again." : "Displayed values are no longer live. Reconnect to check the worker.";
-            the(element, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
-            if (pending) the(controls, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
-            if (submission?.resume) the(controls, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            the(connectionNotice, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
+            if (pending) the(feedback, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
+            if (submission?.resume) the(feedback, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         } finally {
             preview.clear();
             clearInterval(timer);
@@ -244,13 +253,13 @@ export default function observeWorker(element) {
     on(element, "click", "#worker-yolo", async () => {
         try { await toggleYolo(); }
         catch (error) {
-            if (!resources.signal.aborted) the(controls, "command-error", error instanceof Error ? error.message : String(error));
+            if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
         }
     });
-    on(element, "submit", "#worker-reconnect", (event) => {
+    on(main, "submit", "#worker-reconnect", (event) => {
         event.preventDefault();
         if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) {
-            the(controls, "command-error", "");
+            the(feedback, "command-error", "");
             connect();
         }
     });
@@ -278,7 +287,7 @@ export default function observeWorker(element) {
         const message = pending?.message.content === draft.value ? pending.message
             : { id: randomUUID(), role: /** @type {const} */ ("user"), content: draft.value };
         pending = { message, retryable: false };
-        the(controls, { messageStatus: "Sending…", commandError: "" });
+        the(feedback, { messageStatus: "Sending…", commandError: "" });
         connect({ message });
     });
 
@@ -291,7 +300,7 @@ export default function observeWorker(element) {
         try {
             const resume = await reading;
             if (!resume || current !== agent || cancellation || the(element, "connection") !== "interrupted") return;
-            the(controls, { messageStatus: "", commandError: "" });
+            the(feedback, { messageStatus: "", commandError: "" });
             connect({ resume });
         } finally { availability(); }
     });
@@ -318,10 +327,10 @@ export default function observeWorker(element) {
     on(stop, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(controls, "stop-unavailable") !== null) return;
-        the(controls, { messageStatus: "Requesting Stop…", commandError: "" });
-        try { the(controls, "message-status", await cancelWork()); }
+        the(feedback, { messageStatus: "Requesting Stop…", commandError: "" });
+        try { the(feedback, "message-status", await cancelWork()); }
         catch (error) {
-            if (!resources.signal.aborted) the(controls, { messageStatus: "", commandError: `Stop could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            if (!resources.signal.aborted) the(feedback, { messageStatus: "", commandError: `Stop could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         }
     });
 

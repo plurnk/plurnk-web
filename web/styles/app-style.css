@@ -3,7 +3,7 @@
 }
 
 header nav button,
-#worker-yolo {
+#worker-status [data-status-line] button {
     --pico-primary-background: transparent;
     --pico-primary-border: transparent;
     --pico-primary-hover-background: transparent;

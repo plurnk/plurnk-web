@@ -112,10 +112,10 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const page = await signIn(context, "/~/");
                             const second = await signIn(other, "/~/");
                             await verifyPageShell(page, { title: "Workspaces — Plurnk", kind: "daemon" });
-                            assert.deepEqual(await page.locator("main > ul > li > a").allTextContents(), initial.map(({ name }) => name));
-                            const markers = page.locator('main > ul > li > [role="img"]');
-                            assert.deepEqual(await markers.allTextContents(), initial.map(({ project_root }) => project_root === null ? "☁️" : "🗂️"));
-                            assert.deepEqual(await markers.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
+                            assert.deepEqual(await page.locator("main > ul > li > article > header > a").allTextContents(), initial.map(({ name }) => name));
+                            const entries = page.locator('main > ul > li > article');
+                            assert.deepEqual(await entries.locator("header").evaluateAll((elements) => elements.map((element) => getComputedStyle(element, "::before").content.match(/☁️|🗂️/u)?.[0])), initial.map(({ project_root }) => project_root === null ? "☁️" : "🗂️"));
+                            assert.deepEqual(await entries.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
                                 initial.map(({ project_root }) => project_root === null ? "Folderless workspace" : "Project workspace"));
                             const cookie = (await context.cookies()).find(({ name }) => name === "plurnk_web_session");
                             assert.ok(cookie);

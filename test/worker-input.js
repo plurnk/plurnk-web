@@ -289,8 +289,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
         assert.equal(await text.inputValue(), "Lifecycle fixture: delivery-retry.");
         assert.equal(await send.isDisabled(), true);
-        assert.match(await page.locator('[aria-label="Worker controls"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
-        assert.match(await page.locator('#worker-status [role="alert"]').innerText(), /Failed to fetch/u, "the transport failure remains visible beside the stale state");
+        assert.match(await page.locator('[aria-label="Message feedback"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
+        assert.match(await page.locator('#worker-connection').innerText(), /Failed to fetch/u, "the transport failure remains visible beside the stale state");
         assert.equal(model.requests.length, 0);
         assert.equal(requests.length, 1);
         checkBrowser([
@@ -322,7 +322,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
             await field.fill("Keep this draft on credential failure.");
             await page.getByRole("button", { name: "Send", exact: true }).click();
             await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
-            assert.ok((await page.locator('#worker-status [role="alert"]').innerText()).includes(explanation));
+            assert.ok((await page.locator('#worker-connection').innerText()).includes(explanation));
             assert.doesNotMatch(await page.locator("body").innerText(), /not-a-diagnostic/u);
             assert.equal(await field.inputValue(), "Keep this draft on credential failure.");
             assert.equal(model.requests.length, 0);
@@ -383,13 +383,13 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await Promise.all([page.getByRole("button", { name: "Send", exact: true }).click(), truncated.promise]);
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
         assert.equal(await text.inputValue(), "Lifecycle fixture: lost-acknowledgement.");
-        assert.match(await page.locator('[aria-label="Worker controls"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
-        assert.match(await page.locator('#worker-status [role="alert"]').innerText(), /Delivery ended without a worker outcome\./u);
+        assert.match(await page.locator('[aria-label="Message feedback"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
+        assert.match(await page.locator('#worker-connection').innerText(), /Delivery ended without a worker outcome\./u);
         assert.equal(model.requests.length, 1, "the work completed, but this page has not received its acknowledgement");
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await page.getByText("Completed lost-acknowledgement.", { exact: true }).waitFor();
         assert.equal(await text.inputValue(), "", "authoritative rediscovery finally confirms admission");
-        assert.equal(await page.locator('[aria-label="Worker controls"] [role="alert"]').isVisible(), false);
+        assert.equal(await page.locator('[aria-label="Message feedback"] [role="alert"]').isVisible(), false);
         assert.equal(requests.length, 1);
         assert.equal(model.requests.length, 1);
         checkBrowser();
@@ -462,7 +462,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "failed"
             && document.querySelector("#worker-status")?.dataset.connection === "connected");
         assert.equal(await text.inputValue(), "", "admission succeeded even though the model request failed");
-        assert.match(await page.locator('[aria-label="Worker controls"] [role="alert"]').innerText(), /Browser fixture deliberately refused this request/u);
+        assert.match(await page.locator('[aria-label="Message feedback"] [role="alert"]').innerText(), /Browser fixture deliberately refused this request/u);
         assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).count(), 0, "failed work is no longer stoppable");
         assert.equal(model.requests.length, 1);
         checkBrowser();

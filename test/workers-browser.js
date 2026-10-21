@@ -6,35 +6,35 @@ import verifyPageShell from "./page-shell.js";
 // {§web-worker-directory} Native navigation on the packed daemon, with the browser's JavaScript posture supplied by the caller.
 export default async function verifyWorkerDirectory(page, workspace) {
     const path = (worker) => directoryPath({ kind: "worker", workspace: workspace.name, worker: worker.name });
-    const link = (worker) => page.locator(`main li > a[href=${JSON.stringify(path(worker))}]`);
-    const entry = (worker) => link(worker).locator("xpath=..");
+    const link = (worker) => page.locator(`main li > article > header > a[href=${JSON.stringify(path(worker))}]`);
+    const entry = (worker) => link(worker).locator("xpath=../..");
     const models = workspace.workers.filter(({ origin }) => origin === "model");
     const parentOf = (worker) => workspace.workers.find(({ id }) => id === worker.parentWorkerId);
     const background = models.filter((worker) => worker.parentWorkerId !== null && parentOf(worker).origin !== "model");
     const primary = models.filter(({ parentWorkerId }) => parentWorkerId === null);
     const directory = page.url();
-    assert.deepEqual(await page.locator("main > ul > li > a").allTextContents(), primary.map(({ name }) => name));
-    assert.deepEqual((await page.locator("main li > a[href*='@']").allTextContents()).toSorted(), models.map(({ name }) => name).toSorted());
+    assert.deepEqual(await page.locator("main > ul > li > article > header > a").allTextContents(), primary.map(({ name }) => name));
+    assert.deepEqual((await page.locator("main li > article > header > a[href*='@']").allTextContents()).toSorted(), models.map(({ name }) => name).toSorted());
     assert.equal(await page.locator("main details[open]").count(), 0);
     assert.equal(await page.locator('main [role="tree"], main [role="treeitem"]').count(), 0);
     const backgroundSection = page.locator("main > details");
     assert.equal(await backgroundSection.count(), background.length === 0 ? 0 : 1);
     if (background.length) {
         assert.equal(await backgroundSection.locator(":scope > summary").innerText(), "Background work");
-        assert.deepEqual(await backgroundSection.locator(":scope > ul > li > a").allTextContents(), background.map(({ name }) => name));
+        assert.deepEqual(await backgroundSection.locator(":scope > ul > li > article > header > a").allTextContents(), background.map(({ name }) => name));
     }
     for (const worker of models) {
-        assert.equal(await entry(worker).locator(':scope > small > [data-text="worker-kind"]').textContent(), worker.kind);
-        assert.equal(await entry(worker).locator(':scope > small > [data-text="worker-lifecycle"]').textContent(), worker.lifecycle);
+        assert.equal(await entry(worker).locator(':scope > p > small > [data-text="worker-kind"]').textContent(), worker.kind);
+        assert.equal(await entry(worker).locator(':scope > p > small > [data-text="worker-lifecycle"]').textContent(), worker.lifecycle);
         const parent = parentOf(worker);
-        const enclosing = await link(worker).evaluate((element) => element.parentElement.parentElement.closest("li")?.querySelector(":scope > a")?.getAttribute("href") ?? null);
+        const enclosing = await link(worker).evaluate((element) => element.closest("li").parentElement.closest("li")?.querySelector(":scope > article > header > a")?.getAttribute("href") ?? null);
         assert.equal(enclosing, parent?.origin === "model" ? path(parent) : null, `${worker.name}: immediate model parent`);
         const children = models.filter(({ parentWorkerId }) => parentWorkerId === worker.id);
         const disclosure = entry(worker).locator(":scope > details");
         assert.equal(await disclosure.count(), children.length ? 1 : 0, `${worker.name}: leaves have no disclosure`);
         if (children.length) {
             assert.equal(await disclosure.locator(":scope > summary").textContent(), `${children.length} child worker${children.length === 1 ? "" : "s"}`);
-            assert.deepEqual(await disclosure.locator(":scope > ul > li > a").allTextContents(), children.map(({ name }) => name));
+            assert.deepEqual(await disclosure.locator(":scope > ul > li > article > header > a").allTextContents(), children.map(({ name }) => name));
         }
         assert.equal(await link(worker).isVisible(), worker.parentWorkerId === null, `${worker.name}: initially collapsed`);
     }

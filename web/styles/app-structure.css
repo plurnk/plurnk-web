@@ -7,6 +7,26 @@ body > footer {
     overflow-wrap: anywhere;
 }
 
+/* {§web-page-shell} Intrinsic header/footer tracks need no measured offsets. */
+body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="worker"])) {
+    block-size: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+}
+
+body > main:is([data-page="daemon"], [data-page="workspace"], [data-page="worker"]) {
+    min-block-size: 0;
+    overflow: auto;
+}
+
+#worker-status {
+    min-block-size: 0;
+    overflow: auto;
+    padding-block: var(--pico-spacing);
+}
+
 nav,
 nav ul {
     flex-wrap: wrap;
@@ -16,6 +36,10 @@ nav ul,
 nav li {
     min-inline-size: 0;
     max-inline-size: 100%;
+}
+
+ul:has(> [data-directory-entry]) {
+    padding: 0;
 }
 
 /* Floats reserve both edges; the intrinsic-width breadcrumb clears them when it cannot fit. */
@@ -81,7 +105,8 @@ table {
     padding: 0;
 }
 
-:is(#worker-conversation, #worker-diagnostics, #worker-activity, #worker-streams, #worker-command-results) > ul > li {
+:is(#worker-conversation, #worker-diagnostics, #worker-activity, #worker-streams, #worker-command-results) > ul > li,
+[data-directory-entry] {
     list-style: none;
 }
 
@@ -90,7 +115,18 @@ table {
     list-style-type: decimal;
 }
 
-#worker-status > ul {
+#worker-descendants > ul {
+    margin-block-start: var(--pico-spacing);
+}
+
+#worker-compose button {
+    flex: 0 0 auto;
+    inline-size: auto;
+    padding-inline: var(--pico-form-element-spacing-vertical);
+}
+
+#worker-status [data-status-line],
+#worker-status [data-status-line] > ul {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -100,26 +136,53 @@ table {
     margin: 0;
 }
 
-#worker-status > ul > li {
+#worker-status [data-status-line] > ul {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+}
+
+#worker-status [aria-label="Model controls"] {
+    flex-wrap: nowrap;
+}
+
+#worker-status [data-status-line] > ul > li {
     list-style: none;
     min-inline-size: 0;
     margin: 0;
 }
 
-#worker-yolo {
+#worker-status [data-status-line] button {
     --pico-form-element-spacing-vertical: 0;
     --pico-form-element-spacing-horizontal: 0;
 
     margin: 0;
 }
 
-#worker-descendants,
-#worker-descendants > summary {
+/* {§web-worker-input} Native sizing grows the draft, never a JS resize controller. */
+#worker-compose,
+#worker-compose fieldset,
+#worker-stop,
+[aria-label="Worker controls"] {
     margin: 0;
 }
 
-#worker-descendants > ul {
-    margin-block-start: var(--pico-spacing);
+#worker-compose fieldset {
+    align-items: end;
+    min-inline-size: 0;
+}
+
+#worker-message {
+    field-sizing: content;
+    min-inline-size: 0;
+    min-block-size: 1lh;
+    max-block-size: calc(100dvh / 3);
+    resize: none;
+    margin: 0;
+}
+
+#worker-descendants,
+#worker-descendants > summary {
+    margin: 0;
 }
 
 /* {§web-worker-reasoning} The preview follows its tail within its own bounded outlet. */
@@ -130,8 +193,8 @@ table {
     overflow-wrap: anywhere;
 }
 
-/* {§web-worker-approval} Fieldsets must not force literal evidence wider than the viewport. */
-#main [aria-label="Review requests"] fieldset {
+/* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */
+#main fieldset {
     min-inline-size: 0;
 }
 
