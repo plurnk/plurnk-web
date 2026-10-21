@@ -54,6 +54,51 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
 
 // {§web-worker-input} Exercise the shipped controls against the real daemon, not an injected SDK.
 export default async function verifyWorkerInput({ t, withDaemon }) {
+    await t.test("{§web-worker-input} Ctrl+Enter uses native submission without bypassing editing or availability", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        const field = page.getByRole("textbox", { name: "Message", exact: true });
+        assert.equal(await page.getByRole("button", { name: "Send", exact: true }).getAttribute("aria-keyshortcuts"), "Control+Enter");
+        const inputs = [];
+        page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON()); });
+        await field.press("Control+Enter");
+        assert.equal(await field.evaluate((element) => element.validity.valueMissing), true);
+        await field.fill(" \n ");
+        await field.press("Control+Enter");
+        assert.equal(await field.evaluate((element) => element.validity.customError), true, "the ordinary submit handler rejects whitespace");
+        assert.equal(inputs.length, 0);
+        await field.fill("Lifecycle fixture: keyboard-input.");
+        await field.press("End");
+        await field.press("Enter");
+        await field.pressSequentially("Keep this second line.");
+        const body = await field.inputValue();
+        assert.equal(body, "Lifecycle fixture: keyboard-input.\nKeep this second line.");
+        for (const flags of [{ isComposing: true }, { repeat: true }, { altKey: true }]) {
+            await field.dispatchEvent("keydown", { key: "Enter", ctrlKey: true, ...flags });
+        }
+        assert.equal(inputs.length, 0, "editing and composition do not submit");
+        await field.press("Control+Enter");
+        await page.getByText("Completed keyboard-input.", { exact: true }).waitFor({ timeout: 5000 });
+        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+        assert.equal(inputs.length, 1);
+        assert.equal(inputs[0].messages.at(-1).content, body);
+        assert.equal(await field.inputValue(), "", "daemon admission clears the shortcut-submitted draft");
+        await field.fill("/help");
+        await field.press("Control+Enter");
+        await page.locator('#worker-command-results > ul > li header code').filter({ hasText: "/help" }).waitFor();
+        assert.equal(inputs.length, 1, "commands keep the same non-model path");
+        await page.route("**/agui/connect", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
+        await field.fill("Retain this draft while disconnected.");
+        assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isDisabled(), true);
+        await field.press("Control+Enter");
+        assert.equal(await field.inputValue(), "Retain this draft while disconnected.");
+        assert.equal(inputs.length, 1, "keyboard submission cannot bypass unavailable delivery");
+        assert.equal(model.requests.length, 1);
+        checkBrowser([
+            httpFailure("/agui/connect", 503),
+            /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: HTTP 503: \{"title":"Unavailable"\}$/u,
+        ]);
+    }));
     for (const hostname of ["127.0.0.1", "plurnk-browser.test"]) {
         await t.test(`{§web-worker-input} native Send retains distinct message identities on HTTP ${hostname}`, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const secure = hostname === "127.0.0.1";

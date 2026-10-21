@@ -48,7 +48,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await page.locator('label[for="worker-message"]').count(), 0, "the textarea keeps its name without a visible title");
                     for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"]]) {
                         const button = page.getByRole("button", { name, exact: true, includeHidden: true });
-                        assert.equal(await button.getAttribute("title"), name);
+                        assert.equal(await button.getAttribute("title"), name === "Send" ? "Send (Ctrl+Enter)" : name);
                         assert.equal(await button.innerText(), "");
                         assert.ok((await button.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
                     }

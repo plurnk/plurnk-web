@@ -117,7 +117,7 @@
                 <fieldset role="group" aria-label="Worker actions">
                     <button type="submit" form="worker-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
                     <textarea id="worker-message" name="message" aria-label="Message" rows="1" required></textarea>
-                    <button type="submit" form="worker-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" title="Send"></button>
+                    <button type="submit" form="worker-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Control+Enter" title="Send (Ctrl+Enter)"></button>
                 </fieldset>
             </form>
             <form id="worker-stop"></form>
