@@ -8,6 +8,9 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 /* {§web-worker-input} Native controls and document state own their presentation. */
+#worker-compose button[type="submit"]::before { content: "▶️" / ""; }
+#worker-stop button[type="submit"]::before { content: "⏹️" / ""; }
+
 [aria-label="Worker controls"][data-command-error=""] > article,
 [aria-label="Worker controls"][data-message-status=""] > [role="status"] {
     display: none;
@@ -19,7 +22,7 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 /* {§web-worker-commands} Results have their own literal, non-conversation outlet. */
-#worker-command-results:not(:has(ol > li)),
+#worker-command-results:not(:has(ul > li)),
 #worker-command-results [data-command-message=""] > [role="status"],
 #worker-command-results [data-text="command-recovery"]:empty,
 #worker-command-results [data-model-more=""] [data-text="model-more"],
@@ -51,10 +54,10 @@ header nav button:is(:hover, :focus-visible) {
 #worker-status:not([data-lifecycle]) > ul,
 #worker-status[data-connection="connected"] > [role="status"],
 #worker-status:not([data-yolo="1"]) [data-status-field="yolo"],
+#worker-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
 #worker-status:not([data-elapsed]) [data-status-field="elapsed"],
 #worker-status[data-elapsed=""] [data-status-field="elapsed"],
 #worker-status[data-context=""] [data-status-field="context"],
-#worker-status[data-curation=""] [data-status-field="curation"],
 #worker-status[data-descendants="0"] [data-status-field="descendants"],
 #worker-status[data-gated="0"] [data-status-field="gated"],
 #worker-status[data-wait=""] [data-status-field="wait"],
@@ -64,11 +67,19 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
+/* {§web-worker-reasoning} Coordinates are content; the reasoning glyph is presentation. */
+[data-message-role="reasoning"] > article > details > summary::before,
+[data-reasoning-preview] > header::before {
+    content: "💭" / "";
+    margin-inline-end: 0.5ch;
+}
+
 /* {§web-worker-status} Status fields remain semantic; CSS owns their compact notation. */
 #worker-status [data-status-field="yolo"]::before { content: "🔥" / ""; }
 #worker-status [data-status-field="model"]::before { content: "🎲 " / ""; }
 #worker-status [data-text="input"]::before { content: "↓" / ""; }
 #worker-status [data-text="output"]::before { content: "↑" / ""; }
+#worker-status [data-status-field="context"]::after { content: " 📜" / ""; }
 #worker-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }
 #worker-status [data-text="effort"]:not(:empty)::after { content: ")" / ""; }
 #worker-descendants > summary::before { content: "🐜 " / ""; }
@@ -80,22 +91,21 @@ header nav button:is(:hover, :focus-visible) {
 #worker-status[data-lifecycle="running"] { --worker-lifecycle-glyph: "⌛"; }
 #worker-status[data-lifecycle="queued"] { --worker-lifecycle-glyph: "⏳"; }
 #worker-status[data-lifecycle="parked"] { --worker-lifecycle-glyph: "💤"; }
-#worker-status[data-lifecycle="completed"] { --worker-lifecycle-glyph: "⏹️"; }
 #worker-status[data-lifecycle="cancelled"] { --worker-lifecycle-glyph: "🛑"; }
 #worker-status[data-lifecycle="failed"] { --worker-lifecycle-glyph: "❌"; }
 
 /* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
-#worker-diagnostics:not(:has(ol > li)) {
+#worker-diagnostics:not(:has(ul > li)) {
     display: none;
 }
 
 /* {§web-worker-activity} Empty observations and inspection outlets have no presentation. */
-#worker-activity:not(:has(> ol > li)) {
+#worker-activity:not(:has(> ul > li)) {
     display: none;
 }
 
 /* {§web-worker-streams} Observed outcomes and local inspection state control native disclosures. */
-[data-stream-outcomes]:not(:has(ol > li)),
+[data-stream-outcomes]:not(:has(ul > li)),
 [data-stream-problem-title=""] [data-stream-failure],
 [data-entry-output]:not([data-output-state="loading"]) [data-output-loading],
 [data-entry-output]:not([data-output-state="error"]) [data-output-failure],

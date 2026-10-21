@@ -23,14 +23,14 @@ Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending revi
 `/models` lists aliases and a bounded catalog page; narrow its search for more matches.
 The workspace navigation tree shows kinds and lifecycles at page load, with child
 branches collapsed. It is navigation, not a live subscription to child transcripts.
-The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
-On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
-otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
+The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
+On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
+otherwise ☁️ identifies the workspace and a separate 🗂️ line shows its project
 folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
 Non-worker pages use a 65ch reading width; worker pages use the available width.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.
-Header controls: 📁 Workspaces, ⚙️ Account, ✖ Sign out.
+Header controls: 🗃️ workspace breadcrumb, ⚙️ Account, ✖ Sign out.
 Breadcrumbs fit between the mascot and menu, or center below them when space is short.
 
 Directories select their `index.html`: `/` and `/index.html` serve the same
@@ -78,7 +78,7 @@ Connection failure stops observation and marks the displayed values as stale;
 use **Reconnect** or, after revocation, **Sign in**. Reconnect preserves the current
 draft without resubmitting it; full page reloads do not persist drafts.
 No automatic work retries occur.
-Context/curation gauges, pending input, preparation, indexing and the daemon's WAIT
+Context occupancy/capacity, pending input, preparation, indexing and the daemon's WAIT
 countdown appear only when relevant. The countdown is an observation deadline, not
 a promise of completion. A collapsed worker-count disclosure opens the live
 descendant tree; no empty tree or metadata inventory occupies the page.

@@ -16,8 +16,8 @@ function referenceOf(value) {
  * @param {HTMLElement} root @param {(address: string) => Promise<string>} read
  */
 export default function activity(root, read) {
-    const list = $(root, ":scope > ol");
-    if (!(list instanceof HTMLOListElement)) throw new Error("Worker activity has no list.");
+    const list = $(root, ":scope > ul");
+    if (!(list instanceof HTMLUListElement)) throw new Error("Worker activity has no list.");
     const inspect = bodyReferences(root, read);
     /** @type {Map<string, Element>} */
     const rows = new Map();

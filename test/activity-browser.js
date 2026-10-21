@@ -38,7 +38,7 @@ export default async function verifyActivity(t) {
                     await page.waitForFunction(() => typeof window.presentActivity === "function");
                     const receive = (event) => page.evaluate((event) => window.presentActivity(event), event);
                     const activity = page.locator("#worker-activity");
-                    const rows = activity.locator(":scope > ol > li");
+                    const rows = activity.locator(":scope > ul > li");
                     assert.equal(await activity.isVisible(), false);
                     await receive({ type: "CUSTOM", name: "another.extension", value: null });
                     assert.equal(await rows.count(), 0);

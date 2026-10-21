@@ -41,7 +41,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("context"), "");
                     assert.equal(await value("wait"), "");
                     assert.equal(await value("inbox"), "0");
-                    for (const key of ["yolo", "elapsed", "context", "curation", "descendants", "gated", "wait", "inbox", "preparation", "activity"]) {
+                    for (const key of ["yolo", "elapsed", "context", "descendants", "gated", "wait", "inbox", "preparation", "activity"]) {
                         assert.equal(await field(key).isVisible(), false, `${key} has no empty status placeholder`);
                     }
                     assert.equal(await page.locator("#worker-status dl, #worker-status table, #worker-accounting, #workspace-activity, #worker-inbox").count(), 0);
@@ -73,9 +73,13 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#worker-descendants > summary").getAttribute("aria-label"), "Descendant workers: 4; active direct children: 2");
                     assert.equal(await value("gated"), "2");
                     assert.equal(await value("descendants"), "4");
-                    assert.equal(await value("context"), "123 (12%)");
+                    assert.equal(await value("context"), "12%/999");
+                    assert.doesNotMatch(await field("context").innerText(), /ctx/u);
+                    assert.match(await field("context").evaluate((element) => getComputedStyle(element, "::after").content), /📜/u);
                     assert.equal(await field("context").getAttribute("aria-label"), "Current packet context: 123 / 999 tokens");
-                    assert.equal(await value("curation"), "432 (43%)");
+                    assert.equal(await field("curation").count(), 0, "no curation display even when the SDK supplies its budget");
+                    assert.equal(await page.locator("#worker-status").getAttribute("data-curation"), null);
+                    assert.equal(await page.locator("#worker-status").getAttribute("data-curation-label"), null);
                     assert.equal(await value("input"), "999 + ?");
                     assert.equal(await value("cost"), "<$0.0001 + ?");
                     assert.equal(await field("cost").getAttribute("aria-label"), "Cumulative USD, worker and descendants: unknown total; known subtotal 0.0000000123.");
@@ -136,6 +140,13 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("gated"), "1", "settlement changes supplied gate facts, not parent lifecycle");
                     assert.equal(await value("lifecycle"), "parked");
                     assert.equal(await value("descendants"), "5");
+
+                    for (const lifecycle of ["completed", "failed", "cancelled", "running"]) {
+                        await receive({ ...initial, plurnk: { ...initial.plurnk, status: { ...initial.plurnk.status, lifecycle } } });
+                        assert.equal(await value("lifecycle"), lifecycle, "hiding completed presentation does not rewrite lifecycle");
+                        assert.equal(await field("lifecycle").isVisible(), lifecycle !== "completed");
+                        if (lifecycle === "completed") assert.equal(await field("lifecycle").evaluate((element) => element.getBoundingClientRect().width), 0);
+                    }
 
                     await receive(initial);
                     assert.equal(await value("model"), "No model");

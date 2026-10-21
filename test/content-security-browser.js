@@ -86,7 +86,7 @@ export default async function verifyContentSecurity(t) {
                         }
                         assert.equal(await page.locator("[data-plurnk-note]").getAttribute("data-plurnk-note"), injection);
                         for (const id of ["note", "reasoning"]) {
-                            const body = page.locator(`[data-message-id="${id}"] article > pre`);
+                            const body = page.locator(`[data-message-id="${id}"]`).locator(id === "reasoning" ? "article > details > pre" : "article > pre");
                             assert.equal(await body.textContent(), hostile);
                             assert.equal(await body.locator("*").count(), 0, "literal content never enters an HTML parser");
                         }

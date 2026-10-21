@@ -75,7 +75,7 @@ function amount(total, known, format) {
 
 /** @param {number | null | undefined} used @param {number | null | undefined} capacity */
 const occupancy = (used, capacity) => used != null && capacity != null && capacity > 0
-    ? `${tokens(used)} (${Math.round(used / capacity * 100)}%)` : "";
+    ? `${Math.round(used / capacity * 100)}%/${tokens(capacity)}` : "";
 
 /** {§web-worker-status} Unknown complete values and known subtotals are different facts.
  * @param {import("@plurnk/plurnk-agui/client").AguiStatusState} status
@@ -102,8 +102,6 @@ export function gauges(status, budget) {
         gated: String(gated), gatedLabel: `Descendant workers awaiting input: ${gated}`,
         context: occupancy(budget?.contextTokens, budget?.contextCapacity),
         contextLabel: `Current packet context: ${budget?.contextTokens ?? "unknown"} / ${budget?.contextCapacity ?? "unknown"} tokens`,
-        curation: occupancy(budget?.curationWeight, budget?.curationBudget),
-        curationLabel: `Curation weight: ${budget?.curationWeight ?? "unknown"} / ${budget?.curationBudget ?? "unknown"}`,
         inbox: String(status.inbox.length), inboxLabel: `Accepted messages not yet observed: ${status.inbox.length}`,
     };
 }
@@ -119,7 +117,7 @@ export function workspaceIdentity({ name, projectLabel }, worker) {
     const namedFolder = projectLabel !== null && projectLabel !== name;
     return {
         workspaceName: name, workspacePath, workerPath, projectLabel: namedFolder ? projectLabel : "",
-        workspaceIcon: projectLabel !== null && !namedFolder ? "📁" : "☁️",
+        workspaceIcon: projectLabel !== null && !namedFolder ? "🗂️" : "☁️",
         workspaceIconLabel: projectLabel === null ? "Folderless workspace" : namedFolder ? "Workspace" : "Project workspace",
         pageTitle: `${name}@${worker} — Plurnk`,
     };

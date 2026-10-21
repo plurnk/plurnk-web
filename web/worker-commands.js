@@ -36,7 +36,7 @@ const route = (model) => model === null ? "Not selected" : `${model.alias ? `${m
  */
 export default function workerCommands(controls, actions) {
     const outlet = $.clone(controls, "#command-results", { position: "afterbegin" });
-    const list = $(outlet, "ol");
+    const list = $(outlet, "ul");
     if (!list) throw new Error("Command results template is incomplete.");
     /** @param {string} text @param {AbortSignal} signal */
     return async (text, signal) => {

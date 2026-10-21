@@ -5,7 +5,7 @@ import { inputPage } from "./worker-input.js";
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
 const settled = (page, lifecycle) => page.waitForFunction((lifecycle) =>
     document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === lifecycle, lifecycle);
-const outcomes = (page) => page.locator("[data-stream-outcomes] ol > li");
+const outcomes = (page) => page.locator("[data-stream-outcomes] ul > li");
 
 export async function inspectStreamOutput(row) {
     await row.getByRole("button", { name: "Read output", exact: true }).click();
@@ -47,7 +47,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                 if (cancelled) {
                     await page.getByRole("button", { name: "Stop", exact: true }).click();
                     await settled(page, "cancelled");
-                    await page.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ol > li").length === 1);
+                    await page.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ul > li").length === 1);
                 } else {
                     const observer = await context.newPage();
                     await observer.goto(path);
@@ -57,7 +57,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                     assert.equal(model.requests.length, 1, "leaving the page leaves the stream running");
                     model.release("status-stream");
                     await settled(observer, "completed");
-                    await observer.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ol > li").length === 1);
+                    await observer.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ul > li").length === 1);
                     await observer.locator("[data-stream-outcomes] > summary").click();
                     const outcome = outcomes(observer);
                     target = await outcome.getAttribute("data-stream-target");
@@ -105,7 +105,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
             await page.getByText("Considering execution-failure.", { exact: true }).waitFor({ state: "attached" });
             model.release("execution-failure");
             await settled(page, "completed");
-            await page.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ol > li").length === 1);
+            await page.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ul > li").length === 1);
             await page.locator("[data-stream-outcomes] > summary").click();
             await outcomes(page).locator(":scope > details > summary").click();
             assert.equal(await outcomes(page).getAttribute("data-stream-exit-code"), "7");

@@ -189,7 +189,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const page = await context.newPage();
                     await page.goto(new URL("/~/diagnostics@user/", base).href);
                     await connected(page);
-                    const rows = page.locator("#worker-diagnostics ol > li");
+                    const rows = page.locator("#worker-diagnostics ul > li");
                     const notice = rows.filter({ hasText: "PLURNK_SERVICE_EXEC_CONCURRENCY" });
                     const problem = page.locator('#worker-diagnostics li[data-diagnostic-type="plurnk.problem"]')
                         .filter({ hasText: /unavailable.*effort|effort.*unavailable/u });
@@ -277,7 +277,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         assert.deepEqual(await page.locator("[data-messages] article [data-bind]").evaluateAll((elements) => elements.map((element) => ({
                             tag: element.tagName, binding: element.dataset.bind, action: element.dataset.action,
                             role: element.closest("[data-message-role]").dataset.messageRole,
-                        }))), [{ tag: "PRE", binding: "aria-busy:body-pending", action: undefined, role: "reasoning" }],
+                        }))), [
+                            { tag: "SUMMARY", binding: "aria-label:reasoning-label", action: undefined, role: "reasoning" },
+                            { tag: "PRE", binding: "aria-busy:body-pending", action: undefined, role: "reasoning" },
+                        ],
                         "bindings belong to the document-owned reasoning reader, never authored content");
                         assert.equal(await page.locator('[data-message-role="assistant"] article [data-text]').count(), 0, "rich content cannot add bindings; literal result templates retain their owned text slot");
                         assert.equal(await page.locator('[data-messages] article a[href^="javascript:"]').count(), 0);

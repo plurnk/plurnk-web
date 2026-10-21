@@ -40,8 +40,16 @@ export default async function verifyCommands(t) {
                     });
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.command === "function");
+                    assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
+                    assert.equal(await page.locator('label[for="worker-message"]').count(), 0, "the textarea keeps its name without a visible title");
+                    for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"]]) {
+                        const button = page.getByRole("button", { name, exact: true });
+                        assert.equal(await button.getAttribute("title"), name);
+                        assert.equal(await button.innerText(), "");
+                        assert.ok((await button.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
+                    }
                     const command = (text) => page.evaluate((text) => window.command(text), text);
-                    const rows = page.locator("#worker-command-results > ol > li");
+                    const rows = page.locator("#worker-command-results > ul > li");
                     for (const text of ["/", "  /help /model \n", "/yolo"]) assert.equal(await command(text), true);
                     for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b", "/capabilities {"]) {
                         assert.equal(await command(text), false);

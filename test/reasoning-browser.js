@@ -20,7 +20,7 @@ export default async function verifyReasoning(t) {
                         credentials++;
                         return route.fulfill({ json: { token_type: "Bearer", access_token: "reasoning-test" } });
                     });
-                    await page.route("**/reasoning", (route) => {
+                    await page.route("**/agui/7/9/reasoning/1/3", (route) => {
                         reads.push(route.request().headers().authorization);
                         return route.fulfill({ contentType: "text/plain", body });
                     });
@@ -38,6 +38,8 @@ export default async function verifyReasoning(t) {
                     await delta(message.id, "A provisional ");
                     await delta(message.id, "hypothesis.");
                     assert.equal(await preview.isVisible(), true);
+                    assert.equal(await preview.evaluate((element) => element.tagName), "ARTICLE");
+                    assert.match(await preview.locator(":scope > header").evaluate((element) => getComputedStyle(element, "::before").content), /💭/u);
                     assert.equal(await text.textContent(), "A provisional hypothesis.");
                     assert.equal(await preview.getAttribute("data-reasoning-text"), null, "the preview body is not an attribute mirror");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
@@ -53,11 +55,15 @@ export default async function verifyReasoning(t) {
                     await consume({ type: "REASONING_MESSAGE_END", messageId: message.id });
                     assert.equal(await text.textContent(), "");
                     assert.equal(await preview.isVisible(), false);
-                    const linked = { ...message, metadata: { plurnk: { body: { url: "/reasoning", mimeType: "text/plain" } } } };
+                    const linked = { ...message, metadata: { plurnk: { body: { url: "/agui/7/9/reasoning/1/3", mimeType: "text/plain" } } } };
                     await page.evaluate((message) => { window.messages = [message]; window.present(window.messages); }, linked);
                     assert.equal(await page.locator('[data-message-id="attempt"] [data-body-reference]').count(), 1,
                         "late metadata on an empty SDK reasoning message must expose its body");
                     const row = page.locator('[data-message-id="attempt"]');
+                    assert.equal(await row.locator(":scope > article > details > summary").textContent(), "L1/T3");
+                    assert.equal(await row.getByRole("article", { name: "Reasoning", exact: true }).count(), 1);
+                    assert.equal(await row.locator("summary").getAttribute("aria-label"), "Reasoning · L1/T3");
+                    assert.match(await row.locator("summary").evaluate((element) => getComputedStyle(element, "::before").content), /💭/u);
                     assert.equal(await row.locator("details").getAttribute("open"), null);
                     assert.equal(credentials, 0);
                     assert.deepEqual(reads, [], "closed reasoning does not fetch");

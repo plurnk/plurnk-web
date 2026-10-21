@@ -77,6 +77,19 @@ table {
     min-inline-size: 0;
 }
 
+:is(#worker-conversation, #worker-diagnostics, #worker-activity, #worker-streams, #worker-command-results) > ul {
+    padding: 0;
+}
+
+:is(#worker-conversation, #worker-diagnostics, #worker-activity, #worker-streams, #worker-command-results) > ul > li {
+    list-style: none;
+}
+
+/* Pico's `ul li` rule otherwise overrides numbered lists inside the conversation's ul. */
+#worker-conversation ol > li {
+    list-style-type: decimal;
+}
+
 #worker-status > ul {
     display: flex;
     flex-wrap: wrap;
