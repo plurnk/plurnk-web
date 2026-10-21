@@ -52,14 +52,14 @@ export default async function verifyFootnotes(t) {
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (messages) => page.evaluate((messages) => window.present(messages), messages);
                     const rows = page.locator("[data-messages] > li");
-                    const body = () => rows.first().locator(":scope > article[data-message-body]");
+                    const body = () => rows.first().locator(":scope > article");
 
                     await t.test("repeated references and label collisions have unique message-local destinations", async () => {
                         const messages = ["same/label", "same%2Flabel"].map((id) => ({ id, role: "assistant", content: footnoteContent }));
                         await present(messages);
                         const graphs = [];
                         for (const row of await rows.all()) {
-                            const outlet = row.locator("[data-message-body]");
+                            const outlet = row.locator("article");
                             const graph = await footnoteGraph(outlet);
                             assert.equal(graph.definitions.length, 5);
                             assert.equal(graph.references.length, 6);
@@ -118,18 +118,21 @@ export default async function verifyFootnotes(t) {
                         assert.equal(await body().textContent(), "A[^a]\n");
                     });
 
-                    await t.test("every rich role and NOTE gets a separate scope; literal evidence remains literal", async () => {
+                    await t.test("rich messages and SEND get separate scopes; NOTE and reasoning remain literal", async () => {
                         const content = "A[^a]\n\n[^a]: **Definition**.";
-                        const roles = ["user", "assistant", "reasoning", "system", "developer"];
+                        const roles = ["user", "assistant", "system", "developer"];
                         const messages = roles.map((role) => ({ id: role, role, content }));
                         messages.push(...["\ud800", "\ufffd"].map((id) => ({ id, role: "assistant", content })));
-                        messages.push({ id: "notes", role: "assistant", toolCalls: ["assistant", "note/分析%\""].map((id) => ({
-                            id, type: "function", function: { name: "NOTE", arguments: JSON.stringify({ body: content, aside: "fact" }) }, metadata: { plurnk: { op: "NOTE" } },
+                        messages.push({ id: "replies", role: "assistant", toolCalls: ["assistant", "reply/分析%\""].map((id) => ({
+                            id, type: "function", function: { name: "SEND", arguments: JSON.stringify({ body: content }) }, metadata: { plurnk: { op: "SEND" } },
                         })) });
-                        messages.push({ id: "receipt", role: "tool", toolCallId: "assistant", content });
+                        messages.push({ id: "note", role: "assistant", toolCalls: [{ id: "note-call", type: "function",
+                            function: { name: "NOTE", arguments: JSON.stringify({ body: content }) }, metadata: { plurnk: { op: "NOTE" } } }] },
+                        { id: "reasoning", role: "reasoning", content });
+                        messages.push({ id: "receipt", role: "tool", toolCallId: "opaque-call", content });
                         await present(messages);
-                        const outlets = page.locator('[data-message-body]:has(section[aria-label="Footnotes"])');
-                        assert.equal(await outlets.count(), 9);
+                        const outlets = page.locator('[data-messages] article:has(section[aria-label="Footnotes"])');
+                        assert.equal(await outlets.count(), 8);
                         const ids = [];
                         for (const outlet of await outlets.all()) {
                             const graph = await footnoteGraph(outlet);
@@ -138,9 +141,12 @@ export default async function verifyFootnotes(t) {
                             ids.push(...graph.ids);
                         }
                         assert.equal(new Set(ids).size, ids.length);
-                        assert.equal(await page.locator('[data-plurnk-note] > article[data-message-body]').count(), 2);
-                        assert.equal(await rows.last().locator("[data-message-body] code").textContent(), content);
-                        assert.equal(await rows.last().locator("[data-message-body] sup").count(), 0);
+                        assert.equal(await page.locator('[data-call-id][data-plurnk-type="SEND"] > article').count(), 2);
+                        for (const id of ["note", "reasoning", "receipt"]) {
+                            const row = page.locator(`[data-message-id="${id}"]`);
+                            assert.equal(await row.locator("article > pre").textContent(), content);
+                            assert.equal(await row.locator("article sup").count(), 0);
+                        }
                     });
 
                     await t.test("definitions compose with nested Markdown and native mathematics at phone width", async () => {

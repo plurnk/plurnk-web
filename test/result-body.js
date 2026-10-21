@@ -1,4 +1,16 @@
 import assert from "node:assert/strict";
+import { HttpAgent } from "@ag-ui/client";
+
+export async function observeMessages(threadId, origin, headers) {
+    const observer = new HttpAgent({ url: new URL("/agui/connect", origin).href, threadId, headers });
+    const controller = new AbortController();
+    let messages;
+    await observer.runAgent({ abortController: controller }, {
+        onMessagesSnapshotEvent: ({ event }) => { messages = event.messages; controller.abort(); },
+    });
+    assert.ok(messages, "passive SDK observation returns the durable conversation");
+    return messages;
+}
 
 // {§web-result-bodies} Read the standard reference for content assertions; never mutate SDK messages.
 export async function inspectResult(content, token, origin) {
@@ -15,22 +27,4 @@ export async function inspectResult(content, token, origin) {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-store");
     return { ...receipt, content: await response.text() };
-}
-
-// Exercise the shipped Read body control when a browser assertion needs the full result.
-export async function inspectRenderedResults(page) {
-    const results = [];
-    for (const row of await page.locator('[data-message-role="tool"]').all()) {
-        const receipt = JSON.parse(await row.locator("[data-message-body] > pre > code").textContent());
-        const body = row.locator("[data-body-reference]");
-        if (await body.count()) {
-            if (await body.getAttribute("data-body-state") !== "loaded") {
-                await body.getByRole("button", { name: "Read body", exact: true }).click();
-                await body.locator('[data-body-content]').waitFor({ state: "visible" });
-            }
-            receipt.content = await body.locator("[data-text=body-content]").textContent();
-        }
-        results.push(receipt);
-    }
-    return results;
 }

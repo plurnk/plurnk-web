@@ -34,9 +34,13 @@ export default function reviewRequests(controls, yolo) {
         rows.set(interrupt.id, row);
         the(row, {
             interruptId: interrupt.id, proposalChoice: `decision-${index}`, proposalWorker: facts.worker,
-            proposalOp: facts.op, proposalTarget: JSON.stringify(facts.target, null, 2),
-            proposalBody: facts.body, proposalDetails: JSON.stringify(facts, null, 2),
+            proposalOp: facts.op,
         });
+        const target = $(row, "[data-proposal-target]");
+        const body = $(row, "[data-proposal-body]");
+        if (!target || !body) throw new Error("Proposal template has no content outlets.");
+        target.textContent = JSON.stringify(facts.target, null, 2);
+        body.textContent = facts.body;
     }
     the(form, { requestCount: 0, reviewUnavailable: "" });
     return {
@@ -85,11 +89,15 @@ export default function reviewRequests(controls, yolo) {
                         interruptId: interrupt.id,
                         requestWorker: interaction?.workerId ?? "",
                         requestTool: call.function.name,
-                        requestMessage: interrupt.message ?? "Provide the requested input.",
-                        requestArguments: call.function.arguments,
-                        requestSchema: JSON.stringify(interrupt.responseSchema, null, 2),
                         responseError: "",
                     });
+                    const message = $(row, "[data-request-message]");
+                    const args = $(row, "[data-request-arguments]");
+                    const schema = $(row, "[data-request-schema]");
+                    if (!message || !args || !schema) throw new Error("Question template has no content outlets.");
+                    message.textContent = interrupt.message ?? "Provide the requested input.";
+                    args.textContent = call.function.arguments;
+                    schema.textContent = JSON.stringify(interrupt.responseSchema, null, 2);
                     const answer = answerForm(row, interrupt.responseSchema);
                     return async () => {
                         const result = await answer.read();

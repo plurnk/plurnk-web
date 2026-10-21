@@ -28,7 +28,7 @@ export default async function verifyReasoning(t) {
                     await page.waitForFunction(() => typeof window.present === "function" && window.preview);
                     const consume = (event) => page.evaluate((event) => window.preview.consume(event), event);
                     const preview = page.locator("[data-reasoning-preview]");
-                    const text = preview.locator('[data-text="reasoning-text"]');
+                    const text = preview.locator("pre");
                     const delta = (messageId, delta) => consume({ type: "CUSTOM", name: "plurnk.reasoning", value: { messageId, delta } });
                     const message = { id: "attempt", role: "reasoning", content: "" };
                     await page.evaluate((message) => window.present([message]), message);
@@ -39,6 +39,7 @@ export default async function verifyReasoning(t) {
                     await delta(message.id, "hypothesis.");
                     assert.equal(await preview.isVisible(), true);
                     assert.equal(await text.textContent(), "A provisional hypothesis.");
+                    assert.equal(await preview.getAttribute("data-reasoning-text"), null, "the preview body is not an attribute mirror");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
                     const tail = "🐹\n".repeat(40);
                     await delta(message.id, tail);
@@ -54,26 +55,26 @@ export default async function verifyReasoning(t) {
                     assert.equal(await preview.isVisible(), false);
                     const linked = { ...message, metadata: { plurnk: { body: { url: "/reasoning", mimeType: "text/plain" } } } };
                     await page.evaluate((message) => { window.messages = [message]; window.present(window.messages); }, linked);
-                    assert.equal(await page.locator('[data-message-id="attempt"] [data-action="read-body"]').count(), 1,
+                    assert.equal(await page.locator('[data-message-id="attempt"] [data-body-reference]').count(), 1,
                         "late metadata on an empty SDK reasoning message must expose its body");
                     const row = page.locator('[data-message-id="attempt"]');
                     assert.equal(await row.locator("details").getAttribute("open"), null);
-                    await row.locator("summary").click();
                     assert.equal(credentials, 0);
-                    assert.deepEqual(reads, [], "opening a disclosure alone does not read reasoning");
-                    await row.getByRole("button", { name: "Read body", exact: true }).click();
+                    assert.deepEqual(reads, [], "closed reasoning does not fetch");
+                    await row.locator("summary").click();
+                    await row.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                     await row.locator('[data-body-state="loaded"]').waitFor();
-                    assert.equal(await row.locator('[data-text="body-content"]').textContent(), body);
-                    assert.equal(await row.locator("pre[data-body-content] form, pre[data-body-content] strong").count(), 0,
+                    assert.equal(await row.locator('[data-body-reference]').textContent(), body);
+                    assert.equal(await row.locator("[data-body-reference] form, [data-body-reference] strong").count(), 0,
                         "fetched Markdown and HTML stay literal");
                     assert.equal(credentials, 1);
                     assert.deepEqual(reads, ["Bearer reasoning-test"]);
                     assert.deepEqual(await page.evaluate(() => window.messages), [linked], "reading never writes reasoning into SDK-owned messages");
                     await page.evaluate(() => {
-                        window.loadedBody = document.querySelector("pre[data-body-content]");
+                        window.loadedBody = document.querySelector("[data-body-reference]");
                         window.present(structuredClone(window.messages));
                     });
-                    assert.equal(await row.locator("pre[data-body-content]").evaluate((element) => element === window.loadedBody), true);
+                    assert.equal(await row.locator("[data-body-reference]").evaluate((element) => element === window.loadedBody), true);
                     assert.equal(await row.locator("details").evaluate((element) => element.open), true);
                     assert.equal(reads.length, 1);
                     assert.equal(await preview.isVisible(), false, "replay does not reconstruct previews");

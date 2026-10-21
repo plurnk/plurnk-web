@@ -31,8 +31,10 @@ export default async function mermaid(fragment) {
         if (!outlet.isConnected) continue;
         const figure = $.clone(outlet, "#conversation-diagram", { position: "beforebegin" });
         const image = $(figure, "img");
-        if (!(image instanceof HTMLImageElement) || !(figure instanceof HTMLElement)) throw new Error("Diagram template has no image.");
-        the(figure, { diagramSource: code.textContent, diagramUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` });
+        const source = $(figure, "[data-diagram-source]");
+        if (!(image instanceof HTMLImageElement) || !(figure instanceof HTMLElement) || !source) throw new Error("Diagram template is incomplete.");
+        source.textContent = code.textContent;
+        the(figure, "diagramUrl", `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
         try { await image.decode(); }
         catch (error) {
             figure.remove();

@@ -52,7 +52,8 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.match(await (await submit("/effort")).textContent(), /low \(explicit\)/u);
             await submit("/effort invented", "error");
             const absent = await submit("/model nonexistent-web-route", "error");
-            assert.ok((await absent.locator("[data-text=command-problem]").textContent()).length > 0);
+            assert.match(await absent.locator("[data-text=command-message]").textContent(), /nonexistent-web-route/u);
+            assert.equal(await absent.locator("details").count(), 0);
             const selected = await submit("/model browser high");
             assert.match(await selected.textContent(), /browser-fixture\/browser-fixture/u);
             assert.match(await (await submit("/effort")).textContent(), /high \(explicit\)/u);
@@ -143,9 +144,8 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await send("Lifecycle fixture: held-command.");
             await page.getByText("Considering held-command.", { exact: true }).waitFor({ state: "attached" });
             const failed = await submit("/effort low", "error");
-            const problem = JSON.parse(await failed.locator("[data-text=command-problem]").textContent());
-            assert.equal(problem.status, 409);
-            assert.match(problem.type, /worker-loop-active$/u);
+            assert.equal(await failed.locator("article").getAttribute("data-command-status"), "409");
+            assert.match(await failed.locator("[data-text=command-message]").textContent(), /unfinished tasks/u);
             await submit("/help");
             const delivery = Promise.withResolvers();
             const hold = async (route) => {

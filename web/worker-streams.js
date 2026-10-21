@@ -13,6 +13,9 @@ export default function workerStreams(root, read) {
     // A progress event can precede the census introducing its stream. Counts never establish membership.
     /** @type {Map<number, Map<string, number>>} */
     const counts = new Map();
+    const concluded = new Set();
+    /** @type {WeakMap<Element, string>} */
+    const paintedChannels = new WeakMap();
     /** @param {Element} row @param {number} entryId */
     const progress = (row, entryId) => {
         for (const channel of $$(row, "[data-stream-channel]")) {
@@ -46,11 +49,11 @@ export default function workerStreams(root, read) {
                 const channels = $(row, "[data-stream-channels]");
                 if (!channels) throw new Error("Stream has no channel list.");
                 const revision = JSON.stringify(stream.channels);
-                if (the(channels, "stream-channels") !== revision) {
+                if (paintedChannels.get(channels) !== revision) {
                     $.cloneEach(channels, "#worker-stream-channel", stream.channels, (channel, item) => {
                         the(channel, { streamChannel: item.channel, streamState: item.state, streamMime: item.mimetype });
                     });
-                    the(channels, "stream-channels", revision);
+                    paintedChannels.set(channels, revision);
                 }
                 progress(row, stream.entryId);
                 if (current.children[index] !== row) current.insertBefore(row, current.children[index] ?? null);
@@ -70,16 +73,18 @@ export default function workerStreams(root, read) {
                 if (typeof value.scheme !== "string" || typeof value.summary !== "string") throw new Error("Stream conclusion is incomplete.");
                 counts.delete(value.entryId);
                 const evidence = JSON.stringify(value);
-                if ($$(outcomes, ":scope > li").some((row) => the(row, "stream-evidence") === evidence)) return;
+                if (concluded.has(evidence)) return;
                 const row = $.clone(outcomes, "#worker-stream-outcome");
                 the(row, {
-                    streamEvidence: evidence, streamTarget: value.target, streamWorker: value.workerId,
-                    streamScheme: value.scheme, streamSummary: value.summary, streamResult: JSON.stringify(result, null, 2),
+                    streamTarget: value.target, streamWorker: value.workerId,
+                    streamScheme: value.scheme, streamSummary: value.summary, streamStatus: result.status,
+                    streamExitCode: typeof result.exitCode === "number" ? result.exitCode : null,
                     streamProblem: result.problem?.detail ?? "", streamProblemTitle: result.problem?.title ?? "",
                 });
                 const details = $(row, "details");
                 if (!details) throw new Error("Stream outcome has no disclosure.");
                 inspect(details);
+                concluded.add(evidence);
                 return;
             }
             if (typeof value.channel !== "string" || !value.channel || !Number.isSafeInteger(value.contentLength) || value.contentLength < 0) {

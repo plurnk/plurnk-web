@@ -30,7 +30,7 @@ export default async function verifyDiagnostics(t) {
                     await receive(notice);
                     assert.equal(await list.isVisible(), true);
                     assert.equal(await rows.first().getByRole("article", { name: "Warning · engine:provider:provider_unavailable", exact: true }).count(), 1);
-                    assert.equal(await rows.first().locator('[data-text="diagnostic-message"]').textContent(), notice.value.message);
+                    assert.equal(await rows.first().locator('[data-diagnostic-message]').textContent(), notice.value.message);
                     assert.equal(await rows.first().getAttribute("data-diagnostic-level"), "warn");
                     assert.equal(await rows.first().locator("header, details, code").count(), 0);
                     assert.equal(await rows.first().getAttribute("data-diagnostic-details"), null);
@@ -49,7 +49,7 @@ export default async function verifyDiagnostics(t) {
                     } };
                     await receive(problem);
                     assert.equal(await rows.last().getByRole("article", { name: `Error · ${problem.value.title}`, exact: true }).count(), 1);
-                    assert.equal(await rows.last().locator('[data-text="diagnostic-recovery"]').textContent(), problem.value.recovery);
+                    assert.equal(await rows.last().locator('[data-diagnostic-recovery]').textContent(), problem.value.recovery);
                     assert.equal(await list.locator("img, script, form, a").count(), 0, "diagnostic data cannot create actions or network requests");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "diagnostics never fabricate conversation messages");
                     assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial", "severity does not drive lifecycle");

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { inspectRenderedResults } from "./result-body.js";
+import { inspectStreamOutput } from "./worker-streams.js";
+import { inspectResult, observeMessages } from "./result-body.js";
 import { HttpAgent } from "@ag-ui/client";
 import { inputPage } from "./worker-input.js";
 
@@ -52,8 +53,8 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         await connected(page);
         assert.equal(model.requests.length, 2);
         assert.equal(requests.length, 1, "daemon policy settles the operation without asking the client");
-        const results = await page.locator('[data-message-role="tool"] [data-message-body]').allTextContents();
-        assert.ok(results.some((body) => JSON.parse(body).problem?.type === "https://problems.plurnk.xyz/proposal/rejected"), JSON.stringify(results));
+        const outcome = page.locator('[data-call-id][data-plurnk-type="sh"] [data-plurnk-field="outcome"]');
+        assert.match(await outcome.textContent(), /The proposal was rejected \(policy_veto\)\./u);
         checkBrowser();
     }, { env: { PLURNK_SERVICE_PROPOSALS: "reject" } }));
     await t.test("{§web-worker-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
@@ -83,20 +84,17 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             assert.equal(await review.locator("[data-requests] > fieldset").count(), 1);
             assert.equal(await review.locator('[data-text="proposal-worker"]').innerText(), "user");
             assert.equal(await review.locator('[data-text="proposal-op"]').innerText(), "sh");
-            assert.equal(await review.locator('[data-text="proposal-body"]').textContent(), "[sh] printf approved");
-            const projection = JSON.parse(await review.locator('[data-text="proposal-details"]').textContent());
-            assert.equal(projection.worker, "user");
-            assert.equal(projection.body, "[sh] printf approved");
-            assert.equal(projection.disposition.decision, "review");
+            assert.equal(await review.locator('[data-proposal-body]').textContent(), "[sh] printf approved");
+            assert.equal(await review.locator('[data-text="proposal-details"]').count(), 0, "review facts are not duplicated in an envelope dump");
             assert.equal(await review.locator("input:checked").count(), 0, "permission has no preselected answer");
             await review.getByRole("button", { name: "Submit responses", exact: true }).click();
             assert.equal(requests.length, 1, "native required controls prevent an unanswered review");
             assert.equal(model.requests.length, 1);
             const reasoning = page.locator('[data-message-role="reasoning"]').first();
             await reasoning.locator("summary").click();
-            await reasoning.getByRole("button", { name: "Read body", exact: true }).click();
+            await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();
             await reasoning.locator('[data-body-state="loaded"]').waitFor();
-            assert.equal(await reasoning.locator('[data-text="body-content"]').textContent(), `Considering ${name}.`,
+            assert.equal(await reasoning.locator('[data-body-reference]').textContent(), `Considering ${name}.`,
                 "{§web-worker-reasoning} authenticated inspection uses the real protected reasoning resource");
             await page.getByRole("textbox", { name: "Message", exact: true }).fill("Keep this newer draft.");
             await review.getByRole("radio", { name: decision, exact: false }).check();
@@ -120,12 +118,18 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             assert.equal(resume.forwardedProps.plurnk.action, undefined);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this newer draft.");
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1, "review is not another user message");
-            const call = page.locator('[data-call-name="sh"]');
+            const call = page.locator('[data-call-id][data-plurnk-type="sh"]');
             assert.equal(await call.count(), 1);
-            const bodies = await inspectRenderedResults(page);
-            if (decision === "accept") assert.ok(bodies.some((body) => body.content === "approved"), JSON.stringify(bodies));
-            else assert.ok(bodies.some((result) => result.status === 400
-                && result.problem?.type === "https://problems.plurnk.xyz/proposal/rejected"), JSON.stringify(bodies));
+            if (decision === "accept") {
+                await page.locator('[data-stream-outcomes] > summary').click();
+                const outcome = page.locator('[data-stream-outcomes] ol > li');
+                assert.equal(await outcome.count(), 1);
+                await outcome.locator(':scope > details > summary').click();
+                assert.equal((await inspectStreamOutput(outcome)).stdout.content, "approved", "accepted work still produces its exact output through explicit stream inspection");
+            } else {
+                assert.match(await call.locator('[data-plurnk-field="outcome"]').textContent(), /The proposal was rejected \([^)]+\)\./u);
+                assert.equal(await page.locator('[data-stream-outcomes] ol > li').count(), 0, "rejection never starts a stream");
+            }
             assert.equal(await review.isVisible(), false);
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
@@ -227,12 +231,12 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-worker-approval} serial operations present fresh gates without inheriting a prior decision", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-worker-approval} serial operations present fresh gates without inheriting a prior decision", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-batch");
         const groups = page.locator('[data-requests] > fieldset');
         assert.equal(await groups.count(), 1, "dispatch waits for the first proposal before reaching the next operation");
-        assert.equal(await groups.locator('[data-text="proposal-body"]').textContent(), "[sh] printf first");
+        assert.equal(await groups.locator('[data-proposal-body]').textContent(), "[sh] printf first");
         const first = await groups.getAttribute("data-interrupt-id");
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         assert.equal(requests.length, 1, "an unanswered proposal cannot resume");
@@ -244,7 +248,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
                 && group && group.dataset.interruptId !== id;
         }, first);
         assert.equal(await groups.count(), 1);
-        assert.equal(await groups.locator('[data-text="proposal-body"]').textContent(), "[sh] printf second");
+        assert.equal(await groups.locator('[data-proposal-body]').textContent(), "[sh] printf second");
         assert.equal(await groups.locator("input:checked").count(), 0);
         assert.equal(model.requests.length, 1, "both operations belong to the same model turn");
         await groups.getByRole("radio", { name: "Reject", exact: true }).check();
@@ -257,11 +261,14 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             { status: "resolved", payload: { decision: "accept" } },
             { status: "resolved", payload: { decision: "reject" } },
         ]);
-        const results = await inspectRenderedResults(page);
-        assert.ok(results.some((body) => body.content === "first"));
-        assert.ok(results.some((result) => result.status === 400
-            && result.problem?.type === "https://problems.plurnk.xyz/proposal/rejected"), JSON.stringify(results));
-        assert.equal(results.some((body) => body.content === "second"), false);
+        const calls = page.locator('[data-call-id][data-plurnk-type="sh"]');
+        assert.equal(await calls.count(), 2);
+        assert.match(await calls.nth(1).locator('[data-plurnk-field="outcome"]').textContent(), /The proposal was rejected \([^)]+\)\./u);
+        const messages = await observeMessages(requests[0].threadId, base, headers);
+        const accepted = await calls.first().getAttribute("data-call-id");
+        const result = messages.find((message) => message.role === "tool" && message.toolCallId === accepted && message.metadata?.plurnk?.op === "READ");
+        assert.ok(result, "the accepted command's stream output remains correlated with its call");
+        assert.equal((await inspectResult(result.content, undefined, base)).content, "first");
         assert.equal(model.requests.length, 2);
         checkBrowser();
     }));
@@ -319,7 +326,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         assert.equal(requests.filter(({ resume }) => resume?.length).length, 2);
         assert.ok(requests.filter(({ resume }) => resume?.length).every((input) => input.threadId === threadId));
         assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
-        assert.equal(await page.locator('[data-call-name="sh"]').count(), 0,
+        assert.equal(await page.locator('[data-call-id][data-plurnk-type="sh"]').count(), 0,
             "independent child calls do not become the owner's own conversation");
         checkBrowser();
     }));
@@ -351,11 +358,8 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         assert.equal(model.requests.length, 2);
         assert.equal(requests.length, 3);
         assert.notEqual(requests[1].resume[0].interruptId, requests[2].resume[0].interruptId);
-        const results = await page.locator('[data-message-role="tool"] [data-message-body]').allTextContents();
-        assert.ok(results.some((body) => {
-            const result = JSON.parse(body);
-            return result.status === 400 && result.problem?.type === "https://problems.plurnk.xyz/proposal/rejected";
-        }), JSON.stringify(results));
+        const outcome = page.locator('[data-call-id][data-plurnk-type="sh"] [data-plurnk-field="outcome"]');
+        assert.equal(await outcome.textContent(), "Rejected — The proposal was rejected (rejected).");
         checkBrowser();
     }));
 

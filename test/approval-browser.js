@@ -33,9 +33,10 @@ export default async function verifyApproval(t) {
                     const groups = form.locator("[data-requests] > fieldset");
                     assert.equal(await groups.count(), 2);
                     assert.deepEqual(await groups.evaluateAll((nodes) => nodes.map((node) => node.dataset.interruptId)), gates.map(({ id }) => id));
-                    assert.equal(await groups.nth(1).locator('[data-text="proposal-body"]').textContent(), gates[1].metadata.plurnk.proposal.body);
-                    assert.deepEqual(JSON.parse(await groups.nth(1).locator('[data-text="proposal-details"]').textContent()), gates[1].metadata.plurnk.proposal);
-                    assert.equal(await form.locator("form, script, [data-text='proposal-body'] button").count(), 0);
+                    assert.equal(await groups.nth(1).getAttribute("data-proposal-body"), null, "the operation body is content, not attribute state");
+                    assert.equal(await groups.nth(1).locator('[data-proposal-body]').textContent(), gates[1].metadata.plurnk.proposal.body);
+                    assert.equal(await groups.nth(1).locator("details").count(), 0);
+                    assert.equal(await form.locator("form, script, [data-proposal-body] button").count(), 0);
                     assert.equal(await form.locator("input:checked").count(), 0);
                     await groups.nth(0).getByRole("radio", { name: "Accept", exact: true }).check();
                     await groups.nth(1).getByRole("radio", { name: "Reject", exact: true }).check();

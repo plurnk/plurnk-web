@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { chromium, firefox, webkit } from "playwright";
+import conversationFixture from "./conversation-fixture.js";
+import browserDiagnostics from "./browser-diagnostics.js";
+
+const selection = (path, marks, pattern) => ({
+    target: path ? { raw: path } : null,
+    lineMarker: marks ? { marks } : null,
+    matcher: pattern ? { raw: pattern } : null,
+});
+const call = (id, name, args) => ({ id, role: "assistant", toolCalls: [{
+    id: `${id}-call`, type: "function", function: { name, arguments: JSON.stringify(args) },
+    metadata: { plurnk: { op: name, attrs: { sentinel: "private envelope" } } },
+}] });
+const result = (id, receipt) => ({ id: `${id}-result`, role: "tool", toolCallId: `${id}-call`, content: JSON.stringify(receipt) });
+
+/** {§web-operation-summary} Shared structure, authored selection and own receipt; no inferred readback. */
+export default async function verifySemanticContent(t) {
+    const { server, url } = await conversationFixture();
+    try {
+        for (const engine of [chromium, firefox, webkit]) {
+            await t.test(engine.name(), async () => {
+                const browser = await engine.launch();
+                try {
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    const requests = [];
+                    page.on("request", (request) => { if (request.url().includes("/agui/")) requests.push(request.url()); });
+                    await page.goto(url);
+                    await page.waitForFunction(() => typeof window.present === "function");
+                    const present = (messages) => page.evaluate((messages) => { window.source = messages; window.present(messages); }, messages);
+                    const list = page.locator("[data-messages]");
+                    const row = (id) => list.locator(`[data-message-id="${id}"]`);
+                    const field = (item, name) => item.locator(`[data-plurnk-field="${name}"]`);
+                    const glyph = (item) => item.locator("article > header").evaluate((element) => getComputedStyle(element, "::before").content);
+                    const glyphs = { FIND: "🔎", READ: "📖", EDIT: "📝", COPY: "🖨️", MOVE: "📦", KILL: "🗑️", WAIT: "⏳", WORK: "🐜", FORK: "🔱", BARE: "☁️", WARN: "⚠️", FAIL: "⛔", INFO: "📌", sh: "⚙️", mcp: "⚙️", schedule: "⚙️", members: "⚙️" };
+                    const names = Object.keys(glyphs);
+                    const messages = names.flatMap((name) => [
+                        call(name, name, { ...selection("README.md", [1, -1], "/mudkips/"), aside: `Actual ${name} aside` }),
+                        result(name, { status: 200, path: "README.md", content: "Receipt body is not a summary", range: { unit: "line", total: 40, requested: [1, -1], returned: [1, 3] } }),
+                    ]);
+                    await present(messages);
+                    assert.equal(await list.locator(":scope > li").count(), names.length, "own receipts complete their call, not a second article");
+                    for (const name of names) {
+                        const item = row(name);
+                        assert.equal(await item.locator(":scope > article").count(), 1);
+                        assert.deepEqual(await item.locator("article > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["HEADER", "P"]);
+                        assert.equal(await field(item, "aside").textContent(), `Actual ${name} aside`);
+                        assert.equal(await field(item, "path").textContent(), "(README.md)");
+                        assert.equal(await field(item, "scope").textContent(), "<1,-1>");
+                        assert.equal(await field(item, "pattern").textContent(), "/mudkips/");
+                        assert.equal(await item.getByRole("article", { name, exact: true }).count(), 1);
+                        assert.equal(await item.locator("section, div, details, button, a, dl, pre").count(), 0);
+                        assert.equal(await item.getAttribute("data-plurnk-status"), "200");
+                        assert.ok((await glyph(item)).includes(glyphs[name]), `${name}'s stylesheet glyph survives production pruning`);
+                        assert.doesNotMatch(await item.innerText(), /200|Receipt body|private envelope/u);
+                    }
+                    assert.equal(await field(row("READ"), "count").textContent(), "{3}");
+                    assert.equal(await field(row("EDIT"), "count").count(), 0, "no generic range-as-line-count guess");
+                    assert.equal(await field(row("mcp"), "runtime").textContent(), "mcp");
+                    assert.match(await glyph(row("READ")), /📖/u);
+                    assert.match(await glyph(row("mcp")), /⚙/u);
+                    assert.deepEqual(await page.evaluate(() => window.source), messages, "projection never rewrites SDK authority");
+
+                    const read = call("read", "READ", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
+                    const readResult = result("read", { status: 200, lineOrdinals: [1, 8], range: { unit: "line", total: 50, requested: [1, -1], returned: [1, 8] } });
+                    readResult.content = [{ type: "text", text: readResult.content }, { type: "document", source: { type: "url", value: new URL("/agui/body", url).href, mimeType: "text/plain" } }];
+                    await present([read, readResult]);
+                    assert.equal(await row("read").locator("article > header").innerText(), "Looking for mudkips");
+                    assert.equal(await row("read").locator("article > p").innerText(), "(README.md) <1,-1> /mudkips/ {2}");
+                    await row("read").scrollIntoViewIfNeeded();
+                    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                    assert.equal(await row("read").locator("[data-body-reference], details").count(), 0);
+                    assert.deepEqual(requests, [], "a READ summary never fetches its readback body");
+                    await present([read, result("read", { status: 404, problem: { title: "Entry not found", detail: "README.md is missing.", recovery: "Choose an existing path." } })]);
+                    assert.equal(await field(row("read"), "outcome").textContent(), "Entry not found — README.md is missing. — Choose an existing path.");
+                    assert.equal(await row("read").getAttribute("data-plurnk-status"), "404");
+                    assert.equal(await field(row("read"), "count").count(), 0, "replacement snapshot removes a stale count");
+
+                    await present([call("copy", "COPY", { source: selection("a.txt", [2, 4], "/source/"), destination: selection("b.txt", [9], null) })]);
+                    assert.equal(await row("copy").locator("article > p").innerText(), "(a.txt) <2,4> /source/ (b.txt) <9>");
+                    assert.deepEqual(await row("copy").locator('[data-plurnk-operand]').allTextContents(), ["(a.txt) <2,4> /source/", "(b.txt) <9>"]);
+                    await present([call("wait", "WAIT", { lineMarker: { marks: [600] } }), call("empty", "WAIT", {})]);
+                    assert.equal(await row("wait").locator("article > p").innerText(), "<600>");
+                    assert.equal(await row("empty").locator("article > header").count(), 1);
+                    assert.equal(await row("empty").locator("article > p").count(), 0, "no empty row or filler text");
+                    await present([call("find", "FIND", {}), result("find", { status: 204, range: { unit: "result", total: 0, requested: [1, -1] } })]);
+                    assert.equal(await field(row("find"), "count").textContent(), "{0}");
+                    const rejected = call("invalid", "READ", { text: "READ (missing closing syntax" });
+                    rejected.toolCalls[0].metadata.plurnk.op = "error";
+                    await present([rejected, result("invalid", { status: 400, problem: { title: "Invalid operation" } })]);
+                    assert.equal(await field(row("invalid"), "path").count(), 0, "rejected syntax is not reparsed into imagined operands");
+                    assert.equal(await field(row("invalid"), "outcome").textContent(), "Invalid operation");
+                    assert.match(await glyph(row("invalid")), /⛔/u);
+
+                    const literal = '**Not emphasis**\n</pre><script>window.contentExecuted=true</script><pre>\n&copy; 分析 🐹';
+                    const note = call("note", "NOTE", { body: literal, aside: "fact" });
+                    await present([note]);
+                    await row("note").locator("pre").evaluate((element) => {
+                        window.bodyNode = element.firstChild;
+                        const range = document.createRange();
+                        range.selectNodeContents(element);
+                        getSelection().removeAllRanges();
+                        getSelection().addRange(range);
+                    });
+                    await present([note, result("note", { status: 200 })]);
+                    assert.equal(await row("note").locator("pre").textContent(), literal);
+                    assert.equal(await row("note").locator("pre > *, script, strong, code").count(), 0);
+                    assert.equal(await row("note").locator("pre").evaluate((element) => element.firstChild === window.bodyNode), true);
+                    assert.equal(await page.evaluate(() => getSelection().toString()), literal, "receipt arrival preserves selection");
+                    assert.match(await glyph(row("note")), /📊/u);
+                    assert.equal(await field(row("note"), "aside").count(), 0);
+                    const attributes = await row("note").evaluate((element) => [element, ...element.querySelectorAll("*")].flatMap((node) => Array.from(node.attributes, ({ value }) => value)));
+                    assert.equal(attributes.some((value) => value.includes(literal)), false, "no body mirror in attributes");
+                    assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
+
+                    await present([
+                        call("send", "SEND", { body: { raw: "Actual **reply**.", json: null } }), result("send", { status: 200, completion: 200 }),
+                        call("work", "WORK", { target: { raw: "helper" }, aside: "Delegate" }), result("work", { status: 202 }),
+                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', metadata: { plurnk: { op: "SEND", status: 200, signal: 200 } } },
+                        { id: "observation", role: "tool", toolCallId: "work-call", content: '{"status":200,"path":"ops://helper/1","range":{"unit":"line","total":2,"requested":[1,-1],"returned":[1,2]}}', metadata: { plurnk: { op: "READ", status: 200 } } },
+                    ]);
+                    assert.deepEqual(await list.locator(":scope > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)), ["send", "work", "child-reply", "observation"]);
+                    assert.equal(await row("send").locator("article > p > strong").textContent(), "reply");
+                    assert.match(await glyph(row("send")), /🐹/u);
+                    await assert.rejects(present([call("duplicate", "WAIT", {}), result("duplicate", { status: 200 }), { ...result("duplicate", { status: 200 }), id: "other-result" }]), /Operation has duplicate immediate receipts\./u);
+                    assert.equal(await row("send").count(), 1, "a rejected snapshot leaves the last valid projection intact");
+                    assert.equal(await row("child-reply").locator("article > p").innerText(), '{"answer":"Delivered reply"}', "JSON-looking delivered speech remains content");
+                    assert.equal(await field(row("observation"), "path").textContent(), "(ops://helper/1)");
+                    assert.equal(await field(row("observation"), "aside").count(), 0, "later observations do not borrow the invocation's aside");
+                    assert.equal(await field(row("observation"), "count").textContent(), "{2}");
+                    const hostile = '</header><script>window.summaryExecuted=true</script><img src="/unasked">&copy;';
+                    await present([call("hostile", "READ", { ...selection(hostile, [1, 2], hostile), aside: hostile })]);
+                    assert.equal(await field(row("hostile"), "aside").textContent(), hostile);
+                    assert.equal(await field(row("hostile"), "path").textContent(), `(${hostile})`);
+                    assert.equal(await field(row("hostile"), "pattern").textContent(), hostile);
+                    assert.equal(await row("hostile").locator("script, img, form, a").count(), 0);
+                    assert.equal(await page.evaluate(() => window.summaryExecuted), undefined);
+                    assert.deepEqual(requests, []);
+                    const speech = { id: "speech", role: "assistant", content: "Unchanged body.", metadata: { plurnk: { op: "SEND", aside: "Earlier aside" } } };
+                    await present([speech]);
+                    await row("speech").locator("article > p").evaluate((element) => { window.speechBody = element; });
+                    await present([{ ...speech, metadata: {} }]);
+                    assert.equal(await row("speech").locator("header, [data-plurnk-operands]").count(), 0, "changed metadata cannot retain a stale summary");
+                    assert.equal(await row("speech").locator("article > p").evaluate((element) => element === window.speechBody), true);
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        }
+    } finally { await server.close(); }
+}

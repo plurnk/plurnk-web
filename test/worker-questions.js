@@ -3,7 +3,7 @@ import { HttpAgent } from "@ag-ui/client";
 import { inputPage } from "./worker-input.js";
 import { answerSchema, exactAnswer } from "./question-fixture.js";
 import startMcp from "./mcp-fixture.js";
-import { inspectRenderedResults } from "./result-body.js";
+import { inspectResult, observeMessages } from "./result-body.js";
 
 const interrupted = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -33,19 +33,24 @@ async function answer(page, form = review(page)) {
     await form.getByRole("combobox", { name: "confirm", exact: true }).selectOption(String(exactAnswer.confirm));
 }
 
-const questionResult = async (page) => {
-    return (await inspectRenderedResults(page)).find((result) => result.content?.includes('"action"'));
+const questionResult = async (page, base, headers) => {
+    const threadId = await page.locator("#worker-status").getAttribute("data-thread-id");
+    const messages = await observeMessages(threadId, base, headers);
+    const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.function.name === "question").map(({ id }) => id));
+    const result = messages.find((message) => message.role === "tool" && ids.has(message.toolCallId));
+    assert.ok(result, "the daemon retains the question's exact correlated response");
+    return inspectResult(result.content, headers.Authorization?.slice("Bearer ".length), base);
 };
 
 // {§web-worker-questions} The real daemon requests input; shipped forms and HttpAgent settle it.
 export default async function verifyWorkerQuestions({ t, withDaemon }) {
     for (const cancelled of [false, true]) {
-        await t.test(`{§web-worker-questions} ${cancelled ? "cancellation" : "typed native input"} resumes a real question without another prompt`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        await t.test(`{§web-worker-questions} ${cancelled ? "cancellation" : "typed native input"} resumes a real question without another prompt`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 800 });
             const requests = requestsFrom(page);
             const name = cancelled ? "question-cancel" : "question-answer";
             await ask(page, name);
-            assert.deepEqual(JSON.parse(await review(page).locator('[data-text="request-schema"]').textContent()), answerSchema);
+            assert.deepEqual(JSON.parse(await review(page).locator('[data-request-schema]').textContent()), answerSchema);
             assert.equal(await review(page).locator('[data-text="request-tool"]').textContent(), "question");
             assert.equal(model.requests.length, 1);
             if (cancelled) await cancel(page);
@@ -72,8 +77,8 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
             assert.ok(requests.every(({ tools }) => tools.some(({ name }) => name === "question") && tools.some(({ name }) => name === "mcp_input_required")));
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
-            const receipt = await questionResult(page);
-            assert.ok(receipt, "the daemon's operation result reaches the conversation");
+            const receipt = await questionResult(page, base, headers);
+            assert.equal(await page.locator('[data-call-id][data-plurnk-type="question"] > article > header').innerText(), "question");
             assert.deepEqual(JSON.parse(receipt.content), cancelled ? { action: "cancel" } : { action: "accept", content: exactAnswer });
             assert.ok(JSON.stringify(model.requests[1].messages).includes(cancelled ? "cancel" : "cobalt heron"), "the operation result also reaches the resumed model");
             assert.equal(await review(page).isVisible(), false);
@@ -245,7 +250,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         const childPage = await context.newPage();
         await childPage.goto(path.replace("@user/", "@child/"));
         await childPage.getByText("Completed held-question-child.", { exact: true }).waitFor();
-        assert.deepEqual(JSON.parse((await questionResult(childPage)).content), { action: "accept", content: exactAnswer });
+        assert.deepEqual(JSON.parse((await questionResult(childPage, base, headers)).content), { action: "accept", content: exactAnswer });
         assert.equal(model.requests.length, 3, JSON.stringify(model.requests.map(({ messages }) => messages.map(({ role, content }) => ({ role, content: String(content).slice(-1200) })))));
         assert.equal(await page.locator('[data-message-role="user"]').count(), 1, "the child request does not admit a new owner prompt");
         checkBrowser();
@@ -262,7 +267,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
                         throw new Error(`MCP question did not arrive: ${JSON.stringify({ peerErrors: mcp.errors.map(String), page: await page.locator("main").textContent() })}`, { cause });
                     }
                     assert.equal(await review(page).locator('[data-text="request-tool"]').textContent(), "mcp_input_required");
-                    const args = JSON.parse(await review(page).locator('[data-text="request-arguments"]').textContent());
+                    const args = JSON.parse(await review(page).locator('[data-request-arguments]').textContent());
                     assert.equal(args.requests.authorize.params.url, "https://authorization.invalid/authorize");
                     assert.doesNotMatch(JSON.stringify(args), /private-continuation/u);
                     await page.reload();

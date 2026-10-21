@@ -68,7 +68,6 @@
                     <header><span aria-hidden="true" data-i18n="stream-failed-icon">❌</span> <strong data-text="stream-problem-title">Stream failed</strong></header>
                     <p data-text="stream-problem">Failure details</p>
                 </article>
-                <pre><code data-text="stream-result">Result</code></pre>
             </details>
         </li>
     </template>
@@ -93,21 +92,15 @@
                 <p><small data-text="output-mime">Content type</small></p>
                 <p><span data-i18n="output-offset">Offset (code points):</span> <span data-text="output-offset">0</span>
                     <span data-i18n="output-length">Length:</span> <span data-text="output-length">0</span></p>
-                <pre><code data-text="output-content"></code></pre>
+                <pre data-output-content></pre>
             </details>
         </li>
     </template>
     <template id="conversation-body-reference">
-      <section data-body-reference data-bind="aria-label:body-label">
-        <p><code data-text="body-address">Body address</code> <small data-text="body-mime">Content type</small></p>
-        <button type="button" data-action="read-body" data-bind="disabled:body-pending" data-i18n="read-body">Read body</button>
-        <p data-body-loading role="status" data-i18n="reading-body">Reading body…</p>
-        <article data-body-failure role="alert">
-          <header><span aria-hidden="true" data-i18n="body-warning">⚠️</span> <strong data-i18n="body-read-failed">Body read failed</strong></header>
-          <p data-text="body-error">The body could not be read.</p>
-        </article>
-        <pre data-body-content><code data-text="body-content"></code></pre>
-      </section>
+        <pre data-body-reference data-bind="aria-busy:body-pending"></pre>
+    </template>
+    <template id="conversation-body-retry">
+        <form><button type="submit" data-i18n="retry-body">Retry</button></form>
     </template>
     <template id="worker-preparation">
         <li><code data-text="preparation-family">Capability</code> <span data-text="preparation-alias">Alias</span>
@@ -125,25 +118,26 @@
     <template id="worker-diagnostic">
         <li>
             <article data-bind="aria-label:diagnostic-label">
-                <p data-text="diagnostic-message">Diagnostic message</p>
-                <p data-text="diagnostic-recovery">Recovery</p>
+                <p data-diagnostic-message></p>
             </article>
         </li>
+    </template>
+    <template id="diagnostic-recovery">
+        <p data-diagnostic-recovery></p>
     </template>
     <!-- {§web-worker-activity} Observations are literal evidence, not replies or executable markup. -->
     <template id="worker-ambient">
         <li>
-            <article data-bind="aria-label:activity-label">
-                <p data-text="activity-operation">Log entry</p>
-                <div data-activity-body></div>
-                <div data-activity-reasoning></div>
-            </article>
+            <article data-bind="aria-label:activity-label"></article>
         </li>
     </template>
     <template id="worker-outside">
         <li>
-            <article data-bind="aria-label:activity-label"><pre><code data-text="activity-text">Outside-operation text</code></pre></article>
+            <article data-bind="aria-label:activity-label"><pre></pre></article>
         </li>
+    </template>
+    <template id="activity-reasoning">
+        <details><summary data-i18n="activity-reasoning">Reasoning</summary></details>
     </template>
     <!-- {§web-worker-input} Native form structure; the worker SDK owns delivery. -->
     <template id="worker-controls">
@@ -172,17 +166,10 @@
     <template id="worker-command-result">
         <li>
             <article data-command-state="pending" data-bind="aria-busy:command-busy">
-                <header><code data-text="command-input">Command</code></header>
+                <header><code></code></header>
                 <p role="status" data-text="command-message">Running…</p>
                 <div data-command-output></div>
-                <details data-command-evidence>
-                    <summary data-i18n="command-evidence">Daemon result</summary>
-                    <pre><code data-text="command-evidence">Result</code></pre>
-                </details>
-                <details data-command-problem>
-                    <summary data-i18n="command-problem">Error details</summary>
-                    <pre><code data-text="command-problem">Problem</code></pre>
-                </details>
+                <p data-text="command-recovery"></p>
             </article>
         </li>
     </template>
@@ -242,9 +229,9 @@
     </template>
     <template id="command-capabilities">
         <dl>
-            <dt data-i18n="capability-service">Service</dt><dd><pre><code data-text="capability-service">Policy</code></pre></dd>
-            <dt data-i18n="capability-workspace">Workspace</dt><dd><pre><code data-text="capability-workspace">Policy</code></pre></dd>
-            <dt data-i18n="capability-effective">Effective</dt><dd><pre><code data-text="capability-effective">Policy</code></pre></dd>
+            <dt data-i18n="capability-service">Service</dt><dd><pre><code data-capability="service"></code></pre></dd>
+            <dt data-i18n="capability-workspace">Workspace</dt><dd><pre><code data-capability="workspace"></code></pre></dd>
+            <dt data-i18n="capability-effective">Effective</dt><dd><pre><code data-capability="effective"></code></pre></dd>
         </dl>
     </template>
     <!-- {§web-worker-approval} One explicit decision per operation, one complete resume. -->
@@ -261,14 +248,14 @@
     <template id="worker-question">
         <fieldset data-question data-response-error="">
             <legend><span data-request-origin><span data-i18n="request-worker">Worker</span> <span data-text="request-worker">Unknown</span></span> <code data-text="request-tool">Question</code></legend>
-            <p data-text="request-message">Provide the requested input.</p>
+            <p data-request-message></p>
             <details>
                 <summary data-i18n="request-details">Request details</summary>
-                <pre><code data-text="request-arguments">Request details</code></pre>
+                <pre><code data-request-arguments></code></pre>
             </details>
             <details>
                 <summary data-i18n="response-schema">Response schema</summary>
-                <pre><code data-text="request-schema">Response schema</code></pre>
+                <pre><code data-request-schema></code></pre>
             </details>
             <label><input type="checkbox" data-answer-cancel> <span data-i18n="cancel-request">Cancel this request</span></label>
             <fieldset data-answer-fields></fieldset>
@@ -296,12 +283,8 @@
     <template id="worker-proposal">
         <fieldset>
             <legend><span data-text="proposal-worker">Worker</span> <code data-text="proposal-op">Operation</code></legend>
-            <pre><code data-text="proposal-target">Target</code></pre>
-            <pre><code data-text="proposal-body">Operation body</code></pre>
-            <details>
-                <summary data-i18n="review-details">Review details</summary>
-                <pre><code data-text="proposal-details">Proposal evidence</code></pre>
-            </details>
+            <pre><code data-proposal-target></code></pre>
+            <pre><code data-proposal-body></code></pre>
             <label><input type="radio" value="accept" required data-bind="name:proposal-choice"> <span data-i18n="accept">Accept</span></label>
             <label><input type="radio" value="reject" required data-bind="name:proposal-choice"> <span data-i18n="reject">Reject</span></label>
         </fieldset>
@@ -309,34 +292,40 @@
     <!-- {§web-worker-conversation} Inert document-owned structure; HttpAgent supplies its values. -->
     <template id="worker-reasoning-preview">
         <section data-reasoning-preview aria-label="Live reasoning">
-            <p data-i18n="live-reasoning">Live reasoning</p>
-            <pre><code data-text="reasoning-text"></code></pre>
+            <pre></pre>
         </section>
     </template>
     <template id="conversation-message">
-        <li data-bind="id:call-anchor">
-            <article data-message-body data-bind="aria-label:message-label"></article>
+        <li>
+            <article data-bind="aria-label:message-label"></article>
         </li>
     </template>
     <template id="conversation-detail">
         <li>
             <details>
                 <summary data-text="message-label">Reasoning</summary>
-                <div data-message-body></div>
+                <article></article>
             </details>
         </li>
     </template>
-    <template id="conversation-result">
-        <li>
-            <article data-bind="aria-label:message-label">
-                <p data-text="message-error">Tool failed.</p>
-                <a data-call-link data-bind="href:call-href" data-i18n="view-call">View call</a>
-                <div data-message-body></div>
-            </article>
-        </li>
+    <template id="conversation-error">
+        <p data-message-error></p>
     </template>
     <template id="conversation-literal">
-        <pre><code data-text="literal-content">No content.</code></pre>
+        <pre></pre>
+    </template>
+    <!-- {§web-operation-summary} Shared summary; the stylesheet owns operation glyphs. -->
+    <template id="operation-header">
+        <header></header>
+    </template>
+    <template id="operation-operands">
+        <p data-plurnk-operands></p>
+    </template>
+    <template id="operation-operand">
+        <span data-plurnk-operand></span>
+    </template>
+    <template id="operation-field">
+        <span></span>
     </template>
     <!-- {§web-diagram-content} Only the generated data-URI image enters this template. -->
     <template id="conversation-diagram">
@@ -344,7 +333,7 @@
             <div data-diagram-viewport><img data-bind="src:diagram-url" alt="Mermaid diagram; source below."></div>
             <details>
                 <summary data-i18n="diagram-source">Diagram source</summary>
-                <pre><code data-text="diagram-source">Diagram source</code></pre>
+                <pre><code data-diagram-source></code></pre>
             </details>
         </figure>
     </template>

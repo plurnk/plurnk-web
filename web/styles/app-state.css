@@ -21,8 +21,7 @@ header nav button:is(:hover, :focus-visible) {
 /* {§web-worker-commands} Results have their own literal, non-conversation outlet. */
 #worker-command-results:not(:has(ol > li)),
 #worker-command-results [data-command-message=""] > [role="status"],
-#worker-command-results [data-command-evidence=""] > [data-command-evidence],
-#worker-command-results [data-command-problem=""] > [data-command-problem],
+#worker-command-results [data-text="command-recovery"]:empty,
 #worker-command-results [data-model-more=""] [data-text="model-more"],
 #worker-command-results section:not([data-alias-count="0"]) > [data-no-aliases] {
     display: none;
@@ -56,15 +55,12 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 /* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
-#worker-diagnostics:not(:has(ol > li)),
-[data-diagnostic-message=""] [data-text="diagnostic-message"],
-[data-diagnostic-recovery=""] [data-text="diagnostic-recovery"] {
+#worker-diagnostics:not(:has(ol > li)) {
     display: none;
 }
 
 /* {§web-worker-activity} Empty observations and inspection outlets have no presentation. */
-#worker-activity:not(:has(> ol > li)),
-#worker-activity :is([data-activity-body], [data-activity-reasoning]):empty {
+#worker-activity:not(:has(> ol > li)) {
     display: none;
 }
 
@@ -79,7 +75,41 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 /* {§web-worker-conversation} Empty slots are native document state, not JavaScript styling. */
-#worker-conversation [data-text="message-error"] {
+#worker-conversation p[data-message-error] {
+    color: var(--pico-del-color);
+}
+
+/* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
+[data-plurnk-type] > article > header::before {
+    content: var(--plurnk-operation-glyph, "⚙️") / "";
+    margin-inline-end: 0.5ch;
+}
+
+[data-plurnk-type="NOTE"] { --plurnk-operation-glyph: "🗒️"; }
+[data-plurnk-type="FIND"] { --plurnk-operation-glyph: "🔎"; }
+[data-plurnk-type="READ"] { --plurnk-operation-glyph: "📖"; }
+[data-plurnk-type="EDIT"] { --plurnk-operation-glyph: "📝"; }
+[data-plurnk-type="COPY"] { --plurnk-operation-glyph: "🖨️"; }
+[data-plurnk-type="MOVE"] { --plurnk-operation-glyph: "📦"; }
+[data-plurnk-type="KILL"] { --plurnk-operation-glyph: "🗑️"; }
+[data-plurnk-type="WORK"] { --plurnk-operation-glyph: "🐜"; }
+[data-plurnk-type="FORK"] { --plurnk-operation-glyph: "🔱"; }
+[data-plurnk-type="BARE"] { --plurnk-operation-glyph: "☁️"; }
+[data-plurnk-type="WAIT"] { --plurnk-operation-glyph: "⏳"; }
+[data-plurnk-type="SEND"] { --plurnk-operation-glyph: "✉️"; }
+[data-plurnk-type="SEND"][data-plurnk-signal="200"] { --plurnk-operation-glyph: "🐹"; }
+[data-plurnk-type="SEND"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
+[data-plurnk-type="WARN"] { --plurnk-operation-glyph: "⚠️"; }
+
+[data-plurnk-type="FAIL"],
+[data-plurnk-type="error"] { --plurnk-operation-glyph: "⛔"; }
+[data-plurnk-type="INFO"] { --plurnk-operation-glyph: "📌"; }
+[data-plurnk-note="fact"] { --plurnk-operation-glyph: "📊"; }
+[data-plurnk-note="idea"] { --plurnk-operation-glyph: "💡"; }
+[data-plurnk-note="plan"] { --plurnk-operation-glyph: "🚧"; }
+
+[data-message-error="true"] [data-plurnk-field="outcome"],
+:is([data-plurnk-status^="4"], [data-plurnk-status^="5"]) [data-plurnk-field="outcome"] {
     color: var(--pico-del-color);
 }
 
@@ -94,9 +124,7 @@ header nav button:is(:hover, :focus-visible) {
     color: var(--pico-del-color);
 }
 
-#worker-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation],
-#worker-conversation li:not([data-message-error]) [data-text="message-error"],
-#worker-conversation li:not([data-call-href]) [data-call-link] {
+#worker-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
     display: none;
 }
 
@@ -104,10 +132,6 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
-[data-reasoning-preview][data-reasoning-text=""],
-[data-body-reference]:not([data-body-state="error"]) [data-body-failure],
-[data-body-reference]:not([data-body-state="loading"]) [data-body-loading],
-[data-body-reference]:not([data-body-state="loaded"]) [data-body-content],
-[data-body-reference][data-body-state="loaded"] > button {
+[data-reasoning-preview]:has(> pre:empty) {
     display: none;
 }

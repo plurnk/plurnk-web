@@ -48,58 +48,56 @@ export default async function verifyBodies(t) {
                             await route.fulfill({ contentType: "text/html", body: source });
                         }
                     });
-                    const messages = [{ id: "result", role: "tool", toolCallId: "read", content: [
-                        { type: "text", text: '{"status":200,"path":"file.html"}' },
+                    const messages = [{ id: "before-result", role: "assistant", content: "Earlier content.\n\n".repeat(80) },
+                        { id: "result", role: "user", content: [
                         { type: "document", source: { type: "url", value: address, mimeType: "text/html" } },
                     ] }];
                     await page.evaluate((messages) => { window.messages = messages; window.present(messages); }, messages);
                     const result = page.locator('[data-message-id="result"]');
-                    assert.equal(await result.locator("[data-message-body] > pre code").textContent(), '{"status":200,"path":"file.html"}');
-                    assert.equal(await result.getByRole("button", { name: "Read body", exact: true }).count(), 1);
-                    assert.equal(await result.locator("[data-text=body-address]").textContent(), address);
+                    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                    assert.equal(await result.locator("button, a, section, div").count(), 0);
+                    assert.equal(await result.innerText(), "");
+                    assert.doesNotMatch(await result.innerHTML(), /file.html|text\/html|agui\/7|status/u);
                     assert.equal(reads.length, 0);
-                    assert.equal(credentials, 0, "rendering or opening a result neither fetches nor obtains credentials");
-                    await result.getByRole("button", { name: "Read body", exact: true }).click();
+                    assert.equal(credentials, 0, "off-screen history neither fetches nor obtains credentials");
+                    await result.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                     await result.locator('[data-body-state="loaded"]').waitFor();
-                    assert.equal(await result.locator("[data-text=body-content]").textContent(), source);
+                    assert.equal(await result.locator("[data-body-reference]").textContent(), source);
                     assert.equal(await result.locator("script, img, form").count(), 0);
                     assert.deepEqual(await page.evaluate(() => window.messages), messages, "fetched bodies never enter messages sent back to HttpAgent");
-                    await page.evaluate(() => { window.bodyNode = document.querySelector("[data-body-content]"); window.present(structuredClone(window.messages)); });
-                    assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("[data-body-content]")), true);
+                    await page.evaluate(() => { window.bodyNode = document.querySelector("[data-body-reference]"); window.present(structuredClone(window.messages)); });
+                    assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("[data-body-reference]")), true);
                     assert.equal(reads.length, 1);
                     assert.equal(credentials, 1);
 
                     const presentReference = async (value) => {
                         const replacement = structuredClone(messages);
-                        replacement[0].content[1].source.value = value;
+                        replacement[1].content[0].source.value = value;
                         await page.evaluate((messages) => window.present(messages), replacement);
+                        await result.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                     };
                     for (const refused of ["https://elsewhere.invalid/body", "javascript:alert(1)", new URL("/body", url).href.replace("://", "://user:pass@")]) {
                         await presentReference(refused);
-                        await result.getByRole("button", { name: "Read body", exact: true }).click();
                         await result.locator('[data-body-state="error"]').waitFor();
-                        assert.equal(await result.locator("[data-text=body-error]").textContent(), "Body address must be on this daemon's origin.");
+                        assert.equal(await result.locator("[data-body-reference]").textContent(), "Body address must be on this daemon's origin.");
                     }
                     assert.equal(credentials, 1, "an inadmissible address obtains no bearer");
                     assert.equal(reads.length, 1);
 
                     const missing = new URL("/agui/missing", url).href;
                     await presentReference(missing);
-                    await result.getByRole("button", { name: "Read body", exact: true }).click();
                     await result.locator('[data-body-state="error"]').waitFor();
-                    assert.equal(await result.locator("[data-text=body-error]").textContent(), "Body request failed (404).");
-                    assert.equal(await result.locator("[data-message-body] > pre code").textContent(), '{"status":200,"path":"file.html"}');
+                    assert.equal(await result.locator("[data-body-reference]").textContent(), "Body request failed (404).");
                     // Firefox does not log a handled fetch's HTTP refusal to the console.
                     checkBrowser(engine === firefox ? [] : [httpFailure("/agui/missing", 404)]);
-                    await result.getByRole("button", { name: "Read body", exact: true }).click();
+                    await result.getByRole("button", { name: "Retry", exact: true }).click();
                     await result.locator('[data-body-state="loaded"]').waitFor();
                     assert.equal(reads.length, 3, "retry is explicit and performs one additional read");
 
                     await presentReference(new URL("/agui/redirect", url).href);
-                    await result.getByRole("button", { name: "Read body", exact: true }).click();
                     await result.locator('[data-body-state="error"]').waitFor();
-                    assert.match(await result.locator("[data-text=body-error]").textContent(), /Failed to fetch|NetworkError|Load failed/u);
-                    assert.deepEqual(redirects, [], "even explicit inspection never follows a credentialed redirect");
+                    assert.match(await result.locator("[data-body-reference]").textContent(), /Failed to fetch|NetworkError|Load failed/u);
+                    assert.deepEqual(redirects, [], "content hydration never follows a credentialed redirect");
                     checkBrowser(engine === firefox ? [] : engine === chromium ? [
                         /^error \/body: Failed to load resource: net::ERR_FAILED$/u,
                     ] : [
@@ -109,17 +107,17 @@ export default async function verifyBodies(t) {
                     ]);
 
                     const delayed = new URL("/agui/held", url).href;
-                    await presentReference(delayed);
                     const requested = page.waitForRequest(delayed);
                     const delivered = page.waitForResponse(delayed);
-                    await result.getByRole("button", { name: "Read body", exact: true }).click();
-                    assert.equal(await result.getByRole("button", { name: "Read body", exact: true }).isDisabled(), true);
+                    await presentReference(delayed);
                     await requested;
+                    assert.equal(await result.locator("[data-body-reference]").getAttribute("aria-busy"), "true");
+                    assert.equal(await result.getByRole("button").count(), 0);
                     await page.evaluate(() => window.present([{ id: "new-result", role: "tool", toolCallId: "read", content: "New receipt" }]));
                     held.resolve();
                     await (await delivered).finished();
                     await page.waitForFunction(() => !document.querySelector('[data-message-id="result"]'));
-                    assert.equal(await page.locator('[data-message-id="new-result"] [data-message-body]').textContent(), "New receipt");
+                    assert.equal(await page.locator('[data-message-id="new-result"] article').textContent(), "New receipt");
                     assert.equal(await page.locator("[data-body-reference]").count(), 0);
                     checkBrowser();
                 } finally { await browser.close(); }

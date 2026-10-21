@@ -19,9 +19,12 @@ export default function entryOutput(root, read) {
             if (!list) throw new Error("Output snapshot has no channel outlet.");
             $.cloneEach(list, "#stream-output-channel", Object.entries(entry.channels), (channel, [name, value]) => {
                 the(channel, {
-                    outputChannel: name, outputContent: value.content, outputMime: value.mimetype,
+                    outputChannel: name, outputMime: value.mimetype,
                     outputChannelState: value.state, outputLength: value.contentLength, outputOffset: value.contentOffset,
                 });
+                const content = $(channel, "[data-output-content]");
+                if (!content) throw new Error("Output channel has no content outlet.");
+                content.textContent = value.content;
             });
             the(output, { outputState: "loaded", outputLoaded: "true" });
         } catch (error) {
