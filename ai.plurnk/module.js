@@ -22,6 +22,10 @@ export default function createModule() {
     let registration = null;
     /** @type {Session | null} */
     let session = null;
+    let stopped = false;
+    /** @type {Set<Promise<void>>} */
+    const requests = new Set();
+    const stop = () => { stopped = true; };
 
     return {
         mounts: ["/"],
@@ -54,7 +58,8 @@ export default function createModule() {
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
             const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars);
 
-            seam.registerHttpRoute("/", async (req, res) => {
+            /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
+            const serve = async (req, res) => {
                 const pathname = (req.url ?? "").split("?")[0];
                 const directory = parseDirectory(pathname);
                 const home = indexDocument(pathname) === "/index.html";
@@ -136,11 +141,29 @@ export default function createModule() {
                 } finally {
                     if (diagram) req.resume();
                 }
+            };
+
+            // {§web-route-settlement} Every admitted handler retains its host resources until settlement.
+            seam.registerHttpRoute("/", async (req, res) => {
+                if (stopped) {
+                    const body = Buffer.from(JSON.stringify(Problems.create("web", "service-stopping", 503, "The PLURNK service is shutting down.")));
+                    res.writeHead(503, { ...privateHeaders, "content-type": "application/problem+json", "content-length": body.byteLength });
+                    res.end(req.method === "HEAD" ? undefined : body);
+                    req.resume();
+                    return;
+                }
+                const request = serve(req, res);
+                requests.add(request);
+                try { await request; }
+                finally { requests.delete(request); }
             });
         },
+        stop,
         async close() {
+            stop();
             const cleanup = new AsyncDisposableStack();
             cleanup.defer(() => session?.close());
+            cleanup.defer(async () => { await Promise.allSettled(requests); });
             cleanup.defer(() => diagrams.close());
             await cleanup.disposeAsync();
         },

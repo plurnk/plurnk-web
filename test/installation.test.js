@@ -29,6 +29,7 @@ import verifyWorkerApproval from "./worker-approval.js";
 import verifyWorkerQuestions from "./worker-questions.js";
 import verifySharedReview from "./shared-review.js";
 import verifyStaticAssets from "./static-assets.js";
+import verifyRouteSettlement from "./route-settlement.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -69,6 +70,11 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     const { default: Launch } = await import(pathToFileURL(require.resolve("@plurnk/plurnk-service/launch")));
     const daemonBin = join(consumer, "node_modules", ".bin", "plurnk-service");
     const plugin = join(consumer, "node_modules", "@plurnk", "plurnk-web");
+    await t.test("{§web-route-settlement} the packed module settles admitted requests", async (t) => {
+        process.loadEnvFile(join(plugin, "ai.plurnk", ".env.defaults"));
+        const { default: createModule } = await import(pathToFileURL(join(plugin, "ai.plurnk", "module.js")));
+        await verifyRouteSettlement(t, createModule);
+    });
     await t.test("{§web-directory-addresses} the packed codec preserves exact names", async () => {
         const { directoryPath, parseDirectory } = await import(pathToFileURL(join(plugin, "ai.plurnk", "directory-addresses.js")));
         const directory = { kind: "worker", workspace: "~/project @%/index.html", worker: "user" };

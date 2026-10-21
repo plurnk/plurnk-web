@@ -16,6 +16,15 @@ The daemon owns routing precedence, startup readiness and shutdown.
 The package's .env.defaults owns the default. Installation is opt-in; the service
 does not depend on this package. More-specific mounts retain their ownership.
 
+## §web-route-settlement Shutdown admission and settlement
+
+| Boundary | Contract |
+|---|---|
+| Stop | Refuse every new request to the module's mount with a private 503 `service-stopping` Problem, before accessing session or host resources. HEAD omits the body. Already admitted requests remain owned until their handlers settle, even if the browser disconnects. |
+| Close | Stop admission, cancel diagram compilation, join all admitted handlers, then release session state and its credential observer. Close also works without a preceding stop or completed startup. |
+| Failure | Unexpected handler errors still reject to the HTTP host; joining them does not turn them into success. A cleanup failure does not skip request settlement or subsequent resource cleanup. |
+| Host | The daemon owns transport teardown and the overall shutdown deadline. Web adds neither a request-body deadline nor a separate shutdown timeout. No web request may reach host resources after close returns. |
+
 ## §web-configuration Configuration boundary
 
 | Boundary | Contract |
