@@ -36,9 +36,13 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
                     assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
                     const measure = () => page.evaluate(() => {
                         const header = document.querySelector("body > header");
+                        const glyph = document.createRange();
+                        glyph.selectNodeContents(header.querySelector('[aria-label="Workspaces"]'));
                         return {
                             header: header.getBoundingClientRect().toJSON(),
                             logo: header.querySelector('a[href="/"]').getBoundingClientRect().toJSON(),
+                            mascot: header.querySelector('a[href="/"] > img').getBoundingClientRect().toJSON(),
+                            glyph: glyph.getBoundingClientRect().toJSON(),
                             menu: header.querySelector('nav[aria-label="Main navigation"]').getBoundingClientRect().toJSON(),
                             breadcrumb: header.querySelector('nav[aria-label="breadcrumb"]').getBoundingClientRect().toJSON(),
                             font: parseFloat(getComputedStyle(header).fontSize),
@@ -49,7 +53,9 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
                     });
                     for (const width of [500, 320, 768, 500]) {
                         await page.setViewportSize({ width, height: 700 });
-                        const { logo, menu, breadcrumb, header, overflow, items, font, scrollable } = await measure();
+                        const { logo, mascot, glyph, menu, breadcrumb, header, overflow, items, font, scrollable } = await measure();
+                        assert.ok(Math.abs(mascot.width - glyph.width) < glyph.width / 10, "the mascot matches the navigation emoji's scale");
+                        assert.equal(mascot.height, mascot.width, "the mascot retains a square glyph box");
                         assert.equal(overflow, false);
                         assert.equal(await page.locator('[aria-current="page"]').innerText(), name);
                         assert.ok(breadcrumb.y < logo.bottom && breadcrumb.bottom > logo.y, "breadcrumb shares the mascot row");
@@ -68,7 +74,9 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
                     if (name === "~/ptl/project") {
                         await page.setViewportSize({ width: 768, height: 700 });
                         await page.evaluate(() => { document.documentElement.style.fontSize = "48px"; });
-                        const { logo, menu, breadcrumb, overflow } = await measure();
+                        const { logo, mascot, glyph, menu, breadcrumb, overflow } = await measure();
+                        assert.ok(Math.abs(mascot.width - glyph.width) < glyph.width / 10, "the mascot follows enlarged navigation glyphs, not a fixed pixel size");
+                        assert.equal(mascot.height, mascot.width);
                         assert.ok(breadcrumb.y < logo.bottom && breadcrumb.bottom > logo.y, "large text still has one header row");
                         assert.ok(breadcrumb.x >= logo.right && breadcrumb.right <= menu.x);
                         assert.equal(overflow, false);
