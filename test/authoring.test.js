@@ -36,15 +36,18 @@ test("{§web-language} source-only HTML passes the shipped OTM linter without a 
     await promisify(execFile)(process.execPath, [lint, "--check", directory]);
 });
 
-test("{§web-authoring} browser lint admits native forms and rejects replacement mechanisms", async () => {
+test("{§web-authoring} browser lint admits native forms and content outlets while rejecting replacement mechanisms", async () => {
     const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
-    const source = 'import { on, the } from "on_the_money"; on("form", "submit", "form", (event, form) => { event.preventDefault(); the(form, the.form(form)); });';
-    const [valid] = await lint.lintText(source, { filePath: "web/authoring-specimen.js" });
-    assert.deepEqual(valid.messages, []);
+    for (const source of [
+        'import { on, the } from "on_the_money"; on("form", "submit", "form", (event, form) => { event.preventDefault(); the(form, the.form(form)); });',
+        'export function present(outlet, body) { if (outlet.textContent !== body) outlet.textContent = body; }',
+    ]) {
+        const [valid] = await lint.lintText(source, { filePath: "web/authoring-specimen.js" });
+        assert.deepEqual(valid.messages, []);
+    }
     for (const [code, rule] of [
         ['on("form", "submit", handler)', "otm/prefer-on"],
         ['document.querySelector("main")', "otm/no-document-query"],
-        ['element.textContent = message', "otm/prefer-the-set"],
         ['element.style.display = "none"', "otm/no-style-mutation"],
         ['element.innerHTML = message', "no-unsanitized/property"],
         ['new WebSocket("wss://example.test")', "otm/no-raw-websocket"],

@@ -49,6 +49,8 @@ export default async function verifyCommands(t) {
                     assert.equal(requests.length, 0);
                     assert.equal(credentials, 0);
                     assert.equal(await command("/model"), true);
+                    assert.equal(await rows.last().locator("header code").textContent(), "/model");
+                    assert.equal(await rows.last().getAttribute("data-command-input"), null, "the submitted command is content, not attribute state");
                     assert.match(await rows.last().textContent(), /Not selected/u);
                     const source = '<script>window.commandExecuted=true</script>';
                     result = { kind: "worker.model.get", ok: true, result: { model: { provider: "fixture", model: source }, spawnModel: null } };
@@ -78,7 +80,10 @@ export default async function verifyCommands(t) {
                     const problem = { type: "https://example.test/problems/busy", title: "Busy", status: 409, detail: "Worker still active.", recovery: "Wait for the work to settle." };
                     result = { kind: "worker.model.set", ok: false, problem };
                     assert.equal(await command("/model fixture"), false);
-                    assert.deepEqual(JSON.parse(await rows.last().locator("[data-text=command-problem]").textContent()), problem);
+                    assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), problem.detail);
+                    assert.equal(await rows.last().locator("[data-text=command-recovery]").textContent(), problem.recovery);
+                    assert.equal(await rows.last().locator("article").getAttribute("data-command-status"), "409");
+                    assert.equal(await rows.last().locator("details, pre").count(), 0);
                     for (const invalid of [
                         { ok: true, result: null },
                         { kind: "worker.model.get", ok: true },

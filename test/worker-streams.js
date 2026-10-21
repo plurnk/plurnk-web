@@ -13,12 +13,12 @@ async function openCurrent(page) {
     await current(page).locator(":scope > details > summary").click();
 }
 
-async function inspect(row) {
+export async function inspectStreamOutput(row) {
     await row.getByRole("button", { name: "Read output", exact: true }).click();
     await row.locator('[data-output-state="loaded"]').waitFor();
     return Object.fromEntries(await row.locator("[data-output-snapshot] > ul > li").evaluateAll((channels) =>
         channels.map((row) => [row.querySelector("[data-text=output-channel]").textContent, {
-            content: row.querySelector("[data-text=output-content]").textContent,
+            content: row.querySelector("[data-output-content]").textContent,
             state: row.querySelector("[data-text=output-channel-state]").textContent,
             length: row.querySelector("[data-text=output-length]").textContent,
         }])));
@@ -46,7 +46,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                 const channels = await current(page).locator("[data-text=stream-channel]").allTextContents();
                 assert.ok(channels.includes("stdout"));
                 assert.ok(channels.includes("stderr"), "never-written stderr exists in the authoritative census");
-                const silent = await inspect(current(page));
+                const silent = await inspectStreamOutput(current(page));
                 for (const channel of ["stdout", "stderr"]) assert.deepEqual(silent[channel], { content: "", state: "active", length: "0" });
                 const read = inputs.find((input) => input.forwardedProps?.plurnk?.action?.kind === "entry.read");
                 assert.ok(read, "the native control uses the public management Run");
@@ -80,9 +80,9 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                     await observer.locator("[data-stream-outcomes] > summary").click();
                     const outcome = outcomes(observer);
                     await outcome.locator(":scope > details > summary").click();
-                    const result = JSON.parse(await outcome.locator("[data-text=stream-result]").textContent());
-                    assert.equal(result.exitCode, 0);
-                    const output = await inspect(outcome);
+                    assert.equal(await outcome.getAttribute("data-stream-exit-code"), "0");
+                    assert.equal(await outcome.getAttribute("data-stream-result"), null);
+                    const output = await inspectStreamOutput(outcome);
                     assert.equal(output.stdout.content, "Stream completed.\n");
                     assert.equal(output.stderr.content, "");
                     assert.equal(output.stdout.state, "closed");
@@ -96,9 +96,8 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                 if (cancelled) {
                     await page.locator("[data-stream-outcomes] > summary").click();
                     await outcomes(page).locator(":scope > details > summary").click();
-                    const result = JSON.parse(await outcomes(page).locator("[data-text=stream-result]").textContent());
-                    assert.equal(result.status, 499, "cancellation preserves the stream's exact result");
-                    const output = await inspect(outcomes(page));
+                    assert.equal(await outcomes(page).getAttribute("data-stream-status"), "499", "cancellation preserves the stream's exact status");
+                    const output = await inspectStreamOutput(outcomes(page));
                     assert.notEqual(output.stdout.state, "active");
                     assert.equal(model.requests.length, 1);
                 }
@@ -119,11 +118,10 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
             await page.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ol > li").length === 1);
             await page.locator("[data-stream-outcomes] > summary").click();
             await outcomes(page).locator(":scope > details > summary").click();
-            const result = JSON.parse(await outcomes(page).locator("[data-text=stream-result]").textContent());
-            assert.equal(result.exitCode, 7);
-            assert.equal(result.status, 200, "the executor successfully ran a command whose answer was exit 7");
-            assert.equal(result.problem, undefined, "a nonzero command answer is not a fabricated protocol Problem");
-            const output = await inspect(outcomes(page));
+            assert.equal(await outcomes(page).getAttribute("data-stream-exit-code"), "7");
+            assert.equal(await outcomes(page).getAttribute("data-stream-status"), "200", "the executor successfully ran a command whose answer was exit 7");
+            assert.equal(await outcomes(page).locator("[data-stream-failure]").isVisible(), false, "a nonzero command answer is not a fabricated protocol Problem");
+            const output = await inspectStreamOutput(outcomes(page));
             assert.equal(output.stdout.content, "execution-failure stdout\n");
             assert.equal(output.stderr.content, "execution-failure stderr\n");
             assert.equal(await current(page).count(), 0);

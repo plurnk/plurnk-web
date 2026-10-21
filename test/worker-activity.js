@@ -16,22 +16,20 @@ export default async function verifyWorkerActivity({ t, withDaemon }) {
             await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
             const activity = page.locator("#worker-activity");
             const rows = activity.locator(":scope > ol > li");
-            const outside = rows.filter({ has: page.locator('[data-text="activity-text"]') });
+            const outside = activity.locator(':scope > ol > li[data-activity-kind="outside"]');
             assert.equal(await outside.count(), 1, "live outside-operation text is not dropped");
             await activity.locator(":scope > summary").click();
-            assert.equal(await outside.locator("[data-text=activity-text]").textContent(), outsideText);
-            assert.ok(Number(await outside.getAttribute("data-plurnk-tokens")) > 0);
+            assert.equal(await outside.locator("article > pre").textContent(), outsideText);
+            assert.equal(await outside.getAttribute("data-activity-text"), null);
             assert.equal(await page.locator("[data-messages]").getByText(outsideText, { exact: true }).count(), 0);
             assert.ok(await rows.count() > 1, "daemon-owned ambient rows are also visible");
-            const receipt = rows.filter({ has: page.locator("[data-activity-body] [data-body-reference]") }).first();
+            const receipt = rows.filter({ has: page.locator("article > header") }).first();
             assert.ok(Number(await receipt.getAttribute("data-plurnk-worker")) > 0);
             assert.match(await receipt.getAttribute("data-plurnk-coordinate"), /^\d+\/\d+\/\d+$/u);
             assert.equal(await receipt.locator("details, dl").count(), 0);
-            const reference = receipt.locator("[data-activity-body] [data-body-reference]");
-            await reference.getByRole("button", { name: "Read body", exact: true }).click();
-            await reference.locator("[data-body-content]").waitFor();
-            assert.ok((await reference.locator("[data-text=body-content]").textContent()).length > 0);
-            assert.equal(model.requests.length, 2, "inspection does not initiate inference");
+            assert.equal(await receipt.locator("article > [data-body-reference]").count(), 0, "a summary does not fetch receipt content");
+            assert.equal(await receipt.locator("article > header").count(), 1);
+            assert.equal(model.requests.length, 2, "observation does not initiate inference");
             const keys = await rows.evaluateAll((items) => items.map(({ dataset: d }) =>
                 JSON.stringify([d.activityKind, d.plurnkRow, d.plurnkWorker, d.plurnkCoordinate, d.subagentRunId])));
             assert.equal(new Set(keys).size, keys.length, "automatic delivery handoff duplicates no activity");
@@ -39,7 +37,7 @@ export default async function verifyWorkerActivity({ t, withDaemon }) {
             const fresh = await context.newPage();
             await fresh.goto(path);
             await fresh.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-            assert.equal(await fresh.locator("#worker-activity [data-text=activity-text]").count(), 0,
+            assert.equal(await fresh.locator('#worker-activity [data-activity-kind="outside"]').count(), 0,
                 "a fresh page does not reconstruct unprovided outside text from history");
             await fresh.close();
             assert.equal(await outside.count(), 1, "another attachment does not remove this page's observation");

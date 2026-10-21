@@ -98,8 +98,10 @@ export default async function verifyInteractions(t) {
                     const external = [];
                     page.on("request", (network) => { if (new URL(network.url()).hostname === "schema.invalid") external.push(network.url()); });
                     await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), unsafe);
-                    assert.equal(await form.locator('[data-text="request-message"]').textContent(), injected);
-                    assert.equal(await form.locator('[data-text="request-arguments"]').textContent(), injected);
+                    assert.equal(await form.locator('[data-request-message]').textContent(), injected);
+                    assert.equal(await form.locator('[data-request-arguments]').textContent(), injected);
+                    assert.equal(await form.locator('fieldset[data-request-message], fieldset[data-request-arguments], fieldset[data-request-schema]').count(), 0,
+                        "question content is not copied into fieldset state");
                     assert.equal(await form.locator('[data-text="request-worker"]').textContent(), injected);
                     assert.equal(await form.locator("script, form").count(), 0);
                     await json.fill("{}");

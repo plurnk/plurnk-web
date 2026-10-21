@@ -33,7 +33,7 @@ export async function verifyMermaid(t) {
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (content) => page.evaluate((content) => window.present([{ id: "diagram", role: "assistant", content }]), content);
-                    const body = page.locator("[data-message-body]");
+                    const body = page.locator("[data-messages] article");
 
                     await t.test("lazy rendering cannot resurrect replaced content", async () => {
                         assert.ok(!requests.some((path) => path.endsWith("/render/mermaid")));
@@ -62,6 +62,7 @@ export async function verifyMermaid(t) {
                         assert.equal(images.length, diagrams.length);
                         assert.ok(images.every(({ complete, width, height, source, label }) => complete && width > 0 && height > 0 && source && label));
                         assert.deepEqual(await body.locator("pre code").allTextContents(), diagrams.map((source) => source + "\n"));
+                        assert.equal(await body.locator("figure[data-diagram-source]").count(), 0, "source is native code content, not figure state");
                         assert.equal(await body.locator("details[open]").count(), 0);
                         assert.equal(await body.locator("svg, iframe, object, embed, style").count(), 0);
                         await body.locator("details summary").first().click();
@@ -83,19 +84,24 @@ export async function verifyMermaid(t) {
                         assert.deepEqual(requests.slice(before).filter((path) => !path.startsWith("data:")), [new URL("/render/mermaid", url).href]);
                     });
 
-                    await t.test("rich roles and NOTE share one image boundary; tool results remain literal", async () => {
+                    await t.test("rich messages and SEND compile diagrams; NOTE, reasoning and receipts remain literal", async () => {
                         const content = fenced(diagrams[0]).replace("```mermaid", "```MERMAID example");
-                        const roles = ["user", "assistant", "reasoning", "system", "developer"];
+                        const roles = ["user", "assistant", "system", "developer"];
                         await page.evaluate(({ content, roles }) => window.present([
                             ...roles.map((role) => ({ id: role, role, content })),
                             { id: "notes", role: "assistant", content: "", toolCalls: [{ id: "note", type: "function", function: { name: "NOTE", arguments: JSON.stringify({ aside: "idea", body: content }) }, metadata: { plurnk: { op: "NOTE" } } }] },
-                            { id: "result", role: "tool", toolCallId: "note", content },
+                            { id: "send", role: "assistant", toolCalls: [{ id: "send-call", type: "function", function: { name: "SEND", arguments: JSON.stringify({ body: content }) }, metadata: { plurnk: { op: "SEND" } } }] },
+                            { id: "reasoning", role: "reasoning", content },
+                            { id: "result", role: "tool", toolCallId: "opaque-call", content },
                         ]), { content, roles });
-                        await page.waitForFunction(() => document.querySelectorAll("[data-diagram]:not([hidden])").length === 6);
+                        await page.waitForFunction(() => document.querySelectorAll("[data-diagram]:not([hidden])").length === 5);
                         for (const role of roles) assert.equal(await page.locator(`[data-message-id="${role}"] [data-diagram]`).count(), 1);
-                        assert.equal(await page.locator('[data-plurnk-note] [data-diagram]').count(), 1);
-                        assert.equal(await page.locator('[data-message-id="result"] img').count(), 0);
-                        assert.equal(await page.locator('[data-message-id="result"] pre code').textContent(), content);
+                        assert.equal(await page.locator('[data-message-id="send"] [data-diagram]').count(), 1);
+                        for (const id of ["notes", "reasoning", "result"]) {
+                            const row = page.locator(`[data-message-id="${id}"]`);
+                            assert.equal(await row.locator("img, [data-diagram]").count(), 0);
+                            assert.equal(await row.locator("article > pre").textContent(), content);
+                        }
                     });
 
                     await t.test("even active SVG response bytes remain inert inside a native image", async () => {
@@ -170,9 +176,9 @@ export async function verifyUnavailableMermaid() {
         await page.locator('[data-diagram-error="Diagram failed to render"]').waitFor();
         assert.equal(await page.locator("[data-diagram-error]").getAttribute("title"), "Error: Diagram service unavailable.");
         assert.equal(await page.locator("[data-mermaid] code").textContent(), diagrams[0] + "\n");
-        assert.equal(await page.locator("[data-message-body] img").count(), 0);
+        assert.equal(await page.locator("[data-messages] article img").count(), 0);
         await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
-        assert.equal(await page.locator("[data-message-body] strong").textContent(), "Still connected");
+        assert.equal(await page.locator("[data-messages] article strong").textContent(), "Still connected");
         assert.ok(refused.length > 0);
         assert.equal(new Set(refused).size, 1);
         checkBrowser(refused.map((path) => httpFailure(path, 503)));

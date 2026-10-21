@@ -16,7 +16,7 @@ export async function verifyMath(t) {
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (content) => page.evaluate((content) => window.present([{ id: "math", role: "assistant", content }]), content);
-                    const body = page.locator("[data-message-body]");
+                    const body = page.locator("[data-messages] article");
 
                     await t.test("a delayed renderer cannot resurrect removed content; unchanged math retains its nodes", async () => {
                         const release = Promise.withResolvers();
@@ -137,7 +137,7 @@ export async function verifyUnavailableMath() {
         assert.equal(await page.locator("[data-math] code").textContent(), "$x^2$");
         assert.equal(await page.locator("math").count(), 0);
         await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
-        assert.equal(await page.locator("[data-message-body] strong").textContent(), "Still connected");
+        assert.equal(await page.locator("[data-messages] article strong").textContent(), "Still connected");
         // The browser may reuse the failed preload instead of requesting the import separately.
         assert.ok(refused.length > 0, "the renderer's chunk was actually refused");
         assert.equal(new Set(refused).size, 1, "only the intended chunk was refused");

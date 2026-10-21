@@ -8,7 +8,10 @@ export default function reasoningPreview(root, limit) {
     const outlet = $.clone(root, "#worker-reasoning-preview");
     const scroll = $(outlet, "pre");
     if (!(scroll instanceof HTMLElement)) throw new Error("Reasoning preview has no text outlet.");
-    const clear = () => the(outlet, { reasoningId: "", reasoningText: "" });
+    const clear = () => {
+        the(outlet, "reasoning-id", "");
+        scroll.replaceChildren();
+    };
     clear();
 
     return {
@@ -19,7 +22,10 @@ export default function reasoningPreview(root, limit) {
                 clear();
             } else if (event.type === "REASONING_MESSAGE_START") {
                 const { messageId, metadata } = /** @type {import("@ag-ui/client").ReasoningMessageStartEvent} */ (event);
-                if (!metadata?.plurnk?.body) the(outlet, { reasoningId: messageId, reasoningText: "" });
+                if (!metadata?.plurnk?.body) {
+                    clear();
+                    the(outlet, "reasoning-id", messageId);
+                }
             } else if (event.type === "REASONING_MESSAGE_END") {
                 if (/** @type {import("@ag-ui/client").ReasoningMessageEndEvent} */ (event).messageId === the(outlet, "reasoning-id")) clear();
             } else if (event.type === "CUSTOM") {
@@ -29,8 +35,8 @@ export default function reasoningPreview(root, limit) {
                     || value.messageId !== the(outlet, "reasoning-id")) {
                     throw new TypeError("Reasoning preview must name its active message and carry a text delta.");
                 }
-                const tail = Array.from(the(outlet, "reasoning-text") + value.delta).slice(-limit).join("");
-                the(outlet, "reasoning-text", tail);
+                const tail = Array.from(scroll.textContent + value.delta).slice(-limit).join("");
+                if (scroll.textContent !== tail) scroll.textContent = tail;
                 scroll.scrollTop = scroll.scrollHeight;
             }
         },

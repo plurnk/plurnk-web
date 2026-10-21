@@ -30,8 +30,8 @@ export default async function verifyActivity(t) {
                             fail = false;
                             await route.fulfill({ status: 404, body: "Missing" });
                         } else {
-                            if (held) await held.promise;
-                            await route.fulfill({ contentType: "text/html", body: source });
+                            if (/\/(held|depart)$/u.test(route.request().url())) await held.promise;
+                            await route.fulfill({ contentType: "text/html", body: route.request().url().endsWith("/replaced") ? "Replacement content" : source });
                         }
                     });
                     await page.goto(url);
@@ -45,10 +45,13 @@ export default async function verifyActivity(t) {
                     const ambient = { type: "CUSTOM", name: "plurnk.ambient", value: {
                         id: 17, worker_id: 9, loop_seq: 1, turn_seq: 2, sequence: 3, at: "2026-10-20T12:00:00Z",
                         origin: "_plurnk", op: "READ", source: null, state: "resolved", status_rx: 200,
-                        tx: { body: "Literal request" }, rx: { status: 200 }, attrs: {},
+                        tx: { target: { raw: "evidence.html" }, aside: "Inspect evidence" },
+                        rx: { status: 200, range: { unit: "line", total: 2, requested: [1, -1], returned: [1, 2] } }, attrs: {},
                         body: { url: new URL("/agui/7/9/log/1/2/3/READ", url).href, mimeType: "text/html" },
                     } };
                     await receive(ambient);
+                    assert.equal(reads.length, 0);
+                    assert.equal(credentials, 0, "a closed activity disclosure loads nothing");
                     await activity.locator(":scope > summary").click();
                     const row = rows.first();
                     assert.equal(await row.getAttribute("data-plurnk-worker"), "9");
@@ -59,57 +62,58 @@ export default async function verifyActivity(t) {
                     assert.equal(await row.locator("details, dl").count(), 0);
                     assert.equal(await row.getAttribute("data-activity-evidence"), null);
                     assert.equal(await row.getAttribute("data-activity-key"), null);
-                    assert.doesNotMatch(await row.innerHTML(), /Literal request/u, "unused protocol objects remain out of markup and attributes");
-                    assert.equal(reads.length, 0);
-                    assert.equal(credentials, 0, "projection and disclosures neither fetch nor obtain credentials");
-                    const body = row.locator("[data-activity-body] [data-body-reference]");
-                    await body.getByRole("button", { name: "Read body", exact: true }).click();
-                    await body.locator("[data-body-content]").waitFor();
-                    assert.equal(await body.locator("[data-text=body-content]").textContent(), source);
-                    await page.evaluate(() => { window.bodyNode = document.querySelector("#worker-activity [data-body-content]"); });
+                    assert.equal(await row.locator("article > header").innerText(), "Inspect evidence");
+                    assert.equal(await row.locator("article > p").innerText(), "(evidence.html) {2}");
+                    assert.equal(await row.locator("[data-body-reference]").count(), 0, "ambient READ uses the same summary without fetching readback");
+                    await page.evaluate(() => { window.summaryNode = document.querySelector("#worker-activity article > p"); });
                     await receive(structuredClone(ambient));
                     assert.equal(await rows.count(), 1);
-                    assert.equal(await row.getByRole("region", { name: "Receipt body", exact: true }).count(), 1);
-                    assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("#worker-activity [data-body-content]")), true);
+                    assert.equal(await row.locator("article > pre").count(), 0);
+                    assert.equal(await row.locator("button, div, section").count(), 0);
+                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity article > p")), true);
                     await receive({ ...ambient, value: { ...ambient.value, state: "failed", status_rx: 409, source: "message://child/1" } });
                     assert.equal(await rows.count(), 1, "a row update is not a new event history");
                     assert.equal(await row.getAttribute("data-plurnk-state"), "failed");
-                    assert.equal(await row.getAttribute("data-plurnk-source"), "message://child/1");
-                    assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("#worker-activity [data-body-content]")), true);
-                    assert.equal(reads.length, 1);
+                    assert.equal(await row.getAttribute("data-plurnk-source"), null);
+                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity article > p")), true);
+                    assert.equal(reads.length, 0);
 
                     await receive({ ...ambient, value: { ...ambient.value, id: 18, attrs: { kind: "emission" } } });
                     assert.equal(await rows.count(), 1, "an emission announcement duplicates already-rendered operations");
                     await receive({ ...ambient, value: { ...ambient.value, id: 19, op: null, origin: "model", attrs: { kind: "emissionAttempt" },
                         body: undefined, tx: source, status_rx: 400, state: "failed" } });
-                    assert.equal(await rows.nth(1).locator("[data-text=activity-operation]").textContent(), "Rejected emission");
+                    assert.match(await rows.nth(1).locator("article").getAttribute("aria-label"), /^Rejected emission/u);
+                    assert.equal(await rows.nth(1).innerText(), "");
                     await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12,
                         reasoning: { url: new URL("/agui/7/12/reasoning/1/2", url).href, mimeType: "text/plain" } } });
                     const child = rows.nth(2);
                     assert.equal(await child.getAttribute("data-plurnk-worker"), "12");
                     assert.equal(await child.getAttribute("data-subagent-run-id"), "ops://child/7");
-                    assert.equal(await child.getByRole("region", { name: "Reasoning", exact: true }).count(), 1);
-                    assert.equal(await child.locator("[data-activity-reasoning] [data-text=body-address]").textContent(),
-                        new URL("/agui/7/12/reasoning/1/2", url).href);
-                    assert.equal(reads.length, 1, "foreign reasoning is not automatically fetched");
+                    assert.equal(await child.locator("details > summary").textContent(), "Reasoning");
+                    assert.equal(reads.some((url) => url.includes("/reasoning/")), false, "closed foreign reasoning is not fetched");
+                    await child.locator("details > summary").click();
+                    const body = child.locator("[data-body-reference]");
+                    await body.scrollIntoViewIfNeeded();
+                    await child.locator('[data-body-state="loaded"]').waitFor();
+                    assert.equal(await body.textContent(), source);
 
                     const outside = { type: "CUSTOM", name: "plurnk.outside", value: { coordinate: "user-1-2", text: source, tokens: 21 } };
                     await receive(outside);
                     await receive(outside);
                     const prose = rows.nth(3);
-                    assert.equal(await prose.locator("[data-text=activity-text]").textContent(), source);
-                    assert.equal(await prose.getAttribute("data-plurnk-tokens"), "21");
+                    assert.equal(await prose.locator("article > pre").textContent(), source);
+                    assert.equal(await prose.getAttribute("data-plurnk-tokens"), null);
+                    assert.equal(await prose.getAttribute("data-activity-text"), null);
                     assert.equal(await prose.getByRole("article", { name: "Outside operations", exact: true }).count(), 1);
                     await receive({ ...outside, value: { ...outside.value, text: "Changed evidence", tokens: 3 } });
                     assert.equal(await rows.count(), 4);
-                    assert.equal(await prose.locator("[data-text=activity-text]").textContent(), "Changed evidence");
-                    assert.equal(await prose.getAttribute("data-plurnk-tokens"), "3");
+                    assert.equal(await prose.locator("article > pre").textContent(), "Changed evidence");
                     assert.equal(await activity.locator("img, script, form, a").count(), 0);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
                     assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     for (const value of [{}, { ...ambient.value, worker_id: 0 }, { ...ambient.value, sequence: NaN },
-                        { ...ambient.value, body: { url: 123 } }, { ...ambient.value, source: {} }]) {
+                        { ...ambient.value, reasoning: { url: 123 } }, { ...ambient.value, source: {} }]) {
                         await assert.rejects(receive({ ...ambient, value }), /Ambient/u);
                     }
                     for (const value of [{}, { ...outside.value, tokens: -1 }, { ...outside.value, text: {} }]) {
@@ -117,40 +121,42 @@ export default async function verifyActivity(t) {
                     }
                     assert.equal(await rows.count(), 4, "invalid evidence does not mutate the valid view");
 
-                    const setBody = (address) => receive({ ...ambient, value: { ...ambient.value, body: { url: address } } });
+                    const setBody = async (address) => {
+                        await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12, reasoning: { url: address } } });
+                        await child.locator("details").evaluate((element) => { element.open = true; });
+                        await body.scrollIntoViewIfNeeded();
+                    };
+                    const beforeCredentials = credentials;
                     await setBody("https://elsewhere.invalid/body");
-                    await body.getByRole("button", { name: "Read body", exact: true }).click();
-                    await body.locator("[data-body-failure]").waitFor();
-                    assert.equal(await body.locator("[data-text=body-error]").textContent(), "Body address must be on this daemon's origin.");
-                    assert.equal(credentials, 1);
+                    await child.locator('[data-body-state="error"]').waitFor();
+                    assert.equal(await body.textContent(), "Body address must be on this daemon's origin.");
+                    assert.equal(credentials, beforeCredentials);
                     await setBody(new URL("/agui/failed", url).href);
-                    await body.getByRole("button", { name: "Read body", exact: true }).click();
-                    await body.locator("[data-body-failure]").waitFor();
-                    assert.equal(await body.locator("[data-text=body-error]").textContent(), "Body request failed (404).");
+                    await child.locator('[data-body-state="error"]').waitFor();
+                    assert.equal(await body.textContent(), "Body request failed (404).");
                     checkBrowser(engine === firefox ? [] : [httpFailure("/agui/failed", 404)]);
-                    await body.getByRole("button", { name: "Read body", exact: true }).click();
-                    await body.locator("[data-body-content]").waitFor();
-                    assert.equal(await body.locator("[data-text=body-content]").textContent(), source);
+                    await child.getByRole("button", { name: "Retry", exact: true }).click();
+                    await child.locator('[data-body-state="loaded"]').waitFor();
+                    assert.equal(await body.textContent(), source);
 
                     held = Promise.withResolvers();
-                    await setBody(new URL("/agui/held", url).href);
                     const requested = page.waitForRequest("**/agui/held");
                     const delivered = page.waitForResponse("**/agui/held");
-                    await body.getByRole("button", { name: "Read body", exact: true }).click();
+                    await setBody(new URL("/agui/held", url).href);
                     await requested;
-                    assert.equal(await body.getByRole("button", { name: "Read body", exact: true }).isDisabled(), true);
+                    assert.equal(await body.getAttribute("aria-busy"), "true");
                     await setBody(new URL("/agui/replaced", url).href);
+                    await child.locator('[data-body-state="loaded"]').waitFor();
                     held.resolve();
                     await (await delivered).finished();
-                    assert.equal(await body.locator("[data-body-content]").isVisible(), false, "a late read cannot populate a different reference");
-                    assert.equal(await body.locator("[data-text=body-address]").textContent(), new URL("/agui/replaced", url).href);
+                    assert.equal(await body.textContent(), "Replacement content", "a late read cannot populate a different reference");
                     held = Promise.withResolvers();
-                    const leaving = page.waitForRequest("**/agui/replaced");
-                    await body.getByRole("button", { name: "Read body", exact: true }).click();
+                    const leaving = page.waitForRequest("**/agui/depart");
+                    await setBody(new URL("/agui/depart", url).href);
                     await leaving;
                     await page.evaluate(() => window.leaveActivity());
-                    await body.locator('[data-body-loading]').waitFor({ state: "hidden" });
-                    assert.equal(await body.getAttribute("data-body-state"), "idle");
+                    await child.locator('[data-body-state="error"]').waitFor();
+                    assert.equal(await body.getAttribute("aria-busy"), null);
                     held.resolve();
                     checkBrowser();
                 } finally { await browser.close(); }

@@ -9,7 +9,7 @@ import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import startModel, { contentAttack, diagramContent, footnoteAnswer } from "./model-fixture.js";
 import disconnectProxy from "./disconnect-proxy.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
-import { inspectRenderedResults } from "./result-body.js";
+import { inspectResult } from "./result-body.js";
 
 async function controller(base, secret, messages = []) {
     const headers = {};
@@ -199,7 +199,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await problem.getAttribute("data-diagnostic-type"), "plurnk.problem");
                     assert.equal(await problem.getAttribute("data-diagnostic-level"), "error");
                     assert.match(await problem.locator("article").getAttribute("aria-label"), /^Error · /u);
-                    assert.match(await problem.locator('[data-text="diagnostic-message"]').textContent(), /unavailable.*effort|effort.*unavailable/u);
+                    assert.match(await problem.locator('[data-diagnostic-message]').textContent(), /unavailable.*effort|effort.*unavailable/u);
                     assert.equal(await problem.locator("details, code").count(), 0, "the message is content, not a duplicated diagnostic payload");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "configuration evidence is not a fabricated conversation");
                     await notice.evaluate((element) => { window.retainedNotice = element; });
@@ -266,20 +266,20 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, contentAttack, "the protocol preserves the source; the browser owns its interpretation");
                     const verify = async () => {
                         await connected(page);
-                        await page.waitForFunction(() => [...document.querySelectorAll('[data-message-role="assistant"] > article[data-message-body] strong')].some((element) => element.textContent === "Readable evidence"));
-                        const note = page.locator('[data-plurnk-note]');
+                        await page.waitForFunction(() => [...document.querySelectorAll('[data-message-role="assistant"] > article strong')].some((element) => element.textContent === "Readable evidence"));
+                        const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.count(), 1);
                         assert.equal(JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments).body, contentAttack);
-                        assert.equal(await note.locator("[data-message-body] strong").textContent(), "Readable evidence");
-                        assert.equal(await page.locator("[data-message-body] script, [data-message-body] img, [data-message-body] form, [data-message-body] [id]").count(), 0);
-                        assert.deepEqual(await page.locator("[data-message-body] [data-bind]").evaluateAll((elements) => elements.map((element) => ({
+                        assert.equal(await note.locator("article > pre").textContent(), contentAttack);
+                        assert.equal(await note.locator("pre > *").count(), 0, "NOTE content cannot become HTML elements");
+                        assert.equal(await page.locator("[data-messages]").locator("article script, article img, article form, article [id]").count(), 0);
+                        assert.deepEqual(await page.locator("[data-messages] article [data-bind]").evaluateAll((elements) => elements.map((element) => ({
                             tag: element.tagName, binding: element.dataset.bind, action: element.dataset.action,
                             role: element.closest("[data-message-role]").dataset.messageRole,
-                        }))), [{ tag: "SECTION", binding: "aria-label:body-label", action: undefined, role: "reasoning" },
-                            { tag: "BUTTON", binding: "disabled:body-pending", action: "read-body", role: "reasoning" }],
+                        }))), [{ tag: "PRE", binding: "aria-busy:body-pending", action: undefined, role: "reasoning" }],
                         "bindings belong to the document-owned reasoning reader, never authored content");
-                        assert.equal(await page.locator('[data-message-role="assistant"] [data-message-body] [data-text]').count(), 0, "rich content cannot add bindings; literal result templates retain their owned text slot");
-                        assert.equal(await page.locator('[data-message-body] a[href^="javascript:"]').count(), 0);
+                        assert.equal(await page.locator('[data-message-role="assistant"] article [data-text]').count(), 0, "rich content cannot add bindings; literal result templates retain their owned text slot");
+                        assert.equal(await page.locator('[data-messages] article a[href^="javascript:"]').count(), 0);
                         assert.equal(await page.locator("#worker-status").count(), 1);
                         assert.equal(await page.locator("body > header").evaluate((element) => element.outerHTML), header);
                         assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
@@ -316,25 +316,23 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const run = await controller(base, undefined, prompt("notes"));
                     await run.runAgent({ forwardedProps: { plurnk: { workspace: "notes" } } });
                     const verify = async () => {
-                        const notes = page.locator('[data-plurnk-note]');
-                        await page.waitForFunction(() => document.querySelectorAll('[data-plurnk-note]').length === 3);
+                        const notes = page.locator('[data-messages] [data-plurnk-note]');
+                        await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-note]').length === 3);
                         assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.dataset.plurnkNote)), ["fact", "idea", "plan"]);
                         const note = notes.first();
-                        assert.equal(await note.locator("header, details, section, div, ul").count(), 0);
+                        assert.equal(await note.locator("details, section, div, ul").count(), 0);
+                        assert.equal(await note.locator("article > header").count(), 1);
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
-                        assert.equal(await note.locator("[data-message-body] strong").innerText(), "working fact");
+                        assert.equal(await note.locator("article > pre").textContent(), "A **working fact**, not the answer.");
                         const args = JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments);
                         assert.equal(args.body, "A **working fact**, not the answer.");
                         assert.equal(args.aside, "fact");
                         const id = await note.getAttribute("data-call-id");
-                        const anchor = await note.getAttribute("id");
-                        assert.ok(anchor);
-                        const href = `#${anchor}`;
-                        const result = page.locator('[data-message-role="tool"]').filter({ has: page.locator(`[data-call-link][href="${href}"]`) });
-                        assert.equal(await result.count(), 1, "the real correlated result remains in SDK order");
-                        await result.locator("[data-call-link]").click();
-                        assert.equal(await page.locator(":target").getAttribute("data-call-id"), id);
-                        assert.ok(await page.locator('[data-message-role="assistant"] > article[data-message-body]').filter({ hasText: "Completed notes." }).count());
+                        const result = page.locator(`[data-message-role="tool"][data-tool-call-id="${id}"]`);
+                        assert.equal(await result.count(), 0, "the real immediate receipt completes its call's summary");
+                        assert.equal(await note.getAttribute("data-plurnk-status"), "200");
+                        assert.ok(run.messages.some((message) => message.role === "tool" && message.toolCallId === id), "folding the presentation does not delete SDK evidence");
+                        assert.ok(await page.locator('[data-message-role="assistant"] > article').filter({ hasText: "Completed notes." }).count());
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                         return notes.evaluateAll((items) => items.map((item) => item.dataset.callId));
                     };
@@ -368,22 +366,22 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, footnoteAnswer);
                     const verify = async () => {
                         await connected(page);
-                        await page.waitForFunction(() => document.querySelectorAll('section[aria-label="Footnotes"]').length === 2);
-                        const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article[data-message-body]').filter({ has: page.locator("section") });
-                        const note = page.locator('[data-plurnk-note]');
+                        await page.waitForFunction(() => document.querySelector('[data-message-role="assistant"]:not([data-call-id]) article section[aria-label="Footnotes"]'));
+                        const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
+                        const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
                         assert.equal(JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments).body, footnoteAnswer);
-                        const ids = await page.locator("[data-message-body] [id]").evaluateAll((elements) => elements.map(({ id }) => id));
-                        assert.equal(ids.length, 10);
+                        assert.equal(await note.locator("article > pre").textContent(), footnoteAnswer);
+                        assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");
+                        const ids = await answer.locator("[id]").evaluateAll((elements) => elements.map(({ id }) => id));
+                        assert.equal(ids.length, 5);
                         assert.equal(new Set(ids).size, ids.length);
-                        for (const body of [answer, note.locator("[data-message-body]")]) {
-                            assert.deepEqual(await body.locator('section > ol > li > p:first-child').allTextContents(), ["First definition.", "Second definition."]);
-                            assert.equal(await body.locator("sup > a").count(), 3);
-                        }
+                        assert.deepEqual(await answer.locator('section > ol > li > p:first-child').allTextContents(), ["First definition.", "Second definition."]);
+                        assert.equal(await answer.locator("sup > a").count(), 3);
                         const reference = answer.locator("sup > a").nth(1);
                         const referenceId = await reference.getAttribute("id");
                         await reference.click();
-                        assert.equal(await answer.locator(":target").count(), 1, "navigation stays in the answer rather than the identical NOTE");
+                        assert.equal(await answer.locator(":target").count(), 1, "navigation stays within its answer");
                         await answer.getByRole("link", { name: "Back to reference 1.2", exact: true }).click();
                         assert.equal(await page.locator(":target").getAttribute("id"), referenceId);
                         assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "connected");
@@ -478,7 +476,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         assert.equal(await figure.locator("details").evaluate((element) => element.open), false);
                         await figure.getByText("Diagram source", { exact: true }).click();
                         assert.equal(await figure.locator("pre code").innerText(), "flowchart LR\n Client --> Daemon\n");
-                        assert.equal(await page.locator("[data-message-body] svg, [data-message-body] iframe, [data-message-body] style").count(), 0);
+                        assert.equal(await page.locator("[data-messages]").locator("article svg, article iframe, article style").count(), 0);
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     };
                     await verify();
@@ -528,39 +526,44 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(model.requests.length, 1, "only the controlling request starts inference");
                     model.release("conversation");
                     await completion;
-                    await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-message-role="assistant"] [data-message-body]'))
-                        .some((element) => element.textContent === "Completed conversation.\n"));
+                    await page.getByText("Completed conversation.", { exact: true }).waitFor();
                     await connected(page);
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed conversation.");
                     assert.equal(await preview.isVisible(), false);
-                    assert.equal(await preview.locator('[data-text="reasoning-text"]').textContent(), "");
+                    assert.equal(await preview.locator("pre").textContent(), "");
                     const reasoning = page.locator('[data-message-role="reasoning"]').first();
                     await reasoning.waitFor();
                     assert.equal(await reasoning.locator("details").getAttribute("open"), null);
                     assert.equal(requests.some((request) => /\/reasoning\//u.test(new URL(request.url()).pathname)), false,
                         "completed reasoning is a reference, not an automatic fetch");
                     await reasoning.locator("summary").click();
-                    await reasoning.getByRole("button", { name: "Read body", exact: true }).click();
+                    await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                     await reasoning.locator('[data-body-state="loaded"]').waitFor();
-                    assert.equal(await reasoning.locator('[data-text="body-content"]').textContent(), "Considering conversation.");
-                    await reasoning.evaluate((element) => { window.observedReasoning = element; window.observedBody = element.querySelector("pre[data-body-content]"); });
+                    assert.equal(await reasoning.locator('[data-body-reference]').textContent(), "Considering conversation.");
+                    await reasoning.evaluate((element) => { window.observedReasoning = element; window.observedBody = element.querySelector("[data-body-reference]"); });
                     const ids = () => page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
                     const calls = await page.locator("[data-call-id]").evaluateAll((rows) => rows.map((row) => ({
-                        id: row.dataset.callId, name: row.dataset.callName, arguments: row.querySelector("[data-message-body]").textContent,
+                        id: row.dataset.callId, name: row.dataset.plurnkType, body: row.querySelector("article > pre")?.textContent ?? "",
                     })));
                     const reads = calls.filter(({ name }) => name === "READ");
                     assert.equal(reads.length, 2);
-                    assert.ok(reads.some(({ arguments: args }) => args.includes("witness.txt")), "exact daemon arguments reach the template");
-                    const receipts = page.locator('[data-message-role="tool"]');
-                    assert.equal(requests.some((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)), false,
-                        "the shipped page does not prefetch receipt bodies");
-                    const receiptBodies = await inspectRenderedResults(page);
-                    assert.ok(receiptBodies.some((body) => body.content === "cobalt heron"), "the real file result is inspectable by explicit read");
-                    assert.ok(receiptBodies.some((body) => body.problem?.title === "Entry not found"), "the real operation failure is inspectable");
-                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 1);
-                    for (const link of await receipts.locator("[data-call-link]").all()) {
-                        assert.equal(await link.evaluate((element) => Boolean(document.getElementById(decodeURIComponent(new URL(element.href).hash.slice(1))))), true);
-                    }
+                    assert.ok(reads.every(({ body }) => body === ""), "bodyless READ calls are semantic entries, not argument envelopes");
+                    const readRows = page.locator('[data-call-id][data-plurnk-type="READ"]');
+                    const successful = readRows.filter({ has: page.locator('[data-plurnk-field="count"]') });
+                    assert.equal(await successful.locator('[data-plurnk-field="path"]').textContent(), "(witness.txt)");
+                    assert.equal(await successful.locator('[data-plurnk-field="scope"]').textContent(), "<1,1>");
+                    assert.equal(await successful.locator('[data-plurnk-field="pattern"]').textContent(), "/cobalt/");
+                    assert.equal(await successful.locator('[data-plurnk-field="count"]').textContent(), "{1}");
+                    assert.equal(await successful.locator("article > header").innerText(), "selected evidence");
+                    const successfulId = await successful.getAttribute("data-call-id");
+                    const evidence = run.messages.find((message) => message.role === "tool" && message.toolCallId === successfulId);
+                    assert.equal((await inspectResult(evidence.content, undefined, base)).content, "cobalt heron", "actual READ bytes remain accessible through the public evidence resource");
+                    const missing = run.messages.filter(({ role, content }) => role === "tool" && typeof content === "string")
+                        .map(({ content }) => JSON.parse(content)).find(({ problem }) => problem?.title === "Entry not found");
+                    assert.ok(missing, "the fixture actually produced a missing-entry Problem");
+                    assert.ok((await readRows.locator('[data-plurnk-field="outcome"]').allTextContents()).some((text) => text.includes(missing.problem.detail)), "the real operation diagnostic is visible content");
+                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 0, "the browser does not fetch READ bodies for its summary");
+                    assert.equal(await readRows.locator("a, button, [data-body-reference]").count(), 0);
                     for (const colorScheme of ["light", "dark"]) {
                         await page.emulateMedia({ colorScheme });
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "long literal receipts do not widen the viewport");
@@ -581,7 +584,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(JSON.stringify(upload.messages).includes("Considering conversation."), false,
                         "neither preview nor inspected full reasoning enters a later Run upload");
                     assert.equal(await reasoning.evaluate((element) => element === window.observedReasoning), true, "passive replay retains the existing row");
-                    assert.equal(await reasoning.locator("pre[data-body-content]").evaluate((element) => element === window.observedBody), true);
+                    assert.equal(await reasoning.locator("[data-body-reference]").evaluate((element) => element === window.observedBody), true);
                     assert.equal(await reasoning.locator("details").evaluate((element) => element.open), true, "native disclosure choice survives replay");
                     const beforeReload = await ids();
                     assert.equal(beforeReload.length, new Set(beforeReload).size, "reconnect does not duplicate messages");
@@ -594,8 +597,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await page.locator('[data-message-role="reasoning"] [data-body-state="loaded"]').count(), 0);
                     assert.equal(requests.filter((request) => /\/reasoning\//u.test(new URL(request.url()).pathname)).length, 1,
                         "refresh does not re-fetch an inspected reasoning body");
-                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 1,
-                        "reload does not automatically re-fetch an inspected body");
+                    assert.equal(requests.filter((request) => /\/agui\/\d+\/\d+\/log\//u.test(new URL(request.url()).pathname)).length, 0,
+                        "reload does not fetch receipt bodies for summaries");
                     assert.deepEqual(model.errors, []);
                     assert.equal(await page.locator("#worker-conversation form, #worker-conversation textarea, #worker-conversation [contenteditable]").count(), 0);
                     for (const request of requests.filter((request) => new URL(request.url()).pathname === "/agui/connect")) {

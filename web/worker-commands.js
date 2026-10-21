@@ -42,15 +42,14 @@ export default function workerCommands(controls, actions) {
     return async (text, signal) => {
         const row = $.clone(list, "#worker-command-result");
         const article = $(row, "article");
+        const input = $(row, "header code");
         const body = $(row, "[data-command-output]");
-        if (!article || !body) throw new Error("Command result template is incomplete.");
-        the(row, "command-input", text);
-        the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandProblem: "", commandEvidence: "" });
+        if (!article || !input || !body) throw new Error("Command result template is incomplete.");
+        input.textContent = text;
+        the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandRecovery: "" });
         try {
             signal.throwIfAborted();
             const { name, rest, args, policy } = parseCommand(text);
-            /** @type {unknown} */
-            let evidence;
             /** @type {string} */
             let message = "";
             if (name === "help") {
@@ -72,7 +71,6 @@ export default function workerCommands(controls, actions) {
                     if (!Array.isArray(aliases?.aliases)) throw new Error("Alias listing is invalid.");
                     const catalog = Validator.assertModelCatalogPage(await actions.call("models.list", rest ? { search: rest } : {}));
                     signal.throwIfAborted();
-                    evidence = { ...aliases, catalog };
                     const result = $.clone(body, "#command-models");
                     const aliasList = $(result, "[data-model-aliases]");
                     const entries = $(result, "tbody");
@@ -99,7 +97,6 @@ export default function workerCommands(controls, actions) {
                         rest ? { selector: args[0], ...(args[1] === undefined ? {} : { effort: args[1] }) } : {});
                     const projection = /** @type {{model: unknown}} */ (result);
                     const model = rest ? Validator.assertModelRoute(result) : projection?.model === null ? null : Validator.assertModelRoute(projection?.model);
-                    evidence = result;
                     message = `Model: ${route(model)}${model?.effort === undefined ? "" : ` (${model.effort})`}.`;
                 } else if (name === "effort") {
                     const result = /** @type {{effort: unknown, source: unknown, supportedEfforts: unknown[]}} */ (
@@ -107,34 +104,39 @@ export default function workerCommands(controls, actions) {
                     if (!["default", "explicit"].includes(String(result?.source)) || !Array.isArray(result?.supportedEfforts)) throw new Error("Effort result is invalid.");
                     const effort = result.effort === null ? "Unavailable" : Validator.assertEffort(result.effort);
                     const supported = result.supportedEfforts.map((value) => Validator.assertEffort(value));
-                    evidence = result;
                     message = `Effort: ${effort} (${result.source}). Supported: ${supported.join(", ") || "None"}.`;
                 } else if (name === "capabilities") {
                     if (rest) Validator.assertCapabilityPolicy(policy);
                     const result = /** @type {import("@plurnk/plurnk-contracts").CapabilityProjection} */ (
                         await actions.call(rest ? "workspace.capabilities.set" : "workspace.capabilities.get", rest ? { policy } : {}));
                     for (const layer of ["service", "workspace", "effective"]) Validator.assertCapabilityPolicy(Reflect.get(Object(result), layer));
-                    evidence = result;
                     signal.throwIfAborted();
                     const projection = $.clone(body, "#command-capabilities");
-                    the(projection, { capabilityService: JSON.stringify(result.service, null, 2),
-                        capabilityWorkspace: JSON.stringify(result.workspace, null, 2), capabilityEffective: JSON.stringify(result.effective, null, 2) });
+                    for (const layer of /** @type {const} */ (["service", "workspace", "effective"])) {
+                        const content = $(projection, `[data-capability="${layer}"]`);
+                        if (!content) throw new Error("Capability template has no policy outlet.");
+                        content.textContent = JSON.stringify(result[layer], null, 2);
+                    }
                 }
             }
             signal.throwIfAborted();
-            the(article, { commandState: "done", commandBusy: "false", commandMessage: message,
-                commandEvidence: evidence === undefined ? "" : JSON.stringify(evidence, null, 2) });
+            the(article, { commandState: "done", commandBusy: "false", commandMessage: message });
             return true;
         } catch (error) {
             const cause = error instanceof Error ? error.cause : undefined;
-            let details = "";
+            let recovery = "";
+            let status = null;
             if (cause && typeof cause === "object" && !(cause instanceof Error)) {
                 const { Validator } = await import("@plurnk/plurnk-contracts");
-                if (Validator.validateProblemDetails(cause).valid) details = JSON.stringify(cause, null, 2);
+                if (Validator.validateProblemDetails(cause).valid) {
+                    const problem = Validator.assertProblemDetails(cause);
+                    recovery = typeof problem.recovery === "string" ? problem.recovery : "";
+                    status = problem.status;
+                }
             }
             the(article, { commandState: "error", commandBusy: "false",
                 commandMessage: signal.aborted ? "Response not confirmed." : error instanceof Error ? error.message : String(error),
-                commandProblem: details });
+                commandRecovery: recovery, commandStatus: status });
             return false;
         }
     };

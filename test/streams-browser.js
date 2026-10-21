@@ -66,7 +66,8 @@ export default async function verifyStreams(t) {
                     assert.equal(await row.locator("[data-text=stream-length]").first().textContent(), "7");
                     await row.getByRole("button", { name: "Read output", exact: true }).click();
                     await output.locator('[data-output-snapshot]').waitFor();
-                    assert.deepEqual(await output.locator("[data-text=output-content]").allTextContents(), [source, ""]);
+                    assert.deepEqual(await output.locator("[data-output-content]").allTextContents(), [source, ""]);
+                    assert.equal(await output.locator('li[data-output-content]').count(), 0, "output text is not copied into attributes");
                     assert.equal(await output.locator("[data-text=output-length]").first().textContent(), String([...source].length));
                     assert.equal(await output.locator("script, img, form").count(), 0);
                     assert.equal(reads.length, 1);
@@ -85,14 +86,14 @@ export default async function verifyStreams(t) {
                     await row.getByRole("button", { name: "Read output", exact: true }).click();
                     await output.locator("[data-output-failure]").waitFor();
                     assert.equal(await output.locator("[data-text=output-error]").textContent(), problem.detail);
-                    assert.equal(await output.locator("[data-text=output-content]").first().textContent(), source, "a failed refresh retains its prior snapshot");
+                    assert.equal(await output.locator("[data-output-content]").first().textContent(), source, "a failed refresh retains its prior snapshot");
                     result = { ok: true, result: { status: 200, entry: { ...entry, channels: { stdout: channel("finished", "closed") } } } };
                     await row.getByRole("button", { name: "Read output", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("[data-text=output-content]")?.textContent === "finished");
+                    await page.waitForFunction(() => document.querySelector("[data-output-content]")?.textContent === "finished");
                     assert.equal(credentials, 3, "each explicit request obtains current credentials");
                     await page.evaluate(() => window.resetStreams());
                     assert.deepEqual(await row.locator("[data-text=stream-length]").allTextContents(), ["Not observed", "Not observed"]);
-                    assert.equal(await output.locator("[data-text=output-content]").textContent(), "finished", "delivery reset does not erase a labelled snapshot");
+                    assert.equal(await output.locator("[data-output-content]").textContent(), "finished", "delivery reset does not erase a labelled snapshot");
 
                     const conclusion = { entryId: 9, workerId: 9, target: stream.target, scheme: "sh", summary: "Exited 7",
                         subscriptionId: 20, result: { status: 500, exitCode: 7,
@@ -102,7 +103,11 @@ export default async function verifyStreams(t) {
                     const outcomes = page.locator("[data-stream-outcomes]");
                     await outcomes.locator(":scope > summary").click();
                     await outcomes.locator("li > details > summary").click();
-                    assert.deepEqual(JSON.parse(await outcomes.locator("[data-text=stream-result]").textContent()), conclusion.result);
+                    assert.equal(await outcomes.locator("ol > li").getAttribute("data-stream-status"), "500");
+                    assert.equal(await outcomes.locator("ol > li").getAttribute("data-stream-exit-code"), "7");
+                    assert.equal(await outcomes.locator("[data-text=stream-summary]").textContent(), "Exited 7");
+                    assert.equal(await outcomes.locator("[data-stream-result], [data-stream-evidence]").count(), 0);
+                    assert.equal(await current.locator("[data-stream-channels]").getAttribute("data-stream-channels"), "");
                     assert.equal(await outcomes.locator("[data-text=stream-problem]").textContent(), "Command exited 7.");
                     await emit(conclusion);
                     assert.equal(await outcomes.locator("ol > li").count(), 1);

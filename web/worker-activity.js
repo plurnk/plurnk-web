@@ -1,5 +1,6 @@
 import { $, the } from "on_the_money";
 import bodyReferences from "./body-references.js";
+import operationSummary, { argumentsOf, bodyOf, record } from "./operation-summary.js";
 
 /** @typedef {{url: string, mimeType?: string}} Reference */
 
@@ -23,15 +24,17 @@ export default function activity(root, read) {
     /** @type {WeakMap<Element, string>} */
     const references = new WeakMap();
 
-    /** @param {Element} row @param {string} selector @param {Reference | undefined} source @param {string} label */
-    function reference(row, selector, source, label) {
-        const outlet = $(row, selector);
+    /** @param {Element} row @param {string} body @param {Reference | undefined} reasoning */
+    function content(row, body, reasoning) {
+        const outlet = $(row, "article");
         if (!outlet) throw new Error("Activity template has no body outlet.");
-        const revision = JSON.stringify(source ?? null);
+        const revision = JSON.stringify([body, reasoning]);
         if (references.get(outlet) === revision) return;
         outlet.replaceChildren();
-        if (source) inspect(outlet, { value: source.url, mimeType: source.mimeType }, label);
+        if (body) $.clone(outlet, "#conversation-literal").textContent = body;
+        if (reasoning) inspect.append($.clone(outlet, "#activity-reasoning"), { value: reasoning.url, mimeType: reasoning.mimeType });
         references.set(outlet, revision);
+        inspect.prune();
     }
 
     /** @param {import("@ag-ui/client").CustomEvent} event */
@@ -49,8 +52,10 @@ export default function activity(root, read) {
             the(row, {
                 activityKind: "outside", activityLabel: ["Outside operations", attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
                 plurnkCoordinate: value.coordinate, subagentRunId: attribution || null,
-                activityText: value.text, plurnkTokens: value.tokens,
             });
+            const body = $(row, "article > pre");
+            if (!body) throw new Error("Outside text template has no content outlet.");
+            if (body.textContent !== value.text) body.textContent = value.text;
             rows.set(key, row);
             return;
         }
@@ -62,24 +67,26 @@ export default function activity(root, read) {
             || (value.source !== null && typeof value.source !== "string")) {
             throw new TypeError("Ambient row identity or display fields are incomplete.");
         }
-        const body = referenceOf(value.body);
         const reasoning = referenceOf(typeof value.reasoning === "string" ? undefined : value.reasoning);
         if (value.origin === "_plurnk" && value.op === "READ" && value.attrs?.kind === "emission") return;
         const key = JSON.stringify([event.name, attribution, value.worker_id, value.id]);
         const row = rows.get(key) ?? $.clone(list, "#worker-ambient");
         const operation = value.op ?? (value.attrs?.kind === "emissionAttempt" ? "Rejected emission" : "Log entry");
+        const args = typeof value.tx === "string" ? argumentsOf(value.tx) : record(value.tx);
+        const receipt = typeof value.rx === "string" ? argumentsOf(value.rx) : record(value.rx);
         const coordinate = `${value.loop_seq}/${value.turn_seq}/${value.sequence}`;
         the(row, {
-            activityKind: "ambient", activityOperation: operation,
+            activityKind: "ambient",
             activityLabel: [operation, `Worker ${value.worker_id}`, coordinate, value.state, String(value.status_rx),
                 attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
             plurnkRow: value.id, plurnkWorker: value.worker_id, plurnkOrigin: value.origin,
             plurnkCoordinate: coordinate, plurnkType: value.op, plurnkState: value.state,
-            plurnkStatus: value.status_rx, plurnkAt: value.at,
-            plurnkSource: value.source, subagentRunId: attribution || null,
+            plurnkStatus: value.status_rx, subagentRunId: attribution || null,
+            plurnkNote: value.op === "NOTE" ? typeof args?.aside === "string" && args.aside ? args.aside : "note" : null,
+            plurnkSignal: typeof value.signal === "number" ? value.signal : null,
         });
-        reference(row, "[data-activity-body]", body, "Receipt body");
-        reference(row, "[data-activity-reasoning]", reasoning, "Reasoning");
+        content(row, bodyOf(args, value.op), reasoning);
+        operationSummary(row, operation, args, receipt, { op: value.op, status: value.status_rx, address: value.target }, "");
         rows.set(key, row);
     };
 }

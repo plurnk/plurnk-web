@@ -32,15 +32,20 @@ export default function diagnostics(root) {
         const attribution = event.subagentRunId ?? "";
         const key = JSON.stringify([event.name, attribution, event.value]);
         if (observed.has(key)) return;
-        const { diagnosticTitle, ...content } = fields;
+        const { diagnosticTitle } = fields;
         const severity = { info: "Information", warn: "Warning", error: "Error" }[fields.diagnosticLevel];
-        the($.clone(list, "#worker-diagnostic"), {
-            ...content,
-            diagnosticMessage: fields.diagnosticMessage || diagnosticTitle,
+        const row = $.clone(list, "#worker-diagnostic");
+        the(row, {
+            diagnosticLevel: fields.diagnosticLevel,
             diagnosticType: event.name,
             diagnosticLabel: [severity, diagnosticTitle, attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
             subagentRunId: attribution || null,
         });
+        const article = $(row, "article");
+        const message = $(row, "[data-diagnostic-message]");
+        if (!article || !message) throw new Error("Diagnostic template has no content outlet.");
+        message.textContent = fields.diagnosticMessage || diagnosticTitle;
+        if (fields.diagnosticRecovery) $.clone(article, "#diagnostic-recovery").textContent = fields.diagnosticRecovery;
         observed.add(key);
     };
 }

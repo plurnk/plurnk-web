@@ -88,11 +88,12 @@ as literal messages and recovery guidance. Distinct observations remain through 
 on that page; they are not an archive or an indication that the worker has stopped.
 **Observed activity** exposes non-conversation log rows and text emitted outside
 operations, retaining source coordinates and supplied worker attribution as entry
-semantics and accessible names. Referenced receipt bodies and reasoning are
-read only on request. These observations survive reconnects on the same page, not
+semantics and accessible names. These observations survive reconnects on the same page, not
 reloads; they are not replies or a complete activity history.
-Operation receipts stay in the conversation; **Read body** fetches a referenced
-result only when requested. Inspected bodies are literal text and are never added
+Operations show their glyph and aside above the addressed selection, returned count
+and any failure. An immediate receipt completes that summary rather than adding
+another article. Authored bodies appear below it; READ results are not fetched
+automatically. Reasoning stays collapsed until opened. Fetched bodies are literal text and are never added
 to client-uploaded conversation history or saved in browser storage.
 
 **Open streams** lists the worker's current executors, including silent streams,
@@ -106,8 +107,8 @@ cancels execution.
 Live reasoning appears in one temporary plain-text preview, cleared when the
 attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bounds
 its retained tail (4096 Unicode code points by default). Completed turns keep
-their reasoning links in collapsed disclosures; **Read body** retrieves the full
-trace explicitly, without adding it to later Run uploads.
+their reasoning in collapsed disclosures; opening one retrieves the full
+trace when visible, without adding it to later Run uploads.
 
 **Send** also supports follow-ups while the worker is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
@@ -137,12 +138,13 @@ Messages follow HttpAgent's order; unknown history is not shown as empty.
 Content and calls are direct semantic entries with accessible names and
 presentation-relevant metadata, not nested protocol inspectors. Reasoning retains
 its native disclosure; opening it does not start work. Markdown is sanitized, raw
-HTML stays text and images become links. Tool arguments and results remain literal
-content. NOTE presents its Markdown body with category and attribution semantics,
-without an enclosing assistant article or a duplicate arguments view.
+HTML stays text and images become links. SEND bodies use that same Markdown renderer;
+NOTE, reasoning and ordinary operation evidence remain literal preformatted text.
+NOTE retains category and attribution semantics without an enclosing assistant
+article, a duplicate arguments view or a body copy in attributes.
 The browser keeps no separate transcript or persistent conversation cache.
 
-Markdown footnotes use native reference and back-links within each message or NOTE.
+Markdown footnotes use native reference and back-links within each rich message or SEND.
 Repeated references retain separate return links; definitions never leak between
 messages. Code and unresolved references remain readable source.
 

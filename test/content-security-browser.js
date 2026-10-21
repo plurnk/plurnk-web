@@ -62,13 +62,16 @@ export default async function verifyContentSecurity(t) {
                     }));
                     const original = await shell();
 
-                    await t.test("all rich-text roles and NOTE bodies share the same admission boundary", async () => {
-                        const messages = ["user", "assistant", "reasoning", "system", "developer"].map((role) => ({ id: role, role, content: hostile }));
-                        messages.push({ id: "note", role: "assistant", toolCalls: [{
-                            id: "note-call", type: "function", function: { name: "NOTE", arguments: JSON.stringify({ body: hostile, aside: injection }) }, metadata: { plurnk: { op: "NOTE" } },
-                        }] });
+                    await t.test("rich messages and SEND share the sanitizer; NOTE and reasoning remain literal", async () => {
+                        const messages = ["user", "assistant", "system", "developer"].map((role) => ({ id: role, role, content: hostile }));
+                        messages.push({ id: "send", role: "assistant", toolCalls: [{
+                            id: "send-call", type: "function", function: { name: "SEND", arguments: JSON.stringify({ body: hostile }) }, metadata: { plurnk: { op: "SEND" } },
+                        }] }, { id: "reply", role: "tool", toolCallId: "child-work", content: hostile, metadata: { plurnk: { op: "SEND" } } },
+                        { id: "note", role: "assistant", toolCalls: [{ id: "note-call", type: "function",
+                            function: { name: "NOTE", arguments: JSON.stringify({ body: hostile, aside: injection }) }, metadata: { plurnk: { op: "NOTE" } } }] },
+                        { id: "reasoning", role: "reasoning", content: hostile });
                         await present(messages);
-                        const bodies = page.locator("[data-message-body]:has(> p > strong)");
+                        const bodies = page.locator("[data-messages] article:has(> p > strong)");
                         assert.equal(await bodies.count(), 6);
                         for (const body of await bodies.all()) {
                             assert.equal(await body.locator("strong").textContent(), "Readable evidence");
@@ -82,9 +85,14 @@ export default async function verifyContentSecurity(t) {
                             await body.locator("a:not([href])").evaluateAll((links) => links.forEach((link) => link.click()));
                         }
                         assert.equal(await page.locator("[data-plurnk-note]").getAttribute("data-plurnk-note"), injection);
+                        for (const id of ["note", "reasoning"]) {
+                            const body = page.locator(`[data-message-id="${id}"] article > pre`);
+                            assert.equal(await body.textContent(), hostile);
+                            assert.equal(await body.locator("*").count(), 0, "literal content never enters an HTML parser");
+                        }
                     });
 
-                    await t.test("identity, call arguments, result errors and structured payloads remain literal", async () => {
+                    await t.test("identity and errors remain literal; unrecognized payloads are not rendered", async () => {
                         const call = { id: injection, type: "function", function: { name: injection, arguments: hostile } };
                         const messages = [
                             { id: injection, role: "assistant", name: injection, subagentRunId: injection, content: "", toolCalls: [call] },
@@ -93,27 +101,27 @@ export default async function verifyContentSecurity(t) {
                             { id: "parts", role: "user", content: [{ type: "text", text: hostile }, { type: "binary", mimeType: "image/svg+xml", url: "https://example.invalid/media.svg" }] },
                         ];
                         await present(messages);
-                        assert.equal(await page.locator("[data-call-id]").getAttribute("data-call-name"), injection);
-                        assert.equal(await page.locator("[data-call-id] [data-message-body] code").textContent(), hostile);
-                        assert.equal(await page.locator("[data-message-id=result] [data-text=message-error]").textContent(), injection);
-                        assert.equal(await page.locator("[data-message-id=result] [data-message-body] code").textContent(), hostile);
-                        assert.equal(await page.locator("[data-message-id=activity] [data-message-body] code").textContent(), JSON.stringify({ html: hostile }, null, 2));
-                        assert.equal(await page.locator("[data-message-id=parts] [data-message-body] strong").textContent(), "Readable evidence",
+                        assert.equal(await page.locator("[data-call-id] article").getAttribute("aria-label"), [injection, injection, `Subagent ${injection}`].join(" · "));
+                        assert.equal(await page.locator("[data-call-id] article").textContent(), "");
+                        assert.equal(await page.locator("[data-message-id=result] p[data-message-error]").textContent(), injection);
+                        assert.equal(await page.locator("[data-message-id=result] article > pre").textContent(), hostile);
+                        assert.equal(await page.locator("[data-message-id=activity] article").textContent(), "");
+                        assert.equal(await page.locator("[data-message-id=parts] article strong").textContent(), "Readable evidence",
                             "standard text parts use the role's same sanitized renderer");
-                        assert.equal(await page.locator("[data-message-id=parts] [data-message-body] > pre code").textContent(), JSON.stringify(messages[3].content[1], null, 2),
-                            "unsupported parts remain exact literal data, not an image or implicit fetch");
+                        assert.equal(await page.locator("[data-message-id=parts] article > pre").count(), 0,
+                            "unsupported parts stay in JavaScript, not a metadata dump or implicit fetch");
                         assert.equal(await page.locator("#worker-conversation script, #worker-conversation img, #worker-conversation form").count(), 0);
-                        assert.equal(await page.locator("[data-call-link]").first().evaluate((link) => document.getElementById(decodeURIComponent(new URL(link.href).hash.slice(1)))?.dataset.callId), call.id);
+                        assert.equal(await page.locator("[data-message-id=result]").getAttribute("data-tool-call-id"), call.id);
                     });
 
                     await t.test("streaming and replay cannot activate partial markup or escaped code", async () => {
                         for (const content of ["<img src=", injection, "[script](java", "[script](javascript:alert%281%29)", "```html\n" + hostile, "```html\n" + hostile + "\n```", "**Recovered ordinary text**"]) {
                             await present([{ id: "streamed", role: "assistant", content }]);
                             await present([{ id: "streamed", role: "assistant", content }]);
-                            assert.equal(await page.locator("[data-message-body] script, [data-message-body] img, [data-message-body] [data-bind], [data-message-body] [data-text]").count(), 0);
+                            assert.equal(await page.locator("[data-messages]").locator("article script, article img, article [data-bind], article [data-text]").count(), 0);
                             assert.deepEqual(await shell(), original);
                         }
-                        assert.equal(await page.locator("[data-message-body] strong").textContent(), "Recovered ordinary text");
+                        assert.equal(await page.locator("[data-messages] article strong").textContent(), "Recovered ordinary text");
                     });
 
                     assert.deepEqual(await shell(), original, "rendering cannot alter the surrounding application document");
