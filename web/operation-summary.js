@@ -95,6 +95,7 @@ export default function operationSummary(row, name, args, receipt, facts, error)
     if (name === null) {
         $(article, ":scope > header")?.remove();
         $(article, ":scope > [data-plurnk-operands]")?.remove();
+        $(article, ':scope > [data-plurnk-field="outcome"]')?.remove();
         return;
     }
     const op = textOf(facts?.op) || name;
@@ -114,7 +115,6 @@ export default function operationSummary(row, name, args, receipt, facts, error)
     /** @type {Field[]} */
     const result = [];
     if (count !== null) result.push(["count", `{${count}}`]);
-    if (outcome) result.push(["outcome", outcome]);
 
     let header = $(article, ":scope > header");
     header ??= $.clone(article, "#operation-header", { position: "afterbegin" });
@@ -125,16 +125,25 @@ export default function operationSummary(row, name, args, receipt, facts, error)
         painted.set(header, headingRevision);
     }
     let details = $(article, ":scope > [data-plurnk-operands]");
-    if (!operands.some((fields) => fields.length) && !result.length) { details?.remove(); return; }
-    details ??= $.clone(header, "#operation-operands", { position: "afterend" });
-    const revision = JSON.stringify([operands, result]);
-    if (painted.get(details) === revision) return;
-    details.replaceChildren();
-    for (const fields of operands) {
-        if (!fields.length) continue;
-        if (details.hasChildNodes()) details.append(" ");
-        appendFields($.clone(details, "#operation-operand"), fields);
+    if (!operands.some((fields) => fields.length) && !result.length) {
+        details?.remove();
+        details = null;
+    } else {
+        details ??= $.clone(header, "#operation-operands", { position: "afterend" });
+        const revision = JSON.stringify([operands, result]);
+        if (painted.get(details) !== revision) {
+            details.replaceChildren();
+            for (const fields of operands) {
+                if (!fields.length) continue;
+                if (details.hasChildNodes()) details.append(" ");
+                appendFields($.clone(details, "#operation-operand"), fields);
+            }
+            appendFields(details, result);
+            painted.set(details, revision);
+        }
     }
-    appendFields(details, result);
-    painted.set(details, revision);
+    let conclusion = $(article, ':scope > [data-plurnk-field="outcome"]');
+    if (!outcome) { conclusion?.remove(); return; }
+    conclusion ??= $.clone(details ?? header, "#operation-outcome", { position: "afterend" });
+    if (conclusion.textContent !== outcome) conclusion.textContent = outcome;
 }

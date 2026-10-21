@@ -31,6 +31,7 @@ export default async function verifySemanticContent(t) {
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (messages) => page.evaluate((messages) => { window.source = messages; window.present(messages); }, messages);
                     const list = page.locator("[data-messages]");
+                    assert.equal(await list.evaluate((element) => element.tagName), "UL");
                     const row = (id) => list.locator(`[data-message-id="${id}"]`);
                     const field = (item, name) => item.locator(`[data-plurnk-field="${name}"]`);
                     const glyph = (item) => item.locator("article > header").evaluate((element) => getComputedStyle(element, "::before").content);
@@ -75,6 +76,11 @@ export default async function verifySemanticContent(t) {
                     assert.deepEqual(requests, [], "a READ summary never fetches its readback body");
                     await present([read, result("read", { status: 404, problem: { title: "Entry not found", detail: "README.md is missing.", recovery: "Choose an existing path." } })]);
                     assert.equal(await field(row("read"), "outcome").textContent(), "Entry not found — README.md is missing. — Choose an existing path.");
+                    assert.equal(await row("read").locator("article > [data-plurnk-operands] + p[data-plurnk-field=outcome]").count(), 1,
+                        "an outcome is its own paragraph after the operation operands");
+                    const operandsBox = await row("read").locator("[data-plurnk-operands]").boundingBox();
+                    const outcomeBox = await field(row("read"), "outcome").boundingBox();
+                    assert.ok(outcomeBox.y >= operandsBox.y + operandsBox.height, "the rendered outcome starts below the operand row");
                     assert.equal(await row("read").getAttribute("data-plurnk-status"), "404");
                     assert.equal(await field(row("read"), "count").count(), 0, "replacement snapshot removes a stale count");
 
@@ -93,6 +99,10 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await field(row("invalid"), "path").count(), 0, "rejected syntax is not reparsed into imagined operands");
                     assert.equal(await field(row("invalid"), "outcome").textContent(), "Invalid operation");
                     assert.match(await glyph(row("invalid")), /⛔/u);
+                    assert.equal(await row("invalid").locator("article > header + p[data-plurnk-field=outcome]").count(), 1,
+                        "an outcome without operands follows the operation header directly");
+                    await present([rejected, result("invalid", { status: 200 })]);
+                    assert.equal(await field(row("invalid"), "outcome").count(), 0, "a cleared outcome leaves no empty paragraph");
 
                     const literal = '**Not emphasis**\n</pre><script>window.contentExecuted=true</script><pre>\n&copy; 分析 🐹';
                     const note = call("note", "NOTE", { body: literal, aside: "fact" });

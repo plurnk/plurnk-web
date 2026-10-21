@@ -4,7 +4,7 @@ import { inputPage } from "./worker-input.js";
 function composer(page) {
     page.setDefaultTimeout(5000);
     const field = page.getByRole("textbox", { name: "Message", exact: true });
-    const rows = page.locator("#worker-command-results > ol > li");
+    const rows = page.locator("#worker-command-results > ul > li");
     const send = async (text) => {
         await field.fill(text);
         await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -59,7 +59,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.match(await (await submit("/effort")).textContent(), /high \(explicit\)/u);
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high");
-            assert.equal(await page.locator("#worker-command-results > ol > li").count(), 0, "command history is page-local");
+            assert.equal(await page.locator("#worker-command-results > ul > li").count(), 0, "command history is page-local");
             const capabilities = await submit("/capabilities");
             assert.deepEqual(await capabilities.locator("dt").allTextContents(), ["Service", "Workspace", "Effective"]);
             const policy = { deny: [{ runtime: "sh" }] };

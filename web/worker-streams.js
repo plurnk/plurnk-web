@@ -6,7 +6,7 @@ import entryOutput from "./entry-output.js";
  * @param {(target: string) => Promise<import("@plurnk/plurnk-contracts").ClientEntry>} read
  */
 export default function workerStreams(root, read) {
-    const outcomes = $(root, ":scope > ol");
+    const outcomes = $(root, ":scope > ul");
     if (!outcomes) throw new Error("Worker streams have no outcome outlet.");
     const inspect = entryOutput(root, read);
     const concluded = new Set();

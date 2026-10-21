@@ -114,7 +114,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await verifyPageShell(page, { title: "Workspaces — Plurnk", kind: "daemon" });
                             assert.deepEqual(await page.locator("main > ul > li > a").allTextContents(), initial.map(({ name }) => name));
                             const markers = page.locator('main > ul > li > [role="img"]');
-                            assert.deepEqual(await markers.allTextContents(), initial.map(({ project_root }) => project_root === null ? "☁️" : "📁"));
+                            assert.deepEqual(await markers.allTextContents(), initial.map(({ project_root }) => project_root === null ? "☁️" : "🗂️"));
                             assert.deepEqual(await markers.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
                                 initial.map(({ project_root }) => project_root === null ? "Folderless workspace" : "Project workspace"));
                             const cookie = (await context.cookies()).find(({ name }) => name === "plurnk_web_session");
@@ -136,11 +136,11 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 const marker = page.getByRole("navigation", { name: "breadcrumb" }).getByRole("img", {
                                     name: sameFolder ? "Project workspace" : workspace.project_root === null ? "Folderless workspace" : "Workspace", exact: true,
                                 });
-                                assert.equal(await marker.innerText(), sameFolder ? "📁" : "☁️");
+                                assert.equal(await marker.innerText(), sameFolder ? "🗂️" : "☁️");
                                 const folder = page.locator('main [data-text="project-label"]');
                                 if (workspace.project_label !== null && !sameFolder) {
                                     assert.equal(await folder.textContent(), workspace.project_label);
-                                    assert.equal(await page.getByRole("main").getByRole("img", { name: "Project folder", exact: true }).innerText(), "📁");
+                                    assert.equal(await page.getByRole("main").getByRole("img", { name: "Project folder", exact: true }).innerText(), "🗂️");
                                     assert.equal(await folder.locator("a").count(), 0, "a filesystem label is not a web link");
                                 } else {
                                     assert.equal(await folder.count(), 0, "equal labels and folderless workspaces need no folder row");
@@ -151,7 +151,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await page.getByRole("link", { name: worker.name, exact: true }).click();
                                 assert.equal(await page.locator("main h1").count(), 0, "worker identity belongs in the breadcrumb, not a duplicate heading");
                                 await verifyPageShell(page, { title: `${workspace.name}@${worker.name} — Plurnk`, kind: "worker" });
-                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["Workspaces", `${sameFolder ? "📁" : "☁️"} ${workspace.name}`, worker.name]);
+                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["🗃️", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`, worker.name]);
                                 await page.reload();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: workspace.name, exact: true }).click();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces", exact: true }).click();
@@ -168,7 +168,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const missing = await page.goto(new URL("/~/missing/", base).href);
                             assert.equal(missing.status(), 404);
                             await verifyPageShell(page, { title: "404 Not Found — Plurnk", kind: "error" });
-                            await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Workspaces" }).click();
+                            await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces" }).click();
                             assert.equal(new URL(page.url()).pathname, "/~/");
                             await page.getByRole("button", { name: "Sign out" }).click();
                             await page.waitForURL(base);
@@ -223,7 +223,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const page = await context.newPage();
                             const response = await page.goto(new URL("/~/", base).href);
                             assert.equal(response.status(), 200);
-                            assert.equal(await page.locator('[aria-current="page"]').innerText(), "Workspaces");
+                            assert.equal(await page.locator('[aria-current="page"]').innerText(), "🗃️");
                             assert.equal(await page.locator("main h1").count(), 0);
                             assert.equal(new URL(page.url()).pathname, "/~/");
                             assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
@@ -262,7 +262,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 const second = await enter(other);
                                 await page.getByRole("button", { name: "Sign out", exact: true }).click();
                                 await page.waitForURL(base);
-                                await page.getByRole("navigation", { name: "Main navigation", exact: true }).getByRole("link", { name: "Workspaces", exact: true }).click();
+                                await page.getByRole("navigation", { name: "breadcrumb", exact: true }).getByRole("link", { name: "Workspaces", exact: true }).click();
                                 await page.waitForLoadState("domcontentloaded");
                                 assert.equal(new URL(page.url()).pathname, "/oauth/authorize", "revisiting Workspaces requires sign-in; revoking only the web cookie is insufficient");
                                 assert.equal(await page.getByLabel("Password", { exact: true }).count(), 1);
@@ -360,7 +360,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         await page.getByLabel("Password", { exact: true }).fill("proxy-pass");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await page.waitForURL(`${issuer}/~/`);
-                        assert.equal(await page.locator('[aria-current="page"]').innerText(), "Workspaces");
+                        assert.equal(await page.locator('[aria-current="page"]').innerText(), "🗃️");
                         assert.equal(await page.locator("main h1").count(), 0);
                         await page.getByRole("button", { name: "Sign out" }).click();
                         await page.waitForURL(`${issuer}/`);

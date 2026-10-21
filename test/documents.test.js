@@ -39,7 +39,7 @@ test("{§web-worker-conversation} only a worker document supplies the passive co
     };
     const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
     assert.match(html, /<section id="worker-conversation" aria-label="Conversation">/u);
-    assert.match(html, /<ol[^>]*data-messages[^>]*><\/ol>/u);
+    assert.match(html, /<ul[^>]*data-messages[^>]*><\/ul>/u);
     assert.match(html, /Conversation requires JavaScript\./u);
     assert.doesNotMatch(html, /<textarea|contenteditable|<h1\b/u);
     for (const directory of [{ kind: "daemon" }, { kind: "workspace", workspace: "work" }]) {
@@ -64,11 +64,11 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     for (const [name, project_root, project_label, icon, label, separateFolder] of [
         ["~/looks-like-a-folder", null, null, "☁️", "Folderless workspace", false],
-        ["~/project", "/home/daemon/project", "~/project", "📁", "Project workspace", false],
+        ["~/project", "/home/daemon/project", "~/project", "🗂️", "Project workspace", false],
         ["research<&>", "/home/daemon/project", "~/project", "☁️", "Workspace", true],
         ["~/project/", "/home/daemon/project", "~/project", "☁️", "Workspace", true],
-        ["~", "/home/daemon", "~", "📁", "Project workspace", false],
-        ["/", "/", "/", "📁", "Project workspace", false],
+        ["~", "/home/daemon", "~", "🗂️", "Project workspace", false],
+        ["/", "/", "/", "🗂️", "Project workspace", false],
         ["研究", '/srv/資料 @<script>&"', '/srv/資料 @<script>&"', "☁️", "Workspace", true],
     ]) {
         const port = {
@@ -76,10 +76,10 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
             listWorkers: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
-        assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span aria-current="page" data-text="name">Workspaces<\/span><\/li><\/ul><\/nav>/u);
+        assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️<\/span><\/li><\/ul><\/nav>/u);
         assert.doesNotMatch(index, /<h1\b/u);
         const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
-        assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li>/u);
+        assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li>/u);
         const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
         assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span></li>`), page);
         assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
@@ -89,7 +89,7 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
         assert.doesNotMatch(page.split("<main")[1], /aria-label="breadcrumb"/u);
         if (separateFolder) {
             const folder = project_label.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-            assert.ok(page.includes(`<p><span role="img" aria-label="Project folder">📁</span> <span data-text="project-label">${folder}</span></p>`));
+            assert.ok(page.includes(`<p><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${folder}</span></p>`));
         } else {
             assert.doesNotMatch(page, /data-text="project-label"/u, "no duplicate or invented folder row");
         }
@@ -208,7 +208,7 @@ test("{§web-directory-documents} workspace markers describe folder presence wit
         listWorkers: async () => { throw new Error("The workspace index needs no worker lookup."); },
     }, false)).toString();
     assert.match(html, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <a href="\/~\/~\/looks-like-a-folder\/" data-text="name">~\/looks-like-a-folder<\/a><\/li>/u);
-    assert.match(html, /<li><span role="img" aria-label="Project workspace">📁<\/span> <a href="\/~\/research\/" data-text="name">research<\/a><\/li>/u);
+    assert.match(html, /<li><span role="img" aria-label="Project workspace">🗂️<\/span> <a href="\/~\/research\/" data-text="name">research<\/a><\/li>/u);
     assert.match(html, /<li><span role="img" aria-label="Folderless workspace">☁️<\/span> <span data-text="name">\.\.\/legacy<\/span><\/li>/u);
     assert.doesNotMatch(html, /\/home\/daemon\/project/u, "the index shows each name once, not a redundant filesystem label");
 });
@@ -275,7 +275,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" data-page="worker">/u);
-    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>Workspaces<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
+    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template/iu);
     assert.equal(html.match(/<footer\b/gu).length, 1, "the worker status footer is the only footer");
     assert.equal(html.match(/<main\b/gu).length, 1);

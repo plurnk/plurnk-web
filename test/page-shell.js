@@ -13,7 +13,15 @@ export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await home.getAttribute("title"), "Home");
     assert.equal(await home.innerText(), "", "the mascot has no duplicate brand text");
     assert.equal(await home.getByRole("img", { name: "Plurnk", exact: true }).getAttribute("src"), "/icons/plurnk.svg");
-    assert.equal(await navigation.getByRole("link", { name: "Workspaces", exact: true }).getAttribute("href"), "/~/");
+    assert.equal(await navigation.getByRole("link", { name: "Workspaces", exact: true }).count(), 0, "no redundant workspace action beside the breadcrumb");
+    const root = page.locator('header nav[aria-label="breadcrumb"] > ul > li:first-child > [aria-label="Workspaces"]');
+    assert.equal(await root.innerText(), "🗃️");
+    assert.equal(await root.getAttribute("title"), "Workspaces");
+    if (kind === "daemon") {
+        assert.equal(await root.getAttribute("aria-current"), "page");
+        assert.equal(await page.getByRole("img", { name: "Workspaces", exact: true }).count(), 1);
+    }
+    else assert.equal(await root.getAttribute("href"), "/~/");
     assert.equal(await page.locator("[style], [class]").count(), 0);
     if (kind === "error" || kind === "account") {
         const card = page.getByRole("article");
@@ -75,7 +83,7 @@ export default async function verifyPageShell(page, { title, kind }) {
             }
         }
     }
-    for (const [role, name, glyph] of [["link", "Workspaces", "📁"], ["link", "Account", "⚙️"], ["button", "Sign out", "✖"]]) {
+    for (const [role, name, glyph] of [["link", "Account", "⚙️"], ["button", "Sign out", "✖"]]) {
         const control = navigation.getByRole(role, { name, exact: true });
         if (await control.count() === 0) continue;
         assert.equal(await control.innerText(), glyph);
@@ -83,13 +91,6 @@ export default async function verifyPageShell(page, { title, kind }) {
     }
     assert.equal(await page.getByRole("link", { name: "Skip to content", exact: true }).count(), 0);
     await home.focus();
-    await page.keyboard.press("Tab");
-    const focus = await navigation.getByRole("link", { name: "Workspaces", exact: true }).evaluate((element) => {
-        const style = getComputedStyle(element);
-        return { active: document.activeElement === element, shadow: style.boxShadow, outline: style.outlineStyle };
-    });
-    assert.equal(focus.active, true, "native header links remain keyboard navigable");
-    assert.ok(focus.shadow !== "none" || focus.outline !== "none", "keyboard focus remains visible");
     if (await navigation.getByRole("link", { name: "Account", exact: true }).count()) {
         for (const [role, name] of [["link", "Account"], ["button", "Sign out"]]) {
             await page.keyboard.press("Tab");
@@ -98,5 +99,12 @@ export default async function verifyPageShell(page, { title, kind }) {
                 return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
             }), `${name} retains native keyboard order and visible focus`);
         }
+    }
+    if (kind !== "daemon") {
+        await page.keyboard.press("Tab");
+        assert.ok(await root.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
+        }), "the workspace breadcrumb retains native keyboard order and visible focus");
     }
 }

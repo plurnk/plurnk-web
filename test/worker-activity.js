@@ -15,8 +15,8 @@ export default async function verifyWorkerActivity({ t, withDaemon }) {
             await page.getByText("Completed activity.", { exact: true }).waitFor();
             await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
             const activity = page.locator("#worker-activity");
-            const rows = activity.locator(":scope > ol > li");
-            const outside = activity.locator(':scope > ol > li[data-activity-kind="outside"]');
+            const rows = activity.locator(":scope > ul > li");
+            const outside = activity.locator(':scope > ul > li[data-activity-kind="outside"]');
             assert.equal(await outside.count(), 1, "live outside-operation text is not dropped");
             await activity.locator(":scope > summary").click();
             assert.equal(await outside.locator("article > pre").textContent(), outsideText);

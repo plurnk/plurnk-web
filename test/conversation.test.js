@@ -102,7 +102,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         await present(messages);
                         assert.deepEqual(await ids(), ["question", "thought", "operations", "operations", "evidence", "failure", "answer"]);
                         assert.equal(await row("question").locator("article strong").innerText(), "the evidence");
-                        assert.equal(await row("thought").locator(":scope > details").getAttribute("open"), null);
+                        assert.equal(await row("thought").locator(":scope > article > details").getAttribute("open"), null);
                         assert.equal(await row("operations").count(), 2);
                         assert.deepEqual(await row("operations").evaluateAll((rows) => rows.map((row) => row.dataset.callId)), ["call/one#%", "call-two"]);
                         assert.deepEqual(await row("operations").locator("article").allTextContents(), ["", ""], "opaque calls do not become argument dumps");
@@ -267,6 +267,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                             "````markdown", "# Literal heading", "```mermaid", "flowchart LR", " A --> B", "```", "Literal tail.", "````",
                             "", "## Visible heading", "", "| Unicode | Value |", "| --- | --- |", "| e\u0301 | 日本語 🐹 |", "",
                             "> Quoted **evidence**.", "", "- [x] complete", "- [ ] pending", "", "<kbd>Ctrl</kbd>",
+                            "", "1. First step", "2. Second step",
                         ].join("\n");
                         await present([{ id: "markup", role: "assistant", content: valid }]);
                         const content = row("markup").locator("article");
@@ -277,6 +278,9 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.deepEqual(await content.locator("td").allTextContents(), ["e\u0301", "日本語 🐹"]);
                         assert.equal(await content.locator("blockquote strong").innerText(), "evidence");
                         assert.equal(await content.locator("input:disabled").count(), 2);
+                        assert.deepEqual(await content.locator("ol > li").allTextContents(), ["First step", "Second step"]);
+                        assert.equal(await content.locator("ol > li").first().evaluate((element) => getComputedStyle(element).listStyleType), "decimal",
+                            "unnumbered conversation entries do not remove authored ordered-list semantics");
                         assert.match(await content.textContent(), /<kbd>Ctrl<\/kbd>/u);
                         assert.equal(await content.locator("kbd, svg").count(), 0);
 

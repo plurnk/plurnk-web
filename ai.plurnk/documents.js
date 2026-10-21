@@ -41,7 +41,7 @@ export default class Documents {
     }
 
     /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] */
-    #render(title, body, kind, authenticated = false, breadcrumb = "") {
+    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb()) {
         const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
         return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}">${body}</main>${this.#afterMain}`);
@@ -87,8 +87,10 @@ export default class Documents {
         }).join("");
         const others = sessions.some((entry) => entry.family !== family)
             ? '<form method="post" action="/account/sessions/revoke-others"><button type="submit" data-i18n="revoke-others">Revoke other sessions</button></form>' : "";
-        const breadcrumb = '<nav aria-label="breadcrumb"><ul><li><a href="/account/" data-i18n="account">Account</a></li>'
-            + '<li><span aria-current="page" data-i18n="sessions">Sessions</span></li></ul></nav>';
+        const breadcrumb = this.#breadcrumb([
+            '<a href="/account/" data-i18n="account">Account</a>',
+            '<span aria-current="page" data-i18n="sessions">Sessions</span>',
+        ]);
         return this.#render("Sessions", '<article aria-labelledby="sessions-title"><header><h1 id="sessions-title" data-i18n="sessions">Sessions</h1></header>'
             + '<figure><table><thead><tr><th scope="col" data-i18n="session">Session</th><th scope="col" data-i18n="started">Started</th>'
             + '<th scope="col" data-i18n="expires">Expires</th><th scope="col" data-i18n="actions">Actions</th></tr></thead>'
@@ -105,20 +107,28 @@ export default class Documents {
     /** @param {string | null} projectRoot */
     #workspaceMarker(projectRoot) {
         const folder = projectRoot !== null;
-        return `<span role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}">${folder ? "📁" : "☁️"}</span>`;
+        return `<span role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}">${folder ? "🗂️" : "☁️"}</span>`;
+    }
+
+    /** @param {string[]} [items] @param {boolean} [current] */
+    #breadcrumb(items = [], current = false) {
+        const root = current
+            ? '<span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️</span>'
+            : '<a href="/~/" aria-label="Workspaces" title="Workspaces">🗃️</a>';
+        return `<nav aria-label="breadcrumb"><ul>${[root, ...items].map((item) => `<li>${item}</li>`).join("")}</ul></nav>`;
     }
 
     /** @param {import("./directory-addresses.js").Directory} directory @param {string} marker */
     #breadcrumbs(directory, marker) {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
-        const items = [directory.kind === "daemon" ? current("Workspaces") : this.#link("Workspaces", { kind: "daemon" })];
+        const items = [];
         if (directory.kind === "workspace") items.push(`${marker} ${current(directory.workspace)}`);
         if (directory.kind === "worker") {
             const path = directoryPath({ kind: "workspace", workspace: directory.workspace });
             if (path === null) throw new Error("An admitted worker must have a workspace directory address.");
             items.push(`<span id="worker-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, current(directory.worker));
         }
-        return `<nav aria-label="breadcrumb"><ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul></nav>`;
+        return this.#breadcrumb(items, directory.kind === "daemon");
     }
 
     /** {§web-worker-directory}
@@ -179,8 +189,7 @@ export default class Documents {
             + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'
             + '<li data-status-field="usage" data-bind="aria-label:usage-label title:usage-label"><span data-text="input">?</span> <span data-text="output">?</span></li>'
             + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li>'
-            + '<li data-status-field="context" data-bind="aria-label:context-label title:context-label"><span data-i18n="context-short">ctx</span> <span data-text="context"></span></li>'
-            + '<li data-status-field="curation" data-bind="aria-label:curation-label title:curation-label"><span data-i18n="curation-short">cur</span> <span data-text="curation"></span></li>'
+            + '<li data-status-field="context" data-bind="aria-label:context-label title:context-label"><span data-text="context"></span></li>'
             + '<li data-status-field="descendants"><details id="worker-descendants"><summary data-bind="aria-label:descendants-label title:descendants-label"><span data-text="descendants">0</span></summary><ul></ul></details></li>'
             + '<li data-status-field="gated" data-bind="aria-label:gated-label title:gated-label"><span data-text="gated">0</span></li>'
             + '<li data-status-field="wait"><span data-i18n="wait-remaining">updates in</span> <time data-text="wait" data-bind="datetime:wait-at title:wait-at"></time></li>'
@@ -193,14 +202,14 @@ export default class Documents {
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
             + '</p></article></footer>';
         return '<details id="worker-streams" data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
-            + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ol></ol></details>'
-            + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ol></ol></section>'
+            + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ul></ul></details>'
+            + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ul></ul></section>'
             + '<details id="worker-activity"><summary data-i18n="observed-activity">Observed activity</summary>'
-            + '<p data-i18n="activity-scope">Non-conversation evidence observed on this page, not a complete history.</p><ol></ol></details>'
+            + '<p data-i18n="activity-scope">Non-conversation evidence observed on this page, not a complete history.</p><ul></ul></details>'
             + '<section id="worker-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
             + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'
-            + '<ol data-messages></ol></section>' + footer;
+            + '<ul data-messages></ul></section>' + footer;
     }
 
     /**
@@ -225,7 +234,7 @@ export default class Documents {
         if (directory.kind === "workspace") {
             // {§web-workspace-folder}
             const separateFolder = workspace.project_label !== null && workspace.project_label !== workspace.name;
-            const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">📁</span> '
+            const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
             return render(workspace.name, folder + this.#workerTree(workspace.name, byId), marker);
@@ -239,8 +248,8 @@ export default class Documents {
         const title = `${workspace.name}@${directory.worker}`;
         const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
-        const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "📁" : "☁️"}</span>`;
-        return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">📁</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
+        const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
+        return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + (parent === null ? "" : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`)
             + this.#workerStatus(directory, workspace.id, authenticated), marker);
     }

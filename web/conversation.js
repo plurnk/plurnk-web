@@ -12,7 +12,7 @@ import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./oper
  */
 export default function conversation(root, readBody) {
     const list = $(root, "[data-messages]");
-    if (!(list instanceof HTMLOListElement)) throw new Error("Conversation document has no message list.");
+    if (!(list instanceof HTMLUListElement)) throw new Error("Conversation document has no message list.");
     const reference = bodyReferences(root, readBody);
     // Replacing unchanged Markdown would discard native selection inside the body.
     /** @type {WeakMap<Element, string>} */
@@ -28,11 +28,14 @@ export default function conversation(root, readBody) {
 
     /** @param {Element} row @param {unknown} content @param {boolean} rich @param {string} error @param {string} scope */
     function body(row, content, rich, error, scope) {
-        const outlet = $(row, "article");
+        const outlet = $(row, ":scope > article > details") ?? $(row, "article");
         if (!outlet) throw new Error("Message template has no content outlet.");
         const revision = JSON.stringify([content, rich, error]);
         if (painted.get(outlet) === revision) return;
-        outlet.replaceChildren();
+        const summary = $(outlet, ":scope > summary");
+        if (summary) {
+            for (const node of Array.from(outlet.childNodes)) if (node !== summary) node.remove();
+        } else outlet.replaceChildren();
         if (error) $.clone(outlet, "#conversation-error").textContent = error;
         if (Array.isArray(content)) {
             for (const [index, part] of content.entries()) {
@@ -127,6 +130,12 @@ export default function conversation(root, readBody) {
             const linked = message.role === "reasoning" ? message.metadata?.plurnk?.body : undefined;
             if (linked !== undefined && (typeof linked?.url !== "string" || typeof linked?.mimeType !== "string")) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
+            }
+            if (message.role === "reasoning") {
+                // {§web-worker-reasoning} The public body route names the durable loop/turn; message IDs do not.
+                const coordinate = linked ? /^\/agui\/\d+\/\d+\/reasoning\/(\d+)\/(\d+)$/u.exec(new URL(linked.url, location.href).pathname) : null;
+                const label = coordinate ? `L${coordinate[1]}/T${coordinate[2]}` : "";
+                the(row, { reasoningCoordinate: label, reasoningLabel: ["Reasoning", label].filter(Boolean).join(" · ") });
             }
             const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && op !== "SEND" ? ""
                 : linked ? [{ type: "document", source: { type: "url", value: linked.url, mimeType: linked.mimeType } }] : message.content;

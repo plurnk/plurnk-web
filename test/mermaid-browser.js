@@ -100,7 +100,7 @@ export async function verifyMermaid(t) {
                         for (const id of ["notes", "reasoning", "result"]) {
                             const row = page.locator(`[data-message-id="${id}"]`);
                             assert.equal(await row.locator("img, [data-diagram]").count(), 0);
-                            assert.equal(await row.locator("article > pre").textContent(), content);
+                            assert.equal(await row.locator(id === "reasoning" ? "article > details > pre" : "article > pre").textContent(), content);
                         }
                     });
 

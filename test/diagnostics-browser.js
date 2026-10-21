@@ -18,7 +18,7 @@ export default async function verifyDiagnostics(t) {
                     await page.waitForFunction(() => typeof window.presentDiagnostic === "function");
                     const receive = (event) => page.evaluate((event) => window.presentDiagnostic(event), event);
                     const list = page.locator("#worker-diagnostics");
-                    const rows = list.locator("ol > li");
+                    const rows = list.locator("ul > li");
                     assert.equal(await list.isVisible(), false);
                     await receive({ type: "CUSTOM", name: "another.extension", value: null });
                     assert.equal(await rows.count(), 0);

@@ -125,13 +125,13 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             assert.equal(await call.count(), 1);
             if (decision === "accept") {
                 await page.locator('[data-stream-outcomes] > summary').click();
-                const outcome = page.locator('[data-stream-outcomes] ol > li');
+                const outcome = page.locator('[data-stream-outcomes] ul > li');
                 assert.equal(await outcome.count(), 1);
                 await outcome.locator(':scope > details > summary').click();
                 assert.equal((await inspectStreamOutput(outcome)).stdout.content, "approved", "accepted work still produces its exact output through explicit stream inspection");
             } else {
                 assert.match(await call.locator('[data-plurnk-field="outcome"]').textContent(), /The proposal was rejected \([^)]+\)\./u);
-                assert.equal(await page.locator('[data-stream-outcomes] ol > li').count(), 0, "rejection never starts a stream");
+                assert.equal(await page.locator('[data-stream-outcomes] ul > li').count(), 0, "rejection never starts a stream");
             }
             assert.equal(await review.isVisible(), false);
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

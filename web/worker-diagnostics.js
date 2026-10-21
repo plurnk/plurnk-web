@@ -20,8 +20,8 @@ const problemFields = (problem) => ({
  * @param {HTMLElement} root
  */
 export default function diagnostics(root) {
-    const list = $(root, "ol");
-    if (!(list instanceof HTMLOListElement)) throw new Error("Worker diagnostics have no list.");
+    const list = $(root, "ul");
+    if (!(list instanceof HTMLUListElement)) throw new Error("Worker diagnostics have no list.");
     const observed = new Set();
     /** @param {import("@ag-ui/client").CustomEvent} event */
     return async (event) => {

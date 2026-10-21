@@ -20,7 +20,6 @@
         <a href="/" title="Home"><img src="/icons/plurnk.svg" width="32" height="32" alt="Plurnk"></a>
         <nav aria-label="Main navigation">
             <ul>
-                <li><a href="/~/" aria-label="Workspaces" title="Workspaces" data-text="workspaces-icon">📁</a></li>
                 <!-- {§web-page-shell} Instantiated by the document server, not browser JavaScript. -->
                 <template id="session-navigation" data-otm-dynamic>
                     <li><a href="/account/" aria-label="Account" title="Account" data-text="account-icon">⚙️</a></li>
@@ -115,12 +114,11 @@
     <template id="worker-controls">
         <section aria-label="Worker controls" data-command-error="">
             <form id="worker-compose">
-                <label for="worker-message" data-i18n="message">Message</label>
-                <textarea id="worker-message" name="message" rows="3" required></textarea>
-                <button type="submit" disabled data-bind="disabled:send-unavailable" data-i18n="send">Send</button>
+                <textarea id="worker-message" name="message" aria-label="Message" rows="3" required></textarea>
+                <button type="submit" disabled data-bind="disabled:send-unavailable" aria-label="Send" title="Send"></button>
             </form>
             <form id="worker-stop">
-                <button type="submit" disabled data-bind="disabled:stop-unavailable" data-i18n="stop">Stop</button>
+                <button type="submit" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
             </form>
             <p role="status" data-text="message-status">Connect to send a message.</p>
             <article role="alert" data-command-error>
@@ -132,7 +130,7 @@
     <!-- {§web-worker-commands} Command results are local presentation, not conversation messages. -->
     <template id="command-results">
         <section id="worker-command-results" aria-label="Command results">
-            <ol></ol>
+            <ul></ul>
         </section>
     </template>
     <template id="worker-command-result">
@@ -263,9 +261,10 @@
     </template>
     <!-- {§web-worker-conversation} Inert document-owned structure; HttpAgent supplies its values. -->
     <template id="worker-reasoning-preview">
-        <section data-reasoning-preview aria-label="Live reasoning">
+        <article data-reasoning-preview aria-label="Live reasoning">
+            <header></header>
             <pre></pre>
-        </section>
+        </article>
     </template>
     <template id="conversation-message">
         <li>
@@ -274,10 +273,11 @@
     </template>
     <template id="conversation-detail">
         <li>
-            <details>
-                <summary data-text="message-label">Reasoning</summary>
-                <article></article>
-            </details>
+            <article data-bind="aria-label:message-label">
+                <details>
+                    <summary data-bind="aria-label:reasoning-label" data-text="reasoning-coordinate"></summary>
+                </details>
+            </article>
         </li>
     </template>
     <template id="conversation-error">
@@ -298,6 +298,9 @@
     </template>
     <template id="operation-field">
         <span></span>
+    </template>
+    <template id="operation-outcome">
+        <p data-plurnk-field="outcome"></p>
     </template>
     <!-- {§web-diagram-content} Only the generated data-URI image enters this template. -->
     <template id="conversation-diagram">

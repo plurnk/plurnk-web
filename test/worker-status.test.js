@@ -46,7 +46,7 @@ test("{§web-worker-status} model identity, effort, direct children and budgets 
     assert.equal(unselected.model, "No model");
     assert.equal(unselected.effort, "");
     assert.equal(unselected.context, "");
-    assert.equal(unselected.curation, "");
+    assert.equal(Object.hasOwn(unselected, "curation"), false);
     const selected = gauges({ ...idle, model: { alias: "local", provider: "host", model: "qwen", effort: "high", effortSource: "explicit" },
         descendants: [
             { id: 2, name: "first", parentWorkerId: 1, kind: "work", lifecycle: "queued", gates: 0 },
@@ -61,13 +61,14 @@ test("{§web-worker-status} model identity, effort, direct children and budgets 
     assert.equal(selected.descendantsLabel, "Descendant workers: 4; active direct children: 2");
     assert.equal(selected.gated, "1", "count workers awaiting input, not gates");
     assert.equal(selected.descendants, "4", "the census includes completed descendants");
-    assert.equal(selected.context, "0 (0%)");
+    assert.equal(selected.context, "0%/32.8k");
     assert.equal(selected.contextLabel, "Current packet context: 0 / 32768 tokens");
-    assert.equal(selected.curation, "4.2k (53%)");
-    assert.equal(selected.curationLabel, "Curation weight: 4200 / 8000");
+    assert.equal(Object.hasOwn(selected, "curation"), false, "curation stays in SDK state, not the status projection");
+    assert.equal(Object.hasOwn(selected, "curationLabel"), false);
     assert.equal(selected.inbox, "1");
     assert.equal(gauges({ ...idle, model: { provider: "host", model: "other" } }).model, "host/other");
     assert.equal(gauges(idle).context, "", "absence is not an inherited previous budget");
+    assert.equal(gauges(idle, { contextTokens: 14080, contextCapacity: 128000 }).context, "11%/128k");
     for (const budget of [{ contextTokens: 1, contextCapacity: 0 }, { contextTokens: null, contextCapacity: 10 }, { contextTokens: 2 }]) {
         assert.equal(gauges(idle, budget).context, "", "incomplete or zero-capacity gauges cannot invent a percentage");
     }
@@ -120,7 +121,7 @@ test("{§web-worker-status} WAIT uses the daemon deadline without changing lifec
 test("{§web-worker-identity} folder labels are compared, not derived, and names use the shared URL codec", () => {
     assert.deepEqual(workspaceIdentity({ name: "~/project", projectLabel: "~/project" }, "user"), {
         workspaceName: "~/project", workspacePath: "/~/~/project/", workerPath: "/~/~/project@user/", projectLabel: "",
-        workspaceIcon: "📁", workspaceIconLabel: "Project workspace", pageTitle: "~/project@user — Plurnk",
+        workspaceIcon: "🗂️", workspaceIconLabel: "Project workspace", pageTitle: "~/project@user — Plurnk",
     });
     const named = workspaceIdentity({ name: 'review <&@%>', projectLabel: "~/project" }, "user");
     assert.equal(named.workspaceIcon, "☁️");

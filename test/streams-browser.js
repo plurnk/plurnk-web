@@ -42,7 +42,7 @@ export default async function verifyStreams(t) {
                     await page.waitForFunction(() => typeof window.streamEvent === "function");
                     const emit = (value) => page.evaluate((value) => window.streamEvent(value), value);
                     const outcomes = page.locator("[data-stream-outcomes]");
-                    const rows = outcomes.locator(":scope > ol > li");
+                    const rows = outcomes.locator(":scope > ul > li");
                     assert.equal(await page.locator("[data-open-streams], #worker-stream, #worker-stream-channel").count(), 0);
                     assert.equal(await outcomes.isVisible(), false, "no empty inventory is displayed");
                     await emit({ entryId: 9, workerId: 9, target: entry.target, channel: "stdout", contentLength: 7, state: "active" });
