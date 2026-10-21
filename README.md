@@ -8,7 +8,7 @@ No additional server. The root links to the daemon's workspace
 directory at `/~/`; workspace pages list model workers as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
 internal actors. Bookkeeping workers are omitted. Worker pages show identity,
-breadcrumbs, their actual parent, a native worker-tree disclosure, live status and conversation, without a
+breadcrumbs, their actual parent, live status and conversation, without a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
 the worker's current work. Pending operations have native Accept/Reject review forms;
 questions and MCP input share the same review and resume path.
@@ -21,8 +21,8 @@ argument replaces the workspace policy. `/yolo` changes only this page's automat
 approval preference, including pending proposals; questions still require answers.
 Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending review.
 `/models` lists aliases and a bounded catalog page; narrow its search for more matches.
-The workspace navigation tree shows kinds and lifecycles at page load, with the current
-worker's branch open. It is navigation, not a live subscription to child transcripts.
+The workspace navigation tree shows kinds and lifecycles at page load, with child
+branches collapsed. It is navigation, not a live subscription to child transcripts.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 📁.
 On a workspace page, matching workspace/folder labels share one 📁 breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 📁 line shows its project
@@ -97,13 +97,10 @@ another article. Authored bodies appear below it; READ results are not fetched
 automatically. Reasoning stays collapsed until opened. Fetched bodies are literal text and are never added
 to client-uploaded conversation history or saved in browser storage.
 
-**Open streams** lists the worker's current executors, including silent streams,
-with lifetime and channel state. **Read output** explicitly fetches a literal
-snapshot of all channels; click again to refresh it. Progress shows only the last
-observed length, not a guessed count. **Observed stream outcomes** retains exact
-conclusions seen on this page, separately from worker completion and conversation
-receipts. Reconnect refreshes current membership; neither inspection nor navigation
-cancels execution.
+**Observed stream outcomes** retains conclusions seen on this page, separately
+from worker completion and conversation receipts. **Read output** explicitly
+fetches a literal snapshot of all channels; click again to refresh it. Neither
+inspection nor navigation cancels execution.
 
 Live reasoning appears in one temporary plain-text preview, cleared when the
 attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bounds

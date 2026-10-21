@@ -5,13 +5,7 @@ import { inputPage } from "./worker-input.js";
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
 const settled = (page, lifecycle) => page.waitForFunction((lifecycle) =>
     document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === lifecycle, lifecycle);
-const current = (page) => page.locator("#worker-streams [data-open-streams] > li");
 const outcomes = (page) => page.locator("[data-stream-outcomes] ol > li");
-
-async function openCurrent(page) {
-    await page.locator("#worker-streams > details:first-child > summary").click();
-    await current(page).locator(":scope > details > summary").click();
-}
 
 export async function inspectStreamOutput(row) {
     await row.getByRole("button", { name: "Read output", exact: true }).click();
@@ -27,42 +21,29 @@ export async function inspectStreamOutput(row) {
 // {§web-worker-streams} Real sh streams and management reads through the installed browser and daemon.
 export default async function verifyWorkerStreams({ t, withDaemon }) {
     for (const cancelled of [false, true]) {
-        await t.test(`{§web-worker-streams} silent stream inspection, fresh census and ${cancelled ? "explicit cancellation" : "completion while away"}`, () =>
+        await t.test(`{§web-worker-streams} silent work has no inventory; inspect outcomes after ${cancelled ? "explicit cancellation" : "completion while away"}`, () =>
             inputPage(withDaemon, async ({ page, context, path, base, model, checkBrowser, setup, headers }) => {
                 const inputs = [];
-                page.on("request", (request) => {
+                context.on("request", (request) => {
                     if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON());
                 });
-                assert.equal(await current(page).count(), 0);
+                assert.equal(await page.locator("[data-open-streams]").count(), 0);
                 await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
                 await page.getByRole("button", { name: "Send", exact: true }).click();
                 await model.streamStarted;
                 await settled(page, "parked");
                 await connected(page);
-                assert.equal(await current(page).count(), 1);
-                const target = await current(page).getAttribute("data-stream-target");
-                assert.match(target, /^sh:\/\/\/.+/u);
-                await openCurrent(page);
-                const channels = await current(page).locator("[data-text=stream-channel]").allTextContents();
-                assert.ok(channels.includes("stdout"));
-                assert.ok(channels.includes("stderr"), "never-written stderr exists in the authoritative census");
-                const silent = await inspectStreamOutput(current(page));
-                for (const channel of ["stdout", "stderr"]) assert.deepEqual(silent[channel], { content: "", state: "active", length: "0" });
-                const read = inputs.find((input) => input.forwardedProps?.plurnk?.action?.kind === "entry.read");
-                assert.ok(read, "the native control uses the public management Run");
-                assert.deepEqual(read.messages, []);
-                assert.deepEqual(read.tools, []);
-                assert.equal(read.threadId, `${setup.state.plurnk.workspace.id}#user`);
-                assert.deepEqual(read.forwardedProps.plurnk.action, { kind: "entry.read", target });
-                assert.equal(model.requests.length, 1, "inspection is not another inference or conversation turn");
+                assert.equal(await page.locator("[data-open-streams]").count(), 0);
+                assert.equal(await outcomes(page).count(), 0, "active work is not an observed conclusion");
 
                 await page.reload();
                 await connected(page);
-                assert.equal(await current(page).getAttribute("data-stream-target"), target, "refresh recovers a silent stream without channel activity");
-                assert.equal(await current(page).locator("[data-output-snapshot]").isVisible(), false, "reload does not silently reread output");
-                await openCurrent(page);
+                await settled(page, "parked");
+                assert.equal(await page.locator("[data-open-streams]").count(), 0);
                 const readCount = inputs.filter((input) => input.forwardedProps?.plurnk?.action?.kind === "entry.read").length;
-                assert.equal(readCount, 1);
+                assert.equal(readCount, 0, "neither connection nor reload silently reads stream output");
+                assert.equal(model.requests.length, 1, "reload leaves the silent work running");
+                let target;
                 if (cancelled) {
                     await page.getByRole("button", { name: "Stop", exact: true }).click();
                     await settled(page, "cancelled");
@@ -71,7 +52,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                     const observer = await context.newPage();
                     await observer.goto(path);
                     await connected(observer);
-                    assert.equal(await current(observer).getAttribute("data-stream-target"), target);
+                    await settled(observer, "parked");
                     await page.goto(new URL("/~/", base).href);
                     assert.equal(model.requests.length, 1, "leaving the page leaves the stream running");
                     model.release("status-stream");
@@ -79,6 +60,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                     await observer.waitForFunction(() => document.querySelectorAll("[data-stream-outcomes] ol > li").length === 1);
                     await observer.locator("[data-stream-outcomes] > summary").click();
                     const outcome = outcomes(observer);
+                    target = await outcome.getAttribute("data-stream-target");
                     await outcome.locator(":scope > details > summary").click();
                     assert.equal(await outcome.getAttribute("data-stream-exit-code"), "0");
                     assert.equal(await outcome.getAttribute("data-stream-result"), null);
@@ -89,18 +71,26 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                     await observer.close();
                     await page.goto(path);
                     await connected(page);
-                    assert.equal(await current(page).count(), 0, "fresh state removes work completed during absence");
+                    await settled(page, "completed");
                     assert.equal(model.requests.length, 2);
                 }
-                assert.equal(await current(page).count(), 0);
+                assert.equal(await page.locator("[data-open-streams]").count(), 0);
                 if (cancelled) {
                     await page.locator("[data-stream-outcomes] > summary").click();
                     await outcomes(page).locator(":scope > details > summary").click();
                     assert.equal(await outcomes(page).getAttribute("data-stream-status"), "499", "cancellation preserves the stream's exact status");
+                    target = await outcomes(page).getAttribute("data-stream-target");
                     const output = await inspectStreamOutput(outcomes(page));
                     assert.notEqual(output.stdout.state, "active");
                     assert.equal(model.requests.length, 1);
                 }
+                assert.match(target, /^sh:\/\/\/.+/u);
+                const read = inputs.find((input) => input.forwardedProps?.plurnk?.action?.kind === "entry.read");
+                assert.ok(read, "the outcome's native control uses the public management Run");
+                assert.deepEqual(read.messages, []);
+                assert.deepEqual(read.tools, []);
+                assert.equal(read.threadId, `${setup.state.plurnk.workspace.id}#user`);
+                assert.deepEqual(read.forwardedProps.plurnk.action, { kind: "entry.read", target });
                 const inspection = new HttpAgent({ url: new URL("/agui", base).href, threadId: `${setup.state.plurnk.workspace.id}#user`, headers });
                 await inspection.runAgent({ forwardedProps: { plurnk: { action: { kind: "entry.read", target } } } });
                 assert.deepEqual(inspection.messages, [], "management evidence is not appended to SDK conversation");
@@ -124,7 +114,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
             const output = await inspectStreamOutput(outcomes(page));
             assert.equal(output.stdout.content, "execution-failure stdout\n");
             assert.equal(output.stderr.content, "execution-failure stderr\n");
-            assert.equal(await current(page).count(), 0);
+            assert.equal(await page.locator("[data-open-streams]").count(), 0);
             assert.equal(model.requests.length, 2);
             checkBrowser();
         }));

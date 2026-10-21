@@ -139,7 +139,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     assert.doesNotMatch(root, /parent-worker/u);
 });
 
-test("{§web-worker-directory} worker-page navigation identifies the selected branch without acquiring transcripts", async () => {
+test("{§web-worker-directory} worker pages keep breadcrumb and parent navigation without a duplicated workspace tree", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const workers = [worker(1, "_plurnk", null, "_plurnk"), { ...worker(2, "parent"), lifecycle: "running" },
         { ...worker(3, "child", 2), kind: "fork", lifecycle: "failed" },
@@ -152,18 +152,23 @@ test("{§web-worker-directory} worker-page navigation identifies the selected br
     };
     for (const selected of ["parent", "child", "grandchild", "background-child"]) {
         const html = (await document.read({ kind: "worker", workspace: "work", worker: selected }, port, false)).toString();
-        assert.match(html, /<details id="worker-directory"><summary[^>]*>Workers at page load<\/summary><nav aria-label="Workers">/u);
-        assert.ok(html.includes(`<a href="/~/work@${selected}/" data-text="name" data-worker-name="${selected}" data-bind="href:worker-path" aria-current="page">${selected}</a>`));
-        const tree = html.split('<nav aria-label="Workers">')[1].split("</nav>")[0];
-        assert.equal((tree.match(/aria-current="page"/gu) ?? []).length, 1);
-        assert.equal((tree.match(/<details open>/gu) ?? []).length, selected === "parent" ? 1 : 2);
-        assert.equal(tree.includes('<details open><summary data-i18n="background-work">'), selected === "background-child");
-        for (const { name, kind, lifecycle } of workers.filter(({ origin }) => origin === "model")) {
-            assert.ok(tree.includes(`>${name}</a> <small><span data-text="worker-kind">${kind}</span> · <span data-text="worker-lifecycle">${lifecycle}</span></small>`));
-        }
-        assert.doesNotMatch(tree, /transcript|agui|_plurnk/u);
+        assert.doesNotMatch(html, /worker-directory|workers-at-page-load|Workers at page load|<nav aria-label="Workers">/u);
+        assert.ok(html.includes('<a href="/~/work/" data-bind="href:workspace-path" data-text="workspace-name">work</a>'));
+        assert.ok(html.includes(`<span aria-current="page" data-text="name">${selected}</span>`));
+        assert.match(html, /<details id="worker-descendants">/u, "live descendant navigation keeps its own statusline home");
     }
     assert.equal(reads, 4, "one authoritative directory read per document; no second client-side directory");
+});
+
+test("{§web-worker-streams} the worker page has observed outcomes, not an open-stream inventory", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
+    const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+        listWorkers: async () => [worker(9, "user")],
+    }, false)).toString();
+    assert.doesNotMatch(html, /data-open-streams|data-no-streams|stream-count|Open streams/u);
+    assert.match(html, /<details[^>]* data-stream-outcomes>/u);
+    assert.match(html, /id="worker-conversation"/u);
 });
 
 test("{§web-worker-directory} empty and internal-only workspaces have no empty navigation controls", async () => {

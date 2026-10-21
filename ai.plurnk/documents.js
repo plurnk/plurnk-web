@@ -95,11 +95,11 @@ export default class Documents {
             + `<tbody>${entries}</tbody></table></figure>${others ? `<footer>${others}</footer>` : ""}</article>`, "account", true, breadcrumb);
     }
 
-    /** @param {string} label @param {import("./directory-addresses.js").Directory} directory @param {boolean} [current] */
-    #link(label, directory, current = false) {
+    /** @param {string} label @param {import("./directory-addresses.js").Directory} directory */
+    #link(label, directory) {
         const path = directoryPath(directory);
         return path === null ? `<span data-text="name">${escapeHtml(label)}</span>`
-            : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "worker" ? ` data-worker-name="${escapeHtml(directory.worker)}" data-bind="href:worker-path"` : ""}${current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</a>`;
+            : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "worker" ? ` data-worker-name="${escapeHtml(directory.worker)}" data-bind="href:worker-path"` : ""}>${escapeHtml(label)}</a>`;
     }
 
     /** @param {string | null} projectRoot */
@@ -135,17 +135,11 @@ export default class Documents {
     /** {§web-worker-directory}
      * @param {string} workspace
      * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
-     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection} [selected]
      */
-    #workerTree(workspace, workers, selected) {
+    #workerTree(workspace, workers) {
         const models = [...workers.values()].filter(({ origin }) => origin === "model");
         if (models.length === 0) return '<p data-i18n="no-workers">No workers.</p>';
         const children = Map.groupBy(models, ({ parentWorkerId }) => parentWorkerId);
-        const lineage = new Set();
-        for (let worker = selected ?? null; worker !== null; worker = this.#parent(worker, workers)) {
-            if (lineage.has(worker.id)) throw new Error("Worker directory contains cyclic model parentage.");
-            lineage.add(worker.id);
-        }
         const background = models.filter((worker) => {
             const parent = this.#parent(worker, workers);
             return parent !== null && parent.origin !== "model";
@@ -156,14 +150,14 @@ export default class Documents {
             : `<ul>${entries.map((worker) => {
                 rendered++;
                 const descendants = children.get(worker.id) ?? [];
-                const link = this.#link(worker.name, { kind: "worker", workspace, worker: worker.name }, worker.id === selected?.id);
+                const link = this.#link(worker.name, { kind: "worker", workspace, worker: worker.name });
                 const facts = ` <small><span data-text="worker-kind">${escapeHtml(worker.kind)}</span> · <span data-text="worker-lifecycle">${escapeHtml(worker.lifecycle)}</span></small>`;
-                const disclosure = descendants.length === 0 ? "" : `<details${lineage.has(worker.id) ? " open" : ""}><summary data-text="child-workers">`
+                const disclosure = descendants.length === 0 ? "" : '<details><summary data-text="child-workers">'
                     + `${descendants.length} child worker${descendants.length === 1 ? "" : "s"}</summary>${list(descendants)}</details>`;
                 return `<li>${link}${facts}${disclosure}</li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
-        const other = background.length === 0 ? "" : `<details${background.some(({ id }) => lineage.has(id)) ? " open" : ""}><summary data-i18n="background-work">Background work</summary>`
+        const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
             + `${list(background)}</details>`;
         if (rendered !== models.length) throw new Error("Worker directory contains cyclic model parentage.");
         return roots + other;
@@ -198,11 +192,8 @@ export default class Documents {
             + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-bind="action:worker-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
             + '</p></article></footer>';
-        return '<section id="worker-streams" aria-label="Executor streams">'
-            + '<details><summary><span data-i18n="open-streams">Open streams:</span> <span data-text="stream-count">Unknown</span></summary>'
-            + '<p data-no-streams data-i18n="no-open-streams">No open streams.</p><ul data-open-streams></ul></details>'
-            + '<details data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
-            + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ol></ol></details></section>'
+        return '<details id="worker-streams" data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
+            + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ol></ol></details>'
             + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ol></ol></section>'
             + '<details id="worker-activity"><summary data-i18n="observed-activity">Observed activity</summary>'
             + '<p data-i18n="activity-scope">Non-conversation evidence observed on this page, not a complete history.</p><ol></ol></details>'
@@ -246,13 +237,11 @@ export default class Documents {
             ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
             : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
         const title = `${workspace.name}@${directory.worker}`;
-        const tree = '<details id="worker-directory"><summary data-i18n="workers-at-page-load">Workers at page load</summary>'
-            + `<nav aria-label="Workers">${this.#workerTree(workspace.name, byId, worker)}</nav></details>`;
         const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "📁" : "☁️"}</span>`;
         return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">📁</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + (parent === null ? "" : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`)
-            + tree + this.#workerStatus(directory, workspace.id, authenticated), marker);
+            + this.#workerStatus(directory, workspace.id, authenticated), marker);
     }
 }

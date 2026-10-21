@@ -365,7 +365,7 @@ test("{§web-worker-diagnostics} public notices and Problems remain visible outs
 test("{§web-worker-status} {§web-worker-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
 test("{§web-result-bodies} visible content loads securely without an inspection UI", { timeout: 60_000 }, verifyBodies);
 test("{§web-worker-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
-test("{§web-worker-streams} current executor state and explicit output inspection", { timeout: 60_000 }, verifyStreams);
+test("{§web-worker-streams} observed executor outcomes and explicit output inspection", { timeout: 60_000 }, verifyStreams);
 test("{§web-worker-activity} non-conversation observations retain identity and explicit inspection", { timeout: 60_000 }, verifyActivity);
 test("{§web-worker-commands} isolated command delivery and literal results", { timeout: 60_000 }, verifyCommands);
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);

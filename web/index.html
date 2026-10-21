@@ -41,23 +41,7 @@
     <template id="worker-descendant-children">
       <details><summary><span data-i18n="descendant-children">Children:</span> <span data-text="descendant-children"></span></summary><ul></ul></details>
     </template>
-    <!-- {§web-worker-streams} Current membership, observed outcomes and explicit output snapshots are distinct. -->
-    <template id="worker-stream">
-        <li>
-            <details>
-                <summary><code data-text="stream-target">Stream address</code></summary>
-                <p><span data-i18n="stream-worker">Worker:</span> <span data-text="stream-worker">Worker</span>
-                    <span data-i18n="stream-lifetime">Lifetime:</span> <span data-text="stream-lifetime">Lifetime</span></p>
-                <ul data-stream-channels></ul>
-            </details>
-        </li>
-    </template>
-    <template id="worker-stream-channel">
-        <li>
-            <code data-text="stream-channel">Channel</code> <span data-text="stream-state">State</span> <small data-text="stream-mime">Content type</small>
-            <p><span data-i18n="stream-length">Last observed length (code points):</span> <span data-text="stream-length">Not observed</span></p>
-        </li>
-    </template>
+    <!-- {§web-worker-streams} Observed outcomes retain explicit output inspection. -->
     <template id="worker-stream-outcome">
         <li>
             <details>
