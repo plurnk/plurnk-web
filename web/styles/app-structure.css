@@ -94,6 +94,7 @@ table {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
+    justify-content: center;
     gap: var(--pico-spacing);
     padding: 0;
     margin: 0;
@@ -102,6 +103,13 @@ table {
 #worker-status > ul > li {
     list-style: none;
     min-inline-size: 0;
+    margin: 0;
+}
+
+#worker-yolo {
+    --pico-form-element-spacing-vertical: 0;
+    --pico-form-element-spacing-horizontal: 0;
+
     margin: 0;
 }
 

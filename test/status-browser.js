@@ -36,6 +36,14 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#worker-status > ul").isVisible(), false, "unknown state is not a row of invented zeros");
                     assert.equal(await page.locator("#worker-status > [role=status]").isVisible(), true, "connection state remains visible before a gauge arrives");
                     await receive(initial);
+                    const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
+                    assert.equal(await approval.getAttribute("type"), "button");
+                    assert.equal(await approval.getAttribute("aria-pressed"), "false");
+                    assert.equal(await approval.isVisible(), true, "manual approval is an explicit mode, not an absent indicator");
+                    assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
+                    await approval.evaluate((element) => element.setAttribute("aria-pressed", "true"));
+                    assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
+                    await approval.evaluate((element) => element.setAttribute("aria-pressed", "false"));
                     for (const colorScheme of ["light", "dark"]) {
                         await page.emulateMedia({ colorScheme });
                         const appearance = await page.locator("#worker-status > ul").evaluate((element) => {
@@ -50,7 +58,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("context"), "");
                     assert.equal(await value("wait"), "");
                     assert.equal(await value("inbox"), "0");
-                    for (const key of ["yolo", "elapsed", "context", "descendants", "gated", "wait", "inbox", "preparation", "activity"]) {
+                    for (const key of ["elapsed", "context", "descendants", "gated", "wait", "inbox", "preparation", "activity"]) {
                         assert.equal(await field(key).isVisible(), false, `${key} has no empty status placeholder`);
                     }
                     assert.equal(await page.locator("#worker-status dl, #worker-status table, #worker-accounting, #workspace-activity, #worker-inbox").count(), 0);
@@ -84,7 +92,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("descendants"), "4");
                     assert.equal(await value("context"), "12%/999");
                     assert.doesNotMatch(await field("context").innerText(), /ctx/u);
-                    assert.match(await field("context").evaluate((element) => getComputedStyle(element, "::after").content), /📜/u);
+                    assert.equal(await field("context").evaluate((element) => getComputedStyle(element, "::after").content), "none", "context has no decorative scroll");
                     assert.equal(await field("context").getAttribute("aria-label"), "Current packet context: 123 / 999 tokens");
                     assert.equal(await field("curation").count(), 0, "no curation display even when the SDK supplies its budget");
                     assert.equal(await page.locator("#worker-status").getAttribute("data-curation"), null);
@@ -96,7 +104,14 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("inbox"), "2");
                     assert.doesNotMatch(await page.locator("#worker-status").innerHTML(), /message:\/\/user\/first|client-first|data-known-|data-usage-/u);
                     assert.match(await glyph("lifecycle"), /💤/u);
-                    assert.match(await glyph("model"), /🎲/u);
+                    assert.equal(await glyph("model"), "none", "model has no decorative dice");
+                    assert.equal(await page.locator("#worker-status > ul > li:last-child").getAttribute("data-status-field"), "cost", "cost is last in document and accessibility order");
+                    for (const width of [320, 1280]) {
+                        await page.setViewportSize({ width, height: 700 });
+                        assert.equal(await page.locator("#worker-status > ul").evaluate((element) => getComputedStyle(element).justifyContent), "center");
+                        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                    }
+                    await page.setViewportSize({ width: 320, height: 700 });
                     assert.match(await field("cost").ariaSnapshot(), /unknown total; known subtotal 0.0000000123/u);
                     assert.equal(await page.locator("#worker-status > ul [aria-live], #worker-status > ul [role=status]").count(), 0, "ticking gauges do not announce every second");
                     assert.equal(await page.locator("#worker-workspace [data-text=workspace-name]").textContent(), active.plurnk.workspace.name);

@@ -14,9 +14,9 @@ test("{§web-worker-approval} the worker document projects its resolved approval
             listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
             listWorkers: async () => [worker(9, "user")],
         }, false)).toString();
-        assert.ok(html.includes(`data-yolo="${yolo ? "1" : "0"}"`));
+        assert.ok(html.includes(`id="worker-yolo" aria-pressed="${yolo}"`));
         assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-worker-reasoning} the document carries its supplied preview limit");
-        assert.ok(html.includes('data-status-field="yolo" aria-label="Automatic approval"'));
+        assert.ok(html.includes('aria-label="Automatic approval" title="/yolo"'));
         assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
     }
 });

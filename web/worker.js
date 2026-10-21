@@ -30,12 +30,16 @@ const SETTLED_INTERRUPTS = new Set([
  * @param {HTMLElement} element
  */
 export default function observeWorker(element) {
-    const { threadId, auth, yolo } = element.dataset;
-    if (!threadId || (auth !== "session" && auth !== "none") || (yolo !== "1" && yolo !== "0")) throw new Error("Worker document metadata is incomplete.");
+    const { threadId, auth } = element.dataset;
+    if (!threadId || (auth !== "session" && auth !== "none")) throw new Error("Worker document metadata is incomplete.");
+    const approval = $(element, "#worker-yolo");
+    if (!(approval instanceof HTMLButtonElement) || !["true", "false"].includes(approval.getAttribute("aria-pressed") ?? "")) {
+        throw new Error("Worker document has no approval mode.");
+    }
     const history = $("#worker-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
     const controls = $.clone(element, "#worker-controls", { position: "afterend" });
-    const review = reviewRequests(controls, yolo === "1");
+    const review = reviewRequests(controls, approval.getAttribute("aria-pressed") === "true");
     const compose = $(controls, "#worker-compose");
     const stop = $(controls, "#worker-stop");
     const field = $(controls, "#worker-message");
@@ -68,22 +72,19 @@ export default function observeWorker(element) {
     let cancellation;
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
     const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, threadId, auth, signal);
-    const runCommand = workerCommands(controls, {
-        call: action,
-        stop: cancelWork,
-        async toggleYolo() {
-            const enabled = the(element, "yolo") !== "1";
-            the(element, "yolo", enabled ? "1" : "0");
-            const mode = review.automatic(enabled);
-            const current = agent;
-            if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
-                const resume = await review.decisions(current.pendingInterrupts);
-                if (resume && current === agent && the(element, "connection") === "interrupted" && !cancellation) connect({ resume });
-            }
-            availability();
-            return enabled;
-        },
-    });
+    const toggleYolo = async () => {
+        const enabled = approval.getAttribute("aria-pressed") !== "true";
+        approval.setAttribute("aria-pressed", String(enabled));
+        const mode = review.automatic(enabled);
+        const current = agent;
+        if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
+            const resume = await review.decisions(current.pendingInterrupts);
+            if (resume && current === agent && the(element, "connection") === "interrupted" && !cancellation) connect({ resume });
+        }
+        availability();
+        return enabled;
+    };
+    const runCommand = workerCommands(controls, { call: action, stop: cancelWork, toggleYolo });
 
     function availability() {
         const current = the(element, "connection");
@@ -240,6 +241,12 @@ export default function observeWorker(element) {
         })() };
     }
 
+    on(element, "click", "#worker-yolo", async () => {
+        try { await toggleYolo(); }
+        catch (error) {
+            if (!resources.signal.aborted) the(controls, "command-error", error instanceof Error ? error.message : String(error));
+        }
+    });
     on(element, "submit", "#worker-reconnect", (event) => {
         event.preventDefault();
         if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) {
