@@ -206,6 +206,10 @@ table {
 [data-reasoning-preview] pre {
     max-block-size: calc(100dvh / 3);
     overflow: auto;
+}
+
+/* {§web-content-reflow} Literal text preserves whitespace without imposing code geometry. */
+#main :where(pre:not(:has(> code))) {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }

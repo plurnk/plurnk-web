@@ -20,6 +20,7 @@ import verifyCommands from "./commands-browser.js";
 import verifySemanticContent from "./semantic-browser.js";
 import verifyHistory from "./history-browser.js";
 import verifySurfaces from "./surfaces-browser.js";
+import verifyReflow from "./reflow-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -372,6 +373,7 @@ test("{§web-worker-diagnostics} public notices and Problems remain visible outs
 test("{§web-worker-status} {§web-worker-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
 test("{§web-page-shell} pinned shell and native multiline composer reflow", { timeout: 60_000 }, verifyShell);
 test("{§web-conversation-surfaces} semantic backgrounds retain contrast in light and dark themes", { timeout: 60_000 }, verifySurfaces);
+test("{§web-content-reflow} literal content wraps without changing text or explicit code", { timeout: 60_000 }, verifyReflow);
 test("{§web-result-bodies} visible content loads securely without an inspection UI", { timeout: 60_000 }, verifyBodies);
 test("{§web-worker-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
 test("{§web-worker-history} opaque read-only paging through the official SDK", { timeout: 90_000 }, verifyHistory);

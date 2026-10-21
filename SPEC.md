@@ -613,10 +613,16 @@ Reference: [SVG image restrictions](https://developer.mozilla.org/en-US/docs/Web
 
 ## §web-content-reflow Constrained and changing viewports
 
-Ordinary prose and controls reflow at 320 CSS pixels without page-wide horizontal
-scrolling. Code, tables, formulas and diagrams that intrinsically require two dimensions
-scroll within their own content boundary, not the whole message. Keep readable
-font sizes and native zoom; do not shrink content or rewrite diagram orientation.
+Ordinary prose, literal working material and controls reflow at 320 CSS pixels
+without page-wide horizontal scrolling. Literal text preserves authored newlines,
+indentation and source text while wrapping long lines and unbroken tokens; visual
+wraps add no hard line breaks. Native selection is not intercepted. Settled entries
+grow vertically without an internal vertical scroll area;
+the bounded live preview remains governed by {§web-worker-reasoning}.
+Explicit code, tables, formulas and diagrams that intrinsically require two
+dimensions scroll within their own content boundary, not the whole message.
+Raw tool output is literal working material, not inferred code or a table.
+Keep readable font sizes and native zoom; do not shrink content or rewrite diagram orientation.
 Native CSS responds to viewport changes without a JavaScript layout
 controller; reading position and tail following belong to {§web-worker-history}. Browser rendering
 limitations do not introduce a second renderer or compatibility polyfill.
