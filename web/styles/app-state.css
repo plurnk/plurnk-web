@@ -30,10 +30,6 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
-#worker-command-results [data-command-state="error"] > [role="status"] {
-    color: var(--pico-del-color);
-}
-
 /* {§web-worker-questions} Omission and diagnostics are explicit document state. */
 [data-field-optional="false"] > [data-optional-answer],
 [data-field-description=""] > [data-text="field-description"],
@@ -113,11 +109,6 @@ header nav button:is(:hover, :focus-visible) {
     display: none;
 }
 
-/* {§web-worker-conversation} Empty slots are native document state, not JavaScript styling. */
-#worker-conversation p[data-message-error] {
-    color: var(--pico-del-color);
-}
-
 /* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
 [data-plurnk-type] > article > header::before {
     content: var(--plurnk-operation-glyph, "⚙️") / "";
@@ -147,20 +138,13 @@ header nav button:is(:hover, :focus-visible) {
 [data-plurnk-note="idea"] { --plurnk-operation-glyph: "💡"; }
 [data-plurnk-note="plan"] { --plurnk-operation-glyph: "🚧"; }
 
-[data-message-error="true"] [data-plurnk-field="outcome"],
-:is([data-plurnk-status^="4"], [data-plurnk-status^="5"]) [data-plurnk-field="outcome"] {
-    color: var(--pico-del-color);
-}
-
 /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
 #worker-conversation [data-math-error]::after {
     content: " (" attr(data-math-error) ")";
-    color: var(--pico-del-color);
 }
 
 #worker-conversation [data-diagram-error]::after {
     content: " (" attr(data-diagram-error) ")";
-    color: var(--pico-del-color);
 }
 
 #worker-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {

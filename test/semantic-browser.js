@@ -76,6 +76,14 @@ export default async function verifySemanticContent(t) {
                     assert.deepEqual(requests, [], "a READ summary never fetches its readback body");
                     await present([read, result("read", { status: 404, problem: { title: "Entry not found", detail: "README.md is missing.", recovery: "Choose an existing path." } })]);
                     assert.equal(await field(row("read"), "outcome").textContent(), "Entry not found — README.md is missing. — Choose an existing path.");
+                    for (const colorScheme of ["light", "dark"]) {
+                        await page.emulateMedia({ colorScheme });
+                        const appearance = await field(row("read"), "outcome").evaluate((element) => ({
+                            outcome: getComputedStyle(element).color,
+                            article: getComputedStyle(element.parentElement).color,
+                        }));
+                        assert.equal(appearance.outcome, appearance.article, `${colorScheme}: an outcome inherits its Pico article color`);
+                    }
                     assert.equal(await row("read").locator("article > [data-plurnk-operands] + p[data-plurnk-field=outcome]").count(), 1,
                         "an outcome is its own paragraph after the operation operands");
                     const operandsBox = await row("read").locator("[data-plurnk-operands]").boundingBox();

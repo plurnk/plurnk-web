@@ -616,6 +616,11 @@ compilation may combine them without changing their cascade:
 | `app-style.css` | Presentation through substrate tokens; brand accents and system monospace. |
 | `app-state.css` | Worker page width, observer connection/error presentation and native focus visibility. |
 
+Worker content, diagnostics and status inherit Pico's typography and colors.
+Additional worker CSS supplies geometry, overflow containment, declared glyphs
+and visibility—not a separate visual hierarchy or component theme. Layout uses
+the substrate's spacing scale rather than a worker-specific compact scale.
+
 ## §web-language Source language
 
 The shipped document is English, declared by `html[lang]`. Its readable source

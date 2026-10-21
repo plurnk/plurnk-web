@@ -94,11 +94,9 @@ table {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.25em 0.75em;
+    gap: var(--pico-spacing);
     padding: 0;
     margin: 0;
-    font-size: 0.875em;
-    color: var(--pico-muted-color);
 }
 
 #worker-status > ul > li {
