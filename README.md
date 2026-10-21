@@ -266,7 +266,9 @@ The terminal emulator and PTY driver are test-only dependencies.
 It exercises synchronization, observer/control handoff with one SDK history,
 admitted work surviving request abortion, navigation and page close, explicit
 cancellation, approval and question interruption and rediscovery,
-shutdown and the real browser sign-in/access-token lifecycle. Cross-client prompt
+shutdown and the real browser sign-in/access-token lifecycle. Held directory and OAuth
+requests verify that module shutdown settles admitted work before releasing resources.
+Cross-client prompt
 delivery, exact READ operands and real command stdout/stderr results are compared live and after
 refresh through the SDK's messages, without custom-row reconstruction. Standard success,
 cancellation, failure and reported token usage are checked separately. No AG-UI traffic is

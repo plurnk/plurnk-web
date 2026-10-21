@@ -9,7 +9,7 @@ do not confer ownership of daemon policy, identity or lifecycle.
 
 | Concern | Authority | Web's responsibility |
 |---|---|---|
-| Listener, mounts, module startup/shutdown | Plurnk host | Register through the public module seam; release module resources. |
+| Listener, mounts, module startup/shutdown | Plurnk host | Register through the public module seam; stop admission and settle route work before releasing module resources ({§web-route-settlement}). |
 | Workspaces, workers, permissions, work and accounting | Daemon | Select and display supplied identities and facts; request explicit actions. |
 | Credential issuance, expiry, revocation and sign-in inventory | Daemon credential authority | Mediate the browser's grant; never create a second issuer or account database. |
 | AG-UI events, live messages, interrupts and replay | HttpAgent | Use public SDK behavior; do not maintain a parallel protocol reducer. |

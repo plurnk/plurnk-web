@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { test } from "node:test";
+import { setImmediate } from "node:timers/promises";
 import { Piscina } from "piscina";
 import createModule from "../ai.plurnk/module.js";
 
-async function fixture(t, overrides = {}, unsubscribe = () => {}) {
+async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
     const env = { PLURNK_AUTH: "0", ...overrides };
     const original = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
     Object.assign(process.env, env);
@@ -20,7 +21,7 @@ async function fixture(t, overrides = {}, unsubscribe = () => {}) {
         verify: (token) => token === "valid" ? claims : null };
     let handler;
     await module.setup({ credentials });
-    await module.start({ credentials, registerHttpRoute(_prefix, serve) { handler = serve; } });
+    await module.start({ credentials, ...port, registerHttpRoute(_prefix, serve) { handler = serve; } });
     const errors = [];
     const server = createServer((req, res) => {
         void handler(req, res).catch((error) => { errors.push(error); res.writeHead(500); res.end(); });
@@ -181,7 +182,7 @@ test("{§web-diagram-service} disconnect and shutdown terminate compilation with
     await started.promise;
     await module.close();
     await problem(await closing, 503, /stopping/u);
-    await problem(await post(simple), 503, /stopping/u);
+    await problem(await post(simple), 503, /The PLURNK service is shutting down\./u);
 });
 
 test("{§web-diagram-service} unexpected compiler failures retain their cause and release admission", async (t) => {
@@ -203,5 +204,27 @@ test("{§web-diagram-service} another module cleanup failure cannot leave the co
     const { post, module } = await fixture(t, { PLURNK_AUTH: "1" }, () => { if (throws) throw failure; });
     await assert.rejects(module.close(), (error) => error === failure);
     throws = false;
-    await problem(await post(simple, { headers: { cookie: "plurnk_web_session=valid" } }), 503, /stopping/u);
+    await problem(await post(simple, { headers: { cookie: "plurnk_web_session=valid" } }), 503, /The PLURNK service is shutting down\./u);
+});
+
+test("{§web-route-settlement} compiler cleanup failure still joins requests before releasing observers", async (t) => {
+    const entered = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const order = [];
+    const { base, post, module } = await fixture(t, { PLURNK_AUTH: "1" }, () => order.push("observer closed"), {
+        async listWorkspaces() { entered.resolve(); await release.promise; order.push("read settled"); return []; },
+    });
+    const headers = { cookie: "plurnk_web_session=valid" };
+    assert.equal((await post(simple, { headers })).status, 200);
+    const response = fetch(`${base}/~/`, { headers });
+    await entered.promise;
+    const failure = new Error("compiler cleanup failed", { cause: new Error("worker fixture failure") });
+    const destroy = Piscina.prototype.destroy;
+    t.mock.method(Piscina.prototype, "destroy", async function () { await destroy.call(this); throw failure; }, { times: 1 });
+    const closed = assert.rejects(module.close(), (error) => error === failure);
+    try { await setImmediate(); assert.deepEqual(order, [], "cleanup must not bypass a held request"); }
+    finally { release.resolve(); }
+    assert.equal((await response).status, 200);
+    await closed;
+    assert.deepEqual(order, ["read settled", "observer closed"]);
 });
