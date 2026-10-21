@@ -58,6 +58,11 @@ body > header > a {
     align-items: center;
 }
 
+body > header > a > img {
+    inline-size: 2ch;
+    block-size: 2ch;
+}
+
 body > header > nav[aria-label="Main navigation"] {
     grid-area: menu;
 }
