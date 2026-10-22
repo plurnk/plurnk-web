@@ -143,11 +143,15 @@ table {
     padding-inline: var(--pico-form-element-spacing-vertical);
 }
 
-#workspace-create {
+#workspace-create,
+#workspace-rename,
+#worker-create {
     margin-block-start: var(--pico-spacing);
 }
 
-#workspace-create button {
+#workspace-create button,
+#workspace-rename button,
+#worker-create button {
     inline-size: auto;
 }
 

@@ -27,7 +27,7 @@ export default class Creations {
 
     /**
      * @param {string} token The form's hidden token.
-     * @param {() => Promise<{ workspaceName: string, projectRoot: string | null }>} create
+     * @param {() => Promise<string | { workspaceName: string, projectRoot: string | null }>} create
      * @returns {Promise<string>} The canonical address of the created workspace.
      */
     async submit(token, create) {
@@ -48,15 +48,15 @@ export default class Creations {
         }
 
         const creation = (async () => {
-            let envelope;
-            try { envelope = await create(); }
-            catch (cause) { throw new RequestError(502, "The daemon could not create the workspace.", { cause }); }
-            if (envelope.projectRoot !== null) throw new Error("The daemon created a workspace with a project folder from a folderless request.");
-            const path = directoryPath({ kind: "workspace", workspace: envelope.workspaceName });
+            let result;
+            try { result = await create(); }
+            catch (cause) { throw new RequestError(502, "The daemon could not complete the creation.", { cause }); }
+            if (typeof result === "string") return result;
+            if (result.projectRoot !== null) throw new Error("The daemon created a workspace with a project folder from a folderless request.");
+            const path = directoryPath({ kind: "workspace", workspace: result.workspaceName });
             if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
             return path;
         })();
-
         this.#entries.set(token, { kind: "flight", creation, expires: now + this.#ttl * 1000 });
         creation.then(
             (path) => { this.#entries.set(token, { kind: "done", path, expires: Date.now() + this.#ttl * 1000 }); },

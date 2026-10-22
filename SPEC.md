@@ -269,16 +269,35 @@ disabled.
 
 | Boundary | Contract |
 |---|---|
-| Form | One `method="post" action="/workspaces/new"` form (`#workspace-create`) with an accessible New workspace button (`title="New workspace"`) and exactly one hidden token field containing a fresh UUID. Rendering is stateless; no server-side token map is populated on GET or HEAD. No name, folder or settings field: the daemon owns generated names, immutable identity and defaults. |
-| Folder independence | Creation calls the public `createWorkspace` with `projectRoot: null`, never inheriting the current workspace's folder, the daemon's working directory or an operator home. It starts no loop, worker or inference, copies no history, creates no project directory, and leaves the original workspace untouched. |
-| Admission and origin | With authentication enabled, an unadmitted POST answers 401 and a cross-origin form 403 against the daemon's issuer. `PLURNK_AUTH=0` is a first-class anonymous posture, not a read-only mandate: creation requires a matching same-origin `Origin` header naming the request's own host, and any `sec-fetch-site` other than same-origin is refused with 403. |
+| Form | One `method="post" action="/workspaces/new"` form (`#workspace-create`) with an accessible New workspace button (`title="New workspace"`), an optional text input named `name`, and exactly one hidden token field containing a fresh UUID. When a custom name is supplied, creation uses that name; when omitted or blank, the daemon generates one. Rendering is stateless; no server-side token map is populated on GET or HEAD. |
+| Folder independence | Creation calls the public `createWorkspace` with `projectRoot: null`, never inheriting another workspace's folder, the daemon's working directory or an operator home. It starts no loop, worker or inference, copies no history, creates no project directory, and leaves other workspaces untouched. |
 | Method and encoding | Only POST is allowed; GET and HEAD answer 405 with `allow: POST`. The body is UTF-8 `application/x-www-form-urlencoded` (415 otherwise), bounded (413), with exactly one `token` field (400 otherwise). |
 | Convergence | The hidden token is the form's idempotency key at the module's HTTP boundary, because the daemon's creation contract has none. Token tracking begins on `POST /workspaces/new`. The first POST creates one workspace and answers 303 to its canonical address through the shared directory codec. Racing or retried POSTs of the same valid token converge to that same workspace, never a second creation. A settled token stays addressable for the configured TTL, so a retry after a lost response converges. An invalid UUID format answers 400. |
 | Failure | A daemon rejection answers 502 with its cause preserved, and the settled failure is not blindly re-executed within its TTL. An envelope that names a project folder for a folderless request, or a workspace name without a directory address, is a visible internal violation, never a silently adapted creation. |
 | Bound | In-flight and settled tokens are pruned on expiry and bounded across actual POST submissions: exceeding `PLURNK_WEB_CREATE_TOKENS` evicts the oldest settled completed outcome. In-flight creations remain protected during convergence. |
-## §web-worker-directory Model-worker navigation
+## §web-workspace-rename Workspace rename
 
-| Boundary | Representation |
+Workspace pages (`/~/<workspace>/`) carry one native rename form (`#workspace-rename`); daemon, worker, account and error documents never do.
+
+| Boundary | Contract |
+|---|---|
+| Form | One `method="post" action="/workspaces/rename"` form with the current workspace name in a hidden `workspace` field, a required text input named `name` initialized to the current name, and a Rename button. |
+| Delivery | Uses the public `renameWorkspace(workspaceId, name)` contract on `ApplicationPort`. Missing workspace answers 404; empty name answers 400. Rejection answers 502 with cause preserved. Success 303-redirects to the canonical new workspace directory address through the shared directory codec. |
+| Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Same-origin enforcement requires matching `Origin` and same-origin `sec-fetch-site` in both auth and anonymous postures. |
+
+## §web-worker-creation Worker creation
+
+Workspace pages (`/~/<workspace>/`) carry one native worker creation form (`#worker-create`); daemon, worker, account and error documents never do.
+
+| Boundary | Contract |
+|---|---|
+| Form | One `method="post" action="/workers/new"` form with the current workspace name in a hidden `workspace` field, a hidden UUID `token` field, an optional text input named `name`, and a New worker button (`title="New worker"`). |
+| Delivery | Uses the public `createWorker({ workspaceId, name? })` contract on `ApplicationPort`, creating an independent model worker without inheriting parentage, loops, transcripts, or forking active state. When a name is provided, creation requests it; when omitted or blank, the daemon generates one. |
+| Convergence | The form token acts as idempotency key: racing double-clicks and retries converge to the single created worker. Expiry and bounds share the creation limits. |
+| Success and failure | Missing workspace answers 404. Success 303-redirects to the new worker's canonical directory address (`directoryPath({ kind: "worker", workspace, worker })`). Rejection answers 502. |
+| Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
+
+## §web-worker-directory Model-worker navigation
 |---|---|
 | Membership | Every `origin: model` worker appears once, regardless of owner, lifecycle or name spelling. The runtime bookkeeping worker has no directory row or worker page; its direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
 | Roots | Model workers with `parentWorkerId: null` form the primary list. |

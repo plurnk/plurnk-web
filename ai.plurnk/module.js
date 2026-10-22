@@ -3,7 +3,7 @@ import { MIMEType } from "node:util";
 import { Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
 import indexDocument from "./index-document.js";
-import { parseDirectory } from "./directory-addresses.js";
+import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
 import { privateHeaders, redirect, RequestError } from "./http.js";
@@ -14,7 +14,7 @@ import Diagrams from "./diagrams.js";
 // One hidden token field: a UUID is 36 characters; 4 KiB bounds any encoding of it
 // with wide margin. Larger bodies are not this native form.
 const CREATE_INPUT_BYTES = 4096;
-/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers" | "createWorkspace">} Port */
+/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers" | "createWorkspace" | "renameWorkspace" | "createWorker">} Port */
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
@@ -75,6 +75,8 @@ export default function createModule() {
                 const others = pathname === "/account/sessions/revoke-others";
                 const token = pathname === "/auth/token";
                 const creation = pathname === "/workspaces/new";
+                const rename = pathname === "/workspaces/rename";
+                const workerCreation = pathname === "/workers/new";
                 const diagram = pathname === "/render/mermaid";
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
@@ -99,13 +101,13 @@ export default function createModule() {
                         else session.logout(req, res);
                         return;
                     }
-                    if (creation) {
+                    if (creation || rename || workerCreation) {
+                        const actionName = creation ? "create a workspace" : rename ? "rename a workspace" : "create a worker";
                         if (req.method !== "POST") {
                             res.setHeader("allow", "POST");
-                            throw new RequestError(405, "Use POST to create a workspace.");
+                            throw new RequestError(405, `Use POST to ${actionName}.`);
                         }
-                        if (session !== null && !admitted) throw new RequestError(401, "Sign in again before creating a workspace.");
-                        // {§web-workspace-creation} Anonymous creation is a first-class posture, guarded without a second authority.
+                        if (session !== null && !admitted) throw new RequestError(401, `Sign in again before ${creation ? "creating a workspace" : rename ? "renaming a workspace" : "creating a worker"}.`);
                         if (session !== null) session.sameOriginForm(req);
                         else {
                             const origin = req.headers.origin;
@@ -129,19 +131,52 @@ export default function createModule() {
                         const chunks = [];
                         for await (const chunk of req.iterator({ destroyOnReturn: false })) {
                             size += chunk.byteLength;
-                            if (size > CREATE_INPUT_BYTES) { req.resume(); throw new RequestError(413, "Workspace creation form exceeds its bound."); }
+                            if (size > CREATE_INPUT_BYTES) { req.resume(); throw new RequestError(413, "Form exceeds its bound."); }
                             chunks.push(chunk);
                         }
                         let fields;
                         try { fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
-                        catch (cause) { throw new RequestError(400, "Invalid workspace creation form.", { cause }); }
-                        const pairs = [...fields.entries()];
-                        if (pairs.length !== 1 || pairs[0][0] !== "token" || pairs[0][1] === "") {
-                            throw new RequestError(400, "Expected the form's workspace creation token.");
+                        catch (cause) { throw new RequestError(400, "Invalid form data.", { cause }); }
+                        if (creation) {
+                            const formToken = fields.get("token");
+                            if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
+                            const customName = fields.get("name")?.trim();
+                            redirect(res, await creations.submit(formToken, () => seam.createWorkspace({ ...(customName ? { name: customName } : {}), projectRoot: null })));
+                            return;
                         }
-                        // {§web-workspace-creation} The token is the form's idempotency key at this boundary.
-                        redirect(res, await creations.submit(pairs[0][1], () => seam.createWorkspace({ projectRoot: null })));
-                        return;
+                        if (rename) {
+                            const targetName = fields.get("workspace");
+                            const newName = fields.get("name")?.trim();
+                            if (!targetName || !newName) throw new RequestError(400, "Expected current workspace and new name.");
+                            const workspaces = await seam.listWorkspaces();
+                            const ws = workspaces.find(({ name }) => name === targetName);
+                            if (!ws) throw new RequestError(404, "Workspace not found.");
+                            let renamed;
+                            try { renamed = await seam.renameWorkspace(ws.id, newName); }
+                            catch (cause) { throw new RequestError(502, "The daemon could not rename the workspace.", { cause }); }
+                            const path = directoryPath({ kind: "workspace", workspace: renamed.name });
+                            if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
+                            redirect(res, path);
+                            return;
+                        }
+                        if (workerCreation) {
+                            const formToken = fields.get("token");
+                            const targetName = fields.get("workspace");
+                            if (!formToken || !targetName) throw new RequestError(400, "Expected worker creation token and workspace name.");
+                            const workerName = fields.get("name")?.trim();
+                            const workspaces = await seam.listWorkspaces();
+                            const ws = workspaces.find(({ name }) => name === targetName);
+                            if (!ws) throw new RequestError(404, "Workspace not found.");
+                            redirect(res, await creations.submit(formToken, async () => {
+                                let createdWorker;
+                                try { createdWorker = await seam.createWorker({ workspaceId: ws.id, ...(workerName ? { name: workerName } : {}) }); }
+                                catch (cause) { throw new RequestError(502, "The daemon could not create the worker.", { cause }); }
+                                const path = directoryPath({ kind: "worker", workspace: ws.name, worker: createdWorker.workerName });
+                                if (path === null) throw new Error("The daemon returned a worker name without a directory address.");
+                                return path;
+                            }));
+                            return;
+                        }
                     }
                     if (account || sessions || revoke !== null || others) {
                         if (session === null) throw new RequestError(404, "Account is unavailable while authentication is disabled.");
