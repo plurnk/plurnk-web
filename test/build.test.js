@@ -47,22 +47,29 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
                             breadcrumb: header.querySelector('nav[aria-label="breadcrumb"]').getBoundingClientRect().toJSON(),
                             font: parseFloat(getComputedStyle(header).fontSize),
                             scrollable: header.querySelector('nav[aria-label="breadcrumb"]').scrollWidth > header.querySelector('nav[aria-label="breadcrumb"]').clientWidth,
+                            verticalOverflow: header.querySelector('nav[aria-label="breadcrumb"]').scrollHeight > header.querySelector('nav[aria-label="breadcrumb"]').clientHeight,
                             overflow: document.documentElement.scrollWidth > innerWidth,
                             items: [...header.querySelectorAll('nav[aria-label="breadcrumb"] li')].map((item) => item.getBoundingClientRect().toJSON()),
                         };
                     });
                     for (const width of [500, 320, 768, 500]) {
                         await page.setViewportSize({ width, height: 700 });
-                        const { logo, mascot, glyph, menu, breadcrumb, header, overflow, items, font, scrollable } = await measure();
+                        const { logo, mascot, glyph, menu, breadcrumb, header, overflow, items, font, scrollable, verticalOverflow } = await measure();
                         assert.ok(Math.abs(mascot.width - glyph.width) < glyph.width / 10, "the mascot matches the navigation emoji's scale");
                         assert.equal(mascot.height, mascot.width, "the mascot retains a square glyph box");
                         assert.equal(overflow, false);
+                        assert.equal(verticalOverflow, false, "breadcrumb links fit their scroll area vertically");
                         assert.equal(await page.locator('[aria-current="page"]').innerText(), name);
                         assert.ok(breadcrumb.y < logo.bottom && breadcrumb.bottom > logo.y, "breadcrumb shares the mascot row");
                         assert.ok(menu.y < logo.bottom && menu.bottom > logo.y, "menu shares the mascot row");
                         assert.ok(breadcrumb.x >= logo.right && breadcrumb.right <= menu.x, "the breadcrumb remains between controls");
                         assert.ok(items.every((item) => Math.abs(item.y - items[0].y) < 1), "breadcrumb never wraps");
                         assert.ok(header.height <= Math.max(logo.height, menu.height, breadcrumb.height) + font, "header padding is at most one text line in total");
+                        await page.locator('nav[aria-label="breadcrumb"] a').first().focus();
+                        assert.equal(await page.locator('nav[aria-label="breadcrumb"] a').first().evaluate((link) => {
+                            const style = getComputedStyle(link);
+                            return document.activeElement === link && style.boxShadow.includes("inset");
+                        }), true, "keyboard focus stays visible inside the breadcrumb's scroll area");
                         if (name.length > 100) {
                             assert.equal(scrollable, true, "long names are retained in a locally scrollable breadcrumb");
                             assert.equal(await page.locator('nav[aria-label="breadcrumb"]').evaluate((nav) => {
@@ -74,12 +81,13 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
                     if (name === "~/ptl/project") {
                         await page.setViewportSize({ width: 768, height: 700 });
                         await page.evaluate(() => { document.documentElement.style.fontSize = "48px"; });
-                        const { logo, mascot, glyph, menu, breadcrumb, overflow } = await measure();
+                        const { logo, mascot, glyph, menu, breadcrumb, overflow, verticalOverflow } = await measure();
                         assert.ok(Math.abs(mascot.width - glyph.width) < glyph.width / 10, "the mascot follows enlarged navigation glyphs, not a fixed pixel size");
                         assert.equal(mascot.height, mascot.width);
                         assert.ok(breadcrumb.y < logo.bottom && breadcrumb.bottom > logo.y, "large text still has one header row");
                         assert.ok(breadcrumb.x >= logo.right && breadcrumb.right <= menu.x);
                         assert.equal(overflow, false);
+                        assert.equal(verticalOverflow, false, "large text introduces no vertical breadcrumb scroll");
                         await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
                     }
                 }
@@ -89,6 +97,53 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
             await context.close();
         }
     }
+});
+
+test("{§web-page-shell} disconnection is a named header glyph before Account, not a second connection state", async (t) => {
+    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
+        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), contentType }])));
+    const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 320, height: 700 } });
+    const checkBrowser = browserDiagnostics(context);
+    const port = {
+        listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null }],
+        listWorkers: async () => [{ id: 9, name: "user", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "idle" }],
+    };
+    let html;
+    await context.route("http://web.test/**", (route) => {
+        const path = new URL(route.request().url()).pathname;
+        return route.fulfill(path === "/" ? { body: html, contentType: "text/html" } : assets.get(path));
+    });
+    const page = await context.newPage();
+    for (const authenticated of [false, true]) {
+        html = await documents.read({ kind: "worker", workspace: "project", worker: "user" }, port, authenticated);
+        await page.goto("http://web.test/");
+        const indicator = page.getByRole("img", { name: "Disconnected", exact: true, includeHidden: true });
+        assert.equal(await indicator.count(), 1);
+        assert.equal(await indicator.getAttribute("title"), "Disconnected");
+        assert.match(await indicator.evaluate((element) => getComputedStyle(element, "::before").content), /🔌/u);
+        for (const colorScheme of ["light", "dark"]) {
+            await page.emulateMedia({ colorScheme });
+            for (const state of ["initial", "connecting", "connected", "interrupted", "disconnected", "signed-out", "connected"]) {
+                await page.locator("#worker-status").evaluate((element, state) => { element.dataset.connection = state; }, state);
+                assert.equal(await indicator.isVisible(), ["disconnected", "signed-out"].includes(state), `${state}: the header follows observed transport state only`);
+                if (authenticated && await indicator.isVisible()) {
+                    const box = await indicator.boundingBox();
+                    const account = await page.getByRole("link", { name: "Account", exact: true }).boundingBox();
+                    assert.ok(box.x + box.width <= account.x, "the plug is immediately left of Account");
+                    assert.ok(Math.abs(box.y + box.height / 2 - account.y - account.height / 2) < 1);
+                }
+                assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+            }
+        }
+        html = await documents.read({ kind: "workspace", workspace: "project" }, port, authenticated);
+        await page.goto("http://web.test/");
+        assert.equal(await indicator.isVisible(), false, "a document without an observation never claims disconnection");
+    }
+    checkBrowser();
 });
 
 test("{§web-build} production HTML references compiled assets, not development modules", async () => {

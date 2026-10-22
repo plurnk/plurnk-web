@@ -1,5 +1,6 @@
 :root {
     --pico-font-family: var(--pico-font-family-monospace);
+    --pico-line-height: 1.25;
 
     /* {§web-conversation-surfaces} Resolve theme surfaces before per-entry overrides. */
     --plurnk-user-surface: color-mix(in srgb, var(--pico-primary) 8%, var(--pico-card-background-color));
