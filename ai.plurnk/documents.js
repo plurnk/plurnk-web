@@ -11,7 +11,6 @@ export default class Documents {
     #home;
     #yolo;
     #reasoningPreviewChars;
-    #mint;
 
     /** {§web-authorization-style} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -24,11 +23,10 @@ export default class Documents {
         return path;
     }
 
-    /** @param {string} document @param {boolean} yolo @param {number} reasoningPreviewChars @param {() => string} [mint] */
-    constructor(document, yolo, reasoningPreviewChars, mint = () => randomUUID()) {
+    /** @param {string} document @param {boolean} yolo @param {number} reasoningPreviewChars */
+    constructor(document, yolo, reasoningPreviewChars) {
         this.#yolo = yolo;
         this.#reasoningPreviewChars = reasoningPreviewChars;
-        this.#mint = mint;
         const parts = document.split(/<main\b[^>]*>|<\/main>/u);
         if (parts.length !== 3) throw new Error("The web document must contain exactly one main element.");
         const title = parts[0].split(/<title\b[^>]*>|<\/title>/u);
@@ -109,9 +107,9 @@ export default class Documents {
 
     /** {§web-workspace-creation} One native form on the workspace page; the daemon owns names and defaults. */
     #creationForm() {
-        return `<form method="post" action="/workspaces/new">`
-            + `<input type="hidden" name="token" value="${escapeHtml(this.#mint())}">`
-            + `<button type="submit" data-i18n="new-workspace"><span aria-hidden="true">➕</span> New workspace</button></form>`;
+        return '<form id="workspace-create" method="post" action="/workspaces/new">'
+            + `<input type="hidden" name="token" value="${randomUUID()}">`
+            + '<button type="submit" title="New workspace" data-i18n="new-workspace"><span aria-hidden="true">➕</span> New workspace</button></form>';
     }
 
     /** @param {string | null} projectRoot */

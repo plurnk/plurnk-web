@@ -62,7 +62,7 @@ export default function createModule() {
 
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars, () => creations.mint());
+            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars);
 
             /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
             const serve = async (req, res) => {
@@ -109,12 +109,11 @@ export default function createModule() {
                         if (session !== null) session.sameOriginForm(req);
                         else {
                             const origin = req.headers.origin;
-                            if (origin !== undefined) {
-                                let host;
-                                try { host = new URL(origin).host; }
-                                catch (cause) { throw new RequestError(403, "Same-origin form required.", { cause }); }
-                                if (host !== req.headers.host) throw new RequestError(403, "Same-origin form required.");
-                            }
+                            if (typeof origin !== "string") throw new RequestError(403, "Same-origin form required.");
+                            let host;
+                            try { host = new URL(origin).host; }
+                            catch (cause) { throw new RequestError(403, "Same-origin form required.", { cause }); }
+                            if (host !== req.headers.host) throw new RequestError(403, "Same-origin form required.");
                             if (req.headers["sec-fetch-site"] !== undefined && req.headers["sec-fetch-site"] !== "same-origin") {
                                 throw new RequestError(403, "Same-origin form required.");
                             }

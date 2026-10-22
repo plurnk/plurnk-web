@@ -5,41 +5,82 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import createModule from "../ai.plurnk/module.js";
 
-process.env.PLURNK_AUTH = "0";
-
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 
-// {§web-workspace-creation} The anonymous module serves the whole native journey: form, post, redirect.
-async function fixture(t, create = async () => envelope("fresh")) {
+// {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
+async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh") } = {}) {
+    const originalAuth = process.env.PLURNK_AUTH;
+    process.env.PLURNK_AUTH = auth ? "1" : "0";
+    t.after(() => {
+        if (originalAuth === undefined) delete process.env.PLURNK_AUTH;
+        else process.env.PLURNK_AUTH = originalAuth;
+    });
+
     const created = [];
     let handler;
     const module = createModule();
-    await module.start({
+    const credentials = {
+        verify: (token) => token === "valid-session" ? { kind: "session", clientId: "plurnk-web", scopes: ["agui"], family: "f1", subject: "op" } : null,
+        onRevoked: () => () => {},
+    };
+    if (auth) {
+        await module.setup({
+            credentials: {
+                registerClient: () => ({ clientId: "plurnk-web", clientSecret: "sec" }),
+            },
+        });
+    }
+
+    let base = "";
+    const seam = {
+        credentials: {
+            ...credentials,
+            face: () => ({ issuer: () => base }),
+        },
         registerHttpRoute(_prefix, serve) { handler = serve; },
         listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
         listWorkers: async () => [],
         createWorkspace: async (args) => { created.push(args); return create(args); },
-    });
+    };
+
+    await module.start(seam);
     const server = createServer(handler);
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
+    base = `http://127.0.0.1:${server.address().port}`;
+
     t.after(() => module.close());
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
-    const base = `http://127.0.0.1:${server.address().port}`;
-    const post = (token, headers = {}) => fetch(new URL("/workspaces/new", base), {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
-        body: new URLSearchParams({ token }),
-        redirect: "manual",
-    });
+
+    const post = (token, headers = {}) => {
+        const finalHeaders = {
+            "content-type": "application/x-www-form-urlencoded",
+            origin: base,
+            ...(auth && admitted ? { cookie: "plurnk_web_session=valid-session" } : {}),
+            ...headers,
+        };
+        for (const [key, value] of Object.entries(finalHeaders)) {
+            if (value === undefined) delete finalHeaders[key];
+        }
+        return fetch(new URL("/workspaces/new", base), {
+            method: "POST",
+            headers: finalHeaders,
+            body: new URLSearchParams({ token }),
+            redirect: "manual",
+        });
+    };
+
     return { base, created, post };
 }
 
-async function formToken(base) {
-    const page = await fetch(new URL("/~/work/", base));
+async function formToken(base, headers = {}) {
+    const page = await fetch(new URL("/~/work/", base), { headers });
     assert.equal(page.status, 200, "the workspace page carries the creation form");
-    const token = /name="token" value="([^"]+)"/u.exec(await page.text())?.[1];
+    const html = await page.text();
+    const token = /name="token" value="([^"]+)"/u.exec(html)?.[1];
     assert.ok(token);
+    assert.match(html, /id="workspace-create"/u);
+    assert.match(html, /title="New workspace"/u);
     return token;
 }
 
@@ -56,7 +97,7 @@ test("{§web-workspace-creation} the native form creates one folderless workspac
 
 test("{§web-workspace-creation} racing double-clicks converge to one creation", async (t) => {
     const gate = Promise.withResolvers();
-    const { base, created, post } = await fixture(t, async () => { await gate.promise; return envelope("raced"); });
+    const { base, created, post } = await fixture(t, { create: async () => { await gate.promise; return envelope("raced"); } });
     const token = await formToken(base);
     const posts = [post(token), post(token)];
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -76,33 +117,34 @@ test("{§web-workspace-creation} the fixed creation address admits only the nati
         assert.equal(res.headers.get("allow"), "POST");
     }
     const json = await fetch(new URL("/workspaces/new", base),
-        { method: "POST", headers: { "content-type": "application/json" }, body: "{}", redirect: "manual" });
+        { method: "POST", headers: { "content-type": "application/json", origin: base }, body: "{}", redirect: "manual" });
     assert.equal(json.status, 415);
-    const charset = await post("x", { "content-type": "application/x-www-form-urlencoded; charset=latin1" });
+    const charset = await post(randomUUID(), { "content-type": "application/x-www-form-urlencoded; charset=latin1" });
     assert.equal(charset.status, 415);
     for (const body of ["extra=1", "token=a&extra=1", "token="]) {
         const res = await fetch(new URL("/workspaces/new", base),
-            { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, redirect: "manual" });
+            { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body, redirect: "manual" });
         assert.equal(res.status, 400, body);
     }
     const oversized = await fetch(new URL("/workspaces/new", base),
-        { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: `token=${"a".repeat(8192)}`, redirect: "manual" });
+        { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: `token=${"a".repeat(8192)}`, redirect: "manual" });
     assert.equal(oversized.status, 413);
 });
 
-test("{§web-workspace-creation} a stale form reports itself instead of re-executing", async (t) => {
+test("{§web-workspace-creation} invalid token syntax is rejected with 400", async (t) => {
     const { created, post } = await fixture(t);
-    const stale = await post(randomUUID());
-    assert.equal(stale.status, 400);
-    assert.match(await stale.text(), /This creation form expired\./u);
+    const res = await post("not-a-uuid");
+    assert.equal(res.status, 400);
+    assert.match(await res.text(), /Invalid workspace creation token\./u);
     assert.deepEqual(created, []);
 });
 
-test("{§web-workspace-creation} anonymous creation keeps a first-class same-origin guard", async (t) => {
+test("{§web-workspace-creation} anonymous creation strictly requires matching origin and sec-fetch-site", async (t) => {
     const { base, created, post } = await fixture(t);
     const token = await formToken(base);
     const host = new URL(base).host;
     for (const [name, headers, status] of [
+        ["missing origin", { origin: undefined }, 403],
         ["foreign origin", { origin: "https://evil.example" }, 403],
         ["cross-site fetch metadata", { "sec-fetch-site": "cross-site" }, 403],
         ["matching origin", { origin: `http://${host}` }, 303],
@@ -114,25 +156,31 @@ test("{§web-workspace-creation} anonymous creation keeps a first-class same-ori
     assert.deepEqual(created, [{ projectRoot: null }]);
 });
 
+test("{§web-workspace-creation} authenticated creation enforces admission and origin", async (t) => {
+    const { created, post } = await fixture(t, { auth: true, admitted: true });
+    const token = randomUUID();
+
+    // Unadmitted POST returns 401
+    const unadmitted = await post(token, { cookie: "" });
+    assert.equal(unadmitted.status, 401);
+
+    // Cross-origin POST returns 403
+    const crossOrigin = await post(token, { origin: "https://evil.example" });
+    assert.equal(crossOrigin.status, 403);
+
+    // Admitted same-origin POST returns 303 redirect
+    const admittedRes = await post(token);
+    assert.equal(admittedRes.status, 303);
+    assert.equal(admittedRes.headers.get("location"), "/~/fresh/");
+    assert.deepEqual(created, [{ projectRoot: null }]);
+});
+
 test("{§web-workspace-creation} a daemon failure is preserved, not retried blindly", async (t) => {
-    const { base, created, post } = await fixture(t, async () => { throw new Error("daemon refused"); });
+    const { base, created, post } = await fixture(t, { create: async () => { throw new Error("daemon refused"); } });
     const token = await formToken(base);
     for (const attempt of ["failure", "retry of the settled failure"]) {
         const res = await post(token);
         assert.equal(res.status, 502, attempt);
     }
     assert.equal(created.length, 1);
-});
-
-test("{§web-workspace-creation} an expired form token answers a readable stale-form error", async (t) => {
-    const original = process.env.PLURNK_WEB_CREATE_TTL_SEC;
-    process.env.PLURNK_WEB_CREATE_TTL_SEC = "1";
-    t.after(() => { process.env.PLURNK_WEB_CREATE_TTL_SEC = original; });
-    const { base, created, post } = await fixture(t);
-    const token = await formToken(base);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-    const res = await post(token);
-    assert.equal(res.status, 400);
-    assert.match(await res.text(), /This creation form expired\./u);
-    assert.deepEqual(created, []);
 });
