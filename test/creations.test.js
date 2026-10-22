@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import Creations from "../ai.plurnk/creations.js";
 import { RequestError } from "../ai.plurnk/http.js";
@@ -7,7 +8,7 @@ const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot:
 
 test("{§web-workspace-creation} one token settles once and converges racing and retried posts", async () => {
     const creations = new Creations({ ttl: 600, tokens: 128 });
-    const token = creations.mint();
+    const token = randomUUID();
     let calls = 0;
     const create = async () => { calls++; return envelope("fresh"); };
     assert.equal(await creations.submit(token, create), "/~/fresh/");
@@ -17,7 +18,7 @@ test("{§web-workspace-creation} one token settles once and converges racing and
 
 test("{§web-workspace-creation} racing posts share one in-flight creation", async () => {
     const creations = new Creations({ ttl: 600, tokens: 128 });
-    const token = creations.mint();
+    const token = randomUUID();
     const gate = Promise.withResolvers();
     let calls = 0;
     const create = async () => { calls++; await gate.promise; return envelope("raced"); };
@@ -28,22 +29,32 @@ test("{§web-workspace-creation} racing posts share one in-flight creation", asy
     assert.equal(calls, 1);
 });
 
-test("{§web-workspace-creation} unknown and expired tokens are stale forms, never second creations", async () => {
+test("{§web-workspace-creation} invalid token syntax is rejected without invoking create", async () => {
     const creations = new Creations({ ttl: 600, tokens: 128 });
     let calls = 0;
     const create = async () => { calls++; return envelope("never"); };
-    await assert.rejects(creations.submit("not-minted", create),
-        (error) => error instanceof RequestError && error.status === 400);
-    const brief = new Creations({ ttl: 1, tokens: 128 });
-    const token = brief.mint();
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-    await assert.rejects(brief.submit(token, create), { status: 400 });
+    for (const invalid of ["not-a-uuid", "", "12345", "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"]) {
+        await assert.rejects(creations.submit(invalid, create),
+            (error) => error instanceof RequestError && error.status === 400 && error.message.includes("Invalid workspace creation token"));
+    }
     assert.equal(calls, 0);
+});
+
+test("{§web-workspace-creation} expired tokens are pruned so retries after TTL create fresh workspaces", async () => {
+    const creations = new Creations({ ttl: 1, tokens: 128 });
+    const token = randomUUID();
+    let calls = 0;
+    const create = async () => { calls++; return envelope(`run-${calls}`); };
+    assert.equal(await creations.submit(token, create), "/~/run-1/");
+    assert.equal(calls, 1);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert.equal(await creations.submit(token, create), "/~/run-2/");
+    assert.equal(calls, 2);
 });
 
 test("{§web-workspace-creation} a daemon failure is retained and surfaced with its cause", async () => {
     const creations = new Creations({ ttl: 600, tokens: 128 });
-    const token = creations.mint();
+    const token = randomUUID();
     let calls = 0;
     const create = async () => { calls++; throw new Error("daemon refused"); };
     await assert.rejects(creations.submit(token, create),
@@ -60,25 +71,20 @@ test("{§web-workspace-creation} envelope violations fail visibly instead of ada
             /The daemon returned a workspace name without a directory address\./u],
     ]) {
         const creations = new Creations({ ttl: 600, tokens: 128 });
-        await assert.rejects(creations.submit(creations.mint(), async () => returned), message);
+        await assert.rejects(creations.submit(randomUUID(), async () => returned), message);
     }
 });
 
-test("{§web-workspace-creation} the bound yields unsubmitted, then settled, tokens before minting", async () => {
+test("{§web-workspace-creation} the bound evicts oldest completed entries when full", async () => {
     const creations = new Creations({ ttl: 600, tokens: 2 });
-    const first = creations.mint();
-    const second = creations.mint();
-    assert.equal(await creations.submit(first, async () => envelope("one")), "/~/one/");
-    const third = creations.mint(); // Yields the unsubmitted second token.
-    await assert.rejects(creations.submit(second, async () => envelope("never")), { status: 400 });
-    assert.equal(await creations.submit(third, async () => envelope("two")), "/~/two/");
-    creations.mint(); // Yields the oldest settled outcome: first.
-    await assert.rejects(creations.submit(first, async () => envelope("never")), { status: 400 });
-    const gate = Promise.withResolvers();
-    const flights = new Creations({ ttl: 600, tokens: 1 });
-    const pending = flights.submit(flights.mint(), async () => { await gate.promise; return envelope("in-flight"); });
-    const extra = flights.mint(); // An all-in-flight registry mints rather than failing a page render.
-    assert.match(extra, /^[0-9a-f-]{36}$/u);
-    gate.resolve();
-    assert.equal(await pending, "/~/in-flight/");
+    const token1 = randomUUID();
+    const token2 = randomUUID();
+    const token3 = randomUUID();
+    assert.equal(await creations.submit(token1, async () => envelope("one")), "/~/one/");
+    assert.equal(await creations.submit(token2, async () => envelope("two")), "/~/two/");
+    // Submitting a third token evicts the oldest completed entry (token1).
+    assert.equal(await creations.submit(token3, async () => envelope("three")), "/~/three/");
+    // Token2 and Token3 are still retained.
+    assert.equal(await creations.submit(token2, async () => { throw new Error("should converge"); }), "/~/two/");
+    assert.equal(await creations.submit(token3, async () => { throw new Error("should converge"); }), "/~/three/");
 });

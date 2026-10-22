@@ -143,6 +143,14 @@ table {
     padding-inline: var(--pico-form-element-spacing-vertical);
 }
 
+#workspace-create {
+    margin-block-start: var(--pico-spacing);
+}
+
+#workspace-create button {
+    inline-size: auto;
+}
+
 #worker-status [data-status-line],
 #worker-status [data-status-line] > ul {
     display: flex;
