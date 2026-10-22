@@ -846,6 +846,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await second.getByRole("button", { name: "Sign out", exact: true }).click();
                     await second.waitForURL(base);
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "signed-out");
+                    assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), true);
                     const frozen = await value(page, "elapsed");
                     assert.equal(run.isRunning, true);
                     assert.equal(await page.getByRole("alert").isVisible(), true);
@@ -889,6 +890,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.goto(new URL("/~/observer-approval@user/", proxy.url).href);
                     await connection(page, "interrupted");
                     await holding;
+                    assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false,
+                        "an ordinary held approval remains connected");
                     assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
                     assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "passive discovery chooses nothing");
                     assert.equal(model.requests.length, 1, "the approval remains pending");
@@ -920,6 +923,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
 
                     proxy.drop();
                     await connection(page, "disconnected");
+                    assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), true);
                     const afterLoss = requests.length;
                     await setTimeout(1100);
                     assert.equal(requests.length, afterLoss, "an available endpoint does not trigger automatic retries after connection loss");
@@ -937,6 +941,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     }
                     await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
+                    assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false);
                     assert.equal(await value(page, "input"), "800");
                     await daemon.stop();
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");

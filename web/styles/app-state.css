@@ -7,6 +7,20 @@ header nav button:is(:hover, :focus-visible) {
     text-decoration: underline;
 }
 
+/* {§web-page-shell} Keep keyboard focus inside the breadcrumb's scroll area. */
+body > header > nav[aria-label="breadcrumb"] a:focus-visible {
+    box-shadow: inset 0 0 0 var(--pico-outline-width) var(--pico-primary-focus);
+}
+
+/* {§web-page-shell} An ordinary input interrupt is still a live connection. */
+body:not(:has(#worker-status:is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
+    display: none;
+}
+
+[data-connection-indicator] > span::before {
+    content: "🔌" / "";
+}
+
 /* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
 #worker-conversation {
     --pico-card-background-color: var(--plurnk-working-surface);
@@ -27,6 +41,10 @@ header nav button:is(:hover, :focus-visible) {
 }
 
 /* {§web-worker-input} Native controls and document state own their presentation. */
+#worker-message:focus {
+    --pico-box-shadow: inset 0 0 0 var(--pico-outline-width) var(--pico-form-element-focus-color);
+}
+
 button[form="worker-compose"]::before { content: "▶️" / ""; }
 button[form="worker-stop"]::before { content: "⏹️" / ""; }
 

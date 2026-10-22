@@ -83,6 +83,31 @@ export default async function verifyCommands(t) {
                             "Send joins the textarea with Pico's native group margin");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     }
+                    for (const colorScheme of ["light", "dark"]) {
+                        await page.emulateMedia({ colorScheme });
+                        const field = page.getByRole("textbox", { name: "Message", exact: true });
+                        for (const draft of ["One line", "First line\nSecond line\nThird line"]) {
+                            await field.fill(draft);
+                            await field.focus();
+                            const focusShadow = await field.evaluate(async (element) => {
+                                await Promise.all(element.getAnimations().map((animation) => animation.finished));
+                                return getComputedStyle(element).boxShadow;
+                            });
+                            assert.ok(focusShadow.includes("inset"), `${colorScheme}: textarea focus stays within its control`);
+                            const geometry = await actions.evaluate((group) => [...group.children].map((element) => {
+                                const rect = element.getBoundingClientRect();
+                                const style = getComputedStyle(element);
+                                return { top: rect.top, bottom: rect.bottom, lineHeight: parseFloat(style.lineHeight), fontSize: parseFloat(style.fontSize) };
+                            }));
+                            assert.ok(geometry.every(({ top, bottom }) => top === geometry[0].top && bottom === geometry[0].bottom),
+                                "focus and multiline growth keep every composer control aligned");
+                            assert.ok(geometry.every(({ lineHeight, fontSize }) => lineHeight / fontSize === 1.25),
+                                "the single Pico line-height token consistently sizes the composer");
+                            assert.equal(await field.evaluate((element) => getComputedStyle(element).boxShadow.includes("inset")), true,
+                                `${colorScheme}: textarea focus remains visible without projecting beyond the control`);
+                        }
+                        await field.fill("");
+                    }
                     await page.setViewportSize({ width: 320, height: 700 });
                     const command = (text) => page.evaluate((text) => window.command(text), text);
                     const rows = page.locator("#worker-command-results > ul > li");
