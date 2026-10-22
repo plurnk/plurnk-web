@@ -22,7 +22,7 @@ header nav button:is(:hover, :focus-visible) {
     --pico-card-background-color: var(--plurnk-user-surface);
 }
 
-#worker-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]) {
+#worker-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]:not([data-message-role="user"])) {
     --pico-card-background-color: var(--plurnk-reply-surface);
 }
 

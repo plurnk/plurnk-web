@@ -495,7 +495,7 @@ capability, persistence or execution policy. Commands require no inference.
 
 | Entry | Surface |
 |---|---|
-| User content | Subtle green tint derived from the active Pico theme. |
+| User content, including incoming messages annotated as SEND | Subtle green tint derived from the active Pico theme; user authorship takes precedence over operation metadata. |
 | Assistant prose and confirmed SEND bodies, including delivered tool-role replies | Ordinary Pico card surface. |
 | Other conversation entries, including assistant tool calls, NOTE and reasoning; live reasoning preview | Neutral Pico sectioning surface. |
 

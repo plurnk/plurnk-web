@@ -582,6 +582,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     for (const colorScheme of ["light", "dark"]) {
                         await page.emulateMedia({ colorScheme });
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "long literal receipts do not widen the viewport");
+                        const incoming = page.locator('[data-message-role="user"]').first();
+                        assert.equal(await incoming.getAttribute("data-plurnk-type"), "SEND", "the real daemon decorates incoming user messages");
+                        const surface = (element) => element.evaluate((node) => getComputedStyle(node.closest("article") ?? node.querySelector("article")).backgroundColor);
+                        const colors = await Promise.all([incoming, successful, page.getByText("Completed conversation.", { exact: true })].map(surface));
+                        assert.equal(new Set(colors).size, 3, `${colorScheme}: real user, work and delivered reply keep three distinct surfaces`);
                     }
                     await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: reasoning-followup.");
                     await page.getByRole("button", { name: "Send", exact: true }).click();

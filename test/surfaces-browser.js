@@ -6,6 +6,7 @@ import browserDiagnostics from "./browser-diagnostics.js";
 // {§web-conversation-surfaces} Exercise real semantic rows and compiled theme CSS.
 export const messages = [
     { id: "user", role: "user", content: "Please inspect [the evidence](https://example.com/)." },
+    { id: "decorated-user", role: "user", content: "An incoming user message.", metadata: { plurnk: { op: "SEND", origin: "_plurnk" } } },
     { id: "assistant", role: "assistant", content: "I will inspect [the evidence](https://example.com/).", toolCalls: [
         { id: "generic", type: "function", function: { name: "SEND", arguments: "{}" } },
         ...["READ", "NOTE", "SEND"].map((op) => ({ id: op, type: "function", function: { name: op,
@@ -78,6 +79,7 @@ export default async function verifySurfaces(t) {
                     const { background: working } = colors.reasoning;
                     assert.equal(new Set([user, reply, working].map(JSON.stringify)).size, 3, `${colorScheme}: three distinct backgrounds`);
                     assert.ok(user[1] > user[0] && user[1] > user[2], "user tint is green");
+                    assert.deepEqual(colors["decorated-user"].background, user, "SEND metadata never turns a user's prompt into a model reply");
                     for (const id of ["SEND", "reply", "cancelled", "outside"]) assert.deepEqual(colors[id].background, reply, id);
                     for (const id of ["generic", "READ", "NOTE", "result", "system", "developer", "preview"]) assert.deepEqual(colors[id].background, working, id);
                     for (const [id, { background, header, text = [] }] of Object.entries(colors)) {
