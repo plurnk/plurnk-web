@@ -21,6 +21,7 @@ import verifySemanticContent from "./semantic-browser.js";
 import verifyHistory from "./history-browser.js";
 import verifySurfaces from "./surfaces-browser.js";
 import verifyReflow from "./reflow-browser.js";
+import verifyDisclosures from "./disclosure-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -73,11 +74,13 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                             assert.equal(await entry.getAttribute("data-plurnk-state"), "resolved");
                             assert.deepEqual(await entry.locator(":scope > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["ARTICLE"]);
                             assert.equal(await entry.getByRole("article", { name: `NOTE · ${category} · Subagent child-run`, exact: true }).count(), 1);
-                            assert.equal(await entry.locator(":scope > article > pre").textContent(), `A **${category}**.`);
-                            assert.equal(await entry.locator("header").textContent(), category === "custom" ? "custom" : "", "only an uncategorized aside needs visible text");
-                            assert.equal(await entry.locator("details, section, div, ul, li, [data-plurnk-operands]").count(), 0);
+                            assert.equal(await entry.locator(":scope > article > details > pre").textContent(), `A **${category}**.`);
+                            assert.equal(await entry.locator('[data-plurnk-field="heading"]').textContent(), category === "custom" ? "custom" : "", "only an uncategorized aside needs visible text");
+                            assert.equal(await entry.locator("section, div, ul, li, [data-plurnk-operands]").count(), 0);
+                            assert.equal(await entry.locator("details").evaluate((node) => node.open), false);
                             assert.equal(await entry.getAttribute("data-call-arguments"), null);
                         }
+                        await entries.first().locator("summary").click();
                         const snapshot = await entries.first().ariaSnapshot();
                         assert.match(snapshot, /article "NOTE · fact · Subagent child-run"/u);
                         assert.match(snapshot, /A \*\*fact\*\*\./u, "accessible naming preserves the literal body in the accessibility tree");
@@ -110,8 +113,8 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await row("operations").count(), 2);
                         assert.deepEqual(await row("operations").evaluateAll((rows) => rows.map((row) => row.dataset.callId)), ["call/one#%", "call-two"]);
                         assert.deepEqual(await row("operations").locator("article").allTextContents(), ["", ""], "opaque calls do not become argument dumps");
-                        assert.equal(await row("failure").locator("p[data-message-error]").textContent(), "Entry not found");
-                        assert.equal(await row("failure").locator("article > pre").textContent(), "Partial result");
+                        assert.equal(await row("failure").locator('summary > [data-plurnk-field="outcome"]').textContent(), "Entry not found");
+                        assert.equal(await row("failure").locator("article > details > pre").textContent(), "Partial result");
                         assert.equal(await row("evidence").getAttribute("data-tool-call-id"), "call/one#%");
                         assert.equal(await row("evidence").locator("a").count(), 0);
                         assert.equal(await page.locator("#worker-conversation form, #worker-conversation textarea, #worker-conversation [contenteditable]").count(), 0);
@@ -202,8 +205,8 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.deepEqual(await ids(), other.map(({ id }) => id));
                         assert.equal(await row("activity").getByRole("article", { name: "progress", exact: true }).count(), 1);
                         assert.equal(await row("activity").locator("article").textContent(), "");
-                        assert.equal(await row("parts").locator("article > p").textContent(), "First");
-                        assert.deepEqual(await row("parts").locator("article > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["P"]);
+                        assert.equal(await row("parts").locator("article > details > p").textContent(), "First");
+                        assert.deepEqual(await row("parts").locator("article > details > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["SUMMARY", "P"]);
                         assert.equal(await row("child").getAttribute("data-subagent-run-id"), "child-run");
                         assert.equal(await row("child").getByRole("article", { name: "Assistant · Subagent child-run", exact: true }).count(), 1);
                         assert.equal(await row("orphan").locator("a").count(), 0);
@@ -235,7 +238,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await rich.getByRole("link", { name: "image" }).getAttribute("href"), "https://example.invalid/image.png");
                         assert.equal(await rich.getByRole("link", { name: "evidence" }).getAttribute("href"), "https://example.com/evidence");
                         assert.equal(await rich.locator('a[href^="javascript:"]').count(), 0);
-                        assert.equal(await row("literal").locator("article > pre").textContent(), hostile);
+                        assert.equal(await row("literal").locator("article > details > pre").textContent(), hostile);
                         assert.equal(await page.evaluate(() => window.pwned), undefined);
                         assert.deepEqual(requests, [], "rendering content does not fetch its links or images");
                     });
@@ -244,8 +247,9 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         const source = [{ id: "edit", role: "assistant", toolCalls: [{ id: "edit-call", type: "function",
                             function: { name: "EDIT", arguments: '{"body":"Replacement text"}' }, metadata: { plurnk: { op: "EDIT" } } }] }];
                         await present(source);
+                        await row("edit").locator("summary").click();
                         const before = await page.evaluate(() => {
-                            const text = document.querySelector("[data-call-id] article > pre").firstChild;
+                            const text = document.querySelector("[data-call-id] article > details > pre").firstChild;
                             const range = document.createRange();
                             range.selectNodeContents(text);
                             getSelection().removeAllRanges();
@@ -257,9 +261,9 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(before, "Replacement text");
                         await present([...source, { id: "later", role: "reasoning", content: "Another message" }]);
                         assert.deepEqual(await page.evaluate(() => ({
-                            sameText: window.selectedArgument === document.querySelector("[data-call-id] article > pre").firstChild,
-                            sameCall: window.selectedCall === document.querySelector("[data-call-id] article > pre").closest("li"),
-                            text: document.querySelector("[data-call-id] article > pre").textContent,
+                            sameText: window.selectedArgument === document.querySelector("[data-call-id] article > details > pre").firstChild,
+                            sameCall: window.selectedCall === document.querySelector("[data-call-id] article > details > pre").closest("li"),
+                            text: document.querySelector("[data-call-id] article > details > pre").textContent,
                         })), { sameText: true, sameCall: true, text: before },
                             "unchanged argument text retains its DOM node");
                         assert.equal(await page.evaluate(() => getSelection().toString()), before,
@@ -311,14 +315,16 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await item.locator("article").isVisible(), true);
                         assert.equal(await row("note").getAttribute("data-message-role"), "assistant");
                         assert.equal(await row("note").getAttribute("data-subagent-run-id"), "child-run");
-                        assert.equal(await item.locator("article > pre").textContent(), body);
+                        assert.equal(await item.locator("article > details > pre").textContent(), body);
                         assert.equal(await item.locator("script").count(), 0);
-                        assert.equal(await item.locator("details, [data-text=call-arguments]").count(), 0);
+                        assert.equal(await item.locator("[data-text=call-arguments]").count(), 0);
+                        assert.equal(await item.locator("details").evaluate((node) => node.open), false);
                         assert.equal(await item.getAttribute("data-call-arguments"), null);
                         assert.equal(await item.locator('[data-plurnk-field="outcome"]').textContent(), "Note storage failed — The note could not be persisted.");
                         assert.equal(await item.getAttribute("data-plurnk-status"), "500");
                         assert.equal(await row("note-result").count(), 0, "the call's receipt is its summary, not another body");
-                        await item.locator("article > pre").evaluate((element) => {
+                        await item.locator("summary").click();
+                        await item.locator("article > details > pre").evaluate((element) => {
                             window.noteText = element.firstChild;
                             const range = document.createRange();
                             range.selectNodeContents(element);
@@ -326,7 +332,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                             getSelection().addRange(range);
                         });
                         await present(structuredClone([note, result]));
-                        assert.equal(await item.locator("article > pre").evaluate((element) => element.firstChild === window.noteText), true);
+                        assert.equal(await item.locator("article > details > pre").evaluate((element) => element.firstChild === window.noteText), true);
                         assert.equal(await page.evaluate(() => getSelection().toString()), body);
                         assert.equal(await item.locator(":scope > article").count(), 1);
                         assert.deepEqual(await ids(), [note.id]);
@@ -342,18 +348,18 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         for (const argumentsText of ['{"body":"**unfinished', "null", "[]", '{"body":42}', '{"body":{"raw":"**not a string**"}}']) {
                             await display(argumentsText);
                             assert.equal(await item.getAttribute("data-plurnk-note"), null);
-                            assert.equal(await item.locator("article > pre, article > p").count(), 0);
+                            assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                             assert.equal(await item.evaluate((element) => element === window.streamedCall), true);
                         }
                         const complete = '{"body":"**Now complete**","aside":"fact"}';
                         await display(complete);
-                        assert.equal(await item.locator("article > pre").textContent(), "**Now complete**");
+                        assert.equal(await item.locator("article > details > pre").textContent(), "**Now complete**");
                         assert.equal(await item.getAttribute("data-plurnk-note"), "fact");
                         assert.equal(await item.evaluate((element) => element === window.streamedCall), true);
                         for (const [metadata, name] of [[{}, "NOTE"], [{ plurnk: { op: "error" } }, "NOTE"], [{ plurnk: { op: "NOTE" } }, "lookup"]]) {
                             await display(complete, metadata, name);
                             assert.equal(await item.getAttribute("data-plurnk-note"), null);
-                            assert.equal(await item.locator("article > pre, article > p").count(), 0);
+                            assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                         }
                         await display('{"body":"","aside":null}');
                         assert.equal(await item.locator("article").textContent(), "");
@@ -367,6 +373,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
 });
 
 // One browser-test entry point owns browser lifetimes; checks retain cold documents.
+test("{§web-card-disclosure} native bodies preserve defaults, reader choices and visible diagnostics", { timeout: 60_000 }, verifyDisclosures);
 test("{§web-operation-summary} every operation shares its authored summary with its own receipt", { timeout: 60_000 }, verifySemanticContent);
 test("{§web-worker-diagnostics} public notices and Problems remain visible outside conversation", { timeout: 60_000 }, verifyDiagnostics);
 

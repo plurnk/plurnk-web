@@ -64,7 +64,7 @@ export default async function verifyReasoning(t) {
                     assert.equal(await row.locator(":scope > article > details > summary").textContent(), "L1/T3");
                     assert.equal(await row.getByRole("article", { name: "Reasoning", exact: true }).count(), 1);
                     assert.equal(await row.locator("summary").getAttribute("aria-label"), "Reasoning · L1/T3");
-                    assert.match(await row.locator("summary").evaluate((element) => getComputedStyle(element, "::before").content), /💭/u);
+                    assert.match(await row.locator('summary > [data-plurnk-field="heading"]').evaluate((element) => getComputedStyle(element, "::before").content), /💭/u);
                     assert.equal(await row.locator("details").getAttribute("open"), null);
                     assert.equal(credentials, 0);
                     assert.deepEqual(reads, [], "closed reasoning does not fetch");

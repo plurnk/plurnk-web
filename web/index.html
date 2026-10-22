@@ -88,13 +88,8 @@
     <!-- {§web-worker-diagnostics} Diagnostic values are text, never actions or conversation messages. -->
     <template id="worker-diagnostic">
         <li>
-            <article data-bind="aria-label:diagnostic-label">
-                <p data-diagnostic-message></p>
-            </article>
+            <article data-bind="aria-label:diagnostic-label"></article>
         </li>
-    </template>
-    <template id="diagnostic-recovery">
-        <p data-diagnostic-recovery></p>
     </template>
     <!-- {§web-worker-activity} Observations are literal evidence, not replies or executable markup. -->
     <template id="worker-ambient">
@@ -104,7 +99,7 @@
     </template>
     <template id="worker-outside">
         <li>
-            <article data-bind="aria-label:activity-label"><pre></pre></article>
+            <article data-bind="aria-label:activity-label"></article>
         </li>
     </template>
     <template id="activity-reasoning">
@@ -315,27 +310,22 @@
             <article data-bind="aria-label:message-label"></article>
         </li>
     </template>
-    <template id="conversation-detail">
-        <li>
-            <article data-bind="aria-label:message-label">
-                <details>
-                    <summary data-bind="aria-label:reasoning-label" data-text="reasoning-coordinate"></summary>
-                </details>
-            </article>
-        </li>
+    <!-- {§web-card-disclosure} Summary fields are phrasing content, not nested headers or paragraphs. -->
+    <template id="card-disclosure">
+        <details><summary></summary></details>
     </template>
-    <template id="conversation-error">
-        <p data-message-error></p>
+    <template id="card-header">
+        <header></header>
     </template>
     <template id="conversation-literal">
         <pre></pre>
     </template>
     <!-- {§web-operation-summary} Shared summary; the stylesheet owns operation glyphs. -->
     <template id="operation-header">
-        <header></header>
+        <span data-plurnk-field="heading"></span>
     </template>
     <template id="operation-operands">
-        <p data-plurnk-operands></p>
+        <span data-plurnk-operands></span>
     </template>
     <template id="operation-operand">
         <span data-plurnk-operand></span>
@@ -344,7 +334,7 @@
         <span></span>
     </template>
     <template id="operation-outcome">
-        <p data-plurnk-field="outcome"></p>
+        <span data-plurnk-field="outcome"></span>
     </template>
     <!-- {§web-diagram-content} Only the generated data-URI image enters this template. -->
     <template id="conversation-diagram">

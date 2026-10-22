@@ -43,7 +43,7 @@ export default async function verifyReflow(t) {
                                 await page.waitForFunction(() => typeof window.present === "function");
                                 await page.evaluate((messages) => window.present(messages), messages);
                                 const row = (id) => page.locator(`[data-message-id="${id}"]`);
-                                await row("reasoning").locator("summary").click();
+                                for (const id of ["note", "output", "reasoning"]) await row(id).locator("summary").click();
                                 await row("fetched").locator("[data-body-reference]").scrollIntoViewIfNeeded();
                                 await row("fetched").locator('[data-body-state="loaded"]').waitFor();
                                 await row("note").locator("pre").evaluate((element) => {

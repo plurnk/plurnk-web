@@ -86,16 +86,12 @@ function appendFields(outlet, fields) {
 /** @type {WeakMap<Element, string>} */
 const painted = new WeakMap();
 
-/** @param {Element} row @param {string | null} name @param {RecordValue | null} args
+/** @param {Element} summary @param {string | null} name @param {RecordValue | null} args
  * @param {RecordValue | null} receipt @param {RecordValue | null} facts @param {string} error
  */
-export default function operationSummary(row, name, args, receipt, facts, error) {
-    const article = $(row, "article");
-    if (!article) throw new Error("Operation has no article.");
+export default function operationSummary(summary, name, args, receipt, facts, error) {
     if (name === null) {
-        $(article, ":scope > header")?.remove();
-        $(article, ":scope > [data-plurnk-operands]")?.remove();
-        $(article, ':scope > [data-plurnk-field="outcome"]')?.remove();
+        summary.replaceChildren();
         return;
     }
     const op = textOf(facts?.op) || name;
@@ -116,18 +112,17 @@ export default function operationSummary(row, name, args, receipt, facts, error)
     const result = [];
     if (count !== null) result.push(["count", `{${count}}`]);
 
-    let header = $(article, ":scope > header");
-    header ??= $.clone(article, "#operation-header", { position: "afterbegin" });
+    let header = $(summary, ':scope > [data-plurnk-field="heading"]');
+    header ??= $.clone(summary, "#operation-header", { position: "afterbegin" });
     const headingRevision = JSON.stringify(heading);
     if (painted.get(header) !== headingRevision) {
         header.replaceChildren();
         appendFields(header, heading);
         painted.set(header, headingRevision);
     }
-    let details = $(article, ":scope > [data-plurnk-operands]");
+    let details = $(summary, ":scope > [data-plurnk-operands]");
     if (!operands.some((fields) => fields.length) && !result.length) {
         details?.remove();
-        details = null;
     } else {
         details ??= $.clone(header, "#operation-operands", { position: "afterend" });
         const revision = JSON.stringify([operands, result]);
@@ -142,8 +137,9 @@ export default function operationSummary(row, name, args, receipt, facts, error)
             painted.set(details, revision);
         }
     }
-    let conclusion = $(article, ':scope > [data-plurnk-field="outcome"]');
+    let conclusion = $(summary, ':scope > [data-plurnk-field="outcome"]');
     if (!outcome) { conclusion?.remove(); return; }
-    conclusion ??= $.clone(details ?? header, "#operation-outcome", { position: "afterend" });
+    conclusion ??= $.clone(header, "#operation-outcome", { position: "afterend" });
+    if (header.nextElementSibling !== conclusion) header.after(conclusion);
     if (conclusion.textContent !== outcome) conclusion.textContent = outcome;
 }

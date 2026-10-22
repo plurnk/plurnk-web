@@ -214,6 +214,39 @@ table {
     overflow-wrap: anywhere;
 }
 
+/* {§web-card-disclosure} The card owns outer spacing; its final content adds no second margin. */
+#main li > article > details,
+#main li > article > details > :last-child {
+    margin-block-end: 0;
+}
+
+:is(#worker-conversation, #worker-diagnostics, #worker-activity) > ul > li > article > header:only-child {
+    margin-block-end: calc(var(--pico-block-spacing-vertical) * -1);
+    border-block-end: 0;
+    border-end-start-radius: var(--pico-border-radius);
+    border-end-end-radius: var(--pico-border-radius);
+}
+
+/* Phrasing fields wrap beside the native chevron, never pushing it into an empty row. */
+#main li > article > details > summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    line-height: inherit;
+}
+
+#main li > article > details > summary > * {
+    grid-column: 1;
+}
+
+#main li > article > details > summary::after {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+:is(header, summary) > :is([data-plurnk-field="outcome"], [data-plurnk-operands]) {
+    display: block;
+}
+
 /* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */
 #main fieldset {
     min-inline-size: 0;

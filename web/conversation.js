@@ -2,6 +2,7 @@ import { $, the } from "on_the_money";
 import markdown from "./markdown.js";
 import bodyReferences from "./body-references.js";
 import reasoningCoordinate from "./reasoning-coordinate.js";
+import card, { nameCard } from "./card.js";
 import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
 
 /** @typedef {import("@ag-ui/client").Message} Message */
@@ -27,17 +28,15 @@ export default function conversation(root, readBody) {
         }
     }
 
-    /** @param {Element} row @param {unknown} content @param {boolean} rich @param {string} error @param {string} scope */
-    function body(row, content, rich, error, scope) {
-        const outlet = $(row, ":scope > article > details") ?? $(row, "article");
-        if (!outlet) throw new Error("Message template has no content outlet.");
-        const revision = JSON.stringify([content, rich, error]);
+    /** @param {Element | null} outlet @param {unknown} content @param {boolean} rich @param {string} scope */
+    function body(outlet, content, rich, scope) {
+        if (!outlet) return;
+        const revision = JSON.stringify([content, rich]);
         if (painted.get(outlet) === revision) return;
         const summary = $(outlet, ":scope > summary");
         if (summary) {
             for (const node of Array.from(outlet.childNodes)) if (node !== summary) node.remove();
         } else outlet.replaceChildren();
-        if (error) $.clone(outlet, "#conversation-error").textContent = error;
         if (Array.isArray(content)) {
             for (const [index, part] of content.entries()) {
                 if (part?.type === "text" && typeof part.text === "string") text(outlet, part.text, rich, `${scope}-part-${index}`);
@@ -90,8 +89,7 @@ export default function conversation(root, readBody) {
                 row = undefined;
             }
             if (!row) {
-                const element = message.role === "reasoning"
-                    ? $.clone(list, "#conversation-detail") : $.clone(list, "#conversation-message");
+                const element = $.clone(list, "#conversation-message");
                 if (!(element instanceof HTMLElement)) throw new Error("Conversation template must contain an HTML element.");
                 row = element;
             }
@@ -134,17 +132,25 @@ export default function conversation(root, readBody) {
             if (linked !== undefined && (typeof linked?.url !== "string" || typeof linked?.mimeType !== "string")) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
             }
-            if (message.role === "reasoning") {
-                const label = reasoningCoordinate(message.metadata?.plurnk?.coordinate);
-                the(row, { reasoningCoordinate: label, reasoningLabel: ["Reasoning", label].filter(Boolean).join(" · ") });
-            }
             const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && op !== "SEND" ? ""
                 : linked ? [{ type: "document", source: { type: "url", value: linked.url, mimeType: linked.mimeType } }] : message.content;
             const rich = call ? operation?.function.name === "SEND"
                 : message.role === "tool" ? facts?.op === "SEND"
                 : message.role !== "reasoning" && message.role !== "activity";
-            body(row, content, rich, summarized ? "" : error, call ? `call-${call.id}` : `message-${message.id}`);
-            operationSummary(row, summarized ? operationName : null, args, receipt, facts, error);
+            const hasBody = typeof content === "string" ? Boolean(content) : Array.isArray(content) && content.some((part) =>
+                part?.type === "text" && typeof part.text === "string" && Boolean(part.text)
+                || part?.type === "document" && part.source?.type === "url" && typeof part.source.value === "string");
+            const initiallyOpen = message.role === "user" || op === "SEND" || message.role === "assistant" && !call;
+            const frame = card(row, hasBody, initiallyOpen);
+            body(frame.body, content, rich, call ? `call-${call.id}` : `message-${message.id}`);
+            if (summarized) operationSummary(frame.header, operationName, args, receipt, facts, error);
+            else {
+                frame.header.replaceChildren();
+                if (message.role === "reasoning") $.clone(frame.header, "#operation-header").textContent = reasoningCoordinate(message.metadata?.plurnk?.coordinate);
+                if (error) $.clone(frame.header, "#operation-outcome").textContent = error;
+                if (!frame.body && !frame.header.hasChildNodes()) frame.header.remove();
+            }
+            nameCard(frame.header);
             /** @type {Element | null} */
             let position = previous === null ? list.firstElementChild : previous.nextElementSibling;
             while (position && !position.hasAttribute("data-message-id")) position = position.nextElementSibling;

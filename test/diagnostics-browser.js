@@ -30,9 +30,10 @@ export default async function verifyDiagnostics(t) {
                     await receive(notice);
                     assert.equal(await list.isVisible(), true);
                     assert.equal(await rows.first().getByRole("article", { name: "Warning · engine:provider:provider_unavailable", exact: true }).count(), 1);
-                    assert.equal(await rows.first().locator('[data-diagnostic-message]').textContent(), notice.value.message);
+                    assert.equal(await rows.first().locator('header > [data-plurnk-field="heading"]').textContent(), notice.value.message);
                     assert.equal(await rows.first().getAttribute("data-diagnostic-level"), "warn");
-                    assert.equal(await rows.first().locator("header, details, code").count(), 0);
+                    assert.equal(await rows.first().locator("details, code").count(), 0, "a concise notice has no redundant body");
+                    assert.match(await rows.first().locator('[data-plurnk-field="heading"]').evaluate((node) => getComputedStyle(node, "::before").content), /⚠️/u);
                     assert.equal(await rows.first().getAttribute("data-diagnostic-details"), null);
                     await rows.first().evaluate((element) => { window.retainedDiagnostic = element; });
                     await receive(structuredClone(notice));
@@ -49,7 +50,14 @@ export default async function verifyDiagnostics(t) {
                     } };
                     await receive(problem);
                     assert.equal(await rows.last().getByRole("article", { name: `Error · ${problem.value.title}`, exact: true }).count(), 1);
-                    assert.equal(await rows.last().locator('[data-diagnostic-recovery]').textContent(), problem.value.recovery);
+                    assert.equal(await rows.last().locator('summary > [data-plurnk-field="heading"]').textContent(), problem.value.title);
+                    assert.equal(await rows.last().locator("pre").textContent(), `${problem.value.detail}\n\n${problem.value.recovery}`);
+                    assert.equal(await rows.last().locator("pre").isVisible(), false);
+                    assert.equal(await rows.last().getByText(problem.value.title, { exact: true }).isVisible(), true);
+                    await rows.last().locator("summary").click();
+                    assert.equal(await rows.last().locator("pre").isVisible(), true);
+                    await receive(structuredClone(problem));
+                    assert.equal(await rows.last().locator("details").evaluate((node) => node.open), true, "repeated diagnostic preserves inspection");
                     assert.equal(await list.locator("img, script, form, a").count(), 0, "diagnostic data cannot create actions or network requests");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "diagnostics never fabricate conversation messages");
                     assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial", "severity does not drive lifecycle");

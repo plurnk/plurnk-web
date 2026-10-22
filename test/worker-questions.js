@@ -87,7 +87,10 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
             const receipt = await questionResult(page, base, headers);
-            assert.equal(await page.locator('[data-call-id][data-plurnk-type="question"] > article > header').innerText(), "question");
+            const question = page.locator('[data-call-id][data-plurnk-type="question"]');
+            assert.equal(await question.locator('summary > [data-plurnk-field="heading"]').innerText(), "question");
+            assert.equal(await question.locator("article > details").evaluate((node) => node.open), false);
+            assert.equal(await question.locator("pre").isVisible(), false);
             assert.deepEqual(JSON.parse(receipt.content), cancelled ? { action: "cancel" } : { action: "accept", content: exactAnswer });
             assert.ok(JSON.stringify(model.requests[1].messages).includes(cancelled ? "cancel" : "cobalt heron"), "the operation result also reaches the resumed model");
             assert.equal(await review(page).isVisible(), false);

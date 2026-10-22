@@ -1,19 +1,20 @@
 import { $, the } from "on_the_money";
+import card, { nameCard } from "./card.js";
 
 /** @param {import("@plurnk/plurnk-contracts").Notice} notice */
 const noticeFields = (notice) => ({
     diagnosticLevel: notice.level,
     diagnosticTitle: `${notice.source}:${notice.kind}`,
-    diagnosticMessage: notice.message ?? "",
-    diagnosticRecovery: "",
+    heading: notice.message || `${notice.source}:${notice.kind}`,
+    body: "",
 });
 
 /** @param {import("@plurnk/plurnk-contracts").ProblemDetails} problem */
 const problemFields = (problem) => ({
     diagnosticLevel: "error",
     diagnosticTitle: problem.title,
-    diagnosticMessage: problem.detail,
-    diagnosticRecovery: typeof problem.recovery === "string" ? problem.recovery : "",
+    heading: problem.title,
+    body: [...new Set([problem.detail, problem.recovery].filter((text) => typeof text === "string" && text && text !== problem.title))].join("\n\n"),
 });
 
 /** {§web-worker-diagnostics} Distinct observations belong to the page, never the SDK conversation.
@@ -41,11 +42,10 @@ export default function diagnostics(root) {
             diagnosticLabel: [severity, diagnosticTitle, attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
             subagentRunId: attribution || null,
         });
-        const article = $(row, "article");
-        const message = $(row, "[data-diagnostic-message]");
-        if (!article || !message) throw new Error("Diagnostic template has no content outlet.");
-        message.textContent = fields.diagnosticMessage || diagnosticTitle;
-        if (fields.diagnosticRecovery) $.clone(article, "#diagnostic-recovery").textContent = fields.diagnosticRecovery;
+        const { header, body } = card(row, Boolean(fields.body));
+        $.clone(header, "#operation-header").textContent = fields.heading;
+        if (body) $.clone(body, "#conversation-literal").textContent = fields.body;
+        nameCard(header);
         observed.add(key);
     };
 }

@@ -27,6 +27,20 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
             try {
                 const context = await browser.newContext();
                 const checkBrowser = browserDiagnostics(context);
+                const frames = [];
+                context.on("response", (response) => {
+                    const path = new URL(response.url()).pathname;
+                    if (path !== "/agui" && path !== "/agui/connect") return;
+                    const record = { path, events: [] };
+                    frames.push(record);
+                    void response.text().then((body) => {
+                        record.events = body.split("\n\n").filter((frame) => frame.startsWith("data: ")).map((frame) => {
+                            const event = JSON.parse(frame.slice(6));
+                            return { type: event.type, messageId: event.messageId, toolCallId: event.toolCallId,
+                                messages: event.messages?.map(({ id, role, toolCallId }) => ({ id, role, toolCallId })) };
+                        });
+                    }).catch((error) => { record.error = String(error); });
+                });
                 const page = await context.newPage();
                 const address = new URL(`/~/${workspace}@user/`, base);
                 address.hostname = hostname;
@@ -41,7 +55,7 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                 try { await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers, secret }); }
                 catch (cause) {
                     const document = page.isClosed() ? "Page closed" : await page.locator("main").textContent();
-                    const message = `Worker journey failed: ${JSON.stringify({ document, modelErrors: model.errors.map(String) })}`;
+                    const message = `Worker journey failed: ${JSON.stringify({ document, frames, modelErrors: model.errors.map(String) })}`;
                     try { checkBrowser(); }
                     catch (diagnostic) { throw new AggregateError([cause, diagnostic], message, { cause: diagnostic }); }
                     throw new Error(message, { cause });
