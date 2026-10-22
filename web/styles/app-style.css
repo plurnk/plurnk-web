@@ -3,9 +3,10 @@
     --pico-line-height: 1.25;
 
     /* {§web-conversation-surfaces} Resolve theme surfaces before per-entry overrides. */
-    --plurnk-user-surface: color-mix(in srgb, var(--pico-primary) 8%, var(--pico-card-background-color));
+    --plurnk-user-surface: color-mix(in srgb, var(--pico-primary) 12%, var(--pico-card-background-color));
+    --plurnk-user-border: color-mix(in srgb, var(--pico-primary) 28%, var(--pico-card-border-color));
     --plurnk-reply-surface: var(--pico-card-background-color);
-    --plurnk-working-surface: var(--pico-card-sectioning-background-color);
+    --plurnk-working-surface: color-mix(in srgb, var(--pico-color) 6%, var(--pico-card-background-color));
 }
 
 header nav button,

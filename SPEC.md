@@ -511,16 +511,15 @@ capability, persistence or execution policy. Commands require no inference.
 
 | Entry | Surface |
 |---|---|
-| User content, including incoming messages annotated as SEND | Subtle green tint derived from the active Pico theme; user authorship takes precedence over operation metadata. |
+| User content, including incoming messages annotated as SEND | Distinguishable green tint derived from the active Pico theme with an explicit tinted border; user authorship takes precedence over operation metadata. |
 | Assistant prose and confirmed SEND bodies, including delivered tool-role replies | Ordinary Pico card surface. |
-| Other conversation entries, including assistant tool calls, NOTE and reasoning; live reasoning preview | Neutral Pico sectioning surface. |
+| Other conversation entries, including assistant tool calls, NOTE and reasoning; live reasoning preview | Neutral muted slate sectioning surface derived from Pico's theme tokens. |
 
 Existing role and operation attributes select the category in CSS; no additional
 markup, presentation field or JavaScript classification. An operation's header
 shares its body's background. Normal text and links retain at least 4.5:1 contrast
 in light and dark modes. Accessible identity and content remain independent of
 color. Non-conversation cards retain their existing Pico presentation.
-
 ## §web-operation-summary Shared operation summary
 
 | Boundary | Contract |

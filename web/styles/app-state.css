@@ -58,16 +58,16 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
     display: none;
 }
 
+#worker-conversation [data-message-role="user"] > article {
+    box-shadow: 0 0 0 var(--pico-border-width) var(--plurnk-user-border), var(--pico-card-box-shadow);
+}
+
 /* {§web-worker-approval} No review is implied by an empty or unsupported interrupt set. */
 [aria-label="Review requests"][data-request-count="0"] {
     display: none;
 }
 
 /* {§web-worker-commands} Results have their own literal, non-conversation outlet. */
-#worker-command-results:not(:has(ul > li)),
-#worker-command-results [data-command-message=""] > [role="status"],
-#worker-command-results [data-text="command-recovery"]:empty,
-#worker-command-results [data-model-more=""] [data-text="model-more"],
 #worker-command-results section:not([data-alias-count="0"]) > [data-no-aliases] {
     display: none;
 }
