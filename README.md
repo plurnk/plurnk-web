@@ -26,8 +26,10 @@ Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending revi
 Click the status model or effort to open its form below the conversation. Model
 search offers native suggestions, or accepts an exact alias/provider-model.
 Select Model / Select Effort applies the choice and closes the form; Cancel dismisses it.
-The workspace navigation tree shows kinds and lifecycles at page load, with child
-branches collapsed. It is navigation, not a live subscription to child transcripts.
+Workspace cards show the worker's lifecycle, parent/name and workspace at page load.
+Click the ant to visit the worker, or expand the card to see its child tree;
+parent and workspace links navigate independently. Leaves have no empty disclosure.
+These cards are navigation snapshots, not live monitors or completed-reply previews.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 🗂️ line shows its project

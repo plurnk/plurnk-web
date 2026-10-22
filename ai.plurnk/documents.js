@@ -142,8 +142,30 @@ export default class Documents {
         return parent;
     }
 
+    /** {§web-worker-directory} The same identity is a leaf header or a native disclosure summary.
+     * @param {{name: string, project_root: string | null}} workspace
+     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection} worker
+     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection | null} parent
+     */
+    #workerIdentity(workspace, worker, parent) {
+        const path = directoryPath({ kind: "worker", workspace: workspace.name, worker: worker.name });
+        const name = escapeHtml(worker.name);
+        const ant = path === null ? '<span data-worker-link role="img" aria-label="Worker"></span>'
+            : `<a data-worker-link href="${escapeHtml(path)}" aria-label="${name}" title="Open worker ${name}"></a>`;
+        const parentName = parent === null ? "" : parent.origin === "model"
+            ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
+            : `<span>${escapeHtml(parent.name)}</span>`;
+        const lineage = parent === null ? "" : `<span data-worker-parent>${parentName} &gt; </span>`;
+        const lifecycle = escapeHtml(worker.lifecycle);
+        const folder = workspace.project_root !== null;
+        return `<span data-worker-identity>${ant} <span data-lifecycle="${lifecycle}" role="img" aria-label="${lifecycle}" title="${lifecycle}"></span> `
+            + `${lineage}<span>${name}</span></span>`
+            + `<span data-worker-workspace><span data-folder="${folder}" role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}"></span> `
+            + `${this.#link(workspace.name, { kind: "workspace", workspace: workspace.name })}</span>`;
+    }
+
     /** {§web-worker-directory}
-     * @param {string} workspace
+     * @param {{name: string, project_root: string | null}} workspace
      * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
      */
     #workerTree(workspace, workers) {
@@ -160,11 +182,10 @@ export default class Documents {
             : `<ul>${entries.map((worker) => {
                 rendered++;
                 const descendants = children.get(worker.id) ?? [];
-                const link = this.#link(worker.name, { kind: "worker", workspace, worker: worker.name });
-                const facts = `<p><small><span data-text="worker-kind">${escapeHtml(worker.kind)}</span> · <span data-text="worker-lifecycle">${escapeHtml(worker.lifecycle)}</span></small></p>`;
-                const disclosure = descendants.length === 0 ? "" : '<details><summary data-text="child-workers">'
-                    + `${descendants.length} child worker${descendants.length === 1 ? "" : "s"}</summary>${list(descendants)}</details>`;
-                return `<li data-directory-entry="worker"><article aria-label="Worker"><header>${link}</header>${facts}${disclosure}</article></li>`;
+                const identity = this.#workerIdentity(workspace, worker, this.#parent(worker, workers));
+                const content = descendants.length === 0 ? `<header>${identity}</header>`
+                    : `<details><summary>${identity}</summary>${list(descendants)}</details>`;
+                return `<li data-directory-entry="worker"><article aria-label="Worker">${content}</article></li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
         const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
@@ -238,7 +259,7 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            return render(workspace.name, folder + this.#workerTree(workspace.name, byId), marker);
+            return render(workspace.name, folder + this.#workerTree(workspace, byId), marker);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
         if (worker === undefined) return null;
