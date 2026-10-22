@@ -27,6 +27,7 @@ test("{§web-host} {§web-configuration} configuration admits only an enabled ro
 
 test("{§web-configuration} missing and invalid limits never select code defaults; disabled web ignores them", (t) => {
     const keys = ["PLURNK_WEB_ENABLED", "PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_LOGIN_PENDING", "PLURNK_WEB_REASONING_PREVIEW_CHARS",
+        "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_CREATE_TOKENS",
         "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_DIAGRAM_PENDING", "PLURNK_WEB_DIAGRAM_TIMEOUT_MS",
         "PLURNK_WEB_DIAGRAM_INPUT_BYTES", "PLURNK_WEB_DIAGRAM_OUTPUT_BYTES", "PLURNK_WEB_DIAGRAM_EDGES"];
     const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
@@ -184,7 +185,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const directory = await mkdtemp(new URL("../.module-test-", import.meta.url));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const base = pathToFileURL(`${directory}/`);
-    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
+    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "creations.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
         await copyFile(new URL(`../ai.plurnk/${file}`, import.meta.url), new URL(file, base));
     }
     await mkdir(new URL("dist/", base));

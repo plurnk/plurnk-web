@@ -154,3 +154,12 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
     assert.match(headers.get("set-cookie"), /plurnk_web_session=;.*Max-Age=0/u);
     assert.equal(headers.get("location"), "/");
 });
+
+test("{§web-workspace-creation} module form mutations require the daemon's own origin", () => {
+    const session = new Session({ verify: () => null, onRevoked: () => () => {} },
+        { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600, pending: 128 });
+    session.sameOriginForm({ headers: { origin: "https://daemon.example" } });
+    for (const headers of [{ origin: "https://foreign.example" }, { origin: "https://daemon.example.evil" }, {}]) {
+        assert.throws(() => session.sameOriginForm({ headers }), { status: 403 });
+    }
+});

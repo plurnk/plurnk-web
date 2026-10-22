@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { directoryPath } from "./directory-addresses.js";
 import { escapeHtml } from "./http.js";
@@ -10,6 +11,7 @@ export default class Documents {
     #home;
     #yolo;
     #reasoningPreviewChars;
+    #mint;
 
     /** {§web-authorization-style} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -22,10 +24,11 @@ export default class Documents {
         return path;
     }
 
-    /** @param {string} document @param {boolean} yolo @param {number} reasoningPreviewChars */
-    constructor(document, yolo, reasoningPreviewChars) {
+    /** @param {string} document @param {boolean} yolo @param {number} reasoningPreviewChars @param {() => string} [mint] */
+    constructor(document, yolo, reasoningPreviewChars, mint = () => randomUUID()) {
         this.#yolo = yolo;
         this.#reasoningPreviewChars = reasoningPreviewChars;
+        this.#mint = mint;
         const parts = document.split(/<main\b[^>]*>|<\/main>/u);
         if (parts.length !== 3) throw new Error("The web document must contain exactly one main element.");
         const title = parts[0].split(/<title\b[^>]*>|<\/title>/u);
@@ -102,6 +105,13 @@ export default class Documents {
         const path = directoryPath(directory);
         return path === null ? `<span data-text="name">${escapeHtml(label)}</span>`
             : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "worker" ? ` data-worker-name="${escapeHtml(directory.worker)}" data-bind="href:worker-path"` : ""}>${escapeHtml(label)}</a>`;
+    }
+
+    /** {§web-workspace-creation} One native form on the workspace page; the daemon owns names and defaults. */
+    #creationForm() {
+        return `<form method="post" action="/workspaces/new">`
+            + `<input type="hidden" name="token" value="${escapeHtml(this.#mint())}">`
+            + `<button type="submit" data-i18n="new-workspace"><span aria-hidden="true">➕</span> New workspace</button></form>`;
     }
 
     /** @param {string | null} projectRoot */
@@ -259,7 +269,8 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            return render(workspace.name, folder + this.#workerTree(workspace, byId), marker);
+            // {§web-workspace-creation} The workspace page alone carries the creation form.
+            return render(workspace.name, folder + this.#workerTree(workspace, byId) + this.#creationForm(), marker);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
         if (worker === undefined) return null;
