@@ -72,10 +72,9 @@ async function fixture(t, { auth = false, admitted = true, create = async () => 
 
     return { base, created, post };
 }
-
 async function formToken(base, headers = {}) {
-    const page = await fetch(new URL("/~/work/", base), { headers });
-    assert.equal(page.status, 200, "the workspace page carries the creation form");
+    const page = await fetch(new URL("/~/", base), { headers });
+    assert.equal(page.status, 200, "the workspaces directory carries the creation form");
     const html = await page.text();
     const token = /name="token" value="([^"]+)"/u.exec(html)?.[1];
     assert.ok(token);

@@ -249,21 +249,21 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.match(index, /~\/a&amp;&lt;script&gt;@&quot;b/u);
     assert.match(index, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header><\/article>/u);
     assert.match(index, /<form method="post" action="\/auth\/logout">/u);
+    assert.match(index, /<form id="workspace-create" method="post" action="\/workspaces\/new"><input type="hidden" name="token" value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"><button type="submit" title="New workspace" data-i18n="new-workspace"><span aria-hidden="true">➕<\/span> New workspace<\/button><\/form>/u,
+        "{§web-workspace-creation} the daemon workspaces directory carries the native creation form");
     assert.match(index, /<script src="\/app.js"><\/script>/u);
     assert.equal(await document.read({ kind: "workspace", workspace: "missing" }, port, false), null);
     assert.deepEqual(calls, ["workspaces", "workspaces"]);
     const workspace = { kind: "workspace", workspace: '~/a&<script>@"b' };
     const workers = (await document.read(workspace, port, false)).toString();
     assert.match(workers, /a%26%3Cscript%3E%40%22b@user\//u);
-    assert.match(workers, /<form id="workspace-create" method="post" action="\/workspaces\/new"><input type="hidden" name="token" value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"><button type="submit" title="New workspace" data-i18n="new-workspace"><span aria-hidden="true">➕<\/span> New workspace<\/button><\/form>/u,
-        "{§web-workspace-creation} the workspace page alone carries the native creation form");
+    assert.doesNotMatch(workers, /workspaces\/new/u, "{§web-workspace-creation} workspace pages carry no workspace creation form");
     assert.doesNotMatch(workers, /<form method="post" action="\/auth\/logout"/u);
     assert.equal(await document.read({ ...workspace, kind: "worker", worker: "absent" }, port, true), null);
     const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
     assert.match(page, /<title[^>]*>~\/a&amp;&lt;script&gt;@&quot;b@user — Plurnk<\/title>/u);
     assert.doesNotMatch(page, /<h1\b/u);
     assert.doesNotMatch(page, /workspaces\/new/u, "{§web-workspace-creation} worker pages carry no creation form");
-    assert.deepEqual(calls, ["workspaces", "workspaces", "workspaces", 7, "workspaces", 7, "workspaces", 7]);
 });
 
 test("{§web-worker-status} status is a compact footer after conversation, not a metadata inventory", async () => {

@@ -224,8 +224,8 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 | Document | Content / lookup |
 |---|---|
 | `/` | Public foundation document and a real link to `/~/`. |
-| `/~/` | `listWorkspaces()`: native list articles with exact-name links under {§web-page-shell}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder}, one `listWorkers(id)` census rendered under {§web-worker-directory}, and the folderless creation form under {§web-workspace-creation}. |
+| `/~/` | `listWorkspaces()`: native list articles with exact-name links under {§web-page-shell}, and the folderless creation form under {§web-workspace-creation}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listWorkers(id)` census rendered under {§web-worker-directory}. |
 | Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}, plus passive status under {§web-worker-observer} and conversation under {§web-worker-conversation}. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
@@ -263,8 +263,9 @@ workspace with a separate folder must not claim it is folderless.
 
 ## §web-workspace-creation Folderless workspace creation
 
-Workspace pages carry one native creation form; daemon, worker, account and error
-documents never do. The form works with JavaScript disabled.
+The daemon workspaces directory (`/~/`) carries one native creation form; individual
+workspace, worker, account and error documents never do. The form works with JavaScript
+disabled.
 
 | Boundary | Contract |
 |---|---|
