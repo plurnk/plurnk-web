@@ -109,9 +109,28 @@ export default class Documents {
     #creationForm() {
         return '<form id="workspace-create" method="post" action="/workspaces/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
+            + '<input type="text" name="name" placeholder="Workspace name (optional)" aria-label="Workspace name">'
             + '<button type="submit" title="New workspace" data-i18n="new-workspace"><span aria-hidden="true">➕</span> New workspace</button></form>';
     }
 
+    /** @param {{name: string}} workspace */
+    #renameForm(workspace) {
+        const name = escapeHtml(workspace.name);
+        return '<form id="workspace-rename" method="post" action="/workspaces/rename">'
+            + `<input type="hidden" name="workspace" value="${name}">`
+            + `<input type="text" name="name" value="${name}" aria-label="Rename workspace" required>`
+            + '<button type="submit" title="Rename workspace" data-i18n="rename-workspace">Rename</button></form>';
+    }
+
+    /** @param {{name: string}} workspace */
+    #workerCreationForm(workspace) {
+        const name = escapeHtml(workspace.name);
+        return '<form id="worker-create" method="post" action="/workers/new">'
+            + `<input type="hidden" name="token" value="${randomUUID()}">`
+            + `<input type="hidden" name="workspace" value="${name}">`
+            + '<input type="text" name="name" placeholder="Worker name (optional)" aria-label="Worker name">'
+            + '<button type="submit" title="New worker" data-i18n="new-worker"><span aria-hidden="true">➕</span> New worker</button></form>';
+    }
     /** @param {string | null} projectRoot */
     #workspaceMarker(projectRoot) {
         const folder = projectRoot !== null;
@@ -243,6 +262,7 @@ export default class Documents {
     }
 
     /**
+    /**
      * @param {import("./directory-addresses.js").Directory} directory
      * @param {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "listWorkspaces" | "listWorkers">} port
      * @param {boolean} authenticated
@@ -269,7 +289,7 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            return render(workspace.name, folder + this.#workerTree(workspace, byId), marker);
+            return render(workspace.name, folder + this.#renameForm(workspace) + this.#workerTree(workspace, byId) + this.#workerCreationForm(workspace), marker);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
         if (worker === undefined) return null;

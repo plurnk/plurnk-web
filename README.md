@@ -34,12 +34,15 @@ The workspace list marks folderless workspaces with ☁️ and folder-backed one
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 🗂️ line shows its project
 folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
-The workspace list offers a native ➕ New workspace form. It creates a new folderless
-workspace through the public creation contract — never inheriting another
-workspace's folder, starting a loop or copying history — then navigates to it.
-Re-submitting the same form converges to that one creation; a stale form reports
-itself instead of re-executing, and anonymous daemons keep the action behind the
-same origin check.
+The workspace list offers a native ➕ New workspace form with an optional name field.
+It creates a new folderless workspace through the public creation contract — generating
+a name when omitted or using the specified name, and never inheriting another workspace's
+folder, starting a loop or copying history — then navigates to it.
+Workspace pages provide an inline rename form to update the workspace name and navigate
+to its new canonical address, as well as a ➕ New worker form to create an independent
+model worker in that workspace without starting inference or forking transcripts.
+Re-submitting creation forms converges to that one creation; a stale form reports
+itself instead of re-executing, and anonymous daemons keep actions behind same-origin guards.
 Home and account/error pages keep a 65ch reading width. Workspaces, Workspace and
 Worker share full-width article lists and a stationary header around scrolling
 main content. Worker status and the Stop / multiline message / Send row stay at
