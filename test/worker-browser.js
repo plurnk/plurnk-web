@@ -209,8 +209,10 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await problem.getAttribute("data-diagnostic-type"), "plurnk.problem");
                     assert.equal(await problem.getAttribute("data-diagnostic-level"), "error");
                     assert.match(await problem.locator("article").getAttribute("aria-label"), /^Error · /u);
-                    assert.match(await problem.locator('[data-diagnostic-message]').textContent(), /unavailable.*effort|effort.*unavailable/u);
-                    assert.equal(await problem.locator("details, code").count(), 0, "the message is content, not a duplicated diagnostic payload");
+                    assert.match(await problem.locator('pre').textContent(), /unavailable.*effort|effort.*unavailable/u);
+                    assert.equal(await problem.locator("code").count(), 0, "the message is content, not a duplicated diagnostic payload");
+                    assert.equal(await problem.locator("article > details").evaluate((node) => node.open), false);
+                    assert.equal(await problem.locator("summary").isVisible(), true);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "configuration evidence is not a fabricated conversation");
                     await notice.evaluate((element) => { window.retainedNotice = element; });
                     const count = await rows.count();
@@ -280,14 +282,13 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.count(), 1);
                         assert.equal(JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments).body, contentAttack);
-                        assert.equal(await note.locator("article > pre").textContent(), contentAttack);
+                        assert.equal(await note.locator("article > details > pre").textContent(), contentAttack);
                         assert.equal(await note.locator("pre > *").count(), 0, "NOTE content cannot become HTML elements");
                         assert.equal(await page.locator("[data-messages]").locator("article script, article img, article form, article [id]").count(), 0);
                         assert.deepEqual(await page.locator("[data-messages] article [data-bind]").evaluateAll((elements) => elements.map((element) => ({
                             tag: element.tagName, binding: element.dataset.bind, action: element.dataset.action,
                             role: element.closest("[data-message-role]").dataset.messageRole,
                         }))), [
-                            { tag: "SUMMARY", binding: "aria-label:reasoning-label", action: undefined, role: "reasoning" },
                             { tag: "PRE", binding: "aria-busy:body-pending", action: undefined, role: "reasoning" },
                         ],
                         "bindings belong to the document-owned reasoning reader, never authored content");
@@ -333,10 +334,11 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-note]').length === 3);
                         assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.dataset.plurnkNote)), ["fact", "idea", "plan"]);
                         const note = notes.first();
-                        assert.equal(await note.locator("details, section, div, ul").count(), 0);
-                        assert.equal(await note.locator("article > header").count(), 1);
+                        assert.equal(await note.locator("section, div, ul").count(), 0);
+                        assert.equal(await note.locator("article > details > summary").count(), 1);
+                        assert.equal(await note.locator("details").evaluate((node) => node.open), false);
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
-                        assert.equal(await note.locator("article > pre").textContent(), "A **working fact**, not the answer.");
+                        assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
                         const args = JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments);
                         assert.equal(args.body, "A **working fact**, not the answer.");
                         assert.equal(args.aside, "fact");
@@ -384,7 +386,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
                         assert.equal(JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments).body, footnoteAnswer);
-                        assert.equal(await note.locator("article > pre").textContent(), footnoteAnswer);
+                        assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
                         assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");
                         const ids = await answer.locator("[id]").evaluateAll((elements) => elements.map(({ id }) => id));
                         assert.equal(ids.length, 5);
@@ -556,7 +558,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await reasoning.evaluate((element) => { window.observedReasoning = element; window.observedBody = element.querySelector("[data-body-reference]"); });
                     const ids = () => page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
                     const calls = await page.locator("[data-call-id]").evaluateAll((rows) => rows.map((row) => ({
-                        id: row.dataset.callId, name: row.dataset.plurnkType, body: row.querySelector("article > pre")?.textContent ?? "",
+                        id: row.dataset.callId, name: row.dataset.plurnkType, body: row.querySelector("article > details > pre")?.textContent ?? "",
                     })));
                     const reads = calls.filter(({ name }) => name === "READ");
                     assert.equal(reads.length, 2);
@@ -567,7 +569,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await successful.locator('[data-plurnk-field="scope"]').textContent(), "<1,1>");
                     assert.equal(await successful.locator('[data-plurnk-field="pattern"]').textContent(), "/cobalt/");
                     assert.equal(await successful.locator('[data-plurnk-field="count"]').textContent(), "{1}");
-                    assert.equal(await successful.locator("article > header").innerText(), "selected evidence");
+                    assert.equal(await successful.locator('[data-plurnk-field="heading"]').innerText(), "selected evidence");
                     const successfulId = await successful.getAttribute("data-call-id");
                     const evidence = run.messages.find((message) => message.role === "tool" && message.toolCallId === successfulId);
                     assert.equal((await inspectResult(evidence.content, undefined, base)).content, "cobalt heron", "actual READ bytes remain accessible through the public evidence resource");

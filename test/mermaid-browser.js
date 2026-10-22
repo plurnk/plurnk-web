@@ -63,13 +63,13 @@ export async function verifyMermaid(t) {
                         assert.ok(images.every(({ complete, width, height, source, label }) => complete && width > 0 && height > 0 && source && label));
                         assert.deepEqual(await body.locator("pre code").allTextContents(), diagrams.map((source) => source + "\n"));
                         assert.equal(await body.locator("figure[data-diagram-source]").count(), 0, "source is native code content, not figure state");
-                        assert.equal(await body.locator("details[open]").count(), 0);
+                        assert.equal(await body.locator("figure[data-diagram] details[open]").count(), 0);
                         assert.equal(await body.locator("svg, iframe, object, embed, style").count(), 0);
-                        await body.locator("details summary").first().click();
+                        await body.locator("figure[data-diagram] details summary").first().click();
                         await body.locator("img").first().evaluate((image) => { window.savedDiagram = image; });
                         await present(diagrams.map(fenced).join("\n\n"));
                         assert.equal(await body.locator("img").first().evaluate((image) => image === window.savedDiagram), true);
-                        assert.equal(await body.locator("details").first().evaluate((element) => element.open), true);
+                        assert.equal(await body.locator("figure[data-diagram] details").first().evaluate((element) => element.open), true);
                     });
 
                     await t.test("untrusted labels and renderer styles never become application markup or requests", async () => {
@@ -100,7 +100,7 @@ export async function verifyMermaid(t) {
                         for (const id of ["notes", "reasoning", "result"]) {
                             const row = page.locator(`[data-message-id="${id}"]`);
                             assert.equal(await row.locator("img, [data-diagram]").count(), 0);
-                            assert.equal(await row.locator(id === "reasoning" ? "article > details > pre" : "article > pre").textContent(), content);
+                            assert.equal(await row.locator("article > details > pre").textContent(), content);
                         }
                     });
 

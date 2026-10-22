@@ -62,20 +62,20 @@ export default async function verifyActivity(t) {
                     assert.equal(await row.locator("details, dl").count(), 0);
                     assert.equal(await row.getAttribute("data-activity-evidence"), null);
                     assert.equal(await row.getAttribute("data-activity-key"), null);
-                    assert.equal(await row.locator("article > header").innerText(), "Inspect evidence");
-                    assert.equal(await row.locator("article > p").innerText(), "(evidence.html) {2}");
+                    assert.equal(await row.locator('[data-plurnk-field="heading"]').innerText(), "Inspect evidence");
+                    assert.equal(await row.locator("[data-plurnk-operands]").innerText(), "(evidence.html) {2}");
                     assert.equal(await row.locator("[data-body-reference]").count(), 0, "ambient READ uses the same summary without fetching readback");
-                    await page.evaluate(() => { window.summaryNode = document.querySelector("#worker-activity article > p"); });
+                    await page.evaluate(() => { window.summaryNode = document.querySelector("#worker-activity [data-plurnk-operands]"); });
                     await receive(structuredClone(ambient));
                     assert.equal(await rows.count(), 1);
-                    assert.equal(await row.locator("article > pre").count(), 0);
+                    assert.equal(await row.locator("article > details > pre").count(), 0);
                     assert.equal(await row.locator("button, div, section").count(), 0);
-                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity article > p")), true);
+                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity [data-plurnk-operands]")), true);
                     await receive({ ...ambient, value: { ...ambient.value, state: "failed", status_rx: 409, source: "message://child/1" } });
                     assert.equal(await rows.count(), 1, "a row update is not a new event history");
                     assert.equal(await row.getAttribute("data-plurnk-state"), "failed");
                     assert.equal(await row.getAttribute("data-plurnk-source"), null);
-                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity article > p")), true);
+                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity [data-plurnk-operands]")), true);
                     assert.equal(reads.length, 0);
 
                     await receive({ ...ambient, value: { ...ambient.value, id: 18, attrs: { kind: "emission" } } });
@@ -89,9 +89,10 @@ export default async function verifyActivity(t) {
                     const child = rows.nth(2);
                     assert.equal(await child.getAttribute("data-plurnk-worker"), "12");
                     assert.equal(await child.getAttribute("data-subagent-run-id"), "ops://child/7");
-                    assert.equal(await child.locator("details > summary").textContent(), "Reasoning");
+                    assert.equal(await child.locator("details > details > summary").textContent(), "Reasoning");
                     assert.equal(reads.some((url) => new URL(url).searchParams.get("target")?.startsWith("reasoning:")), false, "closed foreign reasoning is not fetched");
-                    await child.locator("details > summary").click();
+                    await child.locator("article > details > summary").click();
+                    await child.locator("details > details > summary").click();
                     const body = child.locator("[data-body-reference]");
                     await body.scrollIntoViewIfNeeded();
                     await child.locator('[data-body-state="loaded"]').waitFor();
@@ -101,13 +102,13 @@ export default async function verifyActivity(t) {
                     await receive(outside);
                     await receive(outside);
                     const prose = rows.nth(3);
-                    assert.equal(await prose.locator("article > pre").textContent(), source);
+                    assert.equal(await prose.locator("article > details > pre").textContent(), source);
                     assert.equal(await prose.getAttribute("data-plurnk-tokens"), null);
                     assert.equal(await prose.getAttribute("data-activity-text"), null);
                     assert.equal(await prose.getByRole("article", { name: "Outside operations", exact: true }).count(), 1);
                     await receive({ ...outside, value: { ...outside.value, text: "Changed evidence", tokens: 3 } });
                     assert.equal(await rows.count(), 4);
-                    assert.equal(await prose.locator("article > pre").textContent(), "Changed evidence");
+                    assert.equal(await prose.locator("article > details > pre").textContent(), "Changed evidence");
                     assert.equal(await activity.locator("img, script, form, a").count(), 0);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
                     assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial");
@@ -123,7 +124,7 @@ export default async function verifyActivity(t) {
 
                     const setBody = async (address) => {
                         await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12, reasoning: { url: address } } });
-                        await child.locator("details").evaluate((element) => { element.open = true; });
+                        await child.locator("details > details").evaluate((element) => { element.open = true; });
                         await body.scrollIntoViewIfNeeded();
                     };
                     const beforeCredentials = credentials;

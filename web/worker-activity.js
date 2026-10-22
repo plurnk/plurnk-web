@@ -1,5 +1,6 @@
 import { $, the } from "on_the_money";
 import bodyReferences from "./body-references.js";
+import card, { nameCard } from "./card.js";
 import operationSummary, { argumentsOf, bodyOf, record } from "./operation-summary.js";
 
 /** @typedef {{url: string, mimeType?: string}} Reference */
@@ -26,15 +27,16 @@ export default function activity(root, read) {
 
     /** @param {Element} row @param {string} body @param {Reference | undefined} reasoning */
     function content(row, body, reasoning) {
-        const outlet = $(row, "article");
-        if (!outlet) throw new Error("Activity template has no body outlet.");
+        const { header, body: outlet } = card(row, Boolean(body || reasoning));
+        if (!outlet) { inspect.prune(); return header; }
         const revision = JSON.stringify([body, reasoning]);
-        if (references.get(outlet) === revision) return;
-        outlet.replaceChildren();
+        if (references.get(outlet) === revision) return header;
+        for (const node of Array.from(outlet.childNodes)) if (node !== header) node.remove();
         if (body) $.clone(outlet, "#conversation-literal").textContent = body;
         if (reasoning) inspect.append($.clone(outlet, "#activity-reasoning"), { value: reasoning.url, mimeType: reasoning.mimeType });
         references.set(outlet, revision);
         inspect.prune();
+        return header;
     }
 
     /** @param {import("@ag-ui/client").CustomEvent} event */
@@ -53,9 +55,7 @@ export default function activity(root, read) {
                 activityKind: "outside", activityLabel: ["Outside operations", attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
                 plurnkCoordinate: value.coordinate, subagentRunId: attribution || null,
             });
-            const body = $(row, "article > pre");
-            if (!body) throw new Error("Outside text template has no content outlet.");
-            if (body.textContent !== value.text) body.textContent = value.text;
+            nameCard(content(row, value.text, undefined));
             rows.set(key, row);
             return;
         }
@@ -85,8 +85,9 @@ export default function activity(root, read) {
             plurnkNote: value.op === "NOTE" ? typeof args?.aside === "string" && args.aside ? args.aside : "note" : null,
             plurnkSignal: typeof value.signal === "number" ? value.signal : null,
         });
-        content(row, bodyOf(args, value.op), reasoning);
-        operationSummary(row, operation, args, receipt, { op: value.op, status: value.status_rx, address: value.target }, "");
+        const header = content(row, bodyOf(args, value.op), reasoning);
+        operationSummary(header, operation, args, receipt, { op: value.op, status: value.status_rx, address: value.target }, "");
+        nameCard(header);
         rows.set(key, row);
     };
 }

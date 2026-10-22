@@ -149,8 +149,11 @@ you are there. Reloading starts from the current daemon window.
 
 Messages preserve daemon chronology; unknown history is not shown as empty.
 Content and calls are direct semantic entries with accessible names and
-presentation-relevant metadata, not nested protocol inspectors. Reasoning retains
-its native disclosure; opening it does not start work. Markdown is sanitized, raw
+presentation-relevant metadata, not nested protocol inspectors. Bodies use native
+disclosures: user messages and delivered replies start open; notes, tool evidence
+and completed reasoning start closed. Headers, diagnostics and operation details
+remain visible. Opening a body does not start work or add READ receipt readback.
+Markdown is sanitized, raw
 HTML stays text and images become links. SEND bodies use that same Markdown renderer;
 NOTE, reasoning and ordinary operation evidence remain literal preformatted text.
 Long lines wrap and settled entries grow with their content; explicit code, tables,

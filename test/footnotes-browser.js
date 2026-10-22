@@ -144,7 +144,7 @@ export default async function verifyFootnotes(t) {
                         assert.equal(await page.locator('[data-call-id][data-plurnk-type="SEND"] > article').count(), 2);
                         for (const id of ["note", "reasoning", "receipt"]) {
                             const row = page.locator(`[data-message-id="${id}"]`);
-                            assert.equal(await row.locator(id === "reasoning" ? "article > details > pre" : "article > pre").textContent(), content);
+                            assert.equal(await row.locator("article > details > pre").textContent(), content);
                             assert.equal(await row.locator("article sup").count(), 0);
                         }
                     });

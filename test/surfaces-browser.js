@@ -41,6 +41,8 @@ export default async function verifySurfaces(t) {
                     window.present(messages);
                     window.preview.consume({ type: "REASONING_MESSAGE_START", messageId: "live" });
                     window.preview.consume({ type: "CUSTOM", name: "plurnk.reasoning", value: { messageId: "live", delta: "Live working material." } });
+                    // Contrast covers inspected working bodies too; hidden content has no painted colors.
+                    for (const disclosure of document.querySelectorAll("[data-messages] > li > article > details")) disclosure.open = true;
                 }, messages);
                 let light;
                 for (const colorScheme of ["light", "dark"]) {

@@ -71,7 +71,7 @@ export default async function verifyContentSecurity(t) {
                             function: { name: "NOTE", arguments: JSON.stringify({ body: hostile, aside: injection }) }, metadata: { plurnk: { op: "NOTE" } } }] },
                         { id: "reasoning", role: "reasoning", content: hostile });
                         await present(messages);
-                        const bodies = page.locator("[data-messages] article:has(> p > strong)");
+                        const bodies = page.locator("[data-messages] article:has(> details > p > strong)");
                         assert.equal(await bodies.count(), 6);
                         for (const body of await bodies.all()) {
                             assert.equal(await body.locator("strong").textContent(), "Readable evidence");
@@ -86,7 +86,7 @@ export default async function verifyContentSecurity(t) {
                         }
                         assert.equal(await page.locator("[data-plurnk-note]").getAttribute("data-plurnk-note"), injection);
                         for (const id of ["note", "reasoning"]) {
-                            const body = page.locator(`[data-message-id="${id}"]`).locator(id === "reasoning" ? "article > details > pre" : "article > pre");
+                            const body = page.locator(`[data-message-id="${id}"]`).locator("article > details > pre");
                             assert.equal(await body.textContent(), hostile);
                             assert.equal(await body.locator("*").count(), 0, "literal content never enters an HTML parser");
                         }
@@ -103,12 +103,12 @@ export default async function verifyContentSecurity(t) {
                         await present(messages);
                         assert.equal(await page.locator("[data-call-id] article").getAttribute("aria-label"), [injection, injection, `Subagent ${injection}`].join(" · "));
                         assert.equal(await page.locator("[data-call-id] article").textContent(), "");
-                        assert.equal(await page.locator("[data-message-id=result] p[data-message-error]").textContent(), injection);
-                        assert.equal(await page.locator("[data-message-id=result] article > pre").textContent(), hostile);
+                        assert.equal(await page.locator('[data-message-id=result] summary > [data-plurnk-field="outcome"]').textContent(), injection);
+                        assert.equal(await page.locator("[data-message-id=result] article > details > pre").textContent(), hostile);
                         assert.equal(await page.locator("[data-message-id=activity] article").textContent(), "");
                         assert.equal(await page.locator("[data-message-id=parts] article strong").textContent(), "Readable evidence",
                             "standard text parts use the role's same sanitized renderer");
-                        assert.equal(await page.locator("[data-message-id=parts] article > pre").count(), 0,
+                        assert.equal(await page.locator("[data-message-id=parts] article > details > pre").count(), 0,
                             "unsupported parts stay in JavaScript, not a metadata dump or implicit fetch");
                         assert.equal(await page.locator("#worker-conversation script, #worker-conversation img, #worker-conversation form").count(), 0);
                         assert.equal(await page.locator("[data-message-id=result]").getAttribute("data-tool-call-id"), call.id);

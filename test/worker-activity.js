@@ -19,7 +19,7 @@ export default async function verifyWorkerActivity({ t, withDaemon }) {
             const outside = activity.locator(':scope > ul > li[data-activity-kind="outside"]');
             assert.equal(await outside.count(), 1, "live outside-operation text is not dropped");
             await activity.locator(":scope > summary").click();
-            assert.equal(await outside.locator("article > pre").textContent(), outsideText);
+            assert.equal(await outside.locator("article > details > pre").textContent(), outsideText);
             assert.equal(await outside.getAttribute("data-activity-text"), null);
             assert.equal(await page.locator("[data-messages]").getByText(outsideText, { exact: true }).count(), 0);
             assert.ok(await rows.count() > 1, "daemon-owned ambient rows are also visible");
