@@ -225,7 +225,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 |---|---|
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: native list articles with exact-name links under {§web-page-shell}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listWorkers(id)` census rendered under {§web-worker-directory}. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder}, one `listWorkers(id)` census rendered under {§web-worker-directory}, and the folderless creation form under {§web-workspace-creation}. |
 | Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}, plus passive status under {§web-worker-observer} and conversation under {§web-worker-conversation}. |
 | Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
@@ -261,6 +261,20 @@ The workspace index continues to mark folder presence under
 distinguish the workspace identity from its project folder; a cloud on a named
 workspace with a separate folder must not claim it is folderless.
 
+## §web-workspace-creation Folderless workspace creation
+
+Workspace pages carry one native creation form; daemon, worker, account and error
+documents never do. The form works with JavaScript disabled.
+
+| Boundary | Contract |
+|---|---|
+| Form | One `method="post" action="/workspaces/new"` form with an accessible New workspace button and exactly one hidden token field. No name, folder or settings field: the daemon owns generated names, immutable identity and defaults. |
+| Folder independence | Creation calls the public `createWorkspace` with `projectRoot: null`, never inheriting the current workspace's folder, the daemon's working directory or an operator home. It starts no loop, worker or inference, copies no history, creates no project directory, and leaves the original workspace untouched. |
+| Admission and origin | With authentication enabled, an unadmitted POST answers 401 and a cross-origin form 403 against the daemon's issuer. `PLURNK_AUTH=0` is a first-class anonymous posture, not a read-only mandate: creation then runs while refusing an `Origin` that does not name the request's own host, and any `sec-fetch-site` other than same-origin. |
+| Method and encoding | Only POST is allowed; GET and HEAD answer 405 with `allow: POST`. The body is UTF-8 `application/x-www-form-urlencoded` (415 otherwise), bounded (413), with exactly one `token` field (400 otherwise). |
+| Convergence | The hidden token is the form's idempotency key at the module's HTTP boundary, because the daemon's creation contract has none. The first POST creates one workspace and answers 303 to its canonical address through the shared directory codec. Racing or retried POSTs of the same token converge to that same workspace, never a second creation. A settled token stays addressable for the configured TTL, so a retry after a lost response converges; an unknown or expired token answers a readable 400. |
+| Failure | A daemon rejection answers 502 with its cause preserved, and the settled failure is not blindly re-executed within its TTL. An envelope that names a project folder for a folderless request, or a workspace name without a directory address, is a visible internal violation, never a silently adapted creation. |
+| Bound | In-flight and settled tokens are pruned on expiry and bounded: minting beyond the bound yields the oldest unsubmitted token, then the oldest settled outcome, so rendering a page never fails; a registry of only in-flight creations mints anyway, briefly exceeding the bound. |
 ## §web-worker-directory Model-worker navigation
 
 | Boundary | Representation |

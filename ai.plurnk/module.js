@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { MIMEType } from "node:util";
 import { Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
 import indexDocument from "./index-document.js";
@@ -7,9 +8,13 @@ import Documents from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
 import { privateHeaders, redirect, RequestError } from "./http.js";
 import { readAsset, sendAsset } from "./static-assets.js";
+import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
 
-/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers">} Port */
+// One hidden token field: a UUID is 36 characters; 4 KiB bounds any encoding of it
+// with wide margin. Larger bodies are not this native form.
+const CREATE_INPUT_BYTES = 4096;
+/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers" | "createWorkspace">} Port */
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
@@ -17,6 +22,7 @@ export default function createModule() {
     const reasoningPreviewChars = Knob.integer("PLURNK_WEB_REASONING_PREVIEW_CHARS", 1);
     const authenticate = Knob.flag("PLURNK_AUTH");
     const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1), pending: Knob.integer("PLURNK_WEB_LOGIN_PENDING", 1) };
+    const creations = new Creations({ ttl: Knob.integer("PLURNK_WEB_CREATE_TTL_SEC", 1), tokens: Knob.integer("PLURNK_WEB_CREATE_TOKENS", 1) });
     const diagrams = new Diagrams();
     /** @type {{ clientId: string, clientSecret: string } | null} */
     let registration = null;
@@ -56,7 +62,7 @@ export default function createModule() {
 
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars);
+            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars, () => creations.mint());
 
             /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
             const serve = async (req, res) => {
@@ -68,6 +74,7 @@ export default function createModule() {
                 const revoke = /^\/account\/sessions\/([^/]+)\/revoke$/u.exec(pathname);
                 const others = pathname === "/account/sessions/revoke-others";
                 const token = pathname === "/auth/token";
+                const creation = pathname === "/workspaces/new";
                 const diagram = pathname === "/render/mermaid";
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
@@ -90,6 +97,51 @@ export default function createModule() {
                         else if (pathname === CALLBACK) await session.callback(req, res);
                         else if (token) await session.token(req, res);
                         else session.logout(req, res);
+                        return;
+                    }
+                    if (creation) {
+                        if (req.method !== "POST") {
+                            res.setHeader("allow", "POST");
+                            throw new RequestError(405, "Use POST to create a workspace.");
+                        }
+                        if (session !== null && !admitted) throw new RequestError(401, "Sign in again before creating a workspace.");
+                        // {§web-workspace-creation} Anonymous creation is a first-class posture, guarded without a second authority.
+                        if (session !== null) session.sameOriginForm(req);
+                        else {
+                            const origin = req.headers.origin;
+                            if (origin !== undefined) {
+                                let host;
+                                try { host = new URL(origin).host; }
+                                catch (cause) { throw new RequestError(403, "Same-origin form required.", { cause }); }
+                                if (host !== req.headers.host) throw new RequestError(403, "Same-origin form required.");
+                            }
+                            if (req.headers["sec-fetch-site"] !== undefined && req.headers["sec-fetch-site"] !== "same-origin") {
+                                throw new RequestError(403, "Same-origin form required.");
+                            }
+                        }
+                        let type;
+                        try { type = new MIMEType(req.headers["content-type"] ?? ""); }
+                        catch (cause) { throw new RequestError(415, "Use UTF-8 application/x-www-form-urlencoded.", { cause }); }
+                        if (type.essence !== "application/x-www-form-urlencoded"
+                            || (type.params.has("charset") && type.params.get("charset")?.toLowerCase() !== "utf-8")) {
+                            throw new RequestError(415, "Use UTF-8 application/x-www-form-urlencoded.");
+                        }
+                        let size = 0;
+                        const chunks = [];
+                        for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+                            size += chunk.byteLength;
+                            if (size > CREATE_INPUT_BYTES) { req.resume(); throw new RequestError(413, "Workspace creation form exceeds its bound."); }
+                            chunks.push(chunk);
+                        }
+                        let fields;
+                        try { fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
+                        catch (cause) { throw new RequestError(400, "Invalid workspace creation form.", { cause }); }
+                        const pairs = [...fields.entries()];
+                        if (pairs.length !== 1 || pairs[0][0] !== "token" || pairs[0][1] === "") {
+                            throw new RequestError(400, "Expected the form's workspace creation token.");
+                        }
+                        // {§web-workspace-creation} The token is the form's idempotency key at this boundary.
+                        redirect(res, await creations.submit(pairs[0][1], () => seam.createWorkspace({ projectRoot: null })));
                         return;
                     }
                     if (account || sessions || revoke !== null || others) {

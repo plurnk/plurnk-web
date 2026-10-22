@@ -80,7 +80,7 @@ export default class Session {
     #mutation(req) {
         const account = this.account(req);
         if (account === null) throw new RequestError(401, "Sign in again before managing sessions.");
-        if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin form required.");
+        this.sameOriginForm(req);
         return account;
     }
 
@@ -91,6 +91,12 @@ export default class Session {
         if (family === account.family) { this.logout(req, res); return; }
         this.#credentials.revokeFamily(family);
         redirect(res, "/account/sessions/");
+    }
+    /** {§web-workspace-creation} Module-owned form mutations use the daemon's own origin.
+     * @param {import("node:http").IncomingMessage} req
+     */
+    sameOriginForm(req) {
+        if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin form required.");
     }
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
@@ -244,7 +250,7 @@ export default class Session {
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
     logout(req, res) {
-        if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin form required.");
+        this.sameOriginForm(req);
         const claims = this.#claims(req);
         if (claims !== null) this.#credentials.revokeFamily(claims.family);
         res.setHeader("set-cookie", this.#cookie(req, SESSION, "", "/", 0));

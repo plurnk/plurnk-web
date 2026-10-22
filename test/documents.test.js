@@ -255,11 +255,14 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     const workspace = { kind: "workspace", workspace: '~/a&<script>@"b' };
     const workers = (await document.read(workspace, port, false)).toString();
     assert.match(workers, /a%26%3Cscript%3E%40%22b@user\//u);
-    assert.doesNotMatch(workers, /<form/u);
+    assert.match(workers, /<form method="post" action="\/workspaces\/new"><input type="hidden" name="token" value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"><button type="submit" data-i18n="new-workspace"><span aria-hidden="true">➕<\/span> New workspace<\/button><\/form>/u,
+        "{§web-workspace-creation} the workspace page alone carries the native creation form");
+    assert.doesNotMatch(workers, /<form method="post" action="\/auth\/logout"/u);
     assert.equal(await document.read({ ...workspace, kind: "worker", worker: "absent" }, port, true), null);
     const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
     assert.match(page, /<title[^>]*>~\/a&amp;&lt;script&gt;@&quot;b@user — Plurnk<\/title>/u);
     assert.doesNotMatch(page, /<h1\b/u);
+    assert.doesNotMatch(page, /workspaces\/new/u, "{§web-workspace-creation} worker pages carry no creation form");
     assert.deepEqual(calls, ["workspaces", "workspaces", "workspaces", 7, "workspaces", 7, "workspaces", 7]);
 });
 
