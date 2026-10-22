@@ -34,8 +34,8 @@ The workspace list marks folderless workspaces with ☁️ and folder-backed one
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 otherwise ☁️ identifies the workspace and a separate 🗂️ line shows its project
 folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
-Workspace pages offer a native ➕ New workspace form. It creates a new folderless
-workspace through the public creation contract — never inheriting the current
+The workspace list offers a native ➕ New workspace form. It creates a new folderless
+workspace through the public creation contract — never inheriting another
 workspace's folder, starting a loop or copying history — then navigates to it.
 Re-submitting the same form converges to that one creation; a stale form reports
 itself instead of re-executing, and anonymous daemons keep the action behind the

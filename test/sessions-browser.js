@@ -227,23 +227,22 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await page.getByRole("button", { name: "Continue", exact: true }).click();
                             await page.waitForURL(new URL("/~/", base).href);
 
-                            // 1. Creation from a project-backed workspace
-                            const projectWorkspace = names[0];
-                            const sourcePath = directoryPath({ kind: "workspace", workspace: projectWorkspace });
-                            await page.goto(new URL(sourcePath, base).href);
-                            assert.equal(new URL(page.url()).pathname, sourcePath);
-
+                            // 1. Creation from the /~/ workspaces index
+                            const initialCensus = await (await fetch(new URL("/__fixture", base))).json();
                             const form = page.locator("#workspace-create");
-                            assert.equal(await form.count(), 1, "creation form is present on workspace page");
+                            assert.equal(await form.count(), 1, "creation form is present on /~/ workspaces index");
                             const button = form.getByRole("button", { name: "New workspace", exact: true });
                             assert.equal(await button.count(), 1);
                             assert.equal(await button.getAttribute("title"), "New workspace");
 
                             // Click New workspace
                             await button.click();
-                            await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/") && new URL(url).pathname !== sourcePath);
+                            await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/") && new URL(url).pathname !== "/~/");
                             const createdPath = new URL(page.url()).pathname;
                             assert.ok(createdPath.startsWith("/~/"), `navigated to workspace path: ${createdPath}`);
+
+                            // Verify workspace page itself carries NO workspace creation form
+                            assert.equal(await page.locator("#workspace-create").count(), 0, "workspace page does not carry workspace creation form");
 
                             // Verify newly created workspace in daemon fixture census
                             const fixtureAfter = await (await fetch(new URL("/__fixture", base))).json();
@@ -253,9 +252,11 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.equal(newlyCreated.project_label, null, "project_label is strictly null");
                             assert.equal(newlyCreated.workers.length, 0, "no worker or loop started");
 
-                            // Verify source workspace is untouched
-                            const sourceAfter = fixtureAfter.find((ws) => ws.name === projectWorkspace);
-                            assert.equal(sourceAfter.project_root, projectRoot, "source project_root unchanged");
+                            // Verify existing workspaces in census remain untouched
+                            for (const ws of initialCensus) {
+                                const found = fixtureAfter.find((after) => after.name === ws.name);
+                                assert.equal(found?.project_root, ws.project_root, `${ws.name} project_root untouched`);
+                            }
 
                             // 2. Verify representation in /~/ list has ☁️ and Folderless workspace label
                             await page.goto(new URL("/~/", base).href);
@@ -264,13 +265,12 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.equal(await createdEntry.getAttribute("aria-label"), "Folderless workspace");
                             assert.equal(await createdEntry.locator("header").evaluate((element) => getComputedStyle(element, "::before").content.match(/☁️|🗂️/u)?.[0]), "☁️");
 
-                            // 3. Test creation from folderless workspace with keyboard submission (Enter)
-                            await page.goto(new URL(createdPath, base).href);
+                            // 3. Test creation from /~/ with keyboard submission (Enter)
                             const secondForm = page.locator("#workspace-create");
                             const secondButton = secondForm.getByRole("button", { name: "New workspace", exact: true });
                             await secondButton.focus();
                             await page.keyboard.press("Enter");
-                            await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/") && new URL(url).pathname !== createdPath);
+                            await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/") && new URL(url).pathname !== "/~/" && new URL(url).pathname !== createdPath);
                             const secondCreatedPath = new URL(page.url()).pathname;
                             assert.ok(secondCreatedPath.startsWith("/~/"));
 

@@ -254,7 +254,9 @@ export default class Documents {
         if (directory.kind === "daemon") {
             const items = workspaces.map(({ name, project_root }) =>
                 `<li data-directory-entry="workspace" data-folder="${project_root !== null}"><article aria-label="${project_root === null ? "Folderless workspace" : "Project workspace"}"><header>${this.#link(name, { kind: "workspace", workspace: name })}</header></article></li>`).join("");
-            return render("Workspaces", items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>');
+            const list = items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>';
+            // {§web-workspace-creation} The daemon workspaces directory alone carries the workspace creation form.
+            return render("Workspaces", list + this.#creationForm());
         }
         const workspace = workspaces.find(({ name }) => name === directory.workspace);
         if (workspace === undefined) return null;
@@ -267,8 +269,7 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            // {§web-workspace-creation} The workspace page alone carries the creation form.
-            return render(workspace.name, folder + this.#workerTree(workspace, byId) + this.#creationForm(), marker);
+            return render(workspace.name, folder + this.#workerTree(workspace, byId), marker);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
         if (worker === undefined) return null;
