@@ -127,22 +127,28 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-worker-name="${name}" data-bind="href:worker-path">${name}</a>`;
-    const facts = (kind) => `<p><small><span data-text="worker-kind">${kind}</span> · <span data-text="worker-lifecycle">completed</span></small></p>`;
-    const entry = (name, kind, children = "") => `<li data-directory-entry="worker"><article aria-label="Worker"><header>${link(name)}</header>${facts(kind)}${children}</article></li>`;
-    const children = (count, list) => `<details><summary data-text="child-workers">${count} child worker${count === 1 ? "" : "s"}</summary><ul>${list}</ul></details>`;
+    const entry = (name, parent = null, children = "") => {
+        const lineage = parent === null ? "" : `<span data-worker-parent>${parent === "_plurnk" ? "<span>_plurnk</span>" : link(parent)} &gt; </span>`;
+        const identity = `<span data-worker-identity><a data-worker-link href="/~/work@${name}/" aria-label="${name}" title="Open worker ${name}"></a> `
+            + '<span data-lifecycle="completed" role="img" aria-label="completed" title="completed"></span> '
+            + `${lineage}<span>${name}</span></span>`
+            + '<span data-worker-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a href="/~/work/" data-text="name">work</a></span>';
+        const content = children ? `<details><summary>${identity}</summary><ul>${children}</ul></details>` : `<header>${identity}</header>`;
+        return `<li data-directory-entry="worker"><article aria-label="Worker">${content}</article></li>`;
+    };
     assert.ok(html.includes([
         "<ul>",
-        entry("2bb6a400-7106-4299-ae47-66daea5d6077", "root"),
-        entry("user", "root", children(2, entry("review", "work", children(1, entry("evidence", "work"))) + entry("research", "work"))),
+        entry("2bb6a400-7106-4299-ae47-66daea5d6077"),
+        entry("user", null, entry("review", "user", entry("evidence", "review")) + entry("research", "user")),
         "</ul>",
         '<details><summary data-i18n="background-work">Background work</summary><ul>',
-        entry("incoming", "work", children(1, entry("incoming-child", "work"))),
-        entry("other", "work"),
+        entry("incoming", "_plurnk", entry("incoming-child", "incoming")),
+        entry("other", "_plurnk"),
         "</ul></details>",
     ].join("")), html);
-    const names = [...html.matchAll(/href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
+    const names = [...html.matchAll(/data-worker-link href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
     assert.deepEqual(names.toSorted(), workers.filter(({ origin }) => origin === "model").map(({ name }) => name).toSorted());
-    assert.doesNotMatch(html, /_plurnk|agui:|\bopen\b|role="tree"|<script/u);
+    assert.doesNotMatch(html, /work@_plurnk|agui:|\bopen\b|role="tree"|<script|data-text="worker-kind"|child worker/u);
     for (const internal of workers.filter(({ origin }) => origin !== "model")) {
         assert.equal(await document.read({ kind: "worker", workspace: "work", worker: internal.name }, port, false), null);
     }

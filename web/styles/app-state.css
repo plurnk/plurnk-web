@@ -134,12 +134,16 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
 #worker-status [data-status-field="inbox"]::before { content: "✉️ " / ""; }
 #worker-status [data-status-field="activity"]::before { content: "🧮 " / ""; }
 #worker-status [data-status-field="preparation"]::before { content: "⚙️ " / ""; }
-#worker-status [data-status-field="lifecycle"]::before { content: var(--worker-lifecycle-glyph, "○") / ""; }
-#worker-status[data-lifecycle="running"] { --worker-lifecycle-glyph: "⌛"; }
-#worker-status[data-lifecycle="queued"] { --worker-lifecycle-glyph: "⏳"; }
-#worker-status[data-lifecycle="parked"] { --worker-lifecycle-glyph: "💤"; }
-#worker-status[data-lifecycle="cancelled"] { --worker-lifecycle-glyph: "🛑"; }
-#worker-status[data-lifecycle="failed"] { --worker-lifecycle-glyph: "❌"; }
+
+/* {§web-worker-directory} The directory and live statusline share one lifecycle vocabulary. */
+#worker-status [data-status-field="lifecycle"]::before,
+[data-worker-identity] [data-lifecycle]::before { content: var(--worker-lifecycle-glyph, "○") / ""; }
+[data-lifecycle="running"] { --worker-lifecycle-glyph: "⌛"; }
+[data-lifecycle="queued"] { --worker-lifecycle-glyph: "⏳"; }
+[data-lifecycle="parked"] { --worker-lifecycle-glyph: "💤"; }
+[data-lifecycle="cancelled"] { --worker-lifecycle-glyph: "🛑"; }
+[data-lifecycle="failed"] { --worker-lifecycle-glyph: "❌"; }
+[data-lifecycle="completed"] { --worker-lifecycle-glyph: "✓"; }
 
 /* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
 #worker-diagnostics:not(:has(ul > li)) {
@@ -194,13 +198,14 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
 [data-plurnk-note="plan"] { --plurnk-operation-glyph: "🚧"; }
 
 /* {§web-page-shell} Directory identity remains accessible without decorative glyphs. */
-[data-directory-entry] > article > header::before {
+[data-directory-entry="workspace"] > article > header::before {
     content: var(--directory-glyph) / "";
     margin-inline-end: 0.5ch;
 }
-[data-directory-entry="worker"] { --directory-glyph: "🐜"; }
-[data-directory-entry="workspace"][data-folder="true"] { --directory-glyph: "🗂️"; }
-[data-directory-entry="workspace"][data-folder="false"] { --directory-glyph: "☁️"; }
+[data-worker-link]::before { content: "🐜" / ""; }
+[data-worker-workspace] [data-folder]::before { content: var(--directory-glyph) / ""; }
+[data-folder="true"] { --directory-glyph: "🗂️"; }
+[data-folder="false"] { --directory-glyph: "☁️"; }
 
 /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
 #worker-conversation [data-math-error]::after {

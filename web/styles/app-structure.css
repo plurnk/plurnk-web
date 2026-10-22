@@ -221,6 +221,7 @@ table {
     margin-block-end: 0;
 }
 
+[data-directory-entry="worker"] > article > header:only-child,
 :is(#worker-conversation, #worker-diagnostics, #worker-activity) > ul > li > article > header:only-child {
     margin-block-end: calc(var(--pico-block-spacing-vertical) * -1);
     border-block-end: 0;
@@ -245,6 +246,11 @@ table {
 }
 
 :is(header, summary) > :is([data-plurnk-field="outcome"], [data-plurnk-operands]) {
+    display: block;
+}
+
+/* {§web-worker-directory} Native summaries contain phrasing content, arranged in two rows. */
+:is(header, summary) > :is([data-worker-identity], [data-worker-workspace]) {
     display: block;
 }
 
