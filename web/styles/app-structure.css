@@ -164,20 +164,27 @@ table {
 }
 
 @media (scripting: none) {
-    /* Nothing opens a dialog without scripting; Pico hides one that is not open, at this same specificity. */
+    /* Nothing opens a dialog without scripting; Pico hides one that is not open, at this same specificity,
+       and sizes it as a modal overlay. In flow it is a card in the page's content. */
     dialog:not([open]) {
         display: block;
         position: static;
-        max-inline-size: 100%;
-        box-sizing: border-box;
+        inline-size: auto;
+        min-inline-size: 0;
+        block-size: auto;
+        min-block-size: 0;
         margin-block: var(--pico-spacing);
         padding: 0;
         border: 0;
+        background-color: transparent;
+        backdrop-filter: none;
     }
 
     dialog > article {
-        max-inline-size: 100%;
-        box-sizing: border-box;
+        inline-size: auto;
+        max-inline-size: none;
+        max-block-size: none;
+        margin: 0;
     }
 
     button[data-dialog-target] {

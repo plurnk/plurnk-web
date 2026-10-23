@@ -52,6 +52,16 @@ test("{§web-worker-directory} two-line cards retain native links, lineage and d
                             listWorkers: async () => workers,
                         }, false);
                         await page.goto(new URL(workspacePath, base).href);
+                        if (!javaScriptEnabled) {
+                            // {§web-worker-creation} {§web-workspace-rename} Without scripting each form is a card in main:
+                            // it takes only its own space, inside main's measure.
+                            const boxes = await page.locator("main > dialog").evaluateAll((dialogs) => dialogs.map((dialog) => {
+                                const box = dialog.getBoundingClientRect(), card = dialog.firstElementChild.getBoundingClientRect();
+                                const main = dialog.parentElement.getBoundingClientRect();
+                                return [dialog.id, Math.abs(box.height - card.height) < 1, box.left >= main.left && box.right <= main.right];
+                            }));
+                            assert.deepEqual(boxes, [["dialog-workspace-rename", true, true], ["dialog-worker-create", true, true]]);
+                        }
                         const link = (name) => page.locator(`main a[data-worker-link][aria-label=${JSON.stringify(name)}]`);
                         const card = (name) => link(name).locator("xpath=ancestor::article[1]");
                         const parent = card("parent");

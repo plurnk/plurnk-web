@@ -235,7 +235,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await trigger.click();
                                 assert.equal(await page.locator("#dialog-workspace-create[open]").count(), 1, "modal opened");
                             } else {
-                                assert.ok(await form.isVisible(), "without JavaScript the creation form renders in flow");
+                                assert.ok(await form.isVisible() && await form.evaluate((element) => element.closest("main") !== null), "without JavaScript the creation form renders in the page content");
                             }
                             const confirmButton = form.getByRole("button", { name: "Confirm", exact: true });
                             await confirmButton.click();
@@ -274,7 +274,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await secondTrigger.click();
                                 assert.equal(await page.locator("#dialog-workspace-create[open]").count(), 1);
                             } else {
-                                assert.ok(await secondForm.isVisible(), "without JavaScript the creation form renders in flow");
+                                assert.ok(await secondForm.isVisible() && await secondForm.evaluate((element) => element.closest("main") !== null), "without JavaScript the creation form renders in the page content");
                             }
                             await nameInput.focus();
                             await page.keyboard.press("Enter");
@@ -289,7 +289,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                     await page.locator(`header button[data-dialog-target="${dialog}"]`).click();
                                     assert.equal(await page.locator(`#${dialog}[open]`).count(), 1, `${dialog} opened`);
                                 } else {
-                                    assert.ok(await target.isVisible(), `without JavaScript ${formId} renders in flow`);
+                                    assert.ok(await target.isVisible() && await target.evaluate((element) => element.closest("main") !== null), `without JavaScript ${formId} renders in the page content`);
                                 }
                                 return target;
                             };

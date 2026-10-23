@@ -36,7 +36,7 @@ folder, if any. Folder labels use the daemon's home abbreviation, not the browse
 The workspace list and workspace pages offer native header actions alongside the breadcrumbs:
 - On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal pre-populated with an automatic candidate name ({§web-workspace-creation}) to create a new folderless workspace.
 - On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️` and `➕` open native `<dialog>` modals to rename the current workspace or create an independent model worker pre-populated with an automatic candidate name ({§web-worker-creation}).
-Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow when JavaScript is disabled, keeping `<main>` clean and focused on directory content.
+Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow at the end of `<main>` when JavaScript is disabled; with JavaScript a closed modal shows nothing.
 itself instead of re-executing, and anonymous daemons keep actions behind same-origin guards.
 Worker share full-width article lists and a stationary header around scrolling
 main content. Worker status and the Stop / multiline message / Send row stay at
