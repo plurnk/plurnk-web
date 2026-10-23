@@ -26,14 +26,14 @@ test("{§web-worker-directory} two-line cards retain native links, lineage and d
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
     const base = `http://127.0.0.1:${server.address().port}`;
     const workers = [
-        { id: 1, name: "_plurnk", parentWorkerId: null, origin: "_plurnk", kind: "root", lifecycle: "idle" },
-        { id: 3, name: "child", parentWorkerId: 2, origin: "model", kind: "work", lifecycle: "parked" },
-        { id: 2, name: "parent", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "running" },
-        { id: 4, name: "leaf", parentWorkerId: 3, origin: "model", kind: "fork", lifecycle: "failed" },
-        { id: 5, name: "background", parentWorkerId: 1, origin: "model", kind: "work", lifecycle: "queued" },
-        { id: 6, name: "done", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "completed" },
-        { id: 7, name: "cancelled", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "cancelled" },
-        { id: 8, name: "idle", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "idle" },
+        { id: 1, name: "_plurnk", parentWorkerId: null, origin: "_plurnk", kind: "root", lifecycle: "idle", hidden_at: null },
+        { id: 3, name: "child", parentWorkerId: 2, origin: "model", kind: "work", lifecycle: "parked", hidden_at: null },
+        { id: 2, name: "parent", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "running", hidden_at: null },
+        { id: 4, name: "leaf", parentWorkerId: 3, origin: "model", kind: "fork", lifecycle: "failed", hidden_at: null },
+        { id: 5, name: "background", parentWorkerId: 1, origin: "model", kind: "work", lifecycle: "queued", hidden_at: null },
+        { id: 6, name: "done", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "completed", hidden_at: null },
+        { id: 7, name: "cancelled", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "cancelled", hidden_at: null },
+        { id: 8, name: "idle", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "idle", hidden_at: null },
     ];
     for (const engine of engines) await t.test(engine.name(), async () => {
         const browser = await engine.launch();
