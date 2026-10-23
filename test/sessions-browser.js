@@ -68,6 +68,14 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 if (claims) port.credentials.revokeFamily(claims.family);
                 res.writeHead(204); res.end(); return;
             }
+            if (req.url === "/__fixture/hide" && req.method === "POST") {
+                let body = "";
+                for await (const chunk of req) body += chunk;
+                const { workspaceId, workerId, hidden } = JSON.parse(body);
+                if (workerId === undefined) await port.setWorkspaceHidden({ workspaceId, hidden });
+                else await port.setWorkerHidden({ workspaceId, workerId, hidden });
+                res.writeHead(204); res.end(); return;
+            }
             const workspaces = await port.listWorkspaces();
             const snapshot = await Promise.all(workspaces.map(async (workspace) => ({ ...workspace,
                 workers: await Promise.all((await port.listWorkers(workspace.id)).map(async (worker) => ({ ...worker,
@@ -187,6 +195,44 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     assert.deepEqual(await (await fetch(new URL("/__fixture", base))).json(), initial,
                         "navigation did not change identities, owners, project roots, workers or loops");
                 } finally { await browser.close(); }
+            });
+        });
+        await t.test("{§web-directory-documents} hidden places leave the directories, and their own pages still open", async () => {
+            await withDaemon({ PLURNK_AUTH: "0", PLURNK_PASS: "" }, async (base) => {
+                const census = await (await fetch(new URL("/__fixture", base))).json();
+                const shelved = census.find(({ name }) => name === "folderless");
+                const project = census.find(({ name }) => name === names[0]);
+                const review = project.workers.find(({ name }) => name === "review");
+                const hide = async (place, hidden) => assert.equal((await fetch(new URL("/__fixture/hide", base), {
+                    method: "POST", body: JSON.stringify({ ...place, hidden }) })).status, 204);
+                await hide({ workspaceId: shelved.id }, true);
+                await hide({ workspaceId: project.id, workerId: review.id }, true);
+                const browser = await chromium.launch();
+                try {
+                    for (const javaScriptEnabled of [true, false]) {
+                        const context = await browser.newContext({ javaScriptEnabled });
+                        const checkBrowser = browserDiagnostics(context);
+                        try {
+                            const page = await context.newPage();
+                            await page.goto(new URL("/~/", base).href);
+                            assert.deepEqual(await page.locator("main > ul > li > article > header > a").allTextContents(),
+                                census.filter(({ id }) => id !== shelved.id).map(({ name }) => name), "a hidden workspace leaves the list");
+                            await page.goto(new URL(directoryPath({ kind: "workspace", workspace: project.name }), base).href);
+                            const tree = await page.locator("main a[data-worker-link]").evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
+                            assert.ok(tree.includes("primary") && tree.includes("research"), "shown workers stay in the tree");
+                            assert.ok(!tree.includes("review") && !tree.includes("evidence"), "a hidden worker leaves the tree with the workers beneath it");
+                            const opened = await page.goto(new URL(directoryPath({ kind: "worker", workspace: project.name, worker: "review" }), base).href);
+                            assert.equal(opened.status(), 200, "a hidden worker's page opens by its address");
+                            assert.equal((await page.goto(new URL(directoryPath({ kind: "workspace", workspace: shelved.name }), base).href)).status(), 200,
+                                "a hidden workspace's page opens by its address");
+                            checkBrowser();
+                        } finally { await context.close(); }
+                    }
+                } finally { await browser.close(); }
+                await hide({ workspaceId: shelved.id }, false);
+                await hide({ workspaceId: project.id, workerId: review.id }, false);
+                const shown = await (await fetch(new URL("/~/", base))).text();
+                assert.match(shown, new RegExp(`href="${directoryPath({ kind: "workspace", workspace: shelved.name })}"`, "u"), "a shown workspace returns to the list");
             });
         });
         await t.test("{§web-session} an empty password explains setup without admitting a localhost browser", async () => {

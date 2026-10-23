@@ -9,7 +9,7 @@ import createModule from "../ai.plurnk/module.js";
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 
 // {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
-async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createWorker = async (args) => ({ workerId: 10, workerName: args.name || "bob" }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null }] } = {}) {
+async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createWorker = async (args) => ({ workerId: 10, workerName: args.name || "bob" }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }] } = {}) {
     const originalAuth = process.env.PLURNK_AUTH;
     process.env.PLURNK_AUTH = auth ? "1" : "0";
     t.after(() => {
@@ -236,7 +236,7 @@ test("{§web-workspace-creation} optional custom workspace name is passed to dae
 test("{§web-workspace-rename} workspace rename updates name and redirects to new canonical path", async (t) => {
     const renamed = [];
     const { base } = await fixture(t, {
-        workspaces: [{ id: 7, name: "old-name", project_root: null, project_label: null }],
+        workspaces: [{ id: 7, name: "old-name", project_root: null, project_label: null, hidden_at: null }],
         rename: async (id, name) => { renamed.push({ id, name }); return { id, name }; },
     });
 
@@ -276,7 +276,7 @@ test("{§web-workspace-rename} workspace rename updates name and redirects to ne
 test("{§web-worker-creation} worker creation creates independent worker and redirects", async (t) => {
     const createdWorkers = [];
     const { base } = await fixture(t, {
-        workspaces: [{ id: 7, name: "my-workspace", project_root: null, project_label: null }],
+        workspaces: [{ id: 7, name: "my-workspace", project_root: null, project_label: null, hidden_at: null }],
         createWorker: async (args) => { createdWorkers.push(args); return { workerId: 10, workerName: args.name || "bob" }; },
     });
 

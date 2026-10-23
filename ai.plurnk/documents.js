@@ -247,7 +247,8 @@ export default class Documents {
      * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
      */
     #workerTree(workspace, workers) {
-        const models = [...workers.values()].filter(({ origin }) => origin === "model");
+        // {§web-directory-documents} A hidden worker leaves the tree; its page still opens by its address.
+        const models = [...workers.values()].filter(({ origin, hidden_at }) => origin === "model" && hidden_at === null);
         if (models.length === 0) return '<p data-i18n="no-workers">No workers.</p>';
         const children = Map.groupBy(models, ({ parentWorkerId }) => parentWorkerId);
         const background = models.filter((worker) => {
@@ -268,7 +269,7 @@ export default class Documents {
         const roots = list(children.get(null) ?? []);
         const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
             + `${list(background)}</details>`;
-        if (rendered !== models.length) throw new Error("Worker directory contains cyclic model parentage.");
+        if (rendered !== models.length) throw new Error("Worker directory holds shown model workers that no shown root reaches.");
         return roots + other;
     }
 
@@ -321,7 +322,8 @@ export default class Documents {
             this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
-            const items = workspaces.map(({ name, project_root }) =>
+            // {§web-directory-documents} A hidden workspace leaves the list; its page still opens by its address.
+            const items = workspaces.filter(({ hidden_at }) => hidden_at === null).map(({ name, project_root }) =>
                 `<li data-directory-entry="workspace" data-folder="${project_root !== null}"><article aria-label="${project_root === null ? "Folderless workspace" : "Project workspace"}"><header>${this.#link(name, { kind: "workspace", workspace: name })}</header></article></li>`).join("");
             const list = items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>';
             const existing = new Set(workspaces.map(({ name }) => name));

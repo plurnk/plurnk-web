@@ -4,12 +4,12 @@ import Documents from "../ai.plurnk/documents.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({
-    id, name, parentWorkerId, origin, owner, kind: parentWorkerId === null ? "root" : "work", lifecycle: "completed",
+    id, name, parentWorkerId, origin, owner, kind: parentWorkerId === null ? "root" : "work", lifecycle: "completed", hidden_at: null,
 });
 
 test("{§web-page-shell} worker status sits outside the scrolling main; directory entries are native articles", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
-    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
         listWorkers: async () => [worker(9, "user")] };
     const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
     assert.match(html, /<\/main><footer id="worker-status"/u);
@@ -25,7 +25,7 @@ test("{§web-worker-approval} the worker document projects its resolved approval
     for (const yolo of [true, false]) {
         const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo, 128);
         const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
             listWorkers: async () => [worker(9, "user")],
         }, false)).toString();
         assert.ok(html.includes(`id="worker-yolo" aria-pressed="${yolo}"`));
@@ -48,7 +48,7 @@ test("{§web-authorization-style} the compiled head names one origin-relative ap
 test("{§web-worker-conversation} only a worker document supplies the passive conversation outlet", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const port = {
-        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
         listWorkers: async () => [worker(9, "user")],
     };
     const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
@@ -65,7 +65,7 @@ test("{§web-worker-observer} readable names never select the worker's live thre
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     for (const name of ["~/project", "42#alice", "renamed workspace"]) {
         const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, {
-            listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null }],
+            listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, hidden_at: null }],
             listWorkers: async () => [worker(9, "user")],
         }, false)).toString();
         assert.match(html, /data-thread-id="7#user"/u);
@@ -124,7 +124,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
         worker(9, "other", 1, "model", "agui://owner"),
         worker(10, "incoming-child", 8),
     ];
-    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers };
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => workers };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-worker-name="${name}" data-bind="href:worker-path">${name}</a>`;
     const entry = (name, parent = null, children = "") => {
@@ -168,7 +168,7 @@ test("{§web-worker-directory} worker pages keep breadcrumb and parent navigatio
         worker(6, "incoming", 1), worker(7, "background-child", 6)];
     let reads = 0;
     const port = {
-        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
         listWorkers: async () => { reads++; return workers; },
     };
     for (const selected of ["parent", "child", "grandchild", "background-child"]) {
@@ -184,7 +184,7 @@ test("{§web-worker-directory} worker pages keep breadcrumb and parent navigatio
 test("{§web-worker-streams} the worker page has observed outcomes, not an open-stream inventory", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
-        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }],
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
         listWorkers: async () => [worker(9, "user")],
     }, false)).toString();
     assert.doesNotMatch(html, /data-open-streams|data-no-streams|stream-count|Open streams/u);
@@ -196,7 +196,7 @@ test("{§web-worker-directory} empty and internal-only workspaces have no empty 
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
     for (const workers of [[], [worker(1, "_plurnk", null, "_plurnk")], [worker(3, "user")]]) {
         const html = (await document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => workers,
         }, false)).toString();
         assert.doesNotMatch(html, /<details|Background work|<ul><\/ul>/u);
         if (workers.some(({ origin }) => origin === "model")) assert.match(html, /href="\/~\/work@user\/"/u);
@@ -209,11 +209,11 @@ test("{§web-worker-directory} inconsistent topology fails rather than dropping 
     for (const [workers, message] of [
         [[worker(1, "first"), worker(1, "second")], "Worker directory contains duplicate identities."],
         [[worker(1, "missing", 2)], "Worker 1 has an absent parent 2."],
-        [[worker(1, "self", 1)], "Worker directory contains cyclic model parentage."],
-        [[worker(1, "first", 2), worker(2, "second", 1)], "Worker directory contains cyclic model parentage."],
+        [[worker(1, "self", 1)], "Worker directory holds shown model workers that no shown root reaches."],
+        [[worker(1, "first", 2), worker(2, "second", 1)], "Worker directory holds shown model workers that no shown root reaches."],
     ]) {
         await assert.rejects(document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null }], listWorkers: async () => workers,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => workers,
         }, false), { name: "Error", message });
     }
 });
@@ -222,9 +222,9 @@ test("{§web-directory-documents} workspace markers describe folder presence wit
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
     const html = (await document.read({ kind: "daemon" }, {
         listWorkspaces: async () => [
-            { id: 1, name: "~/looks-like-a-folder", project_root: null, project_label: null },
-            { id: 2, name: "research", project_root: "/home/daemon/project", project_label: "~/project" },
-            { id: 3, name: "../legacy", project_root: null, project_label: null },
+            { id: 1, name: "~/looks-like-a-folder", project_root: null, project_label: null, hidden_at: null },
+            { id: 2, name: "research", project_root: "/home/daemon/project", project_label: "~/project", hidden_at: null },
+            { id: 3, name: "../legacy", project_root: null, project_label: null, hidden_at: null },
         ],
         listWorkers: async () => { throw new Error("The workspace index needs no worker lookup."); },
     }, false)).toString();
@@ -239,7 +239,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     const port = {
         listWorkspaces: async () => {
             calls.push("workspaces");
-            return [{ id: 7, name: '~/a&<script>@"b', project_root: null, project_label: null }, { id: 8, name: "../legacy", project_root: null, project_label: null }];
+            return [{ id: 7, name: '~/a&<script>@"b', project_root: null, project_label: null, hidden_at: null }, { id: 8, name: "../legacy", project_root: null, project_label: null, hidden_at: null }];
         },
         listWorkers: async (id) => { calls.push(id); return [worker(1, "user")]; },
     };
@@ -273,7 +273,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
 test("{§web-worker-status} status is a compact footer after conversation, not a metadata inventory", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, true, 128);
     const html = (await document.read({ kind: "worker", workspace: "review", worker: "user" }, {
-        listWorkspaces: async () => [{ id: 7, name: "review", project_root: null, project_label: null }],
+        listWorkspaces: async () => [{ id: 7, name: "review", project_root: null, project_label: null, hidden_at: null }],
         listWorkers: async () => [worker(1, "user")],
     }, false)).toString();
     assert.match(html, /<footer id="worker-status"[^>]*>/u);
@@ -296,7 +296,7 @@ test("{§web-directory-documents} a broken document outlet fails at load", () =>
 test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not path segments", async () => {
     const name = "~/project/a&b<script>";
     const port = {
-        listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null }],
+        listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, hidden_at: null }],
         listWorkers: async () => [worker(1, "user")],
     };
     const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" data-page="home">Home</main></body></html>`, false, 128);
@@ -319,7 +319,7 @@ test("{§web-page-shell} empty lists and request failures are useful native docu
     assert.match(empty, /<p[^>]*>No workspaces\.<\/p>/u);
     assert.doesNotMatch(empty, /<ul><\/ul>/u);
     const workers = (await document.read({ kind: "workspace", workspace: "empty" }, {
-        ...port, listWorkspaces: async () => [{ id: 7, name: "empty", project_root: null, project_label: null }],
+        ...port, listWorkspaces: async () => [{ id: 7, name: "empty", project_root: null, project_label: null, hidden_at: null }],
     }, false)).toString();
     assert.match(workers, /data-page="workspace"/u);
     assert.match(workers, /<p[^>]*>No workers\.<\/p>/u);
@@ -375,4 +375,26 @@ test("{§web-account} Sessions renders authority facts in a native table without
     assert.match(html, /<header>[\s\S]*<nav aria-label="breadcrumb">[\s\S]*<\/nav><\/header>/u);
     assert.doesNotMatch(html.split("<main")[1], /aria-label="breadcrumb"/u);
     assert.doesNotMatch(html, /<script>|<template|last active|device|Signed in as/iu);
+});
+
+test("{§web-directory-documents} hidden places leave the lists, and their own pages still open", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
+    const hidden = "2026-10-23T00:00:00.000Z";
+    const port = {
+        listWorkspaces: async () => [
+            { id: 7, name: "work", project_root: null, project_label: null, hidden_at: null },
+            { id: 8, name: "shelved", project_root: null, project_label: null, hidden_at: hidden },
+        ],
+        listWorkers: async (id) => id !== 7 ? [worker(20, "kept")] : [
+            worker(9, "shown"), { ...worker(10, "gone"), hidden_at: hidden }, { ...worker(11, "gone-child", 10), hidden_at: hidden },
+        ],
+    };
+    const daemon = (await document.read({ kind: "daemon" }, port, false)).toString();
+    assert.match(daemon, /href="\/~\/work\/"/u);
+    assert.doesNotMatch(daemon, /shelved/u, "a hidden workspace leaves the workspaces list");
+    const workspace = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
+    assert.match(workspace, />shown</u);
+    assert.doesNotMatch(workspace, /gone/u, "a hidden worker and its group leave the tree");
+    assert.ok(await document.read({ kind: "workspace", workspace: "shelved" }, port, false), "a hidden workspace's page opens by its address");
+    assert.ok(await document.read({ kind: "worker", workspace: "work", worker: "gone" }, port, false), "a hidden worker's page opens by its address");
 });
