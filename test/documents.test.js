@@ -252,7 +252,8 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.match(index, /<form method="post" action="\/auth\/logout">/u);
     assert.match(index, /<dialog id="dialog-workspace-create">[\s\S]*<form id="workspace-create" method="post" action="\/workspaces\/new">[\s\S]*<button type="submit"[^>]*>Confirm<\/button>/u,
         "{§web-workspace-creation} the daemon workspaces directory carries the native creation dialog");
-    assert.doesNotMatch(index.split("<main")[1].split("</main>")[0], /<form\b/u, "main on workspaces index contains no forms");
+    assert.doesNotMatch(index.split("<main")[1].split("</main>")[0].replace(/<dialog\b[\s\S]*?<\/dialog>/gu, ""), /<form\b/u,
+        "main on workspaces index holds a form only inside its dialog");
     assert.match(index, /<script src="\/app.js"><\/script>/u);
     assert.equal(await document.read({ kind: "workspace", workspace: "missing" }, port, false), null);
     assert.deepEqual(calls, ["workspaces", "workspaces"]);
@@ -261,7 +262,8 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.match(workers, /a%26%3Cscript%3E%40%22b@user\//u);
     assert.match(workers, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename dialog");
     assert.match(workers, /<dialog id="dialog-worker-create">[\s\S]*<form id="worker-create" method="post" action="\/workers\/new">/u, "workspace page carries the worker creation dialog");
-    assert.doesNotMatch(workers.split("<main")[1].split("</main>")[0], /<form\b/u, "main on workspace page contains no forms");
+    assert.doesNotMatch(workers.split("<main")[1].split("</main>")[0].replace(/<dialog\b[\s\S]*?<\/dialog>/gu, ""), /<form\b/u,
+        "main on workspace page holds forms only inside their dialogs");
     assert.doesNotMatch(workers, /workspaces\/new/u, "{§web-workspace-creation} workspace pages carry no workspace creation form");
     assert.doesNotMatch(workers, /<form method="post" action="\/auth\/logout"/u);
     const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();

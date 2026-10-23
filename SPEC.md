@@ -265,11 +265,11 @@ workspace with a separate folder must not claim it is folderless.
 The daemon workspaces directory (`/~/`) header carries a native creation trigger button (`➕`);
 individual workspace, worker, account and error documents never do. Activating the trigger
 opens a native `<dialog>` modal (`#dialog-workspace-create`). When JavaScript is disabled, the form
-renders in normal flow and submits cleanly without client scripting.
+renders in normal flow at the end of `<main>` and submits cleanly without client scripting.
 
 | Boundary | Contract |
 |---|---|
-| Form | A native modal (`#dialog-workspace-create`) containing one `method="post" action="/workspaces/new"` form (`#workspace-create`) with Cancel and Confirm buttons, a text input named `name` pre-populated with an automatic candidate name (five alphanumeric characters with at least one letter), and exactly one hidden token field containing a fresh UUID. Users may submit to accept the suggested name, edit it, or cancel/escape to dismiss without mutating state. Resting `<main>` on `/~/` contains only directory content. |
+| Form | A native modal (`#dialog-workspace-create`) containing one `method="post" action="/workspaces/new"` form (`#workspace-create`) with Cancel and Confirm buttons, a text input named `name` pre-populated with an automatic candidate name (five alphanumeric characters with at least one letter), and exactly one hidden token field containing a fresh UUID. Users may submit to accept the suggested name, edit it, or cancel/escape to dismiss without mutating state. With scripting, a resting `<main>` on `/~/` shows only directory content. |
 | Folder independence | Creation calls the public `createWorkspace` with `projectRoot: null`, never inheriting another workspace's folder, the daemon's working directory or an operator home. It starts no loop, worker or inference, copies no history, creates no project directory, and leaves other workspaces untouched. |
 | Admission and origin | With authentication enabled, an unadmitted POST answers 401 and a cross-origin form 403 against the daemon's issuer. `PLURNK_AUTH=0` is a first-class anonymous posture, not a read-only mandate: creation requires a matching same-origin `Origin` header naming the request's own host, and any `sec-fetch-site` other than same-origin is refused with 403. |
 | Method and encoding | Only POST is allowed; GET and HEAD answer 405 with `allow: POST`. The body is UTF-8 `application/x-www-form-urlencoded` (415 otherwise), bounded (413), with exactly one `token` field (400 otherwise). |
@@ -282,11 +282,11 @@ renders in normal flow and submits cleanly without client scripting.
 Workspace page (`/~/<workspace>/`) headers carry a native rename trigger button (`✏️`);
 daemon, worker, account and error documents never do. Activating the trigger opens a native
 `<dialog>` modal (`#dialog-workspace-rename`). When JavaScript is disabled, the form renders in normal
-flow and submits cleanly.
+flow at the end of `<main>` and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | A native modal (`#dialog-workspace-rename`) containing one `method="post" action="/workspaces/rename"` form with the current workspace name in a hidden `workspace` field, a required text input named `name` pre-populated with the current name, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. Resting `<main>` contains only directory content. |
+| Form | A native modal (`#dialog-workspace-rename`) containing one `method="post" action="/workspaces/rename"` form with the current workspace name in a hidden `workspace` field, a required text input named `name` pre-populated with the current name, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. With scripting, a resting `<main>` shows only directory content. |
 | Delivery | Uses the public `renameWorkspace(workspaceId, name)` contract on `ApplicationPort`. Missing workspace answers 404; empty name answers 400. Rejection answers 502 with cause preserved. Success 303-redirects to the canonical new workspace directory address through the shared directory codec. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Same-origin enforcement requires matching `Origin` and same-origin `sec-fetch-site` in both auth and anonymous postures. |
 
@@ -295,11 +295,11 @@ flow and submits cleanly.
 Workspace page (`/~/<workspace>/`) headers carry a native worker creation trigger button (`➕`);
 daemon, worker, account and error documents never do. Activating the trigger opens a native
 `<dialog>` modal (`#dialog-worker-create`). When JavaScript is disabled, the form renders in normal
-flow and submits cleanly.
+flow at the end of `<main>` and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | A native modal (`#dialog-worker-create`) containing one `method="post" action="/workers/new"` form with the current workspace name in a hidden `workspace` field, a hidden UUID `token` field, a text input named `name` pre-populated with an automatic candidate name (eight random lowercase hexadecimal characters), and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. Resting `<main>` contains only directory content. |
+| Form | A native modal (`#dialog-worker-create`) containing one `method="post" action="/workers/new"` form with the current workspace name in a hidden `workspace` field, a hidden UUID `token` field, a text input named `name` pre-populated with an automatic candidate name (eight random lowercase hexadecimal characters), and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. With scripting, a resting `<main>` shows only directory content. |
 | Delivery | Uses the public `createWorker({ workspaceId, name? })` contract on `ApplicationPort`, creating an independent model worker without inheriting parentage, loops, transcripts, or forking active state. When a name is provided, creation requests it; when omitted or blank, the daemon generates one. |
 | Convergence | The form token acts as idempotency key: racing double-clicks and retries converge to the single created worker. Expiry and bounds share the creation limits. |
 | Success and failure | Missing workspace answers 404. Success 303-redirects to the new worker's canonical directory address (`directoryPath({ kind: "worker", workspace, worker })`). Rejection answers 502. |
