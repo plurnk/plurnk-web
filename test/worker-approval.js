@@ -46,7 +46,40 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
         assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"), "the executor actually ran");
         checkBrowser();
-    }));
+    }, { env: { PLURNK_WEB_YOLO: "1" } }));
+    await t.test("{§web-worker-approval} a worker page reached from another site never approves automatically", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, context, path, base, headers, model, checkBrowser }) => {
+        page.setDefaultTimeout(5000);
+        const threadId = await page.locator("#worker-status").getAttribute("data-thread-id");
+        await page.close();
+        // The proposal waits with no page open on its worker.
+        const agent = new HttpAgent({ url: new URL("/agui", base).href, threadId, headers });
+        agent.addMessage({ id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: approval-automatic." });
+        const controller = new AbortController();
+        const running = agent.runAgent({ abortController: controller }).catch(() => {});
+        try {
+            await context.route("http://elsewhere.test/**", (route) => route.fulfill({ contentType: "text/html",
+                body: `<!doctype html><title>Elsewhere</title><link rel="icon" href="data:,"><a href="${path}">Open the worker</a>` }));
+            const visitor = await context.newPage();
+            visitor.setDefaultTimeout(5000);
+            const sent = requestsFrom(visitor);
+            await visitor.goto("http://elsewhere.test/");
+            // Browsers send this navigation `Sec-Fetch-Site: cross-site`; Chromium's headless shell does not report it to Playwright.
+            await visitor.getByRole("link", { name: "Open the worker", exact: true }).click();
+            await interrupted(visitor);
+            assert.equal(await visitor.getByRole("button", { name: "Automatic approval", exact: true, includeHidden: true }).getAttribute("aria-pressed"), "false");
+            assert.equal(await visitor.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true, "the proposal waits for review");
+            assert.equal(sent.filter(({ resume }) => resume?.length).length, 0, "nothing was decided");
+            // The person's own navigation keeps the configured preference.
+            const own = await context.newPage();
+            await own.goto(path);
+            await own.getByText("Completed approval-automatic.", { exact: true }).waitFor();
+            assert.equal(model.requests.length, 2);
+        } finally {
+            controller.abort();
+            await running;
+        }
+        checkBrowser();
+    }, { env: { PLURNK_WEB_YOLO: "1" } }));
     await t.test("{§web-worker-approval} configured YOLO cannot override daemon rejection", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
@@ -59,7 +92,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         const outcome = page.locator('[data-call-id][data-plurnk-type="sh"] [data-plurnk-field="outcome"]');
         assert.match(await outcome.textContent(), /The proposal was rejected \(policy_veto\)\./u);
         checkBrowser();
-    }, { env: { PLURNK_SERVICE_PROPOSALS: "reject" } }));
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "reject", PLURNK_WEB_YOLO: "1" } }));
     await t.test("{§web-worker-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
@@ -75,7 +108,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
             /^error \/agui: Failed to load resource: net::ERR_FAILED$/u,
             /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: Failed to fetch$/u,
         ]);
-    }));
+    }, { env: { PLURNK_WEB_YOLO: "1" } }));
     for (const decision of ["accept", "reject"]) {
         await t.test(`{§web-worker-approval} explicit ${decision} resumes the exact proposal and preserves the operation's result`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 700 });

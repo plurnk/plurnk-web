@@ -21,7 +21,7 @@ and capability changes use daemon actions and retain its validation and active-w
 restrictions. `/capabilities` shows service, workspace and effective policy; a JSON
 argument replaces the workspace policy. `/yolo` or the 🔥/🐹 status toggle changes only this page's automatic
 approval preference, including pending proposals; questions still require answers.
-Reload restores `PLURNK_WEB_YOLO`. Commands remain available during pending review.
+Reload restores the page's starting mode. Commands remain available during pending review.
 `/models` lists aliases and a bounded catalog page; narrow its search for more matches.
 Click the status model or effort to open its form below the conversation. Model
 search offers native suggestions, or accepts an exact alias/provider-model.
@@ -125,9 +125,11 @@ trace when visible, without adding it to later Run uploads.
 **Send** also supports follow-ups while the worker is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
 uncertain submission is never retried automatically. **Stop** preserves unsent
-text; closing the page is not Stop. Browser approval defaults to automatic
-(`PLURNK_WEB_YOLO=1`), subject to daemon permissions. Set `PLURNK_WEB_YOLO=0` for
-manual review. The worker page shows the active mode. In manual mode, each approval
+text; closing the page is not Stop. Browser approval defaults to manual review
+(`PLURNK_WEB_YOLO=0`). `PLURNK_WEB_YOLO=1` accepts proposals automatically, subject to daemon
+permissions, on a worker page the person opened themselves; one reached from another site
+starts in manual review, as does every page on a plain-HTTP origin other than localhost (its
+browser reports no navigation source). The worker page shows the active mode. In manual mode, each approval
 names its requesting worker and shows the exact operation and review evidence.
 Choose Accept or Reject for every presented operation, then **Submit responses**;
 neither choice is preselected. Questions and MCP input always need a human answer.

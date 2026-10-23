@@ -6,7 +6,7 @@ import indexDocument from "./index-document.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
-import { privateHeaders, redirect, refusal, RequestError } from "./http.js";
+import { ownNavigation, privateHeaders, redirect, refusal, RequestError } from "./http.js";
 import { readAsset, sendAsset } from "./static-assets.js";
 import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
@@ -209,7 +209,7 @@ export default function createModule() {
                             return;
                         }
                         const body = home ? documents.home(admitted) : account ? documents.account() : inventory ? documents.sessions(inventory)
-                            : directory === null ? null : await documents.read(directory, seam, admitted);
+                            : directory === null ? null : await documents.read(directory, seam, admitted, ownNavigation(req));
                         if (body === null) throw new RequestError(404, "Workspace or worker not found.");
                         res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
                         res.end(req.method === "HEAD" ? undefined : body);

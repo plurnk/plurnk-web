@@ -275,15 +275,16 @@ export default class Documents {
 
     /** {§web-worker-observer} Identity and navigation belong to the document; status arrives through AG-UI.
      * @param {import("./directory-addresses.js").Directory & {kind: "worker"}} directory @param {number} workspaceId @param {boolean} authenticated
+     * @param {boolean} automatic
      */
-    #workerStatus(directory, workspaceId, authenticated) {
+    #workerStatus(directory, workspaceId, authenticated, automatic) {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted worker must have a directory address.");
         const footer = `<footer id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
             + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + '<div data-status-line><ul aria-label="Model controls">'
-            + `<li data-status-field="yolo"><button type="button" id="worker-yolo" aria-pressed="${this.#yolo}" aria-label="Automatic approval" title="${this.#yolo ? "Auto" : "Manual"} Approval (/yolo)"></button></li>`
+            + `<li data-status-field="yolo"><button type="button" id="worker-yolo" aria-pressed="${automatic}" aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (/yolo)"></button></li>`
             + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="worker-model" aria-label="Model" aria-expanded="false" aria-controls="worker-model-settings"><span data-text="model">No model</span></button><button type="button" id="worker-effort" aria-label="Effort" aria-expanded="false" aria-controls="worker-effort-settings"><span data-text="effort"></span></button></li></ul>'
             + '<ul aria-label="Worker statistics"><li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
             + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'
@@ -316,8 +317,10 @@ export default class Documents {
      * @param {import("./directory-addresses.js").Directory} directory
      * @param {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "listWorkspaces" | "listWorkers">} port
      * @param {boolean} authenticated
+     * @param {boolean} [own] {§web-worker-approval} whether the person reached the page by their own navigation; only then
+     * does a worker page start with the configured automatic approval
      */
-    async read(directory, port, authenticated) {
+    async read(directory, port, authenticated, own = false) {
         const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "", dialogs = "") =>
             this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs);
         const workspaces = await port.listWorkspaces();
@@ -354,7 +357,7 @@ export default class Documents {
         const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
-        const status = this.#workerStatus(directory, workspace.id, authenticated);
+        const status = this.#workerStatus(directory, workspace.id, authenticated, this.#yolo && own);
         return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + (parent === null ? "" : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`)
             + status.content, marker, status.footer);
