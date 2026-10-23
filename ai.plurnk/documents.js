@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
+import { generateWorkspaceName, generateWorkerName } from "./auto-name.js";
 import { directoryPath } from "./directory-addresses.js";
 import { escapeHtml } from "./http.js";
-
 /** {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
 export default class Documents {
     #beforeTitle;
@@ -41,13 +41,12 @@ export default class Documents {
         this.#afterMain = parts[2];
     }
 
-    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] */
-    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "") {
+    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] */
+    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "", dialogs = "") {
         const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
-        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}">${body}</main>${footer}${this.#afterMain}`);
+        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}">${body}</main>${footer}${dialogs}${this.#afterMain}`);
     }
-
     /** @param {boolean} authenticated */
     home(authenticated) { return this.#render("Plurnk", this.#home, "home", authenticated); }
 
@@ -105,42 +104,68 @@ export default class Documents {
             : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "worker" ? ` data-worker-name="${escapeHtml(directory.worker)}" data-bind="href:worker-path"` : ""}>${escapeHtml(label)}</a>`;
     }
 
-    /** {§web-workspace-creation} One native form on the workspace page; the daemon owns names and defaults. */
-    #creationForm() {
-        return '<form id="workspace-create" method="post" action="/workspaces/new">'
+    /**
+     * {§web-workspace-creation} Native dialog modal for workspace creation with pre-populated auto-name.
+     * @param {Set<string>} [existing]
+     */
+    #creationForm(existing = new Set()) {
+        const autoName = generateWorkspaceName(existing);
+        return '<dialog id="dialog-workspace-create"><article>'
+            + '<header><button type="button" aria-label="Close" rel="prev" data-dialog-close></button>'
+            + '<form id="workspace-create" method="post" action="/workspaces/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
-            + '<input type="text" name="name" placeholder="Workspace name (optional)" aria-label="Workspace name">'
-            + '<button type="submit" title="New workspace" data-i18n="new-workspace"><span aria-hidden="true">➕</span> New workspace</button></form>';
+            + '<label><span data-i18n="workspace-name">Workspace name</span>'
+            + `<input type="text" name="name" value="${autoName}" placeholder="Workspace name" aria-label="Workspace name" required></label>`
+            + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
+            + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
+            + '</article></dialog>';
     }
 
-    /** @param {{name: string}} workspace */
+    /**
+     * {§web-workspace-rename} Native dialog modal for workspace rename with pre-populated current name.
+     * @param {{name: string}} workspace
+     */
     #renameForm(workspace) {
         const name = escapeHtml(workspace.name);
-        return '<form id="workspace-rename" method="post" action="/workspaces/rename">'
-            + `<input type="hidden" name="workspace" value="${name}">`
-            + `<input type="text" name="name" value="${name}" aria-label="Rename workspace" required>`
-            + '<button type="submit" title="Rename workspace" data-i18n="rename-workspace">Rename</button></form>';
+        return '<dialog id="dialog-workspace-rename"><article>'
+            + '<header><button type="button" aria-label="Close" rel="prev" data-dialog-close></button>'
+            + '<label><span data-i18n="new-name">New name</span>'
+            + `<input type="text" name="name" value="${name}" aria-label="Rename workspace" required></label>`
+            + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
+            + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
+            + '</article></dialog>';
     }
 
-    /** @param {{name: string}} workspace */
-    #workerCreationForm(workspace) {
+    /**
+     * {§web-worker-creation} Native dialog modal for worker creation with pre-populated auto-name.
+     * @param {{name: string}} workspace
+     * @param {Set<string>} [existing]
+     */
+    #workerCreationForm(workspace, existing = new Set()) {
         const name = escapeHtml(workspace.name);
-        return '<form id="worker-create" method="post" action="/workers/new">'
+        const autoName = generateWorkerName(existing);
+        return '<dialog id="dialog-worker-create"><article>'
+            + '<header><button type="button" aria-label="Close" rel="prev" data-dialog-close></button>'
+            + '<p><strong data-i18n="new-worker">New worker</strong></p></header>'
+            + '<form id="worker-create" method="post" action="/workers/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
             + `<input type="hidden" name="workspace" value="${name}">`
-            + '<input type="text" name="name" placeholder="Worker name (optional)" aria-label="Worker name">'
-            + '<button type="submit" title="New worker" data-i18n="new-worker"><span aria-hidden="true">➕</span> New worker</button></form>';
+            + '<label><span data-i18n="worker-name">Worker name</span>'
+            + `<input type="text" name="name" value="${autoName}" placeholder="Worker name" aria-label="Worker name" required></label>`
+            + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
+            + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
+            + '</article></dialog>';
     }
+
     /** @param {string | null} projectRoot */
     #workspaceMarker(projectRoot) {
         const folder = projectRoot !== null;
         return `<span role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}">${folder ? "🗂️" : "☁️"}</span>`;
     }
-
     /** @param {string[]} [items] @param {boolean} [current] */
     #breadcrumb(items = [], current = false) {
         const root = current
-            ? '<span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️</span>'
+            ? '<span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️</span> <button type="button" data-dialog-target="dialog-workspace-create" aria-label="New workspace" title="New workspace">➕</button>'
             : '<a href="/~/" aria-label="Workspaces" title="Workspaces">🗃️</a>';
         return `<nav aria-label="breadcrumb"><ul>${[root, ...items].map((item) => `<li>${item}</li>`).join("")}</ul></nav>`;
     }
@@ -149,7 +174,9 @@ export default class Documents {
     #breadcrumbs(directory, marker) {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
         const items = [];
-        if (directory.kind === "workspace") items.push(`${marker} ${current(directory.workspace)}`);
+        if (directory.kind === "workspace") {
+            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button>`);
+        }
         if (directory.kind === "worker") {
             const path = directoryPath({ kind: "workspace", workspace: directory.workspace });
             if (path === null) throw new Error("An admitted worker must have a workspace directory address.");
@@ -260,23 +287,21 @@ export default class Documents {
             + '<ul data-messages></ul></section>';
         return { content, footer };
     }
-
-    /**
     /**
      * @param {import("./directory-addresses.js").Directory} directory
      * @param {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "listWorkspaces" | "listWorkers">} port
      * @param {boolean} authenticated
      */
     async read(directory, port, authenticated) {
-        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "") =>
-            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer);
+        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "", dialogs = "") =>
+            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
             const items = workspaces.map(({ name, project_root }) =>
                 `<li data-directory-entry="workspace" data-folder="${project_root !== null}"><article aria-label="${project_root === null ? "Folderless workspace" : "Project workspace"}"><header>${this.#link(name, { kind: "workspace", workspace: name })}</header></article></li>`).join("");
             const list = items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>';
-            // {§web-workspace-creation} The daemon workspaces directory alone carries the workspace creation form.
-            return render("Workspaces", list + this.#creationForm());
+            const existing = new Set(workspaces.map(({ name }) => name));
+            return render("Workspaces", list, "", "", this.#creationForm(existing));
         }
         const workspace = workspaces.find(({ name }) => name === directory.workspace);
         if (workspace === undefined) return null;
@@ -289,7 +314,9 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            return render(workspace.name, folder + this.#renameForm(workspace) + this.#workerTree(workspace, byId) + this.#workerCreationForm(workspace), marker);
+            const existingWorkers = new Set(workers.map(({ name }) => name));
+            const dialogs = this.#renameForm(workspace) + this.#workerCreationForm(workspace, existingWorkers);
+            return render(workspace.name, folder + this.#workerTree(workspace, byId), marker, "", dialogs);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
         if (worker === undefined) return null;

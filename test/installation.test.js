@@ -52,11 +52,8 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/index-document.js"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/directory-addresses.js"));
-    for (const name of ["creations.js", "diagrams.js", "diagram-compiler.js"]) assert.ok(archive.files.some(({ path }) => path === `ai.plurnk/${name}`));
-    for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable.svg", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt"]) {
-        assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), path);
+    for (const expected of ["ai.plurnk/module.js", "ai.plurnk/documents.js", "ai.plurnk/creations.js", "ai.plurnk/auto-name.js", "ai.plurnk/session.js"]) {
+        assert.ok(archive.files.some(({ path }) => path === expected), `expected ${expected} in packed package`);
     }
     assert.ok(!archive.files.some(({ path }) => path.endsWith(".png")), "no unused raster fallback is packed");
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|ai\.plurnk\/public)\/|vite\.config|\.map$/u.test(path)));

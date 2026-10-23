@@ -20,6 +20,7 @@
         "ai.plurnk/index-document.js",
         "ai.plurnk/directory-addresses.js",
         "ai.plurnk/creations.js",
+        "ai.plurnk/auto-name.js",
         "ai.plurnk/documents.js",
         "ai.plurnk/session.js",
         "ai.plurnk/http.js",
@@ -34,7 +35,6 @@
         "LICENSE"
     ],
     "dependencies": {
-        "@plurnk/plurnk-meta": "^2.1.1",
         "negotiator": "1.1.0",
         "oauth4webapi": "3.8.8",
         "ondine": "0.0.1",

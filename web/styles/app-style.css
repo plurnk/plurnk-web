@@ -10,19 +10,21 @@
 }
 
 header nav button,
+nav[aria-label="breadcrumb"] button,
 #worker-status [data-status-line] button {
     --pico-primary-background: transparent;
     --pico-primary-border: transparent;
     --pico-primary-hover-background: transparent;
     --pico-primary-hover-border: transparent;
     --pico-primary-inverse: var(--pico-primary);
+
+    cursor: pointer;
 }
 
 /* {§web-worker-input} Cancellation uses Pico's secondary control palette. */
 button[form="worker-stop"],
-button[data-cancel-settings] {
-    --pico-primary-background: var(--pico-secondary-background);
-    --pico-primary-border: var(--pico-secondary-border);
+button[data-cancel-settings],
+dialog button[data-dialog-close]:not([rel="prev"]) {
     --pico-primary-hover-background: var(--pico-secondary-hover-background);
     --pico-primary-hover-border: var(--pico-secondary-hover-border);
     --pico-primary-inverse: var(--pico-secondary-inverse);
