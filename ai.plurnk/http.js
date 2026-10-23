@@ -44,6 +44,14 @@ export const privateHeaders = {
     "x-frame-options": "DENY",
 };
 
+/** {§web-workspace-creation} A browser that reports where a request came from must report this origin, in either posture.
+ * @param {import("node:http").IncomingMessage} req
+ */
+export function sameOriginFetch(req) {
+    const site = req.headers["sec-fetch-site"];
+    if (site !== undefined && site !== "same-origin") throw new RequestError(403, "Same-origin form required.");
+}
+
 /** {§web-worker-approval} The person reached this page from this origin or through the browser itself (address bar, bookmark),
  * by its Fetch Metadata; another site, a sibling site or no metadata is not their own navigation.
  * @param {import("node:http").IncomingMessage} req

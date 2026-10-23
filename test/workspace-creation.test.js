@@ -129,15 +129,18 @@ test("{§web-workspace-creation} the fixed creation address admits only the nati
         assert.equal(res.status, 400, body);
     }
     const oversized = await fetch(new URL("/workspaces/new", base),
-        { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: `token=${"a".repeat(8192)}`, redirect: "manual" });
-    assert.equal(oversized.status, 413);
+        { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: `token=${"a".repeat(Number(process.env.PLURNK_WEB_FORM_BYTES))}`, redirect: "manual" });
+    assert.equal(oversized.status, 413, "PLURNK_WEB_FORM_BYTES bounds the body");
+    const twice = await fetch(new URL("/workspaces/new", base), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
+        body: `token=${randomUUID()}&token=${randomUUID()}`, redirect: "manual" });
+    assert.equal(twice.status, 400, "exactly one token field");
 });
 
 test("{§web-workspace-creation} invalid token syntax is rejected with 400", async (t) => {
     const { created, post } = await fixture(t);
     const res = await post("not-a-uuid");
     assert.equal(res.status, 400);
-    assert.match(await res.text(), /Invalid workspace creation token\./u);
+    assert.match(await res.text(), /Invalid form token\./u);
     assert.deepEqual(created, []);
 });
 
@@ -169,6 +172,9 @@ test("{§web-workspace-creation} authenticated creation enforces admission and o
     // Cross-origin POST returns 403
     const crossOrigin = await post(token, { origin: "https://evil.example" });
     assert.equal(crossOrigin.status, 403);
+    // A browser reporting another site is refused even with this origin, as in the anonymous posture
+    assert.equal((await post(token, { "sec-fetch-site": "cross-site" })).status, 403);
+    assert.equal((await post(token, { "sec-fetch-site": "same-site" })).status, 403);
 
     // Admitted same-origin POST returns 303 redirect
     const admittedRes = await post(token);
@@ -275,15 +281,17 @@ test("{§web-workspace-rename} workspace rename updates name and redirects to ne
     const missing = await renamePost({ workspace: "nonexistent", name: "new-name" });
     assert.equal(missing.status, 404);
 
-    // Empty name 400
-    const empty = await renamePost({ workspace: "old-name", name: "   " });
+    // Empty name 400; any other name reaches the daemon verbatim, for its admission to judge
+    const empty = await renamePost({ workspace: "old-name", name: "" });
     assert.equal(empty.status, 400);
+    const spaced = await renamePost({ workspace: "old-name", name: "  spaced  " });
+    assert.equal(spaced.status, 303);
 
     // Valid rename
     const success = await renamePost({ workspace: "old-name", name: "new-name" });
     assert.equal(success.status, 303);
     assert.equal(success.headers.get("location"), "/~/new-name/");
-    assert.deepEqual(renamed, [{ id: 7, name: "new-name" }]);
+    assert.deepEqual(renamed, [{ id: 7, name: "  spaced  " }, { id: 7, name: "new-name" }]);
 });
 
 test("{§web-worker-creation} worker creation creates independent worker and redirects", async (t) => {

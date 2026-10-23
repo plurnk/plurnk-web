@@ -31,7 +31,7 @@ export default class Creations {
      * @returns {Promise<string>} The canonical address of the created workspace.
      */
     async submit(token, create) {
-        if (!UUID_PATTERN.test(token)) throw new RequestError(400, "Invalid workspace creation token.");
+        if (!UUID_PATTERN.test(token)) throw new RequestError(400, "Invalid form token.");
         const now = Date.now();
         this.#prune(now);
         const existing = this.#entries.get(token);
