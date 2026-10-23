@@ -52,15 +52,16 @@ test("{§web-workspace-creation} expired tokens are pruned so retries after TTL 
     assert.equal(calls, 2);
 });
 
-test("{§web-workspace-creation} a daemon failure is retained and surfaced with its cause", async () => {
-    const creations = new Creations({ ttl: 600, tokens: 128 });
-    const token = randomUUID();
-    let calls = 0;
-    const create = async () => { calls++; throw new Error("daemon refused"); };
-    await assert.rejects(creations.submit(token, create),
-        (error) => error instanceof RequestError && error.status === 502 && error.cause.message === "daemon refused");
-    await assert.rejects(creations.submit(token, create), { status: 502 });
-    assert.equal(calls, 1);
+test("{§web-workspace-creation} a settled failure is retained under its token, and an internal fault is not reworded", async () => {
+    for (const failure of [new RequestError(409, "Workspace name 'taken' is already in use."), new Error("internal violation")]) {
+        const creations = new Creations({ ttl: 600, tokens: 128 });
+        const token = randomUUID();
+        let calls = 0;
+        const create = async () => { calls++; throw failure; };
+        await assert.rejects(creations.submit(token, create), (error) => error === failure);
+        await assert.rejects(creations.submit(token, create), (error) => error === failure, "a retry of the settled failure replays it");
+        assert.equal(calls, 1);
+    }
 });
 
 test("{§web-workspace-creation} envelope violations fail visibly instead of adapting the creation", async () => {

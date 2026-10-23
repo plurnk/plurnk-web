@@ -311,7 +311,36 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.ok(added, "the daemon holds the new worker");
                             assert.deepEqual([added.parentWorkerId, added.loops.length], [null, 0], "an independent worker with no loop");
 
-                            checkBrowser();
+                            // 5. A daemon refusal shows the daemon's own status and detail, and offers the draft again on a
+                            // form whose corrected submission goes through.
+                            const refusal = async (dialog, formId, name, detail) => {
+                                const target = await open(dialog, formId);
+                                await target.locator('input[name="name"]').fill(name);
+                                await target.getByRole("button", { name: "Confirm", exact: true }).click();
+                                await page.waitForLoadState("domcontentloaded");
+                                assert.equal(await page.locator('[data-text="error-title"]').innerText(), "409 Conflict", `${formId} keeps the daemon's status`);
+                                assert.match(await page.locator('[data-text="error-message"]').innerText(), detail, `${formId} shows the daemon's detail`);
+                                const retry = page.locator(`main #${formId}`);
+                                assert.equal(await retry.locator('input[name="name"]').inputValue(), name, `${formId} offers the draft again`);
+                                return retry;
+                            };
+                            const correct = async (retry, name, path) => {
+                                await retry.locator('input[name="name"]').fill(name);
+                                await retry.getByRole("button", { name: "Confirm", exact: true }).click();
+                                await page.waitForURL(new URL(path, base).href);
+                            };
+                            const suffix = javaScriptEnabled ? "scripted" : "unscripted";
+                            await page.goto(new URL(renamedPath, base).href);
+                            await correct(await refusal("dialog-worker-create", "worker-create", workerName, /already in use/u),
+                                `again-${suffix}`, directoryPath({ kind: "worker", workspace: renamedName, worker: `again-${suffix}` }));
+                            await page.goto(new URL(renamedPath, base).href);
+                            await correct(await refusal("dialog-workspace-rename", "workspace-rename", "folderless", /already in use/u),
+                                `${renamedName}-final`, directoryPath({ kind: "workspace", workspace: `${renamedName}-final` }));
+                            await page.goto(new URL("/~/", base).href);
+                            await correct(await refusal("dialog-workspace-create", "workspace-create", "folderless", /already in use/u),
+                                `corrected-${suffix}`, directoryPath({ kind: "workspace", workspace: `corrected-${suffix}` }));
+
+                            checkBrowser([httpFailure("/workers/new", 409), httpFailure("/workspaces/rename", 409), httpFailure("/workspaces/new", 409)]);
                         } finally { await context.close(); }
                     }
                 } finally { await browser.close(); }

@@ -6,7 +6,7 @@ import indexDocument from "./index-document.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
-import { privateHeaders, redirect, RequestError } from "./http.js";
+import { privateHeaders, redirect, refusal, RequestError } from "./http.js";
 import { readAsset, sendAsset } from "./static-assets.js";
 import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
@@ -141,7 +141,10 @@ export default function createModule() {
                             const formToken = fields.get("token");
                             if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
                             const customName = fields.get("name")?.trim();
-                            redirect(res, await creations.submit(formToken, () => seam.createWorkspace({ ...(customName ? { name: customName } : {}), projectRoot: null })));
+                            redirect(res, await creations.submit(formToken, async () => {
+                                try { return await seam.createWorkspace({ ...(customName ? { name: customName } : {}), projectRoot: null }); }
+                                catch (cause) { throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(customName ?? "")); }
+                            }));
                             return;
                         }
                         if (rename) {
@@ -153,7 +156,7 @@ export default function createModule() {
                             if (!ws) throw new RequestError(404, "Workspace not found.");
                             let renamed;
                             try { renamed = await seam.renameWorkspace(ws.id, newName); }
-                            catch (cause) { throw new RequestError(502, "The daemon could not rename the workspace.", { cause }); }
+                            catch (cause) { throw refusal(cause, "The daemon could not rename the workspace.", documents.retryRename(ws.name, newName)); }
                             const path = directoryPath({ kind: "workspace", workspace: renamed.name });
                             if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
                             redirect(res, path);
@@ -170,7 +173,8 @@ export default function createModule() {
                             redirect(res, await creations.submit(formToken, async () => {
                                 let createdWorker;
                                 try { createdWorker = await seam.createWorker({ workspaceId: ws.id, ...(workerName ? { name: workerName } : {}) }); }
-                                catch (cause) { throw new RequestError(502, "The daemon could not create the worker.", { cause }); }
+                                catch (cause) { throw refusal(cause, "The daemon could not create the worker.", documents.retryWorker(ws.name, workerName ?? "")); }
+                                // An internal fault, not a refusal: the worker exists.
                                 const path = directoryPath({ kind: "worker", workspace: ws.name, worker: createdWorker.workerName });
                                 if (path === null) throw new Error("The daemon returned a worker name without a directory address.");
                                 return path;
@@ -221,7 +225,7 @@ export default function createModule() {
                 } catch (error) {
                     if (!(error instanceof RequestError)) throw error;
                     const body = token || diagram ? Buffer.from(JSON.stringify(Problems.create("web", diagram ? "diagram-request-rejected" : "token-request-rejected", error.status, error.message)))
-                        : documents.error(error.status, error.message, admitted);
+                        : documents.error(error.status, error.message, admitted, { recovery: error.recovery, retry: error.retry });
                     res.writeHead(error.status, { ...privateHeaders, "content-type": token || diagram ? "application/problem+json" : "text/html; charset=utf-8", "content-length": body.byteLength });
                     res.end(req.method === "HEAD" ? undefined : body);
                 } finally {
