@@ -63,6 +63,22 @@ export default async function verifyApproval(t) {
                     assert.equal(await page.evaluate(() => window.review([])), false);
                     assert.equal(await form.isVisible(), false);
 
+                    // {§web-worker-approval} A deadline is a native time; past it the page presents the set and answers nothing.
+                    assert.equal(await page.evaluate((values) => window.review(values), gates), true);
+                    assert.equal(await groups.nth(0).locator("[data-proposal-deadline-line]").isVisible(), false, "an untimed wait has no deadline");
+                    const timed = { ...interrupt("timed"), expiresAt: "2030-01-01T00:00:00.000Z" };
+                    assert.equal(await page.evaluate((values) => window.review(values), [timed]), true);
+                    assert.equal(await groups.locator("time").getAttribute("datetime"), timed.expiresAt);
+                    assert.equal(await groups.locator("[data-proposal-deadline-line]").isVisible(), true);
+                    assert.equal(await form.locator("[data-deadline-notice]").isVisible(), false);
+                    const late = { ...interrupt("late"), expiresAt: "2020-01-01T00:00:00.000Z" };
+                    assert.equal(await page.evaluate((values) => window.review(values), [late]), true);
+                    assert.equal(await form.locator("[data-deadline-notice]").isVisible(), true);
+                    assert.equal(await groups.getByRole("radio", { name: "Accept", exact: true }).isDisabled(), true, "an expired request cannot be answered");
+                    const answered = await page.evaluate(() => window.responses.length);
+                    await form.evaluate((element) => element.requestSubmit());
+                    assert.equal(await page.evaluate(() => window.responses.length), answered, "nothing answers an expired request");
+
                     await page.goto(`${fixture.url}?yolo=1`);
                     await page.waitForFunction(() => typeof window.review === "function");
                     await page.evaluate((values) => window.review(values), gates);
@@ -100,6 +116,9 @@ export default async function verifyApproval(t) {
                     ]);
                     assert.equal(await page.evaluate((values) => window.review(values), [...gates, { id: "unknown" }]), false);
                     assert.equal(await page.evaluate(() => window.responses.length), 2, "unsupported sets are not partially auto-approved");
+                    assert.equal(await page.evaluate((values) => window.review(values), [{ ...interrupt("late"), expiresAt: "2020-01-01T00:00:00.000Z" }]), true);
+                    assert.equal(await page.evaluate(() => window.responses.length), 2, "automatic approval never answers an expired request");
+                    assert.equal(await form.locator("[data-deadline-notice]").isVisible(), true, "it is presented with its passed deadline");
                     checkBrowser();
                 } finally { await browser.close(); }
             });
