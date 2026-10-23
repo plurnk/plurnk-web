@@ -66,8 +66,8 @@ test("{§web-session} HTTPS cookie and session lifetime come from the verified g
     assert.equal(issued[0].subject, "operator");
     assert.ok(issued[0].ttlMs > 0 && issued[0].ttlMs <= 1000);
     const [cleared, issuedCookie] = headers.get("set-cookie");
-    assert.equal(cleared, `plurnk_web_login_${state}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Secure`, "the transaction is single-use");
-    assert.match(issuedCookie, /^plurnk_web_session=session; Path=\/; HttpOnly; SameSite=Lax; Max-Age=1; Secure$/u,
+    assert.equal(cleared, `__Secure-plurnk_web_login_${state}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Secure`, "the transaction is single-use");
+    assert.match(issuedCookie, /^__Host-plurnk_web_session=session; Path=\/; HttpOnly; SameSite=Lax; Max-Age=1; Secure$/u,
         "a live subsecond credential must not become a Max-Age=0 deletion; authority verification still enforces exact expiry");
     assert.equal(headers.get("location"), "/~/folderless/");
     assert.equal(headers.get("cache-control"), "no-store");
@@ -92,14 +92,14 @@ test("{§web-session} a sign-in transaction opens only in the browser and module
     const callback = async (session, cookie, state) => {
         const headers = new Map();
         await assert.rejects(session.callback({ headers: { cookie }, url: `/auth/callback?code=test&state=${state}` }, { setHeader: (name, value) => headers.set(name, value) }),
-            { status: 400, message: "Sign-in expired or does not belong to this browser. Start sign-in again." });
+            { status: 400, message: "This browser holds no current sign-in for this callback. Start sign-in again." });
         return headers.get("set-cookie");
     };
     const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => origin }, { ttl: 600 });
     const other = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => origin }, { ttl: 600 });
     const first = await start(session);
     const second = await start(session);
-    assert.equal(first.name, `plurnk_web_login_${first.state}`);
+    assert.equal(first.name, `__Secure-plurnk_web_login_${first.state}`, "under HTTPS a transaction is Secure-prefixed");
     assert.notEqual(first.name, second.name, "concurrent tabs keep their own transactions");
     const tampered = `${first.value.slice(0, -2)}${first.value.endsWith("AA") ? "AB" : "AA"}`;
     const cases = [
@@ -112,7 +112,7 @@ test("{§web-session} a sign-in transaction opens only in the browser and module
     ];
     for (const [label, cookie, state, target = session] of cases) {
         const cleared = await callback(target, cookie, state);
-        if (/^[\w-]+$/u.test(state)) assert.equal(cleared, `plurnk_web_login_${state}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Secure`, label);
+        if (/^[\w-]+$/u.test(state)) assert.equal(cleared, `__Secure-plurnk_web_login_${state}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Secure`, label);
         else assert.equal(cleared, undefined, label);
     }
     t.mock.timers.tick(600_000);
@@ -147,9 +147,9 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
     await session.login({ headers: {}, url: "/auth/login" }, response);
     const binding = headers.get("set-cookie").split(";")[0];
     const state = new URL(headers.get("location")).searchParams.get("state");
-    await session.callback({ headers: { cookie: `${binding}; plurnk_web_session=old-session` }, url: `/auth/callback?code=test&state=${state}` }, response);
+    await session.callback({ headers: { cookie: `${binding}; __Host-plurnk_web_session=old-session` }, url: `/auth/callback?code=test&state=${state}` }, response);
     assert.deepEqual(revoked, [], "the two callbacks belong to one browser sign-in, not competing families");
-    assert.match(headers.get("set-cookie")[1], /^plurnk_web_session=new-session;/u);
+    assert.match(headers.get("set-cookie")[1], /^__Host-plurnk_web_session=new-session;/u);
 });
 
 test("{§web-account} sign-in returns to native account pages without treating query or fragment text as a path", async () => {
@@ -159,12 +159,12 @@ test("{§web-account} sign-in returns to native account pages without treating q
     const response = { writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
     for (const path of ["/account/", "/account/sessions/"]) {
         for (const requested of [path, `${path}index.html`, `${path}?filter=example`, `${path}index.html#section`]) {
-            await session.login({ headers: { cookie: "plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response);
+            await session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response);
             assert.equal(locations.at(-1), path);
         }
     }
     for (const requested of ["https://foreign.example/account/", "//foreign.example/account/", "/account", "/account/../sessions/"]) {
-        await assert.rejects(session.login({ headers: { cookie: "plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response),
+        await assert.rejects(session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response),
             { status: 400, message: "Invalid return page." });
     }
 });
@@ -181,7 +181,7 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
     };
     const origin = "https://daemon.example";
     const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => origin }, { ttl: 600 });
-    const req = { headers: { origin, cookie: "plurnk_web_session=current-token" } };
+    const req = { headers: { origin, cookie: "__Host-plurnk_web_session=current-token" } };
     const headers = new Map();
     const response = {
         setHeader: (name, value) => headers.set(name, value),
@@ -202,7 +202,7 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
     assert.equal(headers.get("location"), "/account/sessions/");
     session.revoke(req, response, "current");
     assert.deepEqual(revoked, ["other", "other", "current"]);
-    assert.match(headers.get("set-cookie"), /plurnk_web_session=;.*Max-Age=0/u);
+    assert.match(headers.get("set-cookie"), /^__Host-plurnk_web_session=;.*Max-Age=0/u);
     assert.equal(headers.get("location"), "/");
 });
 
@@ -213,4 +213,18 @@ test("{§web-workspace-creation} module form mutations require the daemon's own 
     for (const headers of [{ origin: "https://foreign.example" }, { origin: "https://daemon.example.evil" }, {}]) {
         assert.throws(() => session.sameOriginForm({ headers }), { status: 403 });
     }
+});
+
+test("{§web-session} a browser starts sign-in at the issuer's address, and cookie names follow its scheme", () => {
+    const credentials = { verify: () => null, onRevoked: () => () => {} };
+    const at = (issuer) => new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => issuer }, { ttl: 600 });
+    assert.equal(at("http://127.0.0.1:1066").signIn({ headers: { host: "127.0.0.1:1066" } }, "/~/work/"), "/auth/login?return=%2F%7E%2Fwork%2F",
+        "the address the browser reached is the issuer's");
+    assert.equal(at("https://daemon.example").signIn({ headers: { host: "10.0.0.5:1066" } }, "/~/work/"), "https://daemon.example/auth/login?return=%2F%7E%2Fwork%2F",
+        "another address starts sign-in at the issuer's, where its callback returns");
+    assert.equal(at("http://127.0.0.1:1066").admitted({ headers: { cookie: "__Host-plurnk_web_session=x" } }), false, "plain HTTP reads the unprefixed name");
+    const verified = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "f" }), onRevoked: () => () => {} },
+        { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600 });
+    assert.equal(verified.admitted({ headers: { cookie: "plurnk_web_session=x" } }), false, "HTTPS reads only the host-only name");
+    assert.equal(verified.admitted({ headers: { cookie: "__Host-plurnk_web_session=x" } }), true);
 });

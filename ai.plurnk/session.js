@@ -1,12 +1,16 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import * as oauth from "oauth4webapi";
-import { cookie, redirect, RequestError, privateHeaders } from "./http.js";
+import { cookie, redirect, RequestError, privateHeaders, sameOriginFetch } from "./http.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import indexDocument from "./index-document.js";
 
 const SESSION = "plurnk_web_session";
 // A sign-in transaction's cookie: this prefix and the transaction's state.
 const TRANSACTION = "plurnk_web_login_";
+// {§web-session} Under HTTPS the names carry the browser's prefixes that no sibling host can set: the session is host-only
+// at `/`, and a transaction, scoped to `/auth`, is Secure.
+const HOST_ONLY = "__Host-";
+const SECURE_ONLY = "__Secure-";
 export const CALLBACK = "/auth/callback";
 export const CLIENT = "plurnk-web";
 
@@ -61,7 +65,7 @@ export default class Session {
 
     /** @param {import("node:http").IncomingMessage} req */
     #claims(req) {
-        const token = cookie(req, SESSION);
+        const token = cookie(req, this.#session(req));
         const claims = token === null ? null : this.#credentials.verify(token);
         return claims?.kind === "session" && claims.clientId === this.#client.client_id && claims.scopes.includes("agui") ? claims : null;
     }
@@ -100,6 +104,7 @@ export default class Session {
      */
     sameOriginForm(req) {
         if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin form required.");
+        sameOriginFetch(req);
     }
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
@@ -109,10 +114,27 @@ export default class Session {
         redirect(res, "/account/sessions/");
     }
 
+    /** @param {import("node:http").IncomingMessage} req */
+    #secure(req) { return this.#issuer(req).startsWith("https:"); }
+
+    /** @param {import("node:http").IncomingMessage} req */
+    #session(req) { return `${this.#secure(req) ? HOST_ONLY : ""}${SESSION}`; }
+
+    /** @param {import("node:http").IncomingMessage} req @param {string} state */
+    #transaction(req, state) { return `${this.#secure(req) ? SECURE_ONLY : ""}${TRANSACTION}${state}`; }
+
     /** @param {import("node:http").IncomingMessage} req @param {string} name @param {string} value @param {string} path @param {number} ttl */
     #cookie(req, name, value, path, ttl) {
         return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.ceil(ttl))}`
-            + (this.#issuer(req).startsWith("https:") ? "; Secure" : "");
+            + (this.#secure(req) ? "; Secure" : "");
+    }
+
+    /** {§web-session} Where a browser starts sign-in: the issuer's own address, so its transaction and callback share one host.
+     * @param {import("node:http").IncomingMessage} req @param {string} returnTo
+     */
+    signIn(req, returnTo) {
+        const location = new URL(`/auth/login?${new URLSearchParams({ return: returnTo })}`, this.#issuer(req));
+        return location.host === req.headers.host ? `${location.pathname}${location.search}` : location.href;
     }
 
     /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
@@ -132,7 +154,7 @@ export default class Session {
         const verifier = oauth.generateRandomCodeVerifier();
         const challenge = await oauth.calculatePKCECodeChallenge(verifier);
         const redirectUri = `${issuer}${CALLBACK}`;
-        const name = `${TRANSACTION}${state}`;
+        const name = this.#transaction(req, state);
         const sealed = this.#seal(name, { verifier, target, redirectUri, expires: Date.now() + this.#limits.ttl * 1000 });
         res.setHeader("set-cookie", this.#cookie(req, name, sealed, "/auth", this.#limits.ttl));
         // The browser signs in at the daemon's authorization endpoint on the address it reached.
@@ -148,9 +170,9 @@ export default class Session {
     async callback(req, res) {
         const url = new URL(req.url ?? "/", this.#issuer(req));
         const state = url.searchParams.get("state") ?? "";
-        const expired = new RequestError(400, "Sign-in expired or does not belong to this browser. Start sign-in again.");
+        const expired = new RequestError(400, "This browser holds no current sign-in for this callback. Start sign-in again.");
         if (!/^[\w-]+$/u.test(state)) throw expired;
-        const name = `${TRANSACTION}${state}`;
+        const name = this.#transaction(req, state);
         const sealed = cookie(req, name);
         // Single use: the browser drops the transaction whatever this callback's outcome.
         const cleared = this.#cookie(req, name, "", "/auth", 0);
@@ -185,7 +207,7 @@ export default class Session {
         if (old !== null && old.family !== claims.family) this.#credentials.revokeFamily(old.family);
         this.#prune();
         this.#grants.set(claims.family, grant);
-        res.setHeader("set-cookie", [cleared, this.#cookie(req, SESSION, issued.token, "/", ttlMs / 1000)]);
+        res.setHeader("set-cookie", [cleared, this.#cookie(req, this.#session(req), issued.token, "/", ttlMs / 1000)]);
         redirect(res, transaction.target);
     }
 
@@ -285,7 +307,7 @@ export default class Session {
         this.sameOriginForm(req);
         const claims = this.#claims(req);
         if (claims !== null) this.#credentials.revokeFamily(claims.family);
-        res.setHeader("set-cookie", this.#cookie(req, SESSION, "", "/", 0));
+        res.setHeader("set-cookie", this.#cookie(req, this.#session(req), "", "/", 0));
         redirect(res, "/");
     }
 

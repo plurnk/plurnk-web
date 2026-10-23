@@ -27,7 +27,7 @@ test("{§web-host} {§web-configuration} configuration admits only an enabled ro
 
 test("{§web-configuration} missing and invalid limits never select code defaults; disabled web ignores them", (t) => {
     const keys = ["PLURNK_WEB_ENABLED", "PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_REASONING_PREVIEW_CHARS",
-        "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_CREATE_TOKENS",
+        "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_CREATE_TOKENS", "PLURNK_WEB_FORM_BYTES",
         "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_DIAGRAM_PENDING", "PLURNK_WEB_DIAGRAM_TIMEOUT_MS",
         "PLURNK_WEB_DIAGRAM_INPUT_BYTES", "PLURNK_WEB_DIAGRAM_OUTPUT_BYTES", "PLURNK_WEB_DIAGRAM_EDGES"];
     const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));

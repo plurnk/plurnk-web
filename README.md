@@ -37,7 +37,8 @@ The workspace list and workspace pages offer native header actions alongside the
 - On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal to create a new folderless workspace; left unnamed, the daemon names it ({§web-workspace-creation}).
 - On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️` and `➕` open native `<dialog>` modals to rename the current workspace or create an independent model worker; left unnamed, the daemon names it ({§web-worker-creation}).
 Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow at the end of `<main>` when JavaScript is disabled; with JavaScript a closed modal shows nothing.
-itself instead of re-executing, and anonymous daemons keep actions behind same-origin guards.
+itself instead of re-executing. Anonymous daemons refuse cross-site form posts, but a page that makes the browser reach
+the daemon by a name of its choosing (DNS rebinding) passes that guard: run `PLURNK_AUTH=0` only where trusted parties alone reach the listener.
 Worker share full-width article lists and a stationary header around scrolling
 main content. Worker status and the Stop / multiline message / Send row stay at
 the bottom. The message field and buttons grow together; Enter remains a newline,

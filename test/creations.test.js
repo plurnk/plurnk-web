@@ -35,7 +35,7 @@ test("{§web-workspace-creation} invalid token syntax is rejected without invoki
     const create = async () => { calls++; return envelope("never"); };
     for (const invalid of ["not-a-uuid", "", "12345", "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"]) {
         await assert.rejects(creations.submit(invalid, create),
-            (error) => error instanceof RequestError && error.status === 400 && error.message.includes("Invalid workspace creation token"));
+            (error) => error instanceof RequestError && error.status === 400 && error.message.includes("Invalid form token"));
     }
     assert.equal(calls, 0);
 });

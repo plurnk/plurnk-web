@@ -57,7 +57,7 @@ async function fixture(t) {
     const binding = res.headers["set-cookie"].split(";")[0];
     const state = new URL(res.headers.location).searchParams.get("state");
     await session.callback({ headers: { cookie: binding }, url: `/auth/callback?code=test&state=${state}` }, res);
-    const request = { headers: { cookie: res.headers["set-cookie"].find((value) => value.startsWith("plurnk_web_session=")).split(";")[0], origin } };
+    const request = { headers: { cookie: res.headers["set-cookie"].find((value) => value.startsWith("__Host-plurnk_web_session=")).split(";")[0], origin } };
     const expire = () => { records.get(initial.access_token).expiresAt = Date.now() - 1; };
     return { session, request, records, listeners, authority, initial, pair, expire, entered, released, refreshes };
 }

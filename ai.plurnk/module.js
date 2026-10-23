@@ -6,14 +6,11 @@ import indexDocument from "./index-document.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
-import { ownNavigation, privateHeaders, redirect, refusal, RequestError } from "./http.js";
+import { ownNavigation, privateHeaders, redirect, refusal, RequestError, sameOriginFetch } from "./http.js";
 import { readAsset, sendAsset } from "./static-assets.js";
 import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
 
-// One hidden token field: a UUID is 36 characters; 4 KiB bounds any encoding of it
-// with wide margin. Larger bodies are not this native form.
-const CREATE_INPUT_BYTES = 4096;
 /** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers" | "createWorkspace" | "renameWorkspace" | "createWorker">} Port */
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
@@ -22,6 +19,7 @@ export default function createModule() {
     const reasoningPreviewChars = Knob.integer("PLURNK_WEB_REASONING_PREVIEW_CHARS", 1);
     const authenticate = Knob.flag("PLURNK_AUTH");
     const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1) };
+    const formBytes = Knob.integer("PLURNK_WEB_FORM_BYTES", 1);
     const creations = new Creations({ ttl: Knob.integer("PLURNK_WEB_CREATE_TTL_SEC", 1), tokens: Knob.integer("PLURNK_WEB_CREATE_TOKENS", 1) });
     const diagrams = new Diagrams();
     /** @type {{ clientId: string, clientSecret: string } | null} */
@@ -116,9 +114,7 @@ export default function createModule() {
                             try { host = new URL(origin).host; }
                             catch (cause) { throw new RequestError(403, "Same-origin form required.", { cause }); }
                             if (host !== req.headers.host) throw new RequestError(403, "Same-origin form required.");
-                            if (req.headers["sec-fetch-site"] !== undefined && req.headers["sec-fetch-site"] !== "same-origin") {
-                                throw new RequestError(403, "Same-origin form required.");
-                            }
+                            sameOriginFetch(req);
                         }
                         let type;
                         try { type = new MIMEType(req.headers["content-type"] ?? ""); }
@@ -131,14 +127,14 @@ export default function createModule() {
                         const chunks = [];
                         for await (const chunk of req.iterator({ destroyOnReturn: false })) {
                             size += chunk.byteLength;
-                            if (size > CREATE_INPUT_BYTES) { req.resume(); throw new RequestError(413, "Form exceeds its bound."); }
+                            if (size > formBytes) { req.resume(); throw new RequestError(413, "Form exceeds its bound."); }
                             chunks.push(chunk);
                         }
                         let fields;
                         try { fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
                         catch (cause) { throw new RequestError(400, "Invalid form data.", { cause }); }
                         if (creation) {
-                            const formToken = fields.get("token");
+                            const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
                             if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
                             // An empty name is no name: the daemon names the workspace.
                             const name = fields.get("name") ?? "";
@@ -150,7 +146,7 @@ export default function createModule() {
                         }
                         if (rename) {
                             const targetName = fields.get("workspace");
-                            const newName = fields.get("name")?.trim();
+                            const newName = fields.get("name");
                             if (!targetName || !newName) throw new RequestError(400, "Expected current workspace and new name.");
                             const workspaces = await seam.listWorkspaces();
                             const ws = workspaces.find(({ name }) => name === targetName);
@@ -164,7 +160,7 @@ export default function createModule() {
                             return;
                         }
                         if (workerCreation) {
-                            const formToken = fields.get("token");
+                            const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
                             const targetName = fields.get("workspace");
                             if (!formToken || !targetName) throw new RequestError(400, "Expected worker creation token and workspace name.");
                             // An empty name is no name: the daemon names the worker.
@@ -207,7 +203,7 @@ export default function createModule() {
                             throw new RequestError(405, "Method not allowed.");
                         }
                         if (!home && session !== null && !admitted) {
-                            redirect(res, `/auth/login?${new URLSearchParams({ return: req.url ?? "/~/" })}`);
+                            redirect(res, session.signIn(req, req.url ?? "/~/"));
                             return;
                         }
                         const body = home ? documents.home(admitted) : account ? documents.account() : inventory ? documents.sessions(inventory)
