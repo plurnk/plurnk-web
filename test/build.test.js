@@ -167,6 +167,14 @@ test("{§web-build} production HTML references compiled assets, not development 
     assert.match(footnoteLicense, /Copyright \(c\) 2023-2024 Stilearning/u);
     assert.match(footnoteLicense, /The above copyright notice and this permission notice shall be included/u);
     assert.ok(inventory.some(([path]) => path === "/vendor/MARKED-FOOTNOTE-LICENSE.txt"));
+    // {§web-assets} Every bundled package's entry carries its license text, or names the text retained beside it.
+    const bare = [...license.matchAll(/^## (\S+) - \S+ \(.*\)\n\n(?=## |$)/gmu)].map(([, name]) => name);
+    const retained = (name) => `/vendor/${name.replace(/^@/u, "").replaceAll("/", "-").toUpperCase()}-LICENSE.txt`;
+    assert.deepEqual(bare.filter((name) => !inventory.some(([path]) => path === retained(name))), [], "a bundled package without its license text");
+    for (const name of bare) {
+        const text = await readFile(new URL(`../ai.plurnk/dist${retained(name)}`, import.meta.url), "utf8");
+        assert.ok(text.startsWith(`${name} `) && /Permission|Licensed under|Redistribution/u.test(text), `${retained(name)} holds ${name}'s license`);
+    }
     assert.ok(inventory.some(([path, , type]) => /\/Temml-[^/]+\.woff2$/u.test(path) && type === "font/woff2"));
     assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.js$/u.test(path)), "math remains a separate lazy chunk");
     assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "renderer styles remain separate from the application stylesheet");

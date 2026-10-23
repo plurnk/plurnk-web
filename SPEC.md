@@ -46,6 +46,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 | GET `/icons/plurnk-maskable.svg` | Maskable app icon. |
 | GET `/icons/NOTO-NOTICE.txt`, `/icons/APACHE-2.0.txt` | Artwork attribution and license. |
 | GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt`, `/vendor/DEPENDENCIES-LICENSE.txt` | Packaged substrate and bundled JavaScript dependency licenses. |
+| GET `/vendor/<PACKAGE>-LICENSE.txt` | The license text of a bundled package whose npm artifact omits it, retained from the package's published git revision and named for the package (`@scope/name` as `SCOPE-NAME`, uppercase); its `DEPENDENCIES-LICENSE.txt` entry is a heading only. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
 | Other asset path | 404 error document, never a home-page fallback or filesystem listing. |
 | Asset method other than GET/HEAD | 405 with `Allow: GET, HEAD`. |
