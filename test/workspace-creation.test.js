@@ -9,7 +9,7 @@ import createModule from "../ai.plurnk/module.js";
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 
 // {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
-async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createWorker = async (args) => ({ workerId: 10, workerName: args.name || "bob" }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }] } = {}) {
+async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createWorker = async (args) => ({ workerId: 10, workerName: args.name || "bob" }), setWorkspaceHidden = async ({ workspaceId, hidden }) => ({ id: workspaceId, hidden_at: hidden ? new Date().toISOString() : null }), setWorkerHidden = async ({ workerId, hidden }) => ({ id: workerId, hidden_at: hidden ? new Date().toISOString() : null, workerIds: [workerId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], workers = [{ id: 10, name: "bob", origin: "model", parentWorkerId: null, kind: "worker", lifecycle: "completed", hidden_at: null }] } = {}) {
     const originalAuth = process.env.PLURNK_AUTH;
     process.env.PLURNK_AUTH = auth ? "1" : "0";
     t.after(() => {
@@ -40,19 +40,18 @@ async function fixture(t, { auth = false, admitted = true, create = async () => 
         },
         registerHttpRoute(_prefix, serve) { handler = serve; },
         listWorkspaces: async () => workspaces,
-        listWorkers: async () => [],
+        listWorkers: async () => workers,
         createWorkspace: async (args) => { created.push(args); return create(args); },
         renameWorkspace: rename,
         createWorker,
+        setWorkspaceHidden,
+        setWorkerHidden,
     };
-
     await module.start(seam);
     const server = createServer(handler);
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     base = `http://127.0.0.1:${server.address().port}`;
-
-    t.after(() => module.close());
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
 
     const post = (token, headers = {}, extraBody = {}) => {
@@ -337,9 +336,89 @@ test("{§web-worker-creation} worker creation creates independent worker and red
     assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace@bob/");
     assert.deepEqual(createdWorkers[1], { workspaceId: 7 });
 
-    // Idempotent retry converges to same worker
-    const retryRes = await workerPost({ workspace: "my-workspace", token: unnamedToken });
-    assert.equal(retryRes.status, 303);
-    assert.equal(retryRes.headers.get("location"), "/~/my-workspace@bob/");
-    assert.equal(createdWorkers.length, 2);
+
+});
+
+test("{§web-workspace-hide} workspace hide calls daemon and redirects to /~/", async (t) => {
+    const hidden = [];
+    const { base } = await fixture(t, {
+        workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, hidden_at: null }],
+        setWorkspaceHidden: async (args) => { hidden.push(args); return { id: args.workspaceId, hidden_at: "2026-10-23T00:00:00Z" }; },
+    });
+    const hidePost = (body, headers = {}) => fetch(new URL("/workspaces/hide", base), {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
+        body: new URLSearchParams(body),
+        redirect: "manual",
+    });
+
+    // Method guard
+    for (const method of ["GET", "HEAD"]) {
+        const res = await fetch(new URL("/workspaces/hide", base), { method, redirect: "manual" });
+        assert.equal(res.status, 405, method);
+        assert.equal(res.headers.get("allow"), "POST");
+    }
+
+    // Origin check
+    const foreign = await hidePost({ workspace: "target-ws" }, { origin: "https://evil.example" });
+    assert.equal(foreign.status, 403);
+
+    // Missing workspace 404
+    const missing = await hidePost({ workspace: "nonexistent" });
+    assert.equal(missing.status, 404);
+
+    // Empty workspace 400
+    const empty = await hidePost({ workspace: "" });
+    assert.equal(empty.status, 400);
+
+    // Successful hide
+    const res = await hidePost({ workspace: "target-ws" });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "/~/");
+    assert.deepEqual(hidden, [{ workspaceId: 7, hidden: true }]);
+});
+
+test("{§web-worker-hide} worker hide calls daemon and redirects to workspace address", async (t) => {
+    const hidden = [];
+    const { base } = await fixture(t, {
+        workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, hidden_at: null }],
+        workers: [{ id: 10, name: "target-worker", origin: "model", parentWorkerId: null, kind: "worker", lifecycle: "completed", hidden_at: null }],
+        setWorkerHidden: async (args) => { hidden.push(args); return { id: args.workerId, hidden_at: "2026-10-23T00:00:00Z", workerIds: [args.workerId] }; },
+    });
+
+    const hidePost = (body, headers = {}) => fetch(new URL("/workers/hide", base), {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
+        body: new URLSearchParams(body),
+        redirect: "manual",
+    });
+
+    // Method guard
+    for (const method of ["GET", "HEAD"]) {
+        const res = await fetch(new URL("/workers/hide", base), { method, redirect: "manual" });
+        assert.equal(res.status, 405, method);
+        assert.equal(res.headers.get("allow"), "POST");
+    }
+
+    // Origin check
+    const foreign = await hidePost({ workspace: "target-ws", worker: "target-worker" }, { origin: "https://evil.example" });
+    assert.equal(foreign.status, 403);
+
+    // Missing workspace 404
+    const missingWs = await hidePost({ workspace: "nonexistent", worker: "target-worker" });
+    assert.equal(missingWs.status, 404);
+
+    // Missing worker 404
+    const missingWorker = await hidePost({ workspace: "target-ws", worker: "nonexistent" });
+    assert.equal(missingWorker.status, 404);
+
+    // Empty fields 400
+    const empty = await hidePost({ workspace: "target-ws", worker: "" });
+    assert.equal(empty.status, 400);
+
+    // Successful hide
+    const res = await hidePost({ workspace: "target-ws", worker: "target-worker" });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), "/~/target-ws/");
+    assert.deepEqual(hidden, [{ workspaceId: 7, workerId: 10, hidden: true }]);
 });

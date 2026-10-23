@@ -308,9 +308,33 @@ flow at the end of `<main>` and submits cleanly.
 | Convergence | The form token acts as idempotency key: racing double-clicks and retries converge to the single created worker. Expiry and bounds share the creation limits. |
 | Success and failure | Missing workspace answers 404. Success 303-redirects to the new worker's canonical directory address (`directoryPath({ kind: "worker", workspace, worker })`). A refusal or failure answers as {§web-workspace-creation}'s Failure row says; a worker name without a directory address is an internal violation, not a refusal. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
+## §web-workspace-hide Workspace hide
+
+Workspace page (`/~/<workspace>/`) headers carry a native hide trigger button (`🗑️`);
+daemon, worker, account and error documents never do. Activating the trigger opens a native
+`<dialog>` modal (`#dialog-workspace-hide`). When JavaScript is disabled, the form renders in normal
+flow at the end of `<main>` and submits cleanly.
+
+| Boundary | Contract |
+|---|---|
+| Form | A native modal (`#dialog-workspace-hide`) containing one `method="post" action="/workspaces/hide"` form with the current workspace name in a hidden `workspace` field, a message explaining that hiding leaves files and history intact, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
+| Delivery | Uses the public `setWorkspaceHidden({ workspaceId, hidden: true })` contract on `ApplicationPort`. Missing workspace answers 404. A refusal (such as live work) answers with the daemon's status and detail. Success 303-redirects to `/~/`. |
+| Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
+
+## §web-worker-hide Worker hide
+
+Worker page (`/~/<workspace>@<worker>/`) headers carry a native hide trigger button (`🗑️`);
+daemon, workspace, account and error documents never do. Activating the trigger opens a native
+`<dialog>` modal (`#dialog-worker-hide`). When JavaScript is disabled, the form renders in normal
+flow at the end of `<main>` and submits cleanly.
+
+| Boundary | Contract |
+|---|---|
+| Form | A native modal (`#dialog-worker-hide`) containing one `method="post" action="/workers/hide"` form with the current workspace name in a hidden `workspace` field, the worker name in a hidden `worker` field, an explanation that hiding removes the worker and its descendants without destroying history, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
+| Delivery | Uses the public `setWorkerHidden({ workspaceId, workerId, hidden: true })` contract on `ApplicationPort`. Missing workspace or worker answers 404. A refusal (such as live work covered by the subtree) answers with the daemon's status and detail. Success 303-redirects to the workspace address (`directoryPath({ kind: "workspace", workspace })`). |
+| Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
 
 ## §web-worker-directory Model-worker navigation
-
 | Boundary | Representation |
 |---|---|
 | Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |

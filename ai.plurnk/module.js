@@ -11,7 +11,7 @@ import { readAsset, sendAsset } from "./static-assets.js";
 import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
 
-/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers" | "createWorkspace" | "renameWorkspace" | "createWorker">} Port */
+/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers" | "createWorkspace" | "renameWorkspace" | "createWorker" | "setWorkspaceHidden" | "setWorkerHidden">} Port */
 /** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
@@ -75,6 +75,8 @@ export default function createModule() {
                 const creation = pathname === "/workspaces/new";
                 const rename = pathname === "/workspaces/rename";
                 const workerCreation = pathname === "/workers/new";
+                const workspaceHide = pathname === "/workspaces/hide";
+                const workerHide = pathname === "/workers/hide";
                 const diagram = pathname === "/render/mermaid";
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
@@ -99,13 +101,13 @@ export default function createModule() {
                         else session.logout(req, res);
                         return;
                     }
-                    if (creation || rename || workerCreation) {
-                        const actionName = creation ? "create a workspace" : rename ? "rename a workspace" : "create a worker";
+                    if (creation || rename || workerCreation || workspaceHide || workerHide) {
+                        const actionName = creation ? "create a workspace" : rename ? "rename a workspace" : workerCreation ? "create a worker" : workspaceHide ? "hide a workspace" : "hide a worker";
                         if (req.method !== "POST") {
                             res.setHeader("allow", "POST");
                             throw new RequestError(405, `Use POST to ${actionName}.`);
                         }
-                        if (session !== null && !admitted) throw new RequestError(401, `Sign in again before ${creation ? "creating a workspace" : rename ? "renaming a workspace" : "creating a worker"}.`);
+                        if (session !== null && !admitted) throw new RequestError(401, `Sign in again before ${actionName}.`);
                         if (session !== null) session.sameOriginForm(req);
                         else {
                             const origin = req.headers.origin;
@@ -177,6 +179,34 @@ export default function createModule() {
                                 if (path === null) throw new Error("The daemon returned a worker name without a directory address.");
                                 return path;
                             }));
+                            return;
+                        }
+                        if (workspaceHide) {
+                            const targetName = fields.get("workspace");
+                            if (!targetName) throw new RequestError(400, "Expected workspace name.");
+                            const workspaces = await seam.listWorkspaces();
+                            const ws = workspaces.find(({ name }) => name === targetName);
+                            if (!ws) throw new RequestError(404, "Workspace not found.");
+                            try { await seam.setWorkspaceHidden({ workspaceId: ws.id, hidden: true }); }
+                            catch (cause) { throw refusal(cause, "The daemon could not hide the workspace."); }
+                            redirect(res, "/~/");
+                            return;
+                        }
+                        if (workerHide) {
+                            const targetName = fields.get("workspace");
+                            const targetWorker = fields.get("worker");
+                            if (!targetName || !targetWorker) throw new RequestError(400, "Expected workspace and worker name.");
+                            const workspaces = await seam.listWorkspaces();
+                            const ws = workspaces.find(({ name }) => name === targetName);
+                            if (!ws) throw new RequestError(404, "Workspace not found.");
+                            const workers = await seam.listWorkers(ws.id);
+                            const worker = workers.find(({ name }) => name === targetWorker);
+                            if (!worker) throw new RequestError(404, "Worker not found.");
+                            try { await seam.setWorkerHidden({ workspaceId: ws.id, workerId: worker.id, hidden: true }); }
+                            catch (cause) { throw refusal(cause, "The daemon could not hide the worker."); }
+                            const path = directoryPath({ kind: "workspace", workspace: ws.name });
+                            if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
+                            redirect(res, path);
                             return;
                         }
                     }
