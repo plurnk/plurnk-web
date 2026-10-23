@@ -189,7 +189,11 @@ export default async function verifyStatus(t) {
                     updated.plurnk.workspace.name = "renamed";
                     updated.plurnk.status.descendants[1] = { ...updated.plurnk.status.descendants[1], lifecycle: "completed", gates: 0 };
                     updated.plurnk.status.descendants.push({ id: 15, name: "new-child", parentWorkerId: 13, kind: "work", lifecycle: "idle", gates: 0 });
+                    await family.locator('[data-descendant-id="11"] > a').focus();
+                    await page.evaluate(() => { window.focusedLink = document.activeElement; });
                     await receive(updated);
+                    assert.equal(await page.evaluate(() => window.focusedLink.isConnected && document.activeElement === window.focusedLink), true,
+                        "{§web-worker-descendants} updating other descendants keeps this one's node and focus");
                     assert.equal(await family.locator('[data-descendant-id="11"] > details').evaluate((el) => el.open), true);
                     assert.equal(await family.locator('[data-descendant-id="13"] > details').evaluate((el) => el.open), false);
                     assert.equal(await family.locator('[data-descendant-id="12"] > a').getAttribute("href"), "/~/renamed@grandchild/");
