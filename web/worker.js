@@ -28,6 +28,24 @@ const SETTLED_INTERRUPTS = new Set([
     "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending",
 ]);
 
+/** {§web-worker-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback
+ * here hands its first failure to `fail` and skips the rest, so the run ends with that cause.
+ * @param {import("@ag-ui/client").AgentSubscriber} subscriber @param {(error: unknown) => void} fail
+ * @returns {import("@ag-ui/client").AgentSubscriber}
+ */
+function failing(subscriber, fail) {
+    let failed = false;
+    return Object.fromEntries(Object.entries(subscriber).map(([name, callback]) => [name, async (/** @type {never} */ params) => {
+        if (failed) return undefined;
+        try { return await callback(params); }
+        catch (error) {
+            failed = true;
+            fail(error);
+            return undefined;
+        }
+    }]));
+}
+
 /** {§web-worker-observer} {§web-worker-input} Delivery changes never own the worker's lifetime.
  * @param {HTMLElement} element
  */
@@ -144,7 +162,12 @@ export default function observeWorker(element) {
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
                 agent.url = submission ? "/agui" : "/agui/connect";
-                agent.abortController = controller;
+                // This run ends with the page's observation or with its first intake failure.
+                const run = new AbortController();
+                signal.onabort = () => run.abort(signal.reason);
+                agent.abortController = run;
+                /** @type {{ error: unknown } | undefined} */
+                let intake;
                 if (submission?.message) agent.addMessage(submission.message);
                 let terminal = false;
                 let interrupted = false;
@@ -204,8 +227,14 @@ export default function observeWorker(element) {
                         else refusal = event.message;
                     },
                 };
-                if (submission) await agent.runAgent({ abortController: controller, resume: submission.resume, tools: interactionTools, forwardedProps: { plurnk: { interactive: true } } }, subscriber);
-                else await agent.connectAgent(holding ? { forwardedProps: { plurnk: { interrupts: agent.pendingInterrupts.map(({ id }) => id) } } } : {}, subscriber);
+                const delivered = failing(subscriber, (error) => { intake = { error }; run.abort(error); });
+                try {
+                    if (submission) await agent.runAgent({ abortController: run, resume: submission.resume, tools: interactionTools, forwardedProps: { plurnk: { interactive: true } } }, delivered);
+                    else await agent.connectAgent(holding ? { forwardedProps: { plurnk: { interrupts: agent.pendingInterrupts.map(({ id }) => id) } } } : {}, delivered);
+                } catch (error) {
+                    if (intake === undefined) throw error;
+                }
+                if (intake !== undefined) throw intake.error;
                 signal.throwIfAborted();
                 if (interrupted) {
                     holding = false;

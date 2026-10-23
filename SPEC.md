@@ -343,8 +343,8 @@ stateDiagram-v2
     Connecting --> Connected: authoritative status
     Connected --> Connecting: worker terminal
     Connected --> Connecting: configured automatic approval
-    Connecting --> Disconnected: refusal / transport failure
-    Connected --> Disconnected: shutdown / transport failure
+    Connecting --> Disconnected: refusal / transport or intake failure
+    Connected --> Disconnected: shutdown / transport or intake failure
     Connected --> Interrupted: input required, observation stays live
     Interrupted --> Connecting: another client settles input
     Interrupted --> Connecting: explicit review / reconnect / Stop
@@ -362,6 +362,7 @@ stateDiagram-v2
 | Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/SDK instance and are released on departure. |
 | Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, ends the delivery; reconnect passively to watch subsequent work. A held observation may finish when its gate settles, before the worker concludes: only daemon status/terminal evidence establishes the worker outcome. A protocol/credential failure stops observation. An interrupt applies {§web-worker-input}: configured approval or explicit input required. Never retry work or infer completion from transport closure. |
 | Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card with the failure's diagnostic, retain clearly stale last-observed values, and offer a native Reconnect form. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
+| Intake | An event the page cannot take in (an invalid Problem, notice, stream outcome, activity row or history page) ends the observation as a protocol failure, with that failure's diagnostic. The SDK's own handling of a subscriber's exception, a console report and continued delivery, never applies. |
 | Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
 | Projection | Public state supplies identity under {§web-worker-identity}, status under {§web-worker-status}, and the complete descendant census under {§web-worker-descendants}. The browser keeps no accounting ledger, inferred topology or transcript cache. |
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
