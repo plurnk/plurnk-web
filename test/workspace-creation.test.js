@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { test } from "node:test";
+import { Problems } from "@plurnk/plurnk-contracts";
 import createModule from "../ai.plurnk/module.js";
 
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
@@ -176,15 +177,55 @@ test("{§web-workspace-creation} authenticated creation enforces admission and o
     assert.deepEqual(created, [{ projectRoot: null }]);
 });
 
-test("{§web-workspace-creation} a daemon failure is preserved, not retried blindly", async (t) => {
-    const { base, created, post } = await fixture(t, { create: async () => { throw new Error("daemon refused"); } });
-    const token = await formToken(base);
-    for (const attempt of ["failure", "retry of the settled failure"]) {
-        const res = await post(token);
-        assert.equal(res.status, 502, attempt);
-    }
-    assert.equal(created.length, 1);
+// The daemon's own refusal of a name, as its operation failure carries it.
+const nameConflict = (name) => Object.assign(new Error(`Workspace name '${name}' is already in use.`), {
+    result: { status: 409, problem: Problems.create("daemon:workspace", "name-conflict", 409, `Workspace name '${name}' is already in use.`,
+        { recovery: "Choose another workspace name or attach to the existing workspace." }) },
 });
+
+for (const [form, path, fields] of [
+    ["workspace-create", "/workspaces/new", (token, name) => ({ token, name })],
+    ["workspace-rename", "/workspaces/rename", (_token, name) => ({ workspace: "work", name })],
+    ["worker-create", "/workers/new", (token, name) => ({ token, workspace: "work", name })],
+]) {
+    for (const refused of [true, false]) {
+        test(`{§web-workspace-creation} {§web-workspace-rename} {§web-worker-creation} ${form}: a daemon ${refused ? "refusal keeps its status, detail and recovery" : "failure is a 502"}, and the draft comes back with a fresh token`, async (t) => {
+            const calls = [];
+            const fail = (name) => { calls.push(name); if (name === "taken") throw refused ? nameConflict(name) : new Error("daemon unreachable"); };
+            const { base } = await fixture(t, {
+                create: async ({ name }) => { fail(name); return envelope(name); },
+                rename: async (id, name) => { fail(name); return { id, name }; },
+                createWorker: async ({ name }) => { fail(name); return { workerId: 10, workerName: name }; },
+            });
+            const send = (body) => fetch(new URL(path, base), { method: "POST", redirect: "manual",
+                headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams(body) });
+            const token = randomUUID();
+            const res = await send(fields(token, "taken"));
+            const page = await res.text();
+            assert.equal(res.status, refused ? 409 : 502);
+            if (refused) {
+                assert.match(page, /Workspace name &#39;taken&#39; is already in use\./u, "the daemon's detail");
+                assert.match(page, /Choose another workspace name or attach to the existing workspace\./u, "the daemon's recovery");
+            } else {
+                assert.match(page, /The daemon could not/u);
+            }
+            const retry = new RegExp(`<form id="${form}"[^>]*>[\\s\\S]*?</form>`, "u").exec(page)?.[0];
+            assert.ok(retry, "the page offers the form again");
+            assert.match(retry, /name="name" value="taken"/u, "holding the draft");
+            const retryToken = /name="token" value="([^"]+)"/u.exec(retry)?.[1];
+            if (form === "workspace-rename") {
+                assert.equal(retryToken, undefined, "rename carries no token");
+            } else {
+                assert.ok(retryToken && retryToken !== token, "with a fresh token");
+                assert.equal((await send(fields(token, "taken"))).status, refused ? 409 : 502, "the settled failure replays");
+                assert.deepEqual(calls, ["taken"], "without calling the daemon again");
+            }
+            const corrected = await send(fields(retryToken ?? token, "corrected"));
+            assert.equal(corrected.status, 303, "the corrected draft is a new request");
+            assert.deepEqual(calls, ["taken", "corrected"]);
+        });
+    }
+}
 
 test("{§web-workspace-creation} optional custom workspace name is passed to daemon", async (t) => {
     const { created, post } = await fixture(t);

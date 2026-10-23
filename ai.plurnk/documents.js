@@ -3,6 +3,9 @@ import { STATUS_CODES } from "node:http";
 import { generateWorkspaceName, generateWorkerName } from "./auto-name.js";
 import { directoryPath } from "./directory-addresses.js";
 import { escapeHtml } from "./http.js";
+
+// A dialog's dismissal; a form offered again on an error page has none.
+const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
 /** {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
 export default class Documents {
     #beforeTitle;
@@ -52,16 +55,28 @@ export default class Documents {
 
     /** {§web-page-shell} HTTP failures keep native navigation without disclosing request data.
      * @param {number} status @param {string} message @param {boolean} [authenticated]
+     * @param {{ recovery?: string, retry?: string }} [next] What the person can do next, and the form to submit again.
      */
-    error(status, message, authenticated = false) {
+    error(status, message, authenticated = false, { recovery, retry } = {}) {
         const reason = STATUS_CODES[status];
         if (reason === undefined) throw new Error(`Unknown HTTP status: ${status}`);
         const title = `${status} ${reason}`;
         return this.#render(title, '<article aria-labelledby="error-title"><header><h1 id="error-title">'
             + `<span aria-hidden="true">⚠️</span> <span data-text="error-title">${escapeHtml(title)}</span></h1></header>`
             + `<p data-text="error-message">${escapeHtml(message)}</p>`
+            + (recovery === undefined ? "" : `<p data-text="error-recovery">${escapeHtml(recovery)}</p>`)
+            + (retry ?? "")
             + '<footer><a href="/" data-i18n="home">Home</a></footer></article>', "error", authenticated);
     }
+
+    /** {§web-workspace-creation} The creation form a refused submission offers again, with its draft and a fresh token. @param {string} name */
+    retryCreation(name) { return this.#creationFields(name, ""); }
+
+    /** {§web-workspace-rename} @param {string} workspace @param {string} name */
+    retryRename(workspace, name) { return this.#renameFields(workspace, name, ""); }
+
+    /** {§web-worker-creation} @param {string} workspace @param {string} name */
+    retryWorker(workspace, name) { return this.#workerFields(workspace, name, ""); }
 
     /** {§web-account} Account navigation stays separate from session management. */
     account() {
@@ -109,16 +124,19 @@ export default class Documents {
      * @param {Set<string>} [existing]
      */
     #creationForm(existing = new Set()) {
-        const autoName = generateWorkspaceName(existing);
         return '<dialog id="dialog-workspace-create"><article>'
             + '<header><p><strong data-i18n="new-workspace">New workspace</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<form id="workspace-create" method="post" action="/workspaces/new">'
-            + `<input type="hidden" name="token" value="${randomUUID()}">`
-            + `<input type="text" name="name" value="${autoName}" placeholder="Workspace name" aria-label="Workspace name" required>`
-            + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
-            + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
+            + this.#creationFields(generateWorkspaceName(existing), CANCEL)
             + '</article></dialog>';
+    }
+
+    /** @param {string} name @param {string} cancel */
+    #creationFields(name, cancel) {
+        return '<form id="workspace-create" method="post" action="/workspaces/new">'
+            + `<input type="hidden" name="token" value="${randomUUID()}">`
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Workspace name" aria-label="Workspace name" required>`
+            + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
     /**
@@ -126,16 +144,19 @@ export default class Documents {
      * @param {{name: string}} workspace
      */
     #renameForm(workspace) {
-        const name = escapeHtml(workspace.name);
         return '<dialog id="dialog-workspace-rename"><article>'
             + '<header><p><strong data-i18n="rename-workspace">Rename workspace</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<form id="workspace-rename" method="post" action="/workspaces/rename">'
-            + `<input type="hidden" name="workspace" value="${name}">`
-            + `<input type="text" name="name" value="${name}" placeholder="New name" aria-label="Rename workspace" required>`
-            + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
-            + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
+            + this.#renameFields(workspace.name, workspace.name, CANCEL)
             + '</article></dialog>';
+    }
+
+    /** @param {string} workspace @param {string} name @param {string} cancel */
+    #renameFields(workspace, name, cancel) {
+        return '<form id="workspace-rename" method="post" action="/workspaces/rename">'
+            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="New name" aria-label="Rename workspace" required>`
+            + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
     /**
@@ -144,18 +165,20 @@ export default class Documents {
      * @param {Set<string>} [existing]
      */
     #workerCreationForm(workspace, existing = new Set()) {
-        const name = escapeHtml(workspace.name);
-        const autoName = generateWorkerName(existing);
         return '<dialog id="dialog-worker-create"><article>'
             + '<header><p><strong data-i18n="new-worker">New worker</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<form id="worker-create" method="post" action="/workers/new">'
-            + `<input type="hidden" name="token" value="${randomUUID()}">`
-            + `<input type="hidden" name="workspace" value="${name}">`
-            + `<input type="text" name="name" value="${autoName}" placeholder="Worker name" aria-label="Worker name" required>`
-            + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
-            + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
+            + this.#workerFields(workspace.name, generateWorkerName(existing), CANCEL)
             + '</article></dialog>';
+    }
+
+    /** @param {string} workspace @param {string} name @param {string} cancel */
+    #workerFields(workspace, name, cancel) {
+        return '<form id="worker-create" method="post" action="/workers/new">'
+            + `<input type="hidden" name="token" value="${randomUUID()}">`
+            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Worker name" aria-label="Worker name" required>`
+            + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
     /** @param {string | null} projectRoot */

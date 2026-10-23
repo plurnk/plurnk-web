@@ -48,9 +48,7 @@ export default class Creations {
         }
 
         const creation = (async () => {
-            let result;
-            try { result = await create(); }
-            catch (cause) { throw new RequestError(502, "The daemon could not complete the creation.", { cause }); }
+            const result = await create();
             if (typeof result === "string") return result;
             if (result.projectRoot !== null) throw new Error("The daemon created a workspace with a project folder from a folderless request.");
             const path = directoryPath({ kind: "workspace", workspace: result.workspaceName });
