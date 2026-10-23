@@ -62,7 +62,8 @@ export default function observeWorker(element) {
     const main = $("#main");
     if (!(main instanceof HTMLElement)) throw new Error("Worker document has no main region.");
     const controls = $.clone(element, "#worker-controls");
-    const feedback = $.clone(main, "#worker-feedback", { position: "afterbegin" });
+    // {§web-worker-history} What needs the person follows the conversation, where its pinned end is.
+    const feedback = $.clone(main, "#worker-feedback");
     const notice = $("#worker-connection");
     if (!notice) throw new Error("Worker document has no connection notice.");
     const connectionNotice = notice;
