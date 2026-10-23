@@ -25,6 +25,8 @@ nav[aria-label="breadcrumb"] button,
 button[form="worker-stop"],
 button[data-cancel-settings],
 dialog button[data-dialog-close]:not([rel="prev"]) {
+    --pico-primary-background: var(--pico-secondary-background);
+    --pico-primary-border: var(--pico-secondary-border);
     --pico-primary-hover-background: var(--pico-secondary-hover-background);
     --pico-primary-hover-border: var(--pico-secondary-hover-border);
     --pico-primary-inverse: var(--pico-secondary-inverse);

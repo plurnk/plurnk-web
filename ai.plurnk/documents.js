@@ -111,11 +111,11 @@ export default class Documents {
     #creationForm(existing = new Set()) {
         const autoName = generateWorkspaceName(existing);
         return '<dialog id="dialog-workspace-create"><article>'
-            + '<header><button type="button" aria-label="Close" rel="prev" data-dialog-close></button>'
+            + '<header><p><strong data-i18n="new-workspace">New workspace</strong></p>'
+            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
             + '<form id="workspace-create" method="post" action="/workspaces/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
-            + '<label><span data-i18n="workspace-name">Workspace name</span>'
-            + `<input type="text" name="name" value="${autoName}" placeholder="Workspace name" aria-label="Workspace name" required></label>`
+            + `<input type="text" name="name" value="${autoName}" placeholder="Workspace name" aria-label="Workspace name" required>`
             + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
             + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
             + '</article></dialog>';
@@ -128,9 +128,11 @@ export default class Documents {
     #renameForm(workspace) {
         const name = escapeHtml(workspace.name);
         return '<dialog id="dialog-workspace-rename"><article>'
-            + '<header><button type="button" aria-label="Close" rel="prev" data-dialog-close></button>'
-            + '<label><span data-i18n="new-name">New name</span>'
-            + `<input type="text" name="name" value="${name}" aria-label="Rename workspace" required></label>`
+            + '<header><p><strong data-i18n="rename-workspace">Rename workspace</strong></p>'
+            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
+            + '<form id="workspace-rename" method="post" action="/workspaces/rename">'
+            + `<input type="hidden" name="workspace" value="${name}">`
+            + `<input type="text" name="name" value="${name}" placeholder="New name" aria-label="Rename workspace" required>`
             + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
             + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
             + '</article></dialog>';
@@ -145,13 +147,12 @@ export default class Documents {
         const name = escapeHtml(workspace.name);
         const autoName = generateWorkerName(existing);
         return '<dialog id="dialog-worker-create"><article>'
-            + '<header><button type="button" aria-label="Close" rel="prev" data-dialog-close></button>'
-            + '<p><strong data-i18n="new-worker">New worker</strong></p></header>'
+            + '<header><p><strong data-i18n="new-worker">New worker</strong></p>'
+            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
             + '<form id="worker-create" method="post" action="/workers/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
             + `<input type="hidden" name="workspace" value="${name}">`
-            + '<label><span data-i18n="worker-name">Worker name</span>'
-            + `<input type="text" name="name" value="${autoName}" placeholder="Worker name" aria-label="Worker name" required></label>`
+            + `<input type="text" name="name" value="${autoName}" placeholder="Worker name" aria-label="Worker name" required>`
             + '<footer><button type="button" data-dialog-close data-i18n="cancel">Cancel</button>'
             + '<button type="submit" data-i18n="confirm">Confirm</button></footer></form>'
             + '</article></dialog>';
