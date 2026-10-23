@@ -1,4 +1,5 @@
 import { $, on, the } from "on_the_money";
+import describeFailure from "./failure.js";
 
 /** {§web-worker-streams} Output snapshots belong to their DOM outlet, not the SDK's messages.
  * @param {HTMLElement} root
@@ -30,7 +31,10 @@ export default function entryOutput(root, read) {
         } catch (error) {
             if (!output.isConnected) return;
             if (error instanceof DOMException && error.name === "AbortError") the(output, "output-state", "idle");
-            else the(output, { outputState: "error", outputError: error instanceof Error ? error.message : String(error) });
+            else {
+                const { message, recovery } = await describeFailure(error);
+                if (output.isConnected) the(output, { outputState: "error", outputError: [message, recovery].filter(Boolean).join(" ") });
+            }
         } finally {
             if (output.isConnected) the(output, "output-pending", null);
         }

@@ -1,5 +1,6 @@
 import { $, $$, the } from "on_the_money";
 import { listModels, workerModel, workerEffort, modelLabel } from "./worker-models.js";
+import describeFailure from "./failure.js";
 
 /** {§web-worker-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
 const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop"]);
@@ -107,20 +108,9 @@ export default function workerCommands(controls, actions) {
             the(article, { commandState: "done", commandBusy: "false", commandMessage: message });
             return true;
         } catch (error) {
-            const cause = error instanceof Error ? error.cause : undefined;
-            let recovery = "";
-            let status = null;
-            if (cause && typeof cause === "object" && !(cause instanceof Error)) {
-                const { Validator } = await import("@plurnk/plurnk-contracts");
-                if (Validator.validateProblemDetails(cause).valid) {
-                    const problem = Validator.assertProblemDetails(cause);
-                    recovery = typeof problem.recovery === "string" ? problem.recovery : "";
-                    status = problem.status;
-                }
-            }
+            const { message, recovery, status } = await describeFailure(error);
             the(article, { commandState: "error", commandBusy: "false",
-                commandMessage: signal.aborted ? "Response not confirmed." : error instanceof Error ? error.message : String(error),
-                commandRecovery: recovery, commandStatus: status });
+                commandMessage: signal.aborted ? "Response not confirmed." : message, commandRecovery: recovery, commandStatus: status });
             return false;
         }
     };
