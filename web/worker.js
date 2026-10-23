@@ -15,6 +15,7 @@ import activity from "./worker-activity.js";
 import managementAction from "./management-action.js";
 import workerCommands, { isCommand } from "./worker-commands.js";
 import workerSettings from "./worker-settings.js";
+import describeFailure from "./failure.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
 
@@ -370,7 +371,8 @@ export default function observeWorker(element) {
         the(feedback, { messageStatus: "Requesting Stop…", commandError: "" });
         try { the(feedback, "message-status", await cancelWork()); }
         catch (error) {
-            if (!resources.signal.aborted) the(feedback, { messageStatus: "", commandError: `Stop could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            const { message, recovery } = await describeFailure(error);
+            if (!resources.signal.aborted) the(feedback, { messageStatus: "", commandError: `Stop could not be confirmed: ${[message, recovery].filter(Boolean).join(" ")}` });
         }
     });
 

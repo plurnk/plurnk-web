@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { inputPage } from "./worker-input.js";
+import { httpFailure } from "./browser-diagnostics.js";
 
 function composer(page) {
     page.setDefaultTimeout(5000);
@@ -283,4 +284,39 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.equal(model.requests.length, 3, "commands did not start another inference");
             checkBrowser();
         }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
+    await t.test("{§web-worker-commands} {§web-worker-settings} a refusal before the stream opens or as its RUN_ERROR shows the daemon's Problem and recovery", () =>
+        inputPage(withDaemon, async ({ page, checkBrowser }) => {
+            const { field, submit } = composer(page);
+            const problem = { type: "https://problems.plurnk.xyz/fixture/action-refused", title: "Conflict", status: 409,
+                detail: "The fixture refused the action.", recovery: "Follow the fixture's recovery." };
+            const refusals = {
+                "before the stream opens": (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify(problem) }),
+                "as its RUN_ERROR": (route) => {
+                    const { threadId, runId } = route.request().postDataJSON();
+                    return route.fulfill({ contentType: "text/event-stream", body: [
+                        { type: "RUN_STARTED", threadId, runId },
+                        { type: "RUN_ERROR", message: problem.detail, code: problem.type, metadata: { plurnk: { problem } } },
+                    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+                },
+            };
+            const settings = page.locator("#worker-effort-settings");
+            for (const [refusal, reply] of Object.entries(refusals)) {
+                for (const command of ["/model", "/stop"]) {
+                    await page.route("**/agui", reply, { times: 1 });
+                    const row = await submit(command, "error");
+                    assert.equal(await row.locator("[data-text=command-message]").textContent(), problem.detail, `${command} ${refusal}`);
+                    assert.equal(await row.locator("[data-text=command-recovery]").textContent(), problem.recovery, `${command} ${refusal}`);
+                    assert.equal(await row.locator("article").getAttribute("data-command-status"), "409", `${command} ${refusal}`);
+                }
+                await page.route("**/agui", reply, { times: 1 });
+                await field.focus();
+                await page.locator("#worker-effort").click();
+                await settings.locator("[data-text=settings-recovery]").filter({ hasText: problem.recovery }).waitFor();
+                assert.equal(await settings.locator("[data-text=settings-message]").textContent(), problem.detail, `effort settings ${refusal}`);
+                await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+                // A refused HTTP response is reported by the browser, and its rejected Run by the SDK; a RUN_ERROR by neither.
+                checkBrowser(refusal === "before the stream opens" ? Array.from({ length: 3 }, () => [httpFailure("/agui", 409),
+                    /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: The fixture refused the action\.$/u]).flat() : []);
+            }
+        }));
 }

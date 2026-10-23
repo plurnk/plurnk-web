@@ -1,5 +1,6 @@
 import { $, on, the } from "on_the_money";
 import { listModels, workerModel, workerEffort, modelLabel } from "./worker-models.js";
+import describeFailure from "./failure.js";
 
 /** {§web-worker-settings} Native suggestions are an aid, never a route admission policy.
  * @param {Element} main @param {Element} status
@@ -28,11 +29,8 @@ export default function workerSettings(main, status, call, lifetime) {
         panel.close = () => { lookup?.abort(); article.hidden = true; the(button, "expanded", false); };
         /** @param {unknown} error @param {AbortSignal} signal */
         const failure = async (error, signal) => {
-            const { Validator } = await import("@plurnk/plurnk-contracts");
-            const cause = error instanceof Error ? error.cause : undefined;
-            const recovery = cause !== undefined && Validator.validateProblemDetails(cause).valid ? Validator.assertProblemDetails(cause).recovery : undefined;
-            return { settingsMessage: signal.aborted ? "Response not confirmed." : error instanceof Error ? error.message : String(error),
-                settingsRecovery: typeof recovery === "string" ? recovery : "" };
+            const { message, recovery } = await describeFailure(error);
+            return { settingsMessage: signal.aborted ? "Response not confirmed." : message, settingsRecovery: recovery };
         };
         const load = async () => {
             lookup?.abort();
