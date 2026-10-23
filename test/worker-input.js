@@ -635,7 +635,10 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         ]);
     }));
 
-    await t.test("{§web-worker-input} a provider failure is displayed as a worker failure after message admission", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-worker-input} a provider failure is displayed as a worker failure after message admission", () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+        const observer = await context.newPage();
+        await observer.goto(path);
+        await observer.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         await text.fill("Exercise the rejected browser request.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -644,7 +647,37 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.equal(await text.inputValue(), "", "admission succeeded even though the model request failed");
         assert.match(await page.locator('[aria-label="Message feedback"] [role="alert"]').innerText(), /Browser fixture deliberately refused this request/u);
         assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).count(), 0, "failed work is no longer stoppable");
+        await observer.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "failed");
+        assert.equal(await observer.locator('[aria-label="Message feedback"] [role="alert"]').isVisible(), false,
+            "an observer sent nothing: the worker's failure is its status, not this page's request");
         assert.equal(model.requests.length, 1);
+        checkBrowser();
+    }));
+    await t.test("{§web-worker-observer} a refused observation shows the daemon's Problem, not a transport rendering of it", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
+        await page.route("**/agui/connect", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
+            type: "https://problems.plurnk.xyz/fixture/observation-refused", title: "Conflict", status: 409, detail: "The fixture refused observation." }) }), { times: 1 });
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
+        const notice = await page.locator("#worker-connection").innerText();
+        assert.match(notice, /The fixture refused observation\./u);
+        assert.doesNotMatch(notice, /HTTP 409|"type"/u);
+        checkBrowser([httpFailure("/agui/connect", 409), /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: The fixture refused observation\.$/u]);
+    }));
+    await t.test("{§web-worker-input} Stop interrupted by leaving the page says so on return", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: held-departure.");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await page.getByText("Considering held-departure.", { exact: true }).waitFor({ state: "attached" });
+        const answered = Promise.withResolvers();
+        await page.route("**/agui", async (route) => { await answered.promise; await route.abort(); }, { times: 1 });
+        await page.getByRole("button", { name: "Stop", exact: true }).click();
+        await page.getByText("Requesting Stop…", { exact: true }).waitFor();
+        await page.evaluate(() => {
+            window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+            window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+        });
+        await page.getByText("Stop could not be confirmed before the page was left.", { exact: true }).waitFor();
+        answered.resolve();
+        model.release("held-departure");
         checkBrowser();
     }));
 }

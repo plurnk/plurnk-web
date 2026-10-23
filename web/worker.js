@@ -231,7 +231,8 @@ export default function observeWorker(element) {
                         terminal = details?.terminal !== undefined;
                         problem = details?.problem?.status;
                         settled = problem === 409 && SETTLED_INTERRUPTS.has(details?.problem?.type ?? "");
-                        if (terminal) the(feedback, "command-error", event.message);
+                        // An observer sent nothing: the worker's own failure shows in its status, not as this page's request.
+                        if (terminal && submission) the(feedback, "command-error", event.message);
                         else refusal = event.message;
                     },
                 };
@@ -355,6 +356,9 @@ export default function observeWorker(element) {
             if (!resume || current !== agent || cancellation || the(element, "connection") !== "interrupted") return;
             the(feedback, { messageStatus: "", commandError: "" });
             connect({ resume });
+        } catch (error) {
+            const { message, recovery } = await describeFailure(error);
+            the(feedback, { messageStatus: "", commandError: `Responses could not be submitted: ${[message, recovery].filter(Boolean).join(" ")}` });
         } finally { availability(); }
     });
 
@@ -381,10 +385,16 @@ export default function observeWorker(element) {
         event.preventDefault();
         if (the(controls, "stop-unavailable") !== null) return;
         the(feedback, { messageStatus: "Requesting Stop…", commandError: "" });
+        // The visit that asked: leaving the page ends it, whatever a later return starts.
+        const visit = resources.signal;
         try { the(feedback, "message-status", await cancelWork()); }
         catch (error) {
+            if (visit.aborted) {
+                the(feedback, { messageStatus: "", commandError: "Stop could not be confirmed before the page was left." });
+                return;
+            }
             const { message, recovery } = await describeFailure(error);
-            if (!resources.signal.aborted) the(feedback, { messageStatus: "", commandError: `Stop could not be confirmed: ${[message, recovery].filter(Boolean).join(" ")}` });
+            the(feedback, { messageStatus: "", commandError: `Stop could not be confirmed: ${[message, recovery].filter(Boolean).join(" ")}` });
         }
     });
 

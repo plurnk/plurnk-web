@@ -41,7 +41,8 @@ export default async function verifyBodies(t) {
                         assert.equal(request.headers().authorization, "Bearer body-fixture-credential");
                         reads.push(request.url());
                         if (request.url().endsWith("/missing") && failures++ === 0) {
-                            await route.fulfill({ status: 404, contentType: "application/problem+json", body: '{"title":"Missing"}' });
+                            await route.fulfill({ status: 404, contentType: "application/problem+json", body: JSON.stringify({
+                                type: "https://problems.plurnk.xyz/agui/entry/entry-not-found", title: "Not Found", status: 404, detail: "No entry at this address." }) });
                         } else if (request.url().endsWith("/redirect")) {
                             await route.continue();
                         } else {
@@ -88,7 +89,7 @@ export default async function verifyBodies(t) {
                     const missing = new URL("/agui/missing", url).href;
                     await presentReference(missing);
                     await result.locator('[data-body-state="error"]').waitFor();
-                    assert.equal(await result.locator("[data-body-reference]").textContent(), "Read request failed (404).");
+                    assert.equal(await result.locator("[data-body-reference]").textContent(), "No entry at this address.", "the daemon's Problem, not a status line");
                     // Firefox does not log a handled fetch's HTTP refusal to the console.
                     checkBrowser(engine === firefox ? [] : [httpFailure("/agui/missing", 404)]);
                     await result.getByRole("button", { name: "Retry", exact: true }).click();
