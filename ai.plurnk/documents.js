@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
-import { generateWorkspaceName, generateWorkerName } from "./auto-name.js";
 import { directoryPath } from "./directory-addresses.js";
 import { escapeHtml } from "./http.js";
 
@@ -119,15 +118,12 @@ export default class Documents {
             : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "worker" ? ` data-worker-name="${escapeHtml(directory.worker)}" data-bind="href:worker-path"` : ""}>${escapeHtml(label)}</a>`;
     }
 
-    /**
-     * {§web-workspace-creation} Native dialog modal for workspace creation with pre-populated auto-name.
-     * @param {Set<string>} [existing]
-     */
-    #creationForm(existing = new Set()) {
+    /** {§web-workspace-creation} Native dialog modal for workspace creation; the daemon names an unnamed workspace. */
+    #creationForm() {
         return '<dialog id="dialog-workspace-create"><article>'
             + '<header><p><strong data-i18n="new-workspace">New workspace</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#creationFields(generateWorkspaceName(existing), CANCEL)
+            + this.#creationFields("", CANCEL)
             + '</article></dialog>';
     }
 
@@ -135,7 +131,8 @@ export default class Documents {
     #creationFields(name, cancel) {
         return '<form id="workspace-create" method="post" action="/workspaces/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
-            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Workspace name" aria-label="Workspace name" required>`
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Workspace name" aria-label="Workspace name" aria-describedby="workspace-name-hint">`
+            + '<small id="workspace-name-hint" data-i18n="workspace-name-hint">Leave it empty and the daemon names the workspace.</small>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
@@ -160,15 +157,14 @@ export default class Documents {
     }
 
     /**
-     * {§web-worker-creation} Native dialog modal for worker creation with pre-populated auto-name.
+     * {§web-worker-creation} Native dialog modal for worker creation; the daemon names an unnamed worker.
      * @param {{name: string}} workspace
-     * @param {Set<string>} [existing]
      */
-    #workerCreationForm(workspace, existing = new Set()) {
+    #workerCreationForm(workspace) {
         return '<dialog id="dialog-worker-create"><article>'
             + '<header><p><strong data-i18n="new-worker">New worker</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#workerFields(workspace.name, generateWorkerName(existing), CANCEL)
+            + this.#workerFields(workspace.name, "", CANCEL)
             + '</article></dialog>';
     }
 
@@ -177,7 +173,8 @@ export default class Documents {
         return '<form id="worker-create" method="post" action="/workers/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
-            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Worker name" aria-label="Worker name" required>`
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Worker name" aria-label="Worker name" aria-describedby="worker-name-hint">`
+            + '<small id="worker-name-hint" data-i18n="worker-name-hint">Leave it empty and the daemon names the worker.</small>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
@@ -329,8 +326,7 @@ export default class Documents {
             const items = workspaces.filter(({ hidden_at }) => hidden_at === null).map(({ name, project_root }) =>
                 `<li data-directory-entry="workspace" data-folder="${project_root !== null}"><article aria-label="${project_root === null ? "Folderless workspace" : "Project workspace"}"><header>${this.#link(name, { kind: "workspace", workspace: name })}</header></article></li>`).join("");
             const list = items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>';
-            const existing = new Set(workspaces.map(({ name }) => name));
-            return render("Workspaces", list, "", "", this.#creationForm(existing));
+            return render("Workspaces", list, "", "", this.#creationForm());
         }
         const workspace = workspaces.find(({ name }) => name === directory.workspace);
         if (workspace === undefined) return null;
@@ -343,8 +339,7 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            const existingWorkers = new Set(workers.map(({ name }) => name));
-            const dialogs = this.#renameForm(workspace) + this.#workerCreationForm(workspace, existingWorkers);
+            const dialogs = this.#renameForm(workspace) + this.#workerCreationForm(workspace);
             return render(workspace.name, folder + this.#workerTree(workspace, byId), marker, "", dialogs);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");

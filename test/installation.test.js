@@ -52,7 +52,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
-    for (const expected of ["ai.plurnk/module.js", "ai.plurnk/documents.js", "ai.plurnk/creations.js", "ai.plurnk/auto-name.js", "ai.plurnk/session.js"]) {
+    for (const expected of ["ai.plurnk/module.js", "ai.plurnk/documents.js", "ai.plurnk/creations.js", "ai.plurnk/session.js"]) {
         assert.ok(archive.files.some(({ path }) => path === expected), `expected ${expected} in packed package`);
     }
     assert.ok(!archive.files.some(({ path }) => path.endsWith(".png")), "no unused raster fallback is packed");

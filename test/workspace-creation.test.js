@@ -227,12 +227,25 @@ for (const [form, path, fields] of [
     }
 }
 
-test("{§web-workspace-creation} optional custom workspace name is passed to daemon", async (t) => {
-    const { created, post } = await fixture(t);
-    const token = randomUUID();
-    const res = await post(token, {}, { name: "my-custom-workspace" });
-    assert.equal(res.status, 303);
-    assert.deepEqual(created, [{ name: "my-custom-workspace", projectRoot: null }]);
+test("{§web-workspace-creation} {§web-worker-creation} an empty name is no name, and any other name reaches the daemon verbatim", async (t) => {
+    const workers = [];
+    const { base, created, post } = await fixture(t, {
+        createWorker: async (args) => { workers.push(args); return { workerId: 10, workerName: args.name ?? "a1b2c3d4" }; },
+    });
+    const workerPost = (body) => fetch(new URL("/workers/new", base), {
+        method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams(body), redirect: "manual",
+    });
+    const cases = [["no name field", undefined], ["an empty name", ""], ["a name", "my-custom"], ["a name with spaces around it", "  spaced  "]];
+    for (const [label, name] of cases) {
+        const named = name === undefined ? {} : { name };
+        assert.equal((await post(randomUUID(), {}, named)).status, 303, label);
+        assert.equal((await workerPost({ workspace: "work", token: randomUUID(), ...named })).status, 303, label);
+    }
+    const requested = cases.map(([, name]) => name === undefined || name === "" ? {} : { name });
+    assert.deepEqual(created, requested.map((named) => ({ ...named, projectRoot: null })));
+    assert.deepEqual(workers, requested.map((named) => ({ workspaceId: 7, ...named })));
+});
+
 test("{§web-workspace-rename} workspace rename updates name and redirects to new canonical path", async (t) => {
     const renamed = [];
     const { base } = await fixture(t, {
@@ -321,5 +334,4 @@ test("{§web-worker-creation} worker creation creates independent worker and red
     assert.equal(retryRes.status, 303);
     assert.equal(retryRes.headers.get("location"), "/~/my-workspace@bob/");
     assert.equal(createdWorkers.length, 2);
-});
 });
