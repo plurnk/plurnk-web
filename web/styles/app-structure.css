@@ -106,24 +106,18 @@ header nav button {
     --pico-form-element-spacing-horizontal: 0;
 }
 
-dialog > article > header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+/* {§web-page-shell} The header keeps Pico's close convention; footers inside forms align like article footers. */
+dialog form > footer {
+    text-align: right;
 }
 
-dialog > article > header p {
+dialog form > footer button {
+    inline-size: auto;
     margin-bottom: 0;
 }
 
-dialog > article > footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: calc(var(--pico-spacing) * 0.5);
-}
-
-dialog > article > footer button {
-    margin-bottom: 0;
+dialog form > footer button:not(:first-of-type) {
+    margin-inline-start: calc(var(--pico-spacing) * 0.5);
 }
 
 body > header nav[aria-label="breadcrumb"] li button {
@@ -196,15 +190,6 @@ table {
     padding-inline: var(--pico-form-element-spacing-vertical);
 }
 
-#workspace-create,
-#worker-create {
-    margin: 0;
-}
-
-#workspace-create button,
-#worker-create button {
-    inline-size: auto;
-}
 
 #worker-status [data-status-line],
 #worker-status [data-status-line] > ul {
