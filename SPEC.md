@@ -29,7 +29,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 
 | Boundary | Contract |
 |---|---|
-| Module choices | `ai.plurnk/.env.defaults` declares enablement, browser approval mode, reasoning-preview retention, pending sign-in limits, workspace creation limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
+| Module choices | `ai.plurnk/.env.defaults` declares enablement, browser approval mode, reasoning-preview retention, the sign-in time limit, workspace creation limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
 | Invalid input | Refuse the affected module through the host's configuration diagnostic. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. Disabled web does not inspect unused web settings. |
 | Other owners | Consume daemon authentication and credential policy through their existing configuration and public seams, never web-owned substitutes. |
 | Browser | Receives only explicit public document projections, not the environment, credentials or a second set of deployment defaults. Vite compiles assets independently of operator configuration. |
@@ -149,8 +149,8 @@ explicitly disabled authentication; directory reads are then anonymous.
 | Authentication enabled, empty password | The authority shows configuration-required information and issues no browser sign-in, including on localhost. Web neither infers anonymous access nor adds a local bypass. |
 | Authentication enabled, configured password | A browser signs in with `PLURNK_PASS` alone. No username field or web-owned identity configuration; a wrong password is refused by the authority at 401. |
 | Authentication explicitly disabled | Anonymous directories; no Account or Sign Out controls. |
-| GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, bound to an HttpOnly browser cookie. Return locations are local directory addresses, `/account/` or `/account/sessions/` (also their explicit indexes); never an external URL. |
-| GET `/auth/callback` | Consume the pending browser-bound state once; validate and exchange the code with client authentication. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |
+| GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, carried sealed in that browser's own HttpOnly cookie. Return locations are local directory addresses, `/account/` or `/account/sessions/` (also their explicit indexes); never an external URL. |
+| GET `/auth/callback` | Open this browser's transaction for the returned state and clear it whatever the outcome; validate and exchange the code with client authentication. A code the authority already redeemed answers 400. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |
 | Directory admission | Require a live authority-issued session for `plurnk-web` carrying `agui`; a bearer, refresh token, another client's cookie, or a revoked/expired session is not a web session. |
 | POST `/auth/logout` | Require the issuer's exact Origin, revoke this browser's sign-in family and clear the web cookie. The authority sign-in and its module credentials end together; revisiting requires sign-in. Other browser sessions and independently authorized clients remain intact. |
 | Concurrent callbacks | A new credential in the same sign-in family does not revoke that family. A genuinely different previous family is revoked. |
@@ -158,9 +158,11 @@ explicitly disabled authentication; directory reads are then anonymous.
 | Request origin | A browser is answered at the address it reached the daemon by: its sign-in redirect, callback and Origin checks use the daemon's issuer for that request. No host is refused or redirected; forwarded headers are never read. |
 | Failures | Invalid/replayed/mismatched callbacks fail without session issuance. Expiry/revocation requires sign-in again. Requests reveal no credential in diagnostics. |
 
-Pending authorization state lives only in bounded, expiring module memory:
-`PLURNK_WEB_LOGIN_TTL_SEC` and `PLURNK_WEB_LOGIN_PENDING` own its limits. Closing
-the module clears it. Cookie and grant lifetimes come from the authority, not a
+A sign-in in progress lives only in its browser: the PKCE verifier, return page and
+redirect address travel sealed (AES-256-GCM under a key that lives and ends with the
+module instance) in an HttpOnly `/auth` cookie named for the transaction's state, for
+`PLURNK_WEB_LOGIN_TTL_SEC`. The module keeps no state that an unauthenticated request can
+fill, and a daemon restart ends the sign-ins in progress. Cookie and grant lifetimes come from the authority, not a
 second lifetime setting. Sign-in uses the dependency-free MIT `oauth4webapi`
 client and RFC 8414 discovery after listener admission; passwords are entered
 only at the daemon's authorization endpoint.

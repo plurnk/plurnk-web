@@ -21,7 +21,7 @@ export default function createModule() {
     const yolo = Knob.flag("PLURNK_WEB_YOLO");
     const reasoningPreviewChars = Knob.integer("PLURNK_WEB_REASONING_PREVIEW_CHARS", 1);
     const authenticate = Knob.flag("PLURNK_AUTH");
-    const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1), pending: Knob.integer("PLURNK_WEB_LOGIN_PENDING", 1) };
+    const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1) };
     const creations = new Creations({ ttl: Knob.integer("PLURNK_WEB_CREATE_TTL_SEC", 1), tokens: Knob.integer("PLURNK_WEB_CREATE_TOKENS", 1) });
     const diagrams = new Diagrams();
     /** @type {{ clientId: string, clientSecret: string } | null} */

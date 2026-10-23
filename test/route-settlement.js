@@ -116,6 +116,9 @@ async function authenticated(t, createModule, heldPhase) {
     return { ...f, credentials, gate, observers, order, initial, records, login, callback };
 }
 
+/** @param {Response} response The browser session a sign-in callback set, beside its cleared transaction. */
+const sessionCookie = (response) => response.headers.getSetCookie().find((value) => value.startsWith("plurnk_web_session="))?.split(";")[0];
+
 /** {§web-route-settlement} Real HTTP requests through source and packed module entry points. */
 export default async function verifyRouteSettlement(t, createModule) {
     for (const [name, path] of [["listWorkspaces", "/~/"], ["listWorkers", "/~/example/"]]) {
@@ -136,7 +139,7 @@ export default async function verifyRouteSettlement(t, createModule) {
         const f = await authenticated(t, createModule, "none");
         const login = await f.login();
         const signedIn = await f.callback(login);
-        const cookie = signedIn.headers.get("set-cookie").split(";")[0];
+        const cookie = sessionCookie(signedIn);
         f.records.clear();
         assert.equal(f.observers.size, 1);
         f.module.stop();
@@ -191,7 +194,7 @@ export default async function verifyRouteSettlement(t, createModule) {
                     const signedIn = await f.callback(login);
                     f.records.get(f.initial.access_token).expiresAt = Date.now() - 1;
                     response = fetch(`${f.base}/auth/token`, { method: "POST", headers: {
-                        cookie: signedIn.headers.get("set-cookie").split(";")[0], origin: f.base,
+                        cookie: sessionCookie(signedIn), origin: f.base,
                     } });
                 }
             }
