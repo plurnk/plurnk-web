@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chromium, firefox, webkit } from "playwright";
+import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
@@ -17,7 +17,7 @@ const initial = {
 export default async function verifyStatus(t) {
     const { server, url } = await conversationFixture(new URL("./status-entry.js", import.meta.url));
     try {
-        for (const engine of [chromium, firefox, webkit]) {
+        for (const engine of engines) {
             await t.test(engine.name(), async () => {
                 const browser = await engine.launch();
                 try {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import test from "node:test";
-import { chromium, firefox, webkit } from "playwright";
+import { engines } from "./engines.js";
 import Documents from "../ai.plurnk/documents.js";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import { privateHeaders } from "../ai.plurnk/http.js";
@@ -35,7 +35,7 @@ test("{§web-worker-directory} two-line cards retain native links, lineage and d
         { id: 7, name: "cancelled", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "cancelled" },
         { id: 8, name: "idle", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "idle" },
     ];
-    for (const engine of [chromium, firefox, webkit]) await t.test(engine.name(), async () => {
+    for (const engine of engines) await t.test(engine.name(), async () => {
         const browser = await engine.launch();
         try {
             for (const javaScriptEnabled of [false, true]) {

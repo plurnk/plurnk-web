@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { chromium, firefox, webkit } from "playwright";
+import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
 export default async function verifyReasoning(t) {
     const { server, url } = await conversationFixture(new URL("./reasoning-entry.js", import.meta.url));
     try {
-        for (const engine of [chromium, firefox, webkit]) {
+        for (const engine of engines) {
             await t.test(engine.name(), async () => {
                 const browser = await engine.launch();
                 try {
