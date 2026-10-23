@@ -36,6 +36,8 @@ the plugin root an operator's daemon serves, is only read; a failed gate leaves 
 for diagnosis and names it.
 Commit verified changes with the registered agent as author and the operator as
 signed committer, then push to the canonical forge. No automatic publication.
+Work lands from a `<type>/<slug>` branch as a signed `--no-ff` merge whose subject reads
+`<type>(<scope>): land … (#N)`; gate that merge commit itself, then push it as `main`.
 
 Use focused checks while iterating; the full candidate gate verifies the assembled
 package before landing. Keep candidate archives independent of active daemon work.
