@@ -6,6 +6,11 @@ import { test } from "node:test";
 // {§web-package} The installed module resolves only what its manifest declares; hoisting is not a declaration.
 test("{§web-package} every package the module imports is a declared dependency", async () => {
     const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    assert.deepEqual(Object.keys(manifest.peerDependencies ?? {}).toSorted(), [
+        "@plurnk/plurnk-agui",
+        "@plurnk/plurnk-contracts",
+        "@plurnk/plurnk-modules",
+    ]);
     const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})]);
     const directory = new URL("../ai.plurnk/", import.meta.url);
     const undeclared = [];
