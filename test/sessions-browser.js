@@ -284,7 +284,9 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 assert.ok(await form.isVisible() && await form.evaluate((element) => element.closest("main") !== null), "without JavaScript the creation form renders in the page content");
                             }
                             const confirmButton = form.getByRole("button", { name: "Confirm", exact: true });
+                            const posted = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/workspaces/new");
                             await confirmButton.click();
+                            assert.equal(new URLSearchParams((await posted).postData() ?? "").get("name"), "", "the form names no workspace");
                             await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/") && new URL(url).pathname !== "/~/");
                             const createdPath = new URL(page.url()).pathname;
 
@@ -293,6 +295,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const fixtureAfter = await (await fetch(new URL("/__fixture", base))).json();
                             const newlyCreated = fixtureAfter.find((ws) => directoryPath({ kind: "workspace", workspace: ws.name }) === createdPath);
                             assert.ok(newlyCreated, "created workspace appears in daemon census");
+                            assert.notEqual(newlyCreated.name, "", "{§web-workspace-creation} the daemon named the workspace");
                             assert.equal(newlyCreated.project_root, null, "project_root is strictly null");
                             assert.equal(newlyCreated.project_label, null, "project_label is strictly null");
                             assert.equal(newlyCreated.workers.length, 0, "no worker or loop started");
@@ -356,6 +359,16 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const added = renamed.workers.find((worker) => worker.name === workerName);
                             assert.ok(added, "the daemon holds the new worker");
                             assert.deepEqual([added.parentWorkerId, added.loops.length], [null, 0], "an independent worker with no loop");
+                            // {§web-worker-creation} Left unnamed, the daemon names the worker.
+                            await page.goto(new URL(renamedPath, base).href);
+                            const unnamedForm = await open("dialog-worker-create", "worker-create");
+                            assert.equal(await unnamedForm.locator('input[name="name"]').inputValue(), "", "the form names no worker");
+                            await unnamedForm.getByRole("button", { name: "Confirm", exact: true }).click();
+                            await page.waitForURL((url) => url.pathname.includes("@") && !url.pathname.endsWith(`@${workerName}/`));
+                            const named = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id)
+                                .workers.filter(({ name, origin }) => origin === "model" && name !== workerName);
+                            assert.equal(named.length, 1, "one worker the daemon named");
+                            assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "worker", workspace: renamedName, worker: named[0].name }));
 
                             // 5. A daemon refusal shows the daemon's own status and detail, and offers the draft again on a
                             // form whose corrected submission goes through.

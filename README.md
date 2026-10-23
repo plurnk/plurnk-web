@@ -34,8 +34,8 @@ The workspace list marks folderless workspaces with ☁️ and folder-backed one
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
 The workspace list and workspace pages offer native header actions alongside the breadcrumbs:
-- On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal pre-populated with an automatic candidate name ({§web-workspace-creation}) to create a new folderless workspace.
-- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️` and `➕` open native `<dialog>` modals to rename the current workspace or create an independent model worker pre-populated with an automatic candidate name ({§web-worker-creation}).
+- On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal to create a new folderless workspace; left unnamed, the daemon names it ({§web-workspace-creation}).
+- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️` and `➕` open native `<dialog>` modals to rename the current workspace or create an independent model worker; left unnamed, the daemon names it ({§web-worker-creation}).
 Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow at the end of `<main>` when JavaScript is disabled; with JavaScript a closed modal shows nothing.
 itself instead of re-executing, and anonymous daemons keep actions behind same-origin guards.
 Worker share full-width article lists and a stationary header around scrolling

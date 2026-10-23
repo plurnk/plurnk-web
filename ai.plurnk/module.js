@@ -140,10 +140,11 @@ export default function createModule() {
                         if (creation) {
                             const formToken = fields.get("token");
                             if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
-                            const customName = fields.get("name")?.trim();
+                            // An empty name is no name: the daemon names the workspace.
+                            const name = fields.get("name") ?? "";
                             redirect(res, await creations.submit(formToken, async () => {
-                                try { return await seam.createWorkspace({ ...(customName ? { name: customName } : {}), projectRoot: null }); }
-                                catch (cause) { throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(customName ?? "")); }
+                                try { return await seam.createWorkspace({ ...(name === "" ? {} : { name }), projectRoot: null }); }
+                                catch (cause) { throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(name)); }
                             }));
                             return;
                         }
@@ -166,14 +167,15 @@ export default function createModule() {
                             const formToken = fields.get("token");
                             const targetName = fields.get("workspace");
                             if (!formToken || !targetName) throw new RequestError(400, "Expected worker creation token and workspace name.");
-                            const workerName = fields.get("name")?.trim();
+                            // An empty name is no name: the daemon names the worker.
+                            const workerName = fields.get("name") ?? "";
                             const workspaces = await seam.listWorkspaces();
                             const ws = workspaces.find(({ name }) => name === targetName);
                             if (!ws) throw new RequestError(404, "Workspace not found.");
                             redirect(res, await creations.submit(formToken, async () => {
                                 let createdWorker;
-                                try { createdWorker = await seam.createWorker({ workspaceId: ws.id, ...(workerName ? { name: workerName } : {}) }); }
-                                catch (cause) { throw refusal(cause, "The daemon could not create the worker.", documents.retryWorker(ws.name, workerName ?? "")); }
+                                try { createdWorker = await seam.createWorker({ workspaceId: ws.id, ...(workerName === "" ? {} : { name: workerName }) }); }
+                                catch (cause) { throw refusal(cause, "The daemon could not create the worker.", documents.retryWorker(ws.name, workerName)); }
                                 // An internal fault, not a refusal: the worker exists.
                                 const path = directoryPath({ kind: "worker", workspace: ws.name, worker: createdWorker.workerName });
                                 if (path === null) throw new Error("The daemon returned a worker name without a directory address.");
