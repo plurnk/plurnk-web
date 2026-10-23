@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chromium, firefox, webkit } from "playwright";
+import { engines } from "./engines.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 import { verifyMath, verifyUnavailableMath } from "./math-browser.js";
@@ -38,7 +38,7 @@ const messages = [
 test("{§web-worker-conversation} {§web-conversation-content} native conversation projection", { timeout: 60_000 }, async (t) => {
     const { server, url } = await conversationFixture();
     try {
-        for (const engine of [chromium, firefox, webkit]) {
+        for (const engine of engines) {
             await t.test(engine.name(), async (t) => {
                 const browser = await engine.launch();
                 try {

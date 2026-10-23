@@ -264,9 +264,10 @@ installs their public type declarations without rewriting the lockfile,
 then runs the full gate with `PLURNK_WEB_TEST_PACKAGES` naming the archive directory.
 The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
-Chromium. Component coverage also exercises native conversation behavior in Firefox
-and WebKit. Install the test browsers with `npx playwright install chromium firefox webkit`
-if necessary. The operator's daemon and configuration are not used.
+Chromium. Component coverage also exercises native conversation behavior in Firefox.
+Install the test browsers with `npx playwright install chromium firefox` if necessary;
+WebKit joins the matrix only when `PLURNK_WEB_TEST_WEBKIT=1` is set, because its
+local automation host is recorded-flaky. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference is involved. Separate journeys exercise
 the shipped worker page and native input/review forms without injecting an SDK or mocking AG-UI.

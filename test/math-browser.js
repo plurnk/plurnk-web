@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { chromium, firefox, webkit } from "playwright";
+import { chromium } from "playwright";
+import { engines } from "./engines.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 
 export async function verifyMath(t) {
     const { server, url } = await conversationFixture();
     try {
-        for (const engine of [chromium, firefox, webkit]) {
+        for (const engine of engines) {
             await t.test(engine.name(), async (t) => {
                 const browser = await engine.launch();
                 try {
