@@ -67,6 +67,12 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
     display: none;
 }
 
+/* {§web-worker-approval} A proposal's deadline, and the notice once it has passed, show only when they apply. */
+[aria-label="Review requests"]:not([data-deadline-passed]) [data-deadline-notice],
+[data-proposal-deadline=""] > [data-proposal-deadline-line] {
+    display: none;
+}
+
 /* {§web-worker-commands} Results have their own literal, non-conversation outlet. */
 #worker-command-results section:not([data-alias-count="0"]) > [data-no-aliases] {
     display: none;

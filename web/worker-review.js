@@ -3,6 +3,10 @@ import { buildResumeArray } from "./worker-agent.js";
 import answerForm from "./answer-form.js";
 
 /** @typedef {import("@ag-ui/client").HttpAgent["pendingInterrupts"]} Interrupts */
+/** {§web-worker-approval} The daemon cancels a proposal at its deadline; past it by this page's clock, the page answers nothing.
+ * @param {Interrupts[number]} interrupt
+ */
+const expired = (interrupt) => interrupt.expiresAt !== undefined && Date.parse(interrupt.expiresAt) <= Date.now();
 /** @param {Interrupts[number]} interrupt */
 const proposal = (interrupt) => /** @type {import("@plurnk/plurnk-contracts").ProposalProjection | undefined} */ (interrupt.metadata?.plurnk?.proposal);
 
@@ -22,9 +26,10 @@ export default function reviewRequests(controls, yolo) {
     /** @type {Map<string, Element>} */
     const rows = new Map();
     function mode() {
-        const manual = supported ? current.filter((interrupt) => !yolo || proposal(interrupt) === undefined).length : 0;
-        the(form, "request-count", manual);
-        return !supported ? "unsupported" : manual > 0 ? "manual" : "automatic";
+        const late = supported && current.some(expired);
+        const manual = !supported ? 0 : late ? current.length : current.filter((interrupt) => !yolo || proposal(interrupt) === undefined).length;
+        the(form, { requestCount: manual, deadlinePassed: late ? "" : null });
+        return !supported ? "unsupported" : late ? "expired" : manual > 0 ? "manual" : "automatic";
     }
     /** @param {Interrupts[number]} interrupt @param {number} index @param {Element} [before] */
     function presentProposal(interrupt, index, before) {
@@ -34,7 +39,8 @@ export default function reviewRequests(controls, yolo) {
         rows.set(interrupt.id, row);
         the(row, {
             interruptId: interrupt.id, proposalChoice: `decision-${index}`, proposalWorker: facts.worker,
-            proposalOp: facts.op,
+            proposalOp: facts.op, proposalDeadline: interrupt.expiresAt ?? "",
+            proposalDeadlineLabel: interrupt.expiresAt === undefined ? "" : new Date(interrupt.expiresAt).toLocaleString(),
         });
         const target = $(row, "[data-proposal-target]");
         const body = $(row, "[data-proposal-body]");
@@ -104,7 +110,7 @@ export default function reviewRequests(controls, yolo) {
                         return result && { interruptId: interrupt.id, ...result };
                     };
                 }
-                if (!yolo) presentProposal(interrupt, index);
+                if (!yolo || interrupts.some(expired)) presentProposal(interrupt, index);
                 return async () => {
                     if (yolo) return {
                         interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision: "accept", outcome: "client_yolo" },
@@ -119,6 +125,7 @@ export default function reviewRequests(controls, yolo) {
         },
         /** @param {Interrupts} interrupts */
         async decisions(interrupts) {
+            if (mode() === "expired") return;
             if (!form.reportValidity()) return;
             const results = await Promise.all(responses.map((read) => read()));
             if (results.some((result) => result === undefined)) return;

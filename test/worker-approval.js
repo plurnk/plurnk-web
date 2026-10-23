@@ -80,6 +80,19 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         }
         checkBrowser();
     }, { env: { PLURNK_WEB_YOLO: "1" } }));
+    await t.test("{§web-worker-approval} a proposal's deadline shows, and the page follows the daemon cancelling it", { timeout: 30_000 }, () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
+        page.setDefaultTimeout(5000);
+        const requests = requestsFrom(page);
+        await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-input.");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await interrupted(page);
+        const form = page.getByRole("form", { name: "Review requests", exact: true });
+        assert.ok(Number.isFinite(Date.parse(await form.locator("time").getAttribute("datetime") ?? "")), "the deadline is shown");
+        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected", null, { timeout: 15_000 });
+        assert.equal(await form.isVisible(), false, "the daemon's cancellation withdraws the review");
+        assert.equal(requests.filter(({ resume }) => resume?.length).length, 0, "the page answered nothing");
+        checkBrowser();
+    }, { env: { PLURNK_SERVICE_PROPOSAL_TIMEOUT_MS: "3000" } }));
     await t.test("{§web-worker-approval} configured YOLO cannot override daemon rejection", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);

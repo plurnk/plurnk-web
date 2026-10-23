@@ -241,6 +241,7 @@
         <form aria-label="Review requests" data-request-count="0">
             <fieldset disabled data-bind="disabled:review-unavailable">
                 <legend data-i18n="input-required">Input required</legend>
+                <p role="alert" data-deadline-notice data-i18n="deadline-passed">The decision deadline has passed; the daemon cancels these requests.</p>
                 <div data-requests></div>
                 <button type="submit" data-i18n="submit-responses">Submit responses</button>
             </fieldset>
@@ -287,6 +288,7 @@
             <legend><span data-text="proposal-worker">Worker</span> <code data-text="proposal-op">Operation</code></legend>
             <pre><code data-proposal-target></code></pre>
             <pre><code data-proposal-body></code></pre>
+            <p data-proposal-deadline-line><span data-i18n="decide-by">Decide by</span> <time data-bind="datetime:proposal-deadline" data-text="proposal-deadline-label"></time></p>
             <label><input type="radio" value="accept" required data-bind="name:proposal-choice"> <span data-i18n="accept">Accept</span></label>
             <label><input type="radio" value="reject" required data-bind="name:proposal-choice"> <span data-i18n="reject">Reject</span></label>
         </fieldset>

@@ -128,7 +128,7 @@ export default function observeWorker(element) {
                 : current === "connected" && !arriving && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
         });
-        the(review.form, "review-unavailable", current === "interrupted" && !cancellation ? null : "");
+        the(review.form, "review-unavailable", current === "interrupted" && !cancellation && the(review.form, "deadline-passed") === null ? null : "");
     }
 
     /** @param {string} current @param {string} label */
@@ -254,7 +254,9 @@ export default function observeWorker(element) {
                         continue;
                     }
                     connection("interrupted", "Input required");
-                    the(connectionNotice, "connection-detail", mode === "manual" ? "Review the pending requests." : "This page cannot answer this interaction. Work remains pending.");
+                    the(connectionNotice, "connection-detail", mode === "manual" ? "Review the pending requests."
+                        : mode === "expired" ? "The decision deadline has passed; the daemon cancels these requests."
+                            : "This page cannot answer this interaction. Work remains pending.");
                     holding = true;
                     submission = undefined;
                     continue;
