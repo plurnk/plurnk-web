@@ -398,6 +398,22 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
             checkBrowser();
         }, { authenticated: true }));
     }
+    await t.test("{§web-worker-observer} an event the page cannot take in ends observation with its cause", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
+        await page.route("**/agui/connect", (route) => {
+            const input = route.request().postDataJSON();
+            return route.fulfill({ contentType: "text/event-stream", body: [
+                { type: "RUN_STARTED", runId: input.runId, threadId: input.threadId },
+                { type: "CUSTOM", name: "plurnk.problem", value: { title: "Not a Problem" } },
+                { type: "RUN_FINISHED", runId: input.runId, threadId: input.threadId, outcome: { type: "success" } },
+            ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+        }, { times: 1 });
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
+        assert.match(await page.locator("#worker-connection").innerText(), /invalid RFC 9457 Problem Details/u);
+        await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+        checkBrowser();
+    }));
 
     await t.test("{§web-worker-input} expired browser authority cannot submit or silently replace a draft", () => inputPage(withDaemon, async ({ page, context, base, model, checkBrowser }) => {
         const reached = Promise.withResolvers();
