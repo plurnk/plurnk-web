@@ -52,7 +52,8 @@ async function render(outlet) {
     const source = $(figure, "[data-diagram-source]");
     if (!(image instanceof HTMLImageElement) || !(figure instanceof HTMLElement) || !source) throw new Error("Diagram template is incomplete.");
     source.textContent = code.textContent;
-    the(figure, "diagramUrl", `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    // One copy of the SVG: the image's own source, not a state attribute it is projected from.
+    image.setAttribute("src", `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
     try { await image.decode(); }
     catch (error) {
         figure.remove();

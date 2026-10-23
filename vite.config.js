@@ -38,7 +38,7 @@ export default defineConfig(({ command }) => ({
                 ],
                 defaultExtractor: (content) => content.match(/[A-Za-z0-9_-]+/gu) ?? [],
                 // Browser pseudo-states are not HTML tokens, including inside :is() and :where().
-                safelist: { standard: [/^:/], deep: [/aria-/, /role-/, /data-/] },
+                safelist: { standard: [/^:/], deep: [/aria-/, /data-/] },
                 variables: true,
                 keyframes: true,
             })] : [],

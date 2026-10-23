@@ -19,3 +19,8 @@ test("{§web-package} every package the module imports is a declared dependency"
     }
     assert.deepEqual(undeclared, [], "a runtime import resolves through a declared dependency");
 });
+
+test("{§web-package} the plugin manifest and the package carry one version", async () => {
+    const read = async (name) => JSON.parse(await readFile(new URL(`../${name}`, import.meta.url), "utf8"));
+    assert.equal((await read("plugin.json")).version, (await read("package.json")).version);
+});

@@ -488,6 +488,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         const figure = page.locator('[data-message-role="assistant"] [data-diagram]:not([hidden])');
                         await figure.waitFor();
                         assert.equal(await figure.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0 && image.src.startsWith("data:image/svg+xml;")), true);
+                        assert.equal(await figure.getAttribute("data-diagram-url"), null, "the SVG is held once, by the image");
                         assert.equal(await figure.locator("details").evaluate((element) => element.open), false);
                         await figure.getByText("Diagram source", { exact: true }).click();
                         assert.equal(await figure.locator("pre code").innerText(), "flowchart LR\n Client --> Daemon\n");
