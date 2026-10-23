@@ -260,47 +260,55 @@ The workspace index continues to mark folder presence under
 {§web-directory-documents}, irrespective of name equality. Accessible icon labels
 distinguish the workspace identity from its project folder; a cloud on a named
 workspace with a separate folder must not claim it is folderless.
-
 ## §web-workspace-creation Folderless workspace creation
 
-The daemon workspaces directory (`/~/`) carries one native creation form; individual
-workspace, worker, account and error documents never do. The form works with JavaScript
-disabled.
+The daemon workspaces directory (`/~/`) header carries a native creation trigger button (`➕`);
+individual workspace, worker, account and error documents never do. Activating the trigger
+opens a native `<dialog>` modal (`#dialog-workspace-create`). When JavaScript is disabled, the form
+renders in normal flow and submits cleanly without client scripting.
 
 | Boundary | Contract |
 |---|---|
-| Form | One `method="post" action="/workspaces/new"` form (`#workspace-create`) with an accessible New workspace button (`title="New workspace"`), an optional text input named `name`, and exactly one hidden token field containing a fresh UUID. When a custom name is supplied, creation uses that name; when omitted or blank, the daemon generates one. Rendering is stateless; no server-side token map is populated on GET or HEAD. |
+| Form | A native modal (`#dialog-workspace-create`) containing one `method="post" action="/workspaces/new"` form (`#workspace-create`) with Cancel and Confirm buttons, a text input named `name` pre-populated with an automatic candidate name (five alphanumeric characters with at least one letter), and exactly one hidden token field containing a fresh UUID. Users may submit to accept the suggested name, edit it, or cancel/escape to dismiss without mutating state. Resting `<main>` on `/~/` contains only directory content. |
 | Folder independence | Creation calls the public `createWorkspace` with `projectRoot: null`, never inheriting another workspace's folder, the daemon's working directory or an operator home. It starts no loop, worker or inference, copies no history, creates no project directory, and leaves other workspaces untouched. |
+| Admission and origin | With authentication enabled, an unadmitted POST answers 401 and a cross-origin form 403 against the daemon's issuer. `PLURNK_AUTH=0` is a first-class anonymous posture, not a read-only mandate: creation requires a matching same-origin `Origin` header naming the request's own host, and any `sec-fetch-site` other than same-origin is refused with 403. |
 | Method and encoding | Only POST is allowed; GET and HEAD answer 405 with `allow: POST`. The body is UTF-8 `application/x-www-form-urlencoded` (415 otherwise), bounded (413), with exactly one `token` field (400 otherwise). |
 | Convergence | The hidden token is the form's idempotency key at the module's HTTP boundary, because the daemon's creation contract has none. Token tracking begins on `POST /workspaces/new`. The first POST creates one workspace and answers 303 to its canonical address through the shared directory codec. Racing or retried POSTs of the same valid token converge to that same workspace, never a second creation. A settled token stays addressable for the configured TTL, so a retry after a lost response converges. An invalid UUID format answers 400. |
 | Failure | A daemon rejection answers 502 with its cause preserved, and the settled failure is not blindly re-executed within its TTL. An envelope that names a project folder for a folderless request, or a workspace name without a directory address, is a visible internal violation, never a silently adapted creation. |
 | Bound | In-flight and settled tokens are pruned on expiry and bounded across actual POST submissions: exceeding `PLURNK_WEB_CREATE_TOKENS` evicts the oldest settled completed outcome. In-flight creations remain protected during convergence. |
+
 ## §web-workspace-rename Workspace rename
 
-Workspace pages (`/~/<workspace>/`) carry one native rename form (`#workspace-rename`); daemon, worker, account and error documents never do.
+Workspace page (`/~/<workspace>/`) headers carry a native rename trigger button (`✏️`);
+daemon, worker, account and error documents never do. Activating the trigger opens a native
+`<dialog>` modal (`#dialog-workspace-rename`). When JavaScript is disabled, the form renders in normal
+flow and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | One `method="post" action="/workspaces/rename"` form with the current workspace name in a hidden `workspace` field, a required text input named `name` initialized to the current name, and a Rename button. |
+| Form | A native modal (`#dialog-workspace-rename`) containing one `method="post" action="/workspaces/rename"` form with the current workspace name in a hidden `workspace` field, a required text input named `name` pre-populated with the current name, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. Resting `<main>` contains only directory content. |
 | Delivery | Uses the public `renameWorkspace(workspaceId, name)` contract on `ApplicationPort`. Missing workspace answers 404; empty name answers 400. Rejection answers 502 with cause preserved. Success 303-redirects to the canonical new workspace directory address through the shared directory codec. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Same-origin enforcement requires matching `Origin` and same-origin `sec-fetch-site` in both auth and anonymous postures. |
 
 ## §web-worker-creation Worker creation
 
-Workspace pages (`/~/<workspace>/`) carry one native worker creation form (`#worker-create`); daemon, worker, account and error documents never do.
+Workspace page (`/~/<workspace>/`) headers carry a native worker creation trigger button (`➕`);
+daemon, worker, account and error documents never do. Activating the trigger opens a native
+`<dialog>` modal (`#dialog-worker-create`). When JavaScript is disabled, the form renders in normal
+flow and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | One `method="post" action="/workers/new"` form with the current workspace name in a hidden `workspace` field, a hidden UUID `token` field, an optional text input named `name`, and a New worker button (`title="New worker"`). |
+| Form | A native modal (`#dialog-worker-create`) containing one `method="post" action="/workers/new"` form with the current workspace name in a hidden `workspace` field, a hidden UUID `token` field, a text input named `name` pre-populated with an automatic candidate name (eight random lowercase hexadecimal characters), and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. Resting `<main>` contains only directory content. |
 | Delivery | Uses the public `createWorker({ workspaceId, name? })` contract on `ApplicationPort`, creating an independent model worker without inheriting parentage, loops, transcripts, or forking active state. When a name is provided, creation requests it; when omitted or blank, the daemon generates one. |
 | Convergence | The form token acts as idempotency key: racing double-clicks and retries converge to the single created worker. Expiry and bounds share the creation limits. |
 | Success and failure | Missing workspace answers 404. Success 303-redirects to the new worker's canonical directory address (`directoryPath({ kind: "worker", workspace, worker })`). Rejection answers 502. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
 
 ## §web-worker-directory Model-worker navigation
+
+| Boundary | Representation |
 |---|---|
-| Membership | Every `origin: model` worker appears once, regardless of owner, lifecycle or name spelling. The runtime bookkeeping worker has no directory row or worker page; its direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
-| Roots | Model workers with `parentWorkerId: null` form the primary list. |
 | Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
 | Card identity | Two lines: a named ant link to the worker, its lifecycle glyph, optional actual parent followed by `>`, and the worker name; then a folder/cloud marker and a real link to its workspace. Model parents are links; bookkeeping parents are escaped text, never fabricated worker destinations. Folder presence comes from `project_root`, not the workspace name. Kind and permission owner do not become visible metadata rows. |
 | Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the worker statusline; the icon has a literal accessible name/title. These are directory facts at page load, not locally inferred or continuously updated status. No reply content, completion timestamp or recency ordering is inferred from this census. |

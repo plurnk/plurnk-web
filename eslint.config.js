@@ -5,7 +5,7 @@ import otm from "on_the_money/eslint-config";
 import noUnsanitized from "eslint-plugin-no-unsanitized";
 
 export default defineConfig(
-    { ignores: ["ai.plurnk/dist/**", "web/public/**"] },
+    { ignores: ["ai.plurnk/dist/**", "web/public/**", ".vite-test-*/**", ".module-test-*/**"] },
     {
         files: ["**/*.{js,mjs}"],
         extends: [js.configs.recommended],

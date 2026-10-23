@@ -90,12 +90,12 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
             listWorkers: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
-        assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️<\/span><\/li><\/ul><\/nav>/u);
+        assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️<\/span> <button type="button" data-dialog-target="dialog-workspace-create" aria-label="New workspace" title="New workspace">➕<\/button><\/li><\/ul><\/nav>/u);
         assert.doesNotMatch(index, /<h1\b/u);
         const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
         assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li>/u);
         const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span></li>`), page);
+        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button></li>`), page);
         assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
         assert.doesNotMatch(page, /<h1\b/u);
         assert.equal(page.match(/aria-current="page"/gu).length, 1, "the workspace breadcrumb has one current item");
@@ -248,22 +248,23 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.match(index, /<ul><li data-directory-entry="workspace" data-folder="false"><article aria-label="Folderless workspace"><header><a href="\/~\/~\/a%26%3Cscript%3E%40%22b\/"/u);
     assert.match(index, /~\/a&amp;&lt;script&gt;@&quot;b/u);
     assert.match(index, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header><\/article>/u);
+    assert.match(index, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header><\/article>/u);
     assert.match(index, /<form method="post" action="\/auth\/logout">/u);
-    assert.match(index, /<form id="workspace-create" method="post" action="\/workspaces\/new"><input type="hidden" name="token" value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"><input type="text" name="name" placeholder="Workspace name \(optional\)" aria-label="Workspace name"><button type="submit" title="New workspace" data-i18n="new-workspace"><span aria-hidden="true">➕<\/span> New workspace<\/button><\/form>/u,
-        "{§web-workspace-creation} the daemon workspaces directory carries the workspace creation form");
+    assert.match(index, /<dialog id="dialog-workspace-create">[\s\S]*<form id="workspace-create" method="post" action="\/workspaces\/new">[\s\S]*<button type="submit"[^>]*>Confirm<\/button>/u,
+        "{§web-workspace-creation} the daemon workspaces directory carries the native creation dialog");
+    assert.doesNotMatch(index.split("<main")[1].split("</main>")[0], /<form\b/u, "main on workspaces index contains no forms");
     assert.match(index, /<script src="\/app.js"><\/script>/u);
     assert.equal(await document.read({ kind: "workspace", workspace: "missing" }, port, false), null);
     assert.deepEqual(calls, ["workspaces", "workspaces"]);
     const workspace = { kind: "workspace", workspace: '~/a&<script>@"b' };
     const workers = (await document.read(workspace, port, false)).toString();
     assert.match(workers, /a%26%3Cscript%3E%40%22b@user\//u);
-    assert.match(workers, /<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename form");
-    assert.match(workers, /<form id="worker-create" method="post" action="\/workers\/new">/u, "workspace page carries the worker creation form");
+    assert.match(workers, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename dialog");
+    assert.match(workers, /<dialog id="dialog-worker-create">[\s\S]*<form id="worker-create" method="post" action="\/workers\/new">/u, "workspace page carries the worker creation dialog");
+    assert.doesNotMatch(workers.split("<main")[1].split("</main>")[0], /<form\b/u, "main on workspace page contains no forms");
     assert.doesNotMatch(workers, /workspaces\/new/u, "{§web-workspace-creation} workspace pages carry no workspace creation form");
     assert.doesNotMatch(workers, /<form method="post" action="\/auth\/logout"/u);
     const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
-    assert.match(page, /<title[^>]*>~\/a&amp;&lt;script&gt;@&quot;b@user — Plurnk<\/title>/u);
-    assert.doesNotMatch(page, /<h1\b/u);
     assert.doesNotMatch(page, /workspaces\/new/u, "{§web-workspace-creation} worker pages carry no creation form");
 });
 

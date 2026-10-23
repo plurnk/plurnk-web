@@ -32,18 +32,12 @@ parent and workspace links navigate independently. Leaves have no empty disclosu
 These cards are navigation snapshots, not live monitors or completed-reply previews.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
-otherwise ☁️ identifies the workspace and a separate 🗂️ line shows its project
 folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
-The workspace list offers a native ➕ New workspace form with an optional name field.
-It creates a new folderless workspace through the public creation contract — generating
-a name when omitted or using the specified name, and never inheriting another workspace's
-folder, starting a loop or copying history — then navigates to it.
-Workspace pages provide an inline rename form to update the workspace name and navigate
-to its new canonical address, as well as a ➕ New worker form to create an independent
-model worker in that workspace without starting inference or forking transcripts.
-Re-submitting creation forms converges to that one creation; a stale form reports
+The workspace list and workspace pages offer native header actions alongside the breadcrumbs:
+- On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal pre-populated with an automatic candidate name ({§web-workspace-creation}) to create a new folderless workspace.
+- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️` and `➕` open native `<dialog>` modals to rename the current workspace or create an independent model worker pre-populated with an automatic candidate name ({§web-worker-creation}).
+Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow when JavaScript is disabled, keeping `<main>` clean and focused on directory content.
 itself instead of re-executing, and anonymous daemons keep actions behind same-origin guards.
-Home and account/error pages keep a 65ch reading width. Workspaces, Workspace and
 Worker share full-width article lists and a stationary header around scrolling
 main content. Worker status and the Stop / multiline message / Send row stay at
 the bottom. The message field and buttons grow together; Enter remains a newline,
