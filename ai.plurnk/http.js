@@ -19,9 +19,9 @@ export class RequestError extends Error {
 /**
  * {§web-workspace-creation} A daemon refusal answers with the daemon's own status, detail and recovery; a daemon that
  * failed is a 502. Either way the person's draft comes back in `retry`.
- * @param {unknown} cause @param {string} failed @param {string} retry
+ * @param {unknown} cause @param {string} failed @param {string} [retry]
  */
-export function refusal(cause, failed, retry) {
+export function refusal(cause, failed, retry = undefined) {
     const problem = Problems.fromError(cause);
     if (problem === null || problem.status < 400 || problem.status >= 500) return new RequestError(502, failed, { cause, retry });
     const recovery = typeof problem.recovery === "string" ? problem.recovery : undefined;

@@ -177,12 +177,53 @@ export default class Documents {
             + '<small id="worker-name-hint" data-i18n="worker-name-hint">Leave it empty and the daemon names the worker.</small>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
+    /**
+     * {§web-workspace-hide} Native dialog modal to hide the workspace.
+     * @param {{name: string}} workspace
+     */
+    #workspaceHideForm(workspace) {
+        return '<dialog id="dialog-workspace-hide"><article>'
+            + '<header><p><strong data-i18n="hide-workspace">Hide workspace</strong></p>'
+            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
+            + this.#workspaceHideFields(workspace.name, CANCEL)
+            + '</article></dialog>';
+    }
 
+    /** @param {string} workspace @param {string} cancel */
+    #workspaceHideFields(workspace, cancel) {
+        return '<form id="workspace-hide" method="post" action="/workspaces/hide">'
+            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
+            + '<p data-i18n="hide-workspace-detail">Hiding removes the workspace from directory lists while keeping its files and history intact.</p>'
+            + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
+    }
+
+    /**
+     * {§web-worker-hide} Native dialog modal to hide the worker and its subtree.
+     * @param {{name: string}} workspace
+     * @param {{name: string}} worker
+     */
+    #workerHideForm(workspace, worker) {
+        return '<dialog id="dialog-worker-hide"><article>'
+            + '<header><p><strong data-i18n="hide-worker">Hide worker</strong></p>'
+            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
+            + this.#workerHideFields(workspace.name, worker.name, CANCEL)
+            + '</article></dialog>';
+    }
+
+    /** @param {string} workspace @param {string} worker @param {string} cancel */
+    #workerHideFields(workspace, worker, cancel) {
+        return '<form id="worker-hide" method="post" action="/workers/hide">'
+            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
+            + `<input type="hidden" name="worker" value="${escapeHtml(worker)}">`
+            + '<p data-i18n="hide-worker-detail">Hiding removes the worker and its descendants from directory overviews without destroying history.</p>'
+            + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
+    }
     /** @param {string | null} projectRoot */
     #workspaceMarker(projectRoot) {
         const folder = projectRoot !== null;
         return `<span role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}">${folder ? "🗂️" : "☁️"}</span>`;
     }
+
     /** @param {string[]} [items] @param {boolean} [current] */
     #breadcrumb(items = [], current = false) {
         const root = current
@@ -196,12 +237,12 @@ export default class Documents {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
         const items = [];
         if (directory.kind === "workspace") {
-            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button>`);
+            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button>`);
         }
         if (directory.kind === "worker") {
             const path = directoryPath({ kind: "workspace", workspace: directory.workspace });
             if (path === null) throw new Error("An admitted worker must have a workspace directory address.");
-            items.push(`<span id="worker-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, current(directory.worker));
+            items.push(`<span id="worker-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, `${current(directory.worker)} <button type="button" data-dialog-target="dialog-worker-hide" aria-label="Hide worker" title="Hide worker">🗑️</button>`);
         }
         return this.#breadcrumb(items, directory.kind === "daemon");
     }
@@ -339,7 +380,7 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            const dialogs = this.#renameForm(workspace) + this.#workerCreationForm(workspace);
+            const dialogs = this.#renameForm(workspace) + this.#workspaceHideForm(workspace) + this.#workerCreationForm(workspace);
             return render(workspace.name, folder + this.#workerTree(workspace, byId), marker, "", dialogs);
         }
         const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
@@ -353,8 +394,9 @@ export default class Documents {
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
         const status = this.#workerStatus(directory, workspace.id, authenticated, this.#yolo && own);
+        const dialogs = this.#workerHideForm(workspace, worker);
         return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + (parent === null ? "" : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`)
-            + status.content, marker, status.footer);
+            + status.content, marker, status.footer, dialogs);
     }
 }

@@ -101,7 +101,7 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
         const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
         assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li>/u);
         const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button></li>`), page);
+        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button></li>`), page);
         assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
         assert.doesNotMatch(page, /<h1\b/u);
         assert.equal(page.match(/aria-current="page"/gu).length, 1, "the workspace breadcrumb has one current item");
@@ -267,12 +267,14 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     const workers = (await document.read(workspace, port, false)).toString();
     assert.match(workers, /a%26%3Cscript%3E%40%22b@user\//u);
     assert.match(workers, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename dialog");
+    assert.match(workers, /<dialog id="dialog-workspace-hide">[\s\S]*<form id="workspace-hide" method="post" action="\/workspaces\/hide">/u, "workspace page carries the hide workspace dialog");
     assert.match(workers, /<dialog id="dialog-worker-create">[\s\S]*<form id="worker-create" method="post" action="\/workers\/new">/u, "workspace page carries the worker creation dialog");
     assert.doesNotMatch(workers.split("<main")[1].split("</main>")[0].replace(/<dialog\b[\s\S]*?<\/dialog>/gu, ""), /<form\b/u,
         "main on workspace page holds forms only inside their dialogs");
     assert.doesNotMatch(workers, /workspaces\/new/u, "{§web-workspace-creation} workspace pages carry no workspace creation form");
     assert.doesNotMatch(workers, /<form method="post" action="\/auth\/logout"/u);
     const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
+    assert.match(page, /<dialog id="dialog-worker-hide">[\s\S]*<form id="worker-hide" method="post" action="\/workers\/hide">/u, "worker page carries the hide worker dialog");
     assert.doesNotMatch(page, /workspaces\/new/u, "{§web-workspace-creation} worker pages carry no creation form");
 });
 
@@ -310,9 +312,9 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" data-page="worker">/u);
-    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span><\/li><\/ul><\/nav>/u);
+    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span> <button type="button" data-dialog-target="dialog-worker-hide" aria-label="Hide worker" title="Hide worker">🗑️<\/button><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template/iu);
-    assert.equal(html.match(/<footer\b/gu).length, 1, "the worker status footer is the only footer");
+    assert.equal(html.replace(/<dialog\b[\s\S]*?<\/dialog>/gu, "").match(/<footer\b/gu).length, 1, "the worker status footer is the only document-level footer");
     assert.equal(html.match(/<main\b/gu).length, 1);
     assert.doesNotMatch(html, /<h1\b/u, "the breadcrumb and document title identify the worker without a duplicate heading");
 });
