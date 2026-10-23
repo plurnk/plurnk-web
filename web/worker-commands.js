@@ -34,7 +34,7 @@ export function parseCommand(text) {
  * @param {{call: Action, toggleYolo: () => Promise<boolean>, stop: () => Promise<string>}} actions
  */
 export default function workerCommands(controls, actions) {
-    const outlet = $.clone(controls, "#command-results", { position: "afterbegin" });
+    const outlet = $.clone(controls, "#command-results");
     const list = $(outlet, "ul");
     if (!list) throw new Error("Command results template is incomplete.");
     /** @param {string} text @param {AbortSignal} signal */

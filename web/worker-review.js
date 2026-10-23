@@ -10,7 +10,7 @@ const proposal = (interrupt) => /** @type {import("@plurnk/plurnk-contracts").Pr
  * @param {Element} controls @param {boolean} yolo
  */
 export default function reviewRequests(controls, yolo) {
-    const form = $.clone(controls, "#worker-review", { position: "afterbegin" });
+    const form = $.clone(controls, "#worker-review");
     const outlet = $(form, "[data-requests]");
     if (!(form instanceof HTMLFormElement) || !outlet) throw new Error("Review template is incomplete.");
     const list = outlet;

@@ -349,6 +349,43 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         } finally { await model.close(); }
     });
 
+    await t.test("{§web-worker-history} on a conversation longer than the view, a review, a failure and command output appear in view", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
+        page.setDefaultTimeout(5000);
+        const text = page.getByRole("textbox", { name: "Message", exact: true });
+        const send = page.getByRole("button", { name: "Send", exact: true });
+        // Visible within main's scroll area, its end included, once the page has laid it out: where a reader following the
+        // conversation is looking.
+        const inView = async (locator) => {
+            const element = await locator.elementHandle();
+            return page.waitForFunction((target) => {
+                const view = document.querySelector("main").getBoundingClientRect();
+                const box = target.getBoundingClientRect();
+                return box.height > 0 && box.top < view.bottom && box.bottom <= view.bottom + 1;
+            }, element, { timeout: 2000 }).then(() => true, () => false);
+        };
+        await text.fill(["Lifecycle fixture: long-note.", ...Array.from({ length: 150 }, (_, index) => `Line ${index + 1} of a long note.`)].join("\n"));
+        await send.click();
+        await page.getByText("Completed long-note.", { exact: true }).waitFor();
+        assert.ok(await page.locator("main").evaluate((main) => main.scrollHeight > 2 * main.clientHeight), "the conversation is longer than the view");
+        await text.fill("/help");
+        await send.click();
+        const help = page.locator("#worker-command-results > ul > li").last();
+        await help.locator('[data-command-state="done"]').waitFor();
+        assert.equal(await inView(help), true, "command output appears in view");
+        await text.fill("Lifecycle fixture: approval-input.");
+        await send.click();
+        const review = page.getByRole("form", { name: "Review requests", exact: true });
+        await review.waitFor();
+        assert.equal(await inView(review), true, "a review appears in view");
+        await page.route("**/agui", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
+            type: "https://problems.plurnk.xyz/fixture/stop-refused", title: "Conflict", status: 409, detail: "The fixture refused Stop." }) }), { times: 1 });
+        await page.getByRole("button", { name: "Stop", exact: true }).click();
+        const failure = page.getByRole("alert").filter({ hasText: "The fixture refused Stop." });
+        await failure.waitFor();
+        assert.equal(await inView(failure), true, "a failure appears in view");
+        checkBrowser([httpFailure("/agui", 409), /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: The fixture refused Stop\.$/u]);
+    }, { env: { PLURNK_WEB_YOLO: "0" } }));
+
     await t.test("{§web-worker-input} authenticated admission preserves newer typing and departure never cancels work", () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         const reached = Promise.withResolvers();
         const release = Promise.withResolvers();

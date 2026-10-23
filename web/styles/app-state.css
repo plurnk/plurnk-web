@@ -227,3 +227,8 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
 [data-history-boundary] [data-text="history-error"]:empty {
     display: none;
 }
+
+/* {§web-worker-history} Following holds main's end itself; the browser's scroll anchoring would read as the reader moving. */
+main[data-following] {
+    overflow-anchor: none;
+}
