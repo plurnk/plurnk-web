@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer, request } from "node:http";
 import { HttpAgent } from "@ag-ui/client";
 import { chromium } from "playwright";
 import startModel from "./model-fixture.js";
@@ -282,6 +284,67 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     assert.deepEqual(model.errors, []);
                     checkBrowser();
                 } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
+    await t.test("{§web-worker-input} Send waits while an arriving interrupt is not yet presented", async () => {
+        const model = await startModel();
+        try {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
+                const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user" });
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "arrival", action: { kind: "worker.model.set", selector: "browser" } } } });
+                // The message Run's response stays open after its interrupt arrives, until the journey releases it.
+                const arrived = Promise.withResolvers();
+                const release = Promise.withResolvers();
+                const proxy = createServer((req, res) => {
+                    const held = req.url === "/agui";
+                    const upstream = request(new URL(req.url, base), { method: req.method, headers: req.headers }, (response) => {
+                        res.writeHead(response.statusCode, response.headers);
+                        let seen = "";
+                        response.on("data", (chunk) => {
+                            res.write(chunk);
+                            seen += chunk;
+                            if (held && /"type":"RUN_FINISHED".*"type":"interrupt"/u.test(seen)) arrived.resolve();
+                        });
+                        response.on("end", async () => {
+                            if (held) await release.promise;
+                            res.end();
+                        });
+                    });
+                    upstream.on("error", (error) => res.destroy(error));
+                    req.pipe(upstream);
+                });
+                proxy.listen(0, "127.0.0.1");
+                await once(proxy, "listening");
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    page.setDefaultTimeout(5000);
+                    await page.goto(`http://127.0.0.1:${proxy.address().port}/~/arrival@user/`);
+                    await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+                    const text = page.getByRole("textbox", { name: "Message", exact: true });
+                    const send = page.getByRole("button", { name: "Send", exact: true });
+                    await text.fill("Lifecycle fixture: approval-input.");
+                    await send.click();
+                    await arrived.promise;
+                    await text.fill("A follow-up.");
+                    await page.waitForFunction(() => document.querySelector('button[aria-label="Send"]')?.disabled === true, null, { timeout: 2000 });
+                    release.resolve();
+                    await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
+                    assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true, "the review appears");
+                    assert.doesNotMatch(await page.locator("main").innerText(), /unconfirmed/u, "nothing was sent");
+                    assert.equal(await text.inputValue(), "A follow-up.", "the follow-up stays a draft");
+                    assert.equal(model.requests.length, 1);
+                    checkBrowser();
+                } finally {
+                    release.resolve();
+                    await browser.close();
+                    proxy.closeAllConnections();
+                    proxy.close();
+                }
             });
         } finally { await model.close(); }
     });
