@@ -28,10 +28,12 @@ Frontend source lives in web/. Vite owns development serving and production
 compilation; the module serves only the built ai.plurnk/dist/ asset inventory.
 Keep Vite out of runtime dependencies. Generated assets are packed, not committed.
 
-Run `npm ci --no-audit --no-fund`, then `npm run test:candidate -- <packed-platform-directory>`
-with published or candidate platform and terminal client archives. This installs their public type
-declarations without changing the lockfile and runs `npm test`, including a packed
-installation on an isolated daemon; it must not touch the operator's service.
+Commit, then run `npm run test:candidate -- <packed-platform-directory>` with published or
+candidate platform and terminal client archives. It gates the committed HEAD in a throwaway
+clone: `npm ci` from the lockfile, the archives installed beside it without saving, then
+`npm test`, including a packed installation on an isolated daemon. The checkout, which may be
+the plugin root an operator's daemon serves, is only read; a failed gate leaves its clone
+for diagnosis and names it.
 Commit verified changes with the registered agent as author and the operator as
 signed committer, then push to the canonical forge. No automatic publication.
 

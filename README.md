@@ -262,8 +262,9 @@ development checker, server and browser JavaScript, OTM's HTML/JavaScript/CSS
 contracts and the module, then packs and installs the plugin
 with packed platform packages and the terminal client in a temporary directory. These may be published
 archives obtained with `npm pack` or locally built candidates. `test:candidate`
-installs their public type declarations without rewriting the lockfile,
-then runs the full gate with `PLURNK_WEB_TEST_PACKAGES` naming the archive directory.
+gates the committed HEAD in a throwaway clone: `npm ci` from the lockfile, the
+archives installed beside it without saving, then the full gate with
+`PLURNK_WEB_TEST_PACKAGES` naming the archive directory. The checkout is only read.
 The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Component coverage also exercises native conversation behavior in Firefox.
