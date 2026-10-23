@@ -98,6 +98,8 @@ export default function observeWorker(element) {
     let delivery;
     /** @type {AbortController | undefined} */
     let cancellation;
+    // {§web-worker-input} An interrupt that has arrived and is not yet presented holds Send until its review appears.
+    let arriving = false;
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
     const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, threadId, auth, signal);
     const toggleYolo = async () => {
@@ -123,7 +125,7 @@ export default function observeWorker(element) {
         the(controls, {
             liveWork: live ? "" : null,
             sendUnavailable: (isCommand(draft.value) ? !commandPending
-                : current === "connected" && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
+                : current === "connected" && !arriving && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
         });
         the(review.form, "review-unavailable", current === "interrupted" && !cancellation ? null : "");
@@ -217,6 +219,10 @@ export default function observeWorker(element) {
                     onRunFinishedEvent: ({ outcome }) => {
                         terminal = outcome !== "interrupt";
                         interrupted = outcome === "interrupt";
+                        if (interrupted) {
+                            arriving = true;
+                            availability();
+                        }
                     },
                     onRunErrorEvent: ({ event }) => {
                         if (signal.aborted) return;
@@ -240,6 +246,7 @@ export default function observeWorker(element) {
                 if (interrupted) {
                     holding = false;
                     const mode = review.present(agent.pendingInterrupts, agent.messages);
+                    arriving = false;
                     if (mode === "automatic") {
                         const resume = await review.decisions(agent.pendingInterrupts);
                         if (!resume) throw new Error("Automatic approval did not resolve its presented set.");
@@ -266,6 +273,8 @@ export default function observeWorker(element) {
             if (pending) the(feedback, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
             if (submission?.resume) the(feedback, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         } finally {
+            arriving = false;
+            availability();
             preview.clear();
             clearInterval(timer);
             agent.headers = {};
