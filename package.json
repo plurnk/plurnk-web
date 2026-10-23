@@ -46,8 +46,8 @@
         "@plurnk/plurnk-modules": "^4.0.1"
     },
     "devDependencies": {
-        "@ag-ui/client": "1.0.2",
-        "@ag-ui/core": "1.0.2",
+        "@ag-ui/client": "1.0.3",
+        "@ag-ui/core": "1.0.3",
         "@eslint/js": "10.0.1",
         "@fullhuman/postcss-purgecss": "8.0.0",
         "@picocss/pico": "2.1.1",
