@@ -28,6 +28,13 @@ export default function bodyReferences(root, read) {
             the(outlet, "bodyState", "loaded");
         } catch (error) {
             if (!outlet.isConnected) return;
+            // A read the page abandoned, as when it is left, is not a failure: it rests, and reads again when asked.
+            if (error instanceof DOMException && error.name === "AbortError") {
+                the(outlet, "bodyState", "idle");
+                const again = $.clone(outlet, "#conversation-body-read", { position: "afterend" });
+                on(again, "submit", "form", (event) => { event.preventDefault(); again.remove(); void load(outlet, address); });
+                return;
+            }
             outlet.textContent = error instanceof Error ? error.message : String(error);
             outlet.setAttribute("role", "alert");
             the(outlet, "bodyState", "error");

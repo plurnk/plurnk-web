@@ -80,15 +80,25 @@ not justify weakening CSP or adding a compatibility system.
 
 ### Accepted development dependency exposure
 
-The build-only Stylelint → micromatch → braces chain retains
+The build-only Stylelint → micromatch → braces chain, which the PurgeCSS build step
+also reaches through fast-glob → micromatch, retains
 [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), a
 stack-exhaustion risk from deeply nested glob patterns. The lint command supplies
-the repository-owned `web/styles/*.css` pattern; these packages are absent from
+the repository-owned `web/styles/*.css` pattern and the build its own content
+globs; these packages are absent from
 the production dependency graph and browser bundle. Keep normal audit reporting
 without a fork, override or suppression. Reassess when the upstream chain changes
 or a consumer begins accepting untrusted patterns. This accepts the bounded
 development exposure, not the dependency's correctness; [#9](https://repo.possumtech.com/plurnk/plurnk-web/issues/9)
 retains the investigation and dependency evidence.
+
+### Pinned and reviewed dependencies
+
+| Dependency | Why it stands as it does |
+|---|---|
+| `zod` 3.25.76, an exact direct dependency | The SDK and the page share one copy: `web/schema-validation.js` configures it `jitless` before the SDK loads, as the page's CSP requires, and a second copy would not receive that. It moves only with the SDK's own range. |
+| `ondine` 0.0.1, the server-side diagram compiler | Reviewed 2026-10-23: one maintainer, published 2026-10-19 with SLSA v1 provenance, no dependencies, its compilers WASM. Review it again at every version change. |
+| `@types/negotiator` 0.6 for `negotiator` 1.1 | No 1.x declarations exist; `ai.plurnk/static-assets.js` declares the one 1.x call it relies on, `encoding(available, { preferred })`. |
 
 ## Failure and lifetime
 

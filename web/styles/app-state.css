@@ -238,3 +238,8 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
 main[data-following] {
     overflow-anchor: none;
 }
+
+/* {§web-worker-streams} A supplied exit code is shown; none is supplied for a stream without a process. */
+[data-stream-outcomes] li:not([data-stream-exit-code]) [data-stream-exit-line] {
+    display: none;
+}

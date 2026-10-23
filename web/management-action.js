@@ -16,13 +16,7 @@ export default async function managementAction(kind, params, threadId, auth, sig
     };
     const agent = new WorkerAgent({
         url: "/agui", threadId,
-        fetch: async (url, init) => {
-            const response = await fetch(url, { ...init, signal: AbortSignal.any([signal, ...(init.signal ? [init.signal] : [])]) });
-            if (!response.ok && response.headers.get("content-type")?.split(";")[0]?.trim() === "application/problem+json") {
-                throw refused(await response.json());
-            }
-            return response;
-        },
+        fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.any([signal, ...(init.signal ? [init.signal] : [])]) }),
     });
     /** @type {Error | undefined} */
     let failed;

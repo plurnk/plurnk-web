@@ -157,8 +157,11 @@ export default async function verifyActivity(t) {
                     await setBody(new URL("/agui/depart", url).href);
                     await leaving;
                     await page.evaluate(() => window.leaveActivity());
-                    await child.locator('[data-body-state="error"]').waitFor();
+                    // {§web-result-bodies} A read the page abandoned is not a failure: it rests, and reads again when asked.
+                    await child.locator('[data-body-state="idle"]').waitFor({ state: "attached" });
                     assert.equal(await body.getAttribute("aria-busy"), null);
+                    assert.equal(await body.getAttribute("role"), null, "no alert");
+                    assert.equal(await child.getByRole("button", { name: "Read", exact: true }).count(), 1);
                     held.resolve();
                     checkBrowser();
                 } finally { await browser.close(); }

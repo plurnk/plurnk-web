@@ -109,6 +109,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
             await page.locator("[data-stream-outcomes] > summary").click();
             await outcomes(page).locator(":scope > details > summary").click();
             assert.equal(await outcomes(page).getAttribute("data-stream-exit-code"), "7");
+            assert.equal(await outcomes(page).locator("[data-stream-exit-line]").innerText(), "Exit code: 7", "{§web-worker-streams} the exit code is shown");
             assert.equal(await outcomes(page).getAttribute("data-stream-status"), "200", "the executor successfully ran a command whose answer was exit 7");
             assert.equal(await outcomes(page).locator("[data-stream-failure]").isVisible(), false, "a nonzero command answer is not a fabricated protocol Problem");
             const output = await inspectStreamOutput(outcomes(page));
