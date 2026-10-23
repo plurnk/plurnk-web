@@ -20,7 +20,6 @@
         "ai.plurnk/index-document.js",
         "ai.plurnk/directory-addresses.js",
         "ai.plurnk/creations.js",
-        "ai.plurnk/auto-name.js",
         "ai.plurnk/documents.js",
         "ai.plurnk/session.js",
         "ai.plurnk/http.js",
@@ -35,15 +34,16 @@
         "LICENSE"
     ],
     "dependencies": {
-        "@plurnk/plurnk-meta": "^2.1.1",
+        "@plurnk/plurnk-meta": "^2.1.2",
         "negotiator": "1.1.0",
         "oauth4webapi": "3.8.8",
         "ondine": "0.0.1",
         "piscina": "5.3.2"
     },
     "peerDependencies": {
-        "@plurnk/plurnk-contracts": "^5.0.0",
-        "@plurnk/plurnk-modules": "^4.0.1"
+        "@plurnk/plurnk-agui": "^5.0.0",
+        "@plurnk/plurnk-contracts": "^6.0.0",
+        "@plurnk/plurnk-modules": "^4.1.0"
     },
     "devDependencies": {
         "@ag-ui/client": "1.0.3",
@@ -51,7 +51,6 @@
         "@eslint/js": "10.0.1",
         "@fullhuman/postcss-purgecss": "8.0.0",
         "@picocss/pico": "2.1.1",
-        "@plurnk/plurnk-agui": "^4.0.1",
         "@plurnk/plurnk-spec-check": "0.1.0",
         "@types/negotiator": "0.6.5",
         "@types/node": "^26.1.1",
@@ -80,7 +79,7 @@
         "build": "node scripts/build.mjs",
         "preview": "vite preview",
         "test:lint": "plurnk-spec-check && tsc && tsc -p tsconfig.browser.json && eslint . && otm-lint --check web && stylelint 'web/styles/*.css'",
-        "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js test/creations.test.js test/workspace-creation.test.js test/route-settlement.test.js test/diagrams.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js test/session.test.js test/token.test.js test/documents.test.js test/worker-cards.test.js test/worker-status.test.js test/history-pages.test.js test/conversation.test.js test/package.test.js",
+        "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js test/creations.test.js test/workspace-creation.test.js test/route-settlement.test.js test/diagrams.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js test/session.test.js test/token.test.js test/documents.test.js test/worker-status.test.js test/history-pages.test.js test/conversation.test.js test/package.test.js",
         "test:installation": "node --test test/installation.test.js",
         "test:candidate": "node scripts/test-candidate.mjs",
         "test": "npm run build && npm run test:lint && npm run test:unit && npm run test:installation",

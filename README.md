@@ -32,11 +32,15 @@ parent and workspace links navigate independently. Leaves have no empty disclosu
 These cards are navigation snapshots, not live monitors or completed-reply previews.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
-folder, if any. Folder labels use the daemon's home abbreviation, not the browser's.
+differing labels keep ☁️ on the workspace name and show 🗂️ on a separate folder line.
+Folder labels use the daemon's home abbreviation, not the browser's.
 The workspace list, workspace pages and worker pages offer native header actions alongside the breadcrumbs:
-- On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal to create a new folderless workspace.
-- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️`, `🗑️` and `➕` open native `<dialog>` modals to rename the current workspace, hide the workspace, or create an independent model worker.
-- On `/<workspace>@<worker>/`: breadcrumb navigation carries `🗑️` to hide the worker and its descendants.
+- On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal to create a new folderless workspace; left unnamed, the daemon names it ({§web-workspace-creation}).
+- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️`, `🗑️` and `➕` open native `<dialog>` modals to rename the current workspace ({§web-workspace-rename}), hide the workspace ({§web-workspace-hide}), or create an independent model worker; left unnamed, the daemon names it ({§web-worker-creation}).
+- On `/<workspace>@<worker>/`: breadcrumb navigation carries `🗑️` to hide the worker and its descendants ({§web-worker-hide}).
+Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow at the end of `<main>` when JavaScript is disabled; with JavaScript a closed modal shows nothing.
+Creation forms carry a hidden token so a retried submission converges on the created place instead of re-executing.
+Anonymous daemons refuse cross-site form posts, but a page that makes the browser reach
 the daemon by a name of its choosing (DNS rebinding) passes that guard: run `PLURNK_AUTH=0` only where trusted parties alone reach the listener.
 Worker share full-width article lists and a stationary header around scrolling
 main content. Worker status and the Stop / multiline message / Send row stay at
@@ -300,7 +304,7 @@ from the mascot. HttpAgent loads only on worker pages; Vite includes the bundled
 dependencies' license notices. Production prunes unused CSS rules, variables and keyframes from
 the browser and server-rendered document sources, plus the authority's publicly
 exported document specimens, before minification. The AG-UI package supplies those
-specimens as a development dependency only; no daemon code enters the browser bundle.
+specimens at build time only; no daemon code enters the browser bundle.
 Browser type checking uses the public runtime-neutral client entry without Node
 globals. The module's server-side port types use their separate public entry;
 type declarations are erased, not bundled.

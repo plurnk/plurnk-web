@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import test from "node:test";
 import { engines } from "./engines.js";
 import Documents from "../ai.plurnk/documents.js";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import { privateHeaders } from "../ai.plurnk/http.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-test("{§web-worker-directory} two-line cards retain native links, lineage and disclosure without a browser controller", async (t) => {
+export default async function verifyWorkerCards(t) {
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), contentType }])));
@@ -103,12 +102,20 @@ test("{§web-worker-directory} two-line cards retain native links, lineage and d
                         await card("child").locator(":scope > details > summary").press("Space");
                         assert.equal(await link("leaf").isVisible(), true);
                         assert.equal(requests.length, before, "native expansion makes no requests, including with JavaScript enabled");
-                        const popup = context.waitForEvent("page");
-                        await link("parent").click({ modifiers: ["Control"] });
-                        const tab = await popup;
-                        await tab.waitForLoadState();
-                        assert.equal(await parent.locator(":scope > details").getAttribute("open"), "", "a real ant link does not toggle its enclosing summary");
-                        await tab.close();
+                        const workerPath = directoryPath({ kind: "worker", workspace: name, worker: "parent" });
+                        if (javaScriptEnabled) {
+                            await parent.locator(":scope > details").evaluate((details) => {
+                                addEventListener("click", () => {
+                                    queueMicrotask(() => { window.name = String(details.open); });
+                                }, { once: true });
+                            });
+                        }
+                        await link("parent").click();
+                        assert.equal(new URL(page.url()).pathname, workerPath);
+                        if (javaScriptEnabled) {
+                            assert.equal(await page.evaluate(() => window.name), "true", "a real ant link does not toggle its enclosing summary");
+                        }
+                        await summary.press("Enter");
                         await parent.locator(':scope > details > summary [data-worker-workspace] a').click();
                         assert.equal(new URL(page.url()).pathname, workspacePath);
                         assert.equal(await page.locator('main [data-connection-indicator], main [role="tree"], main [data-text="worker-kind"]').count(), 0);
@@ -119,4 +126,4 @@ test("{§web-worker-directory} two-line cards retain native links, lineage and d
             }
         } finally { await browser.close(); }
     });
-});
+}

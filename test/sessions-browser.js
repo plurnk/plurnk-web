@@ -163,6 +163,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await page.reload();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: workspace.name, exact: true }).click();
                                 assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["🗃️", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name} ✏️ 🗑️ ➕`]);
+                                await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces", exact: true }).click();
                             }
                             const response = await context.request.get(new URL("/~/index.html?q=hello", base).href);
                             assert.equal(response.status(), 200);

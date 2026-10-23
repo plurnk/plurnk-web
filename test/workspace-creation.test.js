@@ -52,6 +52,7 @@ async function fixture(t, { auth = false, admitted = true, create = async () => 
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     base = `http://127.0.0.1:${server.address().port}`;
+    t.after(() => module.close());
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
 
     const post = (token, headers = {}, extraBody = {}) => {
@@ -336,7 +337,11 @@ test("{§web-worker-creation} worker creation creates independent worker and red
     assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace@bob/");
     assert.deepEqual(createdWorkers[1], { workspaceId: 7 });
 
-
+    // Idempotent retry converges to same worker
+    const retryRes = await workerPost({ workspace: "my-workspace", token: unnamedToken });
+    assert.equal(retryRes.status, 303);
+    assert.equal(retryRes.headers.get("location"), "/~/my-workspace@bob/");
+    assert.equal(createdWorkers.length, 2);
 });
 
 test("{§web-workspace-hide} workspace hide calls daemon and redirects to /~/", async (t) => {

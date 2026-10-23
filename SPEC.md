@@ -199,7 +199,7 @@ persistent browser state or additional session registry.
 | Registration | At setup the module registers the single stylesheet declared in the compiled document's head as its client's `stylesheetPath`, verifying its presence in the asset inventory. Missing or multiple document stylesheets are build-contract faults. Lazy content-renderer styles are independent assets, never authorization-page dependencies; no alias route or theme setting is added. |
 | Document ownership | The authority owns sign-in, setup/error, consent and session documents, credential validation and security policy. Web supplies neither a form nor an HTML rewrite. The authority selects the stylesheet from the trusted client registration, never arbitrary request input. |
 | Presentation | The same Pico Classless Green, monospace, 65ch measure, light/dark colors, native controls and article cards apply to authorization and web documents. Ordinary authorization pages work without JavaScript. |
-| Production pruning | The public `authorizationDocumentSpecimens()` export from `@plurnk/plurnk-agui` supplies the authority's markup to PurgeCSS. No copied templates or private daemon-source scan. This is a development dependency, not a browser/runtime import. |
+| Production pruning | The public `authorizationDocumentSpecimens()` export from `@plurnk/plurnk-agui` supplies the authority's markup to PurgeCSS. No copied templates or private daemon-source scan. This is a build-time import, not a browser/runtime import. |
 
 The daemon's standalone documents remain its own responsibility when no registered
 module stylesheet applies. Browser coverage exercises the installed module and
@@ -848,7 +848,8 @@ References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progre
 ## §web-package Package boundary
 
 The npm archive includes the Agent Plugin manifest, native module, defaults,
-document and its complete browser dependency graph, including OTM, Pico, HttpAgent and artwork licenses.
+document and its complete browser dependency graph, including OTM, Pico, HttpAgent and artwork licenses,
+and declares its peer ranges on the platform's contracts, modules and AG-UI packages.
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside candidate service archives in an isolated environment and exercises actual module
 discovery, routing and browser execution.

@@ -22,6 +22,7 @@ import verifyHistory from "./history-browser.js";
 import verifySurfaces from "./surfaces-browser.js";
 import verifyReflow from "./reflow-browser.js";
 import verifyDisclosures from "./disclosure-browser.js";
+import verifyWorkerCards from "./worker-cards-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -395,3 +396,4 @@ test("{§web-diagram-content} {§web-content-reflow} static Mermaid images throu
 test("{§web-diagram-content} unavailable diagram compilation preserves source and ordinary messages", verifyUnavailableMermaid);
 test("{§web-worker-approval} native review controls project complete SDK interrupt sets", { timeout: 60_000 }, verifyApproval);
 test("{§web-worker-questions} native and JSON answers preserve the full response contract", { timeout: 60_000 }, verifyInteractions);
+test("{§web-worker-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifyWorkerCards);
