@@ -224,7 +224,7 @@ The plugin inherits the daemon's host and port, and leaves more-specific routes
 alone. It does not install or start a service.
 
 Set `PLURNK_WEB_ENABLED=0` in the service environment and restart to disable the
-module without uninstalling it. Module settings, browser approval mode and pending-sign-in limits are documented in
+module without uninstalling it. Module settings, browser approval mode and the sign-in time limit are documented in
 [ai.plurnk/.env.defaults](ai.plurnk/.env.defaults).
 
 ## Install as an app

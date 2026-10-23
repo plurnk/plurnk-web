@@ -456,7 +456,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             });
         });
         await t.test("{§web-session} browser-bound single-use callbacks, expiry, host and return validation", async () => {
-            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_WEB_LOGIN_PENDING: "2", PLURNK_PASS: "browser-password" }, async (base) => {
+            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_PASS: "browser-password" }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
@@ -497,16 +497,20 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     assert.equal(completed.headers().location, "/~/");
                     assert.equal((await get(callback)).status(), 400, "callback replay is not a second grant");
                     assert.equal((await get("/~/")).status(), 200);
+                    // Unauthenticated starts leave no module state behind to fill.
+                    for (let index = 0; index < 300; index++) {
+                        assert.equal((await fetch(new URL("/auth/login", base), { redirect: "manual" })).status, 303);
+                    }
                     const pending = await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 });
                     const again = await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 });
                     assert.equal(pending.status(), 303);
                     assert.equal(again.status(), 303);
-                    assert.equal((await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 })).status(), 429);
-                    const authorized = await authorize(other, pending.headers().location);
+                    const expiring = await authorize(other, pending.headers().location);
+                    const signedIn = await other.request.get((await authorize(other, again.headers().location)).headers().location, { maxRedirects: 0 });
+                    assert.equal(signedIn.status(), 303, "a real sign-in completes beside another tab's transaction");
                     const page = await other.newPage();
                     await page.waitForTimeout(1100);
-                    assert.equal((await other.request.get(authorized.headers().location, { maxRedirects: 0 })).status(), 400, "expired transactions cannot establish sessions");
-                    assert.equal((await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 })).status(), 303, "expired transactions free capacity");
+                    assert.equal((await other.request.get(expiring.headers().location, { maxRedirects: 0 })).status(), 400, "expired transactions cannot establish sessions");
                     checkBrowser();
                     checkOther();
                 } finally { await browser.close(); }

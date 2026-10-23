@@ -1,14 +1,17 @@
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import * as oauth from "oauth4webapi";
 import { cookie, redirect, RequestError, privateHeaders } from "./http.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import indexDocument from "./index-document.js";
 
 const SESSION = "plurnk_web_session";
-const TRANSACTION = "plurnk_web_login";
+// A sign-in transaction's cookie: this prefix and the transaction's state.
+const TRANSACTION = "plurnk_web_login_";
 export const CALLBACK = "/auth/callback";
 export const CLIENT = "plurnk-web";
 
 /** @typedef {{ access: string, refresh: string, claims: import("@plurnk/plurnk-contracts").CredentialClaims, refreshing: Promise<void> | null }} Grant */
+/** @typedef {{ verifier: string, target: string, redirectUri: string, expires: number }} Transaction */
 
 /** {§web-session} A consumer of the daemon's authority, never an independent issuer or session inventory. */
 export default class Session {
@@ -19,8 +22,8 @@ export default class Session {
     /** @type {{ server: oauth.AuthorizationServer, options: { [oauth.allowInsecureRequests]: boolean } } | null} */
     #authority = null;
     #limits;
-    /** @type {Map<string, { verifier: string, binding: string, target: string, redirectUri: string, expires: number }>} */
-    #pending = new Map();
+    // {§web-session} Seals sign-in transactions; it lives and ends with this module instance.
+    #key = randomBytes(32);
     /** @type {Map<string, Grant>} */
     #grants = new Map();
     #unsubscribe;
@@ -29,7 +32,7 @@ export default class Session {
      * @param {import("@plurnk/plurnk-contracts").CredentialAuthority} credentials
      * @param {{ clientId: string, clientSecret: string }} registration
      * @param {import("@plurnk/plurnk-contracts").CredentialFace} face
-     * @param {{ ttl: number, pending: number }} limits
+     * @param {{ ttl: number }} limits
      */
     constructor(credentials, registration, face, limits) {
         this.#credentials = credentials;
@@ -128,13 +131,10 @@ export default class Session {
         const state = oauth.generateRandomState();
         const verifier = oauth.generateRandomCodeVerifier();
         const challenge = await oauth.calculatePKCECodeChallenge(verifier);
-        const now = Date.now();
-        for (const [key, transaction] of this.#pending) if (transaction.expires <= now) this.#pending.delete(key);
-        if (this.#pending.size >= this.#limits.pending) throw new RequestError(429, "Too many pending sign-ins. Try again later.");
-        const binding = cookie(req, TRANSACTION) ?? oauth.generateRandomState();
         const redirectUri = `${issuer}${CALLBACK}`;
-        this.#pending.set(state, { verifier, binding, target, redirectUri, expires: now + this.#limits.ttl * 1000 });
-        res.setHeader("set-cookie", this.#cookie(req, TRANSACTION, binding, "/auth", this.#limits.ttl));
+        const name = `${TRANSACTION}${state}`;
+        const sealed = this.#seal(name, { verifier, target, redirectUri, expires: Date.now() + this.#limits.ttl * 1000 });
+        res.setHeader("set-cookie", this.#cookie(req, name, sealed, "/auth", this.#limits.ttl));
         // The browser signs in at the daemon's authorization endpoint on the address it reached.
         const url = new URL(new URL(server.authorization_endpoint).pathname, issuer);
         url.search = new URLSearchParams({
@@ -148,11 +148,15 @@ export default class Session {
     async callback(req, res) {
         const url = new URL(req.url ?? "/", this.#issuer(req));
         const state = url.searchParams.get("state") ?? "";
-        const transaction = this.#pending.get(state);
-        if (transaction === undefined || transaction.expires <= Date.now() || cookie(req, TRANSACTION) !== transaction.binding) {
-            throw new RequestError(400, "Sign-in expired or does not belong to this browser. Start sign-in again.");
-        }
-        this.#pending.delete(state);
+        const expired = new RequestError(400, "Sign-in expired or does not belong to this browser. Start sign-in again.");
+        if (!/^[\w-]+$/u.test(state)) throw expired;
+        const name = `${TRANSACTION}${state}`;
+        const sealed = cookie(req, name);
+        // Single use: the browser drops the transaction whatever this callback's outcome.
+        const cleared = this.#cookie(req, name, "", "/auth", 0);
+        res.setHeader("set-cookie", cleared);
+        const transaction = sealed === null ? null : this.#open(name, sealed);
+        if (transaction === null || transaction.expires <= Date.now()) throw expired;
         const { server, options } = await this.#metadata();
         let params;
         try {
@@ -166,6 +170,10 @@ export default class Session {
         try {
             result = await oauth.processAuthorizationCodeResponse(server, this.#client, response);
         } catch (cause) {
+            // The authority redeems a code once: a replayed callback is the browser's to restart.
+            if (cause instanceof oauth.ResponseBodyError && cause.error === "invalid_grant") {
+                throw new RequestError(400, "Sign-in was not completed. Start sign-in again.", { cause });
+            }
             throw new RequestError(502, "The daemon did not complete sign-in. Start sign-in again.", { cause });
         }
         const grant = this.#grant(result);
@@ -177,8 +185,32 @@ export default class Session {
         if (old !== null && old.family !== claims.family) this.#credentials.revokeFamily(old.family);
         this.#prune();
         this.#grants.set(claims.family, grant);
-        res.setHeader("set-cookie", this.#cookie(req, SESSION, issued.token, "/", ttlMs / 1000));
+        res.setHeader("set-cookie", [cleared, this.#cookie(req, SESSION, issued.token, "/", ttlMs / 1000)]);
         redirect(res, transaction.target);
+    }
+
+    /** {§web-session} A sign-in transaction travels sealed in its own browser cookie, named for its state.
+     * @param {string} name @param {Transaction} transaction
+     */
+    #seal(name, transaction) {
+        const iv = randomBytes(12);
+        const cipher = createCipheriv("aes-256-gcm", this.#key, iv, { authTagLength: 16 }).setAAD(Buffer.from(name));
+        const body = Buffer.concat([cipher.update(JSON.stringify(transaction)), cipher.final()]);
+        return Buffer.concat([iv, body, cipher.getAuthTag()]).toString("base64url");
+    }
+
+    /** A cookie this module instance did not seal for this name opens to nothing.
+     * @param {string} name @param {string} sealed @returns {Transaction | null}
+     */
+    #open(name, sealed) {
+        const bytes = Buffer.from(sealed, "base64url");
+        try {
+            const decipher = createDecipheriv("aes-256-gcm", this.#key, bytes.subarray(0, 12), { authTagLength: 16 }).setAAD(Buffer.from(name));
+            decipher.setAuthTag(bytes.subarray(-16));
+            return JSON.parse(Buffer.concat([decipher.update(bytes.subarray(12, -16)), decipher.final()]).toString("utf8"));
+        } catch {
+            return null;
+        }
     }
 
     /** @param {oauth.TokenEndpointResponse} result @returns {Grant} */
@@ -257,5 +289,5 @@ export default class Session {
         redirect(res, "/");
     }
 
-    close() { this.#pending.clear(); this.#grants.clear(); this.#unsubscribe(); }
+    close() { this.#grants.clear(); this.#unsubscribe(); }
 }
