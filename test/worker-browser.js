@@ -509,6 +509,41 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
         } finally { await model.close(); }
     });
 
+    await t.test("{§web-diagram-content} a page with more diagrams than the service admits at once renders them all", async () => {
+        const model = await startModel();
+        try {
+            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_DIAGRAM_PENDING: "1", PLURNK_WEB_DIAGRAM_THREADS: "1" }, async (base) => {
+                const setup = await controller(base);
+                await setup.runAgent({ forwardedProps: { plurnk: { workspace: "burst", action: { kind: "worker.model.set", selector: "browser" } } } });
+                // One loop with two diagram bodies, the message's and the reply's, which replay renders together.
+                const run = await controller(base, undefined, [{ id: crypto.randomUUID(), role: "user",
+                    content: "Lifecycle fixture: diagrams.\n\n```mermaid\nflowchart LR\n Browser --> Web\n```" }]);
+                await run.runAgent({ forwardedProps: { plurnk: { workspace: "burst" } } });
+                const browser = await chromium.launch();
+                try {
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    // Replay renders both bodies at once: two compilations against an admission of one.
+                    await page.goto(new URL("/~/burst@user/", base).href);
+                    await connected(page);
+                    const held = () => page.evaluate(() => ({
+                        rendered: document.querySelectorAll("[data-messages] [data-diagram]:not([hidden])").length,
+                        refused: document.querySelectorAll("[data-messages] [data-diagram-error]").length,
+                        sources: document.querySelectorAll("[data-messages] [data-mermaid]").length,
+                    }));
+                    try {
+                        await page.waitForFunction(() => document.querySelectorAll(
+                            "[data-messages] [data-diagram]:not([hidden]), [data-messages] [data-diagram-error]").length === 2, null, { timeout: 15_000 });
+                    } catch (cause) { throw new Error(`Two diagrams did not settle: ${JSON.stringify(await held())}`, { cause }); }
+                    assert.deepEqual(await held(), { rendered: 2, refused: 0, sources: 0 }, "both diagrams render; none is refused");
+                    assert.equal(model.requests.length, 1);
+                    checkBrowser();
+                } finally { await browser.close(); }
+            });
+        } finally { await model.close(); }
+    });
+
     await t.test("{§web-worker-conversation} the packed page projects live SDK messages and passive replay without owning work", async () => {
         const projectRoot = await mkdtemp(join(tmpdir(), "plurnk-web-conversation-"));
         const model = await startModel();
