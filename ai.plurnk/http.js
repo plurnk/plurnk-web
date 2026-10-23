@@ -44,6 +44,12 @@ export const privateHeaders = {
     "x-frame-options": "DENY",
 };
 
+/** {§web-worker-approval} The person reached this page from this origin or through the browser itself (address bar, bookmark),
+ * by its Fetch Metadata; another site, a sibling site or no metadata is not their own navigation.
+ * @param {import("node:http").IncomingMessage} req
+ */
+export const ownNavigation = (req) => req.headers["sec-fetch-site"] === "same-origin" || req.headers["sec-fetch-site"] === "none";
+
 /** @param {import("node:http").ServerResponse} res @param {string} location */
 export function redirect(res, location) {
     res.writeHead(303, { ...privateHeaders, location });

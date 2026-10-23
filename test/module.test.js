@@ -61,7 +61,7 @@ test("{§web-configuration} browser YOLO uses the assembled floor and validates 
         else process.env.PLURNK_WEB_YOLO = original.yolo;
         process.env.PLURNK_WEB_ENABLED = original.enabled;
     });
-    assert.equal(original.yolo, "1", "automatic approval is the package default, not a browser fallback");
+    assert.equal(original.yolo, "0", "explicit review is the package default, not a browser fallback");
     for (const value of ["0", "1"]) {
         process.env.PLURNK_WEB_YOLO = value;
         assert.deepEqual(createModule().mounts, ["/"]);

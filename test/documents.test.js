@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Documents from "../ai.plurnk/documents.js";
+import { ownNavigation } from "../ai.plurnk/http.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({
@@ -21,17 +22,22 @@ test("{§web-page-shell} worker status sits outside the scrolling main; director
     }
 });
 
-test("{§web-worker-approval} the worker document projects its resolved approval mode", async () => {
+test("{§web-worker-approval} a worker page starts automatic only when configured and reached by the person's own navigation", async () => {
+    const arrivals = [["same-origin", true], ["none", true], ["cross-site", false], ["same-site", false], [undefined, false]];
     for (const yolo of [true, false]) {
-        const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo, 128);
-        const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
-            listWorkers: async () => [worker(9, "user")],
-        }, false)).toString();
-        assert.ok(html.includes(`id="worker-yolo" aria-pressed="${yolo}"`));
-        assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-worker-reasoning} the document carries its supplied preview limit");
-        assert.ok(html.includes(`aria-label="Automatic approval" title="${yolo ? "Auto" : "Manual"} Approval (/yolo)"`));
-        assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
+        for (const [site, own] of arrivals) {
+            assert.equal(ownNavigation(/** @type {import("node:http").IncomingMessage} */ ({ headers: site === undefined ? {} : { "sec-fetch-site": site } })), own, String(site));
+            const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo, 128);
+            const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
+                listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
+                listWorkers: async () => [worker(9, "user")],
+            }, false, own)).toString();
+            const automatic = yolo && own;
+            assert.ok(html.includes(`id="worker-yolo" aria-pressed="${automatic}"`), `configured ${yolo}, arrival ${site}`);
+            assert.ok(html.includes(`aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (/yolo)"`));
+            assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-worker-reasoning} the document carries its supplied preview limit");
+            assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
+        }
     }
 });
 
