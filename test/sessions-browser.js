@@ -220,7 +220,6 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         const checkBrowser = browserDiagnostics(context);
                         try {
                             const page = await context.newPage();
-                            if (!javaScriptEnabled) await page.emulateMedia({ scripting: "none" });
                             // Sign in first
                             await page.goto(new URL("/~/", base).href);
                             await page.getByLabel("Password", { exact: true }).fill("browser-password");
@@ -236,7 +235,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await trigger.click();
                                 assert.equal(await page.locator("#dialog-workspace-create[open]").count(), 1, "modal opened");
                             } else {
-                                await page.locator("#dialog-workspace-create").evaluate((el) => { el.setAttribute("open", ""); });
+                                assert.ok(await form.isVisible(), "without JavaScript the creation form renders in flow");
                             }
                             const confirmButton = form.getByRole("button", { name: "Confirm", exact: true });
                             await confirmButton.click();
@@ -275,13 +274,42 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await secondTrigger.click();
                                 assert.equal(await page.locator("#dialog-workspace-create[open]").count(), 1);
                             } else {
-                                await page.locator("#dialog-workspace-create").evaluate((el) => { el.setAttribute("open", ""); });
+                                assert.ok(await secondForm.isVisible(), "without JavaScript the creation form renders in flow");
                             }
                             await nameInput.focus();
                             await page.keyboard.press("Enter");
                             await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/") && new URL(url).pathname !== "/~/" && new URL(url).pathname !== createdPath);
                             const secondCreatedPath = new URL(page.url()).pathname;
                             assert.ok(secondCreatedPath.startsWith("/~/"));
+
+                            // 4. {§web-workspace-rename} and {§web-worker-creation} on the workspace page, through the daemon
+                            const open = async (dialog, formId) => {
+                                const target = page.locator(`#${formId}`);
+                                if (javaScriptEnabled) {
+                                    await page.locator(`header button[data-dialog-target="${dialog}"]`).click();
+                                    assert.equal(await page.locator(`#${dialog}[open]`).count(), 1, `${dialog} opened`);
+                                } else {
+                                    assert.ok(await target.isVisible(), `without JavaScript ${formId} renders in flow`);
+                                }
+                                return target;
+                            };
+                            await page.goto(new URL(createdPath, base).href);
+                            const renamedName = `renamed-${javaScriptEnabled ? "scripted" : "unscripted"}`;
+                            const renameForm = await open("dialog-workspace-rename", "workspace-rename");
+                            await renameForm.locator('input[name="name"]').fill(renamedName);
+                            await renameForm.getByRole("button", { name: "Confirm", exact: true }).click();
+                            const renamedPath = directoryPath({ kind: "workspace", workspace: renamedName });
+                            await page.waitForURL(new URL(renamedPath, base).href);
+                            const workerName = `added-${javaScriptEnabled ? "scripted" : "unscripted"}`;
+                            const workerForm = await open("dialog-worker-create", "worker-create");
+                            await workerForm.locator('input[name="name"]').fill(workerName);
+                            await workerForm.getByRole("button", { name: "Confirm", exact: true }).click();
+                            await page.waitForURL(new URL(directoryPath({ kind: "worker", workspace: renamedName, worker: workerName }), base).href);
+                            const renamed = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id);
+                            assert.equal(renamed?.name, renamedName, "the daemon holds the new name");
+                            const added = renamed.workers.find((worker) => worker.name === workerName);
+                            assert.ok(added, "the daemon holds the new worker");
+                            assert.deepEqual([added.parentWorkerId, added.loops.length], [null, 0], "an independent worker with no loop");
 
                             checkBrowser();
                         } finally { await context.close(); }

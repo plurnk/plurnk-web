@@ -164,7 +164,8 @@ table {
 }
 
 @media (scripting: none) {
-    dialog {
+    /* Nothing opens a dialog without scripting; Pico hides one that is not open, at this same specificity. */
+    dialog:not([open]) {
         display: block;
         position: static;
         max-inline-size: 100%;
