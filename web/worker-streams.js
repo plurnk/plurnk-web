@@ -11,10 +11,10 @@ export default function workerStreams(root, read) {
     const inspect = entryOutput(root, read);
     const concluded = new Set();
     return {
-        /** @param {import("@ag-ui/client").CustomEvent} event */
+        /** @param {import("@plurnk/plurnk-acp/client").CustomEvent} event */
         async consume(event) {
             if (event.name !== "plurnk.stream") return;
-            const value = event.value;
+            const value = /** @type {Record<string, any> | null | undefined} */ (event.value);
             if (!value || !Object.hasOwn(value, "result")) return;
             if (!Number.isSafeInteger(value.entryId) || value.entryId <= 0
                 || !Number.isSafeInteger(value.workerId) || value.workerId <= 0 || typeof value.target !== "string" || !value.target) {

@@ -24,7 +24,7 @@ export default function diagnostics(root) {
     const list = $(root, "ul");
     if (!(list instanceof HTMLUListElement)) throw new Error("Worker diagnostics have no list.");
     const observed = new Set();
-    /** @param {import("@ag-ui/client").CustomEvent} event */
+    /** @param {import("@plurnk/plurnk-acp/client").CustomEvent} event */
     return async (event) => {
         if (event.name !== "plurnk.notice" && event.name !== "plurnk.problem") return;
         const { Validator } = await import("@plurnk/plurnk-contracts");

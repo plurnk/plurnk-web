@@ -121,13 +121,13 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
     const workers = [
         worker(1, "_plurnk", null, "_plurnk"),
-        worker(6, "review", 4, "model", "agui://owner"),
+        worker(6, "review", 4, "model", "acp://owner"),
         worker(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
-        worker(4, "user", null, "model", "agui://owner"),
+        worker(4, "user", null, "model", "acp://owner"),
         worker(5, "research", 4),
         worker(7, "evidence", 6),
         worker(8, "incoming", 1),
-        worker(9, "other", 1, "model", "agui://owner"),
+        worker(9, "other", 1, "model", "acp://owner"),
         worker(10, "incoming-child", 8),
     ];
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => workers };
@@ -154,7 +154,7 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
     ].join("")), html);
     const names = [...html.matchAll(/data-worker-link href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
     assert.deepEqual(names.toSorted(), workers.filter(({ origin }) => origin === "model").map(({ name }) => name).toSorted());
-    assert.doesNotMatch(html, /work@_plurnk|agui:|\bopen\b|role="tree"|<script|data-text="worker-kind"|child worker/u);
+    assert.doesNotMatch(html, /work@_plurnk|acp:|\bopen\b|role="tree"|<script|data-text="worker-kind"|child worker/u);
     for (const internal of workers.filter(({ origin }) => origin !== "model")) {
         assert.equal(await document.read({ kind: "worker", workspace: "work", worker: internal.name }, port, false), null);
     }

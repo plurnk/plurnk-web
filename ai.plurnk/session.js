@@ -67,7 +67,7 @@ export default class Session {
     #claims(req) {
         const token = cookie(req, this.#session(req));
         const claims = token === null ? null : this.#credentials.verify(token);
-        return claims?.kind === "session" && claims.clientId === this.#client.client_id && claims.scopes.includes("agui") ? claims : null;
+        return claims?.kind === "session" && claims.clientId === this.#client.client_id && claims.scopes.includes("acp") ? claims : null;
     }
 
     /** @param {import("node:http").IncomingMessage} req */
@@ -161,7 +161,7 @@ export default class Session {
         const url = new URL(new URL(server.authorization_endpoint).pathname, issuer);
         url.search = new URLSearchParams({
             client_id: this.#client.client_id, redirect_uri: redirectUri,
-            response_type: "code", scope: "agui", code_challenge_method: "S256", code_challenge: challenge, state,
+            response_type: "code", scope: "acp", code_challenge_method: "S256", code_challenge: challenge, state,
         }).toString();
         redirect(res, url.href);
     }
@@ -241,7 +241,7 @@ export default class Session {
         const refresh = result.refresh_token === undefined ? null : this.#credentials.verify(result.refresh_token);
         if (access?.kind !== "access" || refresh?.kind !== "refresh" || access.family !== refresh.family
             || access.clientId !== this.#client.client_id || refresh.clientId !== access.clientId
-            || access.subject !== refresh.subject || !access.scopes.includes("agui") || !refresh.scopes.includes("agui")) {
+            || access.subject !== refresh.subject || !access.scopes.includes("acp") || !refresh.scopes.includes("acp")) {
             throw new Error("The authorization server returned credentials outside the registered web grant.");
         }
         return { access: result.access_token, refresh: /** @type {string} */ (result.refresh_token), claims: refresh, refreshing: null };

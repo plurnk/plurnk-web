@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import verifyLifecycle from "./agui-lifecycle.js";
-import verifyOrdinary from "./agui-ordinary.js";
+import verifyLifecycle from "./acp-lifecycle.js";
+import verifyOrdinary from "./acp-ordinary.js";
 import httpAgentBundle from "./http-agent-bundle.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 import { inspectResult } from "./result-body.js";
 
-export default async function verifyAgui(browser, base, token, projectRoot, model, t, stop) {
+export default async function verifyAcp(browser, base, token, projectRoot, model, t, stop) {
     const mount = await httpAgentBundle();
     const context = await browser.newContext();
     const checkBrowser = browserDiagnostics(context);
@@ -18,7 +18,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
         const run = (options) => tab.evaluate(async ({ token, ...options }) => {
             const { HttpAgent } = await import("/__test__/http-agent.js");
             const agent = new HttpAgent({
-                url: new URL("/agui", location.href).href,
+                url: new URL("/acp", location.href).href,
                 threadId: options.threadId ?? "browser-conformance",
                 headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
             });
@@ -45,7 +45,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             return { events, failures, rejected, messages: agent.messages, state: agent.state, running: agent.isRunning };
         }, options);
 
-        await t.test("{§web-agui-conformance} absent and incorrect bearer credentials fail before inference", async () => {
+        await t.test("{§web-acp-conformance} absent and incorrect bearer credentials fail before inference", async () => {
             for (const credential of [undefined, "incorrect-test-token"]) {
                 const result = await run({ token: credential, plurnk: { action: { kind: "discover" } } });
                 assert.equal(result.rejected?.status, 401);
@@ -55,14 +55,13 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
                 assert.deepEqual(result.events, []);
                 assert.equal(result.running, false);
                 checkBrowser([
-                    httpFailure("/agui", 401),
-                    new RegExp(`^error /__test__/http-agent\\.js: Agent execution failed: Error: HTTP 401: .*"type":"${RegExp.escape(problem.type)}"`, "u"),
+                    httpFailure("/acp", 401),
                 ]);
             }
             assert.equal(model.requests.length, 0);
         });
 
-        await t.test("{§web-agui-conformance} authenticated discovery uses the standard Run transport", async () => {
+        await t.test("{§web-acp-conformance} authenticated discovery uses the standard Run transport", async () => {
             const result = await run({ token, plurnk: { action: { kind: "discover" } } });
             assert.deepEqual(result.failures, []);
             assert.equal(result.rejected, undefined);
@@ -76,7 +75,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(model.requests.length, 0);
         });
 
-        await t.test("{§web-agui-conformance} browser assembles reasoning, file receipts, state and final answer", async () => {
+        await t.test("{§web-acp-conformance} browser assembles reasoning, file receipts, state and final answer", async () => {
             const result = await run({
                 token,
                 messages: [{ id: "browser-question", role: "user", content: "Read witness.txt and report its contents." }],
@@ -125,7 +124,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(model.requests.length, 2);
         });
 
-        await t.test("{§web-agui-conformance} workspace actions report workspace activity without selecting a model worker", async () => {
+        await t.test("{§web-acp-conformance} workspace actions report workspace activity without selecting a model worker", async () => {
             const before = model.requests.length;
             const result = await run({ token, threadId: "not-a-worker", plurnk: {
                 workspace: "browser-conformance", action: { kind: "workspace.workers" },
@@ -145,7 +144,7 @@ export default async function verifyAgui(browser, base, token, projectRoot, mode
             assert.equal(model.requests.length, before);
         });
 
-        await t.test("{§web-agui-conformance} provider refusal arrives as RUN_ERROR, not a successful completion", async () => {
+        await t.test("{§web-acp-conformance} provider refusal arrives as RUN_ERROR, not a successful completion", async () => {
             const result = await run({
                 token, threadId: "browser-rejected",
                 messages: [{ id: "browser-rejection", role: "user", content: "Exercise the rejected browser request." }],

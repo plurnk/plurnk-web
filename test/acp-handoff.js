@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 
-// {§web-agui-conformance} The same official SDK history crosses each transport boundary.
+// {§web-acp-conformance} The same official SDK history crosses each transport boundary.
 export default async function verifyHandoff({ tab, t, model, start, finish, read, event, successful, prompt, action, detach, observe, inspect }) {
-    await t.test("{§web-agui-conformance} one SDK history moves from observation to a message Run and back without replaying input", async () => {
+    await t.test("{§web-acp-conformance} one SDK history moves from observation to a message Run and back without replaying input", async () => {
         const before = model.requests.length;
         const initial = await observe("handoff", "browser-conformance", "browser-conformance");
         const readCall = initial.messages.flatMap(({ toolCalls }) => toolCalls ?? []).find(({ function: fn }) => fn.name === "READ");
@@ -34,7 +34,7 @@ export default async function verifyHandoff({ tab, t, model, start, finish, read
         assert.equal(model.requests.length, before + 2);
     });
 
-    await t.test("{§web-agui-conformance} observation rediscovers a controlling Run's approval without resolving or duplicating it", async () => {
+    await t.test("{§web-acp-conformance} observation rediscovers a controlling Run's approval without resolving or duplicating it", async () => {
         const workspace = "handoff-approval";
         await action(workspace, "review", "worker.model.set", { selector: "browser" });
         const before = model.requests.length;

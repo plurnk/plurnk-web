@@ -9,7 +9,7 @@ export default async function httpAgentBundle() {
     });
     const chunks = output.filter(({ type }) => type === "chunk");
     assert.equal(chunks.length, 1, "the test SDK has one self-contained browser entry");
-    // Only the test SDK bundle is injected; /agui and /auth always reach the daemon.
+    // Only the test SDK bundle is injected; /acp and /auth always reach the daemon.
     return (tab, base) => tab.route(new URL("/__test__/http-agent.js", base).href, (route) => route.fulfill({
         contentType: "text/javascript", body: chunks[0].code,
     }));

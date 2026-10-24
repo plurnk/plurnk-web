@@ -311,7 +311,7 @@ export default class Documents {
         return roots + other;
     }
 
-    /** {§web-worker-observer} Identity and navigation belong to the document; status arrives through AG-UI.
+    /** {§web-worker-observer} Identity and navigation belong to the document; status arrives through ACP.
      * @param {import("./directory-addresses.js").Directory & {kind: "worker"}} directory @param {number} workspaceId @param {boolean} authenticated
      * @param {boolean} automatic
      */

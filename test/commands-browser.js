@@ -27,7 +27,7 @@ export default async function verifyCommands(t) {
                         return route.fulfill({ status: credentialStatus,
                             json: { token_type: "Bearer", access_token: "command-fixture-token" } });
                     });
-                    await page.route("**/agui", async (route) => {
+                    await page.route("**/acp", async (route) => {
                         const input = route.request().postDataJSON();
                         requests.push(input);
                         assert.equal(route.request().headers().authorization, "Bearer command-fixture-token");
@@ -254,7 +254,7 @@ export default async function verifyCommands(t) {
                     }
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     held = Promise.withResolvers();
-                    const received = page.waitForRequest("**/agui");
+                    const received = page.waitForRequest("**/acp");
                     const pending = command("/model");
                     await received;
                     await page.evaluate(() => window.depart());

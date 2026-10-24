@@ -17,20 +17,20 @@ export default function reasoningPreview(root, limit) {
 
     return {
         clear,
-        /** @param {import("@ag-ui/client").BaseEvent} event */
+        /** @param {import("@plurnk/plurnk-acp/client").BaseEvent} event */
         consume(event) {
             if (["RUN_STARTED", "RUN_FINISHED", "RUN_ERROR"].includes(event.type)) {
                 clear();
             } else if (event.type === "REASONING_MESSAGE_START") {
-                const { messageId, metadata } = /** @type {import("@ag-ui/client").ReasoningMessageStartEvent} */ (event);
+                const { messageId, metadata } = /** @type {import("@plurnk/plurnk-acp/client").ReasoningMessageStartEvent} */ (event);
                 if (!metadata?.plurnk?.body) {
                     clear();
                     the(outlet, { reasoningId: messageId, reasoningCoordinate: reasoningCoordinate(metadata?.plurnk?.coordinate) });
                 }
             } else if (event.type === "REASONING_MESSAGE_END") {
-                if (/** @type {import("@ag-ui/client").ReasoningMessageEndEvent} */ (event).messageId === the(outlet, "reasoning-id")) clear();
+                if (/** @type {import("@plurnk/plurnk-acp/client").ReasoningMessageEndEvent} */ (event).messageId === the(outlet, "reasoning-id")) clear();
             } else if (event.type === "CUSTOM") {
-                const { name, value } = /** @type {import("@ag-ui/client").CustomEvent} */ (event);
+                const { name, value } = /** @type {import("@plurnk/plurnk-acp/client").CustomEvent & { value?: { messageId?: unknown, delta?: unknown } }} */ (event);
                 if (name !== "plurnk.reasoning") return;
                 if (typeof value?.messageId !== "string" || typeof value?.delta !== "string"
                     || value.messageId !== the(outlet, "reasoning-id")) {

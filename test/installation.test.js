@@ -12,8 +12,8 @@ import { chromium } from "playwright";
 import browserDiagnostics from "./browser-diagnostics.js";
 import verifyWebApp from "./web-app.js";
 import verifyDocument from "./document.js";
-import verifyAgui from "./agui-browser.js";
-import verifyExecution from "./agui-execution.js";
+import verifyAcp from "./acp-browser.js";
+import verifyExecution from "./acp-execution.js";
 import startModel from "./model-fixture.js";
 import candidatePackages from "./candidate-packages.js";
 import verifySessions from "./sessions-browser.js";
@@ -127,10 +127,10 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
             const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
             assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the root document");
             assert.equal(await explicitIndex.text(), await (await fetch(base)).text());
-            const agui = await fetch(new URL("/agui", base));
-            assert.notEqual(agui.status, 200);
-            assert.match(agui.headers.get("content-type"), /application\/problem\+json/u);
-            assert.equal(typeof (await agui.json()).type, "string");
+            const acp = await fetch(new URL("/acp", base));
+            assert.notEqual(acp.status, 200);
+            assert.match(acp.headers.get("content-type"), /application\/problem\+json/u);
+            assert.equal(typeof (await acp.json()).type, "string");
             for (const path of ["/not-a-page", "/~/example@user/asset"]) {
                 const unknown = await fetch(new URL(path, base));
                 assert.equal(unknown.status, 404, `${path}: no unimplemented resource is served`);
@@ -182,7 +182,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
         });
     });
 
-    await t.test("{§web-agui-conformance} official HttpAgent in the browser on an authenticated daemon", async (conformance) => {
+    await t.test("{§web-acp-conformance} official HttpAgent in the browser on an authenticated daemon", async (conformance) => {
         const model = await startModel();
         const token = randomUUID();
         const projectRoot = join(directory, "project");
@@ -196,13 +196,13 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
             }, async (base, daemon) => {
                 const exchanged = await fetch(new URL("/oauth/token", base), {
                     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "agui" }),
+                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "acp" }),
                 });
                 assert.equal(exchanged.status, 200);
                 const { access_token } = await exchanged.json();
                 const browser = await chromium.launch();
                 try {
-                    await verifyAgui(browser, base, access_token, projectRoot, model, conformance, () => daemon.stop());
+                    await verifyAcp(browser, base, access_token, projectRoot, model, conformance, () => daemon.stop());
                 } finally {
                     await browser.close();
                 }
@@ -212,7 +212,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
         }
     });
 
-    await t.test("{§web-agui-conformance} real execution results through the official browser SDK", async (conformance) => {
+    await t.test("{§web-acp-conformance} real execution results through the official browser SDK", async (conformance) => {
         const model = await startModel();
         const token = randomUUID();
         const projectRoot = join(directory, "execution-project");
@@ -221,7 +221,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
             await withDaemon({ ...model.env, PLURNK_SECRET: token, PLURNK_SERVICE_PROPOSALS: "accept" }, async (base) => {
                 const grant = await fetch(new URL("/oauth/token", base), {
                     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "agui" }),
+                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "acp" }),
                 });
                 assert.equal(grant.status, 200);
                 const { access_token } = await grant.json();

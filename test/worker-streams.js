@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 import { inputPage } from "./worker-input.js";
 
 const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -25,7 +25,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
             inputPage(withDaemon, async ({ page, context, path, base, model, checkBrowser, setup, headers }) => {
                 const inputs = [];
                 context.on("request", (request) => {
-                    if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON());
+                    if (new URL(request.url()).pathname === "/acp") inputs.push(request.postDataJSON());
                 });
                 assert.equal(await page.locator("[data-open-streams]").count(), 0);
                 await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
@@ -91,7 +91,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                 assert.deepEqual(read.tools, []);
                 assert.equal(read.threadId, `${setup.state.plurnk.workspace.id}#user`);
                 assert.deepEqual(read.forwardedProps.plurnk.action, { kind: "entry.read", target });
-                const inspection = new HttpAgent({ url: new URL("/agui", base).href, threadId: `${setup.state.plurnk.workspace.id}#user`, headers });
+                const inspection = new HttpAgent({ url: new URL("/acp", base).href, threadId: `${setup.state.plurnk.workspace.id}#user`, headers });
                 await inspection.runAgent({ forwardedProps: { plurnk: { action: { kind: "entry.read", target } } } });
                 assert.deepEqual(inspection.messages, [], "management evidence is not appended to SDK conversation");
                 checkBrowser();

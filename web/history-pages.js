@@ -1,4 +1,4 @@
-/** @typedef {import("@ag-ui/client").Message} Message */
+/** @typedef {import("@plurnk/plurnk-acp/client").Message} Message */
 /** @typedef {{messages: readonly Message[], older: string | null, final: boolean}} Page */
 /** @typedef {Page & {url: string | null}} Part */
 
@@ -16,7 +16,7 @@ export default class HistoryPages {
     /** @type {Part[]} Newest first, in the order reached through daemon boundaries. */
     #pages = [];
 
-    /** @param {import("@ag-ui/client").MessagesSnapshotEvent} event @param {boolean} reading */
+    /** @param {import("@plurnk/plurnk-acp/client").MessagesSnapshotEvent} event @param {boolean} reading */
     snapshot(event, reading) {
         const history = event.metadata?.plurnk?.history;
         const older = history === undefined ? null : history?.older;

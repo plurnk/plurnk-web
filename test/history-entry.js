@@ -9,7 +9,7 @@ const resources = new AbortController();
 const history = workerHistory(document.querySelector("#worker-conversation"), document.querySelector("main"),
     (address) => readBody(address, "session", resources.signal),
     (address, signal) => readHistory(address, "session", AbortSignal.any([signal, resources.signal])));
-window.agent = new WorkerAgent({ url: "/agui", threadId: "7#user" });
+window.agent = new WorkerAgent({ url: "/acp", threadId: "7#user" });
 window.run = () => window.agent.runAgent({}, {
     onMessagesSnapshotEvent: ({ event }) => history.snapshot(event),
     onMessagesChanged: ({ messages }) => history.present(messages),

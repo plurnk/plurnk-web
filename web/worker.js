@@ -17,22 +17,22 @@ import workerCommands, { isCommand } from "./worker-commands.js";
 import workerSettings from "./worker-settings.js";
 import describeFailure from "./failure.js";
 
-/** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@ag-ui/client").RunAgentParameters["resume"]}} Submission */
+/** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@plurnk/plurnk-acp/client").RunAgentParameters["resume"]}} Submission */
 
 // {§web-worker-status} Repaint elapsed and WAIT at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
 
 // {§web-worker-approval} These refusals require fresh observation, never replay of the answer.
 const SETTLED_INTERRUPTS = new Set([
-    "https://problems.plurnk.xyz/agui/interrupt/interrupt-not-pending",
+    "https://problems.plurnk.xyz/acp/interrupt/interrupt-not-pending",
     "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
     "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending",
 ]);
 
 /** {§web-worker-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback
  * here hands its first failure to `fail` and skips the rest, so the run ends with that cause.
- * @param {import("@ag-ui/client").AgentSubscriber} subscriber @param {(error: unknown) => void} fail
- * @returns {import("@ag-ui/client").AgentSubscriber}
+ * @param {import("@plurnk/plurnk-acp/client").AgentSubscriber} subscriber @param {(error: unknown) => void} fail
+ * @returns {import("@plurnk/plurnk-acp/client").AgentSubscriber}
  */
 function failing(subscriber, fail) {
     let failed = false;
@@ -90,8 +90,8 @@ export default function observeWorker(element) {
     if (!(streamList instanceof HTMLElement)) throw new Error("Worker document has no stream outlet.");
     const streams = workerStreams(streamList, (target) => readEntry(target, threadId, auth, resources.signal));
     const presentState = workerState(element);
-    let agent = new WorkerAgent({ url: "/agui/connect", threadId });
-    /** @type {import("@plurnk/plurnk-agui/client").AguiStatusState | undefined} */
+    let agent = new WorkerAgent({ url: "/acp/connect", threadId });
+    /** @type {import("@plurnk/plurnk-acp/client").AcpStatusState | undefined} */
     let status;
     /** @type {{message: {id: string, role: "user", content: string}, retryable: boolean} | undefined} */
     let pending;
@@ -161,11 +161,11 @@ export default function observeWorker(element) {
         try {
             while (!signal.aborted) {
                 if (!holding) connection("connecting", "Connecting…");
-                if (!submission && !holding) agent = new WorkerAgent({ url: "/agui/connect", threadId });
+                if (!submission && !holding) agent = new WorkerAgent({ url: "/acp/connect", threadId });
                 if (!submission?.resume && !holding) review.present([]);
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
-                agent.url = submission ? "/agui" : "/agui/connect";
+                agent.url = submission ? "/acp" : "/acp/connect";
                 // This run ends with the page's observation or with its first intake failure.
                 const run = new AbortController();
                 signal.onabort = () => run.abort(signal.reason);
@@ -180,7 +180,7 @@ export default function observeWorker(element) {
                 let problem;
                 /** @type {string | undefined} */
                 let refusal;
-                /** @type {import("@ag-ui/client").AgentSubscriber} */
+                /** @type {import("@plurnk/plurnk-acp/client").AgentSubscriber} */
                 const subscriber = {
                     onEvent: ({ event }) => {
                         if (signal.aborted) return;

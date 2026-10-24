@@ -13,7 +13,7 @@ const call = (id, op, body, aside = "") => ({
 export default async function verifyDisclosures(t) {
     let reads = 0;
     const { server, url } = await conversationFixture(undefined, new Map([
-        ["/agui/disclosure-body", (_request, response) => {
+        ["/acp/disclosure-body", (_request, response) => {
             reads++;
             response.writeHead(200, { "Content-Type": "text/plain" });
             response.end("Literal <pre> tool output.");
@@ -112,7 +112,7 @@ export default async function verifyDisclosures(t) {
                     assert.equal(await disclosure("note").evaluate((node) => node.open), false);
                     const previousReads = reads;
                     const reference = [{ id: "reference", role: "tool", toolCallId: "opaque-reference", content: [{
-                        type: "document", source: { type: "url", value: new URL("/agui/disclosure-body", url).href, mimeType: "text/plain" },
+                        type: "document", source: { type: "url", value: new URL("/acp/disclosure-body", url).href, mimeType: "text/plain" },
                     }] }];
                     await present(reference);
                     await row("reference").scrollIntoViewIfNeeded();

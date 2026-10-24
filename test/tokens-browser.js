@@ -9,7 +9,7 @@ import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 export default async function verifyTokens({ t, withDaemon }) {
     const mount = await httpAgentBundle();
     await t.test("{§web-access-token} browser sign-in supplies only access credentials and sign-out revokes them", async () => {
-        await withDaemon({ PLURNK_PASS: "token-fixture-password", PLURNK_AGUI_ACCESS_TTL_SEC: "3" }, async (base) => {
+        await withDaemon({ PLURNK_PASS: "token-fixture-password", PLURNK_AUTH_ACCESS_TTL_SEC: "3" }, async (base) => {
             const browser = await chromium.launch();
             try {
                 const context = await browser.newContext();
@@ -58,7 +58,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                     globalThis.connection = {
                         events: [], settled: false, failure: null,
                         async discover(token) {
-                            const agent = new HttpAgent({ url: new URL("/agui", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
+                            const agent = new HttpAgent({ url: new URL("/acp", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             const events = [];
                             try {
                                 await agent.runAgent({ forwardedProps: { plurnk: { action: { kind: "discover" } } } }, { onEvent: ({ event }) => events.push(event) });
@@ -66,7 +66,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                             } catch (error) { return { status: error.status }; }
                         },
                         async create(token) {
-                            const agent = new HttpAgent({ url: new URL("/agui", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
+                            const agent = new HttpAgent({ url: new URL("/acp", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             const events = [];
                             // A worker-setting action creates this model-less fixture; observation cannot.
                             await agent.runAgent({ forwardedProps: { plurnk: { workspace: "tokens", action: { kind: "worker.child.set", selector: null } } } }, {
@@ -75,7 +75,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                             return { terminal: events.at(-1), action: events.at(-1).result };
                         },
                         observe(token) {
-                            this.agent = new Observer({ url: new URL("/agui/connect", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
+                            this.agent = new Observer({ url: new URL("/acp/connect", location.href).href, threadId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             this.pending = this.agent.connectAgent({ forwardedProps: { plurnk: { workspace: "tokens" } } }, {
                                 onEvent: ({ event }) => this.events.push(event),
                             }).catch((error) => { this.failure = error.message; }).finally(() => { this.settled = true; });
@@ -95,8 +95,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                 await setTimeout((supplied.body.expires_in + 1) * 1000);
                 assert.equal((await discover(supplied.body.access_token)).status, 401, "new requests cannot reuse the expired credential");
                 checkBrowser([
-                    httpFailure("/agui", 401),
-                    /^error \/__test__\/http-agent\.js: Agent execution failed: Error: HTTP 401: .*"type":"https:\/\/problems\.plurnk\.xyz\/agui\/http\/bearer-token-invalid"/u,
+                    httpFailure("/acp", 401),
                 ]);
                 assert.equal(await page.evaluate(() => globalThis.connection.settled), false, "expiry does not sever an admitted observation");
                 const renewed = await Promise.all(Array.from({ length: 8 }, token));
@@ -117,8 +116,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                 assert.equal((await token()).status, 401);
                 assert.equal((await discover(current)).status, 401, "the issued access token shares the revoked sign-in family");
                 checkBrowser([
-                    httpFailure("/auth/token", 401), httpFailure("/agui", 401),
-                    /^error \/__test__\/http-agent\.js: Agent execution failed: Error: HTTP 401: .*"type":"https:\/\/problems\.plurnk\.xyz\/agui\/http\/bearer-token-invalid"/u,
+                    httpFailure("/auth/token", 401), httpFailure("/acp", 401),
                 ]);
             } finally { await browser.close(); }
         });
@@ -143,7 +141,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                         const response = await fetch("/auth/token", { method: "POST" });
                         if (!response.ok) throw new Error(`Token request failed: ${response.status}`);
                         const { access_token } = await response.json();
-                        const agent = new HttpAgent({ url: new URL("/agui", location.href).href, threadId: "revocation",
+                        const agent = new HttpAgent({ url: new URL("/acp", location.href).href, threadId: "revocation",
                             initialMessages: [{ id: "revocation-prompt", role: "user", content: "Lifecycle fixture: held-revocation." }],
                             headers: { Authorization: `Bearer ${access_token}` } });
                         const state = globalThis.revocation = { agent, events: [], settled: false, error: null };
@@ -162,13 +160,13 @@ export default async function verifyTokens({ t, withDaemon }) {
                     assert.equal(revoked.final.type, "RUN_ERROR");
                     assert.match(revoked.final.code, /credential-revoked$/u);
                     const exchanged = await fetch(new URL("/oauth/token", base), {
-                        method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "agui" }),
+                        method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "acp" }),
                     });
                     assert.equal(exchanged.status, 200);
                     const { access_token } = await exchanged.json();
                     await page.evaluate(async (access) => {
                         const { Observer } = await import("/__test__/http-agent.js");
-                        const agent = new Observer({ url: new URL("/agui/connect", location.href).href, threadId: "revocation", headers: { Authorization: `Bearer ${access}` } });
+                        const agent = new Observer({ url: new URL("/acp/connect", location.href).href, threadId: "revocation", headers: { Authorization: `Bearer ${access}` } });
                         const state = globalThis.survivor = { agent, events: [], settled: false, error: null };
                         state.pending = agent.connectAgent({ forwardedProps: { plurnk: { workspace: "revocation" } } }, {
                             onEvent: ({ event }) => state.events.push(event),

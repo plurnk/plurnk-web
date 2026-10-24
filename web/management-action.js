@@ -15,7 +15,7 @@ export default async function managementAction(kind, params, threadId, auth, sig
         return Object.assign(new Error(problem.detail ?? problem.title, { cause: problem }), { status: problem.status });
     };
     const agent = new WorkerAgent({
-        url: "/agui", threadId,
+        url: "/acp", threadId,
         fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.any([signal, ...(init.signal ? [init.signal] : [])]) }),
     });
     /** @type {Error | undefined} */
@@ -36,7 +36,7 @@ export default async function managementAction(kind, params, threadId, auth, sig
         }
         signal.throwIfAborted();
         if (failed !== undefined) throw failed;
-        const { result } = outcome;
+        const result = /** @type {{ kind?: string, ok?: boolean, result?: unknown, problem?: unknown } | undefined} */ (outcome.result);
         if (result?.kind !== kind) throw new Error(`${kind} returned no matching action outcome.`);
         if (result.ok === false) {
             const problem = Validator.assertProblemDetails(result.problem);

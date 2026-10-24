@@ -1,9 +1,9 @@
 import "./schema-validation.js";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 import refusal from "./problem-response.js";
 
 // {§web-browser-security} Browser SDK imports share the same pre-schema initialization.
-export { buildResumeArray, randomUUID } from "@ag-ui/client";
+export { MessageSchema, buildResumeArray, randomUUID } from "@plurnk/plurnk-acp/client";
 
 // {§web-worker-questions} Controlling Runs declare only implemented interaction handlers.
 export const interactionTools = [
@@ -30,8 +30,9 @@ export default class WorkerAgent extends HttpAgent {
      * @param {Parameters<HttpAgent["run"]>[0]} input
      */
     run(input) {
-        return super.run({ ...input, forwardedProps: { ...input.forwardedProps,
-            plurnk: { ...input.forwardedProps?.plurnk, reasoning: "link" },
+        const props = /** @type {{ plurnk?: Record<string, unknown> } | undefined} */ (input.forwardedProps);
+        return super.run({ ...input, forwardedProps: { ...props,
+            plurnk: { ...props?.plurnk, reasoning: "link" },
         } });
     }
 

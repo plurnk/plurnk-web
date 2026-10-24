@@ -158,7 +158,7 @@ test("{§web-build} production HTML references compiled assets, not development 
     assert.ok(inventory.some(([path, , type]) => path === "/index.html" && type === "text/html"));
     assert.ok(inventory.some(([path]) => path === "/manifest.webmanifest"));
     const license = await readFile(new URL("../ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt", import.meta.url), "utf8");
-    assert.match(license, /@ag-ui\/client/u);
+    assert.match(license, /@plurnk\/plurnk-acp/u);
     assert.match(license, /temml - 0\.14\.0 \(MIT\)/u);
     assert.doesNotMatch(license, /beautiful-mermaid|ondine|piscina|elkjs/u, "diagram compilation is absent from browser dependencies");
     assert.match(license, /marked-footnote - 1\.4\.0 \(MIT\)/u);

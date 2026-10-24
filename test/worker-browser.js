@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import startModel, { contentAttack, diagramContent, footnoteAnswer } from "./model-fixture.js";
@@ -15,12 +15,12 @@ async function controller(base, secret, messages = []) {
     const headers = {};
     if (secret) {
         const grant = await fetch(new URL("/oauth/token", base), {
-            method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "agui" }),
+            method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "acp" }),
         });
         assert.equal(grant.status, 200);
         headers.Authorization = `Bearer ${(await grant.json()).access_token}`;
     }
-    return new HttpAgent({ url: new URL("/agui", base).href, threadId: "user", headers, initialMessages: messages });
+    return new HttpAgent({ url: new URL("/acp", base).href, threadId: "user", headers, initialMessages: messages });
 }
 
 async function connection(page, state) {
@@ -39,10 +39,10 @@ const deadline = (page) => page.locator('#worker-status [data-text="wait"]').get
 const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: ${name}.` }];
 const entryRequest = (request, scheme) => {
     const url = new URL(request.url());
-    return /\/agui\/\d+\/\d+\/entry$/u.test(url.pathname) && url.searchParams.get("target")?.startsWith(`${scheme}:`);
+    return /\/acp\/\d+\/\d+\/entry$/u.test(url.pathname) && url.searchParams.get("target")?.startsWith(`${scheme}:`);
 };
 
-// {§web-worker-observer} The shipped page, not an injected SDK or substituted AG-UI response.
+// {§web-worker-observer} The shipped page, not an injected SDK or substituted ACP response.
 export default async function verifyWorkerPage({ t, withDaemon }) {
     await t.test("{§web-worker-status} direct children and cumulative descendant spend come from the daemon", async () => {
         const model = await startModel();
@@ -130,7 +130,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     const observations = [];
-                    page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui/connect") observations.push(request.postDataJSON()); });
+                    page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp/connect") observations.push(request.postDataJSON()); });
                     await page.goto(new URL("/~/wait-status@user/", proxy.url).href);
                     await connected(page);
                     await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
@@ -159,8 +159,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
                     assert.equal(model.requests.length, 1, "delivery loss does not wake or cancel work");
                     checkBrowser([
-                        /^error \/agui: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
-                        /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: network error$/u,
+                        /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
                     ]);
                     await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
@@ -216,7 +215,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "configuration evidence is not a fabricated conversation");
                     await notice.evaluate((element) => { window.retainedNotice = element; });
                     const count = await rows.count();
-                    const reattached = page.waitForRequest((request) => new URL(request.url()).pathname === "/agui/connect");
+                    const reattached = page.waitForRequest((request) => new URL(request.url()).pathname === "/acp/connect");
                     const run = await controller(base, undefined, prompt("diagnostics"));
                     await run.runAgent({ forwardedProps: { plurnk: { workspace: "diagnostics" } } });
                     await page.waitForFunction(() => document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
@@ -628,7 +627,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await page.getByRole("button", { name: "Send", exact: true }).click();
                     await page.getByText("Completed reasoning-followup.", { exact: true }).waitFor();
                     await connected(page);
-                    const upload = requests.find((request) => new URL(request.url()).pathname === "/agui")?.postDataJSON();
+                    const upload = requests.find((request) => new URL(request.url()).pathname === "/acp")?.postDataJSON();
                     assert.ok(upload, "the browser sent the follow-up through its real SDK");
                     assert.equal(upload.forwardedProps.plurnk.reasoning, "link");
                     const uploadedReasoning = upload.messages.filter(({ role }) => role === "reasoning");
@@ -657,7 +656,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                         "reload does not fetch receipt bodies for summaries");
                     assert.deepEqual(model.errors, []);
                     assert.equal(await page.locator("#worker-conversation form, #worker-conversation textarea, #worker-conversation [contenteditable]").count(), 0);
-                    for (const request of requests.filter((request) => new URL(request.url()).pathname === "/agui/connect")) {
+                    for (const request of requests.filter((request) => new URL(request.url()).pathname === "/acp/connect")) {
                         const input = request.postDataJSON();
                         assert.deepEqual(input.messages, []);
                         assert.deepEqual(input.tools, []);
@@ -681,7 +680,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
         const model = await startModel();
         const secret = crypto.randomUUID();
         try {
-            await withDaemon({ ...model.env, PLURNK_PASS: "worker-password", PLURNK_SECRET: secret, PLURNK_AGUI_ACCESS_TTL_SEC: "1" }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_PASS: "worker-password", PLURNK_SECRET: secret, PLURNK_AUTH_ACCESS_TTL_SEC: "1" }, async (base) => {
                 const workspace = '~/observer @%/<draft>&"';
                 const threadId = "user";
                 const action = async (kind, parameters = {}, selected = workspace) => {
@@ -705,7 +704,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const observations = [];
                     const access = [];
                     page.on("request", (request) => {
-                        if (new URL(request.url()).pathname === "/agui/connect") observations.push(request.postDataJSON());
+                        if (new URL(request.url()).pathname === "/acp/connect") observations.push(request.postDataJSON());
                     });
                     page.on("response", async (response) => {
                         if (new URL(response.url()).pathname === "/auth/token" && response.ok()) access.push((await response.json()).access_token);
@@ -871,7 +870,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     let attempts = 0;
-                    page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui/connect") attempts++; });
+                    page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp/connect") attempts++; });
                     await page.goto(new URL("/~/observer-revocation@user/", base).href);
                     await page.getByLabel("Password", { exact: true }).fill("revocation-password");
                     await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -920,8 +919,8 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     const requests = [];
                     page.on("request", (request) => requests.push(request));
                     await page.goto(new URL("/~/", proxy.url).href);
-                    assert.equal(requests.some((request) => /worker-.*\.js|\/auth\/token|\/agui/u.test(request.url())), false, "directory navigation needs no worker runtime");
-                    const holding = page.waitForResponse((response) => new URL(response.url()).pathname === "/agui/connect"
+                    assert.equal(requests.some((request) => /worker-.*\.js|\/auth\/token|\/acp/u.test(request.url())), false, "directory navigation needs no worker runtime");
+                    const holding = page.waitForResponse((response) => new URL(response.url()).pathname === "/acp/connect"
                         && response.request().postDataJSON().forwardedProps?.plurnk?.interrupts?.length > 0);
                     await page.goto(new URL("/~/observer-approval@user/", proxy.url).href);
                     await connection(page, "interrupted");
@@ -931,7 +930,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
                     assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "passive discovery chooses nothing");
                     assert.equal(model.requests.length, 1, "the approval remains pending");
-                    assert.equal(requests.filter((request) => new URL(request.url()).pathname === "/agui/connect").length, 2, "discovery then one held observation");
+                    assert.equal(requests.filter((request) => new URL(request.url()).pathname === "/acp/connect").length, 2, "discovery then one held observation");
                     assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);
                     for (const request of requests) assert.equal(request.headers().authorization, undefined);
                     await run.runAgent({ ...parameters, resume: [{ interruptId: run.pendingInterrupts[0].id, status: "resolved", payload: { decision: "accept" } }] });
@@ -953,7 +952,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     assert.equal(await value(nativePage, "lifecycle"), null);
                     assert.equal(await nativePage.getByText("No messages.", { exact: true }).isVisible(), false,
                         "a native document without conversation delivery cannot claim the existing history is empty");
-                    assert.equal(nativeRequests.some((url) => /\/agui|\/auth\/token/u.test(url)), false);
+                    assert.equal(nativeRequests.some((url) => /\/acp|\/auth\/token/u.test(url)), false);
                     checkNative();
                     await native.close();
 
@@ -964,8 +963,7 @@ export default async function verifyWorkerPage({ t, withDaemon }) {
                     await setTimeout(1100);
                     assert.equal(requests.length, afterLoss, "an available endpoint does not trigger automatic retries after connection loss");
                     checkBrowser([
-                        /^error \/agui\/connect: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
-                        /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: network error$/u,
+                        /^error \/acp\/connect: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
                     ]);
                     const card = page.locator('#worker-connection');
                     assert.equal(await card.isVisible(), true);

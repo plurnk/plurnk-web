@@ -82,7 +82,7 @@ async function authenticated(t, createModule, heldPhase) {
         },
     };
     const pair = () => {
-        const claims = { family: "one", subject: "operator", clientId: "plurnk-web", scopes: ["agui"] };
+        const claims = { family: "one", subject: "operator", clientId: "plurnk-web", scopes: ["acp"] };
         return {
             access_token: credentials.issue({ ...claims, kind: "access", ttlMs: 300_000 }).token,
             refresh_token: credentials.issue({ ...claims, kind: "refresh", ttlMs: 600_000 }).token,

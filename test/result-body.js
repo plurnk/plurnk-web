@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 
 export async function observeMessages(threadId, origin, headers) {
-    const observer = new HttpAgent({ url: new URL("/agui/connect", origin).href, threadId, headers });
+    const observer = new HttpAgent({ url: new URL("/acp/connect", origin).href, threadId, headers });
     const controller = new AbortController();
     let messages;
     await observer.runAgent({ abortController: controller }, {

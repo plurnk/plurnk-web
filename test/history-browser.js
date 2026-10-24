@@ -34,7 +34,7 @@ export default async function verifyHistory(t) {
                         if (typeof value === "function") await value(route);
                         else await route.fulfill({ json: value });
                     });
-                    await page.route("**/agui", (route) => {
+                    await page.route("**/acp", (route) => {
                         const input = route.request().postDataJSON();
                         requests.push(input);
                         return route.fulfill({ contentType: "text/event-stream", body: [

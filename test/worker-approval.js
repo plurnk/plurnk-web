@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { inspectStreamOutput } from "./worker-streams.js";
 import { inspectResult, observeMessages } from "./result-body.js";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 import { inputPage } from "./worker-input.js";
 
 const interrupted = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
@@ -10,7 +10,7 @@ const connected = (page) => page.waitForFunction(() => document.querySelector("#
 function requestsFrom(page) {
     const requests = [];
     page.on("request", (request) => {
-        if (new URL(request.url()).pathname === "/agui") requests.push(request.postDataJSON());
+        if (new URL(request.url()).pathname === "/acp") requests.push(request.postDataJSON());
     });
     return requests;
 }
@@ -52,7 +52,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         const threadId = await page.locator("#worker-status").getAttribute("data-thread-id");
         await page.close();
         // The proposal waits with no page open on its worker.
-        const agent = new HttpAgent({ url: new URL("/agui", base).href, threadId, headers });
+        const agent = new HttpAgent({ url: new URL("/acp", base).href, threadId, headers });
         agent.addMessage({ id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: approval-automatic." });
         const controller = new AbortController();
         const running = agent.runAgent({ abortController: controller }).catch(() => {});
@@ -109,7 +109,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
     await t.test("{§web-worker-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
-        await page.route("**/agui", (route) => route.request().postDataJSON().resume ? route.abort() : route.continue());
+        await page.route("**/acp", (route) => route.request().postDataJSON().resume ? route.abort() : route.continue());
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-auto-failure.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
@@ -118,8 +118,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         assert.equal(requests.length, 2, "a failed automatic decision is not retried");
         assert.equal(await page.getByRole("button", { name: "Reconnect", exact: true }).isVisible(), true);
         checkBrowser([
-            /^error \/agui: Failed to load resource: net::ERR_FAILED$/u,
-            /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: Failed to fetch$/u,
+            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
         ]);
     }, { env: { PLURNK_WEB_YOLO: "1" } }));
     for (const decision of ["accept", "reject"]) {
@@ -223,7 +222,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
     await t.test("{§web-worker-approval} held review retains unsent choices and live elapsed time without repeated presentations", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const holds = [];
         page.on("request", (request) => {
-            if (new URL(request.url()).pathname !== "/agui/connect") return;
+            if (new URL(request.url()).pathname !== "/acp/connect") return;
             const input = request.postDataJSON();
             if (input.forwardedProps?.plurnk?.interrupts?.length) holds.push(input);
         });
@@ -256,19 +255,19 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         await interrupted(other);
         const requests = requestsFrom(other);
         const sent = Promise.withResolvers();
-        await other.route("**/agui", (route) => { sent.resolve(route); }, { times: 1 });
+        await other.route("**/acp", (route) => { sent.resolve(route); }, { times: 1 });
         await other.getByRole("radio", { name: "Reject", exact: true }).check();
         await other.getByRole("button", { name: "Submit responses", exact: true }).click();
         const delayed = await sent.promise;
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-late.", { exact: true }).waitFor();
-        const refused = other.waitForResponse((response) => new URL(response.url()).pathname === "/agui");
+        const refused = other.waitForResponse((response) => new URL(response.url()).pathname === "/acp");
         await delayed.continue();
         const events = (await (await refused).text()).split("\n\n").filter((frame) => frame.startsWith("data: ")).map((frame) => JSON.parse(frame.slice(6)));
         const problem = events.find(({ type }) => type === "RUN_ERROR")?.metadata?.plurnk?.problem;
         assert.equal(problem?.status, 409);
-        assert.equal(problem?.type, "https://problems.plurnk.xyz/agui/interrupt/interrupt-not-pending");
+        assert.equal(problem?.type, "https://problems.plurnk.xyz/acp/interrupt/interrupt-not-pending");
         await other.getByText("Completed approval-late.", { exact: true }).waitFor();
         await connected(other);
         assert.match(await other.locator('[data-text="command-error"]').textContent(), /^Response not accepted: /u);
@@ -331,10 +330,10 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         await connected(page);
         const threadId = await page.locator("#worker-status").getAttribute("data-thread-id");
         for (const name of ["one", "two"]) {
-            const fork = new HttpAgent({ url: new URL("/agui", base).href, threadId, headers });
+            const fork = new HttpAgent({ url: new URL("/acp", base).href, threadId, headers });
             const { result } = await fork.runAgent({ forwardedProps: { plurnk: { action: { kind: "run.fork", name } } } });
             assert.equal(result.ok, true, JSON.stringify(result));
-            const child = new HttpAgent({ url: new URL("/agui", base).href, threadId: `${threadId.split("#")[0]}#${name}`, headers });
+            const child = new HttpAgent({ url: new URL("/acp", base).href, threadId: `${threadId.split("#")[0]}#${name}`, headers });
             child.addMessage({ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: held-approval-${name}.` });
             const reasoning = Promise.withResolvers();
             const controller = new AbortController();
@@ -384,7 +383,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
     await t.test("{§web-worker-approval} a failed decision delivery requires rediscovery and a new explicit choice", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-transport");
-        await page.route("**/agui", (route) => route.abort("failed"), { times: 1 });
+        await page.route("**/acp", (route) => route.abort("failed"), { times: 1 });
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
@@ -393,8 +392,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 2);
         checkBrowser([
-            /^error \/agui: Failed to load resource: net::ERR_FAILED$/u,
-            /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: Failed to fetch$/u,
+            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
         ]);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await interrupted(page);
@@ -417,7 +415,7 @@ export default async function verifyWorkerApproval({ t, withDaemon: startDaemon 
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-lost-settlement");
         const truncated = Promise.withResolvers();
-        await page.route("**/agui", async (route) => {
+        await page.route("**/acp", async (route) => {
             try {
                 const response = await route.fetch();
                 assert.equal(response.status(), 200);

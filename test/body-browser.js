@@ -7,7 +7,7 @@ import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 // {§web-result-bodies} Exercise the actual renderer and request path, never a second message reducer.
 export default async function verifyBodies(t) {
     const { server, url } = await conversationFixture(new URL("./body-entry.js", import.meta.url), new Map([
-        ["/agui/redirect", (_request, response) => {
+        ["/acp/redirect", (_request, response) => {
             response.writeHead(302, { Location: "https://elsewhere.invalid/body" });
             response.end();
         }],
@@ -32,17 +32,17 @@ export default async function verifyBodies(t) {
                     });
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
-                    const address = new URL("/agui/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href;
+                    const address = new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href;
                     const source = '<script>window.bodyExecuted=true</script><img src="/unasked"><form data-action="read-body">Not controls</form>';
                     let failures = 0;
                     const held = Promise.withResolvers();
-                    await page.route("**/agui/**", async (route) => {
+                    await page.route("**/acp/**", async (route) => {
                         const request = route.request();
                         assert.equal(request.headers().authorization, "Bearer body-fixture-credential");
                         reads.push(request.url());
                         if (request.url().endsWith("/missing") && failures++ === 0) {
                             await route.fulfill({ status: 404, contentType: "application/problem+json", body: JSON.stringify({
-                                type: "https://problems.plurnk.xyz/agui/entry/entry-not-found", title: "Not Found", status: 404, detail: "No entry at this address." }) });
+                                type: "https://problems.plurnk.xyz/acp/entry/entry-not-found", title: "Not Found", status: 404, detail: "No entry at this address." }) });
                         } else if (request.url().endsWith("/redirect")) {
                             await route.continue();
                         } else {
@@ -59,7 +59,7 @@ export default async function verifyBodies(t) {
                     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                     assert.equal(await result.locator("button, a, section, div").count(), 0);
                     assert.equal(await result.innerText(), "");
-                    assert.doesNotMatch(await result.innerHTML(), /file.html|text\/html|agui\/7|status/u);
+                    assert.doesNotMatch(await result.innerHTML(), /file.html|text\/html|acp\/7|status/u);
                     assert.equal(reads.length, 0);
                     assert.equal(credentials, 0, "off-screen history neither fetches nor obtains credentials");
                     await result.locator("[data-body-reference]").scrollIntoViewIfNeeded();
@@ -86,29 +86,29 @@ export default async function verifyBodies(t) {
                     assert.equal(credentials, 1, "an inadmissible address obtains no bearer");
                     assert.equal(reads.length, 1);
 
-                    const missing = new URL("/agui/missing", url).href;
+                    const missing = new URL("/acp/missing", url).href;
                     await presentReference(missing);
                     await result.locator('[data-body-state="error"]').waitFor();
                     assert.equal(await result.locator("[data-body-reference]").textContent(), "No entry at this address.", "the daemon's Problem, not a status line");
                     // Firefox does not log a handled fetch's HTTP refusal to the console.
-                    checkBrowser(engine === firefox ? [] : [httpFailure("/agui/missing", 404)]);
+                    checkBrowser(engine === firefox ? [] : [httpFailure("/acp/missing", 404)]);
                     await result.getByRole("button", { name: "Retry", exact: true }).click();
                     await result.locator('[data-body-state="loaded"]').waitFor();
                     assert.equal(reads.length, 3, "retry is explicit and performs one additional read");
 
-                    await presentReference(new URL("/agui/redirect", url).href);
+                    await presentReference(new URL("/acp/redirect", url).href);
                     await result.locator('[data-body-state="error"]').waitFor();
                     assert.match(await result.locator("[data-body-reference]").textContent(), /Failed to fetch|NetworkError|Load failed/u);
                     assert.deepEqual(redirects, [], "content hydration never follows a credentialed redirect");
                     checkBrowser(engine === firefox ? [] : engine === chromium ? [
                         /^error \/body: Failed to load resource: net::ERR_FAILED$/u,
                     ] : [
-                        /^error \/agui\/redirect: Failed to load resource:.*$/u,
-                        /^error : Not allowed to follow a redirection while loading http:\/\/127\.0\.0\.1:\d+\/agui\/redirect$/u,
-                        /^exception: \/127\.0\.0\.1:\d+\/agui\/redirect due to access control checks\.$/u,
+                        /^error \/acp\/redirect: Failed to load resource:.*$/u,
+                        /^error : Not allowed to follow a redirection while loading http:\/\/127\.0\.0\.1:\d+\/acp\/redirect$/u,
+                        /^exception: \/127\.0\.0\.1:\d+\/acp\/redirect due to access control checks\.$/u,
                     ]);
 
-                    const delayed = new URL("/agui/held", url).href;
+                    const delayed = new URL("/acp/held", url).href;
                     const requested = page.waitForRequest(delayed);
                     const delivered = page.waitForResponse(delayed);
                     await presentReference(delayed);

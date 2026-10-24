@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import purgeCSS from "@fullhuman/postcss-purgecss";
-import { authorizationDocumentSpecimens } from "@plurnk/plurnk-agui";
+import { authorizationDocumentSpecimens } from "@plurnk/plurnk-auth";
 import indexDocument from "./ai.plurnk/index-document.js";
 
 /** @param {import("vite").ViteDevServer | import("vite").PreviewServer} server */

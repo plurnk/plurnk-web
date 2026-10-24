@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 import { inputPage } from "./worker-input.js";
 import { answerSchema, exactAnswer } from "./question-fixture.js";
 import startMcp from "./mcp-fixture.js";
@@ -14,7 +14,7 @@ const cancel = (page) => review(page).getByRole("checkbox", { name: "Cancel this
 function requestsFrom(page) {
     const requests = [];
     page.on("request", (request) => {
-        if (new URL(request.url()).pathname === "/agui") requests.push(request.postDataJSON());
+        if (new URL(request.url()).pathname === "/acp") requests.push(request.postDataJSON());
     });
     return requests;
 }
@@ -169,7 +169,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await ask(page, "question-invalid");
         const first = await page.locator("[data-question]").getAttribute("data-interrupt-id");
         await answer(page);
-        await page.route("**/agui", (route) => {
+        await page.route("**/acp", (route) => {
             const input = route.request().postDataJSON();
             input.resume[0].payload.count = "invalid on wire";
             return route.continue({ postData: JSON.stringify(input) });
@@ -238,14 +238,18 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await page.getByText("Completed owner-ready.", { exact: true }).waitFor();
         await connected(page);
         const threadId = await page.locator("#worker-status").getAttribute("data-thread-id");
-        const fork = new HttpAgent({ url: new URL("/agui", base).href, threadId, headers });
+        const fork = new HttpAgent({ url: new URL("/acp", base).href, threadId, headers });
         const { result } = await fork.runAgent({ forwardedProps: { plurnk: { action: { kind: "run.fork", name: "child" } } } });
         assert.equal(result.ok, true, JSON.stringify(result));
-        const child = new HttpAgent({ url: new URL("/agui", base).href, threadId: `${threadId.split("#")[0]}#child`, headers });
+        const child = new HttpAgent({ url: new URL("/acp", base).href, threadId: `${threadId.split("#")[0]}#child`, headers });
         child.addMessage({ id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: held-question-child." });
         const reasoning = Promise.withResolvers();
         const controller = new AbortController();
-        const running = child.runAgent({ abortController: controller }, { onReasoningMessageContentEvent: () => reasoning.resolve() });
+        const running = child.runAgent({
+            abortController: controller,
+            tools: [{ name: "question", description: "Ask the user for clarification.", parameters: { type: "object" } }],
+            forwardedProps: { plurnk: { interactive: true } },
+        }, { onReasoningMessageContentEvent: () => reasoning.resolve() });
         await reasoning.promise;
         controller.abort();
         await running;

@@ -8,7 +8,7 @@ export default async function verifyWorkerActivity({ t, withDaemon }) {
         inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
             const uploads = [];
             page.on("request", (request) => {
-                if (new URL(request.url()).pathname === "/agui") uploads.push(request.postDataJSON());
+                if (new URL(request.url()).pathname === "/acp") uploads.push(request.postDataJSON());
             });
             await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: activity.");
             await page.getByRole("button", { name: "Send", exact: true }).click();

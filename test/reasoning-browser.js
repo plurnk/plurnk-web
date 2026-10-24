@@ -20,7 +20,7 @@ export default async function verifyReasoning(t) {
                         credentials++;
                         return route.fulfill({ json: { token_type: "Bearer", access_token: "reasoning-test" } });
                     });
-                    await page.route("**/agui/7/9/entry?target=*", (route) => {
+                    await page.route("**/acp/7/9/entry?target=*", (route) => {
                         reads.push(route.request().headers().authorization);
                         return route.fulfill({ contentType: "text/plain", body });
                     });
@@ -56,7 +56,7 @@ export default async function verifyReasoning(t) {
                     await consume({ type: "REASONING_MESSAGE_END", messageId: message.id });
                     assert.equal(await text.textContent(), "");
                     assert.equal(await preview.isVisible(), false);
-                    const linked = { ...message, metadata: { plurnk: { coordinate: "1/3", body: { url: "/agui/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" } } } };
+                    const linked = { ...message, metadata: { plurnk: { coordinate: "1/3", body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" } } } };
                     await page.evaluate((message) => { window.messages = [message]; window.present(window.messages); }, linked);
                     assert.equal(await page.locator('[data-message-id="attempt"] [data-body-reference]').count(), 1,
                         "late metadata on an empty SDK reasoning message must expose its body");

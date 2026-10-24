@@ -11,7 +11,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
         const tag = family === "approval" ? "{§web-worker-approval}" : "{§web-worker-questions}";
         await t.test(`${tag} shared views retire ${family} when another view explicitly stops the loop`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
             page.setDefaultTimeout(5000);
-            const holding = page.waitForResponse((response) => new URL(response.url()).pathname === "/agui/connect"
+            const holding = page.waitForResponse((response) => new URL(response.url()).pathname === "/acp/connect"
                 && response.request().postDataJSON().forwardedProps?.plurnk?.interrupts?.length > 0);
             const name = `${family}-external-stop`;
             await page.getByRole("textbox", { name: "Message", exact: true }).fill(`Lifecycle fixture: ${name}.`);
@@ -22,7 +22,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
             other.setDefaultTimeout(5000);
             await other.goto(path);
             await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
-            const stopping = other.waitForResponse((response) => new URL(response.url()).pathname === "/agui"
+            const stopping = other.waitForResponse((response) => new URL(response.url()).pathname === "/acp"
                 && response.request().postDataJSON().forwardedProps?.plurnk?.action?.kind === "loop.cancel");
             await other.getByRole("button", { name: "Stop", exact: true }).click();
             const acknowledgement = (await (await stopping).text()).split("\n\n").filter((frame) => frame.startsWith("data: "))
@@ -65,7 +65,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                     await inputPage(withDaemon, async ({ page, model, checkBrowser, base, workspace, secret }) => {
                         const responses = [];
                         page.on("response", (response) => {
-                            if (new URL(response.url()).pathname === "/agui" && response.request().postDataJSON().resume?.length) responses.push(response.text());
+                            if (new URL(response.url()).pathname === "/acp" && response.request().postDataJSON().resume?.length) responses.push(response.text());
                         });
                         const terminal = await startTerminal({ consumer, base, workspace, secret, yolo: terminalYolo });
                         const name = `held-approval-shared-${mode(terminalYolo).toLowerCase()}-${mode(browserYolo).toLowerCase()}-${answer}`;
@@ -113,7 +113,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                             assert.ok(errors.length <= (browserYolo && terminalYolo ? 1 : 0), "only two automatic answers may race");
                             for (const error of errors) {
                                 assert.equal(error.metadata?.plurnk?.problem?.status, 409);
-                                assert.match(error.code, /^https:\/\/problems\.plurnk\.xyz\/(agui\/interrupt\/interrupt|proposal\/resolution\/proposal|interaction\/resolution\/interaction)-not-pending$/u);
+                                assert.match(error.code, /^https:\/\/problems\.plurnk\.xyz\/(acp\/interrupt\/interrupt|proposal\/resolution\/proposal|interaction\/resolution\/interaction)-not-pending$/u);
                             }
                             assert.equal(await page.locator('[data-text="command-error"]').textContent(), errors.length ? `Response not accepted: ${errors[0].message}` : "",
                                 "a refused answer stays visible without hiding live progress");
