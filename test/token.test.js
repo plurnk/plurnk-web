@@ -13,7 +13,7 @@ async function fixture(t) {
     const origin = "https://daemon.example";
     const records = new Map();
     const listeners = new Set();
-    const common = { clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "one" };
+    const common = { clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "one" };
     const authority = {
         issue({ ttlMs, ...claims }) {
             const token = crypto.randomUUID();

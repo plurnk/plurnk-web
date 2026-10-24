@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import aguiSession from "./agui-session.js";
+import acpSession from "./acp-session.js";
 
-// {§web-agui-conformance} Close real submitting transports; the daemon still owns admitted work.
+// {§web-acp-conformance} Close real submitting transports; the daemon still owns admitted work.
 export default async function verifyDisconnect({ tab, t, model, base, mount, token, projectRoot, action, observe, read, finish, detach, successful, prompt, inspect }) {
     for (const departure of ["abort", "navigate", "close"]) {
-        await t.test(`{§web-agui-conformance} submitting ${departure} preserves admitted work and authoritative replay`, async () => {
+        await t.test(`{§web-acp-conformance} submitting ${departure} preserves admitted work and authoritative replay`, async () => {
             const workspace = `disconnect-${departure}`;
             const name = `held-${workspace}`;
             await action(workspace, "user", "worker.model.set", { selector: "browser" });
@@ -14,7 +14,7 @@ export default async function verifyDisconnect({ tab, t, model, base, mount, tok
             try {
                 await mount(sender, base);
                 await sender.goto(base);
-                const submitter = await aguiSession(sender, { token, projectRoot });
+                const submitter = await acpSession(sender, { token, projectRoot });
                 await submitter.start(name, { workspace, threadId: "user", messages: prompt(name) });
                 await submitter.event(name, "REASONING_MESSAGE_CONTENT");
                 if (departure === "abort") {
@@ -58,7 +58,7 @@ export default async function verifyDisconnect({ tab, t, model, base, mount, tok
         });
     }
 
-    await t.test("{§web-agui-conformance} closing the submitting page leaves its approval pending and discoverable", async () => {
+    await t.test("{§web-acp-conformance} closing the submitting page leaves its approval pending and discoverable", async () => {
         const workspace = "approval-disconnect";
         await action(workspace, "user", "worker.model.set", { selector: "browser" });
         const before = model.requests.length;
@@ -66,7 +66,7 @@ export default async function verifyDisconnect({ tab, t, model, base, mount, tok
         try {
             await mount(sender, base);
             await sender.goto(base);
-            const submitter = await aguiSession(sender, { token, projectRoot });
+            const submitter = await acpSession(sender, { token, projectRoot });
             await submitter.start(workspace, { workspace, threadId: "user", messages: prompt(workspace) });
             const paused = await submitter.finish(workspace);
             assert.equal(paused.failure, null);

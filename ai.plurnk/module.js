@@ -42,7 +42,7 @@ export default function createModule() {
             if (!root) throw new Error("The web asset inventory must include index.html.");
             const stylesheetPath = Documents.stylesheet((await readAsset(root[1], root[2], root[3])).body.toString("utf8"));
             if (!inventory.some(([path, , type]) => path === stylesheetPath && type === "text/css")) throw new Error("The application stylesheet is absent from the web asset inventory.");
-            registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["agui"], stylesheetPath });
+            registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["acp"], stylesheetPath });
         },
         async start(seam) {
             if (authenticate) {

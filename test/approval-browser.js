@@ -9,7 +9,7 @@ const interrupt = (id, op = "sh") => ({
         logEntryId: 1, workerId: 2, worker: "child", loopId: 3, turnId: 4, coordinate: "3/4/1", op,
         target: { scheme: "file", authority: null, pathname: "evidence.txt" },
         body: "Exact operation body\n", attrs: { pattern: "literal pattern", nested: { name: "evidence" } },
-        owner: "agui://operator/threads/parent", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
+        owner: "acp://operator/threads/parent", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
     } } },
 });
 

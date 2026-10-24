@@ -21,7 +21,7 @@ async function fixture(t, { auth = false, admitted = true, create = async () => 
     let handler;
     const module = createModule();
     const credentials = {
-        verify: (token) => token === "valid-session" ? { kind: "session", clientId: "plurnk-web", scopes: ["agui"], family: "f1", subject: "op" } : null,
+        verify: (token) => token === "valid-session" ? { kind: "session", clientId: "plurnk-web", scopes: ["acp"], family: "f1", subject: "op" } : null,
         onRevoked: () => () => {},
     };
     if (auth) {

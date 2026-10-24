@@ -39,10 +39,10 @@ export default function activity(root, read) {
         return header;
     }
 
-    /** @param {import("@ag-ui/client").CustomEvent} event */
+    /** @param {import("@plurnk/plurnk-acp/client").CustomEvent} event */
     return (event) => {
         if (event.name !== "plurnk.ambient" && event.name !== "plurnk.outside") return;
-        const value = event.value;
+        const value = /** @type {Record<string, any> | null | undefined} */ (event.value);
         const attribution = event.subagentRunId ?? "";
         if (event.name === "plurnk.outside") {
             if (!value || typeof value.coordinate !== "string" || !value.coordinate

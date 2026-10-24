@@ -119,7 +119,7 @@ export default async function verifyWorkerCards(t) {
                         await parent.locator(':scope > details > summary [data-worker-workspace] a').click();
                         assert.equal(new URL(page.url()).pathname, workspacePath);
                         assert.equal(await page.locator('main [data-connection-indicator], main [role="tree"], main [data-text="worker-kind"]').count(), 0);
-                        assert.equal(requests.some((path) => path.startsWith("/agui")), false, "directory browsing does not start conversation observation");
+                        assert.equal(requests.some((path) => path.startsWith("/acp")), false, "directory browsing does not start conversation observation");
                     }
                     checkBrowser();
                 } finally { await context.close(); }

@@ -15,7 +15,7 @@ async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
     }
-    const claims = { kind: "session", clientId: "plurnk-web", scopes: ["agui"] };
+    const claims = { kind: "session", clientId: "plurnk-web", scopes: ["acp"] };
     const credentials = { registerClient: () => ({ clientId: "plurnk-web", clientSecret: "test-only" }),
         face: () => ({ issuer: () => "http://test.invalid" }), onRevoked: () => unsubscribe,
         verify: (token) => token === "valid" ? claims : null };

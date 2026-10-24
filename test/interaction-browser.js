@@ -29,7 +29,7 @@ export default async function verifyInteractions(t) {
                     }, required: ["text", "count", "enabled", "choice"], additionalProperties: false };
                     const attributed = request(schema);
                     attributed.interrupts[0].metadata = { plurnk: { interaction: {
-                        interactionId: 1, workerId: 23, loopId: 7, turnId: 9, recipient: "agui://owner",
+                        interactionId: 1, workerId: 23, loopId: 7, turnId: 9, recipient: "acp://owner",
                         request: { toolName: "question", arguments: {}, responseSchema: schema },
                     } } };
                     assert.equal(await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), attributed), true,
@@ -119,7 +119,7 @@ export default async function verifyInteractions(t) {
                     mixed.interrupts.push({ id: "proposal", reason: "tool_call", metadata: { plurnk: { proposal: {
                         logEntryId: 1, workerId: 2, worker: "user", loopId: 3, turnId: 4, coordinate: "3/4/1", op: "sh",
                         target: { scheme: "exec", authority: null, pathname: "sh" }, body: "printf reviewed", attrs: {},
-                        owner: "agui://operator/threads/user", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
+                        owner: "acp://operator/threads/user", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
                     } } } });
                     assert.equal(await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), mixed), true);
                     await form.getByRole("radio", { name: "Reject", exact: true }).check();

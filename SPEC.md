@@ -66,7 +66,7 @@ byte length and `X-Content-Type-Options: nosniff`.
 | Address | All representations share the original URL and media type. Encoded files are inventory implementation details, not additional public URLs. Every declared representation must load before route registration. |
 | Negotiation | Use standard `Accept-Encoding` negotiation, honoring quality weights, explicit exclusions, wildcards and identity. Among equally acceptable representations prefer the smallest. An absent or empty header selects identity; no acceptable representation yields 406. |
 | Headers | Add `Accept-Encoding` to `Vary`, preserving existing fields; `Content-Encoding` only for encoded representations; `Content-Length` is the selected representation's byte length. HEAD selects the same representation and headers as GET but sends no body. No new cache lifetime is introduced. |
-| Scope | Dynamic/private documents, authentication responses and other daemon mounts, including AG-UI streams, are not compressed by this handler. Their existing security, caching and streaming contracts remain unchanged. |
+| Scope | Dynamic/private documents, authentication responses and other daemon mounts, including ACP streams, are not compressed by this handler. Their existing security, caching and streaming contracts remain unchanged. |
 
 Reference: [HTTP content negotiation](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3).
 
@@ -138,7 +138,7 @@ authentication contract.
 
 Web consumes the daemon's credential authority, never the operator's secret or
 a second credential configuration. At setup it registers the confidential
-client `plurnk-web` with callback path `/auth/callback` and scope `agui`. It asks
+client `plurnk-web` with callback path `/auth/callback` and scope `acp`. It asks
 the published issuing face for the issuer of each request: the daemon's configured
 public origin, else the address that request reached the daemon at. Its own calls to
 the authority (discovery, code exchange, refresh) go to the face's answer for no
@@ -152,7 +152,7 @@ explicitly disabled authentication; directory reads are then anonymous.
 | Authentication explicitly disabled | Anonymous directories; no Account or Sign Out controls. |
 | GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, carried sealed in that browser's own HttpOnly cookie. Return locations are local directory addresses, `/account/` or `/account/sessions/` (also their explicit indexes); never an external URL. |
 | GET `/auth/callback` | Open this browser's transaction for the returned state and clear it whatever the outcome; validate and exchange the code with client authentication. A code the authority already redeemed answers 400. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |
-| Directory admission | Require a live authority-issued session for `plurnk-web` carrying `agui`; a bearer, refresh token, another client's cookie, or a revoked/expired session is not a web session. |
+| Directory admission | Require a live authority-issued session for `plurnk-web` carrying `acp`; a bearer, refresh token, another client's cookie, or a revoked/expired session is not a web session. |
 | POST `/auth/logout` | Require the issuer's exact Origin, revoke this browser's sign-in family and clear the web cookie. The authority sign-in and its module credentials end together; revisiting requires sign-in. Other browser sessions and independently authorized clients remain intact. |
 | Concurrent callbacks | A new credential in the same sign-in family does not revoke that family. A genuinely different previous family is revoked. |
 | Cookies | Host-only, HttpOnly, SameSite=Lax; Secure under HTTPS. Session path `/`, transaction path `/auth`. Under HTTPS the session cookie's name carries `__Host-` and a transaction's `__Secure-`, prefixes no sibling host can set. No browser storage or token in document content. |
@@ -186,7 +186,7 @@ identity, expiry, revocation and the account inventory.
 | Access expiry | Reuse a still-valid access credential; otherwise perform the standard OAuth refresh grant with confidential-client authentication. Concurrent requests in the same family share one refresh, so rotation does not race across tabs. |
 | Grant integrity | Access and refresh credentials must belong to the registered client, subject, scope and family. A refresh cannot change the family or resurrect a revoked sign-in. Failed refreshes are surfaced; no operation is replayed or authority substituted. |
 | Revocation and cleanup | Authority revocation releases the retained grant. Expired grants are pruned on subsequent credential activity; module close releases them and its revocation subscription. Session expiry remains fixed by sign-in, not extended by refresh. |
-| Browser custody | Access credentials are for the same-origin `/agui` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
+| Browser custody | Access credentials are for the same-origin `/acp` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
 | Refusals | Missing/expired/revoked sign-in is 401; wrong/missing Origin is 403. Expected endpoint failures use RFC 9457 JSON, not an HTML sign-in redirect. |
 
 Worker observation consumes this primitive under {§web-worker-observer}; it adds no
@@ -199,7 +199,7 @@ persistent browser state or additional session registry.
 | Registration | At setup the module registers the single stylesheet declared in the compiled document's head as its client's `stylesheetPath`, verifying its presence in the asset inventory. Missing or multiple document stylesheets are build-contract faults. Lazy content-renderer styles are independent assets, never authorization-page dependencies; no alias route or theme setting is added. |
 | Document ownership | The authority owns sign-in, setup/error, consent and session documents, credential validation and security policy. Web supplies neither a form nor an HTML rewrite. The authority selects the stylesheet from the trusted client registration, never arbitrary request input. |
 | Presentation | The same Pico Classless Green, monospace, 65ch measure, light/dark colors, native controls and article cards apply to authorization and web documents. Ordinary authorization pages work without JavaScript. |
-| Production pruning | The public `authorizationDocumentSpecimens()` export from `@plurnk/plurnk-agui` supplies the authority's markup to PurgeCSS. No copied templates or private daemon-source scan. This is a build-time import, not a browser/runtime import. |
+| Production pruning | The public `authorizationDocumentSpecimens()` export from `@plurnk/plurnk-auth` supplies the authority's markup to PurgeCSS. No copied templates or private daemon-source scan. This is a build-time import, not a browser/runtime import. |
 
 The daemon's standalone documents remain its own responsibility when no registered
 module stylesheet applies. Browser coverage exercises the installed module and
@@ -358,7 +358,7 @@ with the daemon's qualified thread identity (`<workspace ID>#<worker name>`) and
 whether access requires a browser session. URLs and breadcrumbs retain readable names;
 renaming a workspace does not redirect an already-open observation to another worker.
 No credential appears in the document. JavaScript enhances that footer; other
-pages neither load HttpAgent nor request access credentials or AG-UI streams.
+pages neither load HttpAgent nor request access credentials or ACP streams.
 Without JavaScript the identity and navigation remain usable, with an explicit
 notice that live status requires JavaScript.
 
@@ -383,7 +383,7 @@ stateDiagram-v2
 
 | Boundary | Contract |
 |---|---|
-| Transport | A fresh official HttpAgent via its public connection hook, using `/agui/connect` and the qualified `threadId` supplied by the document. No forwarded workspace, action, resume, control claim or capability replacement. A pending review keeps its current SDK instance and names `pendingInterrupts` in `forwardedProps.plurnk.interrupts`; the held connection observes until a gate settles. SDK owns event parsing, replay and state patches; a fresh attachment rediscovers current conversation and interrupt continuations. |
+| Transport | A fresh official HttpAgent via its public connection hook, using `/acp/connect` and the qualified `threadId` supplied by the document. No forwarded workspace, action, resume, control claim or capability replacement. A pending review keeps its current SDK instance and names `pendingInterrupts` in `forwardedProps.plurnk.interrupts`; the held connection observes until a gate settles. SDK owns event parsing, replay and state patches; a fresh attachment rediscovers current conversation and interrupt continuations. |
 | Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/SDK instance and are released on departure. |
 | Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, ends the delivery; reconnect passively to watch subsequent work. A held observation may finish when its gate settles, before the worker concludes: only daemon status/terminal evidence establishes the worker outcome. A protocol/credential failure stops observation. An interrupt applies {§web-worker-input}: configured approval or explicit input required. Never retry work or infer completion from transport closure. |
 | Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card with the failure's diagnostic, retain clearly stale last-observed values, and offer a native Reconnect form. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
@@ -467,7 +467,7 @@ submission and explicit cancellation belong to {§web-worker-input}.
 | Document | A document-owned OTM template places ⏹️ Stop, a native textarea named Message, and ▶️ Send in one row below status. The textarea starts at one line, grows with content to a bounded viewport-relative height, then scrolls internally; both buttons stretch to its height. Send uses Pico's primary palette and Stop its secondary tokens. The buttons submit independent native forms: Stop neither validates nor resets the message field. Icon-only buttons retain accessible names and native explanatory titles. JavaScript mounts them only on worker pages; questions and command results stay in main, not the pinned composer. |
 | Keyboard | Enter remains a newline. Ctrl+Enter in the message field requests native Send-form submission, preserving validation, slash-command routing and delivery availability. Composing text and repeated keydown events do not trigger the shortcut. The Send button exposes the shortcut in its title and accessible keyboard metadata. |
 | Focus | The textarea retains a visible inward focus ring, keeping its visual boundary aligned with adjacent buttons as its content grows. Focus does not change the controls' geometry. |
-| Send | Except for slash commands under {§web-worker-commands}, submit exact nonblank text as one standard user message to `/agui`, on the document's qualified thread. New text gets a new ID; a deliberate retry of the same unconfirmed draft retains its ID for daemon idempotency. Message identity generation works on ordinary HTTP as well as secure contexts; it does not change transport security or authentication policy. A message or response Run declares an attended client and no unimplemented tools; passive connection alone never attaches control. Server permissions remain unchanged. |
+| Send | Except for slash commands under {§web-worker-commands}, submit exact nonblank text as one standard user message to `/acp`, on the document's qualified thread. New text gets a new ID; a deliberate retry of the same unconfirmed draft retains its ID for daemon idempotency. Message identity generation works on ordinary HTTP as well as secure contexts; it does not change transport security or authentication policy. A message or response Run declares an attended client and no unimplemented tools; passive connection alone never attaches control. Server permissions remain unchanged. |
 | Handoff | One current HttpAgent owns the displayed messages. Close and await the preceding delivery before using its received history for a message or response Run. Held observation preserves the SDK's current interrupt set and the unsent review form; after settlement or explicit reconnection, passive reattachment starts fresh under {§web-worker-observer}. Follow-ups during live work use the same ordinary message admission; no parallel transcript, injection endpoint, automatic retry or offline queue. |
 | Admission | The daemon's `status.inbox`, user-message snapshot or user-message arrival confirms acceptance by message ID; local SDK insertion never does. Acceptance precedes model observation: queued follow-ups remain discoverable during inference, after reconnect and after cancellation before observation. Their eventual arrival retains the same ID and does not repeat text. |
 | Draft | Prevent another submission until acceptance or explicit rediscovery after a failed delivery. Clear the submitted text only if the textarea still contains it, preserving newer typing. A refusal or uncertain connection failure retains the draft, explains uncertainty and requires explicit reconnection before another submission. Reattachment may confirm acceptance; absence is not proof of refusal, so a deliberate unchanged retry retains its idempotency key. No automatic resend, browser persistence or guarantee across full reloads is implied. |
@@ -518,7 +518,7 @@ capability, persistence or execution policy. Commands require no inference.
 | Authority | The current HttpAgent's `pendingInterrupts` supplies the complete presented set. `metadata.plurnk.proposal` supplies daemon-owned review facts. No client approval registry, permission rules, inferred ownership, or reconstruction from conversation calls. A delegated proposal need not have a `toolCallId` on its owner's thread. |
 | Configuration | `PLURNK_WEB_YOLO=1` automatically accepts approval proposals with decision `accept` and outcome `client_yolo`; `0`, the shipped default, requires manual review. Read at module startup through {§web-configuration} and project the resolved switch as the native status toggle's pressed state. That toggle and `/yolo` change the same preference for the current page under {§web-worker-commands}; browser assets contain no policy default. This client choice cannot override daemon rejection and does not veto decisions by other authorized clients. |
 | Document | Manual review uses one document-owned native form, a fieldset per operation, and required Accept/Reject radio choices with neither selected. Show the requesting worker, operation, target and exact body, without a duplicate full-proposal dump. Review facts are literal text, never Markdown, executable controls or application bindings. |
-| Decision | Submit the complete presented set in one standard HttpAgent `resume` to `/agui`, retaining its opaque interrupt IDs and current thread. Each proposal entry has resolved status and the configured or explicit decision. An all-proposal YOLO set submits automatically. Questions and MCP input always require explicit answers under {§web-worker-questions}; mixed sets combine those answers with the configured proposal decisions, never a partial submission. No new message, approval tool, synthetic tool result or body editing. The daemon owns validation, settlement and the operation's actual result. |
+| Decision | Submit the complete presented set in one standard HttpAgent `resume` to `/acp`, retaining its opaque interrupt IDs and current thread. Each proposal entry has resolved status and the configured or explicit decision. An all-proposal YOLO set submits automatically. Questions and MCP input always require explicit answers under {§web-worker-questions}; mixed sets combine those answers with the configured proposal decisions, never a partial submission. No new message, approval tool, synthetic tool result or body editing. The daemon owns validation, settlement and the operation's actual result. |
 | Handoff | Disable review during submission, then follow the ordinary SDK conversation and outcomes. A subsequent gate applies the configured mode anew; manual choices start unselected. Otherwise return to passive observation. Keep unsent message text. Stop remains explicit cancellation of the page's worker, not rejection of a proposal or cancellation of another requesting worker. |
 | Refresh and concurrency | Several authorized clients are ordinary views of one pending decision. The daemon settles once; all views withdraw obsolete controls and follow the resulting work without another answer or manual reconnection. Reconnection rediscovers current gates and fresh continuations. Never replay unsubmitted choices after refresh or retry a decision automatically. A stale, refused or uncertain submission is not acceptance; retain its diagnostic without obscuring independently confirmed progress. Actual delivery/credential failures follow {§web-worker-observer}. |
 | Deadline | A proposal whose interrupt carries `expiresAt` shows it as a native `<time>`; one that waits indefinitely shows none. The daemon cancels a proposal at its deadline, needing no client. Past that time by this page's clock, the page answers nothing, manually or automatically: the set is presented with a notice that the daemon cancels it, its controls unavailable, and the held observation follows the daemon's settlement. |
@@ -606,7 +606,7 @@ color. Non-conversation cards retain their existing Pico presentation.
 | Boundary | Contract |
 |---|---|
 | Intake | Standard `document` parts with `source.type: "url"` provide content for one preformatted outlet where that surface displays bodies. Operation summaries under {§web-operation-summary} do not mount receipt-body outlets. Do not display the transport URL, MIME inventory or a Read body inspector. Reference locations remain in JavaScript; the SDK's parts remain unchanged. |
-| Fetch | Native intersection observation reads a body once its outlet enters the viewport. Off-screen bodies and closed disclosures do not fetch. Require a same-origin HTTP(S) URL without embedded credentials; reject redirects. Use a fresh session access credential through {§web-access-token}, or none for explicitly anonymous documents. Never put a bearer in a URL, forward it to another origin, substitute a guessed URL or start an AG-UI Run. |
+| Fetch | Native intersection observation reads a body once its outlet enters the viewport. Off-screen bodies and closed disclosures do not fetch. Require a same-origin HTTP(S) URL without embedded credentials; reject redirects. Use a fresh session access credential through {§web-access-token}, or none for explicitly anonymous documents. Never put a bearer in a URL, forward it to another origin, substitute a guessed URL or start an ACP Run. |
 | Content | Show fetched bytes decoded as text in a literal preformatted outlet, even for HTML, SVG or Markdown. A body cannot create controls, application bindings, scripts or further requests. This read-only inspection is not an attachment editor or a second Markdown rendering policy. |
 | Failure | The outlet announces pending state through `aria-busy`. A failed read shows its diagnostic (the daemon's Problem detail when it supplies one) and a native Retry button in place of content. A read the page abandoned, as when it is left, is no failure: it rests empty with a native Read button. No automatic retry, duplicate pending fetch or silent empty success. |
 | Lifetime | Fetched text belongs only to its existing DOM outlet. Unchanged replay preserves it; replacing/removing the content invalidates late results. It never enters SDK messages, subsequent Run uploads, browser storage or a separate cache. Page departure aborts these browser-owned fetches, not daemon work. |
@@ -691,7 +691,7 @@ Reference: [SVG image restrictions](https://developer.mozilla.org/en-US/docs/Web
 | Boundary | Contract |
 |---|---|
 | HTTP | `POST /render/mermaid` accepts UTF-8 `application/json` containing one `source` string and returns standalone `image/svg+xml`. Other methods return 405 with `Allow: POST`; other media types return 415; invalid UTF-8, JSON or shape returns 400. No CORS admission, simple form submission, external source URL or filesystem path. Browser fetch metadata must be same-origin when present. |
-| Admission | With daemon authentication enabled, require the existing valid web session, otherwise 401 without a login redirect. Explicitly disabled daemon authentication admits anonymous compilation. This is presentation, not an agent operation or an AG-UI extension. |
+| Admission | With daemon authentication enabled, require the existing valid web session, otherwise 401 without a login redirect. Explicitly disabled daemon authentication admits anonymous compilation. This is presentation, not an agent operation or an ACP extension. |
 | Isolation | Ondine executes in a bounded Node worker pool, never on the daemon event loop. The environment owns concurrency, admitted render count, queue-inclusive execution deadline, request-byte limit, compiler edge limit and SVG-byte limit. Request-body transport deadlines remain the HTTP host's concern. Compiler limits and worker termination are not an OS memory sandbox. |
 | Failure | Oversized input returns 413; unsupported or invalid diagrams and compiler/output limits return 422; full admission returns 429; execution deadline returns 408; module shutdown returns 503. Failures are Problems, not images. Preserve unexpected compiler failures for the host's normal error path. |
 | Lifetime | Start compiler workers only on demand. Expired or disconnected render requests stop their pending or active compilation. Module close rejects outstanding compilation and awaits worker termination. Neither browser departure nor renderer failure changes agent work. No persisted render cache or temporary files. |
@@ -840,7 +840,7 @@ The current development page has no backend interaction; no API proxy is install
 | Availability | Requires the daemon. No service worker, offline cache, background sync, notifications or claim of offline functionality. |
 
 Installation metadata does not create a second server or change ownership of
-`/agui` or other daemon mounts. No in-page install prompt or application UI is added.
+`/acp` or other daemon mounts. No in-page install prompt or application UI is added.
 
 References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable),
 [manifest icons](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/icons).
@@ -849,7 +849,7 @@ References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progre
 
 The npm archive includes the Agent Plugin manifest, native module, defaults,
 document and its complete browser dependency graph, including OTM, Pico, HttpAgent and artwork licenses,
-and declares its peer ranges on the platform's contracts, modules and AG-UI packages.
+and declares its peer ranges on the platform's contracts, modules, auth and ACP packages.
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside candidate service archives in an isolated environment and exercises actual module
 discovery, routing and browser execution.
@@ -862,11 +862,11 @@ These drivers are test tooling, not runtime dependencies or a client transport.
 Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-modules/SPEC.md),
 [Agent Plugins](https://agent-plugins.org/), and OTM's installed README.
 
-## §web-agui-conformance Browser protocol verification
+## §web-acp-conformance Browser protocol verification
 
 The packed-installation gate runs the official HttpAgent in Chromium from the
 module's real document origin, against an isolated authenticated daemon and a
-deterministic local model. Only the test SDK asset is injected; AG-UI traffic is
+deterministic local model. Only the test SDK asset is injected; ACP traffic is
 not intercepted or synthesized. No operator configuration or paid model is used.
 Test fixtures and the SDK test bundle are not shipped browser assets. The actual
 worker page is exercised separately under {§web-worker-observer}, without SDK injection.
@@ -881,7 +881,7 @@ worker page is exercised separately under {§web-worker-observer}, without SDK i
 | Operation fidelity | Standard tool-call arguments preserve the authored resource address (including its host), scope, pattern and aside. Successful and failed READs retain their attempted operands and exactly one correlated result, live and after refresh. No custom-row reconstruction supplies missing conversation facts. |
 | Execution results | Real commands' stdout/stderr observations answer the native execution call, retaining output, terminal status and exit code, including nonzero exits. Pre-attached, submitting, late and refreshed SDK consumers retain the same ordered messages and identities; a start receipt is not the command's output. |
 | Run outcomes | Successful loops end with standard `RUN_FINISHED`, `outcome: success`, their result and aggregate reported token usage. Cancellation is `RUN_FINISHED` with `outcome: cancelled`, not `RUN_ERROR`; unreported usage stays absent. Provider failures remain `RUN_ERROR`, not successful completion. Command exit codes and overall loop outcomes remain distinct. |
-| Observation | Passive `/agui/connect` selects an existing worker by qualified `threadId`, remains open while idle and can detach/reconnect without cancelling another connection's work. HttpAgent's public connection hook forwards its input unchanged: retained messages synchronize rather than resubmit work. |
+| Observation | Passive `/acp/connect` selects an existing worker by qualified `threadId`, remains open while idle and can detach/reconnect without cancelling another connection's work. HttpAgent's public connection hook forwards its input unchanged: retained messages synchronize rather than resubmit work. |
 | Exact target | Passive existing-worker selection preserves identity across workspace rename. URLs still select names: a renamed-away URL is 404, while the new URL supplies the same thread identity. Missing/internal targets fail without creating or claiming anything. |
 | Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |
 | Disconnect | After admission, aborting the submitting SDK request, navigating away or closing its page ends delivery only. Observers and fresh connections retain the same work, message identities, natural completion and reported usage; no duplicate prompt or inference. Transport closure is not a worker outcome. |

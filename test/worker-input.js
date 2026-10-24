@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer, request } from "node:http";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 import { chromium } from "playwright";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
@@ -15,12 +15,12 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
             const headers = {};
             if (authenticated) {
                 const response = await fetch(new URL("/oauth/token", base), {
-                    method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "agui" }),
+                    method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "acp" }),
                 });
                 assert.equal(response.status, 200);
                 headers.Authorization = `Bearer ${(await response.json()).access_token}`;
             }
-            const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user", headers });
+            const setup = new HttpAgent({ url: new URL("/acp", base).href, threadId: "user", headers });
             const initialized = await setup.runAgent({ forwardedProps: { plurnk: { workspace,
                 action: selector === null ? { kind: "worker.child.set", selector: null } : { kind: "worker.model.set", selector },
             } } });
@@ -32,7 +32,7 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                 const frames = [];
                 context.on("response", (response) => {
                     const path = new URL(response.url()).pathname;
-                    if (path !== "/agui" && path !== "/agui/connect") return;
+                    if (path !== "/acp" && path !== "/acp/connect") return;
                     const record = { path, events: [] };
                     frames.push(record);
                     void response.text().then((body) => {
@@ -74,7 +74,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         const field = page.getByRole("textbox", { name: "Message", exact: true });
         assert.equal(await page.getByRole("button", { name: "Send", exact: true }).getAttribute("aria-keyshortcuts"), "Control+Enter");
         const inputs = [];
-        page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON()); });
+        page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp") inputs.push(request.postDataJSON()); });
         await field.press("Control+Enter");
         assert.equal(await field.evaluate((element) => element.validity.valueMissing), true);
         await field.fill(" \n ");
@@ -101,7 +101,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await field.press("Control+Enter");
         await page.locator('#worker-command-results > ul > li header code').filter({ hasText: "/help" }).waitFor();
         assert.equal(inputs.length, 1, "commands keep the same non-model path");
-        await page.route("**/agui/connect", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
+        await page.route("**/acp/connect", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
         await field.fill("Retain this draft while disconnected.");
@@ -111,8 +111,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.equal(inputs.length, 1, "keyboard submission cannot bypass unavailable delivery");
         assert.equal(model.requests.length, 1);
         checkBrowser([
-            httpFailure("/agui/connect", 503),
-            /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: HTTP 503: \{"title":"Unavailable"\}$/u,
+            httpFailure("/acp/connect", 503),
         ]);
     }));
     for (const hostname of ["127.0.0.1", "plurnk-browser.test"]) {
@@ -122,7 +121,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                 { secure, uuid: secure ? "function" : "undefined" }, "exercise the browser's real origin rules, without changing its APIs");
             page.on("pageerror", (error) => t.diagnostic(error.message));
             const inputs = [];
-            page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON()); });
+            page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp") inputs.push(request.postDataJSON()); });
             const field = page.getByRole("textbox", { name: "Message", exact: true });
             for (const name of ["origin-first", "origin-second"]) {
                 await field.fill(`Lifecycle fixture: ${name}.`);
@@ -146,7 +145,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         const model = await startModel();
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
-                const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user" });
+                const setup = new HttpAgent({ url: new URL("/acp", base).href, threadId: "user" });
                 await setup.runAgent({ forwardedProps: { plurnk: { workspace: "composer", action: { kind: "worker.model.set", selector: "browser" } } } });
                 const browser = await chromium.launch();
                 try {
@@ -155,7 +154,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
                     const page = await context.newPage();
                     const inputs = [];
                     page.on("request", (request) => {
-                        if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON());
+                        if (new URL(request.url()).pathname === "/acp") inputs.push(request.postDataJSON());
                     });
                     await page.goto(new URL("/~/composer@user/", base).href);
                     await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -248,7 +247,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         const model = await startModel();
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
-                const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user" });
+                const setup = new HttpAgent({ url: new URL("/acp", base).href, threadId: "user" });
                 await setup.runAgent({ forwardedProps: { plurnk: { workspace: "review", action: { kind: "worker.model.set", selector: "browser" } } } });
                 const browser = await chromium.launch();
                 try {
@@ -292,13 +291,13 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         const model = await startModel();
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
-                const setup = new HttpAgent({ url: new URL("/agui", base).href, threadId: "user" });
+                const setup = new HttpAgent({ url: new URL("/acp", base).href, threadId: "user" });
                 await setup.runAgent({ forwardedProps: { plurnk: { workspace: "arrival", action: { kind: "worker.model.set", selector: "browser" } } } });
                 // The message Run's response stays open after its interrupt arrives, until the journey releases it.
                 const arrived = Promise.withResolvers();
                 const release = Promise.withResolvers();
                 const proxy = createServer((req, res) => {
-                    const held = req.url === "/agui";
+                    const held = req.url === "/acp";
                     const upstream = request(new URL(req.url, base), { method: req.method, headers: req.headers }, (response) => {
                         res.writeHead(response.statusCode, response.headers);
                         let seen = "";
@@ -377,21 +376,21 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         const review = page.getByRole("form", { name: "Review requests", exact: true });
         await review.waitFor();
         assert.equal(await inView(review), true, "a review appears in view");
-        await page.route("**/agui", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
+        await page.route("**/acp", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
             type: "https://problems.plurnk.xyz/fixture/stop-refused", title: "Conflict", status: 409, detail: "The fixture refused Stop." }) }), { times: 1 });
         await page.getByRole("button", { name: "Stop", exact: true }).click();
         const failure = page.getByRole("alert").filter({ hasText: "The fixture refused Stop." });
         await failure.waitFor();
         assert.equal(await inView(failure), true, "a failure appears in view");
-        checkBrowser([httpFailure("/agui", 409), /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: The fixture refused Stop\.$/u]);
+        checkBrowser([httpFailure("/acp", 409)]);
     }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
     await t.test("{§web-worker-input} authenticated admission preserves newer typing and departure never cancels work", () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         const reached = Promise.withResolvers();
         const release = Promise.withResolvers();
         const requests = [];
-        page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") requests.push(request.postDataJSON()); });
-        await page.route("**/agui", async (route) => {
+        page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp") requests.push(request.postDataJSON()); });
+        await page.route("**/acp", async (route) => {
             reached.resolve();
             await release.promise;
             await route.continue();
@@ -444,8 +443,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
 
     await t.test("{§web-worker-input} refused delivery keeps its draft through explicit reconnection without retrying", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = [];
-        page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") requests.push(request.postDataJSON()); });
-        await page.route("**/agui", (route) => route.abort("failed"), { times: 1 });
+        page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp") requests.push(request.postDataJSON()); });
+        await page.route("**/acp", (route) => route.abort("failed"), { times: 1 });
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         const send = page.getByRole("button", { name: "Send", exact: true });
         await text.fill("Lifecycle fixture: delivery-retry.");
@@ -458,8 +457,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         assert.equal(model.requests.length, 0);
         assert.equal(requests.length, 1);
         checkBrowser([
-            /^error \/agui: Failed to load resource: net::ERR_FAILED$/u,
-            /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: Failed to fetch$/u,
+            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
         ]);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
@@ -499,7 +497,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         }, { authenticated: true }));
     }
     await t.test("{§web-worker-observer} an event the page cannot take in ends observation with its cause", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
-        await page.route("**/agui/connect", (route) => {
+        await page.route("**/acp/connect", (route) => {
             const input = route.request().postDataJSON();
             return route.fulfill({ contentType: "text/event-stream", body: [
                 { type: "RUN_STARTED", runId: input.runId, threadId: input.threadId },
@@ -542,8 +540,8 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
     await t.test("{§web-worker-input} delivery lost before acknowledgement is rediscovered without submitting again", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = [];
         const truncated = Promise.withResolvers();
-        page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") requests.push(request.postDataJSON()); });
-        await page.route("**/agui", async (route) => {
+        page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp") requests.push(request.postDataJSON()); });
+        await page.route("**/acp", async (route) => {
             try {
                 const response = await route.fetch();
                 assert.equal(response.status(), 200);
@@ -611,7 +609,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await page.getByText("Considering held-stop-failure.", { exact: true }).waitFor({ state: "attached" });
         await text.fill("Keep my next message.");
         const response = Promise.withResolvers();
-        await page.route("**/agui", async (route) => {
+        await page.route("**/acp", async (route) => {
             assert.equal(route.request().postDataJSON().forwardedProps.plurnk.action.kind, "loop.cancel");
             await response.promise;
             return route.abort("failed");
@@ -630,8 +628,7 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         await page.getByText("Completed held-stop-failure.", { exact: true }).waitFor();
         assert.equal(model.requests.length, 1);
         checkBrowser([
-            /^error \/agui: Failed to load resource: net::ERR_FAILED$/u,
-            /^error \/assets\/worker-[^/]+\.js: Agent execution failed: TypeError: Failed to fetch$/u,
+            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
         ]);
     }));
 
@@ -654,21 +651,21 @@ export default async function verifyWorkerInput({ t, withDaemon }) {
         checkBrowser();
     }));
     await t.test("{§web-worker-observer} a refused observation shows the daemon's Problem, not a transport rendering of it", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
-        await page.route("**/agui/connect", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
+        await page.route("**/acp/connect", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
             type: "https://problems.plurnk.xyz/fixture/observation-refused", title: "Conflict", status: 409, detail: "The fixture refused observation." }) }), { times: 1 });
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
         const notice = await page.locator("#worker-connection").innerText();
         assert.match(notice, /The fixture refused observation\./u);
         assert.doesNotMatch(notice, /HTTP 409|"type"/u);
-        checkBrowser([httpFailure("/agui/connect", 409), /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: The fixture refused observation\.$/u]);
+        checkBrowser([httpFailure("/acp/connect", 409)]);
     }));
     await t.test("{§web-worker-input} Stop interrupted by leaving the page says so on return", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: held-departure.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.getByText("Considering held-departure.", { exact: true }).waitFor({ state: "attached" });
         const answered = Promise.withResolvers();
-        await page.route("**/agui", async (route) => { await answered.promise; await route.abort(); }, { times: 1 });
+        await page.route("**/acp", async (route) => { await answered.promise; await route.abort(); }, { times: 1 });
         await page.getByRole("button", { name: "Stop", exact: true }).click();
         await page.getByText("Requesting Stop…", { exact: true }).waitFor();
         await page.evaluate(() => {

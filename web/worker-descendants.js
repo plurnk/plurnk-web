@@ -40,7 +40,7 @@ export default function workerDescendants(element) {
             previous = row;
         }
     };
-    /** @param {readonly import("@plurnk/plurnk-agui/client").AguiDescendant[]} workers @param {string} workspace */
+    /** @param {readonly import("@plurnk/plurnk-acp/client").AcpDescendant[]} workers @param {string} workspace */
     return (workers, workspace) => {
         const revision = JSON.stringify([workspace, workers]);
         if (revision === rendered) return;

@@ -14,7 +14,7 @@ export default function workerState(element) {
     const connectionNotice = $("#worker-connection");
     if (!breadcrumb || !folder || !connectionNotice) throw new Error("Worker status document is incomplete.");
     const presentDescendants = workerDescendants(element);
-    /** @param {{plurnk?: import("@plurnk/plurnk-agui/client").AguiPlusState, budget?: import("@plurnk/plurnk-agui/client").AguiBudgetState}} state
+    /** @param {{plurnk?: import("@plurnk/plurnk-acp/client").AcpPlusState, budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}} state
      * @param {number} now
      */
     return (state, now) => {

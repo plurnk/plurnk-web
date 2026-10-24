@@ -68,7 +68,7 @@ Web uses the daemon's shared `PLURNK_AUTH` and `PLURNK_PASS` configuration.
 There is one local operator account and no username setting. With authentication
 enabled, set a password; an empty password does not admit a browser,
 including on localhost. The daemon owns the sign-in form and credential validation.
-Set `PLURNK_AGUI_ISSUER` to the public origin when a proxy fronts the daemon.
+Set `PLURNK_AUTH_ISSUER` to the public origin when a proxy fronts the daemon.
 `PLURNK_AUTH=0` explicitly makes directories anonymous too.
 
 The daemon's native sign-in and setup/error pages use the same compiled Pico
@@ -83,7 +83,7 @@ information is invented. Other sessions and independently authorized clients rem
 intact. A daemon restart invalidates sessions. Remotely, use HTTPS.
 
 The same-origin `POST /auth/token` connection primitive supplies short-lived
-AG-UI access credentials to a signed-in browser. OAuth refresh credentials stay
+ACP access credentials to a signed-in browser. OAuth refresh credentials stay
 server-side; rotation and revocation use the daemon's authority.
 
 Worker pages passively connect through the official HttpAgent. A compact footer
@@ -276,7 +276,7 @@ and WebKit. Install the test browsers with `npx playwright install chromium fire
 if necessary. The operator's daemon and configuration are not used.
 The gate also runs the official HttpAgent in Chromium against that daemon and a
 deterministic local model; no paid inference is involved. Separate journeys exercise
-the shipped worker page and native input/review forms without injecting an SDK or mocking AG-UI.
+the shipped worker page and native input/review forms without injecting an SDK or mocking ACP.
 Shared review journeys drive the installed terminal through a PTY alongside the
 browser, covering both clients' manual/YOLO combinations and either manual responder.
 The terminal emulator and PTY driver are test-only dependencies.
@@ -288,7 +288,7 @@ requests verify that module shutdown settles admitted work before releasing reso
 Cross-client prompt
 delivery, exact READ operands and real command stdout/stderr results are compared live and after
 refresh through the SDK's messages, without custom-row reconstruction. Standard success,
-cancellation, failure and reported token usage are checked separately. No AG-UI traffic is
+cancellation, failure and reported token usage are checked separately. No ACP traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
 Stream journeys also exercise silent executors, never-written channels, explicit
 authenticated output inspection, completion during absence, cancellation and nonzero exit.
@@ -303,14 +303,14 @@ Pico's readable pinned substrate and dependency licenses, and derives a maskable
 from the mascot. HttpAgent loads only on worker pages; Vite includes the bundled
 dependencies' license notices. Production prunes unused CSS rules, variables and keyframes from
 the browser and server-rendered document sources, plus the authority's publicly
-exported document specimens, before minification. The AG-UI package supplies those
+exported document specimens, before minification. The auth package supplies those
 specimens at build time only; no daemon code enters the browser bundle.
 Browser type checking uses the public runtime-neutral client entry without Node
 globals. The module's server-side port types use their separate public entry;
 type declarations are erased, not bundled.
 The generated asset inventory tells the plugin which production files to serve.
 Static assets negotiate build-time Brotli/gzip representations when smaller, with
-identity delivery available. Private documents and AG-UI streams are not compressed
+identity delivery available. Private documents and ACP streams are not compressed
 by the plugin; no request-time compression or additional browser dependency is added.
 Build output is packed but not committed. [SPEC.md](SPEC.md) defines the contract.
 

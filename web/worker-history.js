@@ -68,7 +68,7 @@ export default function workerHistory(root, main, readBody, readPage) {
     }
 
     return {
-        /** @param {import("@ag-ui/client").MessagesSnapshotEvent} event */
+        /** @param {import("@plurnk/plurnk-acp/client").MessagesSnapshotEvent} event */
         snapshot(event) {
             pages.snapshot(event, !scroll.following);
             const retained = new Set([...pages.mutable(), ...pages.view().gaps.map(({ url }) => url)]);
@@ -76,7 +76,7 @@ export default function workerHistory(root, main, readBody, readPage) {
             for (const [url] of errors) if (!retained.has(url)) errors.delete(url);
             for (const url of pages.mutable()) if (!errors.has(url)) void load(url);
         },
-        /** @param {readonly import("@ag-ui/client").Message[]} messages */
+        /** @param {readonly import("@plurnk/plurnk-acp/client").Message[]} messages */
         present(messages) { pages.live(messages); render(); },
         pause() {
             paused = true;

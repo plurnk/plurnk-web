@@ -41,13 +41,12 @@
         "piscina": "5.3.2"
     },
     "peerDependencies": {
-        "@plurnk/plurnk-agui": "^5.0.0",
+        "@plurnk/plurnk-acp": "^1.0.0",
+        "@plurnk/plurnk-auth": "^1.0.0",
         "@plurnk/plurnk-contracts": "^6.0.0",
         "@plurnk/plurnk-modules": "^4.1.0"
     },
     "devDependencies": {
-        "@ag-ui/client": "1.0.3",
-        "@ag-ui/core": "1.0.3",
         "@eslint/js": "10.0.1",
         "@fullhuman/postcss-purgecss": "8.0.0",
         "@picocss/pico": "2.1.1",

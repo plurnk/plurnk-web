@@ -102,7 +102,7 @@ test("{§web-authorization-style} the registered browser client uses the package
         registrations.push(options);
         return { clientId: options.id, clientSecret: "test-only" };
     } } });
-    assert.deepEqual(registrations, [{ id: "plurnk-web", redirectPaths: ["/auth/callback"], scopes: ["agui"], stylesheetPath: stylesheet }]);
+    assert.deepEqual(registrations, [{ id: "plurnk-web", redirectPaths: ["/auth/callback"], scopes: ["acp"], stylesheetPath: stylesheet }]);
 });
 
 test("{§web-assets} exact public resources and HTTP method matrix", async (t) => {

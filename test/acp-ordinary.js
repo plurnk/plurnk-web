@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 
-// {§web-agui-conformance} No Plurnk selector, action, capability or response interpretation.
+// {§web-acp-conformance} No Plurnk selector, action, capability or response interpretation.
 export default async function verifyOrdinary(tab, token, model, t) {
-    await t.test("{§web-agui-conformance} stock browser agents create, continue and replay isolated conversations", async () => {
+    await t.test("{§web-acp-conformance} stock browser agents create, continue and replay isolated conversations", async () => {
         const before = model.requests.length;
         const inputs = [];
         const capture = (request) => {
-            if (new URL(request.url()).pathname === "/agui") inputs.push(request.postDataJSON());
+            if (new URL(request.url()).pathname === "/acp") inputs.push(request.postDataJSON());
         };
         tab.on("request", capture);
         try {
             const result = await tab.evaluate(async (token) => {
                 const { HttpAgent } = await import("/__test__/http-agent.js");
-                const options = { url: new URL("/agui", location.href).href, headers: { Authorization: `Bearer ${token}` } };
+                const options = { url: new URL("/acp", location.href).href, headers: { Authorization: `Bearer ${token}` } };
                 const run = async (agent, prompt) => {
                     if (prompt) agent.addMessage({ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: ${prompt}.` });
                     const events = [];

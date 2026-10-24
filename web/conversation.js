@@ -5,8 +5,8 @@ import reasoningCoordinate from "./reasoning-coordinate.js";
 import card, { nameCard } from "./card.js";
 import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
 
-/** @typedef {import("@ag-ui/client").Message} Message */
-/** @typedef {NonNullable<import("@ag-ui/client").AssistantMessage["toolCalls"]>[number]} ToolCall */
+/** @typedef {import("@plurnk/plurnk-acp/client").Message} Message */
+/** @typedef {NonNullable<import("@plurnk/plurnk-acp/client").AssistantMessage["toolCalls"]>[number]} ToolCall */
 /** @typedef {{message: Readonly<Message>, call?: ToolCall}} Entry */
 
 /** {§web-worker-conversation} DOM identities are presentation state, never a second conversation.
@@ -133,7 +133,7 @@ export default function conversation(root, readBody) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
             }
             const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && op !== "SEND" ? ""
-                : linked ? [{ type: "document", source: { type: "url", value: linked.url, mimeType: linked.mimeType } }] : message.content;
+                : linked ? [{ type: /** @type {const} */ ("document"), source: { type: /** @type {const} */ ("url"), value: linked.url, mimeType: linked.mimeType } }] : message.content;
             const rich = call ? operation?.function.name === "SEND"
                 : message.role === "tool" ? facts?.op === "SEND"
                 : message.role !== "reasoning" && message.role !== "activity";

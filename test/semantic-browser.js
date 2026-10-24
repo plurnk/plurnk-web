@@ -26,7 +26,7 @@ export default async function verifySemanticContent(t) {
                     const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     const requests = [];
-                    page.on("request", (request) => { if (request.url().includes("/agui/")) requests.push(request.url()); });
+                    page.on("request", (request) => { if (request.url().includes("/acp/")) requests.push(request.url()); });
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (messages) => page.evaluate((messages) => { window.source = messages; window.present(messages); }, messages);
@@ -67,7 +67,7 @@ export default async function verifySemanticContent(t) {
 
                     const read = call("read", "READ", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
                     const readResult = result("read", { status: 200, lineOrdinals: [1, 8], range: { unit: "line", total: 50, requested: [1, -1], returned: [1, 8] } });
-                    readResult.content = [{ type: "text", text: readResult.content }, { type: "document", source: { type: "url", value: new URL("/agui/body", url).href, mimeType: "text/plain" } }];
+                    readResult.content = [{ type: "text", text: readResult.content }, { type: "document", source: { type: "url", value: new URL("/acp/body", url).href, mimeType: "text/plain" } }];
                     await present([read, readResult]);
                     assert.equal(await field(row("read"), "heading").innerText(), "Looking for mudkips");
                     assert.equal(await row("read").locator("[data-plurnk-operands]").innerText(), "(README.md) <1,-1> /mudkips/ {2}");

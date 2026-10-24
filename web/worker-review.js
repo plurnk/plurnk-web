@@ -2,7 +2,7 @@ import { $, the } from "on_the_money";
 import { buildResumeArray } from "./worker-agent.js";
 import answerForm from "./answer-form.js";
 
-/** @typedef {import("@ag-ui/client").HttpAgent["pendingInterrupts"]} Interrupts */
+/** @typedef {import("@plurnk/plurnk-acp/client").HttpAgent["pendingInterrupts"]} Interrupts */
 /** {§web-worker-approval} The daemon cancels a proposal at its deadline; past it by this page's clock, the page answers nothing.
  * @param {Interrupts[number]} interrupt
  */
@@ -18,7 +18,7 @@ export default function reviewRequests(controls, yolo) {
     const outlet = $(form, "[data-requests]");
     if (!(form instanceof HTMLFormElement) || !outlet) throw new Error("Review template is incomplete.");
     const list = outlet;
-    /** @type {Array<() => Promise<NonNullable<import("@ag-ui/client").RunAgentParameters["resume"]>[number] | undefined>>} */
+    /** @type {Array<() => Promise<NonNullable<import("@plurnk/plurnk-acp/client").RunAgentParameters["resume"]>[number] | undefined>>} */
     let responses = [];
     /** @type {Interrupts} */
     let current = [];
@@ -71,7 +71,7 @@ export default function reviewRequests(controls, yolo) {
             }
             return mode();
         },
-        /** @param {Interrupts} interrupts @param {import("@ag-ui/client").HttpAgent["messages"]} [messages] */
+        /** @param {Interrupts} interrupts @param {import("@plurnk/plurnk-acp/client").HttpAgent["messages"]} [messages] */
         present(interrupts, messages = []) {
             current = interrupts;
             const calls = messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []);

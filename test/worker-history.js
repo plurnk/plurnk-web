@@ -9,7 +9,7 @@ export default async function verifyWorkerHistory({ t, withDaemon }) {
             const pages = [];
             page.on("request", (request) => {
                 const url = new URL(request.url());
-                if (url.pathname === "/agui") requests.push(request.postDataJSON());
+                if (url.pathname === "/acp") requests.push(request.postDataJSON());
                 if (url.pathname.endsWith("/messages")) pages.push(request);
             });
             const field = page.getByRole("textbox", { name: "Message", exact: true });
@@ -63,5 +63,5 @@ export default async function verifyWorkerHistory({ t, withDaemon }) {
             assert.ok(reads.some((request) => new URL(request.url()).searchParams.get("target")?.startsWith("log:")));
             for (const request of reads) assert.match(request.headers().authorization, /^Bearer /u);
             checkBrowser();
-        }, { authenticated: true, env: { PLURNK_AGUI_HISTORY_PAGE_CHARS: "2000" } }));
+        }, { authenticated: true, env: { PLURNK_ACP_HISTORY_PAGE_CHARS: "2000" } }));
 }

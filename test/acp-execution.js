@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import aguiSession from "./agui-session.js";
+import acpSession from "./acp-session.js";
 import httpAgentBundle from "./http-agent-bundle.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-// {§web-agui-conformance} Real commands, standard messages, and the SDK's own replay reducer.
+// {§web-acp-conformance} Real commands, standard messages, and the SDK's own replay reducer.
 export default async function verifyExecution(browser, base, token, projectRoot, model, t) {
     const context = await browser.newContext();
     const checkBrowser = browserDiagnostics(context);
@@ -12,11 +12,11 @@ export default async function verifyExecution(browser, base, token, projectRoot,
         const mount = await httpAgentBundle();
         await mount(tab, base);
         await tab.goto(base);
-        const session = await aguiSession(tab, { token, projectRoot });
+        const session = await acpSession(tab, { token, projectRoot });
         const { start, finish, event, successful, action, observe, detach, prompt, inspect } = session;
         try {
             for (const [name, exitCode] of [["execution-success", 0], ["execution-failure", 7]]) {
-                await t.test(`{§web-agui-conformance} command exit ${exitCode} retains stdout/stderr live and after refresh`, async () => {
+                await t.test(`{§web-acp-conformance} command exit ${exitCode} retains stdout/stderr live and after refresh`, async () => {
                     const worker = "user";
                     await action(name, worker, "worker.model.set", { selector: "browser" });
                     const before = model.requests.length;

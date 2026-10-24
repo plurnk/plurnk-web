@@ -93,7 +93,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             const { field, rows, submit, send } = composer(page);
             const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
             const sent = [];
-            page.on("request", (request) => { if (new URL(request.url()).pathname === "/agui") sent.push(request.postDataJSON()); });
+            page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp") sent.push(request.postDataJSON()); });
             await field.focus();
             assert.equal(await approval.getAttribute("aria-pressed"), "false");
             assert.equal(await approval.getAttribute("title"), "Manual Approval (/yolo)");
@@ -135,7 +135,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
         inputPage(withDaemon, async ({ page, model, checkBrowser, setup, workspace }) => {
             const sent = [];
             page.on("request", (request) => {
-                if (new URL(request.url()).pathname === "/agui") sent.push(request.postDataJSON());
+                if (new URL(request.url()).pathname === "/acp") sent.push(request.postDataJSON());
             });
             const { field, submit } = composer(page);
             const help = await submit("/help");
@@ -261,9 +261,9 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
                 if (route.request().postDataJSON().forwardedProps?.plurnk?.action?.kind === "worker.model.get") await delivery.promise;
                 await route.continue();
             };
-            await page.route("**/agui", hold);
+            await page.route("**/acp", hold);
             try {
-                const receiving = page.waitForRequest((request) => new URL(request.url()).pathname === "/agui"
+                const receiving = page.waitForRequest((request) => new URL(request.url()).pathname === "/acp"
                     && request.postDataJSON().forwardedProps?.plurnk?.action?.kind === "worker.model.get");
                 await send("/model");
                 await receiving;
@@ -276,7 +276,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
                 assert.equal(await field.inputValue(), "/help effort", "a delayed result cannot clear newer typing");
             } finally {
                 delivery.resolve();
-                await page.unroute("**/agui", hold);
+                await page.unroute("**/acp", hold);
             }
             const stopped = await submit("/stop");
             assert.match(await stopped.textContent(), /Stop requested/u);
@@ -302,21 +302,20 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             const settings = page.locator("#worker-effort-settings");
             for (const [refusal, reply] of Object.entries(refusals)) {
                 for (const command of ["/model", "/stop"]) {
-                    await page.route("**/agui", reply, { times: 1 });
+                    await page.route("**/acp", reply, { times: 1 });
                     const row = await submit(command, "error");
                     assert.equal(await row.locator("[data-text=command-message]").textContent(), problem.detail, `${command} ${refusal}`);
                     assert.equal(await row.locator("[data-text=command-recovery]").textContent(), problem.recovery, `${command} ${refusal}`);
                     assert.equal(await row.locator("article").getAttribute("data-command-status"), "409", `${command} ${refusal}`);
                 }
-                await page.route("**/agui", reply, { times: 1 });
+                await page.route("**/acp", reply, { times: 1 });
                 await field.focus();
                 await page.locator("#worker-effort").click();
                 await settings.locator("[data-text=settings-recovery]").filter({ hasText: problem.recovery }).waitFor();
                 assert.equal(await settings.locator("[data-text=settings-message]").textContent(), problem.detail, `effort settings ${refusal}`);
                 await settings.getByRole("button", { name: "Cancel", exact: true }).click();
-                // A refused HTTP response is reported by the browser, and its rejected Run by the SDK; a RUN_ERROR by neither.
-                checkBrowser(refusal === "before the stream opens" ? Array.from({ length: 3 }, () => [httpFailure("/agui", 409),
-                    /^error \/assets\/worker-[^/]+\.js: Agent execution failed: Error: The fixture refused the action\.$/u]).flat() : []);
+                // A refused HTTP response is reported by the browser; a RUN_ERROR is not.
+                checkBrowser(refusal === "before the stream opens" ? Array.from({ length: 3 }, () => httpFailure("/acp", 409)) : []);
             }
         }));
 }

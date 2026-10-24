@@ -1,5 +1,5 @@
 import "../web/schema-validation.js";
-import { HttpAgent } from "@ag-ui/client";
+import { HttpAgent } from "@plurnk/plurnk-acp/client";
 
 export { HttpAgent };
 

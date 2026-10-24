@@ -2,7 +2,7 @@
 
 Web is an independently packaged Plurnk module, not an independent set of
 engineering rules. It makes the daemon accessible through a browser using public
-contracts, native documents and the official AG-UI client. Independent releases
+contracts, native documents and the official ACP client. Independent releases
 do not confer ownership of daemon policy, identity or lifecycle.
 
 ## One owner per fact
@@ -12,7 +12,7 @@ do not confer ownership of daemon policy, identity or lifecycle.
 | Listener, mounts, module startup/shutdown | Plurnk host | Register through the public module seam; stop admission and settle route work before releasing module resources ({§web-route-settlement}). |
 | Workspaces, workers, permissions, work and accounting | Daemon | Select and display supplied identities and facts; request explicit actions. |
 | Credential issuance, expiry, revocation and sign-in inventory | Daemon credential authority | Mediate the browser's grant; never create a second issuer or account database. |
-| AG-UI events, live messages, interrupts and replay | HttpAgent | Use public SDK behavior; do not maintain a parallel protocol reducer. |
+| ACP events, live messages, interrupts and replay | HttpAgent | Use public SDK behavior; do not maintain a parallel protocol reducer. |
 | Conversation history boundaries and pages | Daemon | Display explicitly fetched read-only pages alongside the SDK window; never upload archival presentation as agent input. |
 | Document structure and ordinary interaction | Semantic HTML and native controls | Templates, links, lists, forms and disclosures. |
 | Presentation state | OTM attributes and native element state | Project facts; CSS handles visual consequences. JavaScript handles behavior CSS cannot express. |

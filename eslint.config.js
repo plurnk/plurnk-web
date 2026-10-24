@@ -37,7 +37,7 @@ export default defineConfig(
         ignores: ["web/worker-agent.js"],
         rules: {
             "no-restricted-imports": ["error", { paths: [{
-                name: "@ag-ui/client",
+                name: "@plurnk/plurnk-acp/client",
                 message: "Use worker-agent.js so schema security is initialized before the browser SDK.",
             }] }],
         },

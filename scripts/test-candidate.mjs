@@ -29,7 +29,7 @@ console.log(`Gating ${head} in ${clone}`);
 await git(["clone", "--quiet", "--shared", "--no-checkout", checkout, clone], checkout);
 await git(["checkout", "--quiet", "--detach", head], clone);
 try {
-    await npm(["ci", "--no-audit", "--no-fund"], clone);
+    await npm(["ci", "--legacy-peer-deps", "--no-audit", "--no-fund"], clone);
     // Candidate public declarations and authorization specimens beside the locked registry graph.
     await npm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", ...archives], clone);
     await npm(["test"], clone);

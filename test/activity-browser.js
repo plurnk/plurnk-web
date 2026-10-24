@@ -24,7 +24,7 @@ export default async function verifyActivity(t) {
                         credentials++;
                         return route.fulfill({ json: { token_type: "Bearer", access_token: "activity-fixture-credential" } });
                     });
-                    await page.route("**/agui/**", async (route) => {
+                    await page.route("**/acp/**", async (route) => {
                         reads.push(route.request().url());
                         assert.equal(route.request().headers().authorization, "Bearer activity-fixture-credential");
                         if (route.request().url().endsWith("/failed") && fail) {
@@ -48,7 +48,7 @@ export default async function verifyActivity(t) {
                         origin: "_plurnk", op: "READ", source: null, state: "resolved", status_rx: 200,
                         tx: { target: { raw: "evidence.html" }, aside: "Inspect evidence" },
                         rx: { status: 200, range: { unit: "line", total: 2, requested: [1, -1], returned: [1, 2] } }, attrs: {},
-                        body: { url: new URL("/agui/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href, mimeType: "text/html" },
+                        body: { url: new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href, mimeType: "text/html" },
                     } };
                     await receive(ambient);
                     assert.equal(reads.length, 0);
@@ -86,7 +86,7 @@ export default async function verifyActivity(t) {
                     assert.match(await rows.nth(1).locator("article").getAttribute("aria-label"), /^Rejected emission/u);
                     assert.equal(await rows.nth(1).innerText(), "");
                     await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12,
-                        reasoning: { url: new URL("/agui/7/12/entry?target=reasoning%3A%2F%2Fchild%2F1%2F2", url).href, mimeType: "text/plain" } } });
+                        reasoning: { url: new URL("/acp/7/12/entry?target=reasoning%3A%2F%2Fchild%2F1%2F2", url).href, mimeType: "text/plain" } } });
                     const child = rows.nth(2);
                     assert.equal(await child.getAttribute("data-plurnk-worker"), "12");
                     assert.equal(await child.getAttribute("data-subagent-run-id"), "ops://child/7");
@@ -133,28 +133,28 @@ export default async function verifyActivity(t) {
                     await child.locator('[data-body-state="error"]').waitFor();
                     assert.equal(await body.textContent(), "Read address must be on this daemon's origin.");
                     assert.equal(credentials, beforeCredentials);
-                    await setBody(new URL("/agui/failed", url).href);
+                    await setBody(new URL("/acp/failed", url).href);
                     await child.locator('[data-body-state="error"]').waitFor();
                     assert.equal(await body.textContent(), "Read request failed (404).");
-                    checkBrowser(engine === firefox ? [] : [httpFailure("/agui/failed", 404)]);
+                    checkBrowser(engine === firefox ? [] : [httpFailure("/acp/failed", 404)]);
                     await child.getByRole("button", { name: "Retry", exact: true }).click();
                     await child.locator('[data-body-state="loaded"]').waitFor();
                     assert.equal(await body.textContent(), source);
 
                     held = Promise.withResolvers();
-                    const requested = page.waitForRequest("**/agui/held");
-                    const delivered = page.waitForResponse("**/agui/held");
-                    await setBody(new URL("/agui/held", url).href);
+                    const requested = page.waitForRequest("**/acp/held");
+                    const delivered = page.waitForResponse("**/acp/held");
+                    await setBody(new URL("/acp/held", url).href);
                     await requested;
                     assert.equal(await body.getAttribute("aria-busy"), "true");
-                    await setBody(new URL("/agui/replaced", url).href);
+                    await setBody(new URL("/acp/replaced", url).href);
                     await child.locator('[data-body-state="loaded"]').waitFor();
                     held.resolve();
                     await (await delivered).finished();
                     assert.equal(await body.textContent(), "Replacement content", "a late read cannot populate a different reference");
                     held = Promise.withResolvers();
-                    const leaving = page.waitForRequest("**/agui/depart");
-                    await setBody(new URL("/agui/depart", url).href);
+                    const leaving = page.waitForRequest("**/acp/depart");
+                    await setBody(new URL("/acp/depart", url).href);
                     await leaving;
                     await page.evaluate(() => window.leaveActivity());
                     // {§web-result-bodies} A read the page abandoned is not a failure: it rests, and reads again when asked.

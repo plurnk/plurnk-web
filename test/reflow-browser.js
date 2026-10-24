@@ -10,7 +10,7 @@ export default async function verifyReflow(t) {
     const literal = `${paragraph}\n\n    Indented\tcolumns    remain literal.\n${token}\n</pre><script>window.reflowExecuted=true</script>&copy; **not Markdown**\n`;
     const output = Array.from({ length: 60 }, (_, index) => `    ${index}: ${literal}`).join("\n");
     const { server, url } = await conversationFixture(undefined, new Map([
-        ["/agui/reflow-body", (_request, response) => {
+        ["/acp/reflow-body", (_request, response) => {
             response.writeHead(200, { "Content-Type": "text/plain" });
             response.end(literal);
         }],
@@ -24,7 +24,7 @@ export default async function verifyReflow(t) {
         { id: "output", role: "tool", toolCallId: "external-call", content: output },
         { id: "reasoning", role: "reasoning", content: literal },
         { id: "fetched", role: "user", content: [{ type: "document", source: {
-            type: "url", value: new URL("/agui/reflow-body", url).href, mimeType: "text/plain",
+            type: "url", value: new URL("/acp/reflow-body", url).href, mimeType: "text/plain",
         } }] },
         { id: "code", role: "assistant", content: `\`\`\`text\n${token}\n\`\`\`` },
     ];

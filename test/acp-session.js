@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { inspectResult } from "./result-body.js";
 
-// {§web-agui-conformance} One browser fixture drives the official SDK; it owns no protocol reducer.
-export default async function aguiSession(tab, { token, projectRoot }) {
+// {§web-acp-conformance} One browser fixture drives the official SDK; it owns no protocol reducer.
+export default async function acpSession(tab, { token, projectRoot }) {
     await tab.evaluate(async (token) => {
         const { HttpAgent, Observer } = await import("/__test__/http-agent.js");
         const runs = new Map();
@@ -19,7 +19,7 @@ export default async function aguiSession(tab, { token, projectRoot }) {
         globalThis.lifecycle = {
             start(id, { workspace, threadId = workspace, observe = false, messages = [], tools = [], resume, ...plurnk }) {
                 const agent = new (observe ? Observer : HttpAgent)({
-                    url: new URL(observe ? "/agui/connect" : "/agui", location.href).href,
+                    url: new URL(observe ? "/acp/connect" : "/acp", location.href).href,
                     threadId, headers: { Authorization: `Bearer ${token}` }, initialMessages: messages,
                 });
                 const parameters = { tools, forwardedProps: { plurnk: { workspace, ...plurnk } }, ...(resume ? { resume } : {}) };
@@ -30,18 +30,18 @@ export default async function aguiSession(tab, { token, projectRoot }) {
             send(id, messages) {
                 const run = runs.get(id);
                 if (!run.settled) throw new Error("Detach observation before submitting input.");
-                run.agent.url = new URL("/agui", location.href).href;
+                run.agent.url = new URL("/acp", location.href).href;
                 run.agent.addMessages(messages);
                 execute(run, run.parameters);
             },
             resume(id, resume) {
                 const run = runs.get(id);
-                run.agent.url = new URL("/agui", location.href).href;
+                run.agent.url = new URL("/acp", location.href).href;
                 execute(run, { ...run.parameters, resume });
             },
             reconnect(id) {
                 const run = runs.get(id);
-                run.agent.url = new URL("/agui/connect", location.href).href;
+                run.agent.url = new URL("/acp/connect", location.href).href;
                 execute(run, run.parameters, true);
             },
             async finish(id) { await runs.get(id).promise; return this.read(id); },

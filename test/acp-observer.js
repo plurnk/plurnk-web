@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import verifyConversation from "./agui-conversation.js";
+import verifyConversation from "./acp-conversation.js";
 import { httpFailure } from "./browser-diagnostics.js";
 
-// {§web-agui-conformance} Exercise the public observer contract through the official browser SDK.
+// {§web-acp-conformance} Exercise the public observer contract through the official browser SDK.
 export default async function verifyObserver({ tab, t, start, finish, read, event, successful, prompt, model, checkBrowser, action, detach, observe, inspect }) {
 
     await action("observer-workspace", "named-worker", "worker.model.set", { selector: "browser" });
@@ -11,7 +11,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
     assert.deepEqual(seeded.results.map(({ status }) => status), [200]);
     assert.match(seeded.results[0].content, /cobalt heron/u);
 
-    await t.test("{§web-agui-conformance} explicit observation refuses absent and internal targets without mutation", async () => {
+    await t.test("{§web-acp-conformance} explicit observation refuses absent and internal targets without mutation", async () => {
         const beforeCalls = model.requests.length;
         const before = await action("observer-workspace", "named-worker", "workspace.workers");
         const workspaces = await action(undefined, "observer-census", "workspace.list");
@@ -33,8 +33,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
                 : `No model worker named "${worker}" exists in workspace "${workspace}".`);
             assert.deepEqual(result.events, []);
             checkBrowser([
-                httpFailure("/agui/connect", 404),
-                new RegExp(`^error /__test__/http-agent\\.js: Agent execution failed: Error: HTTP 404: .*"type":"${RegExp.escape(problem.type)}"`, "u"),
+                httpFailure("/acp/connect", 404),
             ]);
         }
         // More than a browser's per-origin HTTP/1 connection limit: detachment must release transport too.
@@ -49,7 +48,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         assert.equal(model.requests.length, beforeCalls);
     });
 
-    await t.test("{§web-agui-conformance} exact binding survives name equality and rejects a renamed-away workspace", async () => {
+    await t.test("{§web-acp-conformance} exact binding survives name equality and rejects a renamed-away workspace", async () => {
         await start("rename-seed", { workspace: "before-observer-rename", threadId: "exact-worker", messages: prompt("binding") });
         const seeded = await finish("rename-seed");
         successful(seeded);
@@ -79,8 +78,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
         assert.ok(problem.type.endsWith("/workspace-not-found"), JSON.stringify(problem));
         assert.deepEqual(stale.events, []);
         checkBrowser([
-            httpFailure("/agui/connect", 404),
-            /^error \/__test__\/http-agent\.js: Agent execution failed: Error: HTTP 404: .*"type":"https:\/\/problems\.plurnk\.xyz\/agui\/http\/workspace-not-found"/u,
+            httpFailure("/acp/connect", 404),
         ]);
         assert.deepEqual(await action("exact-worker", "exact-worker", "workspace.workers"), before,
             "renaming or observing must not fabricate workers");
@@ -88,7 +86,7 @@ export default async function verifyObserver({ tab, t, start, finish, read, even
 
     await verifyConversation({ tab, t, start, finish, read, event, successful, prompt, model, action, observe, detach, inspect });
 
-    await t.test("{§web-agui-conformance} live and fresh observers agree on spend and timing across consecutive loops", async (probe) => {
+    await t.test("{§web-acp-conformance} live and fresh observers agree on spend and timing across consecutive loops", async (probe) => {
         const mismatches = [];
         const compare = (actual, expected, label) => {
             try { assert.deepEqual(actual, expected); }

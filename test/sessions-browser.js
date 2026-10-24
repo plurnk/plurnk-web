@@ -38,7 +38,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 await port.createWorker({ workspaceId, name: "user" });
             }
             if (name === ${JSON.stringify(names[0])} && !(await port.listWorkers(workspaceId)).some((worker) => worker.name === "primary")) {
-                const owner = "agui://fixture/threads/primary";
+                const owner = "acp://fixture/threads/primary";
                 await port.registerWorkerOwner(workspaceId, { address: owner, tools: [], interactive: false });
                 const parent = await port.createWorker({ workspaceId, name: "primary", owner });
                 const review = await port.forkWorker({ workspaceId, workerId: parent.workerId, name: "review" });
@@ -543,7 +543,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             await once(proxy, "listening");
             const issuer = `http://127.0.0.1:${proxy.address().port}`;
             try {
-                await withDaemon({ PLURNK_AGUI_ISSUER: issuer, PLURNK_PASS: "proxy-pass" }, async (base) => {
+                await withDaemon({ PLURNK_AUTH_ISSUER: issuer, PLURNK_PASS: "proxy-pass" }, async (base) => {
                     upstream = base;
                     const browser = await chromium.launch();
                     try {

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 
-// {§web-agui-conformance} The SDK's messages, not CUSTOM rows, are the conversation.
+// {§web-acp-conformance} The SDK's messages, not CUSTOM rows, are the conversation.
 export default async function verifyConversation({ t, tab, start, finish, read, event, successful, prompt, model, action, observe, detach, inspect }) {
-    await t.test("{§web-agui-conformance} pre-attached, submitting, late and refreshed browsers receive the same conversation", async (probe) => {
+    await t.test("{§web-acp-conformance} pre-attached, submitting, late and refreshed browsers receive the same conversation", async (probe) => {
         probe.after(() => tab.evaluate(() => globalThis.lifecycle.close()));
         const workspace = "conversation-workspace";
         const worker = "user";
@@ -34,7 +34,7 @@ export default async function verifyConversation({ t, tab, start, finish, read, 
             assert.deepEqual(conversation.filter(({ role }) => role === "user").map(({ id, role, content }) => ({ id, role, content })), messages);
             const arrival = conversation.find(({ role }) => role === "user").metadata.plurnk;
             assert.equal(arrival.op, "SEND");
-            assert.equal(arrival.source, "agui://operator/threads/user/messages/message-conversation");
+            assert.equal(arrival.source, "acp://operator/threads/user/messages/message-conversation");
             assert.ok(Number.isSafeInteger(arrival.id));
             assert.equal(new Set(conversation.map(({ id }) => id)).size, conversation.length, "message identities do not duplicate");
             assert.deepEqual(conversation.filter(({ role }) => role === "reasoning").map(({ content }) => content),

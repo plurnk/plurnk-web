@@ -1,9 +1,9 @@
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 
-/** @typedef {{worker: import("@plurnk/plurnk-agui/client").AguiDescendant, children: DescendantNode[]}} DescendantNode */
+/** @typedef {{worker: import("@plurnk/plurnk-acp/client").AcpDescendant, children: DescendantNode[]}} DescendantNode */
 
 /** {§web-worker-descendants} Nest one supplied census, not an accumulated browser topology.
- * @param {readonly import("@plurnk/plurnk-agui/client").AguiDescendant[]} workers
+ * @param {readonly import("@plurnk/plurnk-acp/client").AcpDescendant[]} workers
  * @returns {DescendantNode[]}
  */
 export function descendantTree(workers) {
@@ -31,7 +31,7 @@ function duration(seconds) {
 }
 
 /** {§web-worker-observer} Elapsed time is a projection of daemon timestamps, not a browser stopwatch.
- * @param {import("@plurnk/plurnk-agui/client").AguiStatusState} status @param {number} now
+ * @param {import("@plurnk/plurnk-acp/client").AcpStatusState} status @param {number} now
  */
 export function elapsed(status, now) {
     if (status.claimedAt === null) return "";
@@ -40,7 +40,7 @@ export function elapsed(status, now) {
 }
 
 /** {§web-worker-status} Time never supplies a lifecycle transition.
- * @param {import("@plurnk/plurnk-agui/client").AguiStatusState} status @param {number} now
+ * @param {import("@plurnk/plurnk-acp/client").AcpStatusState} status @param {number} now
  */
 export function clocks(status, now) {
     return {
@@ -78,8 +78,8 @@ const occupancy = (used, capacity) => used != null && capacity != null && capaci
     ? `${Math.round(used / capacity * 100)}%/${tokens(capacity)}` : "";
 
 /** {§web-worker-status} Unknown complete values and known subtotals are different facts.
- * @param {import("@plurnk/plurnk-agui/client").AguiStatusState} status
- * @param {import("@plurnk/plurnk-agui/client").AguiBudgetState} [budget]
+ * @param {import("@plurnk/plurnk-acp/client").AcpStatusState} status
+ * @param {import("@plurnk/plurnk-acp/client").AcpBudgetState} [budget]
  */
 export function gauges(status, budget) {
     const { model, spend } = status;
@@ -107,7 +107,7 @@ export function gauges(status, budget) {
 }
 
 /** {§web-worker-identity} One directory codec for server and browser navigation.
- * @param {Pick<import("@plurnk/plurnk-agui/client").AguiWorkspaceState, "name" | "projectLabel">} workspace
+ * @param {Pick<import("@plurnk/plurnk-acp/client").AcpWorkspaceState, "name" | "projectLabel">} workspace
  * @param {string} worker
  */
 export function workspaceIdentity({ name, projectLabel }, worker) {

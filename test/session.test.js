@@ -9,7 +9,7 @@ test("{§web-session} only this client's live scoped session admits a document",
     const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "http://127.0.0.1:1066" }, { ttl: 600 });
     const req = { headers: { cookie: "plurnk_web_session=test" } };
     assert.equal(session.admitted(req), false);
-    claims = { kind: "session", clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "one" };
+    claims = { kind: "session", clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "one" };
     assert.equal(session.admitted(req), true);
     for (const change of [{ kind: "access" }, { kind: "refresh" }, { clientId: "other" }, { scopes: [] }]) {
         const original = claims;
@@ -24,7 +24,7 @@ test("{§web-session} only this client's live scoped session admits a document",
 test("{§web-session} HTTPS cookie and session lifetime come from the verified grant", async (t) => {
     const origin = "https://daemon.example";
     const expiresAt = Date.now() + 1000;
-    const common = { clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "grant-one", expiresAt };
+    const common = { clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "grant-one", expiresAt };
     const issued = [];
     const credentials = {
         onRevoked: () => () => {},
@@ -125,7 +125,7 @@ test("{§web-session} a sign-in transaction opens only in the browser and module
 
 test("{§web-session} a second tab's callback does not revoke its own sign-in family", async (t) => {
     const origin = "https://daemon.example";
-    const common = { clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "shared", expiresAt: Date.now() + 60_000 };
+    const common = { clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "shared", expiresAt: Date.now() + 60_000 };
     const revoked = [];
     const credentials = {
         onRevoked: () => () => {},
@@ -153,7 +153,7 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
 });
 
 test("{§web-account} sign-in returns to native account pages without treating query or fragment text as a path", async () => {
-    const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["agui"] }), onRevoked: () => () => {} },
+    const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"] }), onRevoked: () => () => {} },
         { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600 });
     const locations = [];
     const response = { writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
@@ -170,7 +170,7 @@ test("{§web-account} sign-in returns to native account pages without treating q
 });
 
 test("{§web-account} inventory and revocation are scoped to the authenticated subject", () => {
-    const current = { family: "current", subject: "operator", clientId: "plurnk-web", kind: "session", scopes: ["agui"] };
+    const current = { family: "current", subject: "operator", clientId: "plurnk-web", kind: "session", scopes: ["acp"] };
     const entries = [current, { ...current, family: "other" }];
     const revoked = [];
     const credentials = {
@@ -223,7 +223,7 @@ test("{§web-session} a browser starts sign-in at the issuer's address, and cook
     assert.equal(at("https://daemon.example").signIn({ headers: { host: "10.0.0.5:1066" } }, "/~/work/"), "https://daemon.example/auth/login?return=%2F%7E%2Fwork%2F",
         "another address starts sign-in at the issuer's, where its callback returns");
     assert.equal(at("http://127.0.0.1:1066").admitted({ headers: { cookie: "__Host-plurnk_web_session=x" } }), false, "plain HTTP reads the unprefixed name");
-    const verified = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["agui"], subject: "operator", family: "f" }), onRevoked: () => () => {} },
+    const verified = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "f" }), onRevoked: () => () => {} },
         { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600 });
     assert.equal(verified.admitted({ headers: { cookie: "plurnk_web_session=x" } }), false, "HTTPS reads only the host-only name");
     assert.equal(verified.admitted({ headers: { cookie: "__Host-plurnk_web_session=x" } }), true);

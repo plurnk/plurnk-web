@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
-import verifyObserver from "./agui-observer.js";
-import aguiSession from "./agui-session.js";
-import verifyHandoff from "./agui-handoff.js";
-import verifyDisconnect from "./agui-disconnect.js";
+import verifyObserver from "./acp-observer.js";
+import acpSession from "./acp-session.js";
+import verifyHandoff from "./acp-handoff.js";
+import verifyDisconnect from "./acp-disconnect.js";
 
-// {§web-agui-conformance} The fixture uses only the official SDK and the daemon's public wire.
+// {§web-acp-conformance} The fixture uses only the official SDK and the daemon's public wire.
 export default async function verifyLifecycle(tab, { token, projectRoot, model, t, stop, checkBrowser, mount, base }) {
-    const session = await aguiSession(tab, { token, projectRoot });
+    const session = await acpSession(tab, { token, projectRoot });
     const { start, finish, read, event, successful, prompt, action, inspect } = session;
     try {
-        await t.test("{§web-agui-conformance} synchronization is authoritative and inference-free", async () => {
+        await t.test("{§web-acp-conformance} synchronization is authoritative and inference-free", async () => {
             const before = model.requests.length;
             await start("sync", { workspace: "browser-conformance" });
             const result = await finish("sync");
@@ -22,7 +22,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal(model.requests.length, before);
             assert.equal(result.state.plurnk.status.packetCount, 2);
         });
-        await t.test("{§web-agui-conformance} a fresh replay retains the native operation and its result", async () => {
+        await t.test("{§web-acp-conformance} a fresh replay retains the native operation and its result", async () => {
             const result = await read("sync");
             const readCall = result.messages.flatMap(({ toolCalls }) => toolCalls ?? []).find(({ function: fn }) => fn.name === "READ");
             assert.ok(readCall, "a refresh must not discard the READ that the connected client received");
@@ -30,7 +30,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.ok(receipt, "replay retains the correlated operation result");
             assert.match((await inspect(receipt.content)).content, /cobalt heron/u);
         });
-        await t.test("{§web-agui-conformance} a repeated thread name in another workspace has no borrowed history", async () => {
+        await t.test("{§web-acp-conformance} a repeated thread name in another workspace has no borrowed history", async () => {
             const before = model.requests.length;
             await start("other-create", { workspace: "other-workspace", threadId: "browser-conformance", action: { kind: "worker.model.set", selector: "browser" } });
             const created = await finish("other-create");
@@ -44,7 +44,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             assert.equal(result.state.plurnk.status.loopId, null);
             assert.equal(model.requests.length, before);
         });
-        await t.test("{§web-agui-conformance} idle observation remains open without inference and can reconnect", async () => {
+        await t.test("{§web-acp-conformance} idle observation remains open without inference and can reconnect", async () => {
             const before = model.requests.length;
             for (const id of ["idle-a", "idle-b"]) {
                 await start(id, { workspace: "browser-conformance", observe: true });
@@ -61,7 +61,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             }
             assert.equal(model.requests.length, before);
         });
-        await t.test("{§web-agui-conformance} detaching one observer does not cancel another client's running work", async () => {
+        await t.test("{§web-acp-conformance} detaching one observer does not cancel another client's running work", async () => {
             await start("controller", { workspace: "observe-live", messages: prompt("held-observe") });
             await event("controller", "REASONING_MESSAGE_CONTENT");
             await start("observer-a", { workspace: "observe-live", observe: true });
@@ -79,7 +79,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
         });
         await verifyDisconnect({ ...session, t, model, token, projectRoot, mount, base });
         checkBrowser();
-        await t.test("{§web-agui-conformance} explicit cancellation reaches the submitter and observer as a worker outcome", async () => {
+        await t.test("{§web-acp-conformance} explicit cancellation reaches the submitter and observer as a worker outcome", async () => {
             await start("cancel-controller", { workspace: "cancel-live", messages: prompt("held-cancel") });
             await event("cancel-controller", "REASONING_MESSAGE_CONTENT");
             await start("cancel-observer", { workspace: "cancel-live", observe: true });
@@ -107,7 +107,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
             model.release("held-cancel-unrelated");
             successful(await finish("cancel-unrelated"));
         });
-        await t.test("{§web-agui-conformance} native approval interrupts and resumes once through the official SDK", async () => {
+        await t.test("{§web-acp-conformance} native approval interrupts and resumes once through the official SDK", async () => {
             const before = model.requests.length;
             await start("approval", { workspace: "approval-live", messages: prompt("approval") });
             const paused = await finish("approval");
@@ -148,7 +148,7 @@ export default async function verifyLifecycle(tab, { token, projectRoot, model, 
         await verifyHandoff({ ...session, t, model });
         checkBrowser();
         await verifyObserver({ ...session, t, model, checkBrowser });
-        await t.test("{§web-agui-conformance} an idle observer receives daemon shutdown as a terminal error", async () => {
+        await t.test("{§web-acp-conformance} an idle observer receives daemon shutdown as a terminal error", async () => {
             await start("shutdown", { workspace: "browser-conformance", observe: true });
             await event("shutdown", "MESSAGES_SNAPSHOT");
             await stop();

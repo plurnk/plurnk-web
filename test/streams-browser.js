@@ -27,7 +27,7 @@ export default async function verifyStreams(t) {
                     const entry = { entryId: 9, target: "sh:///silent", channels: { stdout: channel(source), stderr: channel("") } };
                     let result = { ok: true, result: { status: 200, entry } };
                     let held = null;
-                    await page.route("**/agui", async (route) => {
+                    await page.route("**/acp", async (route) => {
                         const request = route.request();
                         assert.equal(request.headers().authorization, "Bearer stream-fixture-credential");
                         const input = request.postDataJSON();
@@ -119,7 +119,7 @@ export default async function verifyStreams(t) {
                     assert.equal(await secondOutput.getAttribute("data-output-state"), "error", "an invalid channel suffix is refused by the public validator");
                     assert.equal(await secondOutput.locator("[data-output-snapshot]").isVisible(), false);
                     held = Promise.withResolvers();
-                    const leaving = page.waitForRequest("**/agui");
+                    const leaving = page.waitForRequest("**/acp");
                     await second.getByRole("button", { name: "Read output", exact: true }).click();
                     await leaving;
                     assert.equal(await second.getByRole("button", { name: "Read output", exact: true }).isDisabled(), true);

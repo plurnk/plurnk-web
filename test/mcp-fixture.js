@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
 
-// A deterministic MCP peer, not an AG-UI mock. The installed daemon owns its adapter and continuation.
+// A deterministic MCP peer, not an ACP mock. The installed daemon owns its adapter and continuation.
 export default async function startMcp() {
     const answers = [];
     const errors = [];
