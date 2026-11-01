@@ -498,6 +498,10 @@ export class SessionTranslator {
                     const args = update.rawInput !== undefined
                         ? (typeof update.rawInput === "string" ? update.rawInput : JSON.stringify(update.rawInput))
                         : "{}";
+                    const callPlurnk = plurnk ? structuredClone(plurnk) : {};
+                    if (toolCallId.startsWith("int:") && callPlurnk.op === undefined) {
+                        callPlurnk.synthetic = true;
+                    }
                     messages.push({
                         id: typeof update.messageId === "string" && update.messageId.length > 0
                             ? update.messageId
@@ -509,13 +513,14 @@ export class SessionTranslator {
                             id: toolCallId,
                             type: "function",
                             function: { name, arguments: args },
-                            ...(plurnk ? { metadata: { plurnk: structuredClone(plurnk) } } : {}),
+                            ...(Object.keys(callPlurnk).length > 0 ? { metadata: { plurnk: callPlurnk } } : {}),
                         }],
                     });
                 }
 
                 const hasReceipt =
-                    update.status !== "pending"
+                    !toolCallId.startsWith("int:")
+                    && update.status !== "pending"
                     && (update.rawOutput !== undefined
                         || (Array.isArray(update.content)
                             && update.content.some((b) => isRecord(b) && b.type === "content")));
@@ -586,9 +591,10 @@ export function buildResumeArray(pendingInterrupts, resolutions) {
 /**
  * @param {string} toolName
  * @param {Record<string, unknown>} params
+ * @param {Record<string, unknown>} [reqRecord]
  * @returns {Record<string, unknown>}
  */
-function buildElicitationResponseSchema(toolName, params) {
+function buildElicitationResponseSchema(toolName, params, reqRecord) {
     if (params.mode === "url") {
         return {
             oneOf: [{
@@ -601,7 +607,11 @@ function buildElicitationResponseSchema(toolName, params) {
             }],
         };
     }
-    const requestedSchema = isRecord(params.requestedSchema) ? params.requestedSchema : { type: "object" };
+    const requestedSchema = isRecord(reqRecord?.requestedSchema)
+        ? reqRecord.requestedSchema
+        : isRecord(params.requestedSchema)
+            ? params.requestedSchema
+            : { type: "object" };
     if (toolName === "mcp_input_required") {
         return {
             oneOf: [
@@ -1148,15 +1158,12 @@ export default class SessionAgent {
                 : typeof reqRecord.message === "string"
                     ? reqRecord.message
                     : undefined;
-            const responseSchema = buildElicitationResponseSchema(toolName, params);
+            const responseSchema = buildElicitationResponseSchema(toolName, params, reqRecord);
 
             const hasCall = this.messages
                 .flatMap((m) => (m.role === "assistant" ? m.toolCalls ?? [] : []))
                 .some((c) => c.id === toolCallId);
             if (!hasCall) {
-                const argsPayload = toolName === "mcp_input_required" && params.mode === "url"
-                    ? { requests: { authorize: { params: { url: params.url, message: params.message, elicitationId: params.elicitationId } } } }
-                    : reqRecord;
                 this.messages = SessionTranslator.projectMessages([
                     {
                         sessionUpdate: "tool_call_update",
@@ -1165,27 +1172,10 @@ export default class SessionAgent {
                         title: toolName,
                         kind: "other",
                         status: "in_progress",
-                        rawInput: argsPayload,
+                        rawInput: reqRecord,
                         ...(interaction ? { _meta: { plurnk: { interaction } } } : {}),
                     },
                 ], this.messages);
-            } else if (toolName === "mcp_input_required" && params.mode === "url") {
-                const call = this.messages
-                    .flatMap((m) => (m.role === "assistant" ? m.toolCalls ?? [] : []))
-                    .find((c) => c.id === toolCallId);
-                if (call) {
-                    call.function.arguments = JSON.stringify({
-                        requests: {
-                            authorize: {
-                                params: {
-                                    url: params.url,
-                                    message: params.message,
-                                    elicitationId: params.elicitationId,
-                                },
-                            },
-                        },
-                    });
-                }
             }
 
             /** @type {PendingInterrupt} */
@@ -2495,7 +2485,7 @@ export default class SessionAgent {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
             }
-            if (update.state === "requires_action" && !this.#bufferingReplay) {
+            if (update.state === "requires_action" && !this.#bufferingReplay && this.pendingInterrupts.length > 0) {
                 await subscriber.onSettled?.({ stopReason: "interrupt", meta: plurnk, result: {} });
             }
             if (update.state === "idle" && isRecord(plurnk?.terminal)) {

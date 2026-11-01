@@ -52,7 +52,9 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                     await inputPage(withDaemon, async ({ page, model, checkBrowser, base, workspace, secret }) => {
                         const responses = [];
                         page.on("response", (response) => {
-                            if (new URL(response.url()).pathname === "/acp" && response.request().postDataJSON()?.result?.outcome !== undefined) responses.push(response.text());
+                            if (new URL(response.url()).pathname === "/acp" && response.request().postDataJSON()?.result?.outcome !== undefined) {
+                                responses.push(response.text().catch(() => ""));
+                            }
                         });
                         const terminal = await startTerminal({ consumer, base, workspace, secret, yolo: terminalYolo });
                         const name = `held-approval-shared-${mode(terminalYolo).toLowerCase()}-${mode(browserYolo).toLowerCase()}-${answer}`;

@@ -55,7 +55,7 @@ export default async function startMcp() {
     await once(server, "listening");
     return {
         answers, errors,
-        env: { PLURNK_MCP_fixture: JSON.stringify({ name: "fixture", type: "streamable-http", url: `http://127.0.0.1:${server.address().port}/mcp` }) },
+        env: { PLURNK_MCP_fixture: JSON.stringify({ type: "streamable-http", url: `http://127.0.0.1:${server.address().port}/mcp` }) },
         async close() {
             const closed = once(server, "close");
             server.close();

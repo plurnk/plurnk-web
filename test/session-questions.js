@@ -44,8 +44,8 @@ async function answer(page, form = review(page)) {
 const questionResult = async (page, base, headers) => {
     const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
     const messages = await observeMessages(sessionId, base, headers);
-    const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.function.name === "question").map(({ id }) => id));
-    const result = messages.find((message) => message.role === "tool" && ids.has(message.toolCallId));
+    const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.function.name === "plurnk_question").map(({ id }) => id));
+    const result = messages.find((message) => message.role === "tool" && message.metadata?.plurnk && ids.has(message.toolCallId));
     assert.ok(result, "the daemon retains the question's exact correlated response");
     return inspectResult(result.content, headers.Authorization?.slice("Bearer ".length), base);
 };
@@ -92,8 +92,8 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
             const receipt = await questionResult(page, base, headers);
-            const question = page.locator('[data-call-id][data-plurnk-type="question"]');
-            assert.equal(await question.locator('summary > [data-plurnk-field="heading"]').innerText(), "question");
+            const question = page.locator('[data-call-id][data-plurnk-type="plurnk_question"]');
+            assert.equal(await question.locator('summary > [data-plurnk-field="heading"]').innerText(), "plurnk_question");
             assert.equal(await question.locator("article > details").evaluate((node) => node.open), false);
             assert.equal(await question.locator("pre").isVisible(), false);
             assert.deepEqual(JSON.parse(receipt.content), cancelled ? { action: "cancel" } : { action: "accept", content: exactAnswer });
@@ -288,9 +288,11 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
                     catch (cause) {
                         throw new Error(`MCP question did not arrive: ${JSON.stringify({ peerErrors: mcp.errors.map(String), page: await page.locator("main").textContent() })}`, { cause });
                     }
-                    assert.equal(await review(page).locator('[data-text="request-tool"]').textContent(), "mcp_input_required");
-                    const args = JSON.parse(await review(page).locator('[data-request-arguments]').textContent());
-                    assert.equal(args.requests.authorize.params.url, "https://authorization.invalid/authorize");
+                    assert.deepEqual(await review(page).locator('[data-text="request-tool"]').allTextContents(), [
+                        "mcp_input_required", "mcp_input_required", "mcp_input_required",
+                    ]);
+                    const args = (await review(page).locator("[data-request-arguments]").allTextContents()).map((text) => JSON.parse(text));
+                    assert.equal(args.find(({ mode }) => mode === "url")?.url, "https://authorization.invalid/authorize");
                     assert.doesNotMatch(JSON.stringify(args), /private-continuation/u);
                     await page.reload();
                     await interrupted(page);
@@ -299,8 +301,21 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
                     } : {
                         profile: { action: "accept", content: { name: "Ada" } }, approval: { action: "decline" }, authorize: { action: "cancel" },
                     };
-                    if (cancelled) await cancel(page);
-                    else await review(page).getByRole("textbox", { name: "Answer (JSON)", exact: true }).fill(JSON.stringify(expected));
+                    if (cancelled) {
+                        for (const box of await review(page).getByRole("checkbox", { name: "Cancel this request", exact: true }).all()) {
+                            await box.check();
+                        }
+                    } else {
+                        const byMessage = {
+                            "Name the operator.": expected.profile,
+                            "Continue?": expected.approval,
+                            "Open the authorization page only if you choose to.": expected.authorize,
+                        };
+                        for (const [message, response] of Object.entries(byMessage)) {
+                            const row = review(page).locator("[data-question]").filter({ hasText: message });
+                            await row.getByRole("textbox", { name: "Answer (JSON)", exact: true }).fill(JSON.stringify(response));
+                        }
+                    }
                     await submit(page);
                     await page.getByText(`Completed ${name}.`, { exact: true }).waitFor();
                     await connected(page);
