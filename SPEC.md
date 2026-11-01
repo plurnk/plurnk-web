@@ -92,7 +92,7 @@ projection, applied before resource serving. Vite still owns HTML transformation
 compilation and HMR; no browser router is registered. Its development-only modules and
 source serving are not production resources. Currently only the root document
 is shipped by Vite. The daemon additionally renders the protected directories
-below; worker assets remain unserved.
+below; unlisted assets remain unserved.
 
 ## §web-directory-addresses Named directory addresses
 
@@ -103,14 +103,14 @@ filesystem locations. It does not serve documents or authorize access.
 |---|---|---|
 | Current unnamed daemon | `/~/` | `/~/index.html` |
 | Workspace `~/ptl/project` | `/~/~/ptl/project/` | `/~/~/ptl/project/index.html` |
-| Its worker `reviewer` | `/~/~/ptl/project@reviewer/` | `/~/~/ptl/project@reviewer/index.html` |
-| Workspace `a@b`, worker `user` | `/~/a%40b@user/` | `/~/a%40b@user/index.html` |
+| Its session `reviewer` | `/~/~/ptl/project@reviewer/` | `/~/~/ptl/project@reviewer/index.html` |
+| Workspace `a@b`, session `user` | `/~/a%40b@user/` | `/~/a%40b@user/index.html` |
 | Workspace `index.html` | `/~/index.html/` | `/~/index.html/index.html` |
 
 Workspace names are opaque, case-sensitive text. Encode each slash-separated
 component with `encodeURIComponent`, preserving every slash, including leading,
-repeated and trailing slashes. Encode the worker as one component. Raw `@` is the
-worker delimiter: split it and the document suffix before decoding each name
+repeated and trailing slashes. Encode the session as one component. Raw `@` is the
+session delimiter: split it and the document suffix before decoding each name
 exactly once. Literal `%2F` therefore becomes `%252F`, not a slash. Do not trim,
 normalize Unicode, resolve names as paths, or interpret `~` as a home directory.
 
@@ -118,7 +118,7 @@ The parser accepts the folder and explicit-index spellings, percent-encoding
 case variants and encoded equivalents of name characters (including `/`). `%7E`
 is equivalent to the fixed `~` namespace marker. Query and fragment components
 do not select a directory. Slashless directory aliases, malformed UTF-8/percent
-escapes, empty names, multiple raw worker delimiters, worker child resources and
+escapes, empty names, multiple raw session delimiters, session child resources and
 named-daemon prefixes are not directory matches. Parsing performs no lookups.
 
 The daemon's [workspace name contract](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md)
@@ -167,7 +167,7 @@ fill, and a daemon restart ends the sign-ins in progress. Cookie and grant lifet
 second lifetime setting. Sign-in uses the dependency-free MIT `oauth4webapi`
 client and RFC 8414 discovery after listener admission; passwords are entered
 only at the daemon's authorization endpoint.
-Worker observation uses {§web-worker-observer}. Browser access credentials use
+Session observation uses {§web-session-observer}. Browser access credentials use
 {§web-access-token}; they are never embedded in documents.
 
 References: [OAuth browser applications](https://www.rfc-editor.org/rfc/rfc10017.html#section-6.2),
@@ -189,7 +189,7 @@ identity, expiry, revocation and the account inventory.
 | Browser custody | Access credentials are for the same-origin `/acp` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
 | Refusals | Missing/expired/revoked sign-in is 401; wrong/missing Origin is 403. Expected endpoint failures use RFC 9457 JSON, not an HTML sign-in redirect. |
 
-Worker observation consumes this primitive under {§web-worker-observer}; it adds no
+Session observation consumes this primitive under {§web-session-observer}; it adds no
 persistent browser state or additional session registry.
 
 ## §web-authorization-style Authorization document presentation
@@ -219,7 +219,7 @@ authority together, including empty/wrong passwords and signed-out re-entry.
 
 Forms work with JavaScript enabled or disabled. Read and mutation responses use
 the private headers in {§web-directory-documents}; GET never revokes anything.
-Revocation does not mutate workers, workspace ownership or independently authorized
+Revocation does not mutate sessions, workspace ownership or independently authorized
 client credentials. The daemon owns credential lifetime, grouping and revocation.
 
 ## §web-directory-documents Read-only directory documents
@@ -228,10 +228,10 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 |---|---|
 | `/` | Public foundation document and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: native list articles for the shown workspaces with exact-name links under {§web-page-shell}, and the folderless creation form under {§web-workspace-creation}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listWorkers(id)` census rendered under {§web-worker-directory}. |
-| Worker directory | Exact-name model-worker lookup; identity, breadcrumbs and actual parent under {§web-worker-directory}, plus passive status under {§web-worker-observer} and conversation under {§web-worker-conversation}. |
-| Hidden workspace/worker | The daemon's `hidden_at` mark leaves a workspace out of `/~/` and a worker, with the workers beneath it, out of its workspace's tree; its own page still opens by its exact address. |
-| Missing workspace/worker | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listSessions(id)` census rendered under {§web-session-directory}. |
+| Session directory | Exact-name model-session lookup; identity, breadcrumbs and actual parent under {§web-session-directory}, plus passive status under {§web-session-observer} and conversation under {§web-session-conversation}. |
+| Hidden workspace/session | The daemon's `hidden_at` mark leaves a workspace out of `/~/` and a session, with the sessions beneath it, out of its workspace's tree; its own page still opens by its exact address. |
+| Missing workspace/session | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
 
 Every directory (including a missing one) is authenticated before data lookup.
@@ -254,7 +254,7 @@ Render that label as escaped text, never a filesystem link. Do not derive a labe
 from `project_root`, the browser's location, the client's home or the workspace name.
 The daemon owns home abbreviation; names remain opaque and unchanged.
 
-| Workspace page | Breadcrumb | Separate folder line before the worker list |
+| Workspace page | Breadcrumb | Separate folder line before the session list |
 |---|---|---|
 | Folderless (`project_label: null`) | ☁️ name | None. |
 | Name equals folder label | 🗂️ name | None; the breadcrumb already identifies the folder. |
@@ -267,14 +267,14 @@ workspace with a separate folder must not claim it is folderless.
 ## §web-workspace-creation Folderless workspace creation
 
 The daemon workspaces directory (`/~/`) header carries a native creation trigger button (`➕`);
-individual workspace, worker, account and error documents never do. Activating the trigger
+individual workspace, session, account and error documents never do. Activating the trigger
 opens a native `<dialog>` modal (`#dialog-workspace-create`). When JavaScript is disabled, the form
 renders in normal flow at the end of `<main>` and submits cleanly without client scripting.
 
 | Boundary | Contract |
 |---|---|
 | Form | A native modal (`#dialog-workspace-create`) containing one `method="post" action="/workspaces/new"` form (`#workspace-create`) with Cancel and Confirm buttons, an empty, optional text input named `name` whose description says the daemon names an unnamed workspace, and exactly one hidden token field containing a fresh UUID. An empty name is omitted from `createWorkspace`, and the daemon names the workspace; any other value is requested verbatim, for the daemon's admission to accept or refuse. Cancel or Escape dismisses without mutating state. With scripting, a resting `<main>` on `/~/` shows only directory content. |
-| Folder independence | Creation calls the public `createWorkspace` with `projectRoot: null`, never inheriting another workspace's folder, the daemon's working directory or an operator home. It starts no loop, worker or inference, copies no history, creates no project directory, and leaves other workspaces untouched. |
+| Folder independence | Creation calls the public `createWorkspace` with `projectRoot: null`, never inheriting another workspace's folder, the daemon's working directory or an operator home. It starts no loop, session or inference, copies no history, creates no project directory, and leaves other workspaces untouched. |
 | Admission and origin | With authentication enabled, an unadmitted POST answers 401 and a cross-origin form 403 against the daemon's issuer. `PLURNK_AUTH=0` is a first-class anonymous posture, not a read-only mandate: creation requires a matching same-origin `Origin` header naming the request's own host, and any `sec-fetch-site` other than same-origin is refused with 403. |
 | Method and encoding | Only POST is allowed; GET and HEAD answer 405 with `allow: POST`. The body is UTF-8 `application/x-www-form-urlencoded` (415 otherwise), bounded by `PLURNK_WEB_FORM_BYTES` (413), with exactly one `token` field (400 otherwise). |
 | Convergence | The hidden token is the form's idempotency key at the module's HTTP boundary, because the daemon's creation contract has none. Token tracking begins on `POST /workspaces/new`. The first POST creates one workspace and answers 303 to its canonical address through the shared directory codec. Racing or retried POSTs of the same valid token converge to that same workspace, never a second creation. A settled token stays addressable for the configured TTL, so a retry after a lost response converges. An invalid UUID format answers 400. |
@@ -284,7 +284,7 @@ renders in normal flow at the end of `<main>` and submits cleanly without client
 ## §web-workspace-rename Workspace rename
 
 Workspace page (`/~/<workspace>/`) headers carry a native rename trigger button (`✏️`);
-daemon, worker, account and error documents never do. Activating the trigger opens a native
+daemon, session, account and error documents never do. Activating the trigger opens a native
 `<dialog>` modal (`#dialog-workspace-rename`). When JavaScript is disabled, the form renders in normal
 flow at the end of `<main>` and submits cleanly.
 
@@ -294,24 +294,24 @@ flow at the end of `<main>` and submits cleanly.
 | Delivery | Uses the public `renameWorkspace(workspaceId, name)` contract on `ApplicationPort`. Missing workspace answers 404; empty name answers 400. A refusal or failure answers as {§web-workspace-creation}'s Failure row says, offering the form again with the draft. Success 303-redirects to the canonical new workspace directory address through the shared directory codec. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Same-origin enforcement requires matching `Origin` and same-origin `sec-fetch-site` in both auth and anonymous postures. |
 
-## §web-worker-creation Worker creation
+## §web-session-creation Session creation
 
-Workspace page (`/~/<workspace>/`) headers carry a native worker creation trigger button (`➕`);
-daemon, worker, account and error documents never do. Activating the trigger opens a native
-`<dialog>` modal (`#dialog-worker-create`). When JavaScript is disabled, the form renders in normal
+Workspace page (`/~/<workspace>/`) headers carry a native session creation trigger button (`➕`);
+daemon, session, account and error documents never do. Activating the trigger opens a native
+`<dialog>` modal (`#dialog-session-create`). When JavaScript is disabled, the form renders in normal
 flow at the end of `<main>` and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | A native modal (`#dialog-worker-create`) containing one `method="post" action="/workers/new"` form with the current workspace name in a hidden `workspace` field, a hidden UUID `token` field, an empty, optional text input named `name` whose description says the daemon names an unnamed worker, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. With scripting, a resting `<main>` shows only directory content. |
-| Delivery | Uses the public `createWorker({ workspaceId, name? })` contract on `ApplicationPort`, creating an independent model worker without inheriting parentage, loops, transcripts, or forking active state. An empty name is omitted and the daemon names the worker; any other value is requested verbatim. |
-| Convergence | The form token acts as idempotency key: racing double-clicks and retries converge to the single created worker. Expiry and bounds share the creation limits. |
-| Success and failure | Missing workspace answers 404. Success 303-redirects to the new worker's canonical directory address (`directoryPath({ kind: "worker", workspace, worker })`). A refusal or failure answers as {§web-workspace-creation}'s Failure row says; a worker name without a directory address is an internal violation, not a refusal. |
+| Form | A native modal (`#dialog-session-create`) containing one `method="post" action="/sessions/new"` form with the current workspace name in a hidden `workspace` field, a hidden UUID `token` field, an empty, optional text input named `name` whose description says the daemon names an unnamed session, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. With scripting, a resting `<main>` shows only directory content. |
+| Delivery | Uses the public `createSession({ workspaceId, name? })` contract on `ApplicationPort`, creating an independent model session without inheriting parentage, loops, transcripts, or forking active state. An empty name is omitted and the daemon names the session; any other value is requested verbatim. |
+| Convergence | The form token acts as idempotency key: racing double-clicks and retries converge to the single created session. Expiry and bounds share the creation limits. |
+| Success and failure | Missing workspace answers 404. Success 303-redirects to the new session's canonical directory address (`directoryPath({ kind: "session", workspace, session })`). A refusal or failure answers as {§web-workspace-creation}'s Failure row says; a session name without a directory address is an internal violation, not a refusal. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
 ## §web-workspace-hide Workspace hide
 
 Workspace page (`/~/<workspace>/`) headers carry a native hide trigger button (`🗑️`);
-daemon, worker, account and error documents never do. Activating the trigger opens a native
+daemon, session, account and error documents never do. Activating the trigger opens a native
 `<dialog>` modal (`#dialog-workspace-hide`). When JavaScript is disabled, the form renders in normal
 flow at the end of `<main>` and submits cleanly.
 
@@ -321,44 +321,44 @@ flow at the end of `<main>` and submits cleanly.
 | Delivery | Uses the public `setWorkspaceHidden({ workspaceId, hidden: true })` contract on `ApplicationPort`. Missing workspace answers 404. A refusal (such as live work) answers with the daemon's status and detail. Success 303-redirects to `/~/`. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
 
-## §web-worker-hide Worker hide
+## §web-session-hide Session hide
 
-Worker page (`/~/<workspace>@<worker>/`) headers carry a native hide trigger button (`🗑️`);
+Session page (`/~/<workspace>@<session>/`) headers carry a native hide trigger button (`🗑️`);
 daemon, workspace, account and error documents never do. Activating the trigger opens a native
-`<dialog>` modal (`#dialog-worker-hide`). When JavaScript is disabled, the form renders in normal
+`<dialog>` modal (`#dialog-session-hide`). When JavaScript is disabled, the form renders in normal
 flow at the end of `<main>` and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | A native modal (`#dialog-worker-hide`) containing one `method="post" action="/workers/hide"` form with the current workspace name in a hidden `workspace` field, the worker name in a hidden `worker` field, an explanation that hiding removes the worker and its descendants without destroying history, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
-| Delivery | Uses the public `setWorkerHidden({ workspaceId, workerId, hidden: true })` contract on `ApplicationPort`. Missing workspace or worker answers 404. A refusal (such as live work covered by the subtree) answers with the daemon's status and detail. Success 303-redirects to the workspace address (`directoryPath({ kind: "workspace", workspace })`). |
+| Form | A native modal (`#dialog-session-hide`) containing one `method="post" action="/sessions/hide"` form with the current workspace name in a hidden `workspace` field, the session name in a hidden `session` field, an explanation that hiding removes the session and its descendants without destroying history, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
+| Delivery | Uses the public `setSessionHidden({ workspaceId, sessionId, hidden: true })` contract on `ApplicationPort`. Missing workspace or session answers 404. A refusal (such as live work covered by the subtree) answers with the daemon's status and detail. Success 303-redirects to the workspace address (`directoryPath({ kind: "workspace", workspace })`). |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
 
-## §web-worker-directory Model-worker navigation
+## §web-session-directory Model-session navigation
 | Boundary | Representation |
 |---|---|
 | Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
-| Card identity | Two lines: a named ant link to the worker, its lifecycle glyph, optional actual parent followed by `>`, and the worker name; then a folder/cloud marker and a real link to its workspace. Model parents are links; bookkeeping parents are escaped text, never fabricated worker destinations. Folder presence comes from `project_root`, not the workspace name. Kind and permission owner do not become visible metadata rows. |
-| Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the worker statusline; the icon has a literal accessible name/title. These are directory facts at page load, not locally inferred or continuously updated status. No reply content, completion timestamp or recency ordering is inferred from this census. |
-| Background | Model workers with an immediate non-model parent begin branches in one collapsed “Background work” section. Omit it when empty. No A2A-specific classification or reparenting. |
+| Card identity | Two lines: a named ant link to the session, its lifecycle glyph, optional actual parent followed by `>`, and the session name; then a folder/cloud marker and a real link to its workspace. Model parents are links; bookkeeping parents are escaped text, never fabricated session destinations. Folder presence comes from `project_root`, not the workspace name. Kind and permission owner do not become visible metadata rows. |
+| Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the session statusline; the icon has a literal accessible name/title. These are directory facts at page load, not locally inferred or continuously updated status. No reply content, completion timestamp or recency ordering is inferred from this census. |
+| Background | Model sessions with an immediate non-model parent begin branches in one collapsed “Background work” section. Omit it when empty. No A2A-specific classification or reparenting. |
 | Disclosure | Each card is `li > article`. When it has children, one initially closed `details` contains its two-line identity as a phrasing-only `summary`, followed by the actual nested `ul/li` child cards. Leaves use a `header` with the same identity and no empty disclosure. Activating a summary opens the card; activating its ant, parent or workspace link navigates without toggling it. Native keyboard and pointer behavior work without JavaScript; no separate child-count teaser. |
-| Parent on worker page | Show the actual parent's name: a link for a model parent, escaped text for a bookkeeping parent. Roots omit the parent line. URL breadcrumbs remain workspace/worker navigation, not invented lineage paths. |
-| Placement | The complete workspace tree belongs only to the workspace page. Worker pages retain breadcrumb and parent navigation, and use {§web-worker-descendants} for live descendant navigation; no duplicated page-load tree. |
-| Integrity | Duplicate identities, absent referenced parents and cyclic model parentage are internal contract failures; never silently omit or invent workers. |
+| Parent on session page | Show the actual parent's name: a link for a model parent, escaped text for a bookkeeping parent. Roots omit the parent line. URL breadcrumbs remain workspace/session navigation, not invented lineage paths. |
+| Placement | The complete workspace tree belongs only to the workspace page. Session pages retain breadcrumb and parent navigation, and use {§web-session-descendants} for live descendant navigation; no duplicated page-load tree. |
+| Integrity | Duplicate identities, absent referenced parents and cyclic model parentage are internal contract failures; never silently omit or invent sessions. |
 
 Rendering and expansion perform no attachment, inference, ownership change or
 daemon mutation. There is no browser topology cache, saved expansion state,
 lazy branch request, custom tree role or JavaScript disclosure handler. Opening a
-worker page may observe it under {§web-worker-observer}, never control it.
+session page may observe it under {§web-session-observer}, never control it.
 
-## §web-worker-observer Read-only worker status
+## §web-session-observer Read-only session status
 
-The server renders a semantic status footer only for an existing model worker,
-with the daemon's qualified thread identity (`<workspace ID>#<worker name>`) and
+The server renders a semantic status footer only for an existing model session,
+with the daemon's qualified session identity (`<workspace ID>#<session name>`) and
 whether access requires a browser session. URLs and breadcrumbs retain readable names;
-renaming a workspace does not redirect an already-open observation to another worker.
+renaming a workspace does not redirect an already-open observation to another session.
 No credential appears in the document. JavaScript enhances that footer; other
-pages neither load HttpAgent nor request access credentials or ACP streams.
+pages neither load the ACP client nor request access credentials or ACP streams.
 Without JavaScript the identity and navigation remain usable, with an explicit
 notice that live status requires JavaScript.
 
@@ -366,7 +366,7 @@ notice that live status requires JavaScript.
 stateDiagram-v2
     [*] --> Connecting
     Connecting --> Connected: authoritative status
-    Connected --> Connecting: worker terminal
+    Connected --> Connecting: session terminal
     Connected --> Connecting: configured automatic approval
     Connecting --> Disconnected: refusal / transport or intake failure
     Connected --> Disconnected: shutdown / transport or intake failure
@@ -383,99 +383,99 @@ stateDiagram-v2
 
 | Boundary | Contract |
 |---|---|
-| Transport | A fresh official HttpAgent via its public connection hook, using `/acp/connect` and the qualified `threadId` supplied by the document. No forwarded workspace, action, resume, control claim or capability replacement. A pending review keeps its current SDK instance and names `pendingInterrupts` in `forwardedProps.plurnk.interrupts`; the held connection observes until a gate settles. SDK owns event parsing, replay and state patches; a fresh attachment rediscovers current conversation and interrupt continuations. |
-| Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/SDK instance and are released on departure. |
-| Continuity | Standard successful/cancelled `RUN_FINISHED`, or `RUN_ERROR` carrying a worker terminal in `metadata.plurnk.terminal`, ends the delivery; reconnect passively to watch subsequent work. A held observation may finish when its gate settles, before the worker concludes: only daemon status/terminal evidence establishes the worker outcome. A protocol/credential failure stops observation. An interrupt applies {§web-worker-input}: configured approval or explicit input required. Never retry work or infer completion from transport closure. |
+| Transport | A fresh official ACP client using `/acp` (`session/resume` with `replayFrom: { type: "start" }`) and the qualified `sessionId` supplied by the document. No forwarded workspace, action, control claim or capability replacement. A pending review keeps its current client instance and open ACP connection until its held `session/request_permission` or `elicitation/create` requests settle. The SDK and `SessionTranslator` own notification parsing, replay and state updates; a fresh attachment rediscovers current conversation and interrupt continuations. |
+| Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/client instance and are released on departure. |
+| Continuity | Standard successful/cancelled turn responses (`stopReason: end_turn | cancelled`), or a `state_update` / JSON-RPC error carrying a session terminal in `data.plurnk.terminal`, ends the delivery; reconnect passively to watch subsequent work. A held observation may finish when its gate settles, before the session concludes: only daemon status/terminal evidence establishes the session outcome. A protocol/credential failure stops observation. An interrupt applies {§web-session-input}: configured approval or explicit input required. Never retry work or infer completion from transport closure. |
 | Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown stops reconnection. Show a Pico error card with the failure's diagnostic, retain clearly stale last-observed values, and offer a native Reconnect form. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission reattaches without navigation, preserving the draft; it never resubmits input. A revoked/expired browser session offers native sign-in instead. No background polling or retry/backoff system. |
-| Intake | An event the page cannot take in (an invalid Problem, notice, stream outcome, activity row or history page) ends the observation as a protocol failure, with that failure's diagnostic. The SDK's own handling of a subscriber's exception, a console report and continued delivery, never applies. |
-| Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the worker. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
-| Projection | Public state supplies identity under {§web-worker-identity}, status under {§web-worker-status}, and the complete descendant census under {§web-worker-descendants}. The browser keeps no accounting ledger, inferred topology or transcript cache. |
+| Intake | A notification the page cannot take in (an invalid Problem, notice, stream outcome, activity row or history page) ends the observation as a protocol failure, with that failure's diagnostic. |
+| Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the session. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
+| Projection | Public state supplies identity under {§web-session-identity}, status under {§web-session-status}, and the complete descendant census under {§web-session-descendants}. The browser keeps no accounting ledger, inferred topology or transcript cache. |
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
-| Presentation | The compact footer under {§web-worker-status} uses native HTML and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection changes and errors are announced separately; ticking gauges are not live announcements. A healthy connection needs no persistent “Connected” label. |
+| Presentation | The compact footer under {§web-session-status} uses native HTML and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection changes and errors are announced separately; ticking gauges are not live announcements. A healthy connection needs no persistent “Connected” label. |
 
 Opening the page submits no message and cancels no work. Existing owner proposals
-may receive the configured response under {§web-worker-approval}. Message
-submission and explicit cancellation belong to {§web-worker-input}.
+may receive the configured response under {§web-session-approval}. Message
+submission and explicit cancellation belong to {§web-session-input}.
 
-## §web-worker-identity Current names, fixed observation
+## §web-session-identity Current names, fixed observation
 
 | Boundary | Contract |
 |---|---|
-| Binding | The document's qualified thread ID is immutable for its lifetime. Workspace state must identify that same workspace; a different ID is a contract failure, not permission to retarget observation. |
-| Names and navigation | Each supplied workspace state refreshes the workspace breadcrumb, document title, project-folder label and workspace-relative navigation destinations using the shared directory codec. Worker and parent names remain document facts. An idle connection does not discover a rename until the daemon supplies updated state or a new attachment snapshot. No polling or browser name registry. |
-| Folder | Apply {§web-workspace-folder} on worker pages too: compare the supplied name and folder label exactly, never abbreviate or resolve filesystem paths in the browser. |
+| Binding | The document's qualified session ID is immutable for its lifetime. Workspace state must identify that same workspace; a different ID is a contract failure, not permission to retarget observation. |
+| Names and navigation | Each supplied workspace state refreshes the workspace breadcrumb, document title, project-folder label and workspace-relative navigation destinations using the shared directory codec. Session and parent names remain document facts. An idle connection does not discover a rename until the daemon supplies updated state or a new attachment snapshot. No polling or browser name registry. |
+| Folder | Apply {§web-workspace-folder} on session pages too: compare the supplied name and folder label exactly, never abbreviate or resolve filesystem paths in the browser. |
 | Location | Keep the current URL and history unchanged. Current breadcrumb and parent links use the latest supplied workspace name; sign-in and reconnect destinations follow it too. An old URL still returns 404 after a rename, rather than becoming an identity alias. |
 
-## §web-worker-status Live worker and workspace facts
+## §web-session-status Live session and workspace facts
 
 | Surface | Projection |
 |---|---|
-| Document | A body-level footer contains status above the composer. Center two wrapping groups: automatic approval/model/effort, then the remaining statistics with cost last. Each group fits the available width; a long model route can occupy its own row above statistics. No repeated workspace/worker identity or metadata inventory. Each field has an accessible name independent of CSS-generated glyphs and separators. The SDK retains full state; the DOM is not a second dataset. |
-| Visibility | Hide the status row without reserving space unless the worker is queued, running or parked, focus is within the footer, or its model/effort selector is open. Keep it present through pointer activation of its controls. An unknown lifecycle still supplies no status row. Composer and connection feedback remain independent. Native focus/disclosure state and existing lifecycle attributes own visibility through CSS, without another JavaScript state or timer. |
-| Worker | `plurnk.status` supplies lifecycle and resolved model/effort. Show the alias, otherwise provider/model, with supplied effort and no decorative model glyph; retain the full route and effort source in its description. A null model says “No model”; absent effort uses a neutral placeholder so its selector remains reachable. Completed lifecycle has no visible indicator or reserved space; other supplied states retain theirs. Page-local automatic approval uses a native toggle button: pressed with 🔥 when enabled, unpressed with 🐹 for manual review. Its stable accessible name is “Automatic approval”; CSS supplies the glyph. It shares `/yolo` behavior under {§web-worker-commands}, without submitting the draft or adding a command-history entry. Descendant counts and pending gates follow {§web-worker-descendants}; neither changes the bound worker's lifecycle. No provider fallback. |
-| Clocks | Elapsed follows {§web-worker-observer}, not the browser session, and is omitted without a claim timestamp. WAIT shows whole seconds remaining, rounded up and clamped to zero, with the supplied deadline on its native time element. A null deadline clears it. Expiry neither changes lifecycle nor claims completion or resumption. Both clocks repaint only while connected or awaiting input, and freeze when delivery is unavailable. |
+| Document | A body-level footer contains status above the composer. Center two wrapping groups: automatic approval/model/effort, then the remaining statistics with cost last. Each group fits the available width; a long model route can occupy its own row above statistics. No repeated workspace/session identity or metadata inventory. Each field has an accessible name independent of CSS-generated glyphs and separators. The SDK retains full state; the DOM is not a second dataset. |
+| Visibility | Hide the status row without reserving space unless the session is queued, running or parked, focus is within the footer, or its model/effort selector is open. Keep it present through pointer activation of its controls. An unknown lifecycle still supplies no status row. Composer and connection feedback remain independent. Native focus/disclosure state and existing lifecycle attributes own visibility through CSS, without another JavaScript state or timer. |
+| Session | `plurnk.status` supplies lifecycle and resolved model/effort. Show the alias, otherwise provider/model, with supplied effort and no decorative model glyph; retain the full route and effort source in its description. A null model says “No model”; absent effort uses a neutral placeholder so its selector remains reachable. Completed lifecycle has no visible indicator or reserved space; other supplied states retain theirs. Page-local automatic approval uses a native toggle button: pressed with 🔥 when enabled, unpressed with 🐹 for manual review. Its stable accessible name is “Automatic approval”; CSS supplies the glyph. It shares `/yolo` behavior under {§web-session-commands}, without submitting the draft or adding a command-history entry. Descendant counts and pending gates follow {§web-session-descendants}; neither changes the bound session's lifecycle. No provider fallback. |
+| Clocks | Elapsed follows {§web-session-observer}, not the browser session, and is omitted without a claim timestamp. WAIT shows whole seconds remaining, rounded up and clamped to zero, with the supplied deadline on its native time element. A null deadline clears it. Expiry neither changes lifecycle nor claims completion or resumption. Both clocks repaint only while connected or awaiting input, and freeze when delivery is unavailable. |
 | Context | Root `budget` supplies context occupancy/capacity. Show only percentage/capacity (for example, `11%/650k`) when both values are known and capacity is positive; descriptions retain exact supplied values. Curation stays in SDK state, without a document projection. Unknown input clears the field, never retains an older snapshot or substitutes accounting totals or model configuration. |
-| Accounting | Show daemon cumulative worker-and-descendant input/output tokens and USD cost, never a page-local ledger. Cost is the last list item in document order. Tokens use compact notation; cost uses four fractional digits, with a nonzero amount below display precision shown as less than that precision, never zero. Missing totals show `?`; a supplied known subtotal may precede `+ ?` but never becomes a total. Accessible descriptions retain exact reported values and distinguish partial from complete evidence. No summing, estimated prices or inferred token partitions; formatting never mutates SDK state. |
-| Workspace activity | Show current preparation phase and family/alias, and indexing phase with the supplied percentage when present. Retain the indexing message as a description, without reconstructing progress or printing the full activity record. Empty preparation and null activity clear their fields. These are workspace facts, not worker lifecycle or conversation messages; a worker terminal alone does not clear them. |
+| Accounting | Show daemon cumulative session-and-descendant input/output tokens and USD cost, never a page-local ledger. Cost is the last list item in document order. Tokens use compact notation; cost uses four fractional digits, with a nonzero amount below display precision shown as less than that precision, never zero. Missing totals show `?`; a supplied known subtotal may precede `+ ?` but never becomes a total. Accessible descriptions retain exact reported values and distinguish partial from complete evidence. No summing, estimated prices or inferred token partitions; formatting never mutates SDK state. |
+| Workspace activity | Show current preparation phase and family/alias, and indexing phase with the supplied percentage when present. Retain the indexing message as a description, without reconstructing progress or printing the full activity record. Empty preparation and null activity clear their fields. These are workspace facts, not session lifecycle or conversation messages; a session terminal alone does not clear them. |
 | Inbox | Show a count only when accepted-unobserved messages exist. It describes observation, not execution or a promise that a terminated loop will consume them. Do not render message IDs, paths or receiving-loop records as a status inventory. |
-| Continuity and admission | Project the SDK's complete state after snapshots and deltas. Native disclosures remain open across updates; names, messages and other supplied strings are literal text. Disconnected values remain visibly stale under {§web-worker-observer}. Observation, timer ticks and disclosure do not submit actions or initiate extra network requests. |
+| Continuity and admission | Project the SDK's complete state after snapshots and deltas. Native disclosures remain open across updates; names, messages and other supplied strings are literal text. Disconnected values remain visibly stale under {§web-session-observer}. Observation, timer ticks and disclosure do not submit actions or initiate extra network requests. |
 
-## §web-worker-descendants Live descendant navigation
-
-| Boundary | Contract |
-|---|---|
-| Authority | `status.descendants` is the daemon's complete census beneath the bound worker. Render every supplied worker once, nested by `parentWorkerId`, preserving sibling order; do not infer workers or activity from transcripts, query the directory, or merge successive censuses. This live subtree is distinct from the workspace navigation snapshot under {§web-worker-directory}. |
-| Counts | Alive direct children are roots of that census whose lifecycle is queued, running or parked. “Descendants awaiting input” counts workers at any depth with `gates > 0`, not the number of gates. Show each worker's exact gate count beside its kind and lifecycle; a pending gate does not change its lifecycle locally. |
-| Document | A native disclosure in the footer shows the descendant count, describing active direct children in its accessible name. It is initially closed and absent from presentation when the census is empty, with no placeholder. Opening it reveals nested `ul/li` lists, real named worker links and separate child disclosures; leaves have no child disclosure. Names and facts are literal text. Destinations use the current supplied workspace name and shared directory codec. |
-| Continuity | A replacement census updates membership, facts and counts. Every surviving worker keeps its row's node, and with it focus and an open child disclosure, whether or not its facts changed; only a row out of place moves, and new branches start collapsed. Workspace renames update links without retargeting the bound worker or changing browser history. Disconnection leaves visibly stale evidence, not an invented empty tree. |
-| Integrity | Duplicate identities, cycles, or roots pointing to different absent parents are contract failures. A census may reference only its one excluded bound worker as the roots' parent. No silent reparenting, dropped workers, hierarchy inferred from names or client-owned lifecycle. |
-
-## §web-worker-diagnostics Observed notices and Problems
+## §web-session-descendants Live descendant navigation
 
 | Boundary | Contract |
 |---|---|
-| Intake | The current HttpAgent's `onCustomEvent` receives `plurnk.notice` and `plurnk.problem`. Validate each through its public contracts validator. Unknown custom events are not interpreted as diagnostics. These nonterminal events never change lifecycle, end observation, resume an interrupt or enter the SDK conversation. |
+| Authority | `status.descendants` is the daemon's complete census beneath the bound session. Render every supplied session once, nested by `parentSessionId`, preserving sibling order; do not infer sessions or activity from transcripts, query the directory, or merge successive censuses. This live subtree is distinct from the workspace navigation snapshot under {§web-session-directory}. |
+| Counts | Alive direct children are roots of that census whose lifecycle is queued, running or parked. “Descendants awaiting input” counts sessions at any depth with `gates > 0`, not the number of gates. Show each session's exact gate count beside its kind and lifecycle; a pending gate does not change its lifecycle locally. |
+| Document | A native disclosure in the footer shows the descendant count, describing active direct children in its accessible name. It is initially closed and absent from presentation when the census is empty, with no placeholder. Opening it reveals nested `ul/li` lists, real named session links and separate child disclosures; leaves have no child disclosure. Names and facts are literal text. Destinations use the current supplied workspace name and shared directory codec. |
+| Continuity | A replacement census updates membership, facts and counts. Every surviving session keeps its row's node, and with it focus and an open child disclosure, whether or not its facts changed; only a row out of place moves, and new branches start collapsed. Workspace renames update links without retargeting the bound session or changing browser history. Disconnection leaves visibly stale evidence, not an invented empty tree. |
+| Integrity | Duplicate identities, cycles, or roots pointing to different absent parents are contract failures. A census may reference only its one excluded bound session as the roots' parent. No silent reparenting, dropped sessions, hierarchy inferred from names or client-owned lifecycle. |
+
+## §web-session-diagnostics Observed notices and Problems
+
+| Boundary | Contract |
+|---|---|
+| Intake | The current ACP client's `onSessionUpdate` receives `notice` updates carrying `_meta.plurnk.notice` or `_meta.plurnk.problem`. Validate each through its public contracts validator. Unknown sessionUpdate variants are not interpreted as diagnostics. These nonterminal updates never change lifecycle, end observation, resume an interrupt or enter the conversation. |
 | Document | A separate native list uses {§web-card-disclosure}. Its header contains the literal Notice message (otherwise source/kind) or Problem title beside its severity glyph. Distinct Problem detail/recovery is an initially collapsed literal body, without duplicating the title. Accessible naming conveys severity, source/kind or title and supplied subagent attribution. Entry attributes carry relevant semantic facts; no glyph markup or full-payload disclosure. Hide the section when it has no entries. |
-| Retention | The page retains distinct observed diagnostics across delivery changes and reconnects. An exact repeat of the event name, payload serialization and subagent attribution reuses its existing entry. Deduplication evidence stays in JavaScript, not DOM storage. This is neither an occurrence count nor a durable diagnostic history: reload starts from what the daemon supplies again. No browser storage, transcript reconstruction or inferred error resolution. |
-| Authority | Notice severity is producer-supplied; an error-level Notice or nonterminal Problem is not a failed worker. Connection errors and operation results keep their existing owners. The diagnostic list does not claim to contain events from before attachment or from unobserved children. |
+| Retention | The page retains distinct observed diagnostics across delivery changes and reconnects. An exact repeat of the update kind, payload serialization and subagent attribution reuses its existing entry. Deduplication evidence stays in JavaScript, not DOM storage. This is neither an occurrence count nor a durable diagnostic history: reload starts from what the daemon supplies again. No browser storage, transcript reconstruction or inferred error resolution. |
+| Authority | Notice severity is producer-supplied; an error-level Notice or nonterminal Problem is not a failed session. Connection errors and operation results keep their existing owners. The diagnostic list does not claim to contain events from before attachment or from unobserved children. |
 
-## §web-worker-activity Observed non-conversation activity
+## §web-session-activity Observed non-conversation activity
 
 | Boundary | Contract |
 |---|---|
-| Intake | The current HttpAgent supplies `CUSTOM plurnk.ambient` client-facing log rows and `CUSTOM plurnk.outside` text emitted outside operations. They remain separate from SDK messages, reasoning previews, diagnostics, approvals and lifecycle. Unknown event families are ignored. Invalid identity or displayed fields fail at intake, not as empty activity. |
-| Document | A native “Observed activity” disclosure contains an unnumbered `ul` list of articles using {§web-operation-summary} and {§web-card-disclosure}, with the authored body as literal text and, when supplied, a collapsed reasoning disclosure. These observations start collapsed, including outside text; they are evidence, not delivered replies. Its accessible name identifies operation, worker, coordinate and result state. Relevant identity, origin, coordinate, state, status and attribution live on the entry as scalar attributes. Outside text is literal content with accessible “Outside operations” attribution and coordinate, never an assistant answer or a copy in data attributes. No inferred names, worker tree, heading parsing or executable markup. |
-| Duplication | Ambient rows use their worker and row IDs plus supplied subagent attribution; outside text uses its coordinate plus attribution. Repeated delivery updates that entry in first-observation order. Unchanged evidence preserves its nodes and inspected bodies. Deduplication and reference-render bookkeeping stay in JavaScript, not DOM storage. Changed references replace only their inspection outlets. The `_plurnk` READ row with `attrs.kind=emission` is omitted because its announced operations already have their own conversation representation; rejected emissions and other ambient rows are not suppressed. |
+| Intake | The current ACP client supplies `tool_call_update` client-facing log rows and `agent_message_chunk` text emitted outside operations via `_meta.plurnk`. They remain separate from conversation messages, reasoning previews, diagnostics, approvals and lifecycle. Unknown sessionUpdate families are ignored. Invalid identity or displayed fields fail at intake, not as empty activity. |
+| Document | A native “Observed activity” disclosure contains an unnumbered `ul` list of articles using {§web-operation-summary} and {§web-card-disclosure}, with the authored body as literal text and, when supplied, a collapsed reasoning disclosure. These observations start collapsed, including outside text; they are evidence, not delivered replies. Its accessible name identifies operation, session, coordinate and result state. Relevant identity, origin, coordinate, state, status and attribution live on the entry as scalar attributes. Outside text is literal content with accessible “Outside operations” attribution and coordinate, never an assistant answer or a copy in data attributes. No inferred names, session tree, heading parsing or executable markup. |
+| Duplication | Ambient rows use their session and row IDs plus supplied subagent attribution; outside text uses its coordinate plus attribution. Repeated delivery updates that entry in first-observation order. Unchanged evidence preserves its nodes and inspected bodies. Deduplication and reference-render bookkeeping stay in JavaScript, not DOM storage. Changed references replace only their inspection outlets. The `_plurnk` READ row with `attrs.kind=emission` is omitted because its announced operations already have their own conversation representation; rejected emissions and other ambient rows are not suppressed. |
 | Content | Operation summaries do not fetch receipt bodies. Referenced reasoning uses {§web-result-bodies} and stays unread until its disclosure is opened and visible. Fetches never add text to future conversation uploads. |
-| Retention | Observations belong to this page, not a durable history. Delivery changes and reconnects retain them; reload starts with only what the daemon supplies again. Do not reconstruct past ambient/outside events from messages, poll for them, persist them in browser storage or imply unseen activity was absent. Disconnection retains visibly stale evidence under {§web-worker-observer}; neither events nor browser departure cancel or complete work. |
+| Retention | Observations belong to this page, not a durable history. Delivery changes and reconnects retain them; reload starts with only what the daemon supplies again. Do not reconstruct past ambient/outside events from messages, poll for them, persist them in browser storage or imply unseen activity was absent. Disconnection retains visibly stale evidence under {§web-session-observer}; neither events nor browser departure cancel or complete work. |
 
-## §web-worker-streams Observed executor outcomes
+## §web-session-streams Observed executor outcomes
 
 | Boundary | Contract |
 |---|---|
-| Boundary | The worker page has no open-stream inventory or progress ledger. `status.streams` stays in SDK state; channel-progress events create no document projection. Worker lifecycle, WAIT and conversation receipts retain their own presentation. |
+| Boundary | The session page has no open-stream inventory or progress ledger. `status.streams` stays in client state; channel-progress updates create no document projection. Session lifecycle, WAIT and conversation receipts retain their own presentation. |
 | Document | A native “Observed stream outcomes” disclosure lists conclusions received on this page. It is absent from presentation when empty. All supplied values are literal text; unchanged outcomes retain their disclosures and inspected output. |
-| Outcomes | A stream conclusion is separately retained as a page-local observed outcome: resource, producer, supplied summary and Problem details. Result status and supplied exit code classify the entry, and a supplied exit code is shown; the full result is not dumped into markup. Deduplication remains in JavaScript. Identical repeated conclusions reuse the disclosure. Channel closure, command exit and worker outcome are distinct. Reconnection retains observed outcomes; reload does not reconstruct them from conversation history. |
-| Inspection | A native Read output control makes one explicit public `entry.read` management Run for that target and the page's immutable thread. Acquire fresh same-origin credentials; declare no tools or control claim and upload no conversation. Validate the public `EntryReadResult`. Render every returned channel's exact text, state, MIME type and code-point length as a labelled output snapshot, never Markdown or executable content. The control remains available for an explicit refresh. |
-| Failure and lifetime | Pending reads disable their own control. Failed reads preserve prior output, show the diagnostic and allow explicit retry; a disappeared row cannot receive a late response. Page departure aborts browser-owned reads, never execution. Disconnection retains visibly stale evidence under {§web-worker-observer}. No automatic output fetching, polling, stream cancellation or browser persistence. |
-| Separation | Inspected output and outcomes stay outside SDK messages and future conversation uploads. Ordinary tool results remain authoritative conversation evidence. A stream failure neither completes the worker nor ends its observation. |
+| Outcomes | A `terminal_update` carrying `_meta.plurnk.result` is separately retained as a page-local observed outcome: resource, producer, supplied summary and Problem details. Result status and supplied exit code classify the entry, and a supplied exit code is shown; the full result is not dumped into markup. Deduplication remains in JavaScript. Identical repeated conclusions reuse the disclosure. Channel closure, command exit and session outcome are distinct. Reconnection retains observed outcomes; reload does not reconstruct them from conversation history. |
+| Inspection | A native Read output control makes one explicit public `entry.read` management action (`_plurnk/action`) for that target and the page's immutable session. Acquire fresh same-origin credentials; declare no tools or control claim and upload no conversation. Validate the public `EntryReadResult`. Render every returned channel's exact text, state, MIME type and code-point length as a labelled output snapshot, never Markdown or executable content. The control remains available for an explicit refresh. |
+| Failure and lifetime | Pending reads disable their own control. Failed reads preserve prior output, show the diagnostic and allow explicit retry; a disappeared row cannot receive a late response. Page departure aborts browser-owned reads, never execution. Disconnection retains visibly stale evidence under {§web-session-observer}. No automatic output fetching, polling, stream cancellation or browser persistence. |
+| Separation | Inspected output and outcomes stay outside conversation messages and future prompt submissions. Ordinary tool results remain authoritative conversation evidence. A stream failure neither completes the session nor ends its observation. |
 
-## §web-worker-input Message composer and explicit Stop
+## §web-session-input Message composer and explicit Stop
 
 | Boundary | Contract |
 |---|---|
-| Document | A document-owned OTM template places ⏹️ Stop, a native textarea named Message, and ▶️ Send in one row below status. The textarea starts at one line, grows with content to a bounded viewport-relative height, then scrolls internally; both buttons stretch to its height. Send uses Pico's primary palette and Stop its secondary tokens. The buttons submit independent native forms: Stop neither validates nor resets the message field. Icon-only buttons retain accessible names and native explanatory titles. JavaScript mounts them only on worker pages; questions and command results stay in main, not the pinned composer. |
+| Document | A document-owned OTM template places ⏹️ Stop, a native textarea named Message, and ▶️ Send in one row below status. The textarea starts at one line, grows with content to a bounded viewport-relative height, then scrolls internally; both buttons stretch to its height. Send uses Pico's primary palette and Stop its secondary tokens. The buttons submit independent native forms: Stop neither validates nor resets the message field. Icon-only buttons retain accessible names and native explanatory titles. JavaScript mounts them only on session pages; questions and command results stay in main, not the pinned composer. |
 | Keyboard | Enter remains a newline. Ctrl+Enter in the message field requests native Send-form submission, preserving validation, slash-command routing and delivery availability. Composing text and repeated keydown events do not trigger the shortcut. The Send button exposes the shortcut in its title and accessible keyboard metadata. |
 | Focus | The textarea retains a visible inward focus ring, keeping its visual boundary aligned with adjacent buttons as its content grows. Focus does not change the controls' geometry. |
-| Send | Except for slash commands under {§web-worker-commands}, submit exact nonblank text as one standard user message to `/acp`, on the document's qualified thread. New text gets a new ID; a deliberate retry of the same unconfirmed draft retains its ID for daemon idempotency. Message identity generation works on ordinary HTTP as well as secure contexts; it does not change transport security or authentication policy. A message or response Run declares an attended client and no unimplemented tools; passive connection alone never attaches control. Server permissions remain unchanged. |
-| Handoff | One current HttpAgent owns the displayed messages. Close and await the preceding delivery before using its received history for a message or response Run. Held observation preserves the SDK's current interrupt set and the unsent review form; after settlement or explicit reconnection, passive reattachment starts fresh under {§web-worker-observer}. Follow-ups during live work use the same ordinary message admission; no parallel transcript, injection endpoint, automatic retry or offline queue. |
-| Admission | The daemon's `status.inbox`, user-message snapshot or user-message arrival confirms acceptance by message ID; local SDK insertion never does. Acceptance precedes model observation: queued follow-ups remain discoverable during inference, after reconnect and after cancellation before observation. Their eventual arrival retains the same ID and does not repeat text. |
+| Send | Except for slash commands under {§web-session-commands}, submit exact nonblank text as one standard `session/prompt` request to `/acp`, on the document's qualified session. New text gets a new ID; a deliberate retry of the same unconfirmed draft retains its ID for daemon idempotency. Message identity generation works on ordinary HTTP as well as secure contexts; it does not change transport security or authentication policy. A prompt or resolution request declares an attended client and no unimplemented tools; passive connection alone never attaches control. Server permissions remain unchanged. |
+| Handoff | One current ACP client owns the displayed messages. Close and await the preceding delivery before starting a prompt or resolution request. Held observation preserves the current interrupt set and the unsent review form; after settlement or explicit reconnection, passive reattachment starts fresh under {§web-session-observer}. Follow-ups during live work use the same ordinary message admission; no parallel transcript, injection endpoint, automatic retry or offline queue. |
+| Admission | The daemon's `status.inbox`, user-message snapshot or user-message arrival confirms acceptance by message ID; local insertion never does. Acceptance precedes model observation: queued follow-ups remain discoverable during inference, after reconnect and after cancellation before observation. Their eventual arrival retains the same ID and does not repeat text. |
 | Draft | Prevent another submission until acceptance or explicit rediscovery after a failed delivery. Clear the submitted text only if the textarea still contains it, preserving newer typing. A refusal or uncertain connection failure retains the draft, explains uncertainty and requires explicit reconnection before another submission. Reattachment may confirm acceptance; absence is not proof of refusal, so a deliberate unchanged retry retains its idempotency key. No automatic resend, browser persistence or guarantee across full reloads is implied. |
-| Stop | Explicit submission invokes public `loop.cancel` for the same thread through an independent management Run, with no conversation messages. Its acknowledgement requests cancellation; only worker status/terminal events establish the outcome. Stop preserves unsent text and targets no unrelated worker. Show it only for known queued, running or parked work; unavailable delivery or an in-flight cancellation disables it without hiding known live work. A pending follow-up does not prevent stopping already-running work. |
-| Interrupt | Retain the SDK's pending interrupts and call evidence. Proposals use the configured client choice under {§web-worker-approval}; questions and MCP input use {§web-worker-questions}. Input-required is not disconnection: keep observing authoritative work and pending-input changes through the public adapter contract. Unsupported interactions remain pending with an explicit notice. Send is unavailable until settlement; explicit Stop remains available for live work on this worker. From the moment an interrupt arrives until it is presented, Send is unavailable: a message cannot overtake the review it would leave unanswered. |
-| Failure and departure | Request failure is visible, never a successful send or cancellation. A worker's own failure is its status; only a page that submitted the failed work also reports it as its request's. A Stop the page left before its answer says so on return. Refresh, navigation, page close and delivery handoff only release browser resources: they cannot cancel admitted work. No message or cancellation is automatically resubmitted after reconnect. |
+| Stop | Explicit submission sends a standard `session/cancel` notification for the same session through an independent ACP connection, with no conversation messages. Its acknowledgement requests cancellation; only session status/terminal events establish the outcome. Stop preserves unsent text and targets no unrelated session. Show it only for known queued, running or parked work; unavailable delivery or an in-flight cancellation disables it without hiding known live work. A pending follow-up does not prevent stopping already-running work. |
+| Interrupt | Retain the client's pending interrupts and call evidence. Proposals use the configured client choice under {§web-session-approval}; questions and MCP input use {§web-session-questions}. Input-required is not disconnection: keep observing authoritative work and pending-input changes through the public adapter contract. Unsupported interactions remain pending with an explicit notice. Send is unavailable until settlement; explicit Stop remains available for live work on this session. From the moment an interrupt arrives until it is presented, Send is unavailable: a message cannot overtake the review it would leave unanswered. |
+| Failure and departure | Request failure is visible, never a successful send or cancellation. A session's own failure is its status; only a page that submitted the failed work also reports it as its request's. A Stop the page left before its answer says so on return. Refresh, navigation, page close and delivery handoff only release browser resources: they cannot cancel admitted work. No message or cancellation is automatically resubmitted after reconnect. |
 
-## §web-worker-commands Worker-page slash commands
+## §web-session-commands Session-page slash commands
 
 The first non-whitespace `/` selects a client command, never a model prompt.
 The browser translates input to existing daemon actions; it owns no model,
@@ -484,76 +484,76 @@ capability, persistence or execution policy. Commands require no inference.
 | Input | Effect |
 |---|---|
 | `/help [command]` | Show this browser's supported commands or the named command's usage. Bare `/` shows the same index. |
-| `/models [search]` | Inspect declared aliases and one bounded, optionally searched model-catalog page through `providers.list` and `models.list`. Preserve the supplied page counts; further search narrows the catalog. No endpoint probes. |
-| `/model [selector] [effort]` | `worker.model.get` inspects the bound worker's durable route; `worker.model.set` selects it, optionally with effort in the same action. Display the confirmed route, not the submitted selector. |
-| `/effort [policy]` | `worker.effort.get` or `worker.effort.set`, using the daemon's `effort` field. Present the confirmed effort, provenance and supported efforts; no client-owned list of admitted policies. |
+| `/models [search]` | Inspect declared aliases and one bounded, optionally searched model-catalog page through `providers/list` and `models.list`. Preserve the supplied page counts; further search narrows the catalog. No endpoint probes. |
+| `/model [selector] [effort]` | `session/resume` inspects the bound session's durable `configOptions`; `session/set_config_option` (`configId: "model"`) selects it, optionally setting effort (`configId: "thought_level"`). Display the confirmed route, not the submitted selector. |
+| `/effort [policy]` | `session/resume` or `session/set_config_option` (`configId: "thought_level"`). Present the confirmed effort, provenance and supported efforts; no client-owned list of admitted policies. |
 | `/capabilities [json]` | Inspect or replace the workspace policy through `workspace.capabilities.get` or `workspace.capabilities.set`. Present service, workspace and effective layers separately, preserving exact policy values. |
-| `/yolo` | Toggle the current page's client approval preference under {§web-worker-approval}. No daemon action, credential request or model message. |
-| `/stop` | The same explicit cancellation path as the Stop form under {§web-worker-input}; an idle worker is not an error. |
+| `/yolo` | Toggle the current page's client approval preference under {§web-session-approval}. No daemon action, credential request or model message. |
+| `/stop` | The same explicit cancellation path as the Stop form under {§web-session-input}; an idle session is not an error. |
 
 | Boundary | Contract |
 |---|---|
 | Scope | Only the listed commands. Unknown names and invalid argument shapes report a local diagnostic without inference or a substitute command. No terminal process, filesystem bridge, host-file imports/exports, external editor, command navigation or duplicate terminal framework. Workspace/subsystem management belongs to its own page surface. |
-| Delivery | Each daemon action uses an independent official HttpAgent management Run on the document's immutable thread, fresh credentials, empty messages and no tools or control claim. Preserve exact Problem details. Action results never replace the observer's SDK state or messages. |
+| Delivery | Each daemon action uses an independent official ACP client request on the document's immutable session, fresh credentials, empty messages and no tools or control claim. Preserve exact Problem details. Action results never replace the observer's client state or messages. |
 | Presentation | Document-owned native templates render help, model tables, requested policy layers and confirmed outcomes. Failures show their diagnostic and recovery, not a duplicate serialized Problem. Do not add raw result inspectors. A separate page-local command-results list records each submitted command and its outcome; it is not conversation, durable history or browser storage. |
 | Admission | Command intake is independent of model-message admission: pending reviews do not block commands. One ordinary command is pending at a time; the separate Stop form remains reachable. A successful command clears only its unchanged draft; failure retains it, and newer typing is never cleared. No automatic retries. |
-| Arrival | A worker page starts with the configured switch only when the person reached it by their own navigation: Fetch Metadata `Sec-Fetch-Site` is `same-origin` or `none`. Any other value starts it in manual review, so a link from another site never approves anything; so does no value, which is every arrival at a plain-HTTP origin other than localhost, where browsers send no Fetch Metadata and the person enables approval on the page. |
+| Arrival | A session page starts with the configured switch only when the person reached it by their own navigation: Fetch Metadata `Sec-Fetch-Site` is `same-origin` or `none`. Any other value starts it in manual review, so a link from another site never approves anything; so does no value, which is every arrival at a plain-HTTP origin other than localhost, where browsers send no Fetch Metadata and the person enables approval on the page. |
 | Client approval | A YOLO change applies to outstanding proposals and future ones. Enabling it may submit an all-proposal pending set through the existing complete resume path. Questions and MCP input still require explicit answers; toggling preserves their unsent answers. Disabling cannot revoke an already-submitted decision. Reload restores the starting mode under the Arrival row. |
 | Lifetime | Leaving the page aborts browser delivery, not an admitted mutation or agent work. An interrupted response is shown as unconfirmed, not left running if the browser restores the page. Commands and their results are never uploaded on later model messages. Command errors cannot end observation or fabricate successful model/effort changes. |
 
-## §web-worker-settings Native model and effort selection
+## §web-session-settings Native model and effort selection
 
 | Boundary | Contract |
 |---|---|
-| Disclosure | Model and effort buttons reveal their respective inline articles after the conversation in main, never overlays. Native expanded/controls attributes identify the relationship. Opening focuses the form. Cancel and a confirmed selection return focus to the button before closing the article, preserving the status row under {§web-worker-status}; a failed selection remains open. No separate Close control, visible heading, catalog counts or ordinary success narration. A missing effort still permits inspecting the daemon's supported choices. |
-| Models | One native search input with a “Search Models” placeholder and accessible name, a `datalist` of suggestions, then Cancel / Select Model. Input queries the daemon's entire catalog using the same validated actions as `/models`; suggestions are a bounded result page, not a selectable-route allowlist. Search beyond the initial page by typing, or enter any exact alias/provider-model for daemon validation. Preserve supplied readiness in suggestion labels. Superseded reads cannot replace current suggestions or report stale failures. Search never selects a model; only explicit submission through `worker.model.set` does. No provider probes, model-name guesses, inferred effort policies, client catalog or custom combobox. |
-| Effort | One native select with disabled “Reasoning Effort” placeholder, then Cancel / Select Effort. Offer only the daemon's `supportedEfforts` from `worker.effort.get`; submit through `worker.effort.set`. An empty set has no selectable policy and reports that fact. |
+| Disclosure | Model and effort buttons reveal their respective inline articles after the conversation in main, never overlays. Native expanded/controls attributes identify the relationship. Opening focuses the form. Cancel and a confirmed selection return focus to the button before closing the article, preserving the status row under {§web-session-status}; a failed selection remains open. No separate Close control, visible heading, catalog counts or ordinary success narration. A missing effort still permits inspecting the daemon's supported choices. |
+| Models | One native search input with a “Search Models” placeholder and accessible name, a `datalist` of suggestions, then Cancel / Select Model. Input queries the daemon's entire catalog using the same validated actions as `/models`; suggestions are a bounded result page, not a selectable-route allowlist. Search beyond the initial page by typing, or enter any exact alias/provider-model for daemon validation. Preserve supplied readiness in suggestion labels. Superseded reads cannot replace current suggestions or report stale failures. Search never selects a model; only explicit submission through `session/set_config_option` (`configId: "model"`) does. No provider probes, model-name guesses, inferred effort policies, client catalog or custom combobox. |
+| Effort | One native select with disabled “Reasoning Effort” placeholder, then Cancel / Select Effort. Offer only the daemon's supported efforts from `session/resume` (`configOptions` for `thought_level`); submit through `session/set_config_option` (`configId: "thought_level"`). An empty set has no selectable policy and reports that fact. |
 | Authority | Forms and slash commands share result validation and public management actions. Only confirmed mutations report success; refusal remains visible with its recovery and preserves the selection and message draft. Observer state remains authoritative for status. No conversation entries, inference, duplicate client policy or automatic retry. Leaving the page aborts delivery, not admitted work. |
 
-## §web-worker-approval Configured operation review
+## §web-session-approval Configured operation review
 
 | Boundary | Contract |
 |---|---|
 | Status hover | The native toggle title describes the current mode as “Auto Approval (/yolo)” or “Manual Approval (/yolo)”. Its accessible toggle name stays stable while pressed state expresses enabledness. |
-| Authority | The current HttpAgent's `pendingInterrupts` supplies the complete presented set. `metadata.plurnk.proposal` supplies daemon-owned review facts. No client approval registry, permission rules, inferred ownership, or reconstruction from conversation calls. A delegated proposal need not have a `toolCallId` on its owner's thread. |
-| Configuration | `PLURNK_WEB_YOLO=1` automatically accepts approval proposals with decision `accept` and outcome `client_yolo`; `0`, the shipped default, requires manual review. Read at module startup through {§web-configuration} and project the resolved switch as the native status toggle's pressed state. That toggle and `/yolo` change the same preference for the current page under {§web-worker-commands}; browser assets contain no policy default. This client choice cannot override daemon rejection and does not veto decisions by other authorized clients. |
-| Document | Manual review uses one document-owned native form, a fieldset per operation, and required Accept/Reject radio choices with neither selected. Show the requesting worker, operation, target and exact body, without a duplicate full-proposal dump. Review facts are literal text, never Markdown, executable controls or application bindings. |
-| Decision | Submit the complete presented set in one standard HttpAgent `resume` to `/acp`, retaining its opaque interrupt IDs and current thread. Each proposal entry has resolved status and the configured or explicit decision. An all-proposal YOLO set submits automatically. Questions and MCP input always require explicit answers under {§web-worker-questions}; mixed sets combine those answers with the configured proposal decisions, never a partial submission. No new message, approval tool, synthetic tool result or body editing. The daemon owns validation, settlement and the operation's actual result. |
-| Handoff | Disable review during submission, then follow the ordinary SDK conversation and outcomes. A subsequent gate applies the configured mode anew; manual choices start unselected. Otherwise return to passive observation. Keep unsent message text. Stop remains explicit cancellation of the page's worker, not rejection of a proposal or cancellation of another requesting worker. |
-| Refresh and concurrency | Several authorized clients are ordinary views of one pending decision. The daemon settles once; all views withdraw obsolete controls and follow the resulting work without another answer or manual reconnection. Reconnection rediscovers current gates and fresh continuations. Never replay unsubmitted choices after refresh or retry a decision automatically. A stale, refused or uncertain submission is not acceptance; retain its diagnostic without obscuring independently confirmed progress. Actual delivery/credential failures follow {§web-worker-observer}. |
+| Authority | The current ACP client's `pendingInterrupts` supplies the complete presented set. `_meta.plurnk.proposal` supplies daemon-owned review facts. No client approval registry, permission rules, inferred ownership, or reconstruction from conversation calls. A delegated proposal need not have a `toolCallId` on its owner's session. |
+| Configuration | `PLURNK_WEB_YOLO=1` automatically accepts approval proposals with decision `accept` and outcome `client_yolo`; `0`, the shipped default, requires manual review. Read at module startup through {§web-configuration} and project the resolved switch as the native status toggle's pressed state. That toggle and `/yolo` change the same preference for the current page under {§web-session-commands}; browser assets contain no policy default. This client choice cannot override daemon rejection and does not veto decisions by other authorized clients. |
+| Document | Manual review uses one document-owned native form, a fieldset per operation, and required Accept/Reject radio choices with neither selected. Show the requesting session, operation, target and exact body, without a duplicate full-proposal dump. Review facts are literal text, never Markdown, executable controls or application bindings. |
+| Decision | Submit the complete presented set by resolving the held `session/request_permission` and `elicitation/create` requests on `/acp`, retaining their opaque interrupt IDs and current session. Each proposal response carries `outcome: "selected"` with `optionId: "allow_once" | "reject_once"` and `_meta.plurnk.outcome`. An all-proposal YOLO set submits automatically. Questions and MCP input always require explicit answers under {§web-session-questions}; mixed sets combine those answers with the configured proposal decisions, never a partial submission. No new message, approval tool, synthetic tool result or body editing. The daemon owns validation, settlement and the operation's actual result. |
+| Handoff | Disable review during submission, then follow the ordinary client conversation and outcomes. A subsequent gate applies the configured mode anew; manual choices start unselected. Otherwise return to passive observation. Keep unsent message text. Stop remains explicit cancellation of the page's session, not rejection of a proposal or cancellation of another requesting session. |
+| Refresh and concurrency | Several authorized clients are ordinary views of one pending decision. The daemon settles once; all views withdraw obsolete controls and follow the resulting work without another answer or manual reconnection. Reconnection rediscovers current gates and fresh continuations. Never replay unsubmitted choices after refresh or retry a decision automatically. A stale, refused or uncertain submission is not acceptance; retain its diagnostic without obscuring independently confirmed progress. Actual delivery/credential failures follow {§web-session-observer}. |
 | Deadline | A proposal whose interrupt carries `expiresAt` shows it as a native `<time>`; one that waits indefinitely shows none. The daemon cancels a proposal at its deadline, needing no client. Past that time by this page's clock, the page answers nothing, manually or automatically: the set is presented with a notice that the daemon cancels it, its controls unavailable, and the held observation follows the daemon's settlement. |
-| Settled response | A resume refused with 409 `interrupt-not-pending`, `proposal-not-pending` or `interaction-not-pending` shows the refusal, then reconnects for current state without resending the answer. Other failures remain failures; a refusal does not acknowledge this client's decision. |
+| Settled response | A resolution refused with 409 `interrupt-not-pending`, `proposal-not-pending` or `interaction-not-pending` shows the refusal, then reconnects for current state without resending the answer. Other failures remain failures; a refusal does not acknowledge this client's decision. |
 | Departure | Refresh, navigation, page close and lost delivery cannot reject a proposal, cancel work or undo an accepted decision. They release browser delivery only. |
-| Unsupported sets | Every presented interrupt must be a review proposal or a question supported by {§web-worker-questions}. Otherwise do not submit a partial set or guess a missing response contract. Explain that the interaction is unsupported and leave it pending. |
+| Unsupported sets | Every presented interrupt must be a review proposal or a question supported by {§web-session-questions}. Otherwise do not submit a partial set or guess a missing response contract. Explain that the interaction is unsupported and leave it pending. |
 
-## §web-worker-questions Schema-shaped answers
+## §web-session-questions Schema-shaped answers
 
 | Boundary | Contract |
 |---|---|
-| Authority | Questions and MCP input use the same standard interrupt/resume path as {§web-worker-approval}. The SDK supplies the pending set, the associated tool call and `responseSchema`; the browser invents no question endpoint, MCP continuation or interaction identity. |
-| Attribution | When supplied, `metadata.plurnk.interaction.workerId` identifies the requesting worker in the question heading, including delegated questions and rediscovery. Never infer that identity from a tool-call or interrupt ID. Generic questions remain answerable without this metadata. |
+| Authority | Questions and MCP input use the same standard interrupt/resume path as {§web-session-approval}. The client supplies the pending set, the associated tool call and `responseSchema`; the browser invents no question endpoint, MCP continuation or interaction identity. |
+| Attribution | When supplied, `_meta.plurnk.interaction.sessionId` identifies the requesting session in the question heading, including delegated questions and rediscovery. Never infer that identity from a tool-call or interrupt ID. Generic questions remain answerable without this metadata. |
 | Document | Show the request message, tool name and exact call arguments as literal text. Keep the full response schema inspectable. Straightforward object properties with independent string, number, integer, boolean or enumerated values use native controls in document-owned templates. Other schemas remain whole in an explicitly labelled JSON editor; references, nesting and conditional rules are never flattened or partly discarded. |
 | Values | Preserve strings verbatim and retain numeric, boolean and enum types. Optional fields have an explicit inclusion choice, so omission differs from an empty string, false or zero. Schema defaults may prefill an answer but cannot submit it. A required string may be empty unless the schema prohibits it. |
 | Validation | Native controls enforce their own input constraints. The existing public contracts validator checks the complete proposed answer against the exact schema before sending; validation failure preserves editable input and shows the error. Invalid or unresolvable schemas remain visible and cancellable. Daemon validation and settlement remain authoritative. No schema reference initiates a browser network request. |
-| Resolution | Explicit submission answers or cancels every presented request in one SDK resume, retaining opaque interrupt IDs. Cancellation of a question is not Stop and does not cancel unrelated work. Mixed proposal/question sets use the same complete-set rule. Advertise `question` and `mcp_input_required` only on controlling Runs with these handlers. |
-| Lifetime | Reuse {§web-worker-approval}'s rediscovery, concurrent-client, uncertainty and departure rules. A failed or uncertain submission is not acceptance and is never retried automatically. Refresh does not preserve unsubmitted answers; correcting local validation does. |
+| Resolution | Explicit submission answers (`action: "accept"`, `content`) or cancels (`action: "cancel"`) every presented `elicitation/create` request, retaining opaque interrupt IDs. Cancellation of a question is not Stop and does not cancel unrelated work. Mixed proposal/question sets use the same complete-set rule. |
+| Lifetime | Reuse {§web-session-approval}'s rediscovery, concurrent-client, uncertainty and departure rules. A failed or uncertain submission is not acceptance and is never retried automatically. Refresh does not preserve unsubmitted answers; correcting local validation does. |
 | Security | No request, schema title, field name or answer becomes HTML, an application binding, a navigation instruction or executable code. Keep user data in memory/controls only, not browser storage. External URLs in requests are text, never automatically opened. |
 
-## §web-worker-conversation Conversation projection
+## §web-session-conversation Conversation projection
 
 | Boundary | Contract |
 |---|---|
-| Authority | The worker HttpAgent's ordered `messages` collection is the sole live transcript. Read-only daemon history pages join its display under {§web-worker-history}, never its collection or Run input. No CUSTOM-row reconstruction, browser persistence or second event reducer. Observation submits no input and never answers a tool call; authored input follows {§web-worker-input}. |
-| Identity | Project message content and each assistant call as direct list entries in supplied chronology, with archival joins under {§web-worker-history}, then supplied call order. Content precedes calls within a message; a call-only message has no empty enclosing article. Each entry retains its message ID and, for calls, call ID. Snapshots replace live membership and order; streaming changes update existing entries. Unchanged bodies, selection and native disclosure state survive updates and passive reconnections. Rendered-node lookup comes from the DOM; the renderer's per-outlet last-render cache avoids replacing unchanged content, but holds no separate message collection. A page reload reads fresh authority state, not browser history. |
+| Authority | The session ACP client's ordered `messages` collection is the sole live transcript. Read-only daemon history pages join its display under {§web-session-history}, never its collection or request input. No custom-row reconstruction, browser persistence or second event reducer. Observation submits no input and never answers a tool call; authored input follows {§web-session-input}. |
+| Identity | Project message content and each assistant call as direct list entries in supplied chronology, with archival joins under {§web-session-history}, then supplied call order. Content precedes calls within a message; a call-only message has no empty enclosing article. Each entry retains its message ID and, for calls, call ID. Snapshots replace live membership and order; streaming changes update existing entries. Unchanged bodies, selection and native disclosure state survive updates and passive reconnections. Rendered-node lookup comes from the DOM; the renderer's per-outlet last-render cache avoids replacing unchanged content, but holds no separate message collection. A page reload reads fresh authority state, not browser history. |
 | User and assistant | Content-first semantic articles, with accessible names identifying role and supplied author/subagent attribution, without redundant visible headers. Text is rendered as Markdown. Calls retain their containing message's identity and attribution without duplicating its envelope in the DOM. Empty content does not imply a fabricated answer. |
-| Reasoning | Apply {§web-worker-reasoning}. Nonempty standard reasoning content is literal preformatted text in a collapsed disclosure; negotiated empty messages have no visible row until their body reference arrives. |
-| Calls and results | Confirmed Plurnk operations use {§web-operation-summary}. Their immediate result (correlated by call ID, without its own Plurnk row metadata) completes the call's existing entry rather than creating another article. Results with their own row metadata remain distinct observations or replies; they never inherit the invocation's operands. Generic calls/results retain supplied chronology and accessible identity without guessing a Plurnk contract; late archival receipts join under {§web-worker-history}. Standard tool errors remain visible. |
+| Reasoning | Apply {§web-session-reasoning}. Nonempty standard reasoning content is literal preformatted text in a collapsed disclosure; negotiated empty messages have no visible row until their body reference arrives. |
+| Calls and results | Confirmed Plurnk operations use {§web-operation-summary}. Their immediate result (correlated by call ID, without its own Plurnk row metadata) completes the call's existing entry rather than creating another article. Results with their own row metadata remain distinct observations or replies; they never inherit the invocation's operands. Generic calls/results retain supplied chronology and accessible identity without guessing a Plurnk contract; late archival receipts join under {§web-session-history}. Standard tool errors remain visible. |
 | Working notes | NOTE calls follow {§web-working-notes}; they remain calls, not answers or provider reasoning. |
 | Delivered replies | SEND bodies use the same sanitized Markdown renderer as assistant prose. A tool result attributed to a SEND row is the delivered reply itself, not an operation receipt; render its complete content without unwrapping JSON-shaped replies as metadata. Other authored operation bodies remain literal preformatted text. |
 | Other messages | System/developer messages use the same accessible article boundary. Text and supported document parts retain their original order. Unmapped structured payloads stay in JavaScript; do not serialize them into the document. No inline media player or attachment service. Supplied subagent invocation IDs identify attribution, never mistaken for the parent's output. |
 | Semantics | Entry attributes carry only identity, role, attribution, operation/category and result state relevant to presentation or interaction. Text lives in content nodes, not duplicate data attributes. Structured protocol metadata remains in JavaScript, not attributes or generic JSON disclosures. Accessible naming is independent of visible labels and decorative glyphs. Native structure and controls supply meaning and behavior; CSS alone owns arrangement and decoration. An empty body stays empty; do not invent visible labels or controls to fill it. |
-| Layout | Native unnumbered `ul` and content articles, preserving SDK order and authored Markdown list semantics, with body disclosure under {§web-card-disclosure}. No wrapper solely to reproduce protocol nesting, duplicate worker heading, chat bubbles, application classes or virtual-DOM framework. Literal content wraps under {§web-content-reflow}; explicit code, tables, formulas and diagrams scroll locally when too wide. |
-| Connection | The existing connection notice governs whether displayed history is live. Only a supplied empty SDK collection says “No messages.” Unknown history and deliberately unrendered reasoning placeholders do not imply emptiness. A transport failure retains the last observed projection, never an invented empty or successfully completed conversation. |
+| Layout | Native unnumbered `ul` and content articles, preserving client order and authored Markdown list semantics, with body disclosure under {§web-card-disclosure}. No wrapper solely to reproduce protocol nesting, duplicate session heading, chat bubbles, application classes or virtual-DOM framework. Literal content wraps under {§web-content-reflow}; explicit code, tables, formulas and diagrams scroll locally when too wide. |
+| Connection | The existing connection notice governs whether displayed history is live. Only a supplied empty message collection says “No messages.” Unknown history and deliberately unrendered reasoning placeholders do not imply emptiness. A transport failure retains the last observed projection, never an invented empty or successfully completed conversation. |
 
 ## §web-card-disclosure Card bodies
 
@@ -562,7 +562,7 @@ capability, persistence or execution policy. Commands require no inference.
 | Order | The always-visible summary contains the header (decorative glyph and authored aside), optional diagnostic, then optional operation operands/counts. Omit absent regions. A diagnostic never replaces authored intent. The body follows these regions. |
 | Interaction | A presented nonempty body uses native `details/summary`; the existing summary is its control, without a synthetic “View body” label. With no body there is no disclosure. Summary fields use phrasing content; CSS arranges their rows. Accessible names identify the card independently of glyphs and include visible diagnostics. |
 | Spacing | Retain Pico card padding and spacing between body paragraphs, without an extra trailing disclosure/content margin or an empty body strip below a header-only card. Multiline summaries retain ordinary line spacing; their chevron stays beside the first row, not on an additional empty row. |
-| Defaults | User messages and delivered replies (assistant prose and SEND bodies, including cancellation replies) start open. Other bodies, including NOTE, ordinary tool evidence, observed activity and completed reasoning, start closed. Each disclosure is independent, never an exclusive accordion. Live reasoning retains its visible bounded preview under {§web-worker-reasoning}. |
+| Defaults | User messages and delivered replies (assistant prose and SEND bodies, including cancellation replies) start open. Other bodies, including NOTE, ordinary tool evidence, observed activity and completed reasoning, start closed. Each disclosure is independent, never an exclusive accordion. Live reasoning retains its visible bounded preview under {§web-session-reasoning}. |
 | Continuity | Set the initial open state only when creating a disclosure. Surviving disclosures retain the reader's choice across content updates, receipt arrival, paging, replay and reconnect. Preserve unchanged body nodes and selection. No click controller, preference store or body copy in attributes. |
 | Boundaries | Disclosure changes visibility, not content policy or lifecycle. Literal text and sanitized Markdown keep their existing owners. Referenced bodies load only when visible under {§web-result-bodies}; operation summaries do not gain READ receipt readback. |
 
@@ -588,15 +588,15 @@ color. Non-conversation cards retain their existing Pico presentation.
 | Operands | Use the adapter's authored `target.raw`, `lineMarker.marks` and `matcher.raw`. COPY/MOVE preserve source/destination order and each operand's own scope/pattern. Without an authored target, the operation's own receipt path or row address may identify its resource. Never parse a heading, substitute a causal source or borrow another row's operands. Semantic field spans contain literal text, not duplicate field values in attributes. |
 | Result | READ counts supplied `lineOrdinals`, otherwise its inclusive returned range; FIND counts its inclusive returned range, otherwise its supplied total. Do not count or fetch body text to infer a result size. Show supplied failure title/detail and recovery, standard tool errors, and a no-content diagnostic when supplied; do not print successful status numbers or receipt JSON. |
 | Content | Authored bodies retain {§web-working-notes} and {§web-conversation-content}, with disclosure under {§web-card-disclosure}. The shared summary does not display or fetch receipt bodies, including READ results. Operation-specific readback and previews are separate behavior, not inferred from this summary. |
-| Continuity | Derive the summary from the live collection and read-only pages under {§web-worker-history}. Receipt arrival updates summary fields without replacing an unchanged authored body or its selection. Later observations keep their own identity and result state. |
+| Continuity | Derive the summary from the live collection and read-only pages under {§web-session-history}. Receipt arrival updates summary fields without replacing an unchanged authored body or its selection. Later observations keep their own identity and result state. |
 
-## §web-worker-history Read-only conversation pages
+## §web-session-history Read-only conversation pages
 
 | Boundary | Contract |
 |---|---|
-| Authority | `MESSAGES_SNAPSHOT.metadata.plurnk.history.older` is an opaque URL or null. Follow it unchanged for `{final, messages, older}`. The daemon owns loop membership, cuts and overflow; web imposes no second count/size policy and derives no cursor from message IDs or coordinates. Standard message schemas validate pages. |
+| Authority | `_meta.plurnk.history.older` on the `session/resume` response is an opaque URL or null. Follow it unchanged for `{final, updates, older}` (projected via `SessionTranslator.projectMessages`). The daemon owns loop membership, cuts and overflow; web imposes no second count/size policy and derives no cursor from message IDs or coordinates. Standard schemas validate pages. |
 | Loading | A native **Load previous loop** control marks each unloaded boundary, ordinarily at the top. Fetch only on activation, using the same origin, fresh credential, no-store and redirect refusal as body readback. One pending read per URL; failures retain the view and show a concise retryable diagnostic at that boundary. No speculative prefetch or automatic failure retry. |
-| Projection | Retain explicitly loaded pages for the page visit. Render their supplied chronology with the live window, once per message identity; current live values win overlap. A late immediate result completes its archived call in place. Never append fetched pages, references or preserved reading material to HttpAgent, incoming event streams or Run uploads. |
+| Projection | Retain explicitly loaded pages for the page visit. Render their supplied chronology with the live window, once per message identity; current live values win overlap. A late immediate result completes its archived call in place. Never append fetched pages, references or preserved reading material to the ACP client, incoming notification streams or prompt submissions. |
 | Advancement | A replacement snapshot owns the live window. While reading away from the bottom, retain the displaced observed window as read-only presentation; release this temporary material when following the bottom again. Explicitly loaded pages remain. An unloaded gap between retained material and the new window has its own history control: do not imply continuity or silently fetch intervening history. |
 | Freshness | `final: true` pages are immutable for this visit. Revalidate loaded non-final pages on a new snapshot, preserving live precedence during the read. Failed revalidation remains visible with explicit retry. In-flight reads cannot resurrect a discarded boundary or publish after page departure. A reload starts from a fresh daemon window. |
 | Reading | Prepending pages preserves a visible message's position and unchanged selection/disclosure state. Follow new output and deferred content sizing only while already at the bottom; reading older content never moves focus or pulls the reader to new output. The native main scroll region remains the only page scroller. No virtualized rows, timed scrolling or browser history persistence. A review, message feedback and command results follow the conversation at main's end, so following keeps what needs the person in view as any of them appears or grows. Following ends only when the reader moves up, never because content grew while a scroll settled, and resumes at the end. |
@@ -605,22 +605,22 @@ color. Non-conversation cards retain their existing Pico presentation.
 
 | Boundary | Contract |
 |---|---|
-| Intake | Standard `document` parts with `source.type: "url"` provide content for one preformatted outlet where that surface displays bodies. Operation summaries under {§web-operation-summary} do not mount receipt-body outlets. Do not display the transport URL, MIME inventory or a Read body inspector. Reference locations remain in JavaScript; the SDK's parts remain unchanged. |
-| Fetch | Native intersection observation reads a body once its outlet enters the viewport. Off-screen bodies and closed disclosures do not fetch. Require a same-origin HTTP(S) URL without embedded credentials; reject redirects. Use a fresh session access credential through {§web-access-token}, or none for explicitly anonymous documents. Never put a bearer in a URL, forward it to another origin, substitute a guessed URL or start an ACP Run. |
+| Intake | Standard `document` parts with `source.type: "url"` provide content for one preformatted outlet where that surface displays bodies. Operation summaries under {§web-operation-summary} do not mount receipt-body outlets. Do not display the transport URL, MIME inventory or a Read body inspector. Reference locations remain in JavaScript; the client's parts remain unchanged. |
+| Fetch | Native intersection observation reads a body once its outlet enters the viewport. Off-screen bodies and closed disclosures do not fetch. Require a same-origin HTTP(S) URL without embedded credentials; reject redirects. Use a fresh session access credential through {§web-access-token}, or none for explicitly anonymous documents. Never put a bearer in a URL, forward it to another origin, substitute a guessed URL or start an ACP request. |
 | Content | Show fetched bytes decoded as text in a literal preformatted outlet, even for HTML, SVG or Markdown. A body cannot create controls, application bindings, scripts or further requests. This read-only inspection is not an attachment editor or a second Markdown rendering policy. |
 | Failure | The outlet announces pending state through `aria-busy`. A failed read shows its diagnostic (the daemon's Problem detail when it supplies one) and a native Retry button in place of content. A read the page abandoned, as when it is left, is no failure: it rests empty with a native Read button. No automatic retry, duplicate pending fetch or silent empty success. |
-| Lifetime | Fetched text belongs only to its existing DOM outlet. Unchanged replay preserves it; replacing/removing the content invalidates late results. It never enters SDK messages, subsequent Run uploads, browser storage or a separate cache. Page departure aborts these browser-owned fetches, not daemon work. |
+| Lifetime | Fetched text belongs only to its existing DOM outlet. Unchanged replay preserves it; replacing/removing the content invalidates late results. It never enters client messages, subsequent prompt submissions, browser storage or a separate cache. Page departure aborts these browser-owned fetches, not daemon work. |
 
-## §web-worker-reasoning Ephemeral preview, durable reference
+## §web-session-reasoning Ephemeral preview, durable reference
 
 | Boundary | Contract |
 |---|---|
-| Negotiation | Every browser HttpAgent request supplies `forwardedProps.plurnk.reasoning: "link"`, including observation, held observation, submission, resume and management Runs. Preserve other request properties. HttpAgent keeps the standard empty reasoning messages and their metadata; web never writes preview or fetched text into them. Unnegotiated third-party clients retain the daemon's standard reasoning behavior. |
-| Preview | `CUSTOM plurnk.reasoning` deltas feed one literal-text article outside the message list, with a 💭 header and supplied `metadata.plurnk.coordinate` when present on its standard reasoning start. A new attempt replaces its predecessor. A delta must name that active message. No Markdown interpretation, transcript entry, hidden full-trace accumulator or browser persistence. |
-| Retention | `PLURNK_WEB_REASONING_PREVIEW_CHARS` is a positive integer read at module startup and projected explicitly into worker documents. Retain only the newest configured number of Unicode code points across fragments. CSS bounds the visible area to one third of the dynamic viewport; that outlet follows its newest text. The main viewport separately follows {§web-worker-history}; neither moves focus. No live-region announcement per token. |
-| Clearing | The matching reasoning-message end clears its preview. Run start, terminal outcome, delivery failure, delivery handoff and page departure clear it too. Reattachment never reconstructs a preview from snapshots or body links. A link-only repeated start/end cannot clear another attempt's preview. No preview is retained as evidence of a failed request. |
+| Negotiation | Every browser ACP request supplies `_meta.plurnk.reasoning: "link"`, including observation, held observation, prompt submission, resume and management requests. Preserve other request properties. The ACP client keeps the standard empty reasoning messages and their metadata; web never writes preview or fetched text into them. Unnegotiated third-party clients retain the daemon's standard reasoning behavior. |
+| Preview | `agent_thought_chunk` session updates feed one literal-text article outside the message list, with a 💭 header and supplied `_meta.plurnk.coordinate` when present. A new attempt replaces its predecessor. A delta must name that active message. No Markdown interpretation, transcript entry, hidden full-trace accumulator or browser persistence. |
+| Retention | `PLURNK_WEB_REASONING_PREVIEW_CHARS` is a positive integer read at module startup and projected explicitly into session documents. Retain only the newest configured number of Unicode code points across fragments. CSS bounds the visible area to one third of the dynamic viewport; that outlet follows its newest text. The main viewport separately follows {§web-session-history}; neither moves focus. No live-region announcement per token. |
+| Clearing | The matching reasoning-message end clears its preview. Turn start, terminal outcome, delivery failure, delivery handoff and page departure clear it too. Reattachment never reconstructs a preview from snapshots or body links. A link-only repeated start/end cannot clear another attempt's preview. No preview is retained as evidence of a failed request. |
 | History | A reasoning message's `metadata.plurnk.body` supplies its exact URL and MIME type, including when metadata arrives after an empty message. An article contains its initially collapsed native disclosure, headed by a decorative 💭 and `L{loop}/T{turn}` from `metadata.plurnk.coordinate` when available; its accessible name identifies reasoning independently of the glyph. Message IDs and reference URLs are opaque, never sources of coordinates. The disclosure defers the read until opened and visible under {§web-result-bodies}. No second Read body control. Identity, order, attribution and unchanged loaded outlets survive ordinary snapshots. |
-| Ownership | The preview is presentation only. Its clearing does not cancel inference or erase daemon evidence. Full reasoning is read-only, literal on-demand inspection; neither reading nor streaming contributes text to subsequent SDK uploads. |
+| Ownership | The preview is presentation only. Its clearing does not cancel inference or erase daemon evidence. Full reasoning is read-only, literal on-demand inspection; neither reading nor streaming contributes text to subsequent client requests. |
 
 ## §web-conversation-content Untrusted message content
 
@@ -631,7 +631,7 @@ color. Non-conversation cards retain their existing Pico presentation.
 | Literal content | NOTE, reasoning and ordinary operation evidence enter template-owned `pre` elements as text nodes, never Markdown or HTML. Whitespace, entities and tag-shaped strings stay literal; content cannot close its container or create elements. `pre` supplies semantics, not sanitization. No escaping-and-reparsing filter or body copy in attributes. |
 | Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly; only recognized math and diagram outlets receive their bounded enhancements. |
 | Continuity | The same admission boundary applies to every rich-text message and SEND body, including partial updates and replay. Message identities, author/category labels, call arguments, errors and structured payloads remain data, never markup. Rendering performs no model-directed navigation or resource request; ordinary links require user activation. |
-| Build | Parser and sanitizer are bundled only with the worker entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Only recognized Mermaid blocks request server compilation. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
+| Build | Parser and sanitizer are bundled only with the session entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Only recognized Mermaid blocks request server compilation. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
 
 ## §web-working-notes Inspectable working material
 
@@ -662,7 +662,7 @@ name or content. This presentation adds no conversation store or protocol role.
 | Presentation | Superscript reference links lead to a native ordered list labelled Footnotes. Each definition has a back-link for every occurrence, with accessible reference labels. Fragment navigation is native; no scrolling handler or application action. |
 | Identity | Each rich message body and SEND call has its own anchor namespace, derived from its SDK identity. Definition and occurrence coordinates come from the extension, never arbitrary source-label concatenation. Distinct outlets cannot collide, including when a message and a call have the same ID. Identical content and identity reproduce identical anchors after streaming or replay; no persistent footnote registry or cross-message definition lookup. |
 | Admission | Definition bodies pass through the same Markdown renderer and sanitizer as ordinary prose, including nested Markdown and math. Raw HTML remains text. Footnote labels cannot create IDs, controls or bindings. NOTE, reasoning and ordinary operation evidence remain literal. |
-| Continuity | Parsing state is confined to one body render. Partial updates cannot borrow definitions from earlier renders or other bodies. Unchanged bodies preserve their nodes, selection and native disclosure state under {§web-worker-conversation}. Reflow follows {§web-content-reflow}. |
+| Continuity | Parsing state is confined to one body render. Partial updates cannot borrow definitions from earlier renders or other bodies. Unchanged bodies preserve their nodes, selection and native disclosure state under {§web-session-conversation}. Reflow follows {§web-content-reflow}. |
 
 ## §web-math-content Native mathematics
 
@@ -692,9 +692,9 @@ Reference: [SVG image restrictions](https://developer.mozilla.org/en-US/docs/Web
 |---|---|
 | HTTP | `POST /render/mermaid` accepts UTF-8 `application/json` containing one `source` string and returns standalone `image/svg+xml`. Other methods return 405 with `Allow: POST`; other media types return 415; invalid UTF-8, JSON or shape returns 400. No CORS admission, simple form submission, external source URL or filesystem path. Browser fetch metadata must be same-origin when present. |
 | Admission | With daemon authentication enabled, require the existing valid web session, otherwise 401 without a login redirect. Explicitly disabled daemon authentication admits anonymous compilation. This is presentation, not an agent operation or an ACP extension. |
-| Isolation | Ondine executes in a bounded Node worker pool, never on the daemon event loop. The environment owns concurrency, admitted render count, queue-inclusive execution deadline, request-byte limit, compiler edge limit and SVG-byte limit. Request-body transport deadlines remain the HTTP host's concern. Compiler limits and worker termination are not an OS memory sandbox. |
+| Isolation | Ondine executes in a bounded Node thread pool, never on the daemon event loop. The environment owns concurrency, admitted render count, queue-inclusive execution deadline, request-byte limit, compiler edge limit and SVG-byte limit. Request-body transport deadlines remain the HTTP host's concern. Compiler limits and thread termination are not an OS memory sandbox. |
 | Failure | Oversized input returns 413; unsupported or invalid diagrams and compiler/output limits return 422; full admission returns 429; execution deadline returns 408; module shutdown returns 503. Failures are Problems, not images. Preserve unexpected compiler failures for the host's normal error path. |
-| Lifetime | Start compiler workers only on demand. Expired or disconnected render requests stop their pending or active compilation. Module close rejects outstanding compilation and awaits worker termination. Neither browser departure nor renderer failure changes agent work. No persisted render cache or temporary files. |
+| Lifetime | Start compiler threads only on demand. Expired or disconnected render requests stop their pending or active compilation. Module close rejects outstanding compilation and awaits thread termination. Neither browser departure nor renderer failure changes agent work. No persisted render cache or temporary files. |
 | Output | Responses are private and not cached. SVG has `nosniff` and a sandboxed CSP denying scripts and external resource loads, including when opened as a document. The browser consumes it only through {§web-diagram-content}, without changing the application's CSP. |
 
 ## §web-content-reflow Constrained and changing viewports
@@ -704,13 +704,13 @@ without page-wide horizontal scrolling. Literal text preserves authored newlines
 indentation and source text while wrapping long lines and unbroken tokens; visual
 wraps add no hard line breaks. Native selection is not intercepted. Settled entries
 grow vertically without an internal vertical scroll area;
-the bounded live preview remains governed by {§web-worker-reasoning}.
+the bounded live preview remains governed by {§web-session-reasoning}.
 Explicit code, tables, formulas and diagrams that intrinsically require two
 dimensions scroll within their own content boundary, not the whole message.
 Raw tool output is literal working material, not inferred code or a table.
 Keep readable font sizes and native zoom; do not shrink content or rewrite diagram orientation.
 Native CSS responds to viewport changes without a JavaScript layout
-controller; reading position and tail following belong to {§web-worker-history}. Browser rendering
+controller; reading position and tail following belong to {§web-session-history}. Browser rendering
 limitations do not introduce a second renderer or compatibility polyfill.
 
 ## §web-page-shell Native page shell
@@ -718,15 +718,15 @@ limitations do not introduce a second renderer or compatibility polyfill.
 | Surface | Contract |
 |---|---|
 | Shared navigation | Home/brand and the Workspaces breadcrumb root are real links preceding the single `main` landmark (the workspace index instead marks its root as current); no skip-navigation control. Authenticated documents add Account and a compact secondary Sign Out POST form in the header; no footer logout. Anonymous documents omit account/session controls. Native links and controls retain visible keyboard focus. |
-| Header actions | Mascot-only home link with accessible Plurnk name; its square SVG uses the two-character monospace scale (`2ch`) of the navigation emoji, rather than a fixed pixel size. ⚙️ Account, ✖ Sign out: icon-only controls with explicit accessible names and native explanatory titles. Brand and actions align in one horizontal row, including narrow viewports. The workspace root is 🗃️ with an explicit Workspaces accessible name/title, not another menu action; workspace and worker names remain text. |
+| Header actions | Mascot-only home link with accessible Plurnk name; its square SVG uses the two-character monospace scale (`2ch`) of the navigation emoji, rather than a fixed pixel size. ⚙️ Account, ✖ Sign out: icon-only controls with explicit accessible names and native explanatory titles. Brand and actions align in one horizontal row, including narrow viewports. The workspace root is 🗃️ with an explicit Workspaces accessible name/title, not another menu action; workspace and session names remain text. |
 | Breadcrumb layout | A compact single-row CSS grid keeps the breadcrumb between mascot and menu. Complete names never wrap or abbreviate; overflow scrolls horizontally within the breadcrumb, not the document. Pico's navigation padding belongs inside the breadcrumb's scroll area, with no vertical overflow or clipped content; its keyboard-focus ring stays inward. Native keyboard focus reveals linked ancestors without JavaScript measurements or a responsive navigation widget. The header adds no further block padding. Keyboard order remains mascot, menu, breadcrumb. |
-| Disconnection | A decorative 🔌 with an accessible Disconnected name/title appears immediately left of Account when the worker observation is disconnected or signed out. It is absent during initial connection, healthy observation and ordinary input interrupts, and on documents without live observation. CSS projects the existing connection state; no browser-online inference, duplicate state or new action. Existing failure details and recovery controls remain available. |
-| Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. Home and directory pages omit duplicate headings; the breadcrumb identifies the current worker. Account and error pages retain one `h1`. |
-| Directory breadcrumbs | 🗃️ → whole workspace name → worker; only applicable ancestors appear. Non-directory pages retain the root link, including Account/session navigation. The current item is text marked `aria-current="page"`. The workspace-page marker follows {§web-workspace-folder}. Slashes in names do not invent intermediate directories. |
-| Empty lists | “No workspaces.” or “No workers.”; no empty list masquerading as content. |
-| Page width | Home, account and error documents retain a centered 65ch reading measure. Workspaces, Workspace and Worker share the available viewport width. Gutters and wrapping preserve narrow-screen usability and complete names. |
-| Viewport layout | Directory/worker documents use a viewport-height CSS grid: stationary header, scrollable main, and (on workers) stationary status/composer footer. Native viewport resizing and textarea sizing handle changing available space; no measured offsets or JavaScript layout controller. Main retains conversation, settings, reviews, detailed connection/message feedback and command results. Reading/form documents retain ordinary page flow. |
-| Directory entries | Native lists use `li > article`. Workspace headers retain folder/cloud identity; worker cards use the identity/disclosure under {§web-worker-directory}. Accessible names do not depend on CSS glyphs. Preserve nested child disclosures and the daemon's membership/order; no second browser directory or custom tree widget. |
+| Disconnection | A decorative 🔌 with an accessible Disconnected name/title appears immediately left of Account when the session observation is disconnected or signed out. It is absent during initial connection, healthy observation and ordinary input interrupts, and on documents without live observation. CSS projects the existing connection state; no browser-online inference, duplicate state or new action. Existing failure details and recovery controls remain available. |
+| Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. Home and directory pages omit duplicate headings; the breadcrumb identifies the current session. Account and error pages retain one `h1`. |
+| Directory breadcrumbs | 🗃️ → whole workspace name → session; only applicable ancestors appear. Non-directory pages retain the root link, including Account/session navigation. The current item is text marked `aria-current="page"`. The workspace-page marker follows {§web-workspace-folder}. Slashes in names do not invent intermediate directories. |
+| Empty lists | “No workspaces.” or “No sessions.”; no empty list masquerading as content. |
+| Page width | Home, account and error documents retain a centered 65ch reading measure. Workspaces, Workspace and Session share the available viewport width. Gutters and wrapping preserve narrow-screen usability and complete names. |
+| Viewport layout | Directory/session documents use a viewport-height CSS grid: stationary header, scrollable main, and (on sessions) stationary status/composer footer. Native viewport resizing and textarea sizing handle changing available space; no measured offsets or JavaScript layout controller. Main retains conversation, settings, reviews, detailed connection/message feedback and command results. Reading/form documents retain ordinary page flow. |
+| Directory entries | Native lists use `li > article`. Workspace headers retain folder/cloud identity; session cards use the identity/disclosure under {§web-session-directory}. Accessible names do not depend on CSS glyphs. Preserve nested child disclosures and the daemon's membership/order; no second browser directory or custom tree widget. |
 | Expected HTTP failures | A Pico `article` card within the same HTML shell: heading, decorative warning emoji, escaped explanation and native Home link. Preserve status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
 
 The compiled root document owns shared navigation and assets, including an inert
@@ -756,13 +756,13 @@ compilation may combine them without changing their cascade:
 | `app-vendor.css` | Unmodified pinned Pico Classless Green, copied during build. |
 | `app-structure.css` | Readable page width, gutters and wrapping. |
 | `app-style.css` | Presentation through substrate tokens; brand accents, system monospace and conversation surface colors. |
-| `app-state.css` | Worker page width, semantic background selection, observer connection/error presentation and native focus visibility. |
+| `app-state.css` | Session page width, semantic background selection, observer connection/error presentation and native focus visibility. |
 
-Worker content, diagnostics and status inherit Pico's typography and colors.
-Additional worker CSS supplies geometry, overflow containment, declared glyphs,
+Session content, diagnostics and status inherit Pico's typography and colors.
+Additional session CSS supplies geometry, overflow containment, declared glyphs,
 visibility and the three backgrounds in {§web-conversation-surfaces}, not a
 separate component theme. Layout uses
-the substrate's spacing scale rather than a worker-specific compact scale.
+the substrate's spacing scale rather than a session-specific compact scale.
 
 ## §web-language Source language
 
@@ -780,7 +780,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Concern | Owner |
 |---|---|
 | Document structure and ordinary navigation | Semantic HTML, real links, lists and native forms; not a JavaScript-created application shell. |
-| Interactive worker | JavaScript-dependent product surface, not a parallel no-JS implementation. Status, conversation and explicit input use {§web-worker-observer}, {§web-worker-conversation} and {§web-worker-input}. |
+| Interactive session | JavaScript-dependent product surface, not a parallel no-JS implementation. Status, conversation and explicit input use {§web-session-observer}, {§web-session-conversation} and {§web-session-input}. |
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Document content | Native text or sanitized fragments enter template-owned outlets under {§web-conversation-content}. No competing state/translation writer or body attribute mirror. Unchanged text retains its nodes and native selection. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
@@ -793,8 +793,8 @@ storage even when storage is denied. No language picker or additional locale is 
 | Scripts and styles | Same-origin resources only; no inline execution or dynamic code generation. Browser schema validation runs without JIT, configured before SDK schema initialization. |
 | Images | Same-origin and data-URI images, including Pico's embedded SVG controls. This permission does not extend to scripts, styles or connections. |
 | Other directives | Default same-origin; no objects, base URL changes or framing. Forms submit to the same origin. |
-| Browser gate | Capture console warnings/errors and uncaught exceptions from document, authentication, directory, SDK and actual worker journeys. Healthy paths produce none. Negative cases assert their specific expected diagnostics; no blanket filtering of CSP or SDK errors. |
-| Content checks | Adversarial compiled-renderer tests exercise HTML/SVG, executable URL schemes, application-binding injection, literal fields, streaming and replay in Chromium and Firefox. Assert preserved application structure, inert rejected links, no model-directed requests or new browsing contexts, and clean diagnostics. Math additionally exercises untrusted extensions, macro isolation and delayed rendering. A packed authenticated worker receives hostile NOTE and answer bodies through real SDK delivery and refresh. These checks verify concrete cases, not a claim of exhaustive security assurance. |
+| Browser gate | Capture console warnings/errors and uncaught exceptions from document, authentication, directory, SDK and actual session journeys. Healthy paths produce none. Negative cases assert their specific expected diagnostics; no blanket filtering of CSP or SDK errors. |
+| Content checks | Adversarial compiled-renderer tests exercise HTML/SVG, executable URL schemes, application-binding injection, literal fields, streaming and replay in Chromium and Firefox. Assert preserved application structure, inert rejected links, no model-directed requests or new browsing contexts, and clean diagnostics. Math additionally exercises untrusted extensions, macro isolation and delayed rendering. A packed authenticated session receives hostile NOTE and answer bodies through real SDK delivery and refresh. These checks verify concrete cases, not a claim of exhaustive security assurance. |
 
 ## §web-contract-checks Specification gate
 
@@ -837,7 +837,7 @@ The current development page has no backend interaction; no API proxy is install
 | Document metadata | UTF-8, language, zoomable viewport, description, application name, early `color-scheme: light dark` and brand theme color. The standard manifest owns standalone launch; no legacy platform-specific launch metadata. |
 | Privacy | Discourage indexing with `noindex, nofollow`; limit referrers to the same origin. No external fonts, analytics or deployment-specific canonical URL. |
 | Installation | Browser-owned installation and standalone launch. HTTPS is required remotely; localhost/loopback is eligible without TLS. Browser and OS support varies. |
-| Availability | Requires the daemon. No service worker, offline cache, background sync, notifications or claim of offline functionality. |
+| Availability | Requires the daemon. No offline cache, background sync, notifications or claim of offline functionality. |
 
 Installation metadata does not create a second server or change ownership of
 `/acp` or other daemon mounts. No in-page install prompt or application UI is added.
@@ -848,7 +848,7 @@ References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progre
 ## §web-package Package boundary
 
 The npm archive includes the Agent Plugin manifest, native module, defaults,
-document and its complete browser dependency graph, including OTM, Pico, HttpAgent and artwork licenses,
+document and its complete browser dependency graph, including OTM, Pico, the ACP SDK and artwork licenses,
 and declares its peer ranges on the platform's contracts, modules, auth and ACP packages.
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside candidate service archives in an isolated environment and exercises actual module
@@ -861,36 +861,3 @@ These drivers are test tooling, not runtime dependencies or a client transport.
 
 Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-modules/SPEC.md),
 [Agent Plugins](https://agent-plugins.org/), and OTM's installed README.
-
-## §web-acp-conformance Browser protocol verification
-
-The packed-installation gate runs the official HttpAgent in Chromium from the
-module's real document origin, against an isolated authenticated daemon and a
-deterministic local model. Only the test SDK asset is injected; ACP traffic is
-not intercepted or synthesized. No operator configuration or paid model is used.
-Test fixtures and the SDK test bundle are not shipped browser assets. The actual
-worker page is exercised separately under {§web-worker-observer}, without SDK injection.
-
-| Boundary under verification | Required observation |
-|---|---|
-| Ordinary client | Stock HttpAgent creates, continues and reconstructs a conversation using only standard inputs and authentication. No Plurnk actions, selectors, metadata interpretation or tool declarations. Independent threads remain isolated; sending retained history adds no prompt or inference. |
-| Standard Run | Bearer rejection, discovery, reasoning, correlated native tool/results, Plurnk receipts, state, assistant replies and provider failures survive the official SDK. |
-| State ownership | Preparation and activity belong to workspace state. Runs without a model worker expose neither worker status nor budget. |
-| Synchronization | Authoritative messages/state without inference or borrowed history from another workspace. Retained reasoning and operation/result evidence must not disappear on a fresh connection. |
-| Conversation continuity | An observer attached before another client submits a prompt, the submitter, an observer attached mid-reasoning, and a refreshed observer retain the same ordered messages under the same identities. Prompts arrive once before inference completes; reattachment neither duplicates history nor submits it as new input. A same-named worker in another workspace remains isolated. |
-| Operation fidelity | Standard tool-call arguments preserve the authored resource address (including its host), scope, pattern and aside. Successful and failed READs retain their attempted operands and exactly one correlated result, live and after refresh. No custom-row reconstruction supplies missing conversation facts. |
-| Execution results | Real commands' stdout/stderr observations answer the native execution call, retaining output, terminal status and exit code, including nonzero exits. Pre-attached, submitting, late and refreshed SDK consumers retain the same ordered messages and identities; a start receipt is not the command's output. |
-| Run outcomes | Successful loops end with standard `RUN_FINISHED`, `outcome: success`, their result and aggregate reported token usage. Cancellation is `RUN_FINISHED` with `outcome: cancelled`, not `RUN_ERROR`; unreported usage stays absent. Provider failures remain `RUN_ERROR`, not successful completion. Command exit codes and overall loop outcomes remain distinct. |
-| Observation | Passive `/acp/connect` selects an existing worker by qualified `threadId`, remains open while idle and can detach/reconnect without cancelling another connection's work. HttpAgent's public connection hook forwards its input unchanged: retained messages synchronize rather than resubmit work. |
-| Exact target | Passive existing-worker selection preserves identity across workspace rename. URLs still select names: a renamed-away URL is 404, while the new URL supplies the same thread identity. Missing/internal targets fail without creating or claiming anything. |
-| Status continuity | Live and freshly attached observers agree on current-loop identity, packet count, timing and worker/descendant spend. Reattachment watches subsequent loops without replaying messages as prompts; final state precedes the transport terminal. Unknown pricing remains unknown. |
-| Disconnect | After admission, aborting the submitting SDK request, navigating away or closing its page ends delivery only. Observers and fresh connections retain the same work, message identities, natural completion and reported usage; no duplicate prompt or inference. Transport closure is not a worker outcome. |
-| Explicit cancellation | The public `loop.cancel` action requests cancellation. Submitter and observers receive the daemon's cancelled terminal result; request abortion alone proves no cancellation. Unreported usage stays unknown. The shipped Stop form uses that action under {§web-worker-input}. |
-| Transport handoff | One official SDK history can detach passive observation, submit a new message through Run, and return to observation. Retained history is not admitted as new input; replay retains identities and call/result correspondence. Neither transport role owns the worker's lifetime. |
-| Approval | Native interrupts carry review facts in `metadata.plurnk.proposal`, with a call reference only when that conversation is present. No approval tool declaration is needed. Leaving the submitting page neither resolves nor cancels a pending gate; reconnection rediscovers it. SDK resume yields the operation's actual result, not a decision acknowledgement. A different owner or consumed interrupt cannot resolve the gate. The shipped native forms use {§web-worker-approval}. |
-| Questions | Declared `question` and `mcp_input_required` handlers use native interrupts and schema-preserving answers under {§web-worker-questions}. Resolution and cancellation resume the existing operation; reconnect, stale continuations and credential loss never manufacture an answer. MCP request-state remains daemon-owned. |
-| Shutdown | The daemon delivers a terminal error and stops despite an idle connection. |
-| Credentials | Real password/PKCE sign-in, browser access, expiry, concurrent refresh and revocation compose with the SDK. Revocation terminates admitted connections without cancelling their workers. |
-
-Protocol and shipped-page checks share the public SDK. There is no client-owned
-replay cache, second event parser or automatic retry of work.

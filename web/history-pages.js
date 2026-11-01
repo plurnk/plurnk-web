@@ -1,4 +1,4 @@
-/** @typedef {import("@plurnk/plurnk-acp/client").Message} Message */
+/** @typedef {import("./session-agent.js").Message} Message */
 /** @typedef {{messages: readonly Message[], older: string | null, final: boolean}} Page */
 /** @typedef {Page & {url: string | null}} Part */
 
@@ -9,17 +9,22 @@ function unique(messages) {
     if (new Set(messages.map(({ id }) => id)).size !== messages.length) throw new Error("Conversation has duplicate message identities.");
 }
 
-/** {§web-worker-history} Read-only server projections; no event reduction or SDK mutation. */
+/** {§web-session-history} Read-only server projections; no event reduction or SDK mutation. */
 export default class HistoryPages {
     /** @type {Part} */
     #window = { url: null, messages: [], older: null, final: false };
     /** @type {Part[]} Newest first, in the order reached through daemon boundaries. */
     #pages = [];
 
-    /** @param {import("@plurnk/plurnk-acp/client").MessagesSnapshotEvent} event @param {boolean} reading */
+    /**
+     * @param {{ messages: readonly Message[], older?: unknown, metadata?: { plurnk?: { history?: { older?: unknown } } } }} event
+     * @param {boolean} reading
+     */
     snapshot(event, reading) {
         const history = event.metadata?.plurnk?.history;
-        const older = history === undefined ? null : history?.older;
+        const older = event.older !== undefined
+            ? event.older
+            : (history !== undefined && "older" in history ? (history.older ?? null) : (event.metadata?.plurnk !== undefined ? null : undefined));
         if (older !== null && (typeof older !== "string" || !older.trim())) throw new TypeError("History boundary must be a URL or null.");
         unique(event.messages);
         const incoming = new Set(event.messages.map(({ id }) => id));

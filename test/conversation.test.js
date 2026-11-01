@@ -22,7 +22,7 @@ import verifyHistory from "./history-browser.js";
 import verifySurfaces from "./surfaces-browser.js";
 import verifyReflow from "./reflow-browser.js";
 import verifyDisclosures from "./disclosure-browser.js";
-import verifyWorkerCards from "./worker-cards-browser.js";
+import verifySessionCards from "./session-cards-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -36,7 +36,7 @@ const messages = [
     { id: "answer", role: "assistant", content: "The file contains **cobalt heron**." },
 ];
 
-test("{§web-worker-conversation} {§web-conversation-content} native conversation projection", { timeout: 60_000 }, async (t) => {
+test("{§web-session-conversation} {§web-conversation-content} native conversation projection", { timeout: 60_000 }, async (t) => {
     const { server, url } = await conversationFixture();
     try {
         for (const engine of engines) {
@@ -56,7 +56,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         const source = [{ id: "notebook", role: "assistant", subagentRunId: "child-run", toolCalls:
                             ["fact", "idea", "plan", "note", "custom"].map((aside, index) => ({
                                 id: `note-${index}`, type: "function", function: { name: "NOTE", arguments: JSON.stringify({ aside, body: `A **${aside}**.` }) },
-                                metadata: { plurnk: { op: "NOTE", coordinate: `1/2/${index}`, worker: 9, state: "resolved", status: 200,
+                                metadata: { plurnk: { op: "NOTE", coordinate: `1/2/${index}`, session: 9, state: "resolved", status: 200,
                                     attrs: { privateFixtureMarker: "not-a-presentation-field" } } },
                             })),
                         }];
@@ -70,7 +70,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                             assert.equal(await entry.getAttribute("data-call-id"), `note-${index}`);
                             assert.equal(await entry.getAttribute("data-plurnk-type"), "NOTE");
                             assert.equal(await entry.getAttribute("data-plurnk-note"), category);
-                            assert.equal(await entry.getAttribute("data-plurnk-worker"), "9");
+                            assert.equal(await entry.getAttribute("data-plurnk-session"), "9");
                             assert.equal(await entry.getAttribute("data-plurnk-status"), "200");
                             assert.equal(await entry.getAttribute("data-plurnk-state"), "resolved");
                             assert.deepEqual(await entry.locator(":scope > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["ARTICLE"]);
@@ -89,7 +89,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         await present([]);
                     });
 
-                    await t.test("empty history requires a supplied empty collection, not an empty rendered list", async () => {
+                    await t.test("{§web-session-conversation} empty history requires a supplied empty collection, not an empty rendered list", async () => {
                         await page.reload();
                         await page.waitForFunction(() => typeof window.present === "function");
                         const empty = page.getByText("No messages.", { exact: true });
@@ -106,7 +106,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await empty.isVisible(), true, "a later empty snapshot clears the conversation");
                     });
 
-                    await t.test("roles, exact calls and results retain SDK order in direct semantic entries", async () => {
+                    await t.test("{§web-session-conversation} roles, exact calls and results retain SDK order in direct semantic entries", async () => {
                         await present(messages);
                         assert.deepEqual(await ids(), ["question", "thought", "operations", "operations", "evidence", "failure", "answer"]);
                         assert.equal(await row("question").locator("article strong").innerText(), "the evidence");
@@ -118,11 +118,11 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await row("failure").locator("article > details > pre").textContent(), "Partial result");
                         assert.equal(await row("evidence").getAttribute("data-tool-call-id"), "call/one#%");
                         assert.equal(await row("evidence").locator("a").count(), 0);
-                        assert.equal(await page.locator("#worker-conversation form, #worker-conversation textarea, #worker-conversation [contenteditable]").count(), 0);
+                        assert.equal(await page.locator("#session-conversation form, #session-conversation textarea, #session-conversation [contenteditable]").count(), 0);
                         assert.equal(await page.locator("[data-empty-conversation]").isVisible(), false);
                     });
 
-                    await t.test("streaming and reconnect snapshots preserve open details, focus, unchanged body selection and scroll", async () => {
+                    await t.test("{§web-session-conversation} streaming and reconnect snapshots preserve open details, focus, unchanged body selection and scroll", async () => {
                         await present(messages);
                         await row("thought").locator("summary").click();
                         await page.evaluate(() => {
@@ -149,7 +149,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.match(await row("thought").locator("article").textContent(), /Now I have evidence\./u);
                     });
 
-                    await t.test("call identities stay exact without inventing fragment navigation", async () => {
+                    await t.test("{§web-session-conversation} call identities stay exact without inventing fragment navigation", async () => {
                         const calls = ["call/a", "call%2Fa"].map((id) => ({
                             id, type: "function", function: { name: "READ", arguments: '{"path":"evidence.txt"}' },
                         }));
@@ -162,7 +162,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         }
                     });
 
-                    await t.test("mixed content and calls preserve their order, identity and supplied metadata across snapshots", async () => {
+                    await t.test("{§web-session-conversation} mixed content and calls preserve their order, identity and supplied metadata across snapshots", async () => {
                         const call = (id) => ({ id, type: "function", function: { name: "lookup", arguments: "{}" } });
                         const message = { id: "mixed", role: "assistant", content: "First the explanation.", toolCalls: [call("one"), call("two")],
                             metadata: { plurnk: { op: "SEND", status: 200, address: "message://user/example" } } };
@@ -181,7 +181,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await entries.count(), 1, "invalid identity cannot partially replace valid content");
                     });
 
-                    await t.test("snapshots replace membership and order instead of maintaining another history", async () => {
+                    await t.test("{§web-session-conversation} snapshots replace membership and order instead of maintaining another history", async () => {
                         const revised = [messages[5], messages[0], { id: "new", role: "assistant", content: "New answer" }];
                         await present(revised);
                         assert.deepEqual(await ids(), ["answer", "question", "new"]);
@@ -193,7 +193,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await page.locator("[data-empty-conversation]").isVisible(), true);
                     });
 
-                    await t.test("standard text is readable; unmapped structured payloads remain in JavaScript", async () => {
+                    await t.test("{§web-session-conversation} standard text is readable; unmapped structured payloads remain in JavaScript", async () => {
                         const other = [
                             { id: "system", role: "system", content: "System evidence" },
                             { id: "developer", role: "developer", content: "Developer evidence" },
@@ -214,14 +214,14 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.equal(await row("orphan").getAttribute("data-message-error"), null, "an empty error field is not an error state");
                     });
 
-                    await t.test("Markdown cannot create controls, bindings, executable links or automatic media requests", async () => {
+                    await t.test("{§web-conversation-content} Markdown cannot create controls, bindings, executable links or automatic media requests", async () => {
                         const requests = [];
                         page.on("request", (request) => requests.push(request.url()));
                         const hostile = [
                             "# Heading", "**Strong** and *emphasis*", "- [x] completed", "- [ ] incomplete",
                             "| Name | Value |\n| --- | --- |\n| File | cobalt |",
                             "```text\nflowchart LR\n A --> B\n```",
-                            '<script>window.pwned = true</script>', '<div data-text="connection-label" id="worker-status" onclick="alert(1)">HTML remains text</div>',
+                            '<script>window.pwned = true</script>', '<div data-text="connection-label" id="session-status" onclick="alert(1)">HTML remains text</div>',
                             '<form action="/auth/logout"><button>Injected sign out</button></form>',
                             '[unsafe](javascript:alert%281%29)', '![image](https://example.invalid/image.png "Image")',
                             '[evidence](https://example.com/evidence)',
@@ -244,7 +244,7 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
                         assert.deepEqual(requests, [], "rendering content does not fetch its links or images");
                     });
 
-                    await t.test("unchanged operation bodies preserve native text selection", async () => {
+                    await t.test("{§web-session-conversation} unchanged operation bodies preserve native text selection", async () => {
                         const source = [{ id: "edit", role: "assistant", toolCalls: [{ id: "edit-call", type: "function",
                             function: { name: "EDIT", arguments: '{"body":"Replacement text"}' }, metadata: { plurnk: { op: "EDIT" } } }] }];
                         await present(source);
@@ -376,24 +376,24 @@ test("{§web-worker-conversation} {§web-conversation-content} native conversati
 // One browser-test entry point owns browser lifetimes; checks retain cold documents.
 test("{§web-card-disclosure} native bodies preserve defaults, reader choices and visible diagnostics", { timeout: 60_000 }, verifyDisclosures);
 test("{§web-operation-summary} every operation shares its authored summary with its own receipt", { timeout: 60_000 }, verifySemanticContent);
-test("{§web-worker-diagnostics} public notices and Problems remain visible outside conversation", { timeout: 60_000 }, verifyDiagnostics);
+test("{§web-session-diagnostics} public notices and Problems remain visible outside conversation", { timeout: 60_000 }, verifyDiagnostics);
 
-test("{§web-worker-status} {§web-worker-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
+test("{§web-session-status} {§web-session-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
 test("{§web-page-shell} pinned shell and native multiline composer reflow", { timeout: 60_000 }, verifyShell);
 test("{§web-conversation-surfaces} semantic backgrounds retain contrast in light and dark themes", { timeout: 60_000 }, verifySurfaces);
 test("{§web-content-reflow} literal content wraps without changing text or explicit code", { timeout: 60_000 }, verifyReflow);
 test("{§web-result-bodies} visible content loads securely without an inspection UI", { timeout: 60_000 }, verifyBodies);
-test("{§web-worker-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
-test("{§web-worker-history} opaque read-only paging through the official SDK", { timeout: 90_000 }, verifyHistory);
-test("{§web-worker-streams} observed executor outcomes and explicit output inspection", { timeout: 60_000 }, verifyStreams);
-test("{§web-worker-activity} non-conversation observations retain identity and explicit inspection", { timeout: 60_000 }, verifyActivity);
-test("{§web-worker-commands} isolated command delivery and literal results", { timeout: 60_000 }, verifyCommands);
+test("{§web-session-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
+test("{§web-session-history} opaque read-only paging through the official SDK", { timeout: 90_000 }, verifyHistory);
+test("{§web-session-streams} observed executor outcomes and explicit output inspection", { timeout: 60_000 }, verifyStreams);
+test("{§web-session-activity} non-conversation observations retain identity and explicit inspection", { timeout: 60_000 }, verifyActivity);
+test("{§web-session-commands} isolated command delivery and literal results", { timeout: 60_000 }, verifyCommands);
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);
 test("{§web-conversation-content} {§web-browser-security} adversarial content across roles, streaming and replay", { timeout: 60_000 }, verifyContentSecurity);
 test("{§web-diagram-content} {§web-content-reflow} static Mermaid images through the real conversation outlet", { timeout: 60_000 }, verifyMermaid);
 test("{§web-diagram-content} unavailable diagram compilation preserves source and ordinary messages", verifyUnavailableMermaid);
-test("{§web-worker-approval} native review controls project complete SDK interrupt sets", { timeout: 60_000 }, verifyApproval);
-test("{§web-worker-questions} native and JSON answers preserve the full response contract", { timeout: 60_000 }, verifyInteractions);
-test("{§web-worker-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifyWorkerCards);
+test("{§web-session-approval} native review controls project complete SDK interrupt sets", { timeout: 60_000 }, verifyApproval);
+test("{§web-session-questions} native and JSON answers preserve the full response contract", { timeout: 60_000 }, verifyInteractions);
+test("{§web-session-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifySessionCards);

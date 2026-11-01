@@ -3,7 +3,7 @@ import { engines } from "./engines.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 
-// {§web-worker-diagnostics} Real templates and public validators; no diagnostic HTML supplied by the test.
+// {§web-session-diagnostics} Real templates and public validators; no diagnostic HTML supplied by the test.
 export default async function verifyDiagnostics(t) {
     const { server, url } = await conversationFixture(new URL("./diagnostics-entry.js", import.meta.url));
     try {
@@ -17,20 +17,23 @@ export default async function verifyDiagnostics(t) {
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.presentDiagnostic === "function");
                     const receive = (event) => page.evaluate((event) => window.presentDiagnostic(event), event);
-                    const list = page.locator("#worker-diagnostics");
+                    const list = page.locator("#session-diagnostics");
                     const rows = list.locator("ul > li");
                     assert.equal(await list.isVisible(), false);
-                    await receive({ type: "CUSTOM", name: "another.extension", value: null });
+                    await receive({ sessionUpdate: "another.extension", value: null });
                     assert.equal(await rows.count(), 0);
-                    const notice = { type: "CUSTOM", name: "plurnk.notice", value: {
-                        source: "engine:provider", kind: "provider_unavailable", level: "warn",
-                        message: '<img src="/probe" onerror="alert(1)"> Retrying.',
-                        position: { type: "log-coordinate", coordinate: "log:///1/2/3" },
-                    } };
+                    const notice = {
+                        sessionUpdate: "notice", severity: "warn", title: "engine:provider:provider_unavailable",
+                        _meta: { plurnk: { notice: {
+                            source: "engine:provider", kind: "provider_unavailable", level: "warn",
+                            message: '<img src="/probe" onerror="alert(1)"> Retrying.',
+                            position: { type: "log-coordinate", coordinate: "log:///1/2/3" },
+                        } } },
+                    };
                     await receive(notice);
                     assert.equal(await list.isVisible(), true);
                     assert.equal(await rows.first().getByRole("article", { name: "Warning · engine:provider:provider_unavailable", exact: true }).count(), 1);
-                    assert.equal(await rows.first().locator('header > [data-plurnk-field="heading"]').textContent(), notice.value.message);
+                    assert.equal(await rows.first().locator('header > [data-plurnk-field="heading"]').textContent(), notice._meta.plurnk.notice.message);
                     assert.equal(await rows.first().getAttribute("data-diagnostic-level"), "warn");
                     assert.equal(await rows.first().locator("details, code").count(), 0, "a concise notice has no redundant body");
                     assert.match(await rows.first().locator('[data-plurnk-field="heading"]').evaluate((node) => getComputedStyle(node, "::before").content), /⚠️/u);
@@ -39,30 +42,33 @@ export default async function verifyDiagnostics(t) {
                     await receive(structuredClone(notice));
                     assert.equal(await rows.count(), 1, "reconnection replay is not another claimed occurrence");
                     assert.equal(await rows.first().evaluate((element) => element === window.retainedDiagnostic), true);
-                    await receive({ ...notice, value: { ...notice.value, message: "Retrying in 10s." } });
-                    await receive({ ...notice, subagentRunId: "ops://child/7" });
+                    await receive({ ...notice, _meta: { plurnk: { notice: { ...notice._meta.plurnk.notice, message: "Retrying in 10s." } } } });
+                    await receive({ ...notice, _meta: { plurnk: { ...notice._meta.plurnk, subagentRunId: "ops://child/7" } } });
                     assert.equal(await rows.count(), 3, "changed facts and different producers retain their own evidence");
                     assert.equal(await rows.nth(2).getAttribute("data-subagent-run-id"), "ops://child/7");
-                    for (const level of ["info", "error"]) await receive({ ...notice, value: { source: "fixture", kind: level, level } });
-                    const problem = { type: "CUSTOM", name: "plurnk.problem", value: {
-                        type: "https://problems.plurnk.xyz/fixture/unavailable", title: "Catalog unavailable", status: 503,
-                        detail: "Configured catalog is unavailable.", recovery: "Check the model configuration.", retryable: false,
-                    } };
+                    for (const level of ["info", "error"]) await receive({ ...notice, _meta: { plurnk: { notice: { source: "fixture", kind: level, level } } } });
+                    const problem = {
+                        sessionUpdate: "notice", severity: "error", title: "Catalog unavailable",
+                        _meta: { plurnk: { problem: {
+                            type: "https://problems.plurnk.xyz/fixture/unavailable", title: "Catalog unavailable", status: 503,
+                            detail: "Configured catalog is unavailable.", recovery: "Check the model configuration.", retryable: false,
+                        } } },
+                    };
                     await receive(problem);
-                    assert.equal(await rows.last().getByRole("article", { name: `Error · ${problem.value.title}`, exact: true }).count(), 1);
-                    assert.equal(await rows.last().locator('summary > [data-plurnk-field="heading"]').textContent(), problem.value.title);
-                    assert.equal(await rows.last().locator("pre").textContent(), `${problem.value.detail}\n\n${problem.value.recovery}`);
+                    assert.equal(await rows.last().getByRole("article", { name: `Error · ${problem._meta.plurnk.problem.title}`, exact: true }).count(), 1);
+                    assert.equal(await rows.last().locator('summary > [data-plurnk-field="heading"]').textContent(), problem._meta.plurnk.problem.title);
+                    assert.equal(await rows.last().locator("pre").textContent(), `${problem._meta.plurnk.problem.detail}\n\n${problem._meta.plurnk.problem.recovery}`);
                     assert.equal(await rows.last().locator("pre").isVisible(), false);
-                    assert.equal(await rows.last().getByText(problem.value.title, { exact: true }).isVisible(), true);
+                    assert.equal(await rows.last().getByText(problem._meta.plurnk.problem.title, { exact: true }).isVisible(), true);
                     await rows.last().locator("summary").click();
                     assert.equal(await rows.last().locator("pre").isVisible(), true);
                     await receive(structuredClone(problem));
                     assert.equal(await rows.last().locator("details").evaluate((node) => node.open), true, "repeated diagnostic preserves inspection");
                     assert.equal(await list.locator("img, script, form, a").count(), 0, "diagnostic data cannot create actions or network requests");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "diagnostics never fabricate conversation messages");
-                    assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial", "severity does not drive lifecycle");
-                    await assert.rejects(receive({ ...notice, value: { source: "broken" } }), /invalid Notice/u);
-                    await assert.rejects(receive({ ...problem, value: { title: "broken" } }), /invalid RFC 9457 Problem Details/u);
+                    assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "initial", "severity does not drive lifecycle");
+                    await assert.rejects(receive({ ...notice, _meta: { plurnk: { notice: { source: "broken" } } } }), /invalid Notice/u);
+                    await assert.rejects(receive({ ...problem, _meta: { plurnk: { problem: { title: "broken" } } } }), /invalid RFC 9457 Problem Details/u);
                     assert.equal(await rows.count(), 6, "invalid data cannot displace valid diagnostics");
                     checkBrowser();
                 } finally { await browser.close(); }

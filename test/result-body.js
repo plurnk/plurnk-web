@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { HttpAgent } from "@plurnk/plurnk-acp/client";
+import SessionAgent from "../web/session-agent.js";
 
-export async function observeMessages(threadId, origin, headers) {
-    const observer = new HttpAgent({ url: new URL("/acp/connect", origin).href, threadId, headers });
+export async function observeMessages(sessionId, origin, headers) {
+    const observer = new SessionAgent({ url: new URL("/acp", origin).href, sessionId, headers });
     const controller = new AbortController();
     let messages;
-    await observer.runAgent({ abortController: controller }, {
-        onMessagesSnapshotEvent: ({ event }) => { messages = event.messages; controller.abort(); },
-    });
+    await observer.connectAgent({ abortController: controller }, {
+        onMessagesSnapshot: ({ snapshot }) => { messages = snapshot.messages; controller.abort(); },
+    }).catch(() => {});
     assert.ok(messages, "passive SDK observation returns the durable conversation");
     return messages;
 }

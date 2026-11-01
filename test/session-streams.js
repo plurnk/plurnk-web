@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { HttpAgent } from "@plurnk/plurnk-acp/client";
-import { inputPage } from "./worker-input.js";
+import SessionAgent from "../web/session-agent.js";
+import { inputPage } from "./session-input.js";
 
-const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+const connected = (page) => page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
 const settled = (page, lifecycle) => page.waitForFunction((lifecycle) =>
-    document.querySelector('#worker-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === lifecycle, lifecycle);
+    document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === lifecycle, lifecycle);
 const outcomes = (page) => page.locator("[data-stream-outcomes] ul > li");
 
 export async function inspectStreamOutput(row) {
@@ -18,14 +18,14 @@ export async function inspectStreamOutput(row) {
         }])));
 }
 
-// {§web-worker-streams} Real sh streams and management reads through the installed browser and daemon.
-export default async function verifyWorkerStreams({ t, withDaemon }) {
+// {§web-session-streams} Real sh streams and management reads through the installed browser and daemon.
+export default async function verifySessionStreams({ t, withDaemon }) {
     for (const cancelled of [false, true]) {
-        await t.test(`{§web-worker-streams} silent work has no inventory; inspect outcomes after ${cancelled ? "explicit cancellation" : "completion while away"}`, () =>
+        await t.test(`{§web-session-streams} silent work has no inventory; inspect outcomes after ${cancelled ? "explicit cancellation" : "completion while away"}`, () =>
             inputPage(withDaemon, async ({ page, context, path, base, model, checkBrowser, setup, headers }) => {
                 const inputs = [];
                 context.on("request", (request) => {
-                    if (new URL(request.url()).pathname === "/acp") inputs.push(request.postDataJSON());
+                    if (new URL(request.url()).pathname === "/acp" && request.postDataJSON() !== null) inputs.push(request.postDataJSON());
                 });
                 assert.equal(await page.locator("[data-open-streams]").count(), 0);
                 await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
@@ -40,7 +40,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                 await connected(page);
                 await settled(page, "parked");
                 assert.equal(await page.locator("[data-open-streams]").count(), 0);
-                const readCount = inputs.filter((input) => input.forwardedProps?.plurnk?.action?.kind === "entry.read").length;
+                const readCount = inputs.filter((input) => input?.method === "_plurnk/action" && input?.params?.kind === "entry.read").length;
                 assert.equal(readCount, 0, "neither connection nor reload silently reads stream output");
                 assert.equal(model.requests.length, 1, "reload leaves the silent work running");
                 let target;
@@ -85,20 +85,19 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
                     assert.equal(model.requests.length, 1);
                 }
                 assert.match(target, /^sh:\/\/\/.+/u);
-                const read = inputs.find((input) => input.forwardedProps?.plurnk?.action?.kind === "entry.read");
+                const read = inputs.find((input) => input?.method === "_plurnk/action" && input?.params?.kind === "entry.read");
                 assert.ok(read, "the outcome's native control uses the public management Run");
-                assert.deepEqual(read.messages, []);
-                assert.deepEqual(read.tools, []);
-                assert.equal(read.threadId, `${setup.state.plurnk.workspace.id}#user`);
-                assert.deepEqual(read.forwardedProps.plurnk.action, { kind: "entry.read", target });
-                const inspection = new HttpAgent({ url: new URL("/acp", base).href, threadId: `${setup.state.plurnk.workspace.id}#user`, headers });
-                await inspection.runAgent({ forwardedProps: { plurnk: { action: { kind: "entry.read", target } } } });
+                assert.equal(read.params.sessionId, `${setup.state.plurnk.workspace.id}#user`);
+                assert.equal(read.params.kind, "entry.read");
+                assert.equal(read.params.params?.target ?? read.params.target, target);
+                const inspection = new SessionAgent({ url: new URL("/acp", base).href, sessionId: `${setup.state.plurnk.workspace.id}#user`, headers });
+                await inspection.runAgent({ action: { kind: "entry.read", target } });
                 assert.deepEqual(inspection.messages, [], "management evidence is not appended to SDK conversation");
                 checkBrowser();
             }, { authenticated: cancelled }));
     }
 
-    await t.test("{§web-worker-streams} a nonzero command result does not fail its worker", () =>
+    await t.test("{§web-session-streams} a nonzero command result does not fail its session", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: execution-failure.");
             await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -109,7 +108,7 @@ export default async function verifyWorkerStreams({ t, withDaemon }) {
             await page.locator("[data-stream-outcomes] > summary").click();
             await outcomes(page).locator(":scope > details > summary").click();
             assert.equal(await outcomes(page).getAttribute("data-stream-exit-code"), "7");
-            assert.equal(await outcomes(page).locator("[data-stream-exit-line]").innerText(), "Exit code: 7", "{§web-worker-streams} the exit code is shown");
+            assert.equal(await outcomes(page).locator("[data-stream-exit-line]").innerText(), "Exit code: 7", "{§web-session-streams} the exit code is shown");
             assert.equal(await outcomes(page).getAttribute("data-stream-status"), "200", "the executor successfully ran a command whose answer was exit 7");
             assert.equal(await outcomes(page).locator("[data-stream-failure]").isVisible(), false, "a nonzero command answer is not a fabricated protocol Problem");
             const output = await inspectStreamOutput(outcomes(page));

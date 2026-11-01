@@ -96,8 +96,8 @@ test("{§web-authoring} runtime timers need an owner, not a blanket ban on numbe
 
 test("{§web-browser-security} browser SDK imports cannot bypass schema initialization", async () => {
     const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
-    const [result] = await lint.lintText('import { randomUUID } from "@plurnk/plurnk-acp/client"; console.log(randomUUID());', { filePath: "web/specimen.js" });
+    const [result] = await lint.lintText('import { client } from "@agentclientprotocol/sdk/experimental/v2/unstable"; console.log(client);', { filePath: "web/specimen.js" });
     assert.ok(result.messages.some(({ ruleId }) => ruleId === "no-restricted-imports"));
-    const [valid] = await lint.lintText('import { randomUUID } from "./worker-agent.js"; console.log(randomUUID());', { filePath: "web/specimen.js" });
+    const [valid] = await lint.lintText('import { client } from "./session-agent.js"; console.log(client);', { filePath: "web/specimen.js" });
     assert.deepEqual(valid.messages, []);
 });

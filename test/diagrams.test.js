@@ -218,7 +218,7 @@ test("{§web-route-settlement} compiler cleanup failure still joins requests bef
     assert.equal((await post(simple, { headers })).status, 200);
     const response = fetch(`${base}/~/`, { headers });
     await entered.promise;
-    const failure = new Error("compiler cleanup failed", { cause: new Error("worker fixture failure") });
+    const failure = new Error("compiler cleanup failed", { cause: new Error("compiler fixture failure") });
     const destroy = Piscina.prototype.destroy;
     t.mock.method(Piscina.prototype, "destroy", async function () { await destroy.call(this); throw failure; }, { times: 1 });
     const closed = assert.rejects(module.close(), (error) => error === failure);

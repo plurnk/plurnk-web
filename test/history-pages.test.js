@@ -3,10 +3,10 @@ import test from "node:test";
 import HistoryPages from "../web/history-pages.js";
 
 const message = (id, content = id) => ({ id, role: "user", content });
-const snapshot = (messages, older) => ({ messages, metadata: { plurnk: { history: { older } } } });
+const snapshot = (messages, older) => ({ messages, older });
 const ids = (history) => history.view().messages.map(({ id }) => id);
 
-test("{§web-worker-history} explicit pages preserve chronology and never mutate live input", () => {
+test("{§web-session-history} explicit pages preserve chronology and never mutate live input", () => {
     const history = new HistoryPages();
     const live = Object.freeze([Object.freeze(message("c")), Object.freeze(message("d"))]);
     history.snapshot(snapshot(live, "/older/b"), false);
@@ -21,7 +21,7 @@ test("{§web-worker-history} explicit pages preserve chronology and never mutate
     assert.deepEqual(history.mutable(), []);
 });
 
-test("{§web-worker-history} reconnect exposes a gap without fetching or losing selected pages", () => {
+test("{§web-session-history} reconnect exposes a gap without fetching or losing selected pages", () => {
     const history = new HistoryPages();
     history.snapshot(snapshot([message("c")], "/b"), false);
     history.live([message("c")]);
@@ -36,7 +36,7 @@ test("{§web-worker-history} reconnect exposes a gap without fetching or losing 
     assert.deepEqual(history.view().gaps, [{ url: "/a", before: "b" }]);
 });
 
-test("{§web-worker-history} reading pins displaced observations only until returning to the bottom", () => {
+test("{§web-session-history} reading pins displaced observations only until returning to the bottom", () => {
     const history = new HistoryPages();
     history.snapshot(snapshot([message("a"), message("b")], null), false);
     history.live([message("a"), message("b")]);
@@ -49,7 +49,7 @@ test("{§web-worker-history} reading pins displaced observations only until retu
     assert.deepEqual(history.view().gaps, [{ url: "/a", before: "b" }]);
 });
 
-test("{§web-worker-history} late results update an archived call once, then survive its final refetch", () => {
+test("{§web-session-history} late results update an archived call once, then survive its final refetch", () => {
     const history = new HistoryPages();
     const call = { id: "call-message", role: "assistant", toolCalls: [{ id: "call", type: "function", function: { name: "READ", arguments: "{}" } }] };
     const result = { id: "result", role: "tool", toolCallId: "call", content: "live result" };
@@ -74,7 +74,7 @@ test("{§web-worker-history} late results update an archived call once, then sur
     assert.deepEqual(ids(history), ["call-message", "result", "newer"]);
 });
 
-test("{§web-worker-history} multiple late receipts preserve their supplied order beside an archived call", () => {
+test("{§web-session-history} multiple late receipts preserve their supplied order beside an archived call", () => {
     const history = new HistoryPages();
     const call = { id: "calls", role: "assistant", toolCalls: ["one", "two"].map((id) => ({ id, type: "function", function: { name: "READ", arguments: "{}" } })) };
     const results = ["one", "two"].map((id) => ({ id: `result-${id}`, role: "tool", toolCallId: id, content: id }));
@@ -85,7 +85,7 @@ test("{§web-worker-history} multiple late receipts preserve their supplied orde
     assert.deepEqual(ids(history), ["calls", "result-one", "result-two", "now"]);
 });
 
-test("{§web-worker-history} abandoned reads and invalid cursor cycles cannot change the view", () => {
+test("{§web-session-history} abandoned reads and invalid cursor cycles cannot change the view", () => {
     const history = new HistoryPages();
     history.snapshot(snapshot([message("new")], "/old"), false);
     history.live([message("new")]);
@@ -95,12 +95,12 @@ test("{§web-worker-history} abandoned reads and invalid cursor cycles cannot ch
     assert.deepEqual(ids(history), ["newer"]);
     assert.throws(() => history.accept("/later", { final: true, messages: [], older: "/later" }), /History page repeats its own cursor/u);
     assert.throws(() => history.snapshot(snapshot([], 42), false), /History boundary must be a URL or null/u);
-    assert.throws(() => history.snapshot({ messages: [], metadata: { plurnk: { history: {} } } }, false), /History boundary must be a URL or null/u);
+    assert.throws(() => history.snapshot({ messages: [] }, false), /History boundary must be a URL or null/u);
     assert.throws(() => history.live([message("duplicate"), message("duplicate")]), /duplicate message identities/u);
     assert.deepEqual(ids(history), ["newer"]);
 });
 
-test("{§web-worker-history} a cyclic daemon page chain fails without accepting the page", () => {
+test("{§web-session-history} a cyclic daemon page chain fails without accepting the page", () => {
     const history = new HistoryPages();
     history.snapshot(snapshot([message("latest")], "/b"), false);
     history.live([message("latest")]);

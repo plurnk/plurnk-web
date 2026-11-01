@@ -3,12 +3,12 @@ import conversation from "./conversation.js";
 import conversationScroll from "./conversation-scroll.js";
 import HistoryPages from "./history-pages.js";
 
-/** {§web-worker-history} One renderer for live and archival projections, no SDK writes.
+/** {§web-session-history} One renderer for live and archival projections, no SDK writes.
  * @param {HTMLElement} root @param {HTMLElement} main
  * @param {(address: string) => Promise<string>} readBody
  * @param {(address: string, signal: AbortSignal) => Promise<import("./history-pages.js").Page>} readPage
  */
-export default function workerHistory(root, main, readBody, readPage) {
+export default function sessionHistory(root, main, readBody, readPage) {
     const outlet = $(root, "[data-messages]");
     if (!(outlet instanceof HTMLUListElement)) throw new Error("History has no message list.");
     const list = outlet;
@@ -68,7 +68,7 @@ export default function workerHistory(root, main, readBody, readPage) {
     }
 
     return {
-        /** @param {import("@plurnk/plurnk-acp/client").MessagesSnapshotEvent} event */
+        /** @param {{ messages: readonly import("./session-agent.js").Message[], older?: unknown, metadata?: { plurnk?: { history?: { older?: unknown } } } }} event */
         snapshot(event) {
             pages.snapshot(event, !scroll.following);
             const retained = new Set([...pages.mutable(), ...pages.view().gaps.map(({ url }) => url)]);
@@ -76,7 +76,7 @@ export default function workerHistory(root, main, readBody, readPage) {
             for (const [url] of errors) if (!retained.has(url)) errors.delete(url);
             for (const url of pages.mutable()) if (!errors.has(url)) void load(url);
         },
-        /** @param {readonly import("@plurnk/plurnk-acp/client").Message[]} messages */
+        /** @param {readonly import("./session-agent.js").Message[]} messages */
         present(messages) { pages.live(messages); render(); },
         pause() {
             paused = true;

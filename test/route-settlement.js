@@ -16,7 +16,7 @@ async function fixture(t, createModule, { credentials, ...port } = {}) {
     }
     let handler;
     await module.setup({ credentials });
-    await module.start({ credentials, listWorkspaces: async () => [workspace], listWorkers: async () => [], ...port,
+    await module.start({ credentials, listWorkspaces: async () => [workspace], listSessions: async () => [], ...port,
         registerHttpRoute(prefix, serve) { assert.equal(prefix, "/"); handler = serve; } });
     const errors = [];
     const server = createServer((req, res) => {
@@ -121,7 +121,7 @@ const sessionCookie = (response) => response.headers.getSetCookie().find((value)
 
 /** {§web-route-settlement} Real HTTP requests through source and packed module entry points. */
 export default async function verifyRouteSettlement(t, createModule) {
-    for (const [name, path] of [["listWorkspaces", "/~/"], ["listWorkers", "/~/example/"]]) {
+    for (const [name, path] of [["listWorkspaces", "/~/"], ["listSessions", "/~/example/"]]) {
         await t.test(`close joins ${name} without needing a preceding stop`, async (t) => {
             const gate = hold();
             const f = await fixture(t, createModule, { [name]: gate.call });

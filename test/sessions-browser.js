@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import verifyPageShell from "./page-shell.js";
 import verifyAuthorizationPage from "./authorization-page.js";
-import verifyWorkerDirectory from "./workers-browser.js";
+import verifySessionDirectory from "./session-directory-browser.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 export default async function verifySessions({ t, consumer, withDaemon }) {
@@ -34,21 +34,21 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             const existing = (await port.listWorkspaces()).find((workspace) => workspace.name === name);
             const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
             const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
-            if (!(await port.listWorkers(workspaceId)).some((worker) => worker.name === "user")) {
-                await port.createWorker({ workspaceId, name: "user" });
+            if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
+                await port.createSession({ workspaceId, name: "user" });
             }
-            if (name === ${JSON.stringify(names[0])} && !(await port.listWorkers(workspaceId)).some((worker) => worker.name === "primary")) {
+            if (name === ${JSON.stringify(names[0])} && !(await port.listSessions(workspaceId)).some((session) => session.name === "primary")) {
                 const owner = "acp://fixture/threads/primary";
-                await port.registerWorkerOwner(workspaceId, { address: owner, tools: [], interactive: false });
-                const parent = await port.createWorker({ workspaceId, name: "primary", owner });
-                const review = await port.forkWorker({ workspaceId, workerId: parent.workerId, name: "review" });
-                await port.createWorker({ workspaceId, name: "research", parentWorkerId: parent.workerId });
-                await port.createWorker({ workspaceId, name: "evidence", parentWorkerId: review.workerId });
-                await port.createWorker({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
-                const runtime = await port.ensureRuntimeWorker(workspaceId);
-                const incoming = await port.createWorker({ workspaceId, name: "incoming", parentWorkerId: runtime });
-                await port.createWorker({ workspaceId, name: "incoming-child", parentWorkerId: incoming.workerId });
-                await port.createWorker({ workspaceId, name: "background-peer", parentWorkerId: runtime });
+                await port.registerSessionOwner(workspaceId, { address: owner, tools: [], interactive: false });
+                const parent = await port.createSession({ workspaceId, name: "primary", owner });
+                const review = await port.forkSession({ workspaceId, sessionId: parent.sessionId, name: "review" });
+                await port.createSession({ workspaceId, name: "research", parentSessionId: parent.sessionId });
+                await port.createSession({ workspaceId, name: "evidence", parentSessionId: review.sessionId });
+                await port.createSession({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
+                const runtime = await port.ensureRuntimeSession(workspaceId);
+                const incoming = await port.createSession({ workspaceId, name: "incoming", parentSessionId: runtime });
+                await port.createSession({ workspaceId, name: "incoming-child", parentSessionId: incoming.sessionId });
+                await port.createSession({ workspaceId, name: "background-peer", parentSessionId: runtime });
             }
         }
         for (const [folder, name] of ${JSON.stringify(homeFolders)}) {
@@ -57,8 +57,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             const existing = (await port.listWorkspaces()).find((workspace) => workspace.project_root === projectRoot);
             const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
             if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
-            if (!(await port.listWorkers(workspaceId)).some((worker) => worker.name === "user")) {
-                await port.createWorker({ workspaceId, name: "user" });
+            if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
+                await port.createSession({ workspaceId, name: "user" });
             }
         }
         port.registerHttpRoute("/__fixture", async (req, res) => {
@@ -71,15 +71,15 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
             if (req.url === "/__fixture/hide" && req.method === "POST") {
                 let body = "";
                 for await (const chunk of req) body += chunk;
-                const { workspaceId, workerId, hidden } = JSON.parse(body);
-                if (workerId === undefined) await port.setWorkspaceHidden({ workspaceId, hidden });
-                else await port.setWorkerHidden({ workspaceId, workerId, hidden });
+                const { workspaceId, sessionId, hidden } = JSON.parse(body);
+                if (sessionId === undefined) await port.setWorkspaceHidden({ workspaceId, hidden });
+                else await port.setSessionHidden({ workspaceId, sessionId, hidden });
                 res.writeHead(204); res.end(); return;
             }
             const workspaces = await port.listWorkspaces();
             const snapshot = await Promise.all(workspaces.map(async (workspace) => ({ ...workspace,
-                workers: await Promise.all((await port.listWorkers(workspace.id)).map(async (worker) => ({ ...worker,
-                    loops: await port.listWorkerLoops({ workspaceId: workspace.id, workerId: worker.id }),
+                sessions: await Promise.all((await port.listSessions(workspace.id)).map(async (session) => ({ ...session,
+                    loops: await port.listSessionLoops({ workspaceId: workspace.id, sessionId: session.id }),
                 }))),
             })));
             res.setHeader("content-type", "application/json"); res.end(JSON.stringify(snapshot));
@@ -153,13 +153,13 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 } else {
                                     assert.equal(await folder.count(), 0, "equal labels and folderless workspaces need no folder row");
                                 }
-                                await verifyWorkerDirectory(page, workspace);
-                                const worker = workspace.workers.find(({ origin, parentWorkerId }) => origin === "model" && parentWorkerId === null);
-                                assert.ok(worker);
-                                await page.getByRole("link", { name: worker.name, exact: true }).click();
-                                assert.equal(await page.locator("main h1").count(), 0, "worker identity belongs in the breadcrumb, not a duplicate heading");
-                                await verifyPageShell(page, { title: `${workspace.name}@${worker.name} — Plurnk`, kind: "worker" });
-                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["🗃️", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`, `${worker.name} 🗑️`]);
+                                await verifySessionDirectory(page, workspace);
+                                const session = workspace.sessions.find(({ origin, parentSessionId }) => origin === "model" && parentSessionId === null);
+                                assert.ok(session);
+                                await page.getByRole("link", { name: session.name, exact: true }).click();
+                                assert.equal(await page.locator("main h1").count(), 0, "session identity belongs in the breadcrumb, not a duplicate heading");
+                                await verifyPageShell(page, { title: `${workspace.name}@${session.name} — Plurnk`, kind: "session" });
+                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["🗃️", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`, `${session.name} 🗑️`]);
                                 await page.reload();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: workspace.name, exact: true }).click();
                                 assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["🗃️", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name} ✏️ 🗑️ ➕`]);
@@ -193,7 +193,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         } finally { await context.close(); await other.close(); }
                     }
                     assert.deepEqual(await (await fetch(new URL("/__fixture", base))).json(), initial,
-                        "navigation did not change identities, owners, project roots, workers or loops");
+                        "navigation did not change identities, owners, project roots, sessions or loops");
                 } finally { await browser.close(); }
             });
         });
@@ -202,11 +202,11 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 const census = await (await fetch(new URL("/__fixture", base))).json();
                 const shelved = census.find(({ name }) => name === "folderless");
                 const project = census.find(({ name }) => name === names[0]);
-                const review = project.workers.find(({ name }) => name === "review");
+                const review = project.sessions.find(({ name }) => name === "review");
                 const hide = async (place, hidden) => assert.equal((await fetch(new URL("/__fixture/hide", base), {
                     method: "POST", body: JSON.stringify({ ...place, hidden }) })).status, 204);
                 await hide({ workspaceId: shelved.id }, true);
-                await hide({ workspaceId: project.id, workerId: review.id }, true);
+                await hide({ workspaceId: project.id, sessionId: review.id }, true);
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -218,11 +218,11 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.deepEqual(await page.locator("main > ul > li > article > header > a").allTextContents(),
                                 census.filter(({ id }) => id !== shelved.id).map(({ name }) => name), "a hidden workspace leaves the list");
                             await page.goto(new URL(directoryPath({ kind: "workspace", workspace: project.name }), base).href);
-                            const tree = await page.locator("main a[data-worker-link]").evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
-                            assert.ok(tree.includes("primary") && tree.includes("research"), "shown workers stay in the tree");
-                            assert.ok(!tree.includes("review") && !tree.includes("evidence"), "a hidden worker leaves the tree with the workers beneath it");
-                            const opened = await page.goto(new URL(directoryPath({ kind: "worker", workspace: project.name, worker: "review" }), base).href);
-                            assert.equal(opened.status(), 200, "a hidden worker's page opens by its address");
+                            const tree = await page.locator("main a[data-session-link]").evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
+                            assert.ok(tree.includes("primary") && tree.includes("research"), "shown sessions stay in the tree");
+                            assert.ok(!tree.includes("review") && !tree.includes("evidence"), "a hidden session leaves the tree with the sessions beneath it");
+                            const opened = await page.goto(new URL(directoryPath({ kind: "session", workspace: project.name, session: "review" }), base).href);
+                            assert.equal(opened.status(), 200, "a hidden session's page opens by its address");
                             assert.equal((await page.goto(new URL(directoryPath({ kind: "workspace", workspace: shelved.name }), base).href)).status(), 200,
                                 "a hidden workspace's page opens by its address");
                             checkBrowser();
@@ -230,7 +230,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     }
                 } finally { await browser.close(); }
                 await hide({ workspaceId: shelved.id }, false);
-                await hide({ workspaceId: project.id, workerId: review.id }, false);
+                await hide({ workspaceId: project.id, sessionId: review.id }, false);
                 const shown = await (await fetch(new URL("/~/", base))).text();
                 assert.match(shown, new RegExp(`href="${directoryPath({ kind: "workspace", workspace: shelved.name })}"`, "u"), "a shown workspace returns to the list");
             });
@@ -298,7 +298,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             assert.notEqual(newlyCreated.name, "", "{§web-workspace-creation} the daemon named the workspace");
                             assert.equal(newlyCreated.project_root, null, "project_root is strictly null");
                             assert.equal(newlyCreated.project_label, null, "project_label is strictly null");
-                            assert.equal(newlyCreated.workers.length, 0, "no worker or loop started");
+                            assert.equal(newlyCreated.sessions.length, 0, "no session or loop started");
 
                             // Verify existing workspaces in census remain untouched
                             for (const ws of initialCensus) {
@@ -331,7 +331,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const secondCreatedPath = new URL(page.url()).pathname;
                             assert.ok(secondCreatedPath.startsWith("/~/"));
 
-                            // 4. {§web-workspace-rename} and {§web-worker-creation} on the workspace page, through the daemon
+                            // 4. {§web-workspace-rename} and {§web-session-creation} on the workspace page, through the daemon
                             const open = async (dialog, formId) => {
                                 const target = page.locator(`#${formId}`);
                                 if (javaScriptEnabled) {
@@ -349,26 +349,26 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await renameForm.getByRole("button", { name: "Confirm", exact: true }).click();
                             const renamedPath = directoryPath({ kind: "workspace", workspace: renamedName });
                             await page.waitForURL(new URL(renamedPath, base).href);
-                            const workerName = `added-${javaScriptEnabled ? "scripted" : "unscripted"}`;
-                            const workerForm = await open("dialog-worker-create", "worker-create");
-                            await workerForm.locator('input[name="name"]').fill(workerName);
-                            await workerForm.getByRole("button", { name: "Confirm", exact: true }).click();
-                            await page.waitForURL(new URL(directoryPath({ kind: "worker", workspace: renamedName, worker: workerName }), base).href);
+                            const sessionName = `added-${javaScriptEnabled ? "scripted" : "unscripted"}`;
+                            const sessionForm = await open("dialog-session-create", "session-create");
+                            await sessionForm.locator('input[name="name"]').fill(sessionName);
+                            await sessionForm.getByRole("button", { name: "Confirm", exact: true }).click();
+                            await page.waitForURL(new URL(directoryPath({ kind: "session", workspace: renamedName, session: sessionName }), base).href);
                             const renamed = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id);
                             assert.equal(renamed?.name, renamedName, "the daemon holds the new name");
-                            const added = renamed.workers.find((worker) => worker.name === workerName);
-                            assert.ok(added, "the daemon holds the new worker");
-                            assert.deepEqual([added.parentWorkerId, added.loops.length], [null, 0], "an independent worker with no loop");
-                            // {§web-worker-creation} Left unnamed, the daemon names the worker.
+                            const added = renamed.sessions.find((session) => session.name === sessionName);
+                            assert.ok(added, "the daemon holds the new session");
+                            assert.deepEqual([added.parentSessionId, added.loops.length], [null, 0], "an independent session with no loop");
+                            // {§web-session-creation} Left unnamed, the daemon names the session.
                             await page.goto(new URL(renamedPath, base).href);
-                            const unnamedForm = await open("dialog-worker-create", "worker-create");
-                            assert.equal(await unnamedForm.locator('input[name="name"]').inputValue(), "", "the form names no worker");
+                            const unnamedForm = await open("dialog-session-create", "session-create");
+                            assert.equal(await unnamedForm.locator('input[name="name"]').inputValue(), "", "the form names no session");
                             await unnamedForm.getByRole("button", { name: "Confirm", exact: true }).click();
-                            await page.waitForURL((url) => url.pathname.includes("@") && !url.pathname.endsWith(`@${workerName}/`));
+                            await page.waitForURL((url) => url.pathname.includes("@") && !url.pathname.endsWith(`@${sessionName}/`));
                             const named = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id)
-                                .workers.filter(({ name, origin }) => origin === "model" && name !== workerName);
-                            assert.equal(named.length, 1, "one worker the daemon named");
-                            assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "worker", workspace: renamedName, worker: named[0].name }));
+                                .sessions.filter(({ name, origin }) => origin === "model" && name !== sessionName);
+                            assert.equal(named.length, 1, "one session the daemon named");
+                            assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "session", workspace: renamedName, session: named[0].name }));
 
                             // 5. A daemon refusal shows the daemon's own status and detail, and offers the draft again on a
                             // form whose corrected submission goes through.
@@ -390,8 +390,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             };
                             const suffix = javaScriptEnabled ? "scripted" : "unscripted";
                             await page.goto(new URL(renamedPath, base).href);
-                            await correct(await refusal("dialog-worker-create", "worker-create", workerName, /already in use/u),
-                                `again-${suffix}`, directoryPath({ kind: "worker", workspace: renamedName, worker: `again-${suffix}` }));
+                            await correct(await refusal("dialog-session-create", "session-create", sessionName, /already in use/u),
+                                `again-${suffix}`, directoryPath({ kind: "session", workspace: renamedName, session: `again-${suffix}` }));
                             await page.goto(new URL(renamedPath, base).href);
                             await correct(await refusal("dialog-workspace-rename", "workspace-rename", "folderless", /already in use/u),
                                 `${renamedName}-final`, directoryPath({ kind: "workspace", workspace: `${renamedName}-final` }));
@@ -399,7 +399,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await correct(await refusal("dialog-workspace-create", "workspace-create", "folderless", /already in use/u),
                                 `corrected-${suffix}`, directoryPath({ kind: "workspace", workspace: `corrected-${suffix}` }));
 
-                            checkBrowser([httpFailure("/workers/new", 409), httpFailure("/workspaces/rename", 409), httpFailure("/workspaces/new", 409)]);
+                            checkBrowser([httpFailure("/sessions/new", 409), httpFailure("/workspaces/rename", 409), httpFailure("/workspaces/new", 409)]);
                         } finally { await context.close(); }
                     }
                 } finally { await browser.close(); }

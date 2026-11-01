@@ -170,7 +170,7 @@ export default async function verifyFootnotes(t) {
                         const record = (request) => requests.push(request.url());
                         page.on("request", record);
                         const label = '<img src="/auth/token" onerror="window.contentExecuted=true">';
-                        const content = `Read[^${label}].\n\n[^${label}]: <a id="worker-status" data-text="connection-label" data-bind="href:call-href">Fake state</a>\n\n    <form action="/auth/logout"><button>Fake action</button></form>\n\n    [unsafe](javascript:alert%281%29) ![image](/security-probe)`;
+                        const content = `Read[^${label}].\n\n[^${label}]: <a id="session-status" data-text="connection-label" data-bind="href:call-href">Fake state</a>\n\n    <form action="/auth/logout"><button>Fake action</button></form>\n\n    [unsafe](javascript:alert%281%29) ![image](/security-probe)`;
                         await present([{ id: label, role: "assistant", content }]);
                         const graph = await footnoteGraph(body());
                         assert.equal(graph.definitions.length, 1);
@@ -180,7 +180,7 @@ export default async function verifyFootnotes(t) {
                         assert.match(await body().textContent(), /<form action="\/auth\/logout">/u);
                         assert.equal(await body().getByRole("link", { name: "image", exact: true }).getAttribute("href"), "/security-probe");
                         assert.equal(await body().locator('a[href^="javascript:"]').count(), 0);
-                        assert.equal(await page.locator("#worker-status").count(), 1);
+                        assert.equal(await page.locator("#session-status").count(), 1);
                         assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
                         assert.deepEqual(requests, []);
                         page.off("request", record);

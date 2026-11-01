@@ -13,6 +13,6 @@ export const answerSchema = {
 
 export const exactAnswer = { action: "inspect", content: "  cobalt heron\n  ", count: 0, confirm: false };
 
-export const questionOperation = `\`\`\`question\n${JSON.stringify({
-    message: "Which action should the worker take?", requestedSchema: answerSchema,
+export const questionOperation = `\`\`\`plurnk_question (ask)\n${JSON.stringify({
+    message: "Which action should the session take?", requestedSchema: answerSchema,
 })}\n\`\`\``;

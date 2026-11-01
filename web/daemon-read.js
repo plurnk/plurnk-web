@@ -1,7 +1,7 @@
 import accessHeaders from "./access-headers.js";
 import refusal from "./problem-response.js";
 
-/** {§web-result-bodies} {§web-worker-history} Read opaque daemon URLs within their credential perimeter.
+/** {§web-result-bodies} {§web-session-history} Read opaque daemon URLs within their credential perimeter.
  * @param {string} address @param {"session" | "none"} auth @param {AbortSignal} signal
  */
 export default async function daemonRead(address, auth, signal) {

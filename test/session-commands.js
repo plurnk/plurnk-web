@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { inputPage } from "./worker-input.js";
+import { inputPage } from "./session-input.js";
 import { httpFailure } from "./browser-diagnostics.js";
 
 function composer(page) {
     page.setDefaultTimeout(5000);
     const field = page.getByRole("textbox", { name: "Message", exact: true });
-    const rows = page.locator("#worker-command-results > ul > li");
+    const rows = page.locator("#session-command-results > ul > li");
     const send = async (text) => {
         await field.fill(text);
         await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -20,22 +20,21 @@ function composer(page) {
 }
 
 const reasoning = {
-    PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_REASONING_EFFORT_PATH: "/reasoning_effort",
     PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_REASONING_EFFORTS: "low,high",
 };
 
-// {§web-worker-commands} Real shipped composer and public daemon actions, never model-authored commands.
-export default async function verifyWorkerCommands({ t, withDaemon }) {
-    await t.test("{§web-worker-settings} native selectors read without inference, apply explicitly and preserve the draft", () =>
+// {§web-session-commands} Real shipped composer and public daemon actions, never model-authored commands.
+export default async function verifySessionCommands({ t, withDaemon }) {
+    await t.test("{§web-session-settings} native selectors read without inference, apply explicitly and preserve the draft", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             page.setDefaultTimeout(5000);
             const draft = page.getByRole("textbox", { name: "Message", exact: true });
-            const statusLine = page.locator("#worker-status > [data-status-line]");
+            const statusLine = page.locator("#session-status > [data-status-line]");
             assert.equal(await statusLine.isVisible(), false, "an idle attachment does not occupy status space");
             await draft.fill("Keep this unsent draft.");
             assert.equal(await statusLine.isVisible(), true);
             await page.getByRole("button", { name: "Model", exact: true }).click();
-            const models = page.locator("#worker-model-settings");
+            const models = page.locator("#session-model-settings");
             const selection = models.getByRole("combobox", { name: "Search Models", exact: true });
             assert.equal(await statusLine.isVisible(), true, "inline settings retain the status controls");
             await models.locator('datalist option[value="browser"]').waitFor({ state: "attached" });
@@ -45,13 +44,13 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await models.waitFor({ state: "hidden" });
             assert.equal(await draft.inputValue(), "Keep this unsent draft.");
             await page.getByRole("button", { name: "Effort", exact: true }).click();
-            const effort = page.locator("#worker-effort-settings");
+            const effort = page.locator("#session-effort-settings");
             assert.equal(await models.isVisible(), false);
             const choices = effort.getByRole("combobox", { name: "Reasoning Effort", exact: true });
             await choices.locator('option[value="low"]').waitFor({ state: "attached" });
             await choices.selectOption("low");
             await effort.getByRole("button", { name: "Select Effort", exact: true }).click();
-            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=effort]")?.textContent === "low");
+            await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "low");
             await effort.waitFor({ state: "hidden" });
             assert.equal(await effort.isVisible(), false);
             assert.equal(await page.getByRole("button", { name: "Effort", exact: true }).evaluate((button) => document.activeElement === button), true);
@@ -59,21 +58,21 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await page.locator("body > header > a").focus();
             assert.equal(await statusLine.isVisible(), false, "leaving the controls releases idle status space");
             assert.equal(await draft.inputValue(), "Keep this unsent draft.");
-            assert.equal(await page.locator("#worker-command-results > ul > li").count(), 0);
+            assert.equal(await page.locator("#session-command-results > ul > li").count(), 0);
             assert.equal(model.requests.length, 0);
             checkBrowser();
         }, { env: reasoning }));
 
-    await t.test("{§web-worker-settings} refused effort selection preserves the draft and active work", () =>
+    await t.test("{§web-session-settings} refused effort selection preserves the draft and active work", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { send, field } = composer(page);
             await send("Lifecycle fixture: held-settings.");
             await page.getByText("Considering held-settings.", { exact: true }).waitFor({ state: "attached" });
             await page.locator("body > header > a").focus();
-            assert.equal(await page.locator("#worker-status > [data-status-line]").isVisible(), true, "live work remains observable without composer focus");
+            assert.equal(await page.locator("#session-status > [data-status-line]").isVisible(), true, "live work remains observable without composer focus");
             await field.fill("An untouched next message.");
             await page.getByRole("button", { name: "Effort", exact: true }).click();
-            const article = page.locator("#worker-effort-settings");
+            const article = page.locator("#session-effort-settings");
             const select = article.getByRole("combobox", { name: "Reasoning Effort", exact: true });
             await select.locator('option[value="low"]').waitFor({ state: "attached" });
             await select.selectOption("low");
@@ -82,18 +81,28 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.match(await article.locator("[data-text=settings-recovery]").textContent(), /Conclude or cancel/u);
             assert.equal(await select.inputValue(), "low");
             assert.equal(await field.inputValue(), "An untouched next message.");
-            assert.equal(await page.locator("#worker-status").getAttribute("data-lifecycle"), "running");
+            assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running");
             assert.equal(model.requests.length, 1);
             await page.getByRole("button", { name: "Stop", exact: true }).click();
-            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.lifecycle === "cancelled");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.lifecycle === "cancelled");
             checkBrowser();
         }, { env: reasoning }));
-    await t.test("{§web-worker-approval} native status toggle shares /yolo without submitting a draft or inventing command history", () =>
+    await t.test("{§web-session-approval} native status toggle shares /yolo without submitting a draft or inventing command history", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { field, rows, submit, send } = composer(page);
             const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
             const sent = [];
-            page.on("request", (request) => { if (new URL(request.url()).pathname === "/acp") sent.push(request.postDataJSON()); });
+            page.on("request", (request) => {
+                const body = request.postDataJSON();
+                if (
+                    new URL(request.url()).pathname === "/acp"
+                    && body !== null
+                    && body.method !== "initialize"
+                    && body.params?._meta?.plurnk?.control !== false
+                ) {
+                    sent.push(body);
+                }
+            });
             await field.focus();
             assert.equal(await approval.getAttribute("aria-pressed"), "false");
             assert.equal(await approval.getAttribute("title"), "Manual Approval (/yolo)");
@@ -115,27 +124,35 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.equal(await approval.getAttribute("title"), "Manual Approval (/yolo)");
             await approval.click();
             await page.reload();
-            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             await field.focus();
             assert.equal(await approval.getAttribute("aria-pressed"), "false", "reload restores configured policy");
             await send("Lifecycle fixture: approval-toggle.");
-            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
             await field.fill("Keep this draft during approval.");
             await approval.click();
             await page.getByText("Completed approval-toggle.", { exact: true }).waitFor();
             assert.equal(await field.inputValue(), "Keep this draft during approval.");
             assert.equal(await rows.count(), 0);
-            assert.equal(sent.length, 2, "one authored prompt and its standard approval resume");
-            assert.deepEqual(sent[1].resume.map(({ payload }) => payload), [{ decision: "accept", outcome: "client_yolo" }]);
+            assert.equal(sent.length, 2, "one authored prompt and its standard approval response");
+            assert.deepEqual(sent[1].result?.outcome, { outcome: "selected", optionId: "allow_once" });
             assert.equal(model.requests.length, 2);
             checkBrowser();
         }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
-    await t.test("{§web-worker-commands} slash commands remain outside model messages and preserve daemon truth", () =>
+    await t.test("{§web-session-commands} slash commands remain outside model messages and preserve daemon truth", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser, setup, workspace }) => {
             const sent = [];
             page.on("request", (request) => {
-                if (new URL(request.url()).pathname === "/acp") sent.push(request.postDataJSON());
+                const body = request.postDataJSON();
+                if (
+                    new URL(request.url()).pathname === "/acp"
+                    && body !== null
+                    && body.method !== "initialize"
+                    && body.params?._meta?.plurnk?.control !== false
+                ) {
+                    sent.push(body);
+                }
             });
             const { field, submit } = composer(page);
             const help = await submit("/help");
@@ -164,13 +181,13 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.match(await selected.textContent(), /browser-fixture\/browser-fixture/u);
             assert.match(await (await submit("/effort")).textContent(), /high \(explicit\)/u);
             await page.reload();
-            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high");
-            assert.equal(await page.locator("#worker-command-results > ul > li").count(), 0, "command history is page-local");
+            await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "high");
+            assert.equal(await page.locator("#session-command-results > ul > li").count(), 0, "command history is page-local");
             const capabilities = await submit("/capabilities");
             assert.deepEqual(await capabilities.locator("dt").allTextContents(), ["Service", "Workspace", "Effective"]);
             const policy = { deny: [{ runtime: "sh" }] };
             await submit(`/capabilities ${JSON.stringify(policy)}`);
-            const { result } = await setup.runAgent({ forwardedProps: { plurnk: { workspace, action: { kind: "workspace.capabilities.get" } } } });
+            const { result } = await setup.runAgent({ workspace, action: { kind: "workspace.capabilities.get" } });
             assert.equal(result.ok, true, JSON.stringify(result));
             assert.deepEqual(result.result.workspace, policy);
             await submit("/capabilities {}");
@@ -178,20 +195,17 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.equal(model.requests.length, 0);
             assert.equal(await page.locator("[data-messages] > li").count(), 0);
             for (const input of sent) {
-                assert.deepEqual(input.messages, []);
-                assert.deepEqual(input.tools, []);
-                assert.ok(input.forwardedProps.plurnk.action.kind);
-                assert.equal(input.forwardedProps.plurnk.interactive, undefined);
+                assert.ok(["_plurnk/action", "session/resume", "session/set_config_option", "session/cancel", "providers/list"].includes(input.method));
             }
             await field.fill("Lifecycle fixture: command-followup.");
             await page.getByRole("button", { name: "Send", exact: true }).click();
             await page.getByText("Completed command-followup.", { exact: true }).waitFor();
             assert.equal(model.requests.length, 1);
-            assert.doesNotMatch(JSON.stringify(sent.at(-1).messages), /nonexistent-web-route|\/capabilities|\/models/u);
+            assert.doesNotMatch(JSON.stringify(sent.at(-1).params.prompt), /nonexistent-web-route|\/capabilities|\/models/u);
             checkBrowser();
         }, { authenticated: true, env: reasoning }));
 
-    await t.test("{§web-worker-commands} a modelless worker selects its route without inference", () =>
+    await t.test("{§web-session-commands} a modelless session selects its route without inference", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { submit } = composer(page);
             const before = await submit("/model");
@@ -199,44 +213,44 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await submit("/model browser low");
             const after = await submit("/effort");
             assert.match(await after.textContent(), /low \(explicit\)/u);
-            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent === "browser"
-                && document.querySelector("#worker-status [data-text=effort]")?.textContent === "low");
+            await page.waitForFunction(() => document.querySelector("#session-status [data-text=model]")?.textContent === "browser"
+                && document.querySelector("#session-status [data-text=effort]")?.textContent === "low");
             await page.reload();
-            await page.waitForFunction(() => document.querySelector("#worker-status [data-text=model]")?.textContent === "browser");
-            assert.equal(await page.locator("#worker-status [data-text=effort]").textContent(), "low");
-            assert.match(await page.locator('#worker-status [data-status-field="model"]').getAttribute("aria-label"), /browser-fixture\/browser-fixture; effort: low \(explicit\)/u);
+            await page.waitForFunction(() => document.querySelector("#session-status [data-text=model]")?.textContent === "browser");
+            assert.equal(await page.locator("#session-status [data-text=effort]").textContent(), "low");
+            assert.match(await page.locator('#session-status [data-status-field="model"]').getAttribute("aria-label"), /browser-fixture\/browser-fixture; effort: low \(explicit\)/u);
             assert.equal(model.requests.length, 0);
             checkBrowser();
         }, { selector: null, env: { ...reasoning, PLURNK_MODEL: "" } }));
 
     // https://repo.possumtech.com/plurnk/plurnk-service/issues/1194 owns authoritative idle updates.
-    await t.test("{§web-worker-commands} live model controls agree with fresh observation in every open view", () =>
+    await t.test("{§web-session-commands} live model controls agree with fresh observation in every open view", () =>
         inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
             const { submit } = composer(page);
             const other = await context.newPage();
             await other.goto(path);
-            await other.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-            assert.equal(await other.locator("#worker-status [data-text=effort]").textContent(), "adaptive");
+            await other.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+            assert.equal(await other.locator("#session-status [data-text=effort]").textContent(), "adaptive");
             await submit("/effort low");
             const fresh = await context.newPage();
             await fresh.goto(path);
-            await fresh.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
-            assert.equal(await fresh.locator("#worker-status [data-text=effort]").textContent(), "low",
+            await fresh.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+            assert.equal(await fresh.locator("#session-status [data-text=effort]").textContent(), "low",
                 "a fresh authoritative snapshot confirms the mutation");
             await Promise.all([page, other].map((view) => view.waitForFunction(
-                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "low", undefined, { timeout: 5000 })));
+                () => document.querySelector("#session-status [data-text=effort]")?.textContent === "low", undefined, { timeout: 5000 })));
             await submit("/model browser high");
             await Promise.all([page, other, fresh].map((view) => view.waitForFunction(
-                () => document.querySelector("#worker-status [data-text=effort]")?.textContent === "high", undefined, { timeout: 5000 })));
+                () => document.querySelector("#session-status [data-text=effort]")?.textContent === "high", undefined, { timeout: 5000 })));
             assert.equal(model.requests.length, 0);
             checkBrowser();
         }, { env: reasoning }));
 
-    await t.test("{§web-worker-commands} pending review accepts page-local YOLO and active work retains daemon restrictions", () =>
+    await t.test("{§web-session-commands} pending review accepts page-local YOLO and active work retains daemon restrictions", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { submit, send, field, rows } = composer(page);
             await send("Lifecycle fixture: approval-command.");
-            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
             const form = page.getByRole("form", { name: "Review requests", exact: true });
             assert.equal(await form.isVisible(), true);
             await submit("/help stop");
@@ -247,7 +261,7 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "true");
             assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"));
             await page.reload();
-            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             await field.focus();
             assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "false", "reload restores configured client policy");
             await send("Lifecycle fixture: held-command.");
@@ -258,13 +272,14 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             await submit("/help");
             const delivery = Promise.withResolvers();
             const hold = async (route) => {
-                if (route.request().postDataJSON().forwardedProps?.plurnk?.action?.kind === "worker.model.get") await delivery.promise;
+                const body = route.request().postDataJSON();
+                if (body?.method === "session/resume") await delivery.promise;
                 await route.continue();
             };
             await page.route("**/acp", hold);
             try {
                 const receiving = page.waitForRequest((request) => new URL(request.url()).pathname === "/acp"
-                    && request.postDataJSON().forwardedProps?.plurnk?.action?.kind === "worker.model.get");
+                    && request.postDataJSON()?.method === "session/resume");
                 await send("/model");
                 await receiving;
                 await field.fill("/help effort");
@@ -280,26 +295,27 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
             }
             const stopped = await submit("/stop");
             assert.match(await stopped.textContent(), /Stop requested/u);
-            await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.lifecycle === "cancelled");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.lifecycle === "cancelled");
             assert.equal(model.requests.length, 3, "commands did not start another inference");
             checkBrowser();
         }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
-    await t.test("{§web-worker-commands} {§web-worker-settings} a refusal before the stream opens or as its RUN_ERROR shows the daemon's Problem and recovery", () =>
+    await t.test("{§web-session-commands} {§web-session-settings} a refusal before the stream opens or as an ACP stream error shows the daemon's Problem and recovery", () =>
         inputPage(withDaemon, async ({ page, checkBrowser }) => {
             const { field, submit } = composer(page);
             const problem = { type: "https://problems.plurnk.xyz/fixture/action-refused", title: "Conflict", status: 409,
                 detail: "The fixture refused the action.", recovery: "Follow the fixture's recovery." };
             const refusals = {
                 "before the stream opens": (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify(problem) }),
-                "as its RUN_ERROR": (route) => {
-                    const { threadId, runId } = route.request().postDataJSON();
-                    return route.fulfill({ contentType: "text/event-stream", body: [
-                        { type: "RUN_STARTED", threadId, runId },
-                        { type: "RUN_ERROR", message: problem.detail, code: problem.type, metadata: { plurnk: { problem } } },
-                    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+                "as an ACP stream error": (route) => {
+                    const { id } = route.request().postDataJSON();
+                    return route.fulfill({
+                        headers: { "acp-connection-id": "refused" },
+                        contentType: "application/json",
+                        body: JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message: problem.detail, data: { plurnk: { problem } } } }),
+                    });
                 },
             };
-            const settings = page.locator("#worker-effort-settings");
+            const settings = page.locator("#session-effort-settings");
             for (const [refusal, reply] of Object.entries(refusals)) {
                 for (const command of ["/model", "/stop"]) {
                     await page.route("**/acp", reply, { times: 1 });
@@ -310,11 +326,11 @@ export default async function verifyWorkerCommands({ t, withDaemon }) {
                 }
                 await page.route("**/acp", reply, { times: 1 });
                 await field.focus();
-                await page.locator("#worker-effort").click();
+                await page.locator("#session-effort").click();
                 await settings.locator("[data-text=settings-recovery]").filter({ hasText: problem.recovery }).waitFor();
                 assert.equal(await settings.locator("[data-text=settings-message]").textContent(), problem.detail, `effort settings ${refusal}`);
                 await settings.getByRole("button", { name: "Cancel", exact: true }).click();
-                // A refused HTTP response is reported by the browser; a RUN_ERROR is not.
+                // A refused HTTP response is reported by the browser; an ACP stream error is not.
                 checkBrowser(refusal === "before the stream opens" ? Array.from({ length: 3 }, () => httpFailure("/acp", 409)) : []);
             }
         }));

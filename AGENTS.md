@@ -6,7 +6,7 @@ and OTM's installed README completely before writing browser code.
 
 HTML owns document content and structure. Directory navigation uses real links
 and lists; ordinary actions use semantic forms and native controls. The core
-interactive worker requires JavaScript: do not build a parallel no-JS agent
+interactive session requires JavaScript: do not build a parallel no-JS agent
 interface. OTM enhances documents, not a generic JavaScript application shell.
 Readable English lives at its rendering site, not in placeholders replaced at
 boot. OTM defects and missing general mechanisms go upstream; do not introduce
@@ -34,10 +34,11 @@ clone: `npm ci` from the lockfile, the archives installed beside it without savi
 `npm test`, including a packed installation on an isolated daemon. The checkout, which may be
 the plugin root an operator's daemon serves, is only read; a failed gate leaves its clone
 for diagnosis and names it.
-Commit verified changes with the registered agent as author and the operator as
+Commit verified changes using Conventional Commits (`<type>(<scope>): <description> (#N)` or
+`<type>: <description> (#N)`) with the registered agent as author and the operator as
 signed committer, then push to the canonical forge. No automatic publication.
-Work lands from a `<type>/<slug>` branch as a signed `--no-ff` merge whose subject reads
-`<type>(<scope>): land … (#N)`; gate that merge commit itself, then push it as `main`.
+Work lands from a `<type>/<slug>` branch as a signed `--no-ff` merge (`Merge branch '<type>/<slug>' (#N)`),
+gated before pushing `main`.
 
 Use focused checks while iterating; the full candidate gate verifies the assembled
 package before landing. Keep candidate archives independent of active daemon work.
@@ -50,6 +51,18 @@ General JavaScript lint covers the module, browser, tests and build tooling; OTM
 rules apply to browser authoring. Use modern ESM and platform APIs, preserve error
 causes, and remove unused code rather than suppress checks. Do not restyle unrelated
 code, introduce compatibility aliases, or copy a private platform validator.
+
+**A rename is total.** When a concept's name changes, it changes everywhere that names the concept, in
+one landing: types, schema, methods, Problems, knobs, wire actions, spec tags, tests, fixtures and docs.
+A surface-only rename, a new flag over old internals, is a defect, not a first step.
+
+**Retired forms are erased.** A retired name, syntax, knob, dependency, protocol or behaviour leaves no
+trace in the living tree: no code, spec, doc, test, comment or diagnostic refers to it, and nothing
+recognizes it to refuse, shim or translate it. Never vendor or inline a retired dependency or protocol
+under local names, run dual protocols on one endpoint, or relabel an old wire contract as the new one;
+when an adopted standard has an official SDK, build on that SDK rather than hand-rolling its wire or
+transport layer. Any record of a retired form invites its resurrection. History lives in git, issues and
+published changelogs.
 
 Repository issues own investigation; SPEC.md owns current behavior.
 Create issues with one Conventional type label and the accountable agent. Use full

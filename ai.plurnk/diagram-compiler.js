@@ -1,6 +1,6 @@
 import { render, RenderError } from "ondine/compiler";
 
-/** {§web-diagram-service} This synchronous compiler runs only in a worker thread.
+/** {§web-diagram-service} This synchronous compiler runs only in a Piscina thread.
  * @param {{ source: string, limit: number, outputLimit: number, maxEdges: number }} input
  */
 export default function compile({ source, ...limits }) {

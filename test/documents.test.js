@@ -4,45 +4,45 @@ import Documents from "../ai.plurnk/documents.js";
 import { ownNavigation } from "../ai.plurnk/http.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
-const worker = (id, name, parentWorkerId = null, origin = "model", owner = "_plurnk") => ({
-    id, name, parentWorkerId, origin, owner, kind: parentWorkerId === null ? "root" : "work", lifecycle: "completed", hidden_at: null,
+const session = (id, name, parentSessionId = null, origin = "model", owner = "_plurnk") => ({
+    id, name, parentSessionId, origin, owner, kind: parentSessionId === null ? "root" : "work", lifecycle: "completed", hidden_at: null,
 });
 
-test("{§web-page-shell} worker status sits outside the scrolling main; directory entries are native articles", async () => {
+test("{§web-page-shell} session status sits outside the scrolling main; directory entries are native articles", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
-        listWorkers: async () => [worker(9, "user")] };
-    const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
-    assert.match(html, /<\/main><footer id="worker-status"/u);
+        listSessions: async () => [session(9, "user")] };
+    const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, port, false)).toString();
+    assert.match(html, /<\/main><footer id="session-status"/u);
     assert.match(html, /aria-label="Model controls"/u);
-    assert.match(html, /aria-label="Worker statistics"/u);
+    assert.match(html, /aria-label="Session statistics"/u);
     for (const directory of [{ kind: "daemon" }, { kind: "workspace", workspace: "work" }]) {
         const listing = (await document.read(directory, port, false)).toString();
         assert.match(listing, /<li[^>]*><article[^>]*><header>/u);
     }
 });
 
-test("{§web-worker-approval} a worker page starts automatic only when configured and reached by the person's own navigation", async () => {
+test("{§web-session-approval} a session page starts automatic only when configured and reached by the person's own navigation", async () => {
     const arrivals = [["same-origin", true], ["none", true], ["cross-site", false], ["same-site", false], [undefined, false]];
     for (const yolo of [true, false]) {
         for (const [site, own] of arrivals) {
             assert.equal(ownNavigation(/** @type {import("node:http").IncomingMessage} */ ({ headers: site === undefined ? {} : { "sec-fetch-site": site } })), own, String(site));
             const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo, 128);
-            const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
+            const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
                 listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
-                listWorkers: async () => [worker(9, "user")],
+                listSessions: async () => [session(9, "user")],
             }, false, own)).toString();
             const automatic = yolo && own;
-            assert.ok(html.includes(`id="worker-yolo" aria-pressed="${automatic}"`), `configured ${yolo}, arrival ${site}`);
+            assert.ok(html.includes(`id="session-yolo" aria-pressed="${automatic}"`), `configured ${yolo}, arrival ${site}`);
             assert.ok(html.includes(`aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (/yolo)"`));
-            assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-worker-reasoning} the document carries its supplied preview limit");
+            assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-session-reasoning} the document carries its supplied preview limit");
             assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
         }
     }
 });
 
 test("{§web-authorization-style} the compiled head names one origin-relative application stylesheet", () => {
-    assert.equal(Documents.stylesheet('<head><link rel="modulepreload" href="/worker.js"><link crossorigin href="/assets/app.css" rel="stylesheet"></head><template><link rel="stylesheet" href="/other.css"></template>'), "/assets/app.css");
+    assert.equal(Documents.stylesheet('<head><link rel="modulepreload" href="/session.js"><link crossorigin href="/assets/app.css" rel="stylesheet"></head><template><link rel="stylesheet" href="/other.css"></template>'), "/assets/app.css");
     for (const head of ["", '<link rel="stylesheet" href="/a.css"><link rel="stylesheet" href="/b.css">']) {
         assert.throws(() => Documents.stylesheet(`<head>${head}</head>`), { message: "The web document must declare exactly one application stylesheet." });
     }
@@ -51,31 +51,31 @@ test("{§web-authorization-style} the compiled head names one origin-relative ap
     }
 });
 
-test("{§web-worker-conversation} only a worker document supplies the passive conversation outlet", async () => {
+test("{§web-session-conversation} only a session document supplies the passive conversation outlet", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const port = {
         listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
-        listWorkers: async () => [worker(9, "user")],
+        listSessions: async () => [session(9, "user")],
     };
-    const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
-    assert.match(html, /<section id="worker-conversation" aria-label="Conversation">/u);
+    const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, port, false)).toString();
+    assert.match(html, /<section id="session-conversation" aria-label="Conversation">/u);
     assert.match(html, /<ul[^>]*data-messages[^>]*><\/ul>/u);
     assert.match(html, /Conversation requires JavaScript\./u);
     assert.doesNotMatch(html, /<textarea|contenteditable|<h1\b/u);
     for (const directory of [{ kind: "daemon" }, { kind: "workspace", workspace: "work" }]) {
-        assert.doesNotMatch((await document.read(directory, port, false)).toString(), /id="worker-conversation"/u);
+        assert.doesNotMatch((await document.read(directory, port, false)).toString(), /id="session-conversation"/u);
     }
 });
 
-test("{§web-worker-observer} readable names never select the worker's live thread identity", async () => {
+test("{§web-session-observer} readable names never select the session's live session identity", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     for (const name of ["~/project", "42#alice", "renamed workspace"]) {
-        const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, {
+        const html = (await document.read({ kind: "session", workspace: name, session: "user" }, {
             listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, hidden_at: null }],
-            listWorkers: async () => [worker(9, "user")],
+            listSessions: async () => [session(9, "user")],
         }, false)).toString();
-        assert.match(html, /data-thread-id="7#user"/u);
-        assert.doesNotMatch(html, /data-workspace=|data-worker=/u);
+        assert.match(html, /data-session-id="7#user"/u);
+        assert.doesNotMatch(html, /data-workspace=|data-session=/u);
         assert.ok(html.includes(`${name}@user — Plurnk`));
     }
 });
@@ -93,7 +93,7 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
     ]) {
         const port = {
             listWorkspaces: async () => [{ id: 7, name, project_root, project_label }],
-            listWorkers: async () => [],
+            listSessions: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
         assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️<\/span> <button type="button" data-dialog-target="dialog-workspace-create" aria-label="New workspace" title="New workspace">➕<\/button><\/li><\/ul><\/nav>/u);
@@ -101,8 +101,8 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
         const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
         assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li>/u);
         const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button></li>`), page);
-        assert.match(page, /<p[^>]*>No workers\.<\/p>/u);
+        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button></li>`), page);
+        assert.match(page, /<p[^>]*>No sessions\.<\/p>/u);
         assert.doesNotMatch(page, /<h1\b/u);
         assert.equal(page.match(/aria-current="page"/gu).length, 1, "the workspace breadcrumb has one current item");
         assert.match(page, /<header>[\s\S]*<nav aria-label="breadcrumb">[\s\S]*<\/nav><\/header>/u);
@@ -117,30 +117,30 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
     }
 });
 
-test("{§web-worker-directory} model lineage is complete, collapsed and independent of names and approval owners", async () => {
+test("{§web-session-directory} model lineage is complete, collapsed and independent of names and approval owners", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
-    const workers = [
-        worker(1, "_plurnk", null, "_plurnk"),
-        worker(6, "review", 4, "model", "acp://owner"),
-        worker(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
-        worker(4, "user", null, "model", "acp://owner"),
-        worker(5, "research", 4),
-        worker(7, "evidence", 6),
-        worker(8, "incoming", 1),
-        worker(9, "other", 1, "model", "acp://owner"),
-        worker(10, "incoming-child", 8),
+    const sessions = [
+        session(1, "_plurnk", null, "_plurnk"),
+        session(6, "review", 4, "model", "acp://owner"),
+        session(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
+        session(4, "user", null, "model", "acp://owner"),
+        session(5, "research", 4),
+        session(7, "evidence", 6),
+        session(8, "incoming", 1),
+        session(9, "other", 1, "model", "acp://owner"),
+        session(10, "incoming-child", 8),
     ];
-    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => workers };
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listSessions: async () => sessions };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
-    const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-worker-name="${name}" data-bind="href:worker-path">${name}</a>`;
+    const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-session-name="${name}" data-bind="href:session-path">${name}</a>`;
     const entry = (name, parent = null, children = "") => {
-        const lineage = parent === null ? "" : `<span data-worker-parent>${parent === "_plurnk" ? "<span>_plurnk</span>" : link(parent)} &gt; </span>`;
-        const identity = `<span data-worker-identity><a data-worker-link href="/~/work@${name}/" aria-label="${name}" title="Open worker ${name}"></a> `
+        const lineage = parent === null ? "" : `<span data-session-parent>${parent === "_plurnk" ? "<span>_plurnk</span>" : link(parent)} &gt; </span>`;
+        const identity = `<span data-session-identity><a data-session-link href="/~/work@${name}/" aria-label="${name}" title="Open session ${name}"></a> `
             + '<span data-lifecycle="completed" role="img" aria-label="completed" title="completed"></span> '
             + `${lineage}<span>${name}</span></span>`
-            + '<span data-worker-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a href="/~/work/" data-text="name">work</a></span>';
+            + '<span data-session-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a href="/~/work/" data-text="name">work</a></span>';
         const content = children ? `<details><summary>${identity}</summary><ul>${children}</ul></details>` : `<header>${identity}</header>`;
-        return `<li data-directory-entry="worker"><article aria-label="Worker">${content}</article></li>`;
+        return `<li data-directory-entry="session"><article aria-label="Session">${content}</article></li>`;
     };
     assert.ok(html.includes([
         "<ul>",
@@ -152,74 +152,74 @@ test("{§web-worker-directory} model lineage is complete, collapsed and independ
         entry("other", "_plurnk"),
         "</ul></details>",
     ].join("")), html);
-    const names = [...html.matchAll(/data-worker-link href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
-    assert.deepEqual(names.toSorted(), workers.filter(({ origin }) => origin === "model").map(({ name }) => name).toSorted());
-    assert.doesNotMatch(html, /work@_plurnk|acp:|\bopen\b|role="tree"|<script|data-text="worker-kind"|child worker/u);
-    for (const internal of workers.filter(({ origin }) => origin !== "model")) {
-        assert.equal(await document.read({ kind: "worker", workspace: "work", worker: internal.name }, port, false), null);
+    const names = [...html.matchAll(/data-session-link href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
+    assert.deepEqual(names.toSorted(), sessions.filter(({ origin }) => origin === "model").map(({ name }) => name).toSorted());
+    assert.doesNotMatch(html, /work@_plurnk|acp:|\bopen\b|role="tree"|<script|data-text="session-kind"|child session/u);
+    for (const internal of sessions.filter(({ origin }) => origin !== "model")) {
+        assert.equal(await document.read({ kind: "session", workspace: "work", session: internal.name }, port, false), null);
     }
-    const child = (await document.read({ kind: "worker", workspace: "work", worker: "review" }, port, false)).toString();
-    assert.ok(child.includes(`<p><span data-i18n="parent-worker">Parent:</span> ${link("user")}</p>`));
-    const background = (await document.read({ kind: "worker", workspace: "work", worker: "incoming" }, port, false)).toString();
-    assert.match(background, /<p><span data-i18n="parent-worker">Parent:<\/span> <span data-text="name">_plurnk<\/span><\/p>/u);
-    const root = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, port, false)).toString();
-    assert.doesNotMatch(root, /parent-worker/u);
+    const child = (await document.read({ kind: "session", workspace: "work", session: "review" }, port, false)).toString();
+    assert.ok(child.includes(`<p><span data-i18n="parent-session">Parent:</span> ${link("user")}</p>`));
+    const background = (await document.read({ kind: "session", workspace: "work", session: "incoming" }, port, false)).toString();
+    assert.match(background, /<p><span data-i18n="parent-session">Parent:<\/span> <span data-text="name">_plurnk<\/span><\/p>/u);
+    const root = (await document.read({ kind: "session", workspace: "work", session: "user" }, port, false)).toString();
+    assert.doesNotMatch(root, /parent-session/u);
 });
 
-test("{§web-worker-directory} worker pages keep breadcrumb and parent navigation without a duplicated workspace tree", async () => {
+test("{§web-session-directory} session pages keep breadcrumb and parent navigation without a duplicated workspace tree", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
-    const workers = [worker(1, "_plurnk", null, "_plurnk"), { ...worker(2, "parent"), lifecycle: "running" },
-        { ...worker(3, "child", 2), kind: "fork", lifecycle: "failed" },
-        { ...worker(4, "grandchild", 3), lifecycle: "parked" }, { ...worker(5, "sibling", 2), lifecycle: "queued" },
-        worker(6, "incoming", 1), worker(7, "background-child", 6)];
+    const sessions = [session(1, "_plurnk", null, "_plurnk"), { ...session(2, "parent"), lifecycle: "running" },
+        { ...session(3, "child", 2), kind: "fork", lifecycle: "failed" },
+        { ...session(4, "grandchild", 3), lifecycle: "parked" }, { ...session(5, "sibling", 2), lifecycle: "queued" },
+        session(6, "incoming", 1), session(7, "background-child", 6)];
     let reads = 0;
     const port = {
         listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
-        listWorkers: async () => { reads++; return workers; },
+        listSessions: async () => { reads++; return sessions; },
     };
     for (const selected of ["parent", "child", "grandchild", "background-child"]) {
-        const html = (await document.read({ kind: "worker", workspace: "work", worker: selected }, port, false)).toString();
-        assert.doesNotMatch(html, /worker-directory|workers-at-page-load|Workers at page load|<nav aria-label="Workers">/u);
+        const html = (await document.read({ kind: "session", workspace: "work", session: selected }, port, false)).toString();
+        assert.doesNotMatch(html, /session-directory|sessions-at-page-load|Sessions at page load|<nav aria-label="Sessions">/u);
         assert.ok(html.includes('<a href="/~/work/" data-bind="href:workspace-path" data-text="workspace-name">work</a>'));
         assert.ok(html.includes(`<span aria-current="page" data-text="name">${selected}</span>`));
-        assert.match(html, /<details id="worker-descendants">/u, "live descendant navigation keeps its own statusline home");
+        assert.match(html, /<details id="session-descendants">/u, "live descendant navigation keeps its own statusline home");
     }
     assert.equal(reads, 4, "one authoritative directory read per document; no second client-side directory");
 });
 
-test("{§web-worker-streams} the worker page has observed outcomes, not an open-stream inventory", async () => {
+test("{§web-session-streams} the session page has observed outcomes, not an open-stream inventory", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
-    const html = (await document.read({ kind: "worker", workspace: "work", worker: "user" }, {
+    const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
         listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
-        listWorkers: async () => [worker(9, "user")],
+        listSessions: async () => [session(9, "user")],
     }, false)).toString();
     assert.doesNotMatch(html, /data-open-streams|data-no-streams|stream-count|Open streams/u);
     assert.match(html, /<details[^>]* data-stream-outcomes>/u);
-    assert.match(html, /id="worker-conversation"/u);
+    assert.match(html, /id="session-conversation"/u);
 });
 
-test("{§web-worker-directory} empty and internal-only workspaces have no empty navigation controls", async () => {
+test("{§web-session-directory} empty and internal-only workspaces have no empty navigation controls", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
-    for (const workers of [[], [worker(1, "_plurnk", null, "_plurnk")], [worker(3, "user")]]) {
+    for (const sessions of [[], [session(1, "_plurnk", null, "_plurnk")], [session(3, "user")]]) {
         const html = (await document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => workers,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listSessions: async () => sessions,
         }, false)).toString();
         assert.doesNotMatch(html, /<details|Background work|<ul><\/ul>/u);
-        if (workers.some(({ origin }) => origin === "model")) assert.match(html, /href="\/~\/work@user\/"/u);
-        else assert.match(html, /<p[^>]*>No workers\.<\/p>/u);
+        if (sessions.some(({ origin }) => origin === "model")) assert.match(html, /href="\/~\/work@user\/"/u);
+        else assert.match(html, /<p[^>]*>No sessions\.<\/p>/u);
     }
 });
 
-test("{§web-worker-directory} inconsistent topology fails rather than dropping workers", async () => {
+test("{§web-session-directory} inconsistent topology fails rather than dropping sessions", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
-    for (const [workers, message] of [
-        [[worker(1, "first"), worker(1, "second")], "Worker directory contains duplicate identities."],
-        [[worker(1, "missing", 2)], "Worker 1 has an absent parent 2."],
-        [[worker(1, "self", 1)], "Worker directory holds shown model workers that no shown root reaches."],
-        [[worker(1, "first", 2), worker(2, "second", 1)], "Worker directory holds shown model workers that no shown root reaches."],
+    for (const [sessions, message] of [
+        [[session(1, "first"), session(1, "second")], "Session directory contains duplicate identities."],
+        [[session(1, "missing", 2)], "Session 1 has an absent parent 2."],
+        [[session(1, "self", 1)], "Session directory holds shown model sessions that no shown root reaches."],
+        [[session(1, "first", 2), session(2, "second", 1)], "Session directory holds shown model sessions that no shown root reaches."],
     ]) {
         await assert.rejects(document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => workers,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listSessions: async () => sessions,
         }, false), { name: "Error", message });
     }
 });
@@ -232,7 +232,7 @@ test("{§web-directory-documents} workspace markers describe folder presence wit
             { id: 2, name: "research", project_root: "/home/daemon/project", project_label: "~/project", hidden_at: null },
             { id: 3, name: "../legacy", project_root: null, project_label: null, hidden_at: null },
         ],
-        listWorkers: async () => { throw new Error("The workspace index needs no worker lookup."); },
+        listSessions: async () => { throw new Error("The workspace index needs no session lookup."); },
     }, false)).toString();
     assert.match(html, /<li data-directory-entry="workspace" data-folder="false"><article aria-label="Folderless workspace"><header><a href="\/~\/~\/looks-like-a-folder\/" data-text="name">~\/looks-like-a-folder<\/a><\/header><\/article><\/li>/u);
     assert.match(html, /<li data-directory-entry="workspace" data-folder="true"><article aria-label="Project workspace"><header><a href="\/~\/research\/" data-text="name">research<\/a><\/header><\/article><\/li>/u);
@@ -247,7 +247,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
             calls.push("workspaces");
             return [{ id: 7, name: '~/a&<script>@"b', project_root: null, project_label: null, hidden_at: null }, { id: 8, name: "../legacy", project_root: null, project_label: null, hidden_at: null }];
         },
-        listWorkers: async (id) => { calls.push(id); return [worker(1, "user")]; },
+        listSessions: async (id) => { calls.push(id); return [session(1, "user")]; },
     };
     const document = new Documents(`<!doctype html><title>Plurnk</title><header>${navigation}</header><main>Home</main><script src="/app.js"></script>`, false, 128);
     const index = (await document.read({ kind: "daemon" }, port, true)).toString();
@@ -264,35 +264,35 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.equal(await document.read({ kind: "workspace", workspace: "missing" }, port, false), null);
     assert.deepEqual(calls, ["workspaces", "workspaces"]);
     const workspace = { kind: "workspace", workspace: '~/a&<script>@"b' };
-    const workers = (await document.read(workspace, port, false)).toString();
-    assert.match(workers, /a%26%3Cscript%3E%40%22b@user\//u);
-    assert.match(workers, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename dialog");
-    assert.match(workers, /<dialog id="dialog-workspace-hide">[\s\S]*<form id="workspace-hide" method="post" action="\/workspaces\/hide">/u, "workspace page carries the hide workspace dialog");
-    assert.match(workers, /<dialog id="dialog-worker-create">[\s\S]*<form id="worker-create" method="post" action="\/workers\/new">/u, "workspace page carries the worker creation dialog");
-    assert.doesNotMatch(workers.split("<main")[1].split("</main>")[0].replace(/<dialog\b[\s\S]*?<\/dialog>/gu, ""), /<form\b/u,
+    const sessions = (await document.read(workspace, port, false)).toString();
+    assert.match(sessions, /a%26%3Cscript%3E%40%22b@user\//u);
+    assert.match(sessions, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename dialog");
+    assert.match(sessions, /<dialog id="dialog-workspace-hide">[\s\S]*<form id="workspace-hide" method="post" action="\/workspaces\/hide">/u, "workspace page carries the hide workspace dialog");
+    assert.match(sessions, /<dialog id="dialog-session-create">[\s\S]*<form id="session-create" method="post" action="\/sessions\/new">/u, "workspace page carries the session creation dialog");
+    assert.doesNotMatch(sessions.split("<main")[1].split("</main>")[0].replace(/<dialog\b[\s\S]*?<\/dialog>/gu, ""), /<form\b/u,
         "main on workspace page holds forms only inside their dialogs");
-    assert.doesNotMatch(workers, /workspaces\/new/u, "{§web-workspace-creation} workspace pages carry no workspace creation form");
-    assert.doesNotMatch(workers, /<form method="post" action="\/auth\/logout"/u);
-    const page = (await document.read({ ...workspace, kind: "worker", worker: "user" }, port, true)).toString();
-    assert.match(page, /<dialog id="dialog-worker-hide">[\s\S]*<form id="worker-hide" method="post" action="\/workers\/hide">/u, "worker page carries the hide worker dialog");
-    assert.doesNotMatch(page, /workspaces\/new/u, "{§web-workspace-creation} worker pages carry no creation form");
+    assert.doesNotMatch(sessions, /workspaces\/new/u, "{§web-workspace-creation} workspace pages carry no workspace creation form");
+    assert.doesNotMatch(sessions, /<form method="post" action="\/auth\/logout"/u);
+    const page = (await document.read({ ...workspace, kind: "session", session: "user" }, port, true)).toString();
+    assert.match(page, /<dialog id="dialog-session-hide">[\s\S]*<form id="session-hide" method="post" action="\/sessions\/hide">/u, "session page carries the hide session dialog");
+    assert.doesNotMatch(page, /workspaces\/new/u, "{§web-workspace-creation} session pages carry no creation form");
 });
 
-test("{§web-worker-status} status is a compact footer after conversation, not a metadata inventory", async () => {
+test("{§web-session-status} status is a compact footer after conversation, not a metadata inventory", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, true, 128);
-    const html = (await document.read({ kind: "worker", workspace: "review", worker: "user" }, {
+    const html = (await document.read({ kind: "session", workspace: "review", session: "user" }, {
         listWorkspaces: async () => [{ id: 7, name: "review", project_root: null, project_label: null, hidden_at: null }],
-        listWorkers: async () => [worker(1, "user")],
+        listSessions: async () => [session(1, "user")],
     }, false)).toString();
-    assert.match(html, /<footer id="worker-status"[^>]*>/u);
-    assert.ok(html.indexOf('id="worker-status"') > html.indexOf('id="worker-conversation"'));
-    const footer = html.slice(html.indexOf('<footer id="worker-status"'));
-    assert.match(footer, /<ul aria-label="Worker statistics">/u);
-    assert.match(footer, /<details id="worker-descendants"><summary/u);
+    assert.match(html, /<footer id="session-status"[^>]*>/u);
+    assert.ok(html.indexOf('id="session-status"') > html.indexOf('id="session-conversation"'));
+    const footer = html.slice(html.indexOf('<footer id="session-status"'));
+    assert.match(footer, /<ul aria-label="Session statistics">/u);
+    assert.match(footer, /<details id="session-descendants"><summary/u);
     assert.match(footer, /data-bind="aria-label:lifecycle title:lifecycle"/u);
-    assert.doesNotMatch(footer, /<dl|<table|id="(?:worker-accounting|workspace-activity|worker-inbox)"|data-text="(?:requests|turns|loop)"/u);
-    assert.match(html, /<article id="worker-connection" role="alert">[\s\S]*id="worker-reconnect"[\s\S]*<\/main><footer/u);
-    assert.doesNotMatch(footer, /<article|worker-reconnect/u, "detailed connection notices cannot crowd the pinned composer");
+    assert.doesNotMatch(footer, /<dl|<table|id="(?:session-accounting|workspace-activity|session-inbox)"|data-text="(?:requests|turns|loop)"/u);
+    assert.match(html, /<article id="session-connection" role="alert">[\s\S]*id="session-reconnect"[\s\S]*<\/main><footer/u);
+    assert.doesNotMatch(footer, /<article|session-reconnect/u, "detailed connection notices cannot crowd the pinned composer");
 });
 
 test("{§web-directory-documents} a broken document outlet fails at load", () => {
@@ -305,32 +305,32 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     const name = "~/project/a&b<script>";
     const port = {
         listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, hidden_at: null }],
-        listWorkers: async () => [worker(1, "user")],
+        listSessions: async () => [session(1, "user")],
     };
     const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" data-page="home">Home</main></body></html>`, false, 128);
-    const html = (await document.read({ kind: "worker", workspace: name, worker: "user" }, port, true)).toString();
+    const html = (await document.read({ kind: "session", workspace: name, session: "user" }, port, true)).toString();
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
-    assert.match(html, /<main id="main" data-page="worker">/u);
-    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="worker-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span> <button type="button" data-dialog-target="dialog-worker-hide" aria-label="Hide worker" title="Hide worker">🗑️<\/button><\/li><\/ul><\/nav>/u);
+    assert.match(html, /<main id="main" data-page="session">/u);
+    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="session-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span> <button type="button" data-dialog-target="dialog-session-hide" aria-label="Hide session" title="Hide session">🗑️<\/button><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template/iu);
-    assert.equal(html.replace(/<dialog\b[\s\S]*?<\/dialog>/gu, "").match(/<footer\b/gu).length, 1, "the worker status footer is the only document-level footer");
+    assert.equal(html.replace(/<dialog\b[\s\S]*?<\/dialog>/gu, "").match(/<footer\b/gu).length, 1, "the session status footer is the only document-level footer");
     assert.equal(html.match(/<main\b/gu).length, 1);
-    assert.doesNotMatch(html, /<h1\b/u, "the breadcrumb and document title identify the worker without a duplicate heading");
+    assert.doesNotMatch(html, /<h1\b/u, "the breadcrumb and document title identify the session without a duplicate heading");
 });
 
 test("{§web-page-shell} empty lists and request failures are useful native documents", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
-    const port = { listWorkspaces: async () => [], listWorkers: async () => [] };
+    const port = { listWorkspaces: async () => [], listSessions: async () => [] };
     const empty = (await document.read({ kind: "daemon" }, port, false)).toString();
     assert.match(empty, /<title[^>]*>Workspaces — Plurnk<\/title>/u);
     assert.match(empty, /<p[^>]*>No workspaces\.<\/p>/u);
     assert.doesNotMatch(empty, /<ul><\/ul>/u);
-    const workers = (await document.read({ kind: "workspace", workspace: "empty" }, {
+    const sessions = (await document.read({ kind: "workspace", workspace: "empty" }, {
         ...port, listWorkspaces: async () => [{ id: 7, name: "empty", project_root: null, project_label: null, hidden_at: null }],
     }, false)).toString();
-    assert.match(workers, /data-page="workspace"/u);
-    assert.match(workers, /<p[^>]*>No workers\.<\/p>/u);
+    assert.match(sessions, /data-page="workspace"/u);
+    assert.match(sessions, /<p[^>]*>No sessions\.<\/p>/u);
     const error = document.error(403, 'Rejected <script> & "details"').toString();
     assert.match(error, /<title[^>]*>403 Forbidden — Plurnk<\/title>/u);
     assert.match(error, /data-page="error"/u);
@@ -393,8 +393,8 @@ test("{§web-directory-documents} hidden places leave the lists, and their own p
             { id: 7, name: "work", project_root: null, project_label: null, hidden_at: null },
             { id: 8, name: "shelved", project_root: null, project_label: null, hidden_at: hidden },
         ],
-        listWorkers: async (id) => id !== 7 ? [worker(20, "kept")] : [
-            worker(9, "shown"), { ...worker(10, "gone"), hidden_at: hidden }, { ...worker(11, "gone-child", 10), hidden_at: hidden },
+        listSessions: async (id) => id !== 7 ? [session(20, "kept")] : [
+            session(9, "shown"), { ...session(10, "gone"), hidden_at: hidden }, { ...session(11, "gone-child", 10), hidden_at: hidden },
         ],
     };
     const daemon = (await document.read({ kind: "daemon" }, port, false)).toString();
@@ -402,7 +402,7 @@ test("{§web-directory-documents} hidden places leave the lists, and their own p
     assert.doesNotMatch(daemon, /shelved/u, "a hidden workspace leaves the workspaces list");
     const workspace = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     assert.match(workspace, />shown</u);
-    assert.doesNotMatch(workspace, /gone/u, "a hidden worker and its group leave the tree");
+    assert.doesNotMatch(workspace, /gone/u, "a hidden session and its group leave the tree");
     assert.ok(await document.read({ kind: "workspace", workspace: "shelved" }, port, false), "a hidden workspace's page opens by its address");
-    assert.ok(await document.read({ kind: "worker", workspace: "work", worker: "gone" }, port, false), "a hidden worker's page opens by its address");
+    assert.ok(await document.read({ kind: "session", workspace: "work", session: "gone" }, port, false), "a hidden session's page opens by its address");
 });

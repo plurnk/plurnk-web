@@ -5,7 +5,7 @@ import { escapeHtml } from "./http.js";
 
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
-/** {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
+/** {§web-document} {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
 export default class Documents {
     #beforeTitle;
     #beforeMain;
@@ -43,7 +43,7 @@ export default class Documents {
         this.#afterMain = parts[2];
     }
 
-    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "worker" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] */
+    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "session" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] */
     #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "", dialogs = "") {
         const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
@@ -74,8 +74,8 @@ export default class Documents {
     /** {§web-workspace-rename} @param {string} workspace @param {string} name */
     retryRename(workspace, name) { return this.#renameFields(workspace, name, ""); }
 
-    /** {§web-worker-creation} @param {string} workspace @param {string} name */
-    retryWorker(workspace, name) { return this.#workerFields(workspace, name, ""); }
+    /** {§web-session-creation} @param {string} workspace @param {string} name */
+    retrySession(workspace, name) { return this.#sessionFields(workspace, name, ""); }
 
     /** {§web-account} Account navigation stays separate from session management. */
     account() {
@@ -115,7 +115,7 @@ export default class Documents {
     #link(label, directory) {
         const path = directoryPath(directory);
         return path === null ? `<span data-text="name">${escapeHtml(label)}</span>`
-            : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "worker" ? ` data-worker-name="${escapeHtml(directory.worker)}" data-bind="href:worker-path"` : ""}>${escapeHtml(label)}</a>`;
+            : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "session" ? ` data-session-name="${escapeHtml(directory.session)}" data-bind="href:session-path"` : ""}>${escapeHtml(label)}</a>`;
     }
 
     /** {§web-workspace-creation} Native dialog modal for workspace creation; the daemon names an unnamed workspace. */
@@ -157,24 +157,24 @@ export default class Documents {
     }
 
     /**
-     * {§web-worker-creation} Native dialog modal for worker creation; the daemon names an unnamed worker.
+     * {§web-session-creation} Native dialog modal for session creation; the daemon names an unnamed session.
      * @param {{name: string}} workspace
      */
-    #workerCreationForm(workspace) {
-        return '<dialog id="dialog-worker-create"><article>'
-            + '<header><p><strong data-i18n="new-worker">New worker</strong></p>'
+    #sessionCreationForm(workspace) {
+        return '<dialog id="dialog-session-create"><article>'
+            + '<header><p><strong data-i18n="new-session">New session</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#workerFields(workspace.name, "", CANCEL)
+            + this.#sessionFields(workspace.name, "", CANCEL)
             + '</article></dialog>';
     }
 
     /** @param {string} workspace @param {string} name @param {string} cancel */
-    #workerFields(workspace, name, cancel) {
-        return '<form id="worker-create" method="post" action="/workers/new">'
+    #sessionFields(workspace, name, cancel) {
+        return '<form id="session-create" method="post" action="/sessions/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
-            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Worker name" aria-label="Worker name" aria-describedby="worker-name-hint">`
-            + '<small id="worker-name-hint" data-i18n="worker-name-hint">Leave it empty and the daemon names the worker.</small>'
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Session name" aria-label="Session name" aria-describedby="session-name-hint">`
+            + '<small id="session-name-hint" data-i18n="session-name-hint">Leave it empty and the daemon names the session.</small>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
     /**
@@ -198,24 +198,24 @@ export default class Documents {
     }
 
     /**
-     * {§web-worker-hide} Native dialog modal to hide the worker and its subtree.
+     * {§web-session-hide} Native dialog modal to hide the session and its subtree.
      * @param {{name: string}} workspace
-     * @param {{name: string}} worker
+     * @param {{name: string}} session
      */
-    #workerHideForm(workspace, worker) {
-        return '<dialog id="dialog-worker-hide"><article>'
-            + '<header><p><strong data-i18n="hide-worker">Hide worker</strong></p>'
+    #sessionHideForm(workspace, session) {
+        return '<dialog id="dialog-session-hide"><article>'
+            + '<header><p><strong data-i18n="hide-session">Hide session</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#workerHideFields(workspace.name, worker.name, CANCEL)
+            + this.#sessionHideFields(workspace.name, session.name, CANCEL)
             + '</article></dialog>';
     }
 
-    /** @param {string} workspace @param {string} worker @param {string} cancel */
-    #workerHideFields(workspace, worker, cancel) {
-        return '<form id="worker-hide" method="post" action="/workers/hide">'
+    /** @param {string} workspace @param {string} session @param {string} cancel */
+    #sessionHideFields(workspace, session, cancel) {
+        return '<form id="session-hide" method="post" action="/sessions/hide">'
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
-            + `<input type="hidden" name="worker" value="${escapeHtml(worker)}">`
-            + '<p data-i18n="hide-worker-detail">Hiding removes the worker and its descendants from directory overviews without destroying history.</p>'
+            + `<input type="hidden" name="session" value="${escapeHtml(session)}">`
+            + '<p data-i18n="hide-session-detail">Hiding removes the session and its descendants from directory overviews without destroying history.</p>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
     /** @param {string | null} projectRoot */
@@ -237,115 +237,115 @@ export default class Documents {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
         const items = [];
         if (directory.kind === "workspace") {
-            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-worker-create" aria-label="New worker" title="New worker">➕</button>`);
+            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button>`);
         }
-        if (directory.kind === "worker") {
+        if (directory.kind === "session") {
             const path = directoryPath({ kind: "workspace", workspace: directory.workspace });
-            if (path === null) throw new Error("An admitted worker must have a workspace directory address.");
-            items.push(`<span id="worker-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, `${current(directory.worker)} <button type="button" data-dialog-target="dialog-worker-hide" aria-label="Hide worker" title="Hide worker">🗑️</button>`);
+            if (path === null) throw new Error("An admitted session must have a workspace directory address.");
+            items.push(`<span id="session-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, `${current(directory.session)} <button type="button" data-dialog-target="dialog-session-hide" aria-label="Hide session" title="Hide session">🗑️</button>`);
         }
         return this.#breadcrumb(items, directory.kind === "daemon");
     }
 
-    /** {§web-worker-directory}
-     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection} worker
-     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
+    /** {§web-session-directory}
+     * @param {import("@plurnk/plurnk-contracts").ApplicationSessionProjection} session
+     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationSessionProjection>} sessions
      */
-    #parent(worker, workers) {
-        if (worker.parentWorkerId === null) return null;
-        const parent = workers.get(worker.parentWorkerId);
-        if (parent === undefined) throw new Error(`Worker ${worker.id} has an absent parent ${worker.parentWorkerId}.`);
+    #parent(session, sessions) {
+        if (session.parentSessionId === null) return null;
+        const parent = sessions.get(session.parentSessionId);
+        if (parent === undefined) throw new Error(`Session ${session.id} has an absent parent ${session.parentSessionId}.`);
         return parent;
     }
 
-    /** {§web-worker-directory} The same identity is a leaf header or a native disclosure summary.
+    /** {§web-session-directory} The same identity is a leaf header or a native disclosure summary.
      * @param {{name: string, project_root: string | null}} workspace
-     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection} worker
-     * @param {import("@plurnk/plurnk-contracts").ApplicationWorkerProjection | null} parent
+     * @param {import("@plurnk/plurnk-contracts").ApplicationSessionProjection} session
+     * @param {import("@plurnk/plurnk-contracts").ApplicationSessionProjection | null} parent
      */
-    #workerIdentity(workspace, worker, parent) {
-        const path = directoryPath({ kind: "worker", workspace: workspace.name, worker: worker.name });
-        const name = escapeHtml(worker.name);
-        const ant = path === null ? '<span data-worker-link role="img" aria-label="Worker"></span>'
-            : `<a data-worker-link href="${escapeHtml(path)}" aria-label="${name}" title="Open worker ${name}"></a>`;
+    #sessionIdentity(workspace, session, parent) {
+        const path = directoryPath({ kind: "session", workspace: workspace.name, session: session.name });
+        const name = escapeHtml(session.name);
+        const ant = path === null ? '<span data-session-link role="img" aria-label="Session"></span>'
+            : `<a data-session-link href="${escapeHtml(path)}" aria-label="${name}" title="Open session ${name}"></a>`;
         const parentName = parent === null ? "" : parent.origin === "model"
-            ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
+            ? this.#link(parent.name, { kind: "session", workspace: workspace.name, session: parent.name })
             : `<span>${escapeHtml(parent.name)}</span>`;
-        const lineage = parent === null ? "" : `<span data-worker-parent>${parentName} &gt; </span>`;
-        const lifecycle = escapeHtml(worker.lifecycle);
+        const lineage = parent === null ? "" : `<span data-session-parent>${parentName} &gt; </span>`;
+        const lifecycle = escapeHtml(session.lifecycle);
         const folder = workspace.project_root !== null;
-        return `<span data-worker-identity>${ant} <span data-lifecycle="${lifecycle}" role="img" aria-label="${lifecycle}" title="${lifecycle}"></span> `
+        return `<span data-session-identity>${ant} <span data-lifecycle="${lifecycle}" role="img" aria-label="${lifecycle}" title="${lifecycle}"></span> `
             + `${lineage}<span>${name}</span></span>`
-            + `<span data-worker-workspace><span data-folder="${folder}" role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}"></span> `
+            + `<span data-session-workspace><span data-folder="${folder}" role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}"></span> `
             + `${this.#link(workspace.name, { kind: "workspace", workspace: workspace.name })}</span>`;
     }
 
-    /** {§web-worker-directory}
+    /** {§web-session-directory}
      * @param {{name: string, project_root: string | null}} workspace
-     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationWorkerProjection>} workers
+     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationSessionProjection>} sessions
      */
-    #workerTree(workspace, workers) {
-        // {§web-directory-documents} A hidden worker leaves the tree; its page still opens by its address.
-        const models = [...workers.values()].filter(({ origin, hidden_at }) => origin === "model" && hidden_at === null);
-        if (models.length === 0) return '<p data-i18n="no-workers">No workers.</p>';
-        const children = Map.groupBy(models, ({ parentWorkerId }) => parentWorkerId);
-        const background = models.filter((worker) => {
-            const parent = this.#parent(worker, workers);
+    #sessionTree(workspace, sessions) {
+        // {§web-directory-documents} A hidden session leaves the tree; its page still opens by its address.
+        const models = [...sessions.values()].filter(({ origin, hidden_at }) => origin === "model" && hidden_at === null);
+        if (models.length === 0) return '<p data-i18n="no-sessions">No sessions.</p>';
+        const children = Map.groupBy(models, ({ parentSessionId }) => parentSessionId);
+        const background = models.filter((session) => {
+            const parent = this.#parent(session, sessions);
             return parent !== null && parent.origin !== "model";
         });
         let rendered = 0;
-        /** @param {readonly import("@plurnk/plurnk-contracts").ApplicationWorkerProjection[]} entries @returns {string} */
+        /** @param {readonly import("@plurnk/plurnk-contracts").ApplicationSessionProjection[]} entries @returns {string} */
         const list = (entries) => entries.length === 0 ? ""
-            : `<ul>${entries.map((worker) => {
+            : `<ul>${entries.map((session) => {
                 rendered++;
-                const descendants = children.get(worker.id) ?? [];
-                const identity = this.#workerIdentity(workspace, worker, this.#parent(worker, workers));
+                const descendants = children.get(session.id) ?? [];
+                const identity = this.#sessionIdentity(workspace, session, this.#parent(session, sessions));
                 const content = descendants.length === 0 ? `<header>${identity}</header>`
                     : `<details><summary>${identity}</summary>${list(descendants)}</details>`;
-                return `<li data-directory-entry="worker"><article aria-label="Worker">${content}</article></li>`;
+                return `<li data-directory-entry="session"><article aria-label="Session">${content}</article></li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
         const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
             + `${list(background)}</details>`;
-        if (rendered !== models.length) throw new Error("Worker directory holds shown model workers that no shown root reaches.");
+        if (rendered !== models.length) throw new Error("Session directory holds shown model sessions that no shown root reaches.");
         return roots + other;
     }
 
-    /** {§web-worker-observer} Identity and navigation belong to the document; status arrives through ACP.
-     * @param {import("./directory-addresses.js").Directory & {kind: "worker"}} directory @param {number} workspaceId @param {boolean} authenticated
+    /** {§web-session-observer} Identity and navigation belong to the document; status arrives through ACP.
+     * @param {import("./directory-addresses.js").Directory & {kind: "session"}} directory @param {number} workspaceId @param {boolean} authenticated
      * @param {boolean} automatic
      */
-    #workerStatus(directory, workspaceId, authenticated, automatic) {
+    #sessionStatus(directory, workspaceId, authenticated, automatic) {
         const path = directoryPath(directory);
-        if (path === null) throw new Error("An admitted worker must have a directory address.");
-        const footer = `<footer id="worker-status" aria-label="Worker status" data-thread-id="${workspaceId}#${escapeHtml(directory.worker)}"`
-            + ` data-worker-name="${escapeHtml(directory.worker)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
+        if (path === null) throw new Error("An admitted session must have a directory address.");
+        const footer = `<footer id="session-status" aria-label="Session status" data-session-id="${workspaceId}#${escapeHtml(directory.session)}"`
+            + ` data-session-name="${escapeHtml(directory.session)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + '<div data-status-line><ul aria-label="Model controls">'
-            + `<li data-status-field="yolo"><button type="button" id="worker-yolo" aria-pressed="${automatic}" aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (/yolo)"></button></li>`
-            + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="worker-model" aria-label="Model" aria-expanded="false" aria-controls="worker-model-settings"><span data-text="model">No model</span></button><button type="button" id="worker-effort" aria-label="Effort" aria-expanded="false" aria-controls="worker-effort-settings"><span data-text="effort"></span></button></li></ul>'
-            + '<ul aria-label="Worker statistics"><li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
+            + `<li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="${automatic}" aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (/yolo)"></button></li>`
+            + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="session-model" aria-label="Model" aria-expanded="false" aria-controls="session-model-settings"><span data-text="model">No model</span></button><button type="button" id="session-effort" aria-label="Effort" aria-expanded="false" aria-controls="session-effort-settings"><span data-text="effort"></span></button></li></ul>'
+            + '<ul aria-label="Session statistics"><li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
             + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'
             + '<li data-status-field="usage" data-bind="aria-label:usage-label title:usage-label"><span data-text="input">?</span> <span data-text="output">?</span></li>'
             + '<li data-status-field="context" data-bind="aria-label:context-label title:context-label"><span data-text="context"></span></li>'
-            + '<li data-status-field="descendants"><details id="worker-descendants"><summary data-bind="aria-label:descendants-label title:descendants-label"><span data-text="descendants">0</span></summary><ul></ul></details></li>'
+            + '<li data-status-field="descendants"><details id="session-descendants"><summary data-bind="aria-label:descendants-label title:descendants-label"><span data-text="descendants">0</span></summary><ul></ul></details></li>'
             + '<li data-status-field="gated" data-bind="aria-label:gated-label title:gated-label"><span data-text="gated">0</span></li>'
             + '<li data-status-field="wait"><span data-i18n="wait-remaining">updates in</span> <time data-text="wait" data-bind="datetime:wait-at title:wait-at"></time></li>'
             + '<li data-status-field="inbox" data-bind="aria-label:inbox-label title:inbox-label"><span data-text="inbox">0</span></li>'
             + '<li data-status-field="preparation" data-text="preparation"></li>'
             + '<li data-status-field="activity" data-text="activity" data-bind="title:activity-message"></li>'
             + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li></ul></div></footer>';
-        const content = '<article id="worker-connection" role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
+        const content = '<article id="session-connection" role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
             + '<p data-text="connection-detail">Displayed values are no longer live.</p>'
-            + `<form id="worker-reconnect" action="${escapeHtml(path)}" data-bind="action:worker-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
+            + `<form id="session-reconnect" action="${escapeHtml(path)}" data-bind="action:session-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
             + '</p></article>'
-            + '<details id="worker-streams" data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
+            + '<details id="session-streams" data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
             + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ul></ul></details>'
-            + '<section id="worker-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ul></ul></section>'
-            + '<details id="worker-activity"><summary data-i18n="observed-activity">Observed activity</summary>'
+            + '<section id="session-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ul></ul></section>'
+            + '<details id="session-activity"><summary data-i18n="observed-activity">Observed activity</summary>'
             + '<p data-i18n="activity-scope">Non-conversation evidence observed on this page, not a complete history.</p><ul></ul></details>'
-            + '<section id="worker-conversation" aria-label="Conversation">'
+            + '<section id="session-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
             + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'
             + '<ul data-messages></ul></section>';
@@ -353,10 +353,10 @@ export default class Documents {
     }
     /**
      * @param {import("./directory-addresses.js").Directory} directory
-     * @param {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "listWorkspaces" | "listWorkers">} port
+     * @param {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "listWorkspaces" | "listSessions">} port
      * @param {boolean} authenticated
-     * @param {boolean} [own] {§web-worker-approval} whether the person reached the page by their own navigation; only then
-     * does a worker page start with the configured automatic approval
+     * @param {boolean} [own] {§web-session-approval} whether the person reached the page by their own navigation; only then
+     * does a session page start with the configured automatic approval
      */
     async read(directory, port, authenticated, own = false) {
         const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "", dialogs = "") =>
@@ -371,32 +371,32 @@ export default class Documents {
         }
         const workspace = workspaces.find(({ name }) => name === directory.workspace);
         if (workspace === undefined) return null;
-        const workers = await port.listWorkers(workspace.id);
-        const byId = new Map(workers.map((worker) => [worker.id, worker]));
-        if (byId.size !== workers.length) throw new Error("Worker directory contains duplicate identities.");
+        const sessions = await port.listSessions(workspace.id);
+        const byId = new Map(sessions.map((session) => [session.id, session]));
+        if (byId.size !== sessions.length) throw new Error("Session directory contains duplicate identities.");
         if (directory.kind === "workspace") {
             // {§web-workspace-folder}
             const separateFolder = workspace.project_label !== null && workspace.project_label !== workspace.name;
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            const dialogs = this.#renameForm(workspace) + this.#workspaceHideForm(workspace) + this.#workerCreationForm(workspace);
-            return render(workspace.name, folder + this.#workerTree(workspace, byId), marker, "", dialogs);
+            const dialogs = this.#renameForm(workspace) + this.#workspaceHideForm(workspace) + this.#sessionCreationForm(workspace);
+            return render(workspace.name, folder + this.#sessionTree(workspace, byId), marker, "", dialogs);
         }
-        const worker = workers.find(({ name, origin }) => name === directory.worker && origin === "model");
-        if (worker === undefined) return null;
-        const parent = this.#parent(worker, byId);
+        const session = sessions.find(({ name, origin }) => name === directory.session && origin === "model");
+        if (session === undefined) return null;
+        const parent = this.#parent(session, byId);
         const label = parent === null ? "" : parent.origin === "model"
-            ? this.#link(parent.name, { kind: "worker", workspace: workspace.name, worker: parent.name })
+            ? this.#link(parent.name, { kind: "session", workspace: workspace.name, session: parent.name })
             : `<span data-text="name">${escapeHtml(parent.name)}</span>`;
-        const title = `${workspace.name}@${directory.worker}`;
+        const title = `${workspace.name}@${directory.session}`;
         const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
-        const status = this.#workerStatus(directory, workspace.id, authenticated, this.#yolo && own);
-        const dialogs = this.#workerHideForm(workspace, worker);
-        return render(title, `<p id="worker-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
-            + (parent === null ? "" : `<p><span data-i18n="parent-worker">Parent:</span> ${label}</p>`)
+        const status = this.#sessionStatus(directory, workspace.id, authenticated, this.#yolo && own);
+        const dialogs = this.#sessionHideForm(workspace, session);
+        return render(title, `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
+            + (parent === null ? "" : `<p><span data-i18n="parent-session">Parent:</span> ${label}</p>`)
             + status.content, marker, status.footer, dialogs);
     }
 }

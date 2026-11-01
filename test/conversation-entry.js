@@ -3,4 +3,4 @@ import conversation from "../web/conversation.js";
 import readBody from "../web/read-body.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
-window.present = conversation(document.querySelector("#worker-conversation"), (address) => readBody(address, "none", new AbortController().signal));
+window.present = conversation(document.querySelector("#session-conversation"), (address) => readBody(address, "none", new AbortController().signal));

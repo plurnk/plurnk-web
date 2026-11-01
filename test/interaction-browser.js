@@ -29,14 +29,14 @@ export default async function verifyInteractions(t) {
                     }, required: ["text", "count", "enabled", "choice"], additionalProperties: false };
                     const attributed = request(schema);
                     attributed.interrupts[0].metadata = { plurnk: { interaction: {
-                        interactionId: 1, workerId: 23, loopId: 7, turnId: 9, recipient: "acp://owner",
+                        interactionId: 1, sessionId: 23, loopId: 7, turnId: 9, recipient: "acp://owner",
                         request: { toolName: "question", arguments: {}, responseSchema: schema },
                     } } };
                     assert.equal(await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), attributed), true,
                         "a schema-shaped question is a supported SDK interrupt");
                     const form = page.getByRole("form", { name: "Review requests", exact: true });
                     assert.equal(await form.locator("[data-request-origin]").isVisible(), true);
-                    assert.equal(await form.locator('[data-text="request-worker"]').textContent(), "23");
+                    assert.equal(await form.locator('[data-text="request-session"]').textContent(), "23");
                     await form.getByRole("textbox", { name: "Exact text", exact: true }).fill("  keep this\nverbatim  ");
                     await form.getByRole("spinbutton", { name: "count", exact: true }).fill("0");
                     await form.getByRole("combobox", { name: "enabled", exact: true }).selectOption("false");
@@ -93,7 +93,7 @@ export default async function verifyInteractions(t) {
                     const injected = '<script>window.schemaExecuted=true</script><form action="/auth/logout">';
                     const unsafe = request({ $ref: "https://schema.invalid/not-fetched.json", description: injected });
                     unsafe.interrupts[0].message = injected;
-                    unsafe.interrupts[0].metadata = { plurnk: { interaction: { workerId: injected } } };
+                    unsafe.interrupts[0].metadata = { plurnk: { interaction: { sessionId: injected } } };
                     unsafe.messages[0].toolCalls[0].function.arguments = injected;
                     const external = [];
                     page.on("request", (network) => { if (new URL(network.url()).hostname === "schema.invalid") external.push(network.url()); });
@@ -102,7 +102,7 @@ export default async function verifyInteractions(t) {
                     assert.equal(await form.locator('[data-request-arguments]').textContent(), injected);
                     assert.equal(await form.locator('fieldset[data-request-message], fieldset[data-request-arguments], fieldset[data-request-schema]').count(), 0,
                         "question content is not copied into fieldset state");
-                    assert.equal(await form.locator('[data-text="request-worker"]').textContent(), injected);
+                    assert.equal(await form.locator('[data-text="request-session"]').textContent(), injected);
                     assert.equal(await form.locator("script, form").count(), 0);
                     await json.fill("{}");
                     await form.getByRole("button", { name: "Submit responses", exact: true }).click();
@@ -117,9 +117,9 @@ export default async function verifyInteractions(t) {
 
                     const mixed = request({ type: "object", properties: { answer: { type: "string", minLength: 1 } }, required: ["answer"] });
                     mixed.interrupts.push({ id: "proposal", reason: "tool_call", metadata: { plurnk: { proposal: {
-                        logEntryId: 1, workerId: 2, worker: "user", loopId: 3, turnId: 4, coordinate: "3/4/1", op: "sh",
+                        logEntryId: 1, sessionId: 2, session: "user", loopId: 3, turnId: 4, coordinate: "3/4/1", op: "sh",
                         target: { scheme: "exec", authority: null, pathname: "sh" }, body: "printf reviewed", attrs: {},
-                        owner: "acp://operator/threads/user", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
+                        owner: "acp://operator/sessions/user", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
                     } } } });
                     assert.equal(await page.evaluate(({ interrupts, messages }) => window.review(interrupts, messages), mixed), true);
                     await form.getByRole("radio", { name: "Reject", exact: true }).check();

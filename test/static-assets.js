@@ -16,7 +16,7 @@ async function response(base, path, method = "GET", encoding) {
 
 export default async function verifyStaticAssets(base, plugin) {
     const inventory = JSON.parse(await readFile(new URL("assets.json", plugin), "utf8"));
-    const [path, file] = inventory.find(([path]) => /\/worker-[^/]+\.js$/u.test(path));
+    const [path, file] = inventory.find(([path]) => /\/session-[^/]+\.js$/u.test(path));
     const original = await readFile(new URL(`dist/${file}`, plugin));
     for (const [accept, expected] of [
         ["gzip", "gzip"], ["br", "br"], ["BR", "br"],

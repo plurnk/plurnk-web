@@ -29,12 +29,20 @@ export default async function verifyReasoning(t) {
                     const consume = (event) => page.evaluate((event) => window.preview.consume(event), event);
                     const preview = page.locator("[data-reasoning-preview]");
                     const text = preview.locator("pre");
-                    const delta = (messageId, delta) => consume({ type: "CUSTOM", name: "plurnk.reasoning", value: { messageId, delta } });
+                    const delta = (messageId, delta, meta) => consume({
+                        sessionUpdate: "agent_thought_chunk", messageId, content: { type: "text", text: delta },
+                        ...(meta ? { _meta: meta } : {}),
+                    });
+                    const endAttempt = (messageId, meta) => consume({
+                        sessionUpdate: "agent_thought_chunk", messageId,
+                        content: { type: "resource_link", uri: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", name: "reasoning" },
+                        ...(meta ? { _meta: meta } : {}),
+                    });
                     const message = { id: "attempt", role: "reasoning", content: "" };
                     await page.evaluate((message) => window.present([message]), message);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "empty attempt messages are not empty history disclosures");
                     assert.equal(await preview.isVisible(), false);
-                    await consume({ type: "REASONING_MESSAGE_START", messageId: message.id, metadata: { plurnk: { coordinate: "1/3" } } });
+                    await delta(message.id, "", { plurnk: { coordinate: "1/3" } });
                     assert.equal(await preview.locator("header").textContent(), "L1/T3");
                     await delta(message.id, "A provisional ");
                     await delta(message.id, "hypothesis.");
@@ -53,7 +61,7 @@ export default async function verifyReasoning(t) {
                             && Math.abs(pre.scrollHeight - pre.clientHeight - pre.scrollTop) < 1
                             && document.documentElement.scrollWidth <= innerWidth;
                     }), true, "only the bounded preview scrolls to its newest text on a narrow viewport");
-                    await consume({ type: "REASONING_MESSAGE_END", messageId: message.id });
+                    await endAttempt(message.id);
                     assert.equal(await text.textContent(), "");
                     assert.equal(await preview.isVisible(), false);
                     const linked = { ...message, metadata: { plurnk: { coordinate: "1/3", body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" } } } };
@@ -86,25 +94,21 @@ export default async function verifyReasoning(t) {
                     assert.equal(reads.length, 1);
                     assert.equal(await preview.isVisible(), false, "replay does not reconstruct previews");
 
-                    await consume({ type: "REASONING_MESSAGE_START", messageId: "next" });
                     await delta("next", "<script>window.pwned = true</script>");
-                    await consume({ type: "REASONING_MESSAGE_START", messageId: linked.id, metadata: linked.metadata });
-                    await consume({ type: "REASONING_MESSAGE_END", messageId: linked.id });
+                    await endAttempt(linked.id, linked.metadata);
                     assert.equal(await text.textContent(), "<script>window.pwned = true</script>", "late link folding cannot clear a newer attempt");
                     assert.equal(await preview.locator("script").count(), 0);
                     assert.equal(await page.evaluate(() => window.pwned), undefined);
-                    await consume({ type: "REASONING_MESSAGE_START", messageId: "replacement" });
                     await delta("replacement", "new attempt");
                     assert.equal(await text.textContent(), "new attempt", "attempts do not accumulate each other's text");
-                    await assert.rejects(delta("next", "stale"), /Reasoning preview must name its active message/u);
-                    await assert.rejects(consume({ type: "CUSTOM", name: "plurnk.reasoning", value: { messageId: "replacement", delta: 42 } }),
+                    await assert.rejects(delta("", "stale"), /Reasoning preview must name its active message/u);
+                    await assert.rejects(consume({ sessionUpdate: "agent_thought_chunk", messageId: "replacement", content: { type: "text", text: 42 } }),
                         /Reasoning preview must name its active message/u);
                     assert.equal(await text.textContent(), "new attempt");
-                    for (const type of ["RUN_ERROR", "RUN_FINISHED", "RUN_STARTED"]) {
-                        await consume({ type });
-                        assert.equal(await text.textContent(), "", type);
+                    for (const state of ["idle", "running"]) {
+                        await consume({ sessionUpdate: "state_update", state });
+                        assert.equal(await text.textContent(), "", state);
                         assert.equal(await preview.isVisible(), false);
-                        await consume({ type: "REASONING_MESSAGE_START", messageId: "replacement" });
                         await delta("replacement", "new attempt");
                     }
                     await page.evaluate(() => window.preview.clear());

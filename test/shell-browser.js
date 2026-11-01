@@ -3,7 +3,7 @@ import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-// {§web-page-shell} {§web-worker-input} Measure real CSS geometry, not a declaration proxy.
+// {§web-page-shell} {§web-session-input} Measure real CSS geometry, not a declaration proxy.
 export default async function verifyShell(t) {
     const { server, url } = await conversationFixture(new URL("./shell-entry.js", import.meta.url));
     try {

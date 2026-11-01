@@ -1,6 +1,6 @@
 import { $, the } from "on_the_money";
-import workerState from "../web/worker-state.js";
+import sessionState from "../web/session-state.js";
 
 await the.boot({ persistKeys: [] });
-$.clone("#worker-status", "#worker-controls");
-window.presentState = workerState(document.querySelector("#worker-status"));
+$.clone("#session-status", "#session-controls");
+window.presentState = sessionState(document.querySelector("#session-status"));

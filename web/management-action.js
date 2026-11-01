@@ -1,50 +1,131 @@
-import WorkerAgent from "./worker-agent.js";
+import { PROTOCOL_VERSION, client, createHttpStream, methods } from "./session-agent.js";
 import accessHeaders from "./access-headers.js";
+import problemFromResponse from "./problem-response.js";
 
-/** {§web-worker-commands} Isolated action delivery never owns observation, conversation or work lifetime. A refusal, before the
- * stream opens or as its `RUN_ERROR`, is the daemon's Problem: the thrown Error carries it as its cause.
- * @param {string} kind @param {Record<string, unknown>} params @param {string} threadId
+/** {§web-session-commands} Isolated action delivery never owns observation, conversation or work lifetime. A refusal, before the
+ * stream opens or as an ACP error, is the daemon's Problem: the thrown Error carries it as its cause.
+ * @param {string} kind @param {Record<string, unknown>} params @param {string} sessionId
  * @param {"session" | "none"} auth @param {AbortSignal} signal
  * @returns {Promise<unknown>}
  */
-export default async function managementAction(kind, params, threadId, auth, signal) {
+export default async function managementAction(kind, params, sessionId, auth, signal) {
     const { Validator } = await import("@plurnk/plurnk-contracts");
     /** @param {unknown} value */
     const refused = (value) => {
         const problem = Validator.assertProblemDetails(value);
         return Object.assign(new Error(problem.detail ?? problem.title, { cause: problem }), { status: problem.status });
     };
-    const agent = new WorkerAgent({
-        url: "/acp", threadId,
-        fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.any([signal, ...(init.signal ? [init.signal] : [])]) }),
-    });
+    const headers = await accessHeaders(auth, signal);
+    signal.throwIfAborted();
     /** @type {Error | undefined} */
-    let failed;
+    let httpFailure;
+    /** @type {typeof fetch} */
+    const acpFetch = async (input, init) => {
+        if (init?.method === "DELETE") {
+            return new Response(null, { status: 204 });
+        }
+        const reqHeaders = new Headers(init?.headers);
+        if (kind !== "providers/list" && sessionId && init?.method === "GET" && !reqHeaders.has("acp-session-id")) {
+            return new Response(new ReadableStream({
+                start(controller) {
+                    if (init.signal) {
+                        init.signal.onabort = () => {
+                            try { controller.close(); } catch { /* ignore */ }
+                        };
+                    }
+                },
+            }), {
+                status: 200,
+                headers: { "Content-Type": "text/event-stream" },
+            });
+        }
+        const response = await fetch(input, {
+            ...init,
+            signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]),
+        });
+        if (!response.ok && httpFailure === undefined) {
+            const refusalError = await problemFromResponse(response.clone());
+            httpFailure = refusalError !== null
+                ? refusalError
+                : Object.assign(new Error(response.statusText || `Request failed (${response.status}).`), { status: response.status });
+        }
+        return response;
+    };
+    const stream = createHttpStream(new URL("/acp", window.location.origin).href, {
+        fetch: acpFetch,
+        headers,
+        cookies: "omit",
+    });
+    const app = client({ name: "@plurnk/plurnk-web" });
+    const conn = app.connect(stream);
+    const onAbort = () => { conn.close(); };
+    signal.onabort = onAbort;
+    if (signal.aborted) onAbort();
     try {
-        agent.headers = await accessHeaders(auth, signal);
+        await conn.agent.request(methods.agent.initialize, {
+            protocolVersion: PROTOCOL_VERSION,
+            info: { name: "@plurnk/plurnk-web", version: "1.0.0" },
+        });
         signal.throwIfAborted();
         let outcome;
-        try {
-            outcome = await agent.runAgent({ forwardedProps: { plurnk: { action: { ...params, kind } } } }, {
-                onRunErrorEvent: ({ event }) => {
-                    const problem = /** @type {{ plurnk?: { problem?: unknown } } | undefined} */ (event.metadata)?.plurnk?.problem;
-                    failed = problem === undefined ? new Error(event.message) : refused(problem);
+        if (kind === "providers/list") {
+            outcome = await conn.agent.request(methods.agent.providers.list, {});
+        } else if (kind === "session/resume") {
+            outcome = await conn.agent.request(methods.agent.session.resume, {
+                sessionId,
+                cwd: "/",
+                replayFrom: null,
+                ...params,
+                _meta: {
+                    plurnk: {
+                        control: false,
+                        ...(typeof params._meta === "object" && params._meta !== null && "plurnk" in params._meta
+                            && typeof params._meta.plurnk === "object" && params._meta.plurnk !== null ? params._meta.plurnk : {}),
+                    },
                 },
             });
-        } catch (error) {
-            throw failed ?? error;
+        } else if (kind === "session/set_config_option") {
+            outcome = await conn.agent.request(methods.agent.session.setConfigOption, {
+                sessionId,
+                type: "id",
+                configId: String(params.configId ?? ""),
+                value: String(params.value ?? ""),
+            });
+        } else if (kind === "session/cancel") {
+            await conn.agent.notify(methods.agent.session.cancel, { sessionId });
+            outcome = {};
+        } else {
+            outcome = await conn.agent.request("_plurnk/action", {
+                kind,
+                params,
+                ...(sessionId ? { sessionId } : {}),
+            });
         }
         signal.throwIfAborted();
-        if (failed !== undefined) throw failed;
-        const result = /** @type {{ kind?: string, ok?: boolean, result?: unknown, problem?: unknown } | undefined} */ (outcome.result);
-        if (result?.kind !== kind) throw new Error(`${kind} returned no matching action outcome.`);
-        if (result.ok === false) {
-            const problem = Validator.assertProblemDetails(result.problem);
-            throw new Error(problem.detail, { cause: problem });
+        if (outcome === undefined || outcome === null || typeof outcome !== "object") {
+            throw new Error(`${kind} returned no matching action outcome.`);
         }
-        if (result.ok !== true || !Object.hasOwn(result, "result")) throw new Error(`${kind} was not acknowledged.`);
-        return result.result;
+        return outcome;
+    } catch (error) {
+        if (httpFailure !== undefined) throw httpFailure;
+        if (signal.aborted) {
+            throw signal.reason instanceof Error
+                ? signal.reason
+                : new DOMException("The operation was aborted.", "AbortError");
+        }
+        if (typeof error === "object" && error !== null && "data" in error) {
+            const data = /** @type {Record<string, unknown> | null | undefined} */ (error.data);
+            const plurnk = data && typeof data.plurnk === "object" && data.plurnk !== null
+                ? /** @type {Record<string, unknown>} */ (data.plurnk)
+                : undefined;
+            const rawProblem = data && "problem" in data ? data.problem : (plurnk && "problem" in plurnk ? plurnk.problem : data);
+            if (rawProblem && typeof rawProblem === "object" && "type" in rawProblem && "status" in rawProblem) {
+                throw refused(rawProblem);
+            }
+        }
+        throw error;
     } finally {
-        agent.headers = {};
+        signal.onabort = null;
+        conn.close();
     }
 }

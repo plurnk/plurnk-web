@@ -6,7 +6,7 @@ import { questionOperation } from "./question-fixture.js";
 export const contentAttack = [
     "**Readable evidence**",
     '<script>window.contentExecuted=true</script>',
-    '<span id="worker-status" data-text="connection-label" data-bind="href:call-href">Forged control</span>',
+    '<span id="session-status" data-text="connection-label" data-bind="href:call-href">Forged control</span>',
     '<form action="/auth/logout" method="post"><button>Injected sign out</button></form>',
     '![automatic request](/security-probe)',
     '[unsafe](javascript:alert%281%29)',
@@ -24,7 +24,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
     const streamStarted = Promise.withResolvers();
     const programs = [
         { reasoning: "I will read the requested project file.", content: "```READ (witness.txt)\n```" },
-        { reasoning: "The file confirms the browser connection.", content: "```SEND [200]\nBrowser connection verified: cobalt heron.\n```" },
+        { reasoning: "The file confirms the browser connection.", content: "```DONE\nBrowser connection verified: cobalt heron.\n```" },
     ];
     let turn = 0;
     const server = createServer(async (request, response) => {
@@ -74,22 +74,22 @@ export default async function startModel({ approvalCommand = "printf approved" }
                     const content = lifecycle === "wait-status" && visit === 1
                         ? `\`\`\`sh\nnode --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'\n\`\`\`\n\`\`\`WAIT <60>\n\`\`\``
                         : lifecycle === "activity" && visit === 1 ? outsideText
-                        : lifecycle.startsWith("status-") && visit === 1 ? "```READ (worker://user/identity.md)\n```"
+                        : lifecycle.startsWith("status-") && visit === 1 ? "```READ (session://user/identity.md)\n```"
                         : lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
                         : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `\`\`\`sh\n${approvalCommand}\n\`\`\``
                         : lifecycle === "question-batch" && visit === 1 ? `${questionOperation}\n${questionOperation}`
                         : /^(question|held-question)-/u.test(lifecycle) && visit === 1 ? questionOperation
                         : lifecycle.startsWith("mcp-question-") && visit === 1 ? "```fixture (batch)\n{}\n```\n```WAIT\n```"
                         : lifecycle === "conversation" && visit === 1
-                            ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (worker://user/identity.md) <1,2>\n```"
+                            ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (session://user/identity.md) <1,2>\n```"
                         : lifecycle.startsWith("execution-") && visit === 1
                             ? `\`\`\`sh\nprintf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}\n\`\`\`\n\`\`\`WAIT\n\`\`\``
-                        : lifecycle === "math" ? "```SEND [200]\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
-                        : lifecycle === "diagrams" ? `\`\`\`\`SEND [200]\n${diagramContent}\n\`\`\`\``
-                        : lifecycle === "footnotes" ? `\`\`\`NOTE <!-- fact -->\n${footnoteAnswer}\n\`\`\`\n\`\`\`SEND [200]\n${footnoteAnswer}\n\`\`\``
-                        : lifecycle === "notes" ? "```NOTE <!-- fact -->\nA **working fact**, not the answer.\n```\n```NOTE <!-- idea -->\nA provisional hypothesis.\n```\n```NOTE <!-- plan -->\nCheck the hypothesis.\n```\n```SEND [200]\nCompleted notes.\n```"
-                        : lifecycle === "content-security" ? `\`\`\`NOTE <!-- fact -->\n${contentAttack}\n\`\`\`\n\`\`\`SEND [200]\n${contentAttack}\n\`\`\``
-                        : `\`\`\`SEND [200]\nCompleted ${lifecycle}.\n\`\`\``;
+                        : lifecycle === "math" ? "```DONE\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
+                        : lifecycle === "diagrams" ? `\`\`\`\`DONE\n${diagramContent}\n\`\`\`\``
+                        : lifecycle === "footnotes" ? `\`\`\`NOTE <!-- fact -->\n${footnoteAnswer}\n\`\`\`\n\`\`\`DONE\n${footnoteAnswer}\n\`\`\``
+                        : lifecycle === "notes" ? "```NOTE <!-- fact -->\nA **working fact**, not the answer.\n```\n```NOTE <!-- idea -->\nA provisional hypothesis.\n```\n```NOTE <!-- plan -->\nCheck the hypothesis.\n```\n```DONE\nCompleted notes.\n```"
+                        : lifecycle === "content-security" ? `\`\`\`NOTE <!-- fact -->\n${contentAttack}\n\`\`\`\n\`\`\`DONE\n${contentAttack}\n\`\`\``
+                        : `\`\`\`DONE\nCompleted ${lifecycle}.\n\`\`\``;
                     frame({ content });
                     const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);
                     frame({}, "stop", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });
@@ -136,7 +136,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
         env: {
             PLURNK_MODEL: "browser",
             PLURNK_MODEL_browser: "browser-fixture/browser-fixture",
-            PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_NPM: "@ai-sdk/openai-compatible",
+            PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_ADAPTER: "openai-compatible",
             PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_BASE_URL: `http://127.0.0.1:${port}/v1`,
             PLURNK_PROVIDERS_CONTEXT_WINDOW_browser: "32768",
             PLURNK_PROVIDERS_OUTPUT_BUDGET_browser: "4096",

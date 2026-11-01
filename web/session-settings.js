@@ -1,22 +1,22 @@
 import { $, on, the } from "on_the_money";
-import { listModels, workerModel, workerEffort, modelLabel } from "./worker-models.js";
+import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
 import describeFailure from "./failure.js";
 
-/** {§web-worker-settings} Native suggestions are an aid, never a route admission policy.
+/** {§web-session-settings} Native suggestions are an aid, never a route admission policy.
  * @param {Element} main @param {Element} status
- * @param {import("./worker-models.js").Action} call
+ * @param {import("./session-models.js").Action} call
  * @param {() => AbortSignal} lifetime
  */
-export default function workerSettings(main, status, call, lifetime) {
+export default function sessionSettings(main, status, call, lifetime) {
     const panels = [
         { kind: "model", article: $.clone(main, "#model-settings") },
         { kind: "effort", article: $.clone(main, "#effort-settings") },
     ].map(({ kind, article }) => {
-        const button = $(status, `#worker-${kind}`);
+        const button = $(status, `#session-${kind}`);
         const field = $(article, '[name="selection"]');
         if (!(article instanceof HTMLElement) || !(button instanceof HTMLButtonElement)
             || !(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) {
-            throw new Error("Worker settings template is incomplete.");
+            throw new Error("Session settings template is incomplete.");
         }
         return { kind, article, button, field, close() {} };
     });
@@ -51,7 +51,7 @@ export default function workerSettings(main, status, call, lifetime) {
                     ], (option, { value, label }) => the(option, { optionValue: value, optionLabel: label }));
                 } else {
                     the(article, "selection-unavailable", "");
-                    const { supported } = await workerEffort(invoke);
+                    const { supported } = await sessionEffort(invoke);
                     signal.throwIfAborted();
                     $.cloneEach(field, "#setting-option", ["", ...supported], (option, value) => the(option, {
                         optionValue: value, optionLabel: value || "Reasoning Effort", optionDisabled: value ? null : "",
@@ -66,7 +66,7 @@ export default function workerSettings(main, status, call, lifetime) {
                 if (!request.signal.aborted) the(article, message);
             }
         };
-        on(status, "click", `#worker-${kind}`, async () => {
+        on(status, "click", `#session-${kind}`, async () => {
             if (panels.some(({ article }) => the(article, "settings-pending") !== null)) return;
             if (!article.hidden) { panel.close(); return; }
             for (const other of panels) other.close();
@@ -88,8 +88,8 @@ export default function workerSettings(main, status, call, lifetime) {
             the(article, { settingsPending: "true", selectionUnavailable: "" });
             try {
                 const invoke = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) => call(kind, params, signal);
-                if (kind === "model") await workerModel(invoke, field.value);
-                else await workerEffort(invoke, field.value);
+                if (kind === "model") await sessionModel(invoke, field.value);
+                else await sessionEffort(invoke, field.value);
                 signal.throwIfAborted();
                 button.focus();
                 panel.close();

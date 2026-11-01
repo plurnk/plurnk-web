@@ -66,7 +66,7 @@ export default async function verifyBodies(t) {
                     await result.locator('[data-body-state="loaded"]').waitFor();
                     assert.equal(await result.locator("[data-body-reference]").textContent(), source);
                     assert.equal(await result.locator("script, img, form").count(), 0);
-                    assert.deepEqual(await page.evaluate(() => window.messages), messages, "fetched bodies never enter messages sent back to HttpAgent");
+                    assert.deepEqual(await page.evaluate(() => window.messages), messages, "fetched bodies never enter messages sent back to the SDK");
                     await page.evaluate(() => { window.bodyNode = document.querySelector("[data-body-reference]"); window.present(structuredClone(window.messages)); });
                     assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("[data-body-reference]")), true);
                     assert.equal(reads.length, 1);

@@ -11,8 +11,8 @@ import { readAsset, sendAsset } from "./static-assets.js";
 import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
 
-/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listWorkers" | "createWorkspace" | "renameWorkspace" | "createWorker" | "setWorkspaceHidden" | "setWorkerHidden">} Port */
-/** @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
+/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listSessions" | "createWorkspace" | "renameWorkspace" | "createSession" | "setWorkspaceHidden" | "setSessionHidden">} Port */
+/** {§web-host} {§web-configuration} {§web-package} @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
     const yolo = Knob.flag("PLURNK_WEB_YOLO");
@@ -74,9 +74,9 @@ export default function createModule() {
                 const token = pathname === "/auth/token";
                 const creation = pathname === "/workspaces/new";
                 const rename = pathname === "/workspaces/rename";
-                const workerCreation = pathname === "/workers/new";
+                const sessionCreation = pathname === "/sessions/new";
                 const workspaceHide = pathname === "/workspaces/hide";
-                const workerHide = pathname === "/workers/hide";
+                const sessionHide = pathname === "/sessions/hide";
                 const diagram = pathname === "/render/mermaid";
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
@@ -101,8 +101,8 @@ export default function createModule() {
                         else session.logout(req, res);
                         return;
                     }
-                    if (creation || rename || workerCreation || workspaceHide || workerHide) {
-                        const actionName = creation ? "create a workspace" : rename ? "rename a workspace" : workerCreation ? "create a worker" : workspaceHide ? "hide a workspace" : "hide a worker";
+                    if (creation || rename || sessionCreation || workspaceHide || sessionHide) {
+                        const actionName = creation ? "create a workspace" : rename ? "rename a workspace" : sessionCreation ? "create a session" : workspaceHide ? "hide a workspace" : "hide a session";
                         if (req.method !== "POST") {
                             res.setHeader("allow", "POST");
                             throw new RequestError(405, `Use POST to ${actionName}.`);
@@ -161,22 +161,22 @@ export default function createModule() {
                             redirect(res, path);
                             return;
                         }
-                        if (workerCreation) {
+                        if (sessionCreation) {
                             const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
                             const targetName = fields.get("workspace");
-                            if (!formToken || !targetName) throw new RequestError(400, "Expected worker creation token and workspace name.");
-                            // An empty name is no name: the daemon names the worker.
-                            const workerName = fields.get("name") ?? "";
+                            if (!formToken || !targetName) throw new RequestError(400, "Expected session creation token and workspace name.");
+                            // An empty name is no name: the daemon names the session.
+                            const sessionName = fields.get("name") ?? "";
                             const workspaces = await seam.listWorkspaces();
                             const ws = workspaces.find(({ name }) => name === targetName);
                             if (!ws) throw new RequestError(404, "Workspace not found.");
                             redirect(res, await creations.submit(formToken, async () => {
-                                let createdWorker;
-                                try { createdWorker = await seam.createWorker({ workspaceId: ws.id, ...(workerName === "" ? {} : { name: workerName }) }); }
-                                catch (cause) { throw refusal(cause, "The daemon could not create the worker.", documents.retryWorker(ws.name, workerName)); }
-                                // An internal fault, not a refusal: the worker exists.
-                                const path = directoryPath({ kind: "worker", workspace: ws.name, worker: createdWorker.workerName });
-                                if (path === null) throw new Error("The daemon returned a worker name without a directory address.");
+                                let createdSession;
+                                try { createdSession = await seam.createSession({ workspaceId: ws.id, ...(sessionName === "" ? {} : { name: sessionName }) }); }
+                                catch (cause) { throw refusal(cause, "The daemon could not create the session.", documents.retrySession(ws.name, sessionName)); }
+                                // An internal fault, not a refusal: the session exists.
+                                const path = directoryPath({ kind: "session", workspace: ws.name, session: createdSession.sessionName });
+                                if (path === null) throw new Error("The daemon returned a session name without a directory address.");
                                 return path;
                             }));
                             return;
@@ -192,18 +192,18 @@ export default function createModule() {
                             redirect(res, "/~/");
                             return;
                         }
-                        if (workerHide) {
+                        if (sessionHide) {
                             const targetName = fields.get("workspace");
-                            const targetWorker = fields.get("worker");
-                            if (!targetName || !targetWorker) throw new RequestError(400, "Expected workspace and worker name.");
+                            const targetSession = fields.get("session");
+                            if (!targetName || !targetSession) throw new RequestError(400, "Expected workspace and session name.");
                             const workspaces = await seam.listWorkspaces();
                             const ws = workspaces.find(({ name }) => name === targetName);
                             if (!ws) throw new RequestError(404, "Workspace not found.");
-                            const workers = await seam.listWorkers(ws.id);
-                            const worker = workers.find(({ name }) => name === targetWorker);
-                            if (!worker) throw new RequestError(404, "Worker not found.");
-                            try { await seam.setWorkerHidden({ workspaceId: ws.id, workerId: worker.id, hidden: true }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not hide the worker."); }
+                            const workspaceSessions = await seam.listSessions(ws.id);
+                            const target = workspaceSessions.find(({ name }) => name === targetSession);
+                            if (!target) throw new RequestError(404, "Session not found.");
+                            try { await seam.setSessionHidden({ workspaceId: ws.id, sessionId: target.id, hidden: true }); }
+                            catch (cause) { throw refusal(cause, "The daemon could not hide the session."); }
                             const path = directoryPath({ kind: "workspace", workspace: ws.name });
                             if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
                             redirect(res, path);
@@ -238,7 +238,7 @@ export default function createModule() {
                         }
                         const body = home ? documents.home(admitted) : account ? documents.account() : inventory ? documents.sessions(inventory)
                             : directory === null ? null : await documents.read(directory, seam, admitted, ownNavigation(req));
-                        if (body === null) throw new RequestError(404, "Workspace or worker not found.");
+                        if (body === null) throw new RequestError(404, "Workspace or session not found.");
                         res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
                         res.end(req.method === "HEAD" ? undefined : body);
                         return;

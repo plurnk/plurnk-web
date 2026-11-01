@@ -30,23 +30,23 @@
         </nav>
     </header>
     <main id="main" data-page="home"></main>
-    <!-- {§web-worker-status} Public state supplies literal list values, not document markup. -->
-    <template id="worker-descendant">
+    <!-- {§web-session-status} Public state supplies literal list values, not document markup. -->
+    <template id="session-descendant">
       <li>
         <a data-text="descendant-name" data-bind="href:descendant-path"></a>
         <small><span data-text="descendant-kind"></span> <span data-i18n="descendant-separator">·</span> <span data-text="descendant-lifecycle"></span>
           <span data-i18n="descendant-pending-gates">· Pending requests:</span> <span data-text="descendant-gates"></span></small>
       </li>
     </template>
-    <template id="worker-descendant-children">
+    <template id="session-descendant-children">
       <details><summary><span data-i18n="descendant-children">Children:</span> <span data-text="descendant-children"></span></summary><ul></ul></details>
     </template>
-    <!-- {§web-worker-streams} Observed outcomes retain explicit output inspection. -->
-    <template id="worker-stream-outcome">
+    <!-- {§web-session-streams} Observed outcomes retain explicit output inspection. -->
+    <template id="session-stream-outcome">
         <li>
             <details>
                 <summary><code data-text="stream-target">Stream address</code> <span data-text="stream-scheme">Executor</span></summary>
-                <p><span data-i18n="stream-worker">Worker:</span> <span data-text="stream-worker">Worker</span></p>
+                <p><span data-i18n="stream-session">Session:</span> <span data-text="stream-session">Session</span></p>
                 <p data-text="stream-summary">Stream concluded.</p>
                 <p data-stream-exit-line><span data-i18n="stream-exit-code">Exit code:</span> <span data-text="stream-exit-code"></span></p>
                 <article data-stream-failure>
@@ -90,19 +90,19 @@
     <template id="conversation-body-read">
         <form><button type="submit" data-i18n="read-body">Read</button></form>
     </template>
-    <!-- {§web-worker-diagnostics} Diagnostic values are text, never actions or conversation messages. -->
-    <template id="worker-diagnostic">
+    <!-- {§web-session-diagnostics} Diagnostic values are text, never actions or conversation messages. -->
+    <template id="session-diagnostic">
         <li>
             <article data-bind="aria-label:diagnostic-label"></article>
         </li>
     </template>
-    <!-- {§web-worker-activity} Observations are literal evidence, not replies or executable markup. -->
-    <template id="worker-ambient">
+    <!-- {§web-session-activity} Observations are literal evidence, not replies or executable markup. -->
+    <template id="session-ambient">
         <li>
             <article data-bind="aria-label:activity-label"></article>
         </li>
     </template>
-    <template id="worker-outside">
+    <template id="session-outside">
         <li>
             <article data-bind="aria-label:activity-label"></article>
         </li>
@@ -110,20 +110,20 @@
     <template id="activity-reasoning">
         <details><summary data-i18n="activity-reasoning">Reasoning</summary></details>
     </template>
-    <!-- {§web-worker-input} Native form structure; the worker SDK owns delivery. -->
-    <template id="worker-controls">
-        <section aria-label="Worker controls">
-            <form id="worker-compose">
-                <fieldset role="group" aria-label="Worker actions">
-                    <button type="submit" form="worker-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
-                    <textarea id="worker-message" name="message" aria-label="Message" rows="1" required></textarea>
-                    <button type="submit" form="worker-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Control+Enter" title="Send (Ctrl+Enter)"></button>
+    <!-- {§web-session-input} Native form structure; the session SDK owns delivery. -->
+    <template id="session-controls">
+        <section aria-label="Session controls">
+            <form id="session-compose">
+                <fieldset role="group" aria-label="Session actions">
+                    <button type="submit" form="session-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
+                    <textarea id="session-message" name="message" aria-label="Message" rows="1" required></textarea>
+                    <button type="submit" form="session-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Control+Enter" title="Send (Ctrl+Enter)"></button>
                 </fieldset>
             </form>
-            <form id="worker-stop"></form>
+            <form id="session-stop"></form>
         </section>
     </template>
-    <template id="worker-feedback">
+    <template id="session-feedback">
         <section aria-label="Message feedback" data-command-error="" data-message-status="">
             <p role="status" data-text="message-status">Connect to send a message.</p>
             <article role="alert" data-command-error>
@@ -132,12 +132,12 @@
             </article>
         </section>
     </template>
-    <!-- {§web-worker-settings} Native disclosures and forms reuse the command action boundary. -->
+    <!-- {§web-session-settings} Native disclosures and forms reuse the command action boundary. -->
     <template id="model-settings">
-        <article id="worker-model-settings" aria-label="Model selection" tabindex="-1" hidden>
+        <article id="session-model-settings" aria-label="Model selection" tabindex="-1" hidden>
             <form data-setting="model" data-bind="aria-busy:settings-pending">
-                <input id="worker-model-choice" type="search" name="selection" list="worker-model-options" aria-label="Search Models" placeholder="Search Models" autocomplete="off" spellcheck="false" required data-bind="disabled:settings-pending">
-                <datalist id="worker-model-options"></datalist>
+                <input id="session-model-choice" type="search" name="selection" list="session-model-options" aria-label="Search Models" placeholder="Search Models" autocomplete="off" spellcheck="false" required data-bind="disabled:settings-pending">
+                <datalist id="session-model-options"></datalist>
                 <fieldset role="group">
                     <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
                     <button type="submit" data-bind="disabled:selection-unavailable" data-i18n="select-model">Select Model</button>
@@ -148,9 +148,9 @@
         </article>
     </template>
     <template id="effort-settings">
-        <article id="worker-effort-settings" aria-label="Effort selection" tabindex="-1" hidden>
+        <article id="session-effort-settings" aria-label="Effort selection" tabindex="-1" hidden>
             <form data-setting="effort" data-bind="aria-busy:settings-pending">
-                <select id="worker-effort-choice" name="selection" aria-label="Reasoning Effort" required disabled data-bind="disabled:selection-unavailable">
+                <select id="session-effort-choice" name="selection" aria-label="Reasoning Effort" required disabled data-bind="disabled:selection-unavailable">
                     <option value="" disabled selected data-i18n="reasoning-effort">Reasoning Effort</option>
                 </select>
                 <fieldset role="group">
@@ -163,13 +163,13 @@
         </article>
     </template>
     <template id="setting-option"><option data-bind="value:option-value disabled:option-disabled" data-text="option-label"></option></template>
-    <!-- {§web-worker-commands} Command results are local presentation, not conversation messages. -->
+    <!-- {§web-session-commands} Command results are local presentation, not conversation messages. -->
     <template id="command-results">
-        <section id="worker-command-results" aria-label="Command results">
+        <section id="session-command-results" aria-label="Command results">
             <ul></ul>
         </section>
     </template>
-    <template id="worker-command-result">
+    <template id="session-command-result">
         <li>
             <article data-command-state="pending" data-bind="aria-busy:command-busy">
                 <header><code></code></header>
@@ -183,11 +183,11 @@
         <ul aria-label="Supported commands">
             <li data-command-name="help"><code data-i18n="command-help-usage">/help [command]</code> <span data-i18n="command-help-summary">Show these commands or one command's usage.</span></li>
             <li data-command-name="models"><code data-i18n="command-models-usage">/models [search]</code> <span data-i18n="command-models-summary">List aliases and search the available model catalog.</span></li>
-            <li data-command-name="model"><code data-i18n="command-model-usage">/model [selector] [effort]</code> <span data-i18n="command-model-summary">Inspect or select this worker's model.</span></li>
-            <li data-command-name="effort"><code data-i18n="command-effort-usage">/effort [policy]</code> <span data-i18n="command-effort-summary">Inspect or select this worker's reasoning effort.</span></li>
+            <li data-command-name="model"><code data-i18n="command-model-usage">/model [selector] [effort]</code> <span data-i18n="command-model-summary">Inspect or select this session's model.</span></li>
+            <li data-command-name="effort"><code data-i18n="command-effort-usage">/effort [policy]</code> <span data-i18n="command-effort-summary">Inspect or select this session's reasoning effort.</span></li>
             <li data-command-name="capabilities"><code data-i18n="command-capabilities-usage">/capabilities [json]</code> <span data-i18n="command-capabilities-summary">Inspect or replace the workspace capability policy.</span></li>
             <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle automatic approval on this page.</span></li>
-            <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this worker's active work.</span></li>
+            <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this session's active work.</span></li>
         </ul>
     </template>
     <template id="command-models">
@@ -240,8 +240,8 @@
             <dt data-i18n="capability-effective">Effective</dt><dd><pre><code data-capability="effective"></code></pre></dd>
         </dl>
     </template>
-    <!-- {§web-worker-approval} One explicit decision per operation, one complete resume. -->
-    <template id="worker-review">
+    <!-- {§web-session-approval} One explicit decision per operation, one complete resume. -->
+    <template id="session-review">
         <form aria-label="Review requests" data-request-count="0">
             <fieldset disabled data-bind="disabled:review-unavailable">
                 <legend data-i18n="input-required">Input required</legend>
@@ -251,10 +251,10 @@
             </fieldset>
         </form>
     </template>
-    <!-- {§web-worker-questions} Request data never supplies markup or application bindings. -->
-    <template id="worker-question">
+    <!-- {§web-session-questions} Request data never supplies markup or application bindings. -->
+    <template id="session-question">
         <fieldset data-question data-response-error="">
-            <legend><span data-request-origin><span data-i18n="request-worker">Worker</span> <span data-text="request-worker">Unknown</span></span> <code data-text="request-tool">Question</code></legend>
+            <legend><span data-request-origin><span data-i18n="request-session">Session</span> <span data-text="request-session">Unknown</span></span> <code data-text="request-tool">Question</code></legend>
             <p data-request-message></p>
             <details>
                 <summary data-i18n="request-details">Request details</summary>
@@ -287,9 +287,9 @@
     </template>
     <template id="answer-option"><option data-bind="value:option-value" data-text="option-label">Option</option></template>
     <template id="answer-json"><label><span data-i18n="json-answer">Answer (JSON)</span><textarea rows="6" spellcheck="false" required></textarea></label></template>
-    <template id="worker-proposal">
+    <template id="session-proposal">
         <fieldset>
-            <legend><span data-text="proposal-worker">Worker</span> <code data-text="proposal-op">Operation</code></legend>
+            <legend><span data-text="proposal-session">Session</span> <code data-text="proposal-op">Operation</code></legend>
             <pre><code data-proposal-target></code></pre>
             <pre><code data-proposal-body></code></pre>
             <p data-proposal-deadline-line><span data-i18n="decide-by">Decide by</span> <time data-bind="datetime:proposal-deadline" data-text="proposal-deadline-label"></time></p>
@@ -297,7 +297,7 @@
             <label><input type="radio" value="reject" required data-bind="name:proposal-choice"> <span data-i18n="reject">Reject</span></label>
         </fieldset>
     </template>
-    <!-- {§web-worker-conversation} Inert document-owned structure; HttpAgent supplies its values. -->
+    <!-- {§web-session-conversation} Inert document-owned structure; the ACP client supplies its values. -->
     <template id="conversation-history">
         <li data-history-boundary>
             <form data-bind="aria-busy:history-pending">
@@ -306,7 +306,7 @@
             </form>
         </li>
     </template>
-    <template id="worker-reasoning-preview">
+    <template id="session-reasoning-preview">
         <article data-reasoning-preview aria-label="Live reasoning">
             <header data-text="reasoning-coordinate"></header>
             <pre></pre>

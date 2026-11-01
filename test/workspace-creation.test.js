@@ -9,7 +9,7 @@ import createModule from "../ai.plurnk/module.js";
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 
 // {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
-async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createWorker = async (args) => ({ workerId: 10, workerName: args.name || "bob" }), setWorkspaceHidden = async ({ workspaceId, hidden }) => ({ id: workspaceId, hidden_at: hidden ? new Date().toISOString() : null }), setWorkerHidden = async ({ workerId, hidden }) => ({ id: workerId, hidden_at: hidden ? new Date().toISOString() : null, workerIds: [workerId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], workers = [{ id: 10, name: "bob", origin: "model", parentWorkerId: null, kind: "worker", lifecycle: "completed", hidden_at: null }] } = {}) {
+async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceHidden = async ({ workspaceId, hidden }) => ({ id: workspaceId, hidden_at: hidden ? new Date().toISOString() : null }), setSessionHidden = async ({ sessionId, hidden }) => ({ id: sessionId, hidden_at: hidden ? new Date().toISOString() : null, sessionIds: [sessionId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", hidden_at: null }] } = {}) {
     const originalAuth = process.env.PLURNK_AUTH;
     process.env.PLURNK_AUTH = auth ? "1" : "0";
     t.after(() => {
@@ -40,12 +40,12 @@ async function fixture(t, { auth = false, admitted = true, create = async () => 
         },
         registerHttpRoute(_prefix, serve) { handler = serve; },
         listWorkspaces: async () => workspaces,
-        listWorkers: async () => workers,
+        listSessions: async () => sessions,
         createWorkspace: async (args) => { created.push(args); return create(args); },
         renameWorkspace: rename,
-        createWorker,
+        createSession,
         setWorkspaceHidden,
-        setWorkerHidden,
+        setSessionHidden,
     };
     await module.start(seam);
     const server = createServer(handler);
@@ -192,16 +192,16 @@ const nameConflict = (name) => Object.assign(new Error(`Workspace name '${name}'
 for (const [form, path, fields] of [
     ["workspace-create", "/workspaces/new", (token, name) => ({ token, name })],
     ["workspace-rename", "/workspaces/rename", (_token, name) => ({ workspace: "work", name })],
-    ["worker-create", "/workers/new", (token, name) => ({ token, workspace: "work", name })],
+    ["session-create", "/sessions/new", (token, name) => ({ token, workspace: "work", name })],
 ]) {
     for (const refused of [true, false]) {
-        test(`{§web-workspace-creation} {§web-workspace-rename} {§web-worker-creation} ${form}: a daemon ${refused ? "refusal keeps its status, detail and recovery" : "failure is a 502"}, and the draft comes back with a fresh token`, async (t) => {
+        test(`{§web-workspace-creation} {§web-workspace-rename} {§web-session-creation} ${form}: a daemon ${refused ? "refusal keeps its status, detail and recovery" : "failure is a 502"}, and the draft comes back with a fresh token`, async (t) => {
             const calls = [];
             const fail = (name) => { calls.push(name); if (name === "taken") throw refused ? nameConflict(name) : new Error("daemon unreachable"); };
             const { base } = await fixture(t, {
                 create: async ({ name }) => { fail(name); return envelope(name); },
                 rename: async (id, name) => { fail(name); return { id, name }; },
-                createWorker: async ({ name }) => { fail(name); return { workerId: 10, workerName: name }; },
+                createSession: async ({ name }) => { fail(name); return { sessionId: 10, sessionName: name }; },
             });
             const send = (body) => fetch(new URL(path, base), { method: "POST", redirect: "manual",
                 headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams(body) });
@@ -233,23 +233,23 @@ for (const [form, path, fields] of [
     }
 }
 
-test("{§web-workspace-creation} {§web-worker-creation} an empty name is no name, and any other name reaches the daemon verbatim", async (t) => {
-    const workers = [];
+test("{§web-workspace-creation} {§web-session-creation} an empty name is no name, and any other name reaches the daemon verbatim", async (t) => {
+    const sessions = [];
     const { base, created, post } = await fixture(t, {
-        createWorker: async (args) => { workers.push(args); return { workerId: 10, workerName: args.name ?? "a1b2c3d4" }; },
+        createSession: async (args) => { sessions.push(args); return { sessionId: 10, sessionName: args.name ?? "a1b2c3d4" }; },
     });
-    const workerPost = (body) => fetch(new URL("/workers/new", base), {
+    const sessionPost = (body) => fetch(new URL("/sessions/new", base), {
         method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams(body), redirect: "manual",
     });
     const cases = [["no name field", undefined], ["an empty name", ""], ["a name", "my-custom"], ["a name with spaces around it", "  spaced  "]];
     for (const [label, name] of cases) {
         const named = name === undefined ? {} : { name };
         assert.equal((await post(randomUUID(), {}, named)).status, 303, label);
-        assert.equal((await workerPost({ workspace: "work", token: randomUUID(), ...named })).status, 303, label);
+        assert.equal((await sessionPost({ workspace: "work", token: randomUUID(), ...named })).status, 303, label);
     }
     const requested = cases.map(([, name]) => name === undefined || name === "" ? {} : { name });
     assert.deepEqual(created, requested.map((named) => ({ ...named, projectRoot: null })));
-    assert.deepEqual(workers, requested.map((named) => ({ workspaceId: 7, ...named })));
+    assert.deepEqual(sessions, requested.map((named) => ({ workspaceId: 7, ...named })));
 });
 
 test("{§web-workspace-rename} workspace rename updates name and redirects to new canonical path", async (t) => {
@@ -294,14 +294,14 @@ test("{§web-workspace-rename} workspace rename updates name and redirects to ne
     assert.deepEqual(renamed, [{ id: 7, name: "  spaced  " }, { id: 7, name: "new-name" }]);
 });
 
-test("{§web-worker-creation} worker creation creates independent worker and redirects", async (t) => {
-    const createdWorkers = [];
+test("{§web-session-creation} session creation creates independent session and redirects", async (t) => {
+    const createdSessions = [];
     const { base } = await fixture(t, {
         workspaces: [{ id: 7, name: "my-workspace", project_root: null, project_label: null, hidden_at: null }],
-        createWorker: async (args) => { createdWorkers.push(args); return { workerId: 10, workerName: args.name || "bob" }; },
+        createSession: async (args) => { createdSessions.push(args); return { sessionId: 10, sessionName: args.name || "bob" }; },
     });
 
-    const workerPost = (body, headers = {}) => fetch(new URL("/workers/new", base), {
+    const sessionPost = (body, headers = {}) => fetch(new URL("/sessions/new", base), {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
         body: new URLSearchParams(body),
@@ -310,38 +310,38 @@ test("{§web-worker-creation} worker creation creates independent worker and red
 
     // Method guard
     for (const method of ["GET", "HEAD"]) {
-        const res = await fetch(new URL("/workers/new", base), { method, redirect: "manual" });
+        const res = await fetch(new URL("/sessions/new", base), { method, redirect: "manual" });
         assert.equal(res.status, 405, method);
         assert.equal(res.headers.get("allow"), "POST");
     }
 
     // Origin check
     const token = randomUUID();
-    const foreign = await workerPost({ workspace: "my-workspace", token, name: "alice" }, { origin: "https://evil.example" });
+    const foreign = await sessionPost({ workspace: "my-workspace", token, name: "alice" }, { origin: "https://evil.example" });
     assert.equal(foreign.status, 403);
 
     // Missing workspace 404
-    const missing = await workerPost({ workspace: "nonexistent", token: randomUUID(), name: "alice" });
+    const missing = await sessionPost({ workspace: "nonexistent", token: randomUUID(), name: "alice" });
     assert.equal(missing.status, 404);
 
-    // Create named worker
-    const namedRes = await workerPost({ workspace: "my-workspace", token: randomUUID(), name: "alice" });
+    // Create named session
+    const namedRes = await sessionPost({ workspace: "my-workspace", token: randomUUID(), name: "alice" });
     assert.equal(namedRes.status, 303);
     assert.equal(namedRes.headers.get("location"), "/~/my-workspace@alice/");
-    assert.deepEqual(createdWorkers[0], { workspaceId: 7, name: "alice" });
+    assert.deepEqual(createdSessions[0], { workspaceId: 7, name: "alice" });
 
-    // Create unnamed worker (daemon generates name)
+    // Create unnamed session (daemon generates name)
     const unnamedToken = randomUUID();
-    const unnamedRes = await workerPost({ workspace: "my-workspace", token: unnamedToken });
+    const unnamedRes = await sessionPost({ workspace: "my-workspace", token: unnamedToken });
     assert.equal(unnamedRes.status, 303);
     assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace@bob/");
-    assert.deepEqual(createdWorkers[1], { workspaceId: 7 });
+    assert.deepEqual(createdSessions[1], { workspaceId: 7 });
 
-    // Idempotent retry converges to same worker
-    const retryRes = await workerPost({ workspace: "my-workspace", token: unnamedToken });
+    // Idempotent retry converges to same session
+    const retryRes = await sessionPost({ workspace: "my-workspace", token: unnamedToken });
     assert.equal(retryRes.status, 303);
     assert.equal(retryRes.headers.get("location"), "/~/my-workspace@bob/");
-    assert.equal(createdWorkers.length, 2);
+    assert.equal(createdSessions.length, 2);
 });
 
 test("{§web-workspace-hide} workspace hide calls daemon and redirects to /~/", async (t) => {
@@ -383,15 +383,15 @@ test("{§web-workspace-hide} workspace hide calls daemon and redirects to /~/", 
     assert.deepEqual(hidden, [{ workspaceId: 7, hidden: true }]);
 });
 
-test("{§web-worker-hide} worker hide calls daemon and redirects to workspace address", async (t) => {
+test("{§web-session-hide} session hide calls daemon and redirects to workspace address", async (t) => {
     const hidden = [];
     const { base } = await fixture(t, {
         workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, hidden_at: null }],
-        workers: [{ id: 10, name: "target-worker", origin: "model", parentWorkerId: null, kind: "worker", lifecycle: "completed", hidden_at: null }],
-        setWorkerHidden: async (args) => { hidden.push(args); return { id: args.workerId, hidden_at: "2026-10-23T00:00:00Z", workerIds: [args.workerId] }; },
+        sessions: [{ id: 10, name: "target-session", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", hidden_at: null }],
+        setSessionHidden: async (args) => { hidden.push(args); return { id: args.sessionId, hidden_at: "2026-10-23T00:00:00Z", sessionIds: [args.sessionId] }; },
     });
 
-    const hidePost = (body, headers = {}) => fetch(new URL("/workers/hide", base), {
+    const hidePost = (body, headers = {}) => fetch(new URL("/sessions/hide", base), {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
         body: new URLSearchParams(body),
@@ -400,30 +400,30 @@ test("{§web-worker-hide} worker hide calls daemon and redirects to workspace ad
 
     // Method guard
     for (const method of ["GET", "HEAD"]) {
-        const res = await fetch(new URL("/workers/hide", base), { method, redirect: "manual" });
+        const res = await fetch(new URL("/sessions/hide", base), { method, redirect: "manual" });
         assert.equal(res.status, 405, method);
         assert.equal(res.headers.get("allow"), "POST");
     }
 
     // Origin check
-    const foreign = await hidePost({ workspace: "target-ws", worker: "target-worker" }, { origin: "https://evil.example" });
+    const foreign = await hidePost({ workspace: "target-ws", session: "target-session" }, { origin: "https://evil.example" });
     assert.equal(foreign.status, 403);
 
     // Missing workspace 404
-    const missingWs = await hidePost({ workspace: "nonexistent", worker: "target-worker" });
+    const missingWs = await hidePost({ workspace: "nonexistent", session: "target-session" });
     assert.equal(missingWs.status, 404);
 
-    // Missing worker 404
-    const missingWorker = await hidePost({ workspace: "target-ws", worker: "nonexistent" });
-    assert.equal(missingWorker.status, 404);
+    // Missing session 404
+    const missingSession = await hidePost({ workspace: "target-ws", session: "nonexistent" });
+    assert.equal(missingSession.status, 404);
 
     // Empty fields 400
-    const empty = await hidePost({ workspace: "target-ws", worker: "" });
+    const empty = await hidePost({ workspace: "target-ws", session: "" });
     assert.equal(empty.status, 400);
 
     // Successful hide
-    const res = await hidePost({ workspace: "target-ws", worker: "target-worker" });
+    const res = await hidePost({ workspace: "target-ws", session: "target-session" });
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), "/~/target-ws/");
-    assert.deepEqual(hidden, [{ workspaceId: 7, workerId: 10, hidden: true }]);
+    assert.deepEqual(hidden, [{ workspaceId: 7, sessionId: 10, hidden: true }]);
 });
