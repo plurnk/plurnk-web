@@ -394,7 +394,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         await connected(page);
         assert.equal(model.requests.length, 2);
         assert.equal(requests.length, 3);
-        assert.notEqual(requests[1].id, requests[2].id);
+        assert.notEqual(requests[1].result?.outcome?.optionId, requests[2].result?.outcome?.optionId);
         const outcome = page.locator('[data-call-id][data-plurnk-type="sh"] [data-plurnk-field="outcome"]');
         assert.equal(await outcome.textContent(), "Rejected — The proposal was rejected (rejected).");
         checkBrowser();
@@ -407,10 +407,17 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         await page.route("**/acp", async (route) => {
             try {
                 const response = await route.fetch();
-                assert.equal(response.status(), 200);
-                const [first] = (await response.text()).split("\n\n");
-                assert.equal(JSON.parse(first.slice(6)).method, "session/update");
-                await route.fulfill({ status: 200, contentType: "text/event-stream", body: `${first}\n\n` });
+                assert.equal(response.status(), 202);
+                await new Promise((r) => setTimeout(r, 5));
+                const connId = route.request().headers()["acp-connection-id"];
+                if (connId) {
+                    await fetch(route.request().url(), { method: "DELETE", headers: { "acp-connection-id": connId } });
+                }
+                const deadline = Date.now() + 2000;
+                while (model.requests.length < 2 && Date.now() < deadline) {
+                    await new Promise((r) => setTimeout(r, 10));
+                }
+                await route.fulfill({ response });
                 truncated.resolve();
             } catch (error) {
                 await route.abort();

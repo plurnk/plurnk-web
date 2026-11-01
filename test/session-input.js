@@ -313,20 +313,40 @@ export default async function verifySessionInput({ t, withDaemon }) {
                     let reqBody = "";
                     req.on("data", (chunk) => { reqBody += chunk; });
                     req.on("end", () => {
-                        let parsedReq;
-                        try { parsedReq = JSON.parse(reqBody); } catch { parsedReq = undefined; }
-                        const held = req.url === "/acp" && parsedReq?.method === "session/prompt";
+                        const isSseGet = req.url === "/acp" && req.method === "GET" && Boolean(req.headers["acp-session-id"]);
                         const upstream = request(new URL(req.url, base), { method: req.method, headers: req.headers }, (response) => {
                             res.writeHead(response.statusCode, response.headers);
-                            let seen = "";
+                            res.flushHeaders();
+                            if (!isSseGet) {
+                                response.pipe(res);
+                                return;
+                            }
+                            let buffer = "";
+                            let gateChain = Promise.resolve();
+                            response.setEncoding("utf8");
                             response.on("data", (chunk) => {
-                                res.write(chunk);
-                                seen += chunk;
-                                if (held && /"method":"session\/request_permission"/u.test(seen)) arrived.resolve();
+                                buffer += chunk;
+                                const parts = buffer.split("\n\n");
+                                buffer = parts.pop() ?? "";
+                                for (const frame of parts) {
+                                    const payload = `${frame}\n\n`;
+                                    if (/"method":"session\/request_permission"/u.test(frame)) {
+                                        arrived.resolve();
+                                        gateChain = gateChain.then(() => release.promise).then(() => {
+                                            if (!res.destroyed) res.write(payload);
+                                        });
+                                    } else {
+                                        gateChain = gateChain.then(() => {
+                                            if (!res.destroyed) res.write(payload);
+                                        });
+                                    }
+                                }
                             });
-                            response.on("end", async () => {
-                                if (held) await release.promise;
-                                res.end();
+                            response.on("end", () => {
+                                gateChain = gateChain.then(() => {
+                                    if (buffer.length > 0 && !res.destroyed) res.write(buffer);
+                                    if (!res.destroyed) res.end();
+                                });
                             });
                         });
                         upstream.on("error", (error) => res.destroy(error));
@@ -540,12 +560,11 @@ export default async function verifySessionInput({ t, withDaemon }) {
     await t.test("{§web-session-observer} an event the page cannot take in ends observation with its cause", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
         let injected = false;
         await page.route("**/acp", (route) => {
-            const input = route.request().postDataJSON();
-            if (injected || input?.method !== "session/resume") return route.continue();
+            if (injected || route.request().method() !== "GET" || !route.request().headers()["acp-session-id"]) return route.continue();
             injected = true;
-            return route.fulfill({ contentType: "text/event-stream", body: [
-                { jsonrpc: "2.0", method: "session/update", params: { sessionId: input.params?.sessionId ?? "user", update: { sessionUpdate: "notice", severity: "error", _meta: { plurnk: { problem: { title: "Not a Problem" } } } } } },
-                { jsonrpc: "2.0", id: input.id, result: { stopReason: "end_turn" } },
+            const sessionId = route.request().headers()["acp-session-id"];
+            return route.fulfill({ status: 200, contentType: "text/event-stream", body: [
+                { jsonrpc: "2.0", method: "session/update", params: { sessionId, update: { sessionUpdate: "notice", severity: "error", title: "Problem", _meta: { plurnk: { problem: { title: "Not a Problem" } } } } } },
             ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
         });
         await page.reload();
@@ -591,17 +610,22 @@ export default async function verifySessionInput({ t, withDaemon }) {
         });
         let truncateNextPrompt = true;
         await page.route("**/acp", async (route) => {
+            if (truncateNextPrompt && route.request().method() === "GET" && route.request().headers()["acp-session-id"]) {
+                // Truncate actual daemon delivery before the first update frame arrives, without inventing an event or changing the admitted input.
+                return route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
+            }
             if (!truncateNextPrompt || route.request().postDataJSON()?.method !== "session/prompt") {
                 return route.continue();
             }
             truncateNextPrompt = false;
             try {
                 const response = await route.fetch();
-                assert.equal(response.status(), 200);
-                const frames = (await response.text()).split("\n\n").filter(Boolean);
-                assert.equal(JSON.parse(frames[0].slice(6)).method, "session/update");
-                // Truncate actual daemon delivery before the first update frame arrives, without inventing an event or changing the admitted input.
-                await route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
+                assert.equal(response.status(), 202);
+                const deadline = Date.now() + 2000;
+                while (model.requests.length === 0 && Date.now() < deadline) {
+                    await new Promise((r) => setTimeout(r, 10));
+                }
+                await route.fulfill({ response });
                 truncated.resolve();
             } catch (error) {
                 await route.abort();

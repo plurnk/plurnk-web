@@ -661,13 +661,21 @@ export default class SessionAgent {
     #cancelledSubmittedGates = new Set();
     /** @type {Set<string>} */
     #submittedGateIds = new Set();
+    /** @type {PendingInterrupt[]} */
+    #allPendingInterrupts = [];
+    /** @type {readonly string[] | undefined} */
+    #heldInterruptIds = undefined;
+    /** @type {number} */
+    #inFlightPostCount = 0;
+    /** @type {Promise<void>} */
+    #outboundPostChain = Promise.resolve();
     /** @type {ReturnType<typeof setTimeout> | undefined} */
     #gateCoalesceTimer = undefined;
     /** @type {(() => void) | undefined} */
     #onGateSettled = undefined;
-    /** @type {((outcome: { stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown } }) => void) | undefined} */
+    /** @type {((outcome: { stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error }) => void) | undefined} */
     #onLiveOutcome = undefined;
-    /** @type {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown } } | undefined} */
+    /** @type {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error } | undefined} */
     #queuedLiveOutcome = undefined;
     /** @type {Promise<{ result: unknown, meta?: Record<string, unknown> }> | undefined} */
     #inFlightRequest = undefined;
@@ -730,10 +738,12 @@ export default class SessionAgent {
         this.#inFlightRequest = undefined;
         this.#pendingLiveThought = undefined;
         this.#streamProblem = undefined;
+        this.#heldInterruptIds = undefined;
         for (const [, entry] of this.#gateResolvers) {
             entry.reject(new DOMException("The operation was aborted.", "AbortError"));
         }
         this.#gateResolvers.clear();
+        this.#allPendingInterrupts = [];
         this.#submittedGateIds.clear();
         this.#cancelledSubmittedGates.clear();
         this.#connController?.abort();
@@ -746,7 +756,84 @@ export default class SessionAgent {
     }
 
     /**
-     * @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown } }} outcome
+     * @param {PendingInterrupt} entry
+     * @returns {string}
+     */
+    #interruptSessionKey(entry) {
+        const plurnk = isRecord(entry.metadata) && isRecord(entry.metadata.plurnk)
+            ? entry.metadata.plurnk
+            : undefined;
+        const proposal = isRecord(plurnk?.proposal) ? plurnk.proposal : undefined;
+        if (typeof proposal?.session === "string") return proposal.session;
+        if (typeof proposal?.sessionId === "number") return String(proposal.sessionId);
+        const interaction = isRecord(plurnk?.interaction) ? plurnk.interaction : undefined;
+        if (typeof interaction?.session === "string") return interaction.session;
+        if (typeof interaction?.sessionId === "number") return String(interaction.sessionId);
+        return "";
+    }
+
+    #syncDescendantGates() {
+        const plurnk = isRecord(this.state.plurnk) ? this.state.plurnk : undefined;
+        const status = isRecord(plurnk?.status) ? plurnk.status : undefined;
+        if (!Array.isArray(status?.descendants)) return false;
+        let changed = false;
+        const nextDescendants = status.descendants.map((d) => {
+            if (!isRecord(d)) return d;
+            const matchingGates = [];
+            for (const item of this.#allPendingInterrupts) {
+                const itemPlurnk = isRecord(item.metadata) && isRecord(item.metadata.plurnk)
+                    ? item.metadata.plurnk
+                    : undefined;
+                const prop = isRecord(itemPlurnk?.proposal) ? itemPlurnk.proposal : undefined;
+                const inter = isRecord(itemPlurnk?.interaction) ? itemPlurnk.interaction : undefined;
+                const matchesProp = prop !== undefined
+                    && ((typeof d.id === "number" && prop.sessionId === d.id)
+                        || (typeof d.name === "string" && prop.session === d.name));
+                const matchesInter = inter !== undefined
+                    && ((typeof d.id === "number" && inter.sessionId === d.id)
+                        || (typeof d.name === "string" && inter.session === d.name));
+                if (matchesProp && prop !== undefined) {
+                    matchingGates.push(structuredClone(prop));
+                } else if (matchesInter && inter !== undefined) {
+                    matchingGates.push(structuredClone(inter));
+                }
+            }
+            const prevLen = Array.isArray(d.gates) ? d.gates.length : 0;
+            if (prevLen !== matchingGates.length) {
+                changed = true;
+                return { ...d, gates: matchingGates };
+            }
+            return d;
+        });
+        if (changed) {
+            this.state = {
+                ...this.state,
+                plurnk: {
+                    ...plurnk,
+                    status: {
+                        ...status,
+                        descendants: nextDescendants,
+                    },
+                },
+            };
+        }
+        return changed;
+    }
+
+    #syncPendingInterrupts() {
+        if (this.#allPendingInterrupts.length === 0) {
+            this.pendingInterrupts = [];
+        } else {
+            const firstSession = this.#interruptSessionKey(this.#allPendingInterrupts[0]);
+            this.pendingInterrupts = this.#allPendingInterrupts.filter(
+                (item) => this.#interruptSessionKey(item) === firstSession,
+            );
+        }
+        return this.#syncDescendantGates();
+    }
+
+    /**
+     * @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error }} outcome
      */
     #emitLiveOutcome(outcome) {
         if (this.#onLiveOutcome !== undefined) {
@@ -762,11 +849,28 @@ export default class SessionAgent {
         }
         this.#gateCoalesceTimer = setTimeout(() => {
             this.#gateCoalesceTimer = undefined;
-            void this.#notificationChain.then(() => {
+            void this.#notificationChain.then(async () => {
+                if (this.#connController?.signal.aborted) return;
+                this.#syncPendingInterrupts();
+                if (!this.#bufferingReplay) {
+                    await this.#subscriber.onStateChanged?.({ state: this.state });
+                }
                 this.#onGateSettled?.();
-                this.#emitLiveOutcome({ stopReason: "interrupt" });
+                const held = this.#heldInterruptIds;
+                const currentIds = this.pendingInterrupts.map(({ id }) => id);
+                const sameHeld = held !== undefined
+                    && held.length === currentIds.length
+                    && currentIds.every((id, idx) => id === held[idx]);
+                if (!sameHeld) {
+                    this.#emitLiveOutcome({ stopReason: "interrupt" });
+                }
             });
         });
+    }
+
+    async #drainNotifications() {
+        await new Promise((resolve) => setTimeout(resolve));
+        await this.#notificationChain;
     }
 
     /**
@@ -809,10 +913,35 @@ export default class SessionAgent {
                     headers: { "Content-Type": "text/event-stream" },
                 });
             }
-            const response = await this.#fetch(input, {
-                ...init,
-                headers: mergedHeaders,
-            });
+            const isPost = init?.method === "POST";
+            if (isPost) {
+                this.#inFlightPostCount += 1;
+            }
+            let response;
+            try {
+                const fetchPromise = this.#fetch(input, {
+                    ...init,
+                    headers: mergedHeaders,
+                });
+                if (isPost) {
+                    this.#outboundPostChain = this.#outboundPostChain
+                        .catch(() => undefined)
+                        .then(() => fetchPromise.then(() => undefined, () => undefined));
+                }
+                response = await fetchPromise;
+            } catch (err) {
+                if (!connController.signal.aborted && !init?.signal?.aborted) {
+                    this.#emitLiveOutcome({
+                        stopReason: "transport_error",
+                        transportError: err instanceof Error ? err : new Error(String(err)),
+                    });
+                }
+                throw err;
+            } finally {
+                if (isPost) {
+                    this.#inFlightPostCount = Math.max(0, this.#inFlightPostCount - 1);
+                }
+            }
             if (!response.ok && this.#streamProblem === undefined) {
                 const refusalError = await problemFromResponse(response.clone());
                 if (refusalError) {
@@ -834,8 +963,11 @@ export default class SessionAgent {
                 && response.body
             ) {
                 const reader = response.body.getReader();
+                const decoder = new TextDecoder();
                 const notifyStreamEnd = () => {
+                    if (init?.signal?.aborted) return;
                     void this.#notificationChain.then(() => {
+                        if (init?.signal?.aborted) return;
                         if (this.#streamProblem !== undefined) {
                             this.#emitLiveOutcome({ stopReason: "error", error: this.#streamProblem });
                         } else {
@@ -851,6 +983,14 @@ export default class SessionAgent {
                                 controller.close();
                                 notifyStreamEnd();
                                 return;
+                            }
+                            if (value && this.#submittedGateIds.size > 0) {
+                                const text = decoder.decode(value, { stream: true });
+                                if (text.includes('"$/cancel_request"')) {
+                                    for (const id of this.#submittedGateIds) {
+                                        this.#cancelledSubmittedGates.add(id);
+                                    }
+                                }
                             }
                             controller.enqueue(value);
                         } catch (err) {
@@ -931,7 +1071,8 @@ export default class SessionAgent {
                     }
                     : {}),
             };
-            this.pendingInterrupts.push(entry);
+            this.#allPendingInterrupts.push(entry);
+            this.#syncPendingInterrupts();
 
             return await new Promise((resolve, reject) => {
                 const options = Array.isArray(params.options)
@@ -951,12 +1092,21 @@ export default class SessionAgent {
                 });
                 const onCancel = () => {
                     this.#gateResolvers.delete(interruptId);
-                    this.pendingInterrupts = this.pendingInterrupts.filter((item) => item.id !== interruptId);
+                    this.#allPendingInterrupts = this.#allPendingInterrupts.filter((item) => item.id !== interruptId);
+                    const changed = this.#syncPendingInterrupts();
                     if (this.#submittedGateIds.has(interruptId)) {
                         this.#cancelledSubmittedGates.add(interruptId);
                     }
+                    if (connController.signal.aborted) {
+                        reject(new DOMException("The operation was aborted.", "AbortError"));
+                        return;
+                    }
                     setTimeout(() => {
-                        void this.#notificationChain.then(() => {
+                        void this.#notificationChain.then(async () => {
+                            if (connController.signal.aborted) return;
+                            if (changed && !this.#bufferingReplay) {
+                                await this.#subscriber.onStateChanged?.({ state: this.state });
+                            }
                             if (this.pendingInterrupts.length > 0) {
                                 this.#onLiveOutcome?.({ stopReason: "interrupt" });
                             } else if (this.#inFlightRequest === undefined) {
@@ -1057,7 +1207,8 @@ export default class SessionAgent {
                     }
                     : {}),
             };
-            this.pendingInterrupts.push(entry);
+            this.#allPendingInterrupts.push(entry);
+            this.#syncPendingInterrupts();
 
             return await new Promise((resolve, reject) => {
                 this.#gateResolvers.set(interruptId, {
@@ -1075,12 +1226,21 @@ export default class SessionAgent {
                 });
                 const onCancel = () => {
                     this.#gateResolvers.delete(interruptId);
-                    this.pendingInterrupts = this.pendingInterrupts.filter((item) => item.id !== interruptId);
+                    this.#allPendingInterrupts = this.#allPendingInterrupts.filter((item) => item.id !== interruptId);
+                    const changed = this.#syncPendingInterrupts();
                     if (this.#submittedGateIds.has(interruptId)) {
                         this.#cancelledSubmittedGates.add(interruptId);
                     }
+                    if (connController.signal.aborted) {
+                        reject(new DOMException("The operation was aborted.", "AbortError"));
+                        return;
+                    }
                     setTimeout(() => {
-                        void this.#notificationChain.then(() => {
+                        void this.#notificationChain.then(async () => {
+                            if (connController.signal.aborted) return;
+                            if (changed && !this.#bufferingReplay) {
+                                await this.#subscriber.onStateChanged?.({ state: this.state });
+                            }
                             if (this.pendingInterrupts.length > 0) {
                                 this.#onLiveOutcome?.({ stopReason: "interrupt" });
                             } else if (this.#inFlightRequest === undefined) {
@@ -1136,6 +1296,7 @@ export default class SessionAgent {
         const heldInterrupts = Array.isArray(options.interrupts) ? [...options.interrupts] : [];
 
         try {
+            this.#heldInterruptIds = heldInterrupts.length > 0 ? heldInterrupts : undefined;
             if (heldInterrupts.length > 0 && this.#conn !== undefined) {
                 const currentIds = this.pendingInterrupts.map(({ id }) => id);
                 const sameSet = currentIds.length === heldInterrupts.length
@@ -1159,6 +1320,7 @@ export default class SessionAgent {
                 return { result: {}, stopReason: outcome.stopReason, meta: outcome.meta };
             }
 
+            this.#allPendingInterrupts = [];
             this.pendingInterrupts = [];
             this.#queuedLiveOutcome = undefined;
             this.#pendingLiveThought = undefined;
@@ -1184,7 +1346,7 @@ export default class SessionAgent {
             const response = /** @type {unknown} */ (
                 await conn.agent.request(methods.agent.session.resume, params)
             );
-            await this.#notificationChain;
+            await this.#drainNotifications();
             const rawResult = isRecord(response) ? response : {};
             const metaPlurnk = isRecord(rawResult._meta) && isRecord(rawResult._meta.plurnk)
                 ? rawResult._meta.plurnk
@@ -1201,6 +1363,33 @@ export default class SessionAgent {
                 const history = isRecord(metaPlurnk?.history) ? metaPlurnk.history : undefined;
                 if (history !== undefined) {
                     this.messages = SessionTranslator.projectMessages(replayed, []);
+                    const statusObj = isRecord(metaPlurnk?.status) ? metaPlurnk.status : undefined;
+                    const wsObj = isRecord(metaPlurnk?.workspace) ? metaPlurnk.workspace : undefined;
+                    const numericSessionId = typeof metaPlurnk?.sessionId === "number"
+                        ? metaPlurnk.sessionId
+                        : (isRecord(metaPlurnk?.session) && typeof metaPlurnk.session.id === "number" ? metaPlurnk.session.id : undefined);
+                    const inboxItems = Array.isArray(statusObj?.inbox) ? statusObj.inbox : [];
+                    if (inboxItems.length > 0 && typeof wsObj?.id === "number" && typeof numericSessionId === "number") {
+                        const existingIds = new Set(this.messages.map((m) => m.id));
+                        const baseOrigin = typeof globalThis.location?.origin === "string" && globalThis.location.origin !== "null"
+                            ? globalThis.location.origin
+                            : "http://127.0.0.1";
+                        for (const item of inboxItems) {
+                            if (!isRecord(item) || typeof item.id !== "string" || typeof item.path !== "string" || existingIds.has(item.id)) {
+                                continue;
+                            }
+                            const entryUrl = new URL(
+                                `/acp/${encodeURIComponent(String(wsObj.id))}/${encodeURIComponent(String(numericSessionId))}/entry?target=${encodeURIComponent(item.path)}`,
+                                new URL(this.url, baseOrigin).origin,
+                            ).href;
+                            const res = await this.#fetch(entryUrl, { headers: new Headers(this.headers), signal });
+                            if (res.ok) {
+                                const content = await res.text();
+                                this.messages.push({ id: item.id, role: "user", content });
+                                existingIds.add(item.id);
+                            }
+                        }
+                    }
                     const older = typeof history.older === "string" ? history.older : null;
                     await subscriber.onMessagesSnapshot?.({
                         snapshot: {
@@ -1393,7 +1582,7 @@ export default class SessionAgent {
                     ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
                 });
             }
-            await this.#notificationChain;
+            await this.#drainNotifications();
             const rawResult = isRecord(response) ? response : {};
             const metaPlurnk = isRecord(rawResult._meta) && isRecord(rawResult._meta.plurnk)
                 ? rawResult._meta.plurnk
@@ -1434,6 +1623,7 @@ export default class SessionAgent {
         this.#replayUpdates = [];
         this.#pendingLiveThought = undefined;
         this.#queuedLiveOutcome = undefined;
+        this.#allPendingInterrupts = [];
         this.pendingInterrupts = [];
         const { signal } = controller;
 
@@ -1462,11 +1652,18 @@ export default class SessionAgent {
                 return { result: rawResult, meta: metaPlurnk };
             });
             this.#inFlightRequest = requestPromise;
-            void requestPromise.finally(() => {
-                if (this.#inFlightRequest === requestPromise) {
-                    this.#inFlightRequest = undefined;
-                }
-            });
+            void requestPromise.then(
+                () => {
+                    if (this.#inFlightRequest === requestPromise) {
+                        this.#inFlightRequest = undefined;
+                    }
+                },
+                () => {
+                    if (this.#inFlightRequest === requestPromise) {
+                        this.#inFlightRequest = undefined;
+                    }
+                },
+            );
 
             return await this.#awaitRequestOrInterrupt(requestPromise, signal, subscriber);
         } catch (error) {
@@ -1500,10 +1697,27 @@ export default class SessionAgent {
             this.#needsConnectionSse = false;
             await this.#ensureConnection(signal);
             let missingGateKind = /** @type {"proposal" | "interaction" | undefined} */ (undefined);
+            const plurnkState = isRecord(this.state.plurnk) ? this.state.plurnk : undefined;
+            const statusState = isRecord(plurnkState?.status) ? plurnkState.status : undefined;
+            const rawParts = typeof this.sessionId === "string" ? this.sessionId.split("#") : [];
+            const boundName = typeof statusState?.name === "string" ? statusState.name : (rawParts[1] || "user");
+            const boundId = typeof statusState?.id === "number" ? String(statusState.id) : "";
+            let resolvedDescendantOnly = resolutions.length > 0;
+            for (const res of resolutions) {
+                const existing = this.#allPendingInterrupts.find((item) => item.id === res.interruptId);
+                if (existing) {
+                    const key = this.#interruptSessionKey(existing);
+                    if (!key || key === boundName || key === boundId) {
+                        resolvedDescendantOnly = false;
+                    }
+                } else {
+                    resolvedDescendantOnly = false;
+                }
+            }
 
             for (const res of resolutions) {
                 const gate = this.#gateResolvers.get(res.interruptId);
-                this.pendingInterrupts = this.pendingInterrupts.filter((item) => item.id !== res.interruptId);
+                this.#allPendingInterrupts = this.#allPendingInterrupts.filter((item) => item.id !== res.interruptId);
                 if (!gate) {
                     missingGateKind = res.interruptId.startsWith("int:") ? "interaction" : "proposal";
                     continue;
@@ -1545,12 +1759,14 @@ export default class SessionAgent {
                 }
             }
 
+            const gatesChanged = this.#syncPendingInterrupts();
+
             if (missingGateKind !== undefined) {
                 const isInteraction = missingGateKind === "interaction";
                 const problem = {
                     type: isInteraction
-                        ? "https://problems.plurnk.xyz/interaction:resolution/interaction-not-pending"
-                        : "https://problems.plurnk.xyz/proposal:resolution/proposal-not-pending",
+                        ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
+                        : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
                     title: isInteraction ? "Interaction not pending" : "Proposal not pending",
                     status: 409,
                     detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
@@ -1566,14 +1782,61 @@ export default class SessionAgent {
                 return await this.#awaitRequestOrInterrupt(this.#inFlightRequest, signal, subscriber);
             }
 
+            const boundLifecycle = typeof statusState?.lifecycle === "string" ? statusState.lifecycle : "idle";
+            if (
+                (resolvedDescendantOnly && !["queued", "running", "parked"].includes(boundLifecycle))
+                || this.pendingInterrupts.length > 0
+            ) {
+                await new Promise((r) => setTimeout(r));
+                await this.#outboundPostChain;
+                await this.#drainNotifications();
+                if (gatesChanged && !this.#bufferingReplay) {
+                    await subscriber.onStateChanged?.({ state: this.state });
+                }
+                if (this.#cancelledSubmittedGates.size > 0 && missingGateKind === undefined) {
+                    const firstId = [...this.#cancelledSubmittedGates][0] ?? "";
+                    const isInteraction = firstId.startsWith("int:");
+                    const problem = {
+                        type: isInteraction
+                            ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
+                            : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
+                        title: isInteraction ? "Interaction not pending" : "Proposal not pending",
+                        status: 409,
+                        detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
+                    };
+                    await subscriber.onError?.({
+                        message: problem.detail,
+                        status: 409,
+                        problem,
+                    });
+                }
+                const nextStop = this.pendingInterrupts.length > 0 ? "interrupt" : "end_turn";
+                if (nextStop !== "interrupt") {
+                    this.close();
+                }
+                await subscriber.onSettled?.({ stopReason: nextStop, result: {} });
+                return { result: {}, stopReason: nextStop };
+            }
+
             const outcome = await this.#waitForLiveOutcome(signal);
+            await this.#outboundPostChain;
+            await this.#drainNotifications();
+            if (outcome.error) {
+                this.close();
+                await subscriber.onError?.(outcome.error);
+                return { result: undefined, stopReason: "error", meta: outcome.meta };
+            }
+            if (outcome.stopReason === "eof") {
+                this.close();
+                return { result: {}, stopReason: "end_turn", meta: outcome.meta };
+            }
             if (this.#cancelledSubmittedGates.size > 0 && missingGateKind === undefined) {
                 const firstId = [...this.#cancelledSubmittedGates][0] ?? "";
                 const isInteraction = firstId.startsWith("int:");
                 const problem = {
                     type: isInteraction
-                        ? "https://problems.plurnk.xyz/interaction:resolution/interaction-not-pending"
-                        : "https://problems.plurnk.xyz/proposal:resolution/proposal-not-pending",
+                        ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
+                        : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
                     title: isInteraction ? "Interaction not pending" : "Proposal not pending",
                     status: 409,
                     detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
@@ -1583,15 +1846,6 @@ export default class SessionAgent {
                     status: 409,
                     problem,
                 });
-            }
-            if (outcome.error) {
-                this.close();
-                await subscriber.onError?.(outcome.error);
-                return { result: undefined, stopReason: "error", meta: outcome.meta };
-            }
-            if (outcome.stopReason === "eof") {
-                this.close();
-                return { result: {}, stopReason: "end_turn", meta: outcome.meta };
             }
             const stopReason = outcome.stopReason;
             if (stopReason !== "interrupt") {
@@ -1646,6 +1900,7 @@ export default class SessionAgent {
         ]);
 
         if (raced.kind === "outcome") {
+            void requestPromise.catch(() => undefined);
             this.#onLiveOutcome = undefined;
             if (raced.error) {
                 this.close();
@@ -1665,7 +1920,7 @@ export default class SessionAgent {
         const { result, meta: initialMeta } = raced.kind === "response"
             ? raced
             : await requestPromise;
-        await this.#notificationChain;
+        await this.#drainNotifications();
         const rawResult = isRecord(result) ? result : {};
         let metaPlurnk = initialMeta;
         this.#applyResponseState(rawResult, metaPlurnk);
@@ -1713,8 +1968,8 @@ export default class SessionAgent {
             const isInteraction = firstId.startsWith("int:");
             const problem = {
                 type: isInteraction
-                    ? "https://problems.plurnk.xyz/interaction:resolution/interaction-not-pending"
-                    : "https://problems.plurnk.xyz/proposal:resolution/proposal-not-pending",
+                    ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
+                    : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
                 title: isInteraction ? "Interaction not pending" : "Proposal not pending",
                 status: 409,
                 detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
@@ -1782,6 +2037,9 @@ export default class SessionAgent {
         if (this.#queuedLiveOutcome !== undefined) {
             const outcome = this.#queuedLiveOutcome;
             this.#queuedLiveOutcome = undefined;
+            if (outcome.transportError !== undefined) {
+                return Promise.reject(outcome.transportError);
+            }
             return Promise.resolve(outcome);
         }
         return new Promise((resolve, reject) => {
@@ -1795,11 +2053,15 @@ export default class SessionAgent {
                         : new DOMException("The operation was aborted.", "AbortError"),
                 );
             };
-            /** @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown } }} outcome */
+            /** @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error }} outcome */
             const settle = (outcome) => {
                 signal.onabort = null;
                 if (this.#onLiveOutcome === settle) {
                     this.#onLiveOutcome = undefined;
+                }
+                if (outcome.transportError !== undefined) {
+                    reject(outcome.transportError);
+                    return;
                 }
                 resolve(outcome);
             };
@@ -1879,11 +2141,26 @@ export default class SessionAgent {
      */
     async #handleError(error, signal, subscriber, actionKind) {
         if (signal.aborted && this.#streamProblem === undefined) {
+            if (this.pendingInterrupts.length === 0) {
+                this.close();
+            }
             throw signal.reason instanceof Error
                 ? signal.reason
                 : new DOMException("The operation was aborted.", "AbortError");
         }
-        await this.#notificationChain;
+        await this.#drainNotifications();
+        if (signal.aborted && this.#streamProblem === undefined) {
+            if (this.pendingInterrupts.length === 0) {
+                this.close();
+            }
+            throw signal.reason instanceof Error
+                ? signal.reason
+                : new DOMException("The operation was aborted.", "AbortError");
+        }
+        if (this.#streamProblem === undefined && error instanceof Error && error.message === "ACP session SSE stream closed") {
+            this.close();
+            return { result: undefined, stopReason: "end_turn" };
+        }
         if (this.#streamProblem !== undefined) {
             const sp = this.#streamProblem;
             this.#streamProblem = undefined;
@@ -1953,8 +2230,18 @@ export default class SessionAgent {
         const ws = isRecord(plurnkState?.workspace) ? plurnkState.workspace : undefined;
         const st = isRecord(plurnkState?.status) ? plurnkState.status : undefined;
         const rawParts = typeof this.sessionId === "string" ? this.sessionId.split("#") : [];
-        const workspaceId = typeof ws?.id === "number" ? String(ws.id) : (rawParts[0] || "1");
-        const numericSessionId = typeof st?.id === "number" ? String(st.id) : (rawParts[1] || "1");
+        const workspaceId = typeof ws?.id === "number"
+            ? String(ws.id)
+            : typeof plurnkState?.workspaceId === "number"
+                ? String(plurnkState.workspaceId)
+                : (rawParts[0] || "1");
+        const numericSessionId = typeof st?.id === "number"
+            ? String(st.id)
+            : typeof plurnkState?.sessionId === "number"
+                ? String(plurnkState.sessionId)
+                : isRecord(plurnkState?.session) && typeof plurnkState.session.id === "number"
+                    ? String(plurnkState.session.id)
+                    : (rawParts[1] && /^[1-9]\d*$/u.test(rawParts[1]) ? rawParts[1] : "1");
         const sessionName = typeof st?.name === "string" ? st.name : (rawParts[1] || "user");
         const target = `reasoning://${sessionName}/${pending.coordinate}`;
         const body = {
@@ -2063,7 +2350,9 @@ export default class SessionAgent {
                     plurnk: prevPlurnk,
                 };
             }
-            await subscriber.onStateChanged?.({ state: this.state });
+            if (!this.#bufferingReplay) {
+                await subscriber.onStateChanged?.({ state: this.state });
+            }
             return;
         }
 
@@ -2074,7 +2363,9 @@ export default class SessionAgent {
                 ...this.state,
                 plurnk: prevPlurnk,
             };
-            await subscriber.onStateChanged?.({ state: this.state });
+            if (!this.#bufferingReplay) {
+                await subscriber.onStateChanged?.({ state: this.state });
+            }
             return;
         }
 
@@ -2109,7 +2400,9 @@ export default class SessionAgent {
                 plurnk: prevPlurnk,
                 ...(budget !== undefined ? { budget } : {}),
             };
-            await subscriber.onStateChanged?.({ state: this.state });
+            if (!this.#bufferingReplay) {
+                await subscriber.onStateChanged?.({ state: this.state });
+            }
             return;
         }
 
@@ -2160,12 +2453,24 @@ export default class SessionAgent {
                     ...this.state,
                     plurnk: prevPlurnk,
                 };
-                await subscriber.onStateChanged?.({ state: this.state });
+                this.#syncDescendantGates();
+                if (!this.#bufferingReplay) {
+                    await subscriber.onStateChanged?.({ state: this.state });
+                }
             }
             return;
         }
 
         if (kind === "state_update") {
+            if (
+                (update.state === "running" || update.state === "idle")
+                && this.#inFlightPostCount > 0
+                && this.#submittedGateIds.size > 0
+            ) {
+                for (const id of this.#submittedGateIds) {
+                    this.#cancelledSubmittedGates.add(id);
+                }
+            }
             await this.#finalizeLiveThought(subscriber);
             const prevPlurnk = isRecord(this.state.plurnk) ? { ...this.state.plurnk } : {};
             const prevStatus = isRecord(prevPlurnk.status) ? { ...prevPlurnk.status } : {};
@@ -2186,7 +2491,12 @@ export default class SessionAgent {
                     ...this.state,
                     plurnk: prevPlurnk,
                 };
-                await subscriber.onStateChanged?.({ state: this.state });
+                if (!this.#bufferingReplay) {
+                    await subscriber.onStateChanged?.({ state: this.state });
+                }
+            }
+            if (update.state === "requires_action" && !this.#bufferingReplay) {
+                await subscriber.onSettled?.({ stopReason: "interrupt", meta: plurnk, result: {} });
             }
             if (update.state === "idle" && isRecord(plurnk?.terminal)) {
                 const stopReason = typeof update.stopReason === "string" ? update.stopReason : "end_turn";
@@ -2282,7 +2592,9 @@ export default class SessionAgent {
                     ...this.state,
                     plurnk: prevPlurnk,
                 };
-                await subscriber.onStateChanged?.({ state: this.state });
+                if (!this.#bufferingReplay) {
+                    await subscriber.onStateChanged?.({ state: this.state });
+                }
             }
             if (update.severity === "error" && isRecord(plurnk?.problem)) {
                 const problem = plurnk.problem;
@@ -2348,7 +2660,9 @@ export default class SessionAgent {
                     ...this.state,
                     plurnk: prevPlurnk,
                 };
-                await subscriber.onStateChanged?.({ state: this.state });
+                if (!this.#bufferingReplay) {
+                    await subscriber.onStateChanged?.({ state: this.state });
+                }
             }
             return;
         }
@@ -2363,6 +2677,9 @@ export default class SessionAgent {
             if (this.#bufferingReplay) {
                 this.#replayUpdates.push(update);
                 return;
+            }
+            if (kind === "tool_call_update" && (plurnk?.proposal !== undefined || plurnk?.interaction !== undefined)) {
+                await subscriber.onSettled?.({ stopReason: "interrupt", meta: plurnk, result: {} });
             }
             await this.#applyLiveMessageUpdate(update, subscriber);
         }
