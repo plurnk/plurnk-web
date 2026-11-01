@@ -22,6 +22,8 @@ export default function activity(root, read) {
     const inspect = bodyReferences(root, read);
     /** @type {Map<string, Element>} */
     const rows = new Map();
+    /** @type {Set<string>} */
+    const ambientCalls = new Set();
     /** @type {WeakMap<Element, string>} */
     const references = new WeakMap();
 
@@ -68,9 +70,14 @@ export default function activity(root, read) {
         if (plurnk.proposal !== undefined || plurnk.interaction !== undefined) return;
         if (update.rawInput === undefined && update.rawOutput === undefined && update.name === undefined) return;
         const op = plurnk.op !== undefined ? plurnk.op : (update.name ?? null);
+        if (!attribution && typeof plurnk.coordinate === "string" && update.toolCallId === plurnk.coordinate) {
+            if (plurnk.origin === "model") ambientCalls.delete(plurnk.coordinate);
+            else if (typeof plurnk.origin === "string") ambientCalls.add(plurnk.coordinate);
+        }
         const isDischarge = typeof update.toolCallId === "string"
             && typeof plurnk.coordinate === "string"
-            && update.toolCallId !== plurnk.coordinate;
+            && update.toolCallId !== plurnk.coordinate
+            && !ambientCalls.has(update.toolCallId);
         if (!attribution && (isDischarge || (plurnk.origin === "model" && op !== null && plurnk.attrs?.kind !== "emissionAttempt"))) return;
         const entryMatch = typeof plurnk.body?.url === "string"
             ? /\/acp\/[1-9]\d*\/([1-9]\d*)\/entry/u.exec(plurnk.body.url)

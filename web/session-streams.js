@@ -15,7 +15,7 @@ export default function sessionStreams(root, read) {
         async consume(update) {
             if (update.sessionUpdate !== "terminal_update") return;
             const plurnk = /** @type {Record<string, unknown> | undefined} */ (update._meta?.plurnk);
-            if (!plurnk || !Object.hasOwn(plurnk, "result")) return;
+            if (!plurnk || !Object.hasOwn(plurnk, "result") || (plurnk.loop_seq === 1 && plurnk.turn_seq === 1)) return;
             const terminalMatch = typeof update.terminalId === "string" ? /^term:([1-9]\d*)$/u.exec(update.terminalId) : null;
             const entryId = typeof plurnk.entryId === "number" ? plurnk.entryId : (terminalMatch ? Number(terminalMatch[1]) : 0);
             const sessionId = typeof plurnk.sessionId === "number" ? plurnk.sessionId : 0;

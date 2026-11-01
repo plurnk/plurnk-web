@@ -11,8 +11,9 @@ export default async function verifySessionActivity({ t, withDaemon }) {
                 const body = request.postDataJSON();
                 if (
                     new URL(request.url()).pathname === "/acp"
-                    && body?.method !== "initialize"
-                    && body?.params?._meta?.plurnk?.control !== false
+                    && body !== null
+                    && body.method !== "initialize"
+                    && body.params?._meta?.plurnk?.control !== false
                 ) {
                     uploads.push(body);
                 }

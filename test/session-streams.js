@@ -25,7 +25,7 @@ export default async function verifySessionStreams({ t, withDaemon }) {
             inputPage(withDaemon, async ({ page, context, path, base, model, checkBrowser, setup, headers }) => {
                 const inputs = [];
                 context.on("request", (request) => {
-                    if (new URL(request.url()).pathname === "/acp") inputs.push(request.postDataJSON());
+                    if (new URL(request.url()).pathname === "/acp" && request.postDataJSON() !== null) inputs.push(request.postDataJSON());
                 });
                 assert.equal(await page.locator("[data-open-streams]").count(), 0);
                 await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");

@@ -1,4 +1,5 @@
 import { $, the } from "on_the_money";
+import { Validator } from "@plurnk/plurnk-contracts";
 import card, { nameCard } from "./card.js";
 
 /** @param {import("@plurnk/plurnk-contracts").Notice} notice */
@@ -33,10 +34,12 @@ export default function diagnostics(root) {
         const isProblem = !isNotice && Object.hasOwn(plurnk, "problem");
         if (!isNotice && !isProblem) return;
         if (isNotice && typeof plurnk.notice === "object" && plurnk.notice !== null
-            && Reflect.get(plurnk.notice, "source") === "engine:lifecycle"
-            && Reflect.get(plurnk.notice, "kind") === "loop_status"
-            && !Object.hasOwn(plurnk.notice, "position")) return;
-        const { Validator } = await import("@plurnk/plurnk-contracts");
+            && ((Reflect.get(plurnk.notice, "source") === "engine:lifecycle"
+                && Reflect.get(plurnk.notice, "kind") === "loop_status"
+                && !Object.hasOwn(plurnk.notice, "position"))
+                || (Reflect.get(plurnk.notice, "source") === "engine:derivation"
+                    && Reflect.get(plurnk.notice, "kind") === "search_progress"
+                    && Reflect.get(plurnk.notice, "phase") !== "failed"))) return;
         const value = isNotice ? plurnk.notice : plurnk.problem;
         const fields = isNotice ? noticeFields(Validator.assertNotice(value))
             : problemFields(Validator.assertProblemDetails(value));

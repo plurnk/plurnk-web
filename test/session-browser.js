@@ -165,6 +165,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     assert.equal(model.requests.length, 1, "delivery loss does not wake or cancel work");
                     checkBrowser([
                         /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
+                        /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
                     ]);
                     await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
@@ -204,13 +205,13 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await connected(page);
                     const rows = page.locator("#session-diagnostics ul > li");
                     const notice = rows.filter({ hasText: "PLURNK_SERVICE_EXEC_CONCURRENCY" });
-                    const problem = page.locator('#session-diagnostics li[data-diagnostic-type="notice"][data-diagnostic-level="error"]')
+                    const problem = page.locator('#session-diagnostics li[data-diagnostic-type="problem"][data-diagnostic-level="error"]')
                         .filter({ hasText: /unavailable.*effort|effort.*unavailable/u });
                     await notice.waitFor();
                     await problem.waitFor();
                     assert.equal(await notice.getAttribute("data-diagnostic-type"), "notice");
                     assert.equal(await notice.getAttribute("data-diagnostic-level"), "warn");
-                    assert.equal(await problem.getAttribute("data-diagnostic-type"), "notice");
+                    assert.equal(await problem.getAttribute("data-diagnostic-type"), "problem");
                     assert.equal(await problem.getAttribute("data-diagnostic-level"), "error");
                     assert.match(await problem.locator("article").getAttribute("aria-label"), /^Error · /u);
                     assert.match(await problem.locator('pre').textContent(), /unavailable.*effort|effort.*unavailable/u);
@@ -985,6 +986,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await setTimeout(1100);
                     assert.equal(requests.length, afterLoss, "an available endpoint does not trigger automatic retries after connection loss");
                     checkBrowser([
+                        /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
                         /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
                     ]);
                     const card = page.locator('#session-connection');

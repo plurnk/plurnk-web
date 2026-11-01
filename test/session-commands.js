@@ -20,7 +20,6 @@ function composer(page) {
 }
 
 const reasoning = {
-    PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_REASONING_EFFORT_PATH: "/reasoning_effort",
     PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_REASONING_EFFORTS: "low,high",
 };
 
@@ -97,8 +96,9 @@ export default async function verifySessionCommands({ t, withDaemon }) {
                 const body = request.postDataJSON();
                 if (
                     new URL(request.url()).pathname === "/acp"
-                    && body?.method !== "initialize"
-                    && body?.params?._meta?.plurnk?.control !== false
+                    && body !== null
+                    && body.method !== "initialize"
+                    && body.params?._meta?.plurnk?.control !== false
                 ) {
                     sent.push(body);
                 }
@@ -147,8 +147,9 @@ export default async function verifySessionCommands({ t, withDaemon }) {
                 const body = request.postDataJSON();
                 if (
                     new URL(request.url()).pathname === "/acp"
-                    && body?.method !== "initialize"
-                    && body?.params?._meta?.plurnk?.control !== false
+                    && body !== null
+                    && body.method !== "initialize"
+                    && body.params?._meta?.plurnk?.control !== false
                 ) {
                     sent.push(body);
                 }

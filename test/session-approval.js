@@ -13,8 +13,9 @@ function requestsFrom(page) {
         const body = request.postDataJSON();
         if (
             new URL(request.url()).pathname === "/acp"
-            && body?.method !== "initialize"
-            && body?.params?._meta?.plurnk?.control !== false
+            && body !== null
+            && body.method !== "initialize"
+            && body.params?._meta?.plurnk?.control !== false
         ) {
             requests.push(body);
         }

@@ -77,7 +77,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const inputs = [];
         page.on("request", (request) => {
             const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body?.method !== "initialize" && body?.params?._meta?.plurnk?.control !== false) {
+            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 inputs.push(body);
             }
         });
@@ -129,7 +129,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
             const inputs = [];
             page.on("request", (request) => {
                 const body = request.postDataJSON();
-                if (new URL(request.url()).pathname === "/acp" && body?.method !== "initialize" && body?.params?._meta?.plurnk?.control !== false) {
+                if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                     inputs.push(body);
                 }
             });
@@ -166,7 +166,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
                     const inputs = [];
                     page.on("request", (request) => {
                         const body = request.postDataJSON();
-                        if (new URL(request.url()).pathname === "/acp" && body?.method !== "initialize" && body?.params?._meta?.plurnk?.control !== false) {
+                        if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                             inputs.push(body);
                         }
                     });
@@ -408,7 +408,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const requests = [];
         page.on("request", (request) => {
             const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body?.method !== "initialize" && body?.params?._meta?.plurnk?.control !== false) {
+            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 requests.push(body);
             }
         });
@@ -472,7 +472,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const requests = [];
         page.on("request", (request) => {
             const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body?.method !== "initialize" && body?.params?._meta?.plurnk?.control !== false) {
+            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 requests.push(body);
             }
         });
@@ -583,7 +583,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const truncated = Promise.withResolvers();
         page.on("request", (request) => {
             const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body?.method !== "initialize" && body?.params?._meta?.plurnk?.control !== false) {
+            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 requests.push(body);
             }
         });

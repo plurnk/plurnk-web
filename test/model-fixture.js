@@ -136,7 +136,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
         env: {
             PLURNK_MODEL: "browser",
             PLURNK_MODEL_browser: "browser-fixture/browser-fixture",
-            PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_NPM: "@ai-sdk/openai-compatible",
+            PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_ADAPTER: "openai-compatible",
             PLURNK_PROVIDERS_PROVIDER_BROWSER_FIXTURE_BASE_URL: `http://127.0.0.1:${port}/v1`,
             PLURNK_PROVIDERS_CONTEXT_WINDOW_browser: "32768",
             PLURNK_PROVIDERS_OUTPUT_BUDGET_browser: "4096",

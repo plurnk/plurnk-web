@@ -6,9 +6,10 @@ import {
     methods,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
+import { Validator } from "@plurnk/plurnk-contracts";
 import problemFromResponse from "./problem-response.js";
 
-export { PROTOCOL_VERSION, client, createHttpStream, methods };
+export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
 
 /**
  * @typedef {{
@@ -196,6 +197,9 @@ function extractToolResultContent(contentBlocks, rawOutput) {
 
 /** {§web-session-conversation} {§web-session-history} Project standard ACP v2 session updates into transcript messages. */
 export class SessionTranslator {
+    /** @type {Set<string>} */
+    static #ambientCallIds = new Set();
+
     /**
      * @param {readonly Record<string, unknown>[]} updates
      * @param {readonly Message[]} [existing]
@@ -401,8 +405,16 @@ export class SessionTranslator {
                     continue;
                 }
 
+                if (typeof plurnk?.coordinate === "string" && plurnk.coordinate === toolCallId) {
+                    if (plurnk.origin === "model") SessionTranslator.#ambientCallIds.delete(toolCallId);
+                    else if (typeof plurnk.origin === "string") SessionTranslator.#ambientCallIds.add(toolCallId);
+                }
+
                 // Later observation discharging an earlier tool call (coordinate !== toolCallId).
                 if (typeof plurnk?.coordinate === "string" && plurnk.coordinate !== toolCallId) {
+                    if (SessionTranslator.#ambientCallIds.has(toolCallId)) {
+                        continue;
+                    }
                     const obsId = plurnk.coordinate;
                     const obsContent = plurnk.op === "SEND"
                         ? (() => {
@@ -715,6 +727,7 @@ export default class SessionAgent {
         this.#queuedLiveOutcome = undefined;
         this.#inFlightRequest = undefined;
         this.#pendingLiveThought = undefined;
+        this.#streamProblem = undefined;
         for (const [, entry] of this.#gateResolvers) {
             entry.reject(new DOMException("The operation was aborted.", "AbortError"));
         }
@@ -773,6 +786,9 @@ export default class SessionAgent {
 
         /** @type {typeof globalThis.fetch} */
         const acpFetch = async (input, init) => {
+            if (init?.method === "DELETE") {
+                return new Response(null, { status: 204 });
+            }
             const mergedHeaders = new Headers(init?.headers);
             for (const [key, value] of Object.entries(this.headers)) {
                 mergedHeaders.set(key, value);
@@ -801,18 +817,33 @@ export default class SessionAgent {
                 && response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
                 && response.body
             ) {
-                const origBody = response.body;
-                const wrappedBody = origBody.pipeThrough(new TransformStream({
-                    flush: () => {
-                        void this.#notificationChain.then(() => {
-                            if (this.#streamProblem !== undefined) {
-                                this.#emitLiveOutcome({ stopReason: "error", error: this.#streamProblem });
-                            } else {
-                                this.#emitLiveOutcome({ stopReason: "eof" });
+                const reader = response.body.getReader();
+                const notifyStreamEnd = () => {
+                    void this.#notificationChain.then(() => {
+                        if (this.#streamProblem !== undefined) {
+                            this.#emitLiveOutcome({ stopReason: "error", error: this.#streamProblem });
+                        } else {
+                            this.#emitLiveOutcome({ stopReason: "eof" });
+                        }
+                    });
+                };
+                const wrappedBody = new ReadableStream({
+                    pull: async (controller) => {
+                        try {
+                            const { done, value } = await reader.read();
+                            if (done) {
+                                controller.close();
+                                notifyStreamEnd();
+                                return;
                             }
-                        });
+                            controller.enqueue(value);
+                        } catch (err) {
+                            notifyStreamEnd();
+                            controller.error(err);
+                        }
                     },
-                }));
+                    cancel: (reason) => reader.cancel(reason),
+                });
                 return new Response(wrappedBody, {
                     status: response.status,
                     statusText: response.statusText,
@@ -908,12 +939,20 @@ export default class SessionAgent {
                     if (this.#submittedGateIds.has(interruptId)) {
                         this.#cancelledSubmittedGates.add(interruptId);
                     }
-                    void this.#notificationChain.then(() => {
-                        if (this.pendingInterrupts.length > 0) {
-                            this.#onLiveOutcome?.({ stopReason: "interrupt" });
-                        } else if (this.#inFlightRequest === undefined) {
-                            this.#onLiveOutcome?.({ stopReason: "end_turn" });
-                        }
+                    setTimeout(() => {
+                        void this.#notificationChain.then(() => {
+                            if (this.pendingInterrupts.length > 0) {
+                                this.#onLiveOutcome?.({ stopReason: "interrupt" });
+                            } else if (this.#inFlightRequest === undefined) {
+                                const status = isRecord(this.state.plurnk) && isRecord(this.state.plurnk.status)
+                                    ? this.state.plurnk.status
+                                    : undefined;
+                                const lifecycle = typeof status?.lifecycle === "string" ? status.lifecycle : "idle";
+                                if (!["queued", "running", "parked"].includes(lifecycle)) {
+                                    this.#onLiveOutcome?.({ stopReason: "end_turn" });
+                                }
+                            }
+                        });
                     });
                     reject(new DOMException("The operation was aborted.", "AbortError"));
                 };
@@ -1024,12 +1063,20 @@ export default class SessionAgent {
                     if (this.#submittedGateIds.has(interruptId)) {
                         this.#cancelledSubmittedGates.add(interruptId);
                     }
-                    void this.#notificationChain.then(() => {
-                        if (this.pendingInterrupts.length > 0) {
-                            this.#onLiveOutcome?.({ stopReason: "interrupt" });
-                        } else if (this.#inFlightRequest === undefined) {
-                            this.#onLiveOutcome?.({ stopReason: "end_turn" });
-                        }
+                    setTimeout(() => {
+                        void this.#notificationChain.then(() => {
+                            if (this.pendingInterrupts.length > 0) {
+                                this.#onLiveOutcome?.({ stopReason: "interrupt" });
+                            } else if (this.#inFlightRequest === undefined) {
+                                const status = isRecord(this.state.plurnk) && isRecord(this.state.plurnk.status)
+                                    ? this.state.plurnk.status
+                                    : undefined;
+                                const lifecycle = typeof status?.lifecycle === "string" ? status.lifecycle : "idle";
+                                if (!["queued", "running", "parked"].includes(lifecycle)) {
+                                    this.#onLiveOutcome?.({ stopReason: "end_turn" });
+                                }
+                            }
+                        });
                     });
                     reject(new DOMException("The operation was aborted.", "AbortError"));
                 };
@@ -1084,14 +1131,13 @@ export default class SessionAgent {
                 }
                 const outcome = await this.#waitForLiveOutcome(signal);
                 if (outcome.error) {
-                    if (outcome.error.status === 401) {
-                        throw Object.assign(new Error(outcome.error.message, { cause: outcome.error.problem }), {
-                            status: 401,
-                            problem: outcome.error.problem,
-                        });
-                    }
+                    this.close();
                     await subscriber.onError?.(outcome.error);
                     return { result: undefined, stopReason: "error" };
+                }
+                if (outcome.stopReason === "eof") {
+                    this.close();
+                    return { result: {}, stopReason: "end_turn" };
                 }
                 await subscriber.onSettled?.({ stopReason: outcome.stopReason, meta: outcome.meta, result: {} });
                 return { result: {}, stopReason: outcome.stopReason, meta: outcome.meta };
@@ -1165,22 +1211,22 @@ export default class SessionAgent {
             }
 
             if (this.pendingInterrupts.length > 0) {
+                this.#queuedLiveOutcome = undefined;
                 await subscriber.onSettled?.({ stopReason: "interrupt", meta: metaPlurnk, result: rawResult });
                 return { result: rawResult, stopReason: "interrupt", meta: metaPlurnk };
             }
 
             const outcome = await this.#waitForLiveOutcome(signal);
             if (outcome.error) {
-                if (outcome.error.status === 401) {
-                    throw Object.assign(new Error(outcome.error.message, { cause: outcome.error.problem }), {
-                        status: 401,
-                        problem: outcome.error.problem,
-                    });
-                }
+                this.close();
                 await subscriber.onError?.(outcome.error);
                 return { result: undefined, stopReason: "error", meta: outcome.meta };
             }
-            const stopReason = outcome.stopReason === "eof" ? "end_turn" : outcome.stopReason;
+            if (outcome.stopReason === "eof") {
+                this.close();
+                return { result: rawResult, stopReason: "end_turn", meta: metaPlurnk };
+            }
+            const stopReason = outcome.stopReason;
             if (stopReason !== "interrupt") {
                 this.close();
             }
@@ -1237,18 +1283,37 @@ export default class SessionAgent {
         const { kind, params: nestedParams, ...rest } = rawAction;
         const actionParams = isRecord(nestedParams) ? nestedParams : rest;
         const actionKind = typeof kind === "string" ? kind : "";
+        const hadConn = this.#conn !== undefined && this.#connController !== undefined && !this.#connController.signal.aborted;
 
         try {
             const conn = await this.#ensureConnection(signal);
             let response;
             if (actionKind === "session/set_config_option") {
+                const configId = String(actionParams.configId ?? "");
+                const rawVal = String(actionParams.value ?? "");
+                const value = configId === "spawn_model" && rawVal === "" ? "inherit" : rawVal;
                 response = await conn.agent.request(methods.agent.session.setConfigOption, {
                     sessionId: this.sessionId ?? "user",
                     type: "id",
-                    configId: String(actionParams.configId ?? ""),
-                    value: String(actionParams.value ?? ""),
+                    configId,
+                    value,
                     _meta: {
                         plurnk: {
+                            ...(options.workspace ? { workspace: options.workspace } : {}),
+                            ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
+                        },
+                    },
+                });
+            } else if (actionKind === "session/resume") {
+                response = await conn.agent.request(methods.agent.session.resume, {
+                    sessionId: this.sessionId ?? "user",
+                    cwd: "/",
+                    ...(actionParams.replayFrom !== undefined
+                        ? { replayFrom: /** @type {import("@agentclientprotocol/sdk/experimental/v2/unstable").ReplayFrom | null} */ (actionParams.replayFrom) }
+                        : {}),
+                    _meta: {
+                        plurnk: {
+                            control: false,
                             ...(options.workspace ? { workspace: options.workspace } : {}),
                             ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
                         },
@@ -1315,6 +1380,9 @@ export default class SessionAgent {
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
+            }
+            if (!hadConn) {
+                this.close();
             }
         }
     }
@@ -1482,17 +1550,43 @@ export default class SessionAgent {
                 });
             }
             if (outcome.error) {
-                if (outcome.error.status === 401) {
-                    throw Object.assign(new Error(outcome.error.message, { cause: outcome.error.problem }), {
-                        status: 401,
-                        problem: outcome.error.problem,
-                    });
-                }
+                this.close();
                 await subscriber.onError?.(outcome.error);
                 return { result: undefined, stopReason: "error", meta: outcome.meta };
             }
-            const stopReason = outcome.stopReason === "eof" ? "end_turn" : outcome.stopReason;
-            await subscriber.onSettled?.({ stopReason, meta: outcome.meta, result: {} });
+            if (outcome.stopReason === "eof") {
+                this.close();
+                return { result: {}, stopReason: "end_turn", meta: outcome.meta };
+            }
+            const stopReason = outcome.stopReason;
+            if (stopReason !== "interrupt") {
+                this.close();
+            }
+            const metaPlurnk = outcome.meta;
+            const terminalResult = isRecord(metaPlurnk?.terminal) && isRecord(metaPlurnk.terminal.result)
+                ? metaPlurnk.terminal.result
+                : isRecord(metaPlurnk?.result)
+                    ? metaPlurnk.result
+                    : undefined;
+            const failedTerminal = typeof terminalResult?.status === "number"
+                && terminalResult.status >= 400
+                && terminalResult.status !== 499;
+            if (failedTerminal || stopReason === "error" || stopReason === "refusal") {
+                const problem = isRecord(terminalResult?.problem) ? terminalResult.problem : terminalResult;
+                const message = typeof problem?.detail === "string"
+                    ? problem.detail
+                    : typeof problem?.title === "string"
+                        ? problem.title
+                        : "Session loop failed.";
+                await subscriber.onError?.({
+                    message,
+                    status: typeof terminalResult?.status === "number" ? terminalResult.status : undefined,
+                    problem,
+                    terminal: metaPlurnk?.terminal ?? terminalResult,
+                });
+            } else {
+                await subscriber.onSettled?.({ stopReason, meta: outcome.meta, result: {} });
+            }
             return { result: {}, stopReason, meta: outcome.meta };
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
@@ -1515,16 +1609,11 @@ export default class SessionAgent {
             requestPromise.then((res) => ({ kind: /** @type {const} */ ("response"), ...res })),
             outcomePromise.then((out) => ({ kind: /** @type {const} */ ("outcome"), ...out })),
         ]);
-        this.#onLiveOutcome = undefined;
 
         if (raced.kind === "outcome") {
+            this.#onLiveOutcome = undefined;
             if (raced.error) {
-                if (raced.error.status === 401) {
-                    throw Object.assign(new Error(raced.error.message, { cause: raced.error.problem }), {
-                        status: 401,
-                        problem: raced.error.problem,
-                    });
-                }
+                this.close();
                 await subscriber.onError?.(raced.error);
                 return { result: undefined, stopReason: "error", meta: raced.meta };
             }
@@ -1532,16 +1621,56 @@ export default class SessionAgent {
                 await subscriber.onSettled?.({ stopReason: "interrupt", meta: raced.meta, result: {} });
                 return { result: {}, stopReason: "interrupt", meta: raced.meta };
             }
+            if (raced.stopReason === "eof") {
+                this.close();
+                return { result: undefined, stopReason: "end_turn", meta: raced.meta };
+            }
         }
 
-        const { result, meta: metaPlurnk } = raced.kind === "response"
+        const { result, meta: initialMeta } = raced.kind === "response"
             ? raced
             : await requestPromise;
         await this.#notificationChain;
         const rawResult = isRecord(result) ? result : {};
+        let metaPlurnk = initialMeta;
         this.#applyResponseState(rawResult, metaPlurnk);
         if (Object.keys(this.state).length > 0) {
             await subscriber.onStateChanged?.({ state: this.state });
+        }
+
+        if (this.#gateCoalesceTimer !== undefined) {
+            await new Promise((r) => {
+                this.#onGateSettled = () => {
+                    this.#onGateSettled = undefined;
+                    r(undefined);
+                };
+            });
+        }
+
+        /** @type {Awaited<typeof outcomePromise> | undefined} */
+        let liveOutcome = raced.kind === "outcome" ? raced : undefined;
+        const hasImmediateOutcome = typeof rawResult.stopReason === "string"
+            || typeof metaPlurnk?.stopReason === "string"
+            || metaPlurnk?.terminal !== undefined
+            || this.pendingInterrupts.length > 0;
+        if (liveOutcome === undefined && !hasImmediateOutcome) {
+            liveOutcome = await outcomePromise;
+        }
+        this.#onLiveOutcome = undefined;
+
+        if (liveOutcome !== undefined) {
+            if (liveOutcome.error) {
+                this.close();
+                await subscriber.onError?.(liveOutcome.error);
+                return { result: undefined, stopReason: "error", meta: liveOutcome.meta };
+            }
+            if (liveOutcome.meta) {
+                metaPlurnk = metaPlurnk ? { ...metaPlurnk, ...liveOutcome.meta } : liveOutcome.meta;
+                this.#applyResponseState(rawResult, metaPlurnk);
+                if (Object.keys(this.state).length > 0) {
+                    await subscriber.onStateChanged?.({ state: this.state });
+                }
+            }
         }
 
         if (this.#cancelledSubmittedGates.size > 0) {
@@ -1562,13 +1691,23 @@ export default class SessionAgent {
             });
         }
 
-        const stopReason = this.pendingInterrupts.length > 0
+        if (liveOutcome?.stopReason === "eof" && !hasImmediateOutcome) {
+            this.close();
+            return { result: rawResult, stopReason: "end_turn", meta: metaPlurnk };
+        }
+        const rawStopReason = this.pendingInterrupts.length > 0
             ? "interrupt"
-            : typeof metaPlurnk?.stopReason === "string"
-                ? metaPlurnk.stopReason
-                : typeof rawResult.stopReason === "string"
-                    ? rawResult.stopReason
-                    : "end_turn";
+            : typeof liveOutcome?.stopReason === "string"
+                ? liveOutcome.stopReason
+                : typeof metaPlurnk?.stopReason === "string"
+                    ? metaPlurnk.stopReason
+                    : typeof rawResult.stopReason === "string"
+                        ? rawResult.stopReason
+                        : "end_turn";
+        const stopReason = rawStopReason === "eof" ? "end_turn" : rawStopReason;
+        if (stopReason !== "interrupt") {
+            this.close();
+        }
         const terminalResult = isRecord(metaPlurnk?.terminal) && isRecord(metaPlurnk.terminal.result)
             ? metaPlurnk.terminal.result
             : isRecord(metaPlurnk?.result)
@@ -2069,6 +2208,21 @@ export default class SessionAgent {
                 prevPlurnk.status = prevStatus;
                 stateChanged = true;
             }
+            if (notice?.source === "engine:derivation" && notice.kind === "search_progress") {
+                const ws = isRecord(prevPlurnk.workspace) ? { ...prevPlurnk.workspace } : {};
+                ws.activity = notice.phase === "complete"
+                    ? null
+                    : {
+                        kind: "derivation",
+                        phase: notice.phase,
+                        ...(typeof notice.completed === "number" ? { completed: notice.completed } : {}),
+                        ...(typeof notice.total === "number" ? { total: notice.total } : {}),
+                        ...(typeof notice.percent === "number" ? { percent: notice.percent } : {}),
+                        ...(typeof notice.message === "string" ? { message: notice.message } : {}),
+                    };
+                prevPlurnk.workspace = ws;
+                stateChanged = true;
+            }
             if (isRecord(plurnk?.status)) {
                 Object.assign(prevStatus, structuredClone(plurnk.status));
                 prevPlurnk.status = prevStatus;
@@ -2103,6 +2257,9 @@ export default class SessionAgent {
                     : typeof problem.title === "string"
                         ? problem.title
                         : "Stream error.";
+                if (!this.#bufferingReplay) {
+                    this.#streamProblem = { message, status, problem };
+                }
                 if (status === 401 || this.#submittedGateIds.size > 0) {
                     this.#streamProblem = { message, status, problem };
                     this.#emitLiveOutcome({

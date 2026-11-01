@@ -82,14 +82,14 @@ export default async function verifyTokens({ t, withDaemon }) {
                         async discover(token) {
                             const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             try {
-                                const outcome = await agent.runAgent({ action: { kind: "discover" } });
+                                const outcome = await agent.runAgent({ action: { kind: "providers/list" } });
                                 return { stopReason: outcome.stopReason, result: outcome.result };
                             } catch (error) { return { status: error.status }; }
                         },
                         async create(token) {
                             const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             // A session-setting action creates this model-less fixture; observation cannot.
-                            const outcome = await agent.runAgent({ workspace: "tokens", action: { kind: "session/set_config_option", configId: "spawn_model", value: "" } });
+                            const outcome = await agent.runAgent({ workspace: "tokens", action: { kind: "session/set_config_option", configId: "spawn_model", value: "inherit" } });
                             return { stopReason: outcome.stopReason, action: outcome.result };
                         },
                         observe(token) {
