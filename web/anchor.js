@@ -1,4 +1,4 @@
-/** {§web-worker-conversation} Avoid native fragment lookup's literal/percent-decoded ambiguity.
+/** {§web-session-conversation} Avoid native fragment lookup's literal/percent-decoded ambiguity.
  * @param {string} kind
  * @param {string} identity
  */

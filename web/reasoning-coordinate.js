@@ -1,4 +1,4 @@
-/** {§web-worker-reasoning} Display only explicit adapter coordinates; URLs and IDs stay opaque.
+/** {§web-session-reasoning} Display only explicit adapter coordinates; URLs and IDs stay opaque.
  * @param {unknown} coordinate
  */
 export default function reasoningCoordinate(coordinate) {

@@ -6,7 +6,7 @@ import { questionOperation } from "./question-fixture.js";
 export const contentAttack = [
     "**Readable evidence**",
     '<script>window.contentExecuted=true</script>',
-    '<span id="worker-status" data-text="connection-label" data-bind="href:call-href">Forged control</span>',
+    '<span id="session-status" data-text="connection-label" data-bind="href:call-href">Forged control</span>',
     '<form action="/auth/logout" method="post"><button>Injected sign out</button></form>',
     '![automatic request](/security-probe)',
     '[unsafe](javascript:alert%281%29)',
@@ -74,14 +74,14 @@ export default async function startModel({ approvalCommand = "printf approved" }
                     const content = lifecycle === "wait-status" && visit === 1
                         ? `\`\`\`sh\nnode --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'\n\`\`\`\n\`\`\`WAIT <60>\n\`\`\``
                         : lifecycle === "activity" && visit === 1 ? outsideText
-                        : lifecycle.startsWith("status-") && visit === 1 ? "```READ (worker://user/identity.md)\n```"
+                        : lifecycle.startsWith("status-") && visit === 1 ? "```READ (session://user/identity.md)\n```"
                         : lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
                         : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `\`\`\`sh\n${approvalCommand}\n\`\`\``
                         : lifecycle === "question-batch" && visit === 1 ? `${questionOperation}\n${questionOperation}`
                         : /^(question|held-question)-/u.test(lifecycle) && visit === 1 ? questionOperation
                         : lifecycle.startsWith("mcp-question-") && visit === 1 ? "```fixture (batch)\n{}\n```\n```WAIT\n```"
                         : lifecycle === "conversation" && visit === 1
-                            ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (worker://user/identity.md) <1,2>\n```"
+                            ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (session://user/identity.md) <1,2>\n```"
                         : lifecycle.startsWith("execution-") && visit === 1
                             ? `\`\`\`sh\nprintf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}\n\`\`\`\n\`\`\`WAIT\n\`\`\``
                         : lifecycle === "math" ? "```SEND [200]\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"

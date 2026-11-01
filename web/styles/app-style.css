@@ -11,7 +11,7 @@
 
 header nav button,
 nav[aria-label="breadcrumb"] button,
-#worker-status [data-status-line] button {
+#session-status [data-status-line] button {
     --pico-primary-background: transparent;
     --pico-primary-border: transparent;
     --pico-primary-hover-background: transparent;
@@ -21,8 +21,8 @@ nav[aria-label="breadcrumb"] button,
     cursor: pointer;
 }
 
-/* {§web-worker-input} Cancellation uses Pico's secondary control palette. */
-button[form="worker-stop"],
+/* {§web-session-input} Cancellation uses Pico's secondary control palette. */
+button[form="session-stop"],
 button[data-cancel-settings],
 dialog button[data-dialog-close]:not([rel="prev"]) {
     --pico-primary-background: var(--pico-secondary-background);

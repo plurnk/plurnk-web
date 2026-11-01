@@ -1,8 +1,8 @@
 import { $, $$, the } from "on_the_money";
-import { listModels, workerModel, workerEffort, modelLabel } from "./worker-models.js";
+import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
 import describeFailure from "./failure.js";
 
-/** {§web-worker-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
+/** {§web-session-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
 const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop"]);
 
 /** @param {string} text */
@@ -27,13 +27,13 @@ export function parseCommand(text) {
     return { name, rest, args, policy };
 }
 
-/** @typedef {import("./worker-models.js").Action} Action */
+/** @typedef {import("./session-models.js").Action} Action */
 
-/** {§web-worker-commands} Native, literal results stay outside the observer's messages and state.
+/** {§web-session-commands} Native, literal results stay outside the observer's messages and state.
  * @param {Element} controls
  * @param {{call: Action, toggleYolo: () => Promise<boolean>, stop: () => Promise<string>}} actions
  */
-export default function workerCommands(controls, actions) {
+export default function sessionCommands(controls, actions) {
     const outlet = $.clone(controls, "#command-results");
     const list = $(outlet, "ul");
     if (!list) throw new Error("Command results template is incomplete.");
@@ -41,7 +41,7 @@ export default function workerCommands(controls, actions) {
     return async (text, signal) => {
         /** @type {Action} */
         const call = (kind, params) => actions.call(kind, params, signal);
-        const row = $.clone(list, "#worker-command-result");
+        const row = $.clone(list, "#session-command-result");
         const article = $(row, "article");
         const input = $(row, "header code");
         const body = $(row, "[data-command-output]");
@@ -85,10 +85,10 @@ export default function workerCommands(controls, actions) {
                     the(result, { aliasCount: matches.length, modelTotal: catalog.total, modelCount: catalog.items.length,
                         modelOffset: catalog.offset, modelMore: catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search." });
                 } else if (name === "model") {
-                    const model = await workerModel(call, args[0], args[1]);
+                    const model = await sessionModel(call, args[0], args[1]);
                     message = `Model: ${modelLabel(model)}${model?.effort === undefined ? "" : ` (${model.effort})`}.`;
                 } else if (name === "effort") {
-                    const { effort, source, supported } = await workerEffort(call, args[0]);
+                    const { effort, source, supported } = await sessionEffort(call, args[0]);
                     message = `Effort: ${effort ?? "Unavailable"} (${source}). Supported: ${supported.join(", ") || "None"}.`;
                 } else if (name === "capabilities") {
                     if (rest) Validator.assertCapabilityPolicy(policy);

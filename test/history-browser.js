@@ -5,7 +5,11 @@ import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 const message = (id, content = id) => ({ id, role: "user", content });
-const snapshot = (messages, older) => ({ type: "MESSAGES_SNAPSHOT", messages, metadata: { plurnk: { history: { older } } } });
+const userChunk = (id, text = id) => ({ sessionUpdate: "user_message_chunk", messageId: id, content: { type: "text", text } });
+const snapshot = (messages, older) => ({
+    updates: messages.map((m) => userChunk(m.id, m.content)),
+    result: { _meta: { plurnk: { history: { older } } } },
+});
 
 export default async function verifyHistory(t) {
     const fixture = await conversationFixture(new URL("./history-entry.js", import.meta.url));
@@ -34,13 +38,10 @@ export default async function verifyHistory(t) {
                         if (typeof value === "function") await value(route);
                         else await route.fulfill({ json: value });
                     });
-                    await page.route("**/acp", (route) => {
-                        const input = route.request().postDataJSON();
+                    fixture.onAcp((input) => {
                         requests.push(input);
-                        return route.fulfill({ contentType: "text/event-stream", body: [
-                            { type: "RUN_STARTED", runId: input.runId, threadId: input.threadId }, ...events,
-                            { type: "RUN_FINISHED", runId: input.runId, threadId: input.threadId, outcome: { type: "success" } },
-                        ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+                        const { updates = events, result = {} } = Array.isArray(events) ? { updates: events } : events;
+                        return { updates, result, closeStream: true };
                     });
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.run === "function");
@@ -55,7 +56,7 @@ export default async function verifyHistory(t) {
                     const live = [message("current", "Current text.\n\n".repeat(35)), message("tail", "Newest text.")];
                     const old = [message("old", "Old text.\n\n".repeat(35)), message("current", "Stale current text.")];
                     pages.set("/history/old", { final: true, messages: old, older: null });
-                    events = [snapshot(live, older)];
+                    events = snapshot(live, older);
                     await run();
                     await settled();
                     assert.equal(await atBottom(), true, "first attachment follows the live tail");
@@ -79,11 +80,11 @@ export default async function verifyHistory(t) {
                     assert.equal(await page.evaluate(() => window.saved === document.querySelector('[data-message-id="current"] article p')), true);
                     assert.equal(await page.evaluate(() => getSelection().toString()), "Current text.");
                     await run();
-                    assert.deepEqual(requests.at(-1).messages, live, "actual SDK Run upload excludes fetched history");
+                    assert.equal(requests.at(-1).params.messages, undefined, "actual SDK request excludes fetched history");
                     assert.deepEqual(reads, [older], "final pages never refetch on replay");
 
                     // Read away from the tail while a snapshot removes the visible material.
-                    events = [snapshot([message("next", "Next text.\n\n".repeat(20))], "/history/current")];
+                    events = snapshot([message("next", "Next text.\n\n".repeat(20))], "/history/current");
                     const before = await current.boundingBox();
                     await run();
                     await settled();
@@ -101,18 +102,18 @@ export default async function verifyHistory(t) {
                     const call = { id: "call-message", role: "assistant", toolCalls: [{ id: "call", type: "function",
                         function: { name: "READ", arguments: JSON.stringify({ target: { raw: "evidence.txt" } }) }, metadata: { plurnk: { op: "READ" } } }] };
                     pages.set("/history/call", { final: false, messages: [call], older: null });
-                    events = [snapshot([message("now")], "/history/call")];
+                    events = snapshot([message("now")], "/history/call");
                     await run();
                     await page.getByRole("button", { name: "Load previous loop" }).click();
                     await page.locator('[data-call-id="call"]').waitFor();
                     const result = { id: "receipt", role: "tool", toolCallId: "call", content: '{"status":200,"path":"evidence.txt","range":{"returned":[1,2]}}' };
-                    events = [{ type: "TOOL_CALL_RESULT", messageId: result.id, role: "tool", toolCallId: result.toolCallId, content: result.content }];
+                    events = [{ sessionUpdate: "tool_call_update", toolCallId: result.toolCallId, status: "completed", rawOutput: result.content, _meta: { plurnk: { messageId: result.id } } }];
                     await run();
                     assert.deepEqual(await ids(), ["call-message", "now"], "immediate late result completes its original operation row exactly once");
                     assert.equal(await page.locator('[data-call-id="call"] [data-plurnk-field="count"]').textContent(), "{2}");
                     const readCount = reads.length;
                     pages.set("/history/call", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
-                    events = [snapshot([message("now")], "/history/call")];
+                    events = snapshot([message("now")], "/history/call");
                     await run();
                     await page.getByRole("alert").filter({ hasText: "Read request failed (503)." }).waitFor();
                     assert.equal(await page.locator('[data-call-id="call"] [data-plurnk-field="count"]').textContent(), "{2}", "failed revalidation cannot hide a confirmed result");
@@ -125,12 +126,12 @@ export default async function verifyHistory(t) {
                     await run();
                     assert.equal(reads.length, readCount + 2, "newly final page stops revalidation");
                     assert.deepEqual(await ids(), ["call-message", "now"]);
-                    assert.ok(!JSON.stringify(requests.at(-1).messages).includes("call-message"));
+                    assert.ok(!JSON.stringify(requests.at(-1)).includes("call-message"));
 
                     await page.reload();
                     await page.waitForFunction(() => typeof window.run === "function");
                     pages.set("/history/failure", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
-                    events = [snapshot([message("retained")], "/history/failure")];
+                    events = snapshot([message("retained")], "/history/failure");
                     await run();
                     await page.getByRole("button", { name: "Load previous loop" }).click();
                     await page.getByRole("alert").filter({ hasText: "Read request failed (503)." }).waitFor();
@@ -148,11 +149,11 @@ export default async function verifyHistory(t) {
                         started.resolve(); await held.promise;
                         await route.fulfill({ json: { final: true, messages: [message("abandoned")], older: null } });
                     });
-                    events = [snapshot([message("new-window")], "/history/held")];
+                    events = snapshot([message("new-window")], "/history/held");
                     await run();
                     await page.getByRole("button", { name: "Load previous loop" }).click();
                     await started.promise;
-                    events = [snapshot([message("last-window")], null)];
+                    events = snapshot([message("last-window")], null);
                     await run();
                     held.resolve();
                     await settled();

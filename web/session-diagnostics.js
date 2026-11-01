@@ -17,28 +17,39 @@ const problemFields = (problem) => ({
     body: [...new Set([problem.detail, problem.recovery].filter((text) => typeof text === "string" && text && text !== problem.title))].join("\n\n"),
 });
 
-/** {§web-worker-diagnostics} Distinct observations belong to the page, never the SDK conversation.
+/** {§web-session-diagnostics} Distinct observations belong to the page, never the SDK conversation.
  * @param {HTMLElement} root
  */
 export default function diagnostics(root) {
     const list = $(root, "ul");
-    if (!(list instanceof HTMLUListElement)) throw new Error("Worker diagnostics have no list.");
+    if (!(list instanceof HTMLUListElement)) throw new Error("Session diagnostics have no list.");
     const observed = new Set();
-    /** @param {import("@plurnk/plurnk-acp/client").CustomEvent} event */
-    return async (event) => {
-        if (event.name !== "plurnk.notice" && event.name !== "plurnk.problem") return;
+    /** @param {import("./session-agent.js").AcpSessionUpdate} update */
+    return async (update) => {
+        if (update.sessionUpdate !== "notice") return;
+        const plurnk = /** @type {Record<string, unknown> | undefined} */ (update._meta?.plurnk);
+        if (!plurnk) return;
+        const isNotice = Object.hasOwn(plurnk, "notice");
+        const isProblem = !isNotice && Object.hasOwn(plurnk, "problem");
+        if (!isNotice && !isProblem) return;
+        if (isNotice && typeof plurnk.notice === "object" && plurnk.notice !== null
+            && Reflect.get(plurnk.notice, "source") === "engine:lifecycle"
+            && Reflect.get(plurnk.notice, "kind") === "loop_status"
+            && !Object.hasOwn(plurnk.notice, "position")) return;
         const { Validator } = await import("@plurnk/plurnk-contracts");
-        const fields = event.name === "plurnk.notice" ? noticeFields(Validator.assertNotice(event.value))
-            : problemFields(Validator.assertProblemDetails(event.value));
-        const attribution = event.subagentRunId ?? "";
-        const key = JSON.stringify([event.name, attribution, event.value]);
+        const value = isNotice ? plurnk.notice : plurnk.problem;
+        const fields = isNotice ? noticeFields(Validator.assertNotice(value))
+            : problemFields(Validator.assertProblemDetails(value));
+        const attribution = typeof plurnk.subagentRunId === "string" ? plurnk.subagentRunId : "";
+        const diagnosticType = isNotice ? "notice" : "problem";
+        const key = JSON.stringify([diagnosticType, attribution, value]);
         if (observed.has(key)) return;
         const { diagnosticTitle } = fields;
         const severity = { info: "Information", warn: "Warning", error: "Error" }[fields.diagnosticLevel];
-        const row = $.clone(list, "#worker-diagnostic");
+        const row = $.clone(list, "#session-diagnostic");
         the(row, {
             diagnosticLevel: fields.diagnosticLevel,
-            diagnosticType: event.name,
+            diagnosticType,
             diagnosticLabel: [severity, diagnosticTitle, attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
             subagentRunId: attribution || null,
         });

@@ -1,4 +1,4 @@
-/** {§web-worker-observer} A refusal the daemon explains is its Problem: the Error carries it as its cause, and its status.
+/** {§web-session-observer} A refusal the daemon explains is its Problem: the Error carries it as its cause, and its status.
  * @param {Response} response
  * @returns {Promise<(Error & { status: number }) | null>}
  */

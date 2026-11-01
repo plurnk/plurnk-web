@@ -7,12 +7,12 @@ Conversation cards use a subtle green user tint, ordinary cards for model replie
 and neutral backgrounds for operations, notes and reasoning.
 Requires a current stable browser; no legacy-browser compatibility layer is shipped.
 No additional server. The root links to the daemon's workspace
-directory at `/~/`; workspace pages list model workers as real links, with native
+directory at `/~/`; workspace pages list model sessions as real links, with native
 collapsed child branches and a “Background work” section for branches beneath
-internal actors. Bookkeeping workers are omitted. Worker pages show identity,
+internal actors. Bookkeeping sessions are omitted. Session pages show identity,
 breadcrumbs, their actual parent, live status and conversation, without a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
-the worker's current work. Pending operations have native Accept/Reject review forms;
+the session's current work. Pending operations have native Accept/Reject review forms;
 questions and MCP input share the same review and resume path.
 The message box also accepts `/help`, `/models [search]`, `/model [selector] [effort]`,
 `/effort [policy]`, `/capabilities [json]`, `/yolo`, and `/stop`. Commands never go
@@ -26,24 +26,24 @@ Reload restores the page's starting mode. Commands remain available during pendi
 Click the status model or effort to open its form below the conversation. Model
 search offers native suggestions, or accepts an exact alias/provider-model.
 Select Model / Select Effort applies the choice and closes the form; Cancel dismisses it.
-Workspace cards show the worker's lifecycle, parent/name and workspace at page load.
-Click the ant to visit the worker, or expand the card to see its child tree;
+Workspace cards show the session's lifecycle, parent/name and workspace at page load.
+Click the ant to visit the session, or expand the card to see its child tree;
 parent and workspace links navigate independently. Leaves have no empty disclosure.
 These cards are navigation snapshots, not live monitors or completed-reply previews.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 differing labels keep ☁️ on the workspace name and show 🗂️ on a separate folder line.
 Folder labels use the daemon's home abbreviation, not the browser's.
-The workspace list, workspace pages and worker pages offer native header actions alongside the breadcrumbs:
+The workspace list, workspace pages and session pages offer native header actions alongside the breadcrumbs:
 - On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal to create a new folderless workspace; left unnamed, the daemon names it ({§web-workspace-creation}).
-- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️`, `🗑️` and `➕` open native `<dialog>` modals to rename the current workspace ({§web-workspace-rename}), hide the workspace ({§web-workspace-hide}), or create an independent model worker; left unnamed, the daemon names it ({§web-worker-creation}).
-- On `/<workspace>@<worker>/`: breadcrumb navigation carries `🗑️` to hide the worker and its descendants ({§web-worker-hide}).
+- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️`, `🗑️` and `➕` open native `<dialog>` modals to rename the current workspace ({§web-workspace-rename}), hide the workspace ({§web-workspace-hide}), or create an independent model session; left unnamed, the daemon names it ({§web-session-creation}).
+- On `/<workspace>@<session>/`: breadcrumb navigation carries `🗑️` to hide the session and its descendants ({§web-session-hide}).
 Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow at the end of `<main>` when JavaScript is disabled; with JavaScript a closed modal shows nothing.
 Creation forms carry a hidden token so a retried submission converges on the created place instead of re-executing.
 Anonymous daemons refuse cross-site form posts, but a page that makes the browser reach
 the daemon by a name of its choosing (DNS rebinding) passes that guard: run `PLURNK_AUTH=0` only where trusted parties alone reach the listener.
-Worker share full-width article lists and a stationary header around scrolling
-main content. Worker status and the Stop / multiline message / Send row stay at
+Sessions share full-width article lists and a stationary header around scrolling
+main content. Session status and the Stop / multiline message / Send row stay at
 the bottom. The message field and buttons grow together; Enter remains a newline,
 and Ctrl+Enter sends through the same form as Send.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
@@ -54,11 +54,11 @@ Breadcrumbs fit between the mascot and menu, or center below them when space is 
 Directories select their `index.html`: `/` and `/index.html` serve the same
 document, as do the two spellings for any admitted nested index. Directory links
 include the trailing slash. Missing documents and assets return 404, not the
-home page. Navigation never creates workspaces or workers, claims control, or
+home page. Navigation never creates workspaces or sessions, claims control, or
 starts inference. Folderless workspaces work the same way as project workspaces.
 
 The [directory address contract](SPEC.md#web-directory-addresses-named-directory-addresses)
-maps workspace names to `/~/<workspace>/` and workers to `/~/<workspace>@<worker>/`,
+maps workspace names to `/~/<workspace>/` and sessions to `/~/<workspace>@<session>/`,
 preserving slashes and encoding name punctuation. Names remain separate from
 project folders; URLs do not publish workspace files.
 
@@ -86,9 +86,9 @@ The same-origin `POST /auth/token` connection primitive supplies short-lived
 ACP access credentials to a signed-in browser. OAuth refresh credentials stay
 server-side; rotation and revocation use the daemon's authority.
 
-Worker pages passively connect through the official HttpAgent. A compact footer
+Session pages passively connect through the official ACP client. A compact footer
 above the message field shows approval mode, lifecycle, model/effort, latest-loop
-elapsed time, and cumulative worker-and-descendant tokens and cost. Unknown totals
+elapsed time, and cumulative session-and-descendant tokens and cost. Unknown totals
 stay `?`, not zero; known partial amounts retain `+ ?`. Field descriptions preserve
 exact accounting behind the compact figures. A finished loop leaves the page watching
 for the next one. Closing, refreshing or navigating away never cancels work.
@@ -98,15 +98,15 @@ draft without resubmitting it; full page reloads do not persist drafts.
 No automatic work retries occur.
 Context occupancy/capacity, pending input, preparation, indexing and the daemon's WAIT
 countdown appear only when relevant. The countdown is an observation deadline, not
-a promise of completion. A collapsed worker-count disclosure opens the live
+a promise of completion. A collapsed session-count disclosure opens the live
 descendant tree; no empty tree or metadata inventory occupies the page.
 Workspace names and folder labels
-follow supplied state without changing the observed worker or rewriting the URL.
+follow supplied state without changing the observed session or rewriting the URL.
 Daemon notices and nonterminal Problems appear separately under **Observed diagnostics**,
 as literal messages and recovery guidance. Distinct observations remain through reconnects
-on that page; they are not an archive or an indication that the worker has stopped.
+on that page; they are not an archive or an indication that the session has stopped.
 **Observed activity** exposes non-conversation log rows and text emitted outside
-operations, retaining source coordinates and supplied worker attribution as entry
+operations, retaining source coordinates and supplied session attribution as entry
 semantics and accessible names. These observations survive reconnects on the same page, not
 reloads; they are not replies or a complete activity history.
 Operations show their glyph and aside above the addressed selection, returned count
@@ -116,7 +116,7 @@ automatically. Reasoning stays collapsed until opened. Fetched bodies are litera
 to client-uploaded conversation history or saved in browser storage.
 
 **Observed stream outcomes** retains conclusions seen on this page, separately
-from worker completion and conversation receipts. **Read output** explicitly
+from session completion and conversation receipts. **Read output** explicitly
 fetches a literal snapshot of all channels; click again to refresh it. Neither
 inspection nor navigation cancels execution.
 
@@ -124,17 +124,17 @@ Live reasoning appears in one temporary plain-text preview, cleared when the
 attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bounds
 its retained tail (4096 Unicode code points by default). Completed turns keep
 their reasoning in collapsed disclosures; opening one retrieves the full
-trace when visible, without adding it to later Run uploads.
+trace when visible, without adding it to later prompt submissions.
 
-**Send** also supports follow-ups while the worker is running. The draft clears
+**Send** also supports follow-ups while the session is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
 uncertain submission is never retried automatically. **Stop** preserves unsent
 text; closing the page is not Stop. Browser approval defaults to manual review
 (`PLURNK_WEB_YOLO=0`). `PLURNK_WEB_YOLO=1` accepts proposals automatically, subject to daemon
-permissions, on a worker page the person opened themselves; one reached from another site
+permissions, on a session page the person opened themselves; one reached from another site
 starts in manual review, as does every page on a plain-HTTP origin other than localhost (its
-browser reports no navigation source). The worker page shows the active mode. In manual mode, each approval
-names its requesting worker and shows the exact operation and review evidence.
+browser reports no navigation source). The session page shows the active mode. In manual mode, each approval
+names its requesting session and shows the exact operation and review evidence.
 Choose Accept or Reject for every presented operation, then **Submit responses**;
 neither choice is preselected. Questions and MCP input always need a human answer.
 Other authorized clients can settle the same request; every view withdraws the
@@ -144,12 +144,12 @@ continues. Failed or uncertain decisions are reported, never automatically retri
 an actual connection failure requires **Reconnect**. Unimplemented interactions remain pending with
 an explicit notice, never an automatic decision.
 
-Questions show their request, full response schema, and requesting worker ID when
+Questions show their request, full response schema, and requesting session ID when
 the daemon supplies it. Simple fields use native
 controls; nested or conditional answers use an **Answer (JSON)** editor without
 discarding schema rules. Optional fields have an inclusion checkbox. Answers are
 validated before submission and by the daemon; local errors preserve your input.
-**Cancel this request** cancels that question, not the worker's other work.
+**Cancel this request** cancels that question, not the session's other work.
 Refresh rediscovers pending questions but does not retain unsubmitted answers.
 
 The daemon supplies the recent conversation window. **Load previous loop** reads
@@ -171,7 +171,7 @@ Long lines wrap and settled entries grow with their content; explicit code, tabl
 formulas and diagrams scroll locally when wider than the viewport.
 NOTE retains category and attribution semantics without an enclosing assistant
 article, a duplicate arguments view or a body copy in attributes.
-HttpAgent owns live messages; archival pages are read-only presentation. Neither
+The ACP client owns live messages; archival pages are read-only presentation. Neither
 is saved in browser storage.
 
 Markdown footnotes use native reference and back-links within each rich message or SEND.
@@ -185,7 +185,7 @@ The math renderer and its styles load only when needed.
 
 Mermaid fences become static SVG images compiled by the web module's pinned
 [Ondine](https://github.com/wevm/ondine) dependency, within its supported syntax.
-The compiler runs in bounded Node worker threads; no compiler or WebAssembly is
+The compiler runs in bounded Node threads; no compiler or WebAssembly is
 sent to the browser. Compilation uses the existing browser session (or the daemon's
 explicitly unauthenticated mode). `PLURNK_WEB_DIAGRAM_*` limits are documented in
 `ai.plurnk/.env.defaults`.
@@ -198,11 +198,11 @@ without shrinking the text or widening the page. Native zoom remains available.
 English is rendered in the document, not filled in by JavaScript. The current
 page needs no duplicate English dictionary or browser storage, and has no language
 picker or stored preferences. Ordinary navigation and forms
-remain native HTML; live worker status and conversation require JavaScript.
+remain native HTML; live session status and conversation require JavaScript.
 
 ## Install from source
 
-Requires Node.js 26+ and Plurnk service 4.x with its module-client credential and
+Requires Node.js 26+ and Plurnk service 5.x with its module-client credential and
 workspace-label APIs
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
 including sign-in inventory, shared browser/module revocation, password-only login,
@@ -238,8 +238,8 @@ where supported. The manifest supplies Plurnk's name, icons and standalone windo
 Localhost works over HTTP; remote installation requires HTTPS, normally supplied
 by your reverse proxy. Installation does not install or start the daemon.
 
-The app requires its daemon to be reachable. It does not register a service worker,
-cache workspace data, or provide offline operation. Browser and OS support varies.
+The app requires its daemon to be reachable. It does not register an offline cache
+or provide offline operation. Browser and OS support varies.
 
 ## Development
 
@@ -274,20 +274,19 @@ isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Component coverage also exercises native conversation behavior in Firefox
 and WebKit. Install the test browsers with `npx playwright install chromium firefox webkit`
 if necessary. The operator's daemon and configuration are not used.
-The gate also runs the official HttpAgent in Chromium against that daemon and a
-deterministic local model; no paid inference is involved. Separate journeys exercise
-the shipped worker page and native input/review forms without injecting an SDK or mocking ACP.
+The gate exercises the shipped session page and native input/review forms against that daemon and a
+deterministic local model; no paid inference is involved and no ACP traffic is mocked.
 Shared review journeys drive the installed terminal through a PTY alongside the
 browser, covering both clients' manual/YOLO combinations and either manual responder.
 The terminal emulator and PTY driver are test-only dependencies.
-It exercises synchronization, observer/control handoff with one SDK history,
+It exercises synchronization, observer/control handoff with one ACP history,
 admitted work surviving request abortion, navigation and page close, explicit
 cancellation, approval and question interruption and rediscovery,
 shutdown and the real browser sign-in/access-token lifecycle. Held directory and OAuth
 requests verify that module shutdown settles admitted work before releasing resources.
 Cross-client prompt
 delivery, exact READ operands and real command stdout/stderr results are compared live and after
-refresh through the SDK's messages, without custom-row reconstruction. Standard success,
+refresh through the client's messages, without custom-row reconstruction. Standard success,
 cancellation, failure and reported token usage are checked separately. No ACP traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
 Stream journeys also exercise silent executors, never-written channels, explicit
@@ -300,7 +299,7 @@ streaming and replay against the production content policy in all three engines.
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
 Pico's readable pinned substrate and dependency licenses, and derives a maskable SVG
-from the mascot. HttpAgent loads only on worker pages; Vite includes the bundled
+from the mascot. The ACP client loads only on session pages; Vite includes the bundled
 dependencies' license notices. Production prunes unused CSS rules, variables and keyframes from
 the browser and server-rendered document sources, plus the authority's publicly
 exported document specimens, before minification. The auth package supplies those
@@ -322,7 +321,7 @@ before production pruning, so references between layers remain visible:
 | `app-vendor.css` | Generated, unmodified Pico substrate. |
 | `app-structure.css` | Reading width, viewport grid, composer sizing, gutters and wrapping. |
 | `app-style.css` | Substrate token overrides; brand accents, system monospace and conversation surface colors. |
-| `app-state.css` | Directory/worker width, semantic background selection, glyphs, connection state and native focus visibility. |
+| `app-state.css` | Directory/session width, semantic background selection, glyphs, connection state and native focus visibility. |
 
 Authored CSS is checked with OTM's Stylelint rules. Content-renderer dependencies
 load their own vendor styles separately; sign-in uses only the page stylesheet.

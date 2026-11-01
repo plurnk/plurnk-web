@@ -3,7 +3,7 @@ import { on, the } from "on_the_money";
 // scrollTop can be fractional; scrollHeight and clientHeight are integer CSS pixels.
 const SCROLL_ROUNDING_PX = 1;
 
-/** {§web-worker-history} Native scrolling, with a reading anchor across document updates.
+/** {§web-session-history} Native scrolling, with a reading anchor across document updates.
  * @param {HTMLElement} main @param {HTMLElement} conversation @param {() => void} followed
  */
 export default function conversationScroll(main, conversation, followed) {

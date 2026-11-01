@@ -16,7 +16,7 @@ const hostile = [
     '<iframe srcdoc="<script>parent.contentExecuted=true</script>"></iframe><object data="/auth/token"></object>',
     '<audio src="/auth/token" autoplay></audio><video poster="/auth/token"></video>',
     '<template id="conversation-message"><button>Replacement template</button></template>',
-    '<a id="worker-status" name="location" data-text="message-author" data-bind="href:call-href" data-action="sign-out" href="/auth/logout">Injected binding</a>',
+    '<a id="session-status" name="location" data-text="message-author" data-bind="href:call-href" data-action="sign-out" href="/auth/logout">Injected binding</a>',
     '<span data-math="inline">Injected renderer marker</span>',
     '[script](javascript:alert%281%29)',
     '[mixed case](JaVaScRiPt:alert%281%29)',
@@ -54,7 +54,7 @@ export default async function verifyContentSecurity(t) {
                     const present = (messages) => page.evaluate((messages) => window.present(messages), messages);
                     const shell = () => page.evaluate(() => ({
                         header: document.querySelector("body > header").outerHTML,
-                        status: document.querySelector("#worker-status").outerHTML,
+                        status: document.querySelector("#session-status").outerHTML,
                         templates: [...document.querySelectorAll("body > template")].map((template) => template.outerHTML),
                         body: [...document.body.attributes].map(({ name, value }) => [name, value]),
                         base: document.baseURI,
@@ -110,7 +110,7 @@ export default async function verifyContentSecurity(t) {
                             "standard text parts use the role's same sanitized renderer");
                         assert.equal(await page.locator("[data-message-id=parts] article > details > pre").count(), 0,
                             "unsupported parts stay in JavaScript, not a metadata dump or implicit fetch");
-                        assert.equal(await page.locator("#worker-conversation script, #worker-conversation img, #worker-conversation form").count(), 0);
+                        assert.equal(await page.locator("#session-conversation script, #session-conversation img, #session-conversation form").count(), 0);
                         assert.equal(await page.locator("[data-message-id=result]").getAttribute("data-tool-call-id"), call.id);
                     });
 

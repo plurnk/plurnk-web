@@ -5,11 +5,11 @@ import reasoningCoordinate from "./reasoning-coordinate.js";
 import card, { nameCard } from "./card.js";
 import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
 
-/** @typedef {import("@plurnk/plurnk-acp/client").Message} Message */
-/** @typedef {NonNullable<import("@plurnk/plurnk-acp/client").AssistantMessage["toolCalls"]>[number]} ToolCall */
+/** @typedef {import("./session-agent.js").Message} Message */
+/** @typedef {import("./session-agent.js").ToolCall} ToolCall */
 /** @typedef {{message: Readonly<Message>, call?: ToolCall}} Entry */
 
-/** {§web-worker-conversation} DOM identities are presentation state, never a second conversation.
+/** {§web-session-conversation} DOM identities are presentation state, never a second conversation.
  * @param {HTMLElement} root @param {(address: string) => Promise<string>} readBody
  */
 export default function conversation(root, readBody) {
@@ -63,10 +63,11 @@ export default function conversation(root, readBody) {
         const folded = new Set(immediate.map(({ id }) => id));
         const entries = messages.flatMap((message) => {
             if (folded.has(message.id)) return [];
-            // {§web-worker-reasoning} An empty live reasoning message is not a transcript body.
+            // {§web-session-reasoning} An empty live reasoning message is not a transcript body.
             if (message.role === "reasoning" && !message.content && message.metadata?.plurnk?.body === undefined) return [];
-            const operations = message.role === "assistant" ? message.toolCalls ?? [] : [];
+            const operations = message.role === "assistant" ? (message.toolCalls ?? []).filter((call) => !call.metadata?.plurnk?.synthetic) : [];
             const hasContent = Array.isArray(message.content) ? message.content.length > 0 : Boolean(message.content);
+            if (!hasContent && !operations.length && message.role === "assistant" && (message.toolCalls?.length ?? 0) > 0) return [];
             /** @type {Entry[]} */
             const content = hasContent || !operations.length ? [{ message }] : [];
             return [...content, ...operations.map((call) => ({ message, call }))];
@@ -96,6 +97,7 @@ export default function conversation(root, readBody) {
             const answered = message.role === "tool" ? calls.get(message.toolCallId) : undefined;
             const operation = call?.metadata?.plurnk?.op === call?.function.name ? call : undefined;
             const args = operation ? argumentsOf(operation.function.arguments) : null;
+            // {§web-working-notes} NOTE calls project semantic bodies and categories without duplicating arguments.
             const category = operation?.function.name === "NOTE" && typeof args?.body === "string"
                 ? typeof args.aside === "string" && args.aside ? args.aside : "note" : null;
             const facts = record((call ? call.metadata : message.metadata)?.plurnk);
@@ -123,7 +125,7 @@ export default function conversation(root, readBody) {
                 callId: call?.id ?? null,
                 plurnkType: typeof op === "string" ? op : null,
                 plurnkNote: category,
-                plurnkWorker: typeof facts?.worker === "number" ? facts.worker : null,
+                plurnkSession: typeof facts?.sessionId === "number" ? facts.sessionId : (typeof facts?.session === "number" ? facts.session : null),
                 plurnkStatus: typeof receipt?.status === "number" ? receipt.status : typeof facts?.status === "number" ? facts.status : null,
                 plurnkSignal: typeof receipt?.completion === "number" ? receipt.completion : typeof facts?.signal === "number" ? facts.signal : null,
                 plurnkState: typeof facts?.state === "string" ? facts.state : null,
@@ -132,6 +134,7 @@ export default function conversation(root, readBody) {
             if (linked !== undefined && (typeof linked?.url !== "string" || typeof linked?.mimeType !== "string")) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
             }
+            /** @type {string | readonly import("./session-agent.js").MessagePart[] | undefined} */
             const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && op !== "SEND" ? ""
                 : linked ? [{ type: /** @type {const} */ ("document"), source: { type: /** @type {const} */ ("url"), value: linked.url, mimeType: linked.mimeType } }] : message.content;
             const rich = call ? operation?.function.name === "SEND"

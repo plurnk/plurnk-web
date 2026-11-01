@@ -52,7 +52,7 @@ export function sameOriginFetch(req) {
     if (site !== undefined && site !== "same-origin") throw new RequestError(403, "Same-origin form required.");
 }
 
-/** {§web-worker-approval} The person reached this page from this origin or through the browser itself (address bar, bookmark),
+/** {§web-session-approval} The person reached this page from this origin or through the browser itself (address bar, bookmark),
  * by its Fetch Metadata; another site, a sibling site or no metadata is not their own navigation.
  * @param {import("node:http").IncomingMessage} req
  */

@@ -3,9 +3,9 @@ import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-// {§web-worker-streams} Real templates, projection, SDK and management requests; controlled wire evidence.
+// {§web-session-streams} Real templates, projection, SDK and management requests; controlled wire evidence.
 export default async function verifyStreams(t) {
-    const { server, url } = await conversationFixture(new URL("./streams-entry.js", import.meta.url));
+    const { onAcp, server, url } = await conversationFixture(new URL("./streams-entry.js", import.meta.url));
     try {
         for (const engine of engines) {
             await t.test(engine.name(), async () => {
@@ -27,30 +27,27 @@ export default async function verifyStreams(t) {
                     const entry = { entryId: 9, target: "sh:///silent", channels: { stdout: channel(source), stderr: channel("") } };
                     let result = { ok: true, result: { status: 200, entry } };
                     let held = null;
-                    await page.route("**/acp", async (route) => {
-                        const request = route.request();
-                        assert.equal(request.headers().authorization, "Bearer stream-fixture-credential");
-                        const input = request.postDataJSON();
+                    onAcp(async (input, headers) => {
+                        assert.equal(headers.authorization, "Bearer stream-fixture-credential");
                         reads.push(input);
                         if (held) await held.promise;
-                        await route.fulfill({ contentType: "text/event-stream", body: [
-                            { type: "RUN_STARTED", threadId: input.threadId, runId: input.runId },
-                            { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, result: { kind: "entry.read", ...result } },
-                        ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+                        return result.ok === false
+                            ? { error: { code: -32000, message: result.problem.detail, data: result.problem } }
+                            : { result: result.result };
                     });
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.streamEvent === "function");
                     const emit = (value) => page.evaluate((value) => window.streamEvent(value), value);
                     const outcomes = page.locator("[data-stream-outcomes]");
                     const rows = outcomes.locator(":scope > ul > li");
-                    assert.equal(await page.locator("[data-open-streams], #worker-stream, #worker-stream-channel").count(), 0);
+                    assert.equal(await page.locator("[data-open-streams], #session-stream, #session-stream-channel").count(), 0);
                     assert.equal(await outcomes.isVisible(), false, "no empty inventory is displayed");
-                    await emit({ entryId: 9, workerId: 9, target: entry.target, channel: "stdout", contentLength: 7, state: "active" });
+                    await emit({ entryId: 9, sessionId: 9, target: entry.target, channel: "stdout", contentLength: 7, state: "active" });
                     assert.equal(await rows.count(), 0, "channel progress does not create an inventory or an outcome");
                     assert.equal(credentials, 0);
 
                     const problem = { type: "https://example.test/problems/missing", title: "Entry unavailable", status: 404, detail: "Entry is no longer readable." };
-                    const conclusion = { entryId: 9, workerId: 9, target: entry.target, scheme: "sh", summary: "Exited 7",
+                    const conclusion = { entryId: 9, sessionId: 9, target: entry.target, scheme: "sh", summary: "Exited 7",
                         subscriptionId: 20, result: { status: 500, exitCode: 7,
                             problem: { ...problem, status: 500, title: "Nonzero exit", detail: "Command exited 7." } } };
                     await assert.rejects(emit({ ...conclusion, entryId: 0 }), /Stream event has no resource identity/u);
@@ -77,13 +74,13 @@ export default async function verifyStreams(t) {
                     assert.deepEqual(await output.locator("[data-text=output-mime]").allTextContents(), ["text/stream", "text/stream"]);
                     assert.equal(await output.locator("script, img, form").count(), 0);
                     assert.equal(reads.length, 1);
-                    assert.deepEqual(reads[0].messages, []);
-                    assert.deepEqual(reads[0].tools, []);
-                    assert.equal(reads[0].threadId, "7#user");
-                    assert.deepEqual(reads[0].forwardedProps, { plurnk: { action: { kind: "entry.read", target: entry.target }, reasoning: "link" } });
+                    assert.equal(reads[0].method, "_plurnk/action");
+                    assert.equal(reads[0].params.sessionId, "7#user");
+                    assert.equal(reads[0].params.kind, "entry.read");
+                    assert.equal(reads[0].params.params.target, entry.target);
                     await page.evaluate(() => { window.outputNode = document.querySelector("[data-output-snapshot]"); });
                     await emit(conclusion);
-                    await emit({ entryId: 9, workerId: 9, target: entry.target, channel: "stdout", contentLength: 20, state: "closed" });
+                    await emit({ entryId: 9, sessionId: 9, target: entry.target, channel: "stdout", contentLength: 20, state: "closed" });
                     assert.equal(await rows.count(), 1);
                     assert.equal(await row.locator(":scope > details").getAttribute("open"), "");
                     assert.equal(await page.evaluate(() => window.outputNode === document.querySelector("[data-output-snapshot]")), true);
@@ -119,7 +116,7 @@ export default async function verifyStreams(t) {
                     assert.equal(await secondOutput.getAttribute("data-output-state"), "error", "an invalid channel suffix is refused by the public validator");
                     assert.equal(await secondOutput.locator("[data-output-snapshot]").isVisible(), false);
                     held = Promise.withResolvers();
-                    const leaving = page.waitForRequest("**/acp");
+                    const leaving = page.waitForRequest((req) => req.url().endsWith("/acp") && req.method() === "POST" && req.postDataJSON()?.method === "_plurnk/action");
                     await second.getByRole("button", { name: "Read output", exact: true }).click();
                     await leaving;
                     assert.equal(await second.getByRole("button", { name: "Read output", exact: true }).isDisabled(), true);
@@ -127,7 +124,7 @@ export default async function verifyStreams(t) {
                     await page.waitForFunction(() => document.querySelectorAll("[data-entry-output]")[1]?.dataset.outputState === "idle");
                     assert.equal(await second.getByRole("button", { name: "Read output", exact: true }).isDisabled(), false);
                     held.resolve();
-                    assert.ok(reads.every((input) => input.forwardedProps.plurnk.action.kind === "entry.read"),
+                    assert.ok(reads.every((input) => input.method === "_plurnk/action" && input.params.kind === "entry.read"),
                         "aborting output inspection cannot issue a cancellation of daemon work");
                     checkBrowser();
                 } finally { await browser.close(); }

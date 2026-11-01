@@ -1,7 +1,7 @@
 import { $, on, the } from "on_the_money";
 import describeFailure from "./failure.js";
 
-/** {§web-worker-streams} Output snapshots belong to their DOM outlet, not the SDK's messages.
+/** {§web-session-streams} Output snapshots belong to their DOM outlet, not the SDK's messages.
  * @param {HTMLElement} root
  * @param {(target: string) => Promise<import("@plurnk/plurnk-contracts").ClientEntry>} read
  */

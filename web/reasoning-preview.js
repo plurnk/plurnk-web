@@ -1,44 +1,65 @@
 import { $, the } from "on_the_money";
 import reasoningCoordinate from "./reasoning-coordinate.js";
 
-/** {§web-worker-reasoning} One bounded presentation outlet, never SDK message content.
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** {§web-session-reasoning} One bounded presentation outlet, never SDK message content.
  * @param {HTMLElement} root @param {number} limit
  */
 export default function reasoningPreview(root, limit) {
-    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Worker document has no valid reasoning preview limit.");
-    const outlet = $.clone(root, "#worker-reasoning-preview");
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Session document has no valid reasoning preview limit.");
+    const outlet = $.clone(root, "#session-reasoning-preview");
     const scroll = $(outlet, "pre");
     if (!(scroll instanceof HTMLElement)) throw new Error("Reasoning preview has no text outlet.");
+    const text = scroll;
     const clear = () => {
         the(outlet, { reasoningId: "", reasoningCoordinate: "" });
-        scroll.replaceChildren();
+        text.replaceChildren();
     };
     clear();
 
     return {
         clear,
-        /** @param {import("@plurnk/plurnk-acp/client").BaseEvent} event */
-        consume(event) {
-            if (["RUN_STARTED", "RUN_FINISHED", "RUN_ERROR"].includes(event.type)) {
+        /** @param {import("./session-agent.js").AcpSessionUpdate} update */
+        consume(update) {
+            if (
+                update.sessionUpdate === "state_update"
+                || update.sessionUpdate === "tool_call"
+                || update.sessionUpdate === "tool_call_update"
+                || update.sessionUpdate === "agent_message_chunk"
+                || (update.sessionUpdate === "notice"
+                    && isRecord(update._meta)
+                    && isRecord(update._meta.plurnk)
+                    && isRecord(update._meta.plurnk.notice)
+                    && update._meta.plurnk.notice.kind === "turn_generated")
+            ) {
                 clear();
-            } else if (event.type === "REASONING_MESSAGE_START") {
-                const { messageId, metadata } = /** @type {import("@plurnk/plurnk-acp/client").ReasoningMessageStartEvent} */ (event);
-                if (!metadata?.plurnk?.body) {
-                    clear();
-                    the(outlet, { reasoningId: messageId, reasoningCoordinate: reasoningCoordinate(metadata?.plurnk?.coordinate) });
-                }
-            } else if (event.type === "REASONING_MESSAGE_END") {
-                if (/** @type {import("@plurnk/plurnk-acp/client").ReasoningMessageEndEvent} */ (event).messageId === the(outlet, "reasoning-id")) clear();
-            } else if (event.type === "CUSTOM") {
-                const { name, value } = /** @type {import("@plurnk/plurnk-acp/client").CustomEvent & { value?: { messageId?: unknown, delta?: unknown } }} */ (event);
-                if (name !== "plurnk.reasoning") return;
-                if (typeof value?.messageId !== "string" || typeof value?.delta !== "string"
-                    || value.messageId !== the(outlet, "reasoning-id")) {
-                    throw new TypeError("Reasoning preview must name its active message and carry a text delta.");
-                }
-                const tail = Array.from(scroll.textContent + value.delta).slice(-limit).join("");
-                if (scroll.textContent !== tail) scroll.textContent = tail;
-                scroll.scrollTop = scroll.scrollHeight;
+                return;
+            }
+            if (update.sessionUpdate !== "agent_thought_chunk") return;
+            const block = isRecord(update.content) ? update.content : undefined;
+            const metaPlurnk = isRecord(update._meta) && isRecord(update._meta.plurnk)
+                ? update._meta.plurnk
+                : undefined;
+            const coordinate = metaPlurnk?.coordinate;
+            const body = metaPlurnk?.body;
+            if (block?.type === "resource_link" || body !== undefined) {
+                if (update.messageId === the(outlet, "reasoning-id")) clear();
+                return;
+            }
+            if (typeof update.messageId !== "string" || !update.messageId
+                || block?.type !== "text" || typeof block.text !== "string") {
+                throw new TypeError("Reasoning preview must name its active message and carry a text delta.");
+            }
+            if (update.messageId !== the(outlet, "reasoning-id")) {
+                clear();
+                the(outlet, { reasoningId: update.messageId, reasoningCoordinate: reasoningCoordinate(coordinate) });
+            }
+            if (block.text) {
+                const tail = Array.from(text.textContent + block.text).slice(-limit).join("");
+                if (text.textContent !== tail) text.textContent = tail;
+                text.scrollTop = text.scrollHeight;
             }
         },
     };

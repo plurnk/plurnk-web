@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { HttpAgent } from "@plurnk/plurnk-acp/client";
-import { inputPage } from "./worker-input.js";
+import SessionAgent from "../web/session-agent.js";
+import { inputPage } from "./session-input.js";
 import { answerSchema, exactAnswer } from "./question-fixture.js";
 import startMcp from "./mcp-fixture.js";
 import { inspectResult, observeMessages } from "./result-body.js";
 
-const interrupted = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "interrupted");
-const connected = (page) => page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+const interrupted = (page) => page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
+const connected = (page) => page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
 const review = (page) => page.getByRole("form", { name: "Review requests", exact: true });
 const submit = (page) => review(page).getByRole("button", { name: "Submit responses", exact: true }).click();
 const cancel = (page) => review(page).getByRole("checkbox", { name: "Cancel this request", exact: true }).check();
@@ -14,7 +14,14 @@ const cancel = (page) => review(page).getByRole("checkbox", { name: "Cancel this
 function requestsFrom(page) {
     const requests = [];
     page.on("request", (request) => {
-        if (new URL(request.url()).pathname === "/acp") requests.push(request.postDataJSON());
+        const body = request.postDataJSON();
+        if (
+            new URL(request.url()).pathname === "/acp"
+            && body?.method !== "initialize"
+            && body?.params?._meta?.plurnk?.control !== false
+        ) {
+            requests.push(body);
+        }
     });
     return requests;
 }
@@ -34,18 +41,18 @@ async function answer(page, form = review(page)) {
 }
 
 const questionResult = async (page, base, headers) => {
-    const threadId = await page.locator("#worker-status").getAttribute("data-thread-id");
-    const messages = await observeMessages(threadId, base, headers);
+    const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
+    const messages = await observeMessages(sessionId, base, headers);
     const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.function.name === "question").map(({ id }) => id));
     const result = messages.find((message) => message.role === "tool" && ids.has(message.toolCallId));
     assert.ok(result, "the daemon retains the question's exact correlated response");
     return inspectResult(result.content, headers.Authorization?.slice("Bearer ".length), base);
 };
 
-// {§web-worker-questions} The real daemon requests input; shipped forms and HttpAgent settle it.
-export default async function verifyWorkerQuestions({ t, withDaemon }) {
+// {§web-session-questions} The real daemon requests input; shipped forms and SessionAgent settle it.
+export default async function verifySessionQuestions({ t, withDaemon }) {
     for (const cancelled of [false, true]) {
-        await t.test(`{§web-worker-questions} ${cancelled ? "cancellation" : "typed native input"} resumes a real question without another prompt`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
+        await t.test(`{§web-session-questions} ${cancelled ? "cancellation" : "typed native input"} resumes a real question without another prompt`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 800 });
             const requests = requestsFrom(page);
             const name = cancelled ? "question-cancel" : "question-answer";
@@ -80,10 +87,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
             await connected(page);
             assert.equal(model.requests.length, 2);
             assert.equal(requests.length, 2);
-            const [response] = requests[1].resume;
-            assert.equal(response.status, cancelled ? "cancelled" : "resolved");
-            assert.deepEqual(response.payload, cancelled ? undefined : exactAnswer);
-            assert.ok(requests.every(({ tools }) => tools.some(({ name }) => name === "question") && tools.some(({ name }) => name === "mcp_input_required")));
+            assert.deepEqual(requests[1].result, cancelled ? { action: "cancel" } : { action: "accept", content: exactAnswer });
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
             const receipt = await questionResult(page, base, headers);
@@ -99,7 +103,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         }, { authenticated: true, hostname: "plurnk-browser.test" }));
     }
 
-    await t.test("{§web-worker-questions} complete presentations remain answerable as another question becomes pending", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} complete presentations remain answerable as another question becomes pending", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await ask(page, "question-batch");
         const seen = [];
@@ -119,7 +123,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
             }
             await submit(page);
             const observed = await page.waitForFunction((ids) => {
-                const status = document.querySelector("#worker-status");
+                const status = document.querySelector("#session-status");
                 const state = status?.dataset.connection;
                 const next = [...document.querySelectorAll("[data-question]")].map((row) => row.dataset.interruptId);
                 const settled = ["disconnected", "signed-out"].includes(state)
@@ -133,13 +137,14 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await page.getByText("Completed question-batch.", { exact: true }).waitFor();
         await connected(page);
         assert.equal(model.requests.length, 2);
-        assert.deepEqual(requests.slice(1).flatMap(({ resume }) => resume.map(({ status, payload }) => ({ status, payload }))), [
-            { status: "resolved", payload: exactAnswer }, { status: "cancelled", payload: undefined },
+        assert.deepEqual(requests.slice(1).map((r) => r.result), [
+            { action: "accept", content: exactAnswer },
+            { action: "cancel" },
         ]);
         checkBrowser();
     }));
 
-    await t.test("{§web-worker-questions} shared views withdraw answered questions and follow work without manual reconnection", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} shared views withdraw answered questions and follow work without manual reconnection", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         await ask(page, "question-tabs");
         await answer(page);
         const first = await page.locator("[data-question]").getAttribute("data-interrupt-id");
@@ -161,21 +166,21 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         assert.equal(await review(other).isVisible(), false);
         assert.equal(await other.locator('[aria-label="Message feedback"] [role="alert"]').isVisible(), false);
         assert.equal(model.requests.length, 2, "the answered question creates no duplicate inference");
-        assert.equal(otherRequests.some(({ resume }) => resume?.length > 0), false, "the second view never answers an already settled question");
+        assert.equal(otherRequests.some((req) => req?.result?.action !== undefined), false, "the second view never answers an already settled question");
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-worker-questions} daemon rejection remains pending until rediscovery and explicit correction", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} daemon rejection remains pending until rediscovery and explicit correction", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         await ask(page, "question-invalid");
         const first = await page.locator("[data-question]").getAttribute("data-interrupt-id");
         await answer(page);
         await page.route("**/acp", (route) => {
             const input = route.request().postDataJSON();
-            input.resume[0].payload.count = "invalid on wire";
+            if (input?.result?.content) input.result.content.count = "invalid on wire";
             return route.continue({ postData: JSON.stringify(input) });
         }, { times: 1 });
         await submit(page);
-        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "disconnected");
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
         assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*schema/iu);
         assert.equal(model.requests.length, 1);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
@@ -188,7 +193,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         checkBrowser();
     }));
 
-    await t.test("{§web-worker-questions} leaving a pending or resumed question never cancels the worker", { timeout: 25_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} leaving a pending or resumed question never cancels the session", { timeout: 25_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         await ask(page, "question-resumed-departure");
         await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
         await page.goto(path);
@@ -204,17 +209,17 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         await observer.getByText("Completed question-resumed-departure.", { exact: true }).waitFor();
         await connected(observer);
         assert.equal(model.requests.length, 2);
-        assert.equal(await observer.locator('#worker-status [data-status-field="lifecycle"]').getAttribute("aria-label"), "completed");
+        assert.equal(await observer.locator('#session-status [data-status-field="lifecycle"]').getAttribute("aria-label"), "completed");
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-worker-questions} revoked authority cannot answer and fresh sign-in retains the question", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} revoked authority cannot answer and fresh sign-in retains the question", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await ask(page, "question-revoked");
         await answer(page);
         const logout = await context.request.post(new URL("/auth/logout", base).href, { headers: { Origin: new URL(base).origin }, maxRedirects: 0 });
         assert.equal(logout.status(), 303);
-        await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "signed-out");
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
         assert.match(await page.locator('[data-text="connection-detail"]').textContent(), /credential.*revoked/iu);
         assert.equal(await review(page).getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(requests.length, 1, "no unauthenticated resume is sent");
@@ -232,34 +237,33 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-worker-questions} an idle owner answers a delegated question on the requesting child's continuation", { timeout: 25_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, headers, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} an idle owner answers a delegated question on the requesting child's continuation", { timeout: 25_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, headers, model, checkBrowser }) => {
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: owner-ready.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.getByText("Completed owner-ready.", { exact: true }).waitFor();
         await connected(page);
-        const threadId = await page.locator("#worker-status").getAttribute("data-thread-id");
-        const fork = new HttpAgent({ url: new URL("/acp", base).href, threadId, headers });
-        const { result } = await fork.runAgent({ forwardedProps: { plurnk: { action: { kind: "run.fork", name: "child" } } } });
+        const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
+        const fork = new SessionAgent({ url: new URL("/acp", base).href, sessionId, headers });
+        const { result, meta } = await fork.runAgent({ action: { kind: "session/fork", name: "child" } });
         assert.equal(result.ok, true, JSON.stringify(result));
-        const child = new HttpAgent({ url: new URL("/acp", base).href, threadId: `${threadId.split("#")[0]}#child`, headers });
+        const childSessionId = String(meta?.sessionId ?? result.result?._meta?.plurnk?.sessionId ?? "");
+        const child = new SessionAgent({ url: new URL("/acp", base).href, sessionId: `${sessionId.split("#")[0]}#child`, headers });
         child.addMessage({ id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: held-question-child." });
         const reasoning = Promise.withResolvers();
         const controller = new AbortController();
         const running = child.runAgent({
             abortController: controller,
-            tools: [{ name: "question", description: "Ask the user for clarification.", parameters: { type: "object" } }],
-            forwardedProps: { plurnk: { interactive: true } },
-        }, { onReasoningMessageContentEvent: () => reasoning.resolve() });
+        }, { onThoughtChunk: () => reasoning.resolve() });
         await reasoning.promise;
         controller.abort();
-        await running;
+        await running.catch(() => {});
         model.release("held-question-child");
         await interrupted(page);
         assert.equal(await review(page).isVisible(), true);
-        assert.equal(await review(page).locator('[data-text="request-worker"]').textContent(), String(result.result.workerId));
+        assert.equal(await review(page).locator('[data-text="request-session"]').textContent(), childSessionId);
         await page.reload();
         await interrupted(page);
-        assert.equal(await review(page).locator('[data-text="request-worker"]').textContent(), String(result.result.workerId), "rediscovery retains the requesting child's identity");
+        assert.equal(await review(page).locator('[data-text="request-session"]').textContent(), childSessionId, "rediscovery retains the requesting child's identity");
         assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).count(), 0, "a child's question does not expose Stop on its idle parent");
         assert.equal(await page.getByRole("button", { name: "Stop", exact: true, includeHidden: true }).isDisabled(), true);
         await answer(page);
@@ -274,7 +278,7 @@ export default async function verifyWorkerQuestions({ t, withDaemon }) {
     }));
 
     for (const cancelled of [false, true]) {
-        await t.test(`{§web-worker-questions} real MCP input ${cancelled ? "cancels" : "accepts/declines"} its complete batch across reconnect`, { timeout: 25_000 }, async () => {
+        await t.test(`{§web-session-questions} real MCP input ${cancelled ? "cancels" : "accepts/declines"} its complete batch across reconnect`, { timeout: 25_000 }, async () => {
             const mcp = await startMcp();
             try {
                 await inputPage(withDaemon, async ({ page, model, checkBrowser }) => {

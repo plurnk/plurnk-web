@@ -32,19 +32,107 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
         .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
     const documents = new Documents(template, false, 64);
-    const document = await documents.read({ kind: "worker", workspace: "conversation", worker: "user" }, {
+    const document = await documents.read({ kind: "session", workspace: "conversation", session: "user" }, {
         listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null }],
-        listWorkers: async () => [{ id: 9, name: "user", parentWorkerId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle" }],
+        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle" }],
     }, false);
+    let acpHandler = null;
+    let connSeq = 0;
+    const sseStreams = new Map();
+    const handleAcp = async (request, response) => {
+        if (request.method === "GET") {
+            const connId = request.headers["acp-connection-id"] ?? "";
+            const sessionId = request.headers["acp-session-id"] ?? "";
+            const key = `${connId}:${sessionId}`;
+            response.writeHead(200, {
+                ...privateHeaders,
+                "content-type": "text/event-stream",
+                "cache-control": "no-cache",
+                "connection": "keep-alive",
+            });
+            response.flushHeaders();
+            sseStreams.set(key, response);
+            request.on("close", () => {
+                if (sseStreams.get(key) === response) sseStreams.delete(key);
+            });
+            return;
+        }
+        if (request.method === "DELETE") {
+            const connId = request.headers["acp-connection-id"] ?? "";
+            for (const [key, stream] of sseStreams) {
+                if (key.startsWith(`${connId}:`)) {
+                    sseStreams.delete(key);
+                    stream.end();
+                }
+            }
+            response.writeHead(202, privateHeaders);
+            response.end();
+            return;
+        }
+        const chunks = [];
+        for await (const chunk of request) chunks.push(chunk);
+        const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (input.method === "initialize") {
+            const connId = `conn-${++connSeq}`;
+            response.writeHead(200, {
+                ...privateHeaders,
+                "content-type": "application/json",
+                "acp-connection-id": connId,
+            });
+            response.end(JSON.stringify({
+                jsonrpc: "2.0",
+                id: input.id,
+                result: {
+                    protocolVersion: 2,
+                    capabilities: {},
+                    info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+                },
+            }));
+            return;
+        }
+        const connId = request.headers["acp-connection-id"] ?? "";
+        const sessionId = request.headers["acp-session-id"] ?? input.params?.sessionId ?? "";
+        const sse = sseStreams.get(`${connId}:${sessionId}`) ?? sseStreams.get(`${connId}:`);
+        const outcome = await acpHandler(input, request.headers);
+        response.writeHead(202, privateHeaders);
+        response.end();
+        if (sse && !sse.writableEnded) {
+            for (const update of outcome.updates ?? []) {
+                sse.write(`data: ${JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: "session/update",
+                    params: { sessionId, update },
+                })}\n\n`);
+            }
+            const rpcFrame = outcome.error
+                ? { jsonrpc: "2.0", id: input.id, error: outcome.error }
+                : { jsonrpc: "2.0", id: input.id, result: outcome.result ?? {} };
+            sse.write(`data: ${JSON.stringify(rpcFrame)}\n\n`);
+            if (outcome.closeStream) {
+                sse.end();
+            }
+        }
+    };
     const server = createServer((request, response) => {
         const path = new URL(request.url, "http://fixture.invalid").pathname;
         if (routes.has(path)) { routes.get(path)(request, response); return; }
+        if (path === "/acp" && acpHandler) { void handleAcp(request, response); return; }
         if (path === "/render/mermaid") { void serve(request, response); return; }
         const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);
         response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.type ?? "text/plain" });
         response.end(asset?.body ?? "Not found");
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    return { server: { close: async () => { await module.close(); await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); } },
-        url: `http://127.0.0.1:${server.address().port}/conversation-test` };
+    return {
+        onAcp: (handler) => { acpHandler = handler; },
+        server: {
+            close: async () => {
+                for (const stream of sseStreams.values()) stream.end();
+                sseStreams.clear();
+                await module.close();
+                await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            },
+        },
+        url: `http://127.0.0.1:${server.address().port}/conversation-test`,
+    };
 }

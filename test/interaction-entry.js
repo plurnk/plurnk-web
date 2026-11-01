@@ -1,8 +1,8 @@
 import { $, on, the } from "on_the_money";
-import reviewRequests from "../web/worker-review.js";
+import reviewRequests from "../web/session-review.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
-const controls = $.clone("#main", "#worker-controls");
+const controls = $.clone("#main", "#session-controls");
 const review = reviewRequests(controls, false);
 let interrupts = [];
 window.responses = [];

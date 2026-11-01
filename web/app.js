@@ -9,5 +9,5 @@ await the.boot({
 
 initDialogs();
 
-const worker = $("#worker-status");
-if (worker instanceof HTMLElement) (await import("./worker.js")).default(worker);
+const session = $("#session-status");
+if (session instanceof HTMLElement) (await import("./session.js")).default(session);

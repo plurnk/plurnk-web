@@ -40,8 +40,7 @@ export default async function verifySurfaces(t) {
                 await page.waitForFunction(() => typeof window.present === "function");
                 await page.evaluate((messages) => {
                     window.present(messages);
-                    window.preview.consume({ type: "REASONING_MESSAGE_START", messageId: "live" });
-                    window.preview.consume({ type: "CUSTOM", name: "plurnk.reasoning", value: { messageId: "live", delta: "Live working material." } });
+                    window.preview.consume({ sessionUpdate: "agent_thought_chunk", messageId: "live", content: { type: "text", text: "Live working material." } });
                     // Contrast covers inspected working bodies too; hidden content has no painted colors.
                     for (const disclosure of document.querySelectorAll("[data-messages] > li > article > details")) disclosure.open = true;
                 }, messages);
@@ -72,7 +71,7 @@ export default async function verifySurfaces(t) {
                                     return { color: rgba(style.color), background: local[3] === 0 ? background : local, tag: element.tagName };
                                 }),
                             }];
-                        }).concat([["outside", { background: rgba(getComputedStyle(document.querySelector("#worker-connection")).backgroundColor) }]]));
+                        }).concat([["outside", { background: rgba(getComputedStyle(document.querySelector("#session-connection")).backgroundColor) }]]));
                     });
                     const { background: user } = colors.user;
                     const { background: reply } = colors.assistant;

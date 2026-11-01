@@ -111,7 +111,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     await createModule().start({ registerHttpRoute(prefix, serve) {
         assert.equal(prefix, "/");
         handler = serve;
-    }, listWorkspaces: async () => [], listWorkers: async () => [] });
+    }, listWorkspaces: async () => [], listSessions: async () => [] });
     const server = createServer(handler);
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
     server.listen(0, "127.0.0.1");
@@ -141,7 +141,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
                 assert.match(body.toString(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
                 assert.doesNotMatch(body.toString(), /id="session-navigation"|href="\/account\/"|action="\/auth\/logout"/u);
                 assert.match(body.toString(), /<template id="conversation-message">/u,
-                    "{§web-worker-conversation} the shared HTML owns inert message structure, not authenticated navigation");
+                    "{§web-session-conversation} the shared HTML owns inert message structure, not authenticated navigation");
                 assert.equal(body.byteLength, Number(res.headers.get("content-length")));
             } else assert.deepEqual(body, expected);
         }

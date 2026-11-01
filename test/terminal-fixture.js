@@ -15,7 +15,7 @@ export default async function startTerminal({ consumer, base, workspace, secret,
     let term;
     try {
         term = pty.spawn(process.execPath, [join(consumer, "node_modules", ".bin", "plurnk"),
-            "--workspace", workspace, "--worker", "user", "--project-root", ""], {
+            "--workspace", workspace, "--session", "user", "--project-root", ""], {
             name: "xterm-256color", cols, rows, cwd: consumer,
             env: {
                 PATH: process.env.PATH,

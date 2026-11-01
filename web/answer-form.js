@@ -9,7 +9,7 @@ const FIELD_KEYS = new Set([
 /** @param {unknown} value @returns {value is Schema} */
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
-/** {§web-worker-questions} This selects controls, not a second JSON Schema validator.
+/** {§web-session-questions} This selects controls, not a second JSON Schema validator.
  * @param {Schema} schema @returns {Array<[string, Schema]> | null}
  */
 function fieldsOf(schema) {

@@ -8,7 +8,7 @@ body > footer {
 }
 
 /* {§web-page-shell} Intrinsic header/footer tracks need no measured offsets. */
-body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="worker"])) {
+body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="session"])) {
     block-size: 100dvh;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -16,12 +16,12 @@ body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="wo
     overflow: hidden;
 }
 
-body > main:is([data-page="daemon"], [data-page="workspace"], [data-page="worker"]) {
+body > main:is([data-page="daemon"], [data-page="workspace"], [data-page="session"]) {
     min-block-size: 0;
     overflow: auto;
 }
 
-#worker-status {
+#session-status {
     min-block-size: 0;
     overflow: auto;
     padding-block: var(--pico-spacing);
@@ -140,26 +140,26 @@ table {
     overflow-wrap: normal;
 }
 
-/* {§web-worker-conversation} The browser owns scrolling; stream updates do not move focus. */
-#worker-conversation li {
+/* {§web-session-conversation} The browser owns scrolling; stream updates do not move focus. */
+#session-conversation li {
     min-inline-size: 0;
 }
 
-:is(#worker-conversation, #worker-diagnostics, #worker-activity, #worker-streams, #worker-command-results) > ul {
+:is(#session-conversation, #session-diagnostics, #session-activity, #session-streams, #session-command-results) > ul {
     padding: 0;
 }
 
-:is(#worker-conversation, #worker-diagnostics, #worker-activity, #worker-streams, #worker-command-results) > ul > li,
+:is(#session-conversation, #session-diagnostics, #session-activity, #session-streams, #session-command-results) > ul > li,
 [data-directory-entry] {
     list-style: none;
 }
 
 /* Pico's `ul li` rule otherwise overrides numbered lists inside the conversation's ul. */
-#worker-conversation ol > li {
+#session-conversation ol > li {
     list-style-type: decimal;
 }
 
-#worker-descendants > ul {
+#session-descendants > ul {
     margin-block-start: var(--pico-spacing);
 }
 
@@ -192,15 +192,15 @@ table {
     }
 }
 
-#worker-compose button {
+#session-compose button {
     flex: 0 0 auto;
     inline-size: auto;
     padding-inline: var(--pico-form-element-spacing-vertical);
 }
 
 
-#worker-status [data-status-line],
-#worker-status [data-status-line] > ul {
+#session-status [data-status-line],
+#session-status [data-status-line] > ul {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -210,42 +210,42 @@ table {
     margin: 0;
 }
 
-#worker-status [data-status-line] > ul {
+#session-status [data-status-line] > ul {
     min-inline-size: 0;
     max-inline-size: 100%;
 }
 
-#worker-status [aria-label="Model controls"] {
+#session-status [aria-label="Model controls"] {
     flex-wrap: nowrap;
 }
 
-#worker-status [data-status-line] > ul > li {
+#session-status [data-status-line] > ul > li {
     list-style: none;
     min-inline-size: 0;
     margin: 0;
 }
 
-#worker-status [data-status-line] button {
+#session-status [data-status-line] button {
     --pico-form-element-spacing-vertical: 0;
     --pico-form-element-spacing-horizontal: 0;
 
     margin: 0;
 }
 
-/* {§web-worker-input} Native sizing grows the draft, never a JS resize controller. */
-#worker-compose,
-#worker-compose fieldset,
-#worker-stop,
-[aria-label="Worker controls"] {
+/* {§web-session-input} Native sizing grows the draft, never a JS resize controller. */
+#session-compose,
+#session-compose fieldset,
+#session-stop,
+[aria-label="Session controls"] {
     margin: 0;
 }
 
-#worker-compose fieldset {
+#session-compose fieldset {
     align-items: stretch;
     min-inline-size: 0;
 }
 
-#worker-message {
+#session-message {
     field-sizing: content;
     min-inline-size: 0;
     min-block-size: 1lh;
@@ -254,12 +254,12 @@ table {
     margin: 0;
 }
 
-#worker-descendants,
-#worker-descendants > summary {
+#session-descendants,
+#session-descendants > summary {
     margin: 0;
 }
 
-/* {§web-worker-reasoning} The preview follows its tail within its own bounded outlet. */
+/* {§web-session-reasoning} The preview follows its tail within its own bounded outlet. */
 [data-reasoning-preview] pre {
     max-block-size: calc(100dvh / 3);
     overflow: auto;
@@ -277,8 +277,8 @@ table {
     margin-block-end: 0;
 }
 
-[data-directory-entry="worker"] > article > header:only-child,
-:is(#worker-conversation, #worker-diagnostics, #worker-activity) > ul > li > article > header:only-child {
+[data-directory-entry="session"] > article > header:only-child,
+:is(#session-conversation, #session-diagnostics, #session-activity) > ul > li > article > header:only-child {
     margin-block-end: calc(var(--pico-block-spacing-vertical) * -1);
     border-block-end: 0;
     border-end-start-radius: var(--pico-border-radius);
@@ -305,8 +305,8 @@ table {
     display: block;
 }
 
-/* {§web-worker-directory} Native summaries contain phrasing content, arranged in two rows. */
-:is(header, summary) > :is([data-worker-identity], [data-worker-workspace]) {
+/* {§web-session-directory} Native summaries contain phrasing content, arranged in two rows. */
+:is(header, summary) > :is([data-session-identity], [data-session-workspace]) {
     display: block;
 }
 
@@ -315,34 +315,34 @@ table {
     min-inline-size: 0;
 }
 
-#worker-conversation pre,
-#worker-streams pre,
-#worker-activity pre,
-#worker-command-results pre,
+#session-conversation pre,
+#session-streams pre,
+#session-activity pre,
+#session-command-results pre,
 #main [aria-label="Review requests"] pre,
-#worker-conversation [data-math],
-#worker-conversation [data-diagram-viewport] {
+#session-conversation [data-math],
+#session-conversation [data-diagram-viewport] {
     max-inline-size: 100%;
     overflow-x: auto;
 }
 
 /* {§web-diagram-content} Preserve readable intrinsic labels; wide images scroll locally. */
-#worker-conversation [data-diagram-viewport] > img {
+#session-conversation [data-diagram-viewport] > img {
     max-inline-size: none;
 }
 
 /* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */
-#worker-conversation [data-math="inline"] {
+#session-conversation [data-math="inline"] {
     display: inline-block;
     vertical-align: middle;
 }
 
-#worker-conversation [data-math="block"] {
+#session-conversation [data-math="block"] {
     display: block;
     margin-block: var(--pico-spacing);
 }
 
-#worker-conversation [data-math] > math {
+#session-conversation [data-math] > math {
     inline-size: max-content;
     min-inline-size: 100%;
 }

@@ -4,6 +4,7 @@ import globals from "globals";
 import otm from "on_the_money/eslint-config";
 import noUnsanitized from "eslint-plugin-no-unsanitized";
 
+// {§web-authoring} {§web-contract-checks} {§web-language} Authoring and specification boundaries are gated by lint.
 export default defineConfig(
     { ignores: ["ai.plurnk/dist/**", "web/public/**", ".vite-test-*/**", ".module-test-*/**"] },
     {
@@ -34,12 +35,18 @@ export default defineConfig(
     },
     {
         files: ["web/**/*.js"],
-        ignores: ["web/worker-agent.js"],
+        ignores: ["web/session-agent.js"],
         rules: {
-            "no-restricted-imports": ["error", { paths: [{
-                name: "@plurnk/plurnk-acp/client",
-                message: "Use worker-agent.js so schema security is initialized before the browser SDK.",
-            }] }],
+            "no-restricted-imports": ["error", { paths: [
+                {
+                    name: "@agentclientprotocol/sdk/experimental/v2/unstable",
+                    message: "Use session-agent.js so schema security is initialized before the browser SDK.",
+                },
+                {
+                    name: "@agentclientprotocol/sdk/experimental/http-client",
+                    message: "Use session-agent.js so schema security is initialized before the browser SDK.",
+                },
+            ] }],
         },
     },
     {

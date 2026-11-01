@@ -1,38 +1,41 @@
 import { $, on, the } from "on_the_money";
-import WorkerAgent, { interactionTools, randomUUID } from "./worker-agent.js";
-import { clocks } from "./worker-status.js";
-import workerState from "./worker-state.js";
-import workerHistory from "./worker-history.js";
-import reviewRequests from "./worker-review.js";
-import diagnostics from "./worker-diagnostics.js";
+import SessionAgent, { randomUUID } from "./session-agent.js";
+import { clocks } from "./session-status.js";
+import sessionState from "./session-state.js";
+import sessionHistory from "./session-history.js";
+import reviewRequests from "./session-review.js";
+import diagnostics from "./session-diagnostics.js";
 import accessHeaders from "./access-headers.js";
 import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import reasoningPreview from "./reasoning-preview.js";
-import workerStreams from "./worker-streams.js";
+import sessionStreams from "./session-streams.js";
 import readEntry from "./read-entry.js";
-import activity from "./worker-activity.js";
+import activity from "./session-activity.js";
 import managementAction from "./management-action.js";
-import workerCommands, { isCommand } from "./worker-commands.js";
-import workerSettings from "./worker-settings.js";
+import sessionCommands, { isCommand } from "./session-commands.js";
+import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 
-/** @typedef {{message?: {id: string, role: "user", content: string}, resume?: import("@plurnk/plurnk-acp/client").RunAgentParameters["resume"]}} Submission */
+/** @typedef {{message?: {id: string, role: "user", content: string}, resume?: readonly import("./session-agent.js").ResumeResolution[]}} Submission */
 
-// {§web-worker-status} Repaint elapsed and WAIT at whole-second precision; no network polling.
+// {§web-session-status} Repaint elapsed and WAIT at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
 
-// {§web-worker-approval} These refusals require fresh observation, never replay of the answer.
+// {§web-session-approval} These refusals require fresh observation, never replay of the answer.
 const SETTLED_INTERRUPTS = new Set([
     "https://problems.plurnk.xyz/acp/interrupt/interrupt-not-pending",
     "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
     "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending",
+    "interrupt-not-pending",
+    "proposal-not-pending",
+    "interaction-not-pending",
 ]);
 
-/** {§web-worker-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback
+/** {§web-session-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback
  * here hands its first failure to `fail` and skips the rest, so the run ends with that cause.
- * @param {import("@plurnk/plurnk-acp/client").AgentSubscriber} subscriber @param {(error: unknown) => void} fail
- * @returns {import("@plurnk/plurnk-acp/client").AgentSubscriber}
+ * @param {import("./session-agent.js").SessionSubscriber} subscriber @param {(error: unknown) => void} fail
+ * @returns {import("./session-agent.js").SessionSubscriber}
  */
 function failing(subscriber, fail) {
     let failed = false;
@@ -47,51 +50,51 @@ function failing(subscriber, fail) {
     }]));
 }
 
-/** {§web-worker-observer} {§web-worker-input} Delivery changes never own the worker's lifetime.
+/** {§web-session-observer} {§web-session-input} Delivery changes never own the session's lifetime.
  * @param {HTMLElement} element
  */
-export default function observeWorker(element) {
-    const { threadId, auth } = element.dataset;
-    if (!threadId || (auth !== "session" && auth !== "none")) throw new Error("Worker document metadata is incomplete.");
-    const approval = $(element, "#worker-yolo");
+export default function observeSession(element) {
+    const { sessionId, auth } = element.dataset;
+    if (!sessionId || (auth !== "session" && auth !== "none")) throw new Error("Session document metadata is incomplete.");
+    const approval = $(element, "#session-yolo");
     if (!(approval instanceof HTMLButtonElement) || !["true", "false"].includes(approval.getAttribute("aria-pressed") ?? "")) {
-        throw new Error("Worker document has no approval mode.");
+        throw new Error("Session document has no approval mode.");
     }
-    const history = $("#worker-conversation");
-    if (!(history instanceof HTMLElement)) throw new Error("Worker document has no conversation outlet.");
+    const history = $("#session-conversation");
+    if (!(history instanceof HTMLElement)) throw new Error("Session document has no conversation outlet.");
     const main = $("#main");
-    if (!(main instanceof HTMLElement)) throw new Error("Worker document has no main region.");
-    const controls = $.clone(element, "#worker-controls");
-    // {§web-worker-history} What needs the person follows the conversation, where its pinned end is.
-    const feedback = $.clone(main, "#worker-feedback");
-    const notice = $("#worker-connection");
-    if (!notice) throw new Error("Worker document has no connection notice.");
+    if (!(main instanceof HTMLElement)) throw new Error("Session document has no main region.");
+    const controls = $.clone(element, "#session-controls");
+    // {§web-session-history} What needs the person follows the conversation, where its pinned end is.
+    const feedback = $.clone(main, "#session-feedback");
+    const notice = $("#session-connection");
+    if (!notice) throw new Error("Session document has no connection notice.");
     const connectionNotice = notice;
     const review = reviewRequests(main, approval.getAttribute("aria-pressed") === "true");
-    const compose = $(controls, "#worker-compose");
-    const stop = $(controls, "#worker-stop");
-    const field = $(controls, "#worker-message");
+    const compose = $(controls, "#session-compose");
+    const stop = $(controls, "#session-stop");
+    const field = $(controls, "#session-message");
     if (!(compose instanceof HTMLFormElement) || !(stop instanceof HTMLFormElement) || !(field instanceof HTMLTextAreaElement)) {
-        throw new Error("Worker controls are incomplete.");
+        throw new Error("Session controls are incomplete.");
     }
     const draft = field;
     the(feedback, "message-status", "");
     let resources = new AbortController();
-    const transcript = workerHistory(history, main, (address) => readBody(address, auth, resources.signal),
+    const transcript = sessionHistory(history, main, (address) => readBody(address, auth, resources.signal),
         (address, signal) => readHistory(address, auth, AbortSignal.any([signal, resources.signal])));
     const preview = reasoningPreview(history, Number(element.dataset.reasoningPreviewChars));
-    const diagnosticList = $("#worker-diagnostics");
-    if (!(diagnosticList instanceof HTMLElement)) throw new Error("Worker document has no diagnostics outlet.");
+    const diagnosticList = $("#session-diagnostics");
+    if (!(diagnosticList instanceof HTMLElement)) throw new Error("Session document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
-    const activityList = $("#worker-activity");
-    if (!(activityList instanceof HTMLElement)) throw new Error("Worker document has no activity outlet.");
+    const activityList = $("#session-activity");
+    if (!(activityList instanceof HTMLElement)) throw new Error("Session document has no activity outlet.");
     const observeActivity = activity(activityList, (address) => readBody(address, auth, resources.signal));
-    const streamList = $("#worker-streams");
-    if (!(streamList instanceof HTMLElement)) throw new Error("Worker document has no stream outlet.");
-    const streams = workerStreams(streamList, (target) => readEntry(target, threadId, auth, resources.signal));
-    const presentState = workerState(element);
-    let agent = new WorkerAgent({ url: "/acp/connect", threadId });
-    /** @type {import("@plurnk/plurnk-acp/client").AcpStatusState | undefined} */
+    const streamList = $("#session-streams");
+    if (!(streamList instanceof HTMLElement)) throw new Error("Session document has no stream outlet.");
+    const streams = sessionStreams(streamList, (target) => readEntry(target, sessionId, auth, resources.signal));
+    const presentState = sessionState(element);
+    let agent = new SessionAgent({ url: "/acp", sessionId });
+    /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
     /** @type {{message: {id: string, role: "user", content: string}, retryable: boolean} | undefined} */
     let pending;
@@ -99,10 +102,10 @@ export default function observeWorker(element) {
     let delivery;
     /** @type {AbortController | undefined} */
     let cancellation;
-    // {§web-worker-input} An interrupt that has arrived and is not yet presented holds Send until its review appears.
+    // {§web-session-input} An interrupt that has arrived and is not yet presented holds Send until its review appears.
     let arriving = false;
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
-    const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, threadId, auth, signal);
+    const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, sessionId, auth, signal);
     const toggleYolo = async () => {
         const enabled = approval.getAttribute("aria-pressed") !== "true";
         approval.setAttribute("aria-pressed", String(enabled));
@@ -116,8 +119,8 @@ export default function observeWorker(element) {
         availability();
         return enabled;
     };
-    const runCommand = workerCommands(main, { call: action, stop: cancelWork, toggleYolo });
-    workerSettings(main, element, action, () => resources.signal);
+    const runCommand = sessionCommands(main, { call: action, stop: cancelWork, toggleYolo });
+    sessionSettings(main, element, action, () => resources.signal);
 
     function availability() {
         const current = the(element, "connection");
@@ -161,18 +164,20 @@ export default function observeWorker(element) {
         try {
             while (!signal.aborted) {
                 if (!holding) connection("connecting", "Connecting…");
-                if (!submission && !holding) agent = new WorkerAgent({ url: "/acp/connect", threadId });
+                if (!submission && !holding) {
+                    agent.close();
+                    agent = new SessionAgent({ url: "/acp", sessionId });
+                }
                 if (!submission?.resume && !holding) review.present([]);
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
-                agent.url = submission ? "/acp" : "/acp/connect";
+                agent.url = "/acp";
                 // This run ends with the page's observation or with its first intake failure.
                 const run = new AbortController();
                 signal.onabort = () => run.abort(signal.reason);
                 agent.abortController = run;
                 /** @type {{ error: unknown } | undefined} */
                 let intake;
-                if (submission?.message) agent.addMessage(submission.message);
                 let terminal = false;
                 let interrupted = false;
                 let settled = false;
@@ -180,27 +185,24 @@ export default function observeWorker(element) {
                 let problem;
                 /** @type {string | undefined} */
                 let refusal;
-                /** @type {import("@plurnk/plurnk-acp/client").AgentSubscriber} */
+                /** @type {import("./session-agent.js").SessionSubscriber} */
                 const subscriber = {
-                    onEvent: ({ event }) => {
+                    onSessionUpdate: async ({ update }) => {
                         if (signal.aborted) return;
-                        preview.consume(event);
-                    },
-                    onCustomEvent: async ({ event }) => {
-                        if (signal.aborted) return;
-                        await diagnose(event);
-                        await streams.consume(event);
-                        observeActivity(event);
+                        preview.consume(update);
+                        await diagnose(update);
+                        await streams.consume(update);
+                        observeActivity(update);
                     },
                     onMessagesChanged: ({ messages }) => { if (!signal.aborted) transcript.present(messages); },
-                    onTextMessageStartEvent: ({ event }) => {
-                        if (!signal.aborted && event.role === "user") acknowledged(event.messageId);
+                    onUserMessage: ({ messageId }) => {
+                        if (!signal.aborted) acknowledged(messageId);
                     },
-                    onMessagesSnapshotEvent: ({ event }) => {
+                    onMessagesSnapshot: ({ snapshot }) => {
                         if (signal.aborted) return;
-                        transcript.snapshot(event);
+                        transcript.snapshot(snapshot);
                         if (!pending) return;
-                        if (event.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
+                        if (snapshot.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
                         else if (!submission) {
                             pending.retryable = true;
                             the(feedback, { messageStatus: "Delivery remains unconfirmed. You may retry this draft.", commandError: "" });
@@ -217,33 +219,36 @@ export default function observeWorker(element) {
                         if (pending && next.inbox.some(({ id }) => id === pending?.message.id)) acknowledged(pending.message.id);
                         if (!holding) connection("connected", "Connected");
                     },
-                    onRunFinishedEvent: ({ outcome }) => {
-                        terminal = outcome !== "interrupt";
-                        interrupted = outcome === "interrupt";
+                    onSettled: ({ stopReason }) => {
+                        terminal = stopReason !== "interrupt";
+                        interrupted = stopReason === "interrupt";
                         if (interrupted) {
                             arriving = true;
                             availability();
                         }
                     },
-                    onRunErrorEvent: ({ event }) => {
+                    onError: ({ message, status: errStatus, problem: errProblem, terminal: errTerminal }) => {
                         if (signal.aborted) return;
-                        const details = /** @type {{plurnk?: {terminal?: unknown, problem?: {status: number, type: string}}} | undefined} */ (event.metadata)?.plurnk;
-                        terminal = details?.terminal !== undefined;
-                        problem = details?.problem?.status;
-                        settled = problem === 409 && SETTLED_INTERRUPTS.has(details?.problem?.type ?? "");
-                        // An observer sent nothing: the worker's own failure shows in its status, not as this page's request.
-                        if (terminal && submission) the(feedback, "command-error", event.message);
-                        else refusal = event.message;
+                        terminal = errTerminal !== undefined;
+                        problem = errStatus ?? (typeof errProblem?.status === "number" ? errProblem.status : undefined);
+                        const problemType = typeof errProblem?.type === "string" ? errProblem.type : "";
+                        settled = problem === 409 && SETTLED_INTERRUPTS.has(problemType);
+                        // An observer sent nothing: the session's own failure shows in its status, not as this page's request.
+                        if (terminal && submission) the(feedback, "command-error", message);
+                        else refusal = message;
                     },
                 };
                 const delivered = failing(subscriber, (error) => { intake = { error }; run.abort(error); });
                 try {
-                    if (submission) await agent.runAgent({ abortController: run, resume: submission.resume, tools: interactionTools, forwardedProps: { plurnk: { interactive: true } } }, delivered);
-                    else await agent.connectAgent(holding ? { forwardedProps: { plurnk: { interrupts: agent.pendingInterrupts.map(({ id }) => id) } } } : {}, delivered);
+                    if (submission) await agent.runAgent({ abortController: run, message: submission.message, resume: submission.resume }, delivered);
+                    else await agent.connectAgent(holding ? { interrupts: agent.pendingInterrupts.map(({ id }) => id) } : {}, delivered);
                 } catch (error) {
                     if (intake === undefined) throw error;
                 }
-                if (intake !== undefined) throw intake.error;
+                if (intake !== undefined) {
+                    agent.close();
+                    throw intake.error;
+                }
                 signal.throwIfAborted();
                 if (interrupted) {
                     holding = false;
@@ -264,15 +269,16 @@ export default function observeWorker(element) {
                     continue;
                 }
                 if (settled && submission?.resume) the(feedback, "command-error", `Response not accepted: ${refusal}`);
-                else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a worker outcome."), { status: problem });
+                else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a session outcome."), { status: problem });
                 holding = false;
                 submission = undefined;
             }
         } catch (error) {
             if (signal.aborted) return;
+            agent.close();
             const signedOut = Reflect.get(Object(error), "status") === 401;
             connection(signedOut ? "signed-out" : "disconnected", signedOut ? "Sign-in ended" : "Disconnected");
-            const guidance = signedOut ? "Sign in to connect to this worker again." : "Displayed values are no longer live. Reconnect to check the worker.";
+            const guidance = signedOut ? "Sign in to connect to this session again." : "Displayed values are no longer live. Reconnect to check the session.";
             the(connectionNotice, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
             if (pending) the(feedback, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
             if (submission?.resume) the(feedback, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
@@ -298,13 +304,13 @@ export default function observeWorker(element) {
         })() };
     }
 
-    on(element, "click", "#worker-yolo", async () => {
+    on(element, "click", "#session-yolo", async () => {
         try { await toggleYolo(); }
         catch (error) {
             if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
         }
     });
-    on(main, "submit", "#worker-reconnect", (event) => {
+    on(main, "submit", "#session-reconnect", (event) => {
         event.preventDefault();
         if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) {
             the(feedback, "command-error", "");
@@ -362,19 +368,18 @@ export default function observeWorker(element) {
         } finally { availability(); }
     });
 
-    // {§web-worker-commands} The button and slash command have one explicit cancellation path.
+    // {§web-session-commands} The button and slash command have one explicit cancellation path.
     async function cancelWork() {
         if (cancellation) throw new Error("Stop is already pending.");
         const controller = new AbortController();
         cancellation = controller;
         availability();
         try {
-            const outcome = /** @type {{cancelled: boolean}} */ (
-                await action("loop.cancel", {}, controller.signal));
+            const wasLive = Boolean(status && ["queued", "running", "parked"].includes(status.lifecycle));
+            await action("session/cancel", {}, controller.signal);
             controller.signal.throwIfAborted();
-            if (typeof outcome?.cancelled !== "boolean") throw new Error("Stop was not acknowledged.");
             if (the(element, "connection") === "interrupted") connect();
-            return outcome.cancelled ? "Stop requested." : "No active work to stop.";
+            return wasLive ? "Stop requested." : "No active work to stop.";
         } finally {
             cancellation = undefined;
             availability();
@@ -404,6 +409,7 @@ export default function observeWorker(element) {
         resources.abort();
         delivery?.controller.abort();
         cancellation?.abort();
+        agent.close();
         connection("closed", "Not connected.");
     };
     window.onpageshow = (event) => {

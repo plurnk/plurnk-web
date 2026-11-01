@@ -79,7 +79,7 @@ Escaped \$x$; unclosed $x.
                         const source = [String.raw`$\notACommand{a}$`, String.raw`$\href{javascript:alert(1)}{x}$`,
                             String.raw`$\includegraphics{https://example.invalid/math.svg}$`, String.raw`$\htmlClass{evil}{x}$`,
                             String.raw`$\class{evil}{x}$`, String.raw`$\style{position:fixed}{x}$`, String.raw`$\data{text=connection-label}{x}$`,
-                            String.raw`$$\begin{equation}x\label{worker-status}\end{equation}$$`,
+                            String.raw`$$\begin{equation}x\label{session-status}\end{equation}$$`,
                             String.raw`$\gdef\secret{42}\secret$`, String.raw`$\secret$`,
                             String.raw`$\def\loop{\loop}\loop$`,
                             '<math id="injected"><mi data-text="connection-label">x</mi></math>',
@@ -89,7 +89,7 @@ Escaped \$x$; unclosed $x.
                         assert.match(await body.textContent(), /\\notACommand/u);
                         assert.match(await body.textContent(), /\\secret/u, "macros do not leak between expressions");
                         assert.equal(await body.locator("[id], a, img, svg, style, script, [data-text], [data-bind], .evil").count(), 0);
-                        assert.equal(await page.locator("#worker-status").count(), 1);
+                        assert.equal(await page.locator("#session-status").count(), 1);
                         assert.deepEqual(requests.filter((address) => new URL(address).origin !== new URL(url).origin), []);
                         page.off("request", record);
                     });

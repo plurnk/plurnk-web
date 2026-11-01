@@ -6,10 +6,10 @@ import browserDiagnostics from "./browser-diagnostics.js";
 const interrupt = (id, op = "sh") => ({
     id, reason: "tool_call", message: "Review the requested action.",
     metadata: { plurnk: { proposal: {
-        logEntryId: 1, workerId: 2, worker: "child", loopId: 3, turnId: 4, coordinate: "3/4/1", op,
+        logEntryId: 1, sessionId: 2, session: "child", loopId: 3, turnId: 4, coordinate: "3/4/1", op,
         target: { scheme: "file", authority: null, pathname: "evidence.txt" },
         body: "Exact operation body\n", attrs: { pattern: "literal pattern", nested: { name: "evidence" } },
-        owner: "acp://operator/threads/parent", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
+        owner: "acp://operator/sessions/parent", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
     } } },
 });
 
@@ -28,7 +28,7 @@ export default async function verifyApproval(t) {
                     const form = page.getByRole("form", { name: "Review requests", exact: true });
                     assert.equal(await form.isVisible(), false);
                     const gates = [interrupt("id[0]#one"), interrupt("quote\"<two>", "EDIT")];
-                    gates[1].metadata.plurnk.proposal.body = '<form action="/auth/logout"><button data-text="proposal-worker">Injected</button></form>\n' + "x".repeat(400);
+                    gates[1].metadata.plurnk.proposal.body = '<form action="/auth/logout"><button data-text="proposal-session">Injected</button></form>\n' + "x".repeat(400);
                     assert.equal(await page.evaluate((values) => window.review(values), gates), true);
                     const groups = form.locator("[data-requests] > fieldset");
                     assert.equal(await groups.count(), 2);
@@ -63,7 +63,7 @@ export default async function verifyApproval(t) {
                     assert.equal(await page.evaluate(() => window.review([])), false);
                     assert.equal(await form.isVisible(), false);
 
-                    // {§web-worker-approval} A deadline is a native time; past it the page presents the set and answers nothing.
+                    // {§web-session-approval} A deadline is a native time; past it the page presents the set and answers nothing.
                     assert.equal(await page.evaluate((values) => window.review(values), gates), true);
                     assert.equal(await groups.nth(0).locator("[data-proposal-deadline-line]").isVisible(), false, "an untimed wait has no deadline");
                     const timed = { ...interrupt("timed"), expiresAt: "2030-01-01T00:00:00.000Z" };

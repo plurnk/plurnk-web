@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.title(), title);
     assert.equal(await page.locator("main").count(), 1);
-    assert.equal(await page.locator("main h1").count(), ["home", "daemon", "workspace", "worker"].includes(kind) ? 0 : 1);
+    assert.equal(await page.locator("main h1").count(), ["home", "daemon", "workspace", "session"].includes(kind) ? 0 : 1);
     if (kind === "home") assert.equal(await page.locator("main").innerText(), "");
     assert.equal(await page.locator("main").getAttribute("data-page"), kind);
     const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
@@ -55,7 +55,7 @@ export default async function verifyPageShell(page, { title, kind }) {
             };
         });
         assert.equal(bounds.overflow, false, `${kind} fits ${width}px without horizontal scrolling`);
-        const expected = ["daemon", "workspace", "worker"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
+        const expected = ["daemon", "workspace", "session"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
         assert.ok(Math.abs(bounds.content - expected) < 1, `${kind} main width ${bounds.content} should be ${expected}`);
         assert.ok(Math.abs(bounds.header - expected) < 1, `${kind} navigation shares the document width`);
         const centers = await navigation.locator("li > a, li > form > button").evaluateAll((elements) => elements.map((element) => {

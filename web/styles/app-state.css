@@ -1,5 +1,5 @@
-/* {§web-page-shell} The worker is a product surface, not a reading column. */
-body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="worker"])) > :is(header, main, footer) {
+/* {§web-page-shell} The session is a product surface, not a reading column. */
+body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, main, footer) {
     max-inline-size: none;
 }
 
@@ -13,7 +13,7 @@ body > header > nav[aria-label="breadcrumb"] a:focus-visible {
 }
 
 /* {§web-page-shell} An ordinary input interrupt is still a live connection. */
-body:not(:has(#worker-status:is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
+body:not(:has(#session-status:is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
     display: none;
 }
 
@@ -22,33 +22,33 @@ body:not(:has(#worker-status:is([data-connection="disconnected"], [data-connecti
 }
 
 /* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
-#worker-conversation {
+#session-conversation {
     --pico-card-background-color: var(--plurnk-working-surface);
     --pico-primary: var(--pico-primary-hover);
     --pico-accordion-open-summary-color: var(--pico-color);
 }
 
-#worker-conversation :is([data-message-id] > article, [data-reasoning-preview]) {
+#session-conversation :is([data-message-id] > article, [data-reasoning-preview]) {
     --pico-card-sectioning-background-color: var(--pico-card-background-color);
 }
 
-#worker-conversation [data-message-role="user"] {
+#session-conversation [data-message-role="user"] {
     --pico-card-background-color: var(--plurnk-user-surface);
 }
 
-#worker-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]:not([data-message-role="user"])) {
+#session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]:not([data-message-role="user"])) {
     --pico-card-background-color: var(--plurnk-reply-surface);
 }
 
-/* {§web-worker-input} Native controls and document state own their presentation. */
-#worker-message:focus {
+/* {§web-session-input} Native controls and document state own their presentation. */
+#session-message:focus {
     --pico-box-shadow: inset 0 0 0 var(--pico-outline-width) var(--pico-form-element-focus-color);
 }
 
-button[form="worker-compose"]::before { content: "▶️" / ""; }
-button[form="worker-stop"]::before { content: "⏹️" / ""; }
+button[form="session-compose"]::before { content: "▶️" / ""; }
+button[form="session-stop"]::before { content: "⏹️" / ""; }
 
-[aria-label="Worker controls"]:not([data-live-work]) button[form="worker-stop"] {
+[aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"] {
     display: none;
 }
 
@@ -58,110 +58,110 @@ button[form="worker-stop"]::before { content: "⏹️" / ""; }
     display: none;
 }
 
-#worker-conversation [data-message-role="user"] > article {
+#session-conversation [data-message-role="user"] > article {
     box-shadow: 0 0 0 var(--pico-border-width) var(--plurnk-user-border), var(--pico-card-box-shadow);
 }
 
-/* {§web-worker-approval} No review is implied by an empty or unsupported interrupt set. */
+/* {§web-session-approval} No review is implied by an empty or unsupported interrupt set. */
 [aria-label="Review requests"][data-request-count="0"] {
     display: none;
 }
 
-/* {§web-worker-approval} A proposal's deadline, and the notice once it has passed, show only when they apply. */
+/* {§web-session-approval} A proposal's deadline, and the notice once it has passed, show only when they apply. */
 [aria-label="Review requests"]:not([data-deadline-passed]) [data-deadline-notice],
 [data-proposal-deadline=""] > [data-proposal-deadline-line] {
     display: none;
 }
 
-/* {§web-worker-commands} Results have their own literal, non-conversation outlet. */
-#worker-command-results section:not([data-alias-count="0"]) > [data-no-aliases] {
+/* {§web-session-commands} Results have their own literal, non-conversation outlet. */
+#session-command-results section:not([data-alias-count="0"]) > [data-no-aliases] {
     display: none;
 }
 
-/* {§web-worker-settings} Empty feedback occupies no page space. */
-:is(#worker-model-settings, #worker-effort-settings) > p:empty {
+/* {§web-session-settings} Empty feedback occupies no page space. */
+:is(#session-model-settings, #session-effort-settings) > p:empty {
     display: none;
 }
 
-/* {§web-worker-questions} Omission and diagnostics are explicit document state. */
+/* {§web-session-questions} Omission and diagnostics are explicit document state. */
 [data-field-optional="false"] > [data-optional-answer],
 [data-field-description=""] > [data-text="field-description"],
-[data-request-worker=""] [data-request-origin],
+[data-request-session=""] [data-request-origin],
 [data-question][data-response-error=""] > [data-response-error] {
     display: none;
 }
 
-/* {§web-worker-observer} Failed connections expose native recovery, never stale live indicators. */
-body:not(:has(#worker-status:is([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]))) #worker-connection,
-body:not(:has(#worker-status[data-connection="signed-out"])) [data-sign-in],
-body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
+/* {§web-session-observer} Failed connections expose native recovery, never stale live indicators. */
+body:not(:has(#session-status:is([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]))) #session-connection,
+body:not(:has(#session-status[data-connection="signed-out"])) [data-sign-in],
+body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
     display: none;
 }
 
-/* {§web-worker-identity} {§web-worker-status} Optional supplied facts, not guessed activity. */
-#worker-folder[data-project-label=""],
-#worker-status:not([data-lifecycle]) > [data-status-line],
-#worker-status[data-connection="connected"] > [role="status"],
-#worker-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
-#worker-status:not([data-elapsed]) [data-status-field="elapsed"],
-#worker-status[data-elapsed=""] [data-status-field="elapsed"],
-#worker-status[data-context=""] [data-status-field="context"],
-#worker-status[data-descendants="0"] [data-status-field="descendants"],
-#worker-status[data-gated="0"] [data-status-field="gated"],
-#worker-status[data-wait=""] [data-status-field="wait"],
-#worker-status[data-inbox="0"] [data-status-field="inbox"],
-#worker-status[data-preparation=""] [data-status-field="preparation"],
-#worker-status[data-activity=""] [data-status-field="activity"] {
+/* {§web-session-identity} {§web-session-status} Optional supplied facts, not guessed activity. */
+#session-folder[data-project-label=""],
+#session-status:not([data-lifecycle]) > [data-status-line],
+#session-status[data-connection="connected"] > [role="status"],
+#session-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
+#session-status:not([data-elapsed]) [data-status-field="elapsed"],
+#session-status[data-elapsed=""] [data-status-field="elapsed"],
+#session-status[data-context=""] [data-status-field="context"],
+#session-status[data-descendants="0"] [data-status-field="descendants"],
+#session-status[data-gated="0"] [data-status-field="gated"],
+#session-status[data-wait=""] [data-status-field="wait"],
+#session-status[data-inbox="0"] [data-status-field="inbox"],
+#session-status[data-preparation=""] [data-status-field="preparation"],
+#session-status[data-activity=""] [data-status-field="activity"] {
     display: none;
 }
 
-/* {§web-worker-status} Native interaction retains the row; unfocused live work remains observable. */
-#worker-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"])) > [data-status-line] {
+/* {§web-session-status} Native interaction retains the row; unfocused live work remains observable. */
+#session-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"])) > [data-status-line] {
     display: none;
 }
 
-/* {§web-worker-reasoning} Coordinates are content; the reasoning glyph is presentation. */
+/* {§web-session-reasoning} Coordinates are content; the reasoning glyph is presentation. */
 [data-message-role="reasoning"] [data-plurnk-field="heading"]::before,
 [data-reasoning-preview] > header::before {
     content: "💭" / "";
     margin-inline-end: 0.5ch;
 }
 
-/* {§web-worker-status} Status fields remain semantic; CSS owns their compact notation. */
-#worker-yolo[aria-pressed="true"]::before { content: "🔥" / ""; }
-#worker-yolo[aria-pressed="false"]::before { content: "🐹" / ""; }
-#worker-status [data-text="input"]::before { content: "↓" / ""; }
-#worker-status [data-text="output"]::before { content: "↑" / ""; }
-#worker-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }
-#worker-status [data-text="effort"]:not(:empty)::after { content: ")" / ""; }
-#worker-effort:has([data-text="effort"]:empty)::before { content: "(—)" / ""; }
-#worker-descendants > summary::before { content: "🐜 " / ""; }
-#worker-status [data-status-field="gated"]::before { content: "🚦 " / ""; }
-#worker-status [data-status-field="inbox"]::before { content: "✉️ " / ""; }
-#worker-status [data-status-field="activity"]::before { content: "🧮 " / ""; }
-#worker-status [data-status-field="preparation"]::before { content: "⚙️ " / ""; }
+/* {§web-session-status} Status fields remain semantic; CSS owns their compact notation. */
+#session-yolo[aria-pressed="true"]::before { content: "🔥" / ""; }
+#session-yolo[aria-pressed="false"]::before { content: "🐹" / ""; }
+#session-status [data-text="input"]::before { content: "↓" / ""; }
+#session-status [data-text="output"]::before { content: "↑" / ""; }
+#session-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }
+#session-status [data-text="effort"]:not(:empty)::after { content: ")" / ""; }
+#session-effort:has([data-text="effort"]:empty)::before { content: "(—)" / ""; }
+#session-descendants > summary::before { content: "🐜 " / ""; }
+#session-status [data-status-field="gated"]::before { content: "🚦 " / ""; }
+#session-status [data-status-field="inbox"]::before { content: "✉️ " / ""; }
+#session-status [data-status-field="activity"]::before { content: "🧮 " / ""; }
+#session-status [data-status-field="preparation"]::before { content: "⚙️ " / ""; }
 
-/* {§web-worker-directory} The directory and live statusline share one lifecycle vocabulary. */
-#worker-status [data-status-field="lifecycle"]::before,
-[data-worker-identity] [data-lifecycle]::before { content: var(--worker-lifecycle-glyph, "○") / ""; }
-[data-lifecycle="running"] { --worker-lifecycle-glyph: "⌛"; }
-[data-lifecycle="queued"] { --worker-lifecycle-glyph: "⏳"; }
-[data-lifecycle="parked"] { --worker-lifecycle-glyph: "💤"; }
-[data-lifecycle="cancelled"] { --worker-lifecycle-glyph: "🛑"; }
-[data-lifecycle="failed"] { --worker-lifecycle-glyph: "❌"; }
-[data-lifecycle="completed"] { --worker-lifecycle-glyph: "✓"; }
+/* {§web-session-directory} The directory and live statusline share one lifecycle vocabulary. */
+#session-status [data-status-field="lifecycle"]::before,
+[data-session-identity] [data-lifecycle]::before { content: var(--session-lifecycle-glyph, "○") / ""; }
+[data-lifecycle="running"] { --session-lifecycle-glyph: "⌛"; }
+[data-lifecycle="queued"] { --session-lifecycle-glyph: "⏳"; }
+[data-lifecycle="parked"] { --session-lifecycle-glyph: "💤"; }
+[data-lifecycle="cancelled"] { --session-lifecycle-glyph: "🛑"; }
+[data-lifecycle="failed"] { --session-lifecycle-glyph: "❌"; }
+[data-lifecycle="completed"] { --session-lifecycle-glyph: "✓"; }
 
-/* {§web-worker-diagnostics} Diagnostic presence and optional fields are document state. */
-#worker-diagnostics:not(:has(ul > li)) {
+/* {§web-session-diagnostics} Diagnostic presence and optional fields are document state. */
+#session-diagnostics:not(:has(ul > li)) {
     display: none;
 }
 
-/* {§web-worker-activity} Empty observations and inspection outlets have no presentation. */
-#worker-activity:not(:has(> ul > li)) {
+/* {§web-session-activity} Empty observations and inspection outlets have no presentation. */
+#session-activity:not(:has(> ul > li)) {
     display: none;
 }
 
-/* {§web-worker-streams} Observed outcomes and local inspection state control native disclosures. */
+/* {§web-session-streams} Observed outcomes and local inspection state control native disclosures. */
 [data-stream-outcomes]:not(:has(ul > li)),
 [data-stream-problem-title=""] [data-stream-failure],
 [data-entry-output]:not([data-output-state="loading"]) [data-output-loading],
@@ -208,21 +208,21 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
     content: var(--directory-glyph) / "";
     margin-inline-end: 0.5ch;
 }
-[data-worker-link]::before { content: "🐜" / ""; }
-[data-worker-workspace] [data-folder]::before { content: var(--directory-glyph) / ""; }
+[data-session-link]::before { content: "🐜" / ""; }
+[data-session-workspace] [data-folder]::before { content: var(--directory-glyph) / ""; }
 [data-folder="true"] { --directory-glyph: "🗂️"; }
 [data-folder="false"] { --directory-glyph: "☁️"; }
 
 /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
-#worker-conversation [data-math-error]::after {
+#session-conversation [data-math-error]::after {
     content: " (" attr(data-math-error) ")";
 }
 
-#worker-conversation [data-diagram-error]::after {
+#session-conversation [data-diagram-error]::after {
     content: " (" attr(data-diagram-error) ")";
 }
 
-#worker-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
+#session-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
     display: none;
 }
 
@@ -234,12 +234,12 @@ body:has(#worker-status[data-connection="signed-out"]) [data-reconnect] {
     display: none;
 }
 
-/* {§web-worker-history} Following holds main's end itself; the browser's scroll anchoring would read as the reader moving. */
+/* {§web-session-history} Following holds main's end itself; the browser's scroll anchoring would read as the reader moving. */
 main[data-following] {
     overflow-anchor: none;
 }
 
-/* {§web-worker-streams} A supplied exit code is shown; none is supplied for a stream without a process. */
+/* {§web-session-streams} A supplied exit code is shown; none is supplied for a stream without a process. */
 [data-stream-outcomes] li:not([data-stream-exit-code]) [data-stream-exit-line] {
     display: none;
 }

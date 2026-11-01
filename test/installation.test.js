@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -12,21 +11,18 @@ import { chromium } from "playwright";
 import browserDiagnostics from "./browser-diagnostics.js";
 import verifyWebApp from "./web-app.js";
 import verifyDocument from "./document.js";
-import verifyAcp from "./acp-browser.js";
-import verifyExecution from "./acp-execution.js";
-import startModel from "./model-fixture.js";
 import candidatePackages from "./candidate-packages.js";
 import verifySessions from "./sessions-browser.js";
 import verifyAccount from "./account-browser.js";
 import verifyTokens from "./tokens-browser.js";
-import verifyWorkerPage from "./worker-browser.js";
-import verifyWorkerStreams from "./worker-streams.js";
-import verifyWorkerActivity from "./worker-activity.js";
-import verifyWorkerCommands from "./worker-commands.js";
-import verifyWorkerInput from "./worker-input.js";
-import verifyWorkerHistory from "./worker-history.js";
-import verifyWorkerApproval from "./worker-approval.js";
-import verifyWorkerQuestions from "./worker-questions.js";
+import verifySessionPage from "./session-browser.js";
+import verifySessionStreams from "./session-streams.js";
+import verifySessionActivity from "./session-activity.js";
+import verifySessionCommands from "./session-commands.js";
+import verifySessionInput from "./session-input.js";
+import verifySessionHistory from "./session-history.js";
+import verifySessionApproval from "./session-approval.js";
+import verifySessionQuestions from "./session-questions.js";
 import verifySharedReview from "./shared-review.js";
 import verifyStaticAssets from "./static-assets.js";
 import verifyRouteSettlement from "./route-settlement.js";
@@ -74,7 +70,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     });
     await t.test("{§web-directory-addresses} the packed codec preserves exact names", async () => {
         const { directoryPath, parseDirectory } = await import(pathToFileURL(join(plugin, "ai.plurnk", "directory-addresses.js")));
-        const directory = { kind: "worker", workspace: "~/project @%/index.html", worker: "user" };
+        const directory = { kind: "session", workspace: "~/project @%/index.html", session: "user" };
         const path = directoryPath(directory);
         assert.equal(path, "/~/~/project%20%40%25/index.html@user/");
         assert.deepEqual(parseDirectory(new URL(path, "https://example.test").pathname), directory);
@@ -90,7 +86,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
             XDG_STATE_HOME: join(userHome, ".local", "state"),
             XDG_CACHE_HOME: join(userHome, ".cache"),
             XDG_RUNTIME_DIR: join(userHome, "run"),
-            // {§web-worker-approval} Journeys that are not about review settle proposals automatically; the shipped
+            // {§web-session-approval} Journeys that are not about review settle proposals automatically; the shipped
             // default is explicit review, and each approval journey sets the mode it exercises.
             PLURNK_WEB_YOLO: "1",
             ...overrides,
@@ -182,72 +178,17 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
         });
     });
 
-    await t.test("{§web-acp-conformance} official HttpAgent in the browser on an authenticated daemon", async (conformance) => {
-        const model = await startModel();
-        const token = randomUUID();
-        const projectRoot = join(directory, "project");
-        await mkdir(projectRoot);
-        await writeFile(join(projectRoot, "witness.txt"), "cobalt heron\n");
-        try {
-            await withDaemon({
-                ...model.env,
-                PLURNK_SECRET: token,
-                PLURNK_MEMBERS_witness: "witness.txt",
-            }, async (base, daemon) => {
-                const exchanged = await fetch(new URL("/oauth/token", base), {
-                    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "acp" }),
-                });
-                assert.equal(exchanged.status, 200);
-                const { access_token } = await exchanged.json();
-                const browser = await chromium.launch();
-                try {
-                    await verifyAcp(browser, base, access_token, projectRoot, model, conformance, () => daemon.stop());
-                } finally {
-                    await browser.close();
-                }
-            });
-        } finally {
-            await model.close();
-        }
-    });
-
-    await t.test("{§web-acp-conformance} real execution results through the official browser SDK", async (conformance) => {
-        const model = await startModel();
-        const token = randomUUID();
-        const projectRoot = join(directory, "execution-project");
-        await mkdir(projectRoot);
-        try {
-            await withDaemon({ ...model.env, PLURNK_SECRET: token, PLURNK_SERVICE_PROPOSALS: "accept" }, async (base) => {
-                const grant = await fetch(new URL("/oauth/token", base), {
-                    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: token, scope: "acp" }),
-                });
-                assert.equal(grant.status, 200);
-                const { access_token } = await grant.json();
-                const browser = await chromium.launch();
-                try {
-                    await verifyExecution(browser, base, access_token, projectRoot, model, conformance);
-                } finally {
-                    await browser.close();
-                }
-            });
-        } finally {
-            await model.close();
-        }
-    });
-
     await verifySessions({ t, consumer, withDaemon });
     await verifyAccount({ t, withDaemon });
     await verifyTokens({ t, withDaemon });
-    await verifyWorkerPage({ t, withDaemon });
-    await verifyWorkerStreams({ t, withDaemon });
-    await verifyWorkerActivity({ t, withDaemon });
-    await verifyWorkerCommands({ t, withDaemon });
-    await verifyWorkerInput({ t, withDaemon });
-    await verifyWorkerHistory({ t, withDaemon });
-    await verifyWorkerApproval({ t, withDaemon });
-    await verifyWorkerQuestions({ t, withDaemon });
+    await verifySessionPage({ t, withDaemon });
+    await verifySessionStreams({ t, withDaemon });
+    await verifySessionActivity({ t, withDaemon });
+    await verifySessionCommands({ t, withDaemon });
+    await verifySessionInput({ t, withDaemon });
+    await verifySessionHistory({ t, withDaemon });
+    await verifySessionApproval({ t, withDaemon });
+    await verifySessionQuestions({ t, withDaemon });
     await verifySharedReview({ t, withDaemon, consumer });
 
     await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {

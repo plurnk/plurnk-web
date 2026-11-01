@@ -1,24 +1,24 @@
 import { $, the } from "on_the_money";
-import { buildResumeArray } from "./worker-agent.js";
+import { buildResumeArray } from "./session-agent.js";
 import answerForm from "./answer-form.js";
 
-/** @typedef {import("@plurnk/plurnk-acp/client").HttpAgent["pendingInterrupts"]} Interrupts */
-/** {§web-worker-approval} The daemon cancels a proposal at its deadline; past it by this page's clock, the page answers nothing.
+/** @typedef {import("./session-agent.js").PendingInterrupt[]} Interrupts */
+/** {§web-session-approval} The daemon cancels a proposal at its deadline; past it by this page's clock, the page answers nothing.
  * @param {Interrupts[number]} interrupt
  */
 const expired = (interrupt) => interrupt.expiresAt !== undefined && Date.parse(interrupt.expiresAt) <= Date.now();
 /** @param {Interrupts[number]} interrupt */
 const proposal = (interrupt) => /** @type {import("@plurnk/plurnk-contracts").ProposalProjection | undefined} */ (interrupt.metadata?.plurnk?.proposal);
 
-/** {§web-worker-approval} {§web-worker-questions} Apply the configured client choice to the SDK's complete set.
+/** {§web-session-approval} {§web-session-questions} Apply the configured client choice to the SDK's complete set.
  * @param {Element} controls @param {boolean} yolo
  */
 export default function reviewRequests(controls, yolo) {
-    const form = $.clone(controls, "#worker-review");
+    const form = $.clone(controls, "#session-review");
     const outlet = $(form, "[data-requests]");
     if (!(form instanceof HTMLFormElement) || !outlet) throw new Error("Review template is incomplete.");
     const list = outlet;
-    /** @type {Array<() => Promise<NonNullable<import("@plurnk/plurnk-acp/client").RunAgentParameters["resume"]>[number] | undefined>>} */
+    /** @type {Array<() => Promise<import("./session-agent.js").ResumeResolution | undefined>>} */
     let responses = [];
     /** @type {Interrupts} */
     let current = [];
@@ -35,10 +35,10 @@ export default function reviewRequests(controls, yolo) {
     function presentProposal(interrupt, index, before) {
         const facts = proposal(interrupt);
         if (!facts) throw new Error("Proposal presentation has no facts.");
-        const row = before ? $.clone(before, "#worker-proposal", { position: "beforebegin" }) : $.clone(list, "#worker-proposal");
+        const row = before ? $.clone(before, "#session-proposal", { position: "beforebegin" }) : $.clone(list, "#session-proposal");
         rows.set(interrupt.id, row);
         the(row, {
-            interruptId: interrupt.id, proposalChoice: `decision-${index}`, proposalWorker: facts.worker,
+            interruptId: interrupt.id, proposalChoice: `decision-${index}`, proposalSession: facts.session,
             proposalOp: facts.op, proposalDeadline: interrupt.expiresAt ?? "",
             proposalDeadlineLabel: interrupt.expiresAt === undefined ? "" : new Date(interrupt.expiresAt).toLocaleString(),
         });
@@ -51,9 +51,9 @@ export default function reviewRequests(controls, yolo) {
     the(form, { requestCount: 0, reviewUnavailable: "" });
     return {
         form,
-        /** {§web-worker-commands} Change only proposal controls; question answers remain in their original nodes.
-         * @param {boolean} value
-         */
+        /** {§web-session-commands} Change only proposal controls; question answers remain in their original nodes.
+          * @param {boolean} value
+          */
         automatic(value) {
             yolo = value;
             if (supported) {
@@ -71,7 +71,7 @@ export default function reviewRequests(controls, yolo) {
             }
             return mode();
         },
-        /** @param {Interrupts} interrupts @param {import("@plurnk/plurnk-acp/client").HttpAgent["messages"]} [messages] */
+        /** @param {Interrupts} interrupts @param {import("./session-agent.js").Message[]} [messages] */
         present(interrupts, messages = []) {
             current = interrupts;
             const calls = messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []);
@@ -89,11 +89,11 @@ export default function reviewRequests(controls, yolo) {
                     const call = calls.find(({ id }) => id === interrupt.toolCallId);
                     if (!call || !interrupt.responseSchema) throw new Error("Question interrupt has no request contract.");
                     const interaction = /** @type {import("@plurnk/plurnk-contracts").ClientInteractionProjection | undefined} */ (interrupt.metadata?.plurnk?.interaction);
-                    const row = $.clone(list, "#worker-question");
+                    const row = $.clone(list, "#session-question");
                     rows.set(interrupt.id, row);
                     the(row, {
                         interruptId: interrupt.id,
-                        requestWorker: interaction?.workerId ?? "",
+                        requestSession: interaction?.sessionId ?? "",
                         requestTool: call.function.name,
                         responseError: "",
                     });

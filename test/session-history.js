@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
-import { inputPage } from "./worker-input.js";
+import { inputPage } from "./session-input.js";
 
-/** {§web-worker-history} The installed browser on an authenticated candidate daemon, no substituted wire. */
-export default async function verifyWorkerHistory({ t, withDaemon }) {
-    await t.test("{§web-worker-history} packed browser pages real loops without uploading archives or starting work", () =>
+/** {§web-session-history} The installed browser on an authenticated candidate daemon, no substituted wire. */
+export default async function verifySessionHistory({ t, withDaemon }) {
+    await t.test("{§web-session-history} packed browser pages real loops without uploading archives or starting work", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const requests = [];
             const pages = [];
             page.on("request", (request) => {
                 const url = new URL(request.url());
-                if (url.pathname === "/acp") requests.push(request.postDataJSON());
+                if (url.pathname === "/acp" && request.postDataJSON()?.method === "session/prompt") requests.push(request.postDataJSON());
                 if (url.pathname.endsWith("/messages")) pages.push(request);
             });
             const field = page.getByRole("textbox", { name: "Message", exact: true });
@@ -17,7 +17,7 @@ export default async function verifyWorkerHistory({ t, withDaemon }) {
                 await field.fill(`Lifecycle fixture: ${name}.`);
                 await page.getByRole("button", { name: "Send", exact: true }).click();
                 await page.getByText(`Completed ${name}.`, { exact: true }).waitFor();
-                await page.waitForFunction(() => document.querySelector("#worker-status")?.dataset.connection === "connected");
+                await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             };
             for (const name of ["history-first", "history-second", "history-third"]) await send(name);
             await page.reload();
@@ -30,11 +30,11 @@ export default async function verifyWorkerHistory({ t, withDaemon }) {
             assert.equal(pages.length, 1);
             assert.match(pages[0].headers().authorization, /^Bearer /u);
             assert.equal(model.requests.length, 3, "reading history initiates no inference");
-            const firstId = requests[0].messages.at(-1).id;
+            const firstId = requests[0].params.messageId;
             await send("history-fourth");
             const upload = requests.at(-1);
-            assert.ok(!upload.messages.some(({ id }) => id === firstId), "an actual controlling Run excludes the loaded archival arrival");
-            assert.ok(!upload.messages.some(({ content }) => typeof content === "string" && content === "Completed history-first."));
+            assert.notEqual(upload.params.messageId, firstId, "an actual controlling Run excludes the loaded archival arrival");
+            assert.ok(!upload.params.prompt.some(({ text }) => typeof text === "string" && text === "Completed history-first."));
             assert.equal(await page.getByText("Completed history-first.", { exact: true }).count(), 1, "explicitly loaded history remains in the view");
             assert.equal(pages.length, 1, "the final page is immutable and never revalidated");
             await page.reload();
@@ -44,7 +44,7 @@ export default async function verifyWorkerHistory({ t, withDaemon }) {
             checkBrowser();
         }, { authenticated: true }));
 
-    await t.test("{§web-worker-history} oversized pasted words remain readable through the public entry route", () =>
+    await t.test("{§web-session-history} oversized pasted words remain readable through the public entry route", () =>
         inputPage(withDaemon, async ({ page, checkBrowser }) => {
             const source = `Lifecycle fixture: history-paste.\n${"Literal <p>pasted words</p>.\n".repeat(300)}`;
             const reads = [];

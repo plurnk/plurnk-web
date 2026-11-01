@@ -10,14 +10,14 @@ do not confer ownership of daemon policy, identity or lifecycle.
 | Concern | Authority | Web's responsibility |
 |---|---|---|
 | Listener, mounts, module startup/shutdown | Plurnk host | Register through the public module seam; stop admission and settle route work before releasing module resources ({§web-route-settlement}). |
-| Workspaces, workers, permissions, work and accounting | Daemon | Select and display supplied identities and facts; request explicit actions. |
+| Workspaces, sessions, permissions, work and accounting | Daemon | Select and display supplied identities and facts; request explicit actions. |
 | Credential issuance, expiry, revocation and sign-in inventory | Daemon credential authority | Mediate the browser's grant; never create a second issuer or account database. |
-| ACP events, live messages, interrupts and replay | HttpAgent | Use public SDK behavior; do not maintain a parallel protocol reducer. |
+| ACP events, live messages, interrupts and replay | Official ACP SDK (`@agentclientprotocol/sdk`) | Use public SDK behavior; do not maintain a parallel protocol reducer. |
 | Conversation history boundaries and pages | Daemon | Display explicitly fetched read-only pages alongside the SDK window; never upload archival presentation as agent input. |
 | Document structure and ordinary interaction | Semantic HTML and native controls | Templates, links, lists, forms and disclosures. |
 | Presentation state | OTM attributes and native element state | Project facts; CSS handles visual consequences. JavaScript handles behavior CSS cannot express. |
 | Asset compilation and packaging | Vite and the module's build | Ship a complete local asset inventory; no runtime asset build or CDN. |
-| Dynamic diagrams | Ondine in web-owned Node worker threads | Compile bounded source to standalone SVG; the browser displays a native image, not renderer markup. |
+| Dynamic diagrams | Ondine in web-owned Node threads | Compile bounded source to standalone SVG; the browser displays a native image, not renderer markup. |
 
 Missing platform or OTM functionality is a request to its owner, not permission
 to build a compensating subsystem here. Prefer directly explainable ownership
@@ -110,7 +110,7 @@ apparently healthy empty view. Never print credentials or credential responses.
 The browser owns delivery and its local resources, not admitted work. Navigation,
 disconnection and teardown are not cancellation. Retry and cancellation are
 explicit actions; approval follows the configured client choice under
-{§web-worker-approval}, never an inferred permission or a replacement for daemon
+{§web-session-approval}, never an inferred permission or a replacement for daemon
 authority. Resource cleanup must preserve both the original failure and cleanup
 failures.
 

@@ -29,7 +29,7 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
             const page = await context.newPage();
             for (const authenticated of [false, true]) {
                 for (const name of ["w", "~/ptl/project", `~/project/${"long-name-".repeat(20)}`]) {
-                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, hidden_at: null }], listWorkers: async () => [] };
+                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, hidden_at: null }], listSessions: async () => [] };
                     html = await documents.read({ kind: "workspace", workspace: name }, port, authenticated);
                     await page.goto("http://web.test/");
                     assert.equal(await page.locator('header > nav[aria-label="breadcrumb"]').count(), 1);
@@ -110,7 +110,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
     const checkBrowser = browserDiagnostics(context);
     const port = {
         listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, hidden_at: null }],
-        listWorkers: async () => [{ id: 9, name: "user", parentWorkerId: null, origin: "model", kind: "root", lifecycle: "idle" }],
+        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle" }],
     };
     let html;
     await context.route("http://web.test/**", (route) => {
@@ -119,7 +119,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
     });
     const page = await context.newPage();
     for (const authenticated of [false, true]) {
-        html = await documents.read({ kind: "worker", workspace: "project", worker: "user" }, port, authenticated);
+        html = await documents.read({ kind: "session", workspace: "project", session: "user" }, port, authenticated);
         await page.goto("http://web.test/");
         const indicator = page.getByRole("img", { name: "Disconnected", exact: true, includeHidden: true });
         assert.equal(await indicator.count(), 1);
@@ -128,7 +128,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
         for (const colorScheme of ["light", "dark"]) {
             await page.emulateMedia({ colorScheme });
             for (const state of ["initial", "connecting", "connected", "interrupted", "disconnected", "signed-out", "connected"]) {
-                await page.locator("#worker-status").evaluate((element, state) => { element.dataset.connection = state; }, state);
+                await page.locator("#session-status").evaluate((element, state) => { element.dataset.connection = state; }, state);
                 assert.equal(await indicator.isVisible(), ["disconnected", "signed-out"].includes(state), `${state}: the header follows observed transport state only`);
                 if (authenticated && await indicator.isVisible()) {
                     const box = await indicator.boundingBox();
@@ -158,7 +158,7 @@ test("{§web-build} production HTML references compiled assets, not development 
     assert.ok(inventory.some(([path, , type]) => path === "/index.html" && type === "text/html"));
     assert.ok(inventory.some(([path]) => path === "/manifest.webmanifest"));
     const license = await readFile(new URL("../ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt", import.meta.url), "utf8");
-    assert.match(license, /@plurnk\/plurnk-acp/u);
+    assert.match(license, /@agentclientprotocol\/sdk/u);
     assert.match(license, /temml - 0\.14\.0 \(MIT\)/u);
     assert.doesNotMatch(license, /beautiful-mermaid|ondine|piscina|elkjs/u, "diagram compilation is absent from browser dependencies");
     assert.match(license, /marked-footnote - 1\.4\.0 \(MIT\)/u);
@@ -222,7 +222,7 @@ test("{§web-asset-encoding} the build records only useful, lossless static repr
             assert.ok(bytes.byteLength < original.byteLength, `${path} ${coding}`);
             assert.deepEqual(coding === "br" ? brotliDecompressSync(bytes) : gunzipSync(bytes), original);
         }
-        if (/\/worker-[^/]+\.js$/u.test(path)) assert.deepEqual(Object.keys(encoded).sort(), ["br", "gzip"]);
+        if (/\/session-[^/]+\.js$/u.test(path)) assert.deepEqual(Object.keys(encoded).sort(), ["br", "gzip"]);
     }
 });
 

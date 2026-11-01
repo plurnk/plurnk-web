@@ -44,7 +44,7 @@ const directories = [
         ['<a href="x">&</a>', "%3Ca%20href%3D%22x%22%3E%26%3C/a%3E"],
     ].flatMap(([workspace, encoded]) => [
         [{ kind: "workspace", workspace }, `/~/${encoded}/`],
-        [{ kind: "worker", workspace, worker: "user_1" }, `/~/${encoded}@user_1/`],
+        [{ kind: "session", workspace, session: "user_1" }, `/~/${encoded}@user_1/`],
     ]),
 ];
 
@@ -68,21 +68,21 @@ test("{§web-directory-addresses} delimiters precede one decoding pass", () => {
     for (const path of ["/%7E/a%2fb/", "/%7e/a%2Fb/index.html", "/~/a/b/"]) {
         assert.deepEqual(parseDirectory(path), { kind: "workspace", workspace: "a/b" }, path);
     }
-    assert.deepEqual(parseDirectory("/~/a%40b@user_1/"), { kind: "worker", workspace: "a@b", worker: "user_1" });
+    assert.deepEqual(parseDirectory("/~/a%40b@user_1/"), { kind: "session", workspace: "a@b", session: "user_1" });
     assert.deepEqual(parseDirectory("/~/a%2540b/"), { kind: "workspace", workspace: "a%40b" });
     assert.deepEqual(parseDirectory("/~/a/%252e%252e/"), { kind: "workspace", workspace: "a/%2e%2e" });
-    assert.deepEqual(parseDirectory("/~/a@%75ser_1/"), { kind: "worker", workspace: "a", worker: "user_1" });
-    assert.equal(directoryPath({ kind: "worker", workspace: "a", worker: "_plurnk" }), "/~/a@_plurnk/");
+    assert.deepEqual(parseDirectory("/~/a@%75ser_1/"), { kind: "session", workspace: "a", session: "user_1" });
+    assert.equal(directoryPath({ kind: "session", workspace: "a", session: "_plurnk" }), "/~/a@_plurnk/");
 });
 
 test("{§web-directory-addresses} unrepresentable legacy names are not repaired or aliased", () => {
     for (const workspace of ["", ".", "..", "a/./b", "../a", "a/..", "a//../", "\ud800", "a\udfff"]) {
-        for (const directory of [{ kind: "workspace", workspace }, { kind: "worker", workspace, worker: "user" }]) {
+        for (const directory of [{ kind: "workspace", workspace }, { kind: "session", workspace, session: "user" }]) {
             assert.equal(directoryPath(directory), null, JSON.stringify(directory));
         }
     }
-    for (const worker of ["", "\ud800"]) {
-        assert.equal(directoryPath({ kind: "worker", workspace: "a", worker }), null);
+    for (const session of ["", "\ud800"]) {
+        assert.equal(directoryPath({ kind: "session", workspace: "a", session }), null);
     }
     for (const path of [
         "/", "/index.html", "/~", "/@/a/", "/~myHome/a/", "https://example.test/~/a/",

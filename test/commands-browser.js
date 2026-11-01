@@ -4,7 +4,7 @@ import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-// {§web-worker-commands} Controlled protocol failures through the real SDK and native templates.
+// {§web-session-commands} Controlled protocol failures through the real SDK and native templates.
 export default async function verifyCommands(t) {
     const fixture = await conversationFixture(new URL("./commands-entry.js", import.meta.url));
     try {
@@ -18,7 +18,13 @@ export default async function verifyCommands(t) {
                     const requests = [];
                     let credentials = 0;
                     let credentialStatus = 200;
-                    let result = { kind: "worker.model.get", ok: true, result: { model: null, spawnModel: null } };
+                    const modelResponse = (model) => ({ configOptions: [], availableCommands: [], _meta: { plurnk: { status: { model, spawnModel: null } } } });
+                    const effortResponse = (model, supportedEfforts = []) => ({
+                        configOptions: [{ id: "thought_level", configId: "thought_level", name: "Reasoning Effort", type: "select", currentValue: model?.effort ?? "", options: supportedEfforts.map((value) => ({ value, name: value })) }],
+                        availableCommands: [],
+                        _meta: { plurnk: { status: { model, spawnModel: null } } },
+                    });
+                    let result = modelResponse(null);
                     let held = undefined;
                     let delayed = undefined;
                     let catalog = undefined;
@@ -27,26 +33,36 @@ export default async function verifyCommands(t) {
                         return route.fulfill({ status: credentialStatus,
                             json: { token_type: "Bearer", access_token: "command-fixture-token" } });
                     });
-                    await page.route("**/acp", async (route) => {
-                        const input = route.request().postDataJSON();
+                    fixture.onAcp(async (input, headers) => {
+                        assert.equal(headers.authorization, "Bearer command-fixture-token");
                         requests.push(input);
-                        assert.equal(route.request().headers().authorization, "Bearer command-fixture-token");
                         if (held) await held.promise;
-                        const kind = input.forwardedProps.plurnk.action.kind;
-                        const wait = kind === "models.list" && input.forwardedProps.plurnk.action.search === delayed?.search ? delayed : undefined;
+                        const kind = input.method === "_plurnk/action" ? input.params.kind : input.method;
+                        const search = input.method === "_plurnk/action" ? input.params.params?.search : undefined;
+                        const wait = kind === "models.list" && search === delayed?.search ? delayed : undefined;
                         if (wait) { wait.started.resolve(); await wait.release.promise; }
-                        const outcome = catalog && kind === "providers.list" ? { kind, ok: true, result: { aliases: catalog.aliases } }
-                            : catalog && kind === "models.list" ? { kind, ...(wait?.outcome ?? catalog.error ?? { ok: true, result: catalog.page }) } : result;
-                        await route.fulfill({ contentType: "text/event-stream", body: [
-                            { type: "RUN_STARTED", threadId: input.threadId, runId: input.runId },
-                            { type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId, result: outcome },
-                        ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
-                        wait?.done.resolve();
+                        let payload;
+                        let errorProblem;
+                        if (catalog && kind === "providers/list") {
+                            payload = { providers: catalog.aliases.map((a) => ({ providerId: a.alias, supported: [a.provider], required: false, _meta: { plurnk: a } })) };
+                        } else if (catalog && kind === "models.list") {
+                            const chosen = wait?.outcome ?? catalog.error;
+                            if (chosen?.problem) errorProblem = chosen.problem;
+                            else payload = catalog.page;
+                        } else if (result?.problem) {
+                            errorProblem = result.problem;
+                        } else {
+                            payload = result;
+                        }
+                        queueMicrotask(() => wait?.done.resolve());
+                        return errorProblem
+                            ? { error: { code: -32000, message: errorProblem.detail, data: errorProblem } }
+                            : { result: payload };
                     });
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.command === "function");
                     assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
-                    assert.equal(await page.locator('label[for="worker-message"]').count(), 0, "the textarea keeps its name without a visible title");
+                    assert.equal(await page.locator('label[for="session-message"]').count(), 0, "the textarea keeps its name without a visible title");
                     for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"]]) {
                         const button = page.getByRole("button", { name, exact: true, includeHidden: true });
                         assert.equal(await button.getAttribute("title"), name === "Send" ? "Send (Ctrl+Enter)" : name);
@@ -56,12 +72,12 @@ export default async function verifyCommands(t) {
                     const send = page.getByRole("button", { name: "Send", exact: true });
                     const stop = page.getByRole("button", { name: "Stop", exact: true, includeHidden: true });
                     assert.equal(await stop.isVisible(), false, "no Stop is presented without known live work");
-                    const actions = page.getByRole("group", { name: "Worker actions", exact: true });
+                    const actions = page.getByRole("group", { name: "Session actions", exact: true });
                     assert.equal(await actions.locator("button").count(), 2);
-                    assert.equal(await send.evaluate((button) => button.form.id), "worker-compose");
-                    assert.equal(await stop.evaluate((button) => button.form.id), "worker-stop", "Stop has independent native submission, not reset semantics");
+                    assert.equal(await send.evaluate((button) => button.form.id), "session-compose");
+                    assert.equal(await stop.evaluate((button) => button.form.id), "session-stop", "Stop has independent native submission, not reset semantics");
                     assert.equal(await stop.getAttribute("type"), "submit");
-                    await page.locator('[aria-label="Worker controls"]').evaluate((element) => element.setAttribute("data-live-work", ""));
+                    await page.locator('[aria-label="Session controls"]').evaluate((element) => element.setAttribute("data-live-work", ""));
                     assert.equal(await stop.isVisible(), true, "known live work remains visible even while Stop is unavailable");
                     assert.equal(await stop.isDisabled(), true);
                     for (const colorScheme of ["light", "dark"]) {
@@ -111,7 +127,7 @@ export default async function verifyCommands(t) {
                     }
                     await page.setViewportSize({ width: 320, height: 700 });
                     const command = (text) => page.evaluate((text) => window.command(text), text);
-                    const rows = page.locator("#worker-command-results > ul > li");
+                    const rows = page.locator("#session-command-results > ul > li");
                     for (const text of ["/", "  /help /model \n", "/yolo"]) assert.equal(await command(text), true);
                     for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b", "/capabilities {"]) {
                         assert.equal(await command(text), false);
@@ -123,7 +139,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await rows.last().getAttribute("data-command-input"), null, "the submitted command is content, not attribute state");
                     assert.match(await rows.last().textContent(), /Not selected/u);
                     const source = '<script>window.commandExecuted=true</script>';
-                    result = { kind: "worker.model.get", ok: true, result: { model: { provider: "fixture", model: source }, spawnModel: null } };
+                    result = modelResponse({ provider: "fixture", model: source });
                     assert.equal(await command("/model"), true);
                     assert.match(await rows.last().textContent(), /<script>/u);
                     assert.equal(await rows.locator("script").count(), 0, "daemon strings remain literal text");
@@ -142,12 +158,12 @@ export default async function verifyCommands(t) {
                     assert.equal(await rows.last().locator("[data-text=model-name]").textContent(), source);
                     assert.equal(await rows.last().locator("[data-text=model-readiness]").textContent(), "Not configured");
                     assert.equal(await rows.last().locator("[data-text=model-more]").isVisible(), true);
-                    assert.equal(requests.at(-1).forwardedProps.plurnk.action.search, "fixture");
+                    assert.equal(requests.at(-1).params.params.search, "fixture");
                     const modelButton = page.getByRole("button", { name: "Model", exact: true });
-                    const modelPanel = page.locator("#worker-model-settings");
+                    const modelPanel = page.locator("#session-model-settings");
                     const selectModel = modelPanel.getByRole("combobox", { name: "Search Models", exact: true });
-                    const statusLine = page.locator("#worker-status > [data-status-line]");
-                    result = { kind: "worker.model.get", ok: true, result: { model: null } };
+                    const statusLine = page.locator("#session-status > [data-status-line]");
+                    result = modelResponse(null);
                     await page.getByRole("textbox", { name: "Message", exact: true }).focus();
                     await modelButton.press("Enter");
                     await modelPanel.locator('datalist option[value="fixture/small"]').waitFor({ state: "attached" });
@@ -160,7 +176,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await modelPanel.locator("header, footer, label, h2, select, [data-text=catalog-summary]").count(), 0);
                     assert.deepEqual(await modelPanel.getByRole("button").allTextContents(), ["Cancel", "Select Model"]);
                     assert.equal(await modelPanel.locator("p:visible").count(), 0, "no success or catalog-summary chatter");
-                    assert.equal(await modelPanel.evaluate((panel) => Boolean(document.querySelector("#worker-conversation").compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
+                    assert.equal(await modelPanel.evaluate((panel) => Boolean(document.querySelector("#session-conversation").compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
                     assert.equal(await page.locator("main").evaluate((main) => main.scrollWidth <= main.clientWidth), true, "native model choices fit the narrow main region");
                     delayed = { search: "stale", started: Promise.withResolvers(), release: Promise.withResolvers(), done: Promise.withResolvers(),
                         outcome: { ok: false, problem: { type: "https://example.test/problems/catalog", title: "Stale search", status: 503, detail: "Stale failure." } } };
@@ -170,8 +186,8 @@ export default async function verifyCommands(t) {
                     catalog.page = { items: [{ ...catalog.page.items[0], selector: "fixture/beyond-first-page", model: "beyond-first-page" }], offset: 0, total: 1 };
                     await selectModel.fill("beyond-first-page");
                     await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
-                    assert.deepEqual(requests.slice(beforeSearch).map(({ forwardedProps }) => forwardedProps.plurnk.action.kind), ["providers.list", "models.list"]);
-                    assert.equal(requests.at(-1).forwardedProps.plurnk.action.search, "beyond-first-page");
+                    assert.deepEqual(requests.slice(beforeSearch).map((req) => req.method === "_plurnk/action" ? req.params.kind : req.method), ["providers/list", "models.list"]);
+                    assert.equal(requests.at(-1).params.params.search, "beyond-first-page");
                     assert.equal(await modelPanel.locator('datalist option[value="local"]').count(), 0);
                     delayed.release.resolve();
                     await delayed.done.promise;
@@ -184,7 +200,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await selectModel.inputValue(), "unavailable");
                     catalog.error = undefined;
                     await selectModel.fill("fixture/not-in-catalog");
-                    result = { kind: "worker.model.set", ok: false, problem: { type: "https://example.test/problems/config", title: "Not configured", status: 422, detail: "Credential required.", recovery: "Configure this provider." } };
+                    result = { ok: false, problem: { type: "https://example.test/problems/config", title: "Not configured", status: 422, detail: "Credential required.", recovery: "Configure this provider." } };
                     const historyCount = await rows.count();
                     await modelPanel.getByRole("button", { name: "Select Model", exact: true }).click();
                     await modelPanel.getByRole("status").filter({ hasText: "Credential required." }).waitFor();
@@ -192,15 +208,15 @@ export default async function verifyCommands(t) {
                     assert.equal(await modelPanel.locator("[data-text=settings-recovery]").textContent(), "Configure this provider.");
                     assert.equal(await rows.count(), historyCount, "native selection is not synthetic command history");
                     assert.equal(await modelPanel.isVisible(), true, "refusal retains the form");
-                    result = { kind: "worker.model.set", ok: true, result: { provider: "fixture", model: "not-in-catalog" } };
+                    result = modelResponse({ provider: "fixture", model: "not-in-catalog" });
                     await modelPanel.getByRole("button", { name: "Select Model", exact: true }).click();
                     await modelPanel.waitFor({ state: "hidden" });
                     assert.equal(await modelButton.getAttribute("aria-expanded"), "false");
                     assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true);
                     assert.equal(await statusLine.isVisible(), true, "successful selection retains focus and status");
                     const effortButton = page.getByRole("button", { name: "Effort", exact: true });
-                    const effortPanel = page.locator("#worker-effort-settings");
-                    result = { kind: "worker.effort.get", ok: true, result: { effort: null, source: "default", supportedEfforts: [] } };
+                    const effortPanel = page.locator("#session-effort-settings");
+                    result = effortResponse(null, []);
                     await effortButton.click();
                     await effortPanel.getByRole("status").filter({ hasText: "No supported efforts." }).waitFor();
                     assert.equal(await modelPanel.isVisible(), false);
@@ -222,17 +238,17 @@ export default async function verifyCommands(t) {
                     assert.equal(await command("/models absent"), true);
                     assert.equal(await rows.last().locator("[data-no-aliases]").isVisible(), true);
                     catalog = undefined;
-                    const problem = { type: "https://example.test/problems/busy", title: "Busy", status: 409, detail: "Worker still active.", recovery: "Wait for the work to settle." };
-                    result = { kind: "worker.model.set", ok: false, problem };
+                    const problem = { type: "https://example.test/problems/busy", title: "Busy", status: 409, detail: "Session still active.", recovery: "Wait for the work to settle." };
+                    result = { ok: false, problem };
                     assert.equal(await command("/model fixture"), false);
                     assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), problem.detail);
                     assert.equal(await rows.last().locator("[data-text=command-recovery]").textContent(), problem.recovery);
                     assert.equal(await rows.last().locator("article").getAttribute("data-command-status"), "409");
                     assert.equal(await rows.last().locator("details, pre").count(), 0);
                     for (const invalid of [
-                        { ok: true, result: null },
-                        { kind: "worker.model.get", ok: true },
-                        { kind: "worker.model.get", ok: true, result: { model: 42 } },
+                        { configOptions: [], availableCommands: [] },
+                        { configOptions: [], availableCommands: [], _meta: { plurnk: { status: {} } } },
+                        { configOptions: [], availableCommands: [], _meta: { plurnk: { status: { model: 42 } } } },
                     ]) {
                         result = invalid;
                         assert.equal(await command("/model"), false, "missing, mismatched and malformed results cannot claim success");
@@ -244,17 +260,18 @@ export default async function verifyCommands(t) {
                     assert.match(await rows.last().textContent(), /401/u);
                     checkBrowser(engine === firefox ? [] : [httpFailure("/auth/token", 401)]);
                     credentialStatus = 200;
-                    result = { kind: "worker.model.get", ok: true, result: { model: null, spawnModel: null } };
+                    result = modelResponse(null);
                     assert.equal(await command("/model"), true, "a later explicit command can recover");
                     for (const input of requests) {
-                        assert.equal(input.threadId, "7#user");
-                        assert.deepEqual(input.messages, []);
-                        assert.deepEqual(input.tools, []);
-                        assert.equal(input.forwardedProps.plurnk.interactive, undefined);
+                        if (input.method !== "providers/list") {
+                            assert.equal(input.params.sessionId, "7#user");
+                        }
+                        assert.equal(input.params.messages, undefined);
+                        assert.equal(input.params._meta?.plurnk?.interactive, undefined);
                     }
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     held = Promise.withResolvers();
-                    const received = page.waitForRequest("**/acp");
+                    const received = page.waitForRequest((req) => req.url().endsWith("/acp") && req.method() === "POST" && req.postDataJSON()?.method !== "initialize");
                     const pending = command("/model");
                     await received;
                     await page.evaluate(() => window.depart());
@@ -262,7 +279,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await pending, false, "departure cancels only delivery, with no successful result invented");
                     assert.equal(await rows.last().locator("[data-command-state=error]").count(), 1);
                     assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "Response not confirmed.");
-                    assert.equal(requests.some((input) => input.forwardedProps.plurnk.action.kind === "loop.cancel"), false);
+                    assert.equal(requests.some((input) => input.method === "session/cancel"), false);
                     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
                     checkBrowser();
                 } finally { await browser.close(); }

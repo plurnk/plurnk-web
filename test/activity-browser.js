@@ -4,7 +4,7 @@ import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-// {§web-worker-activity} Real OTM templates and the shared authenticated body reader.
+// {§web-session-activity} Real OTM templates and the shared authenticated body reader.
 export default async function verifyActivity(t) {
     const { server, url } = await conversationFixture(new URL("./activity-entry.js", import.meta.url));
     try {
@@ -38,57 +38,60 @@ export default async function verifyActivity(t) {
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.presentActivity === "function");
                     const receive = (event) => page.evaluate((event) => window.presentActivity(event), event);
-                    const activity = page.locator("#worker-activity");
+                    const activity = page.locator("#session-activity");
                     const rows = activity.locator(":scope > ul > li");
                     assert.equal(await activity.isVisible(), false);
-                    await receive({ type: "CUSTOM", name: "another.extension", value: null });
+                    await receive({ sessionUpdate: "another.extension", value: null });
                     assert.equal(await rows.count(), 0);
-                    const ambient = { type: "CUSTOM", name: "plurnk.ambient", value: {
-                        id: 17, worker_id: 9, loop_seq: 1, turn_seq: 2, sequence: 3, at: "2026-10-20T12:00:00Z",
-                        origin: "_plurnk", op: "READ", source: null, state: "resolved", status_rx: 200,
-                        tx: { target: { raw: "evidence.html" }, aside: "Inspect evidence" },
-                        rx: { status: 200, range: { unit: "line", total: 2, requested: [1, -1], returned: [1, 2] } }, attrs: {},
-                        body: { url: new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href, mimeType: "text/html" },
-                    } };
+                    const ambient = {
+                        sessionUpdate: "tool_call_update", toolCallId: "1/2/3", status: "completed",
+                        rawInput: { target: { raw: "evidence.html" }, aside: "Inspect evidence" },
+                        rawOutput: { status: 200, range: { unit: "line", total: 2, requested: [1, -1], returned: [1, 2] } },
+                        _meta: { plurnk: {
+                            id: 17, sessionId: 9, loopSeq: 1, turnSeq: 2, sequence: 3, coordinate: "1/2/3",
+                            origin: "_plurnk", op: "READ", source: null, state: "resolved", status: 200, attrs: {},
+                            body: { url: new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href, mimeType: "text/html" },
+                        } },
+                    };
                     await receive(ambient);
                     assert.equal(reads.length, 0);
                     assert.equal(credentials, 0, "a closed activity disclosure loads nothing");
                     await activity.locator(":scope > summary").click();
                     const row = rows.first();
-                    assert.equal(await row.getAttribute("data-plurnk-worker"), "9");
+                    assert.equal(await row.getAttribute("data-plurnk-session"), "9");
                     assert.equal(await row.getAttribute("data-plurnk-coordinate"), "1/2/3");
                     assert.equal(await row.getAttribute("data-plurnk-state"), "resolved");
                     assert.equal(await row.getAttribute("data-plurnk-status"), "200");
-                    assert.equal(await row.getByRole("article", { name: "READ · Worker 9 · 1/2/3 · resolved · 200", exact: true }).count(), 1);
+                    assert.equal(await row.getByRole("article", { name: "READ · Session 9 · 1/2/3 · resolved · 200", exact: true }).count(), 1);
                     assert.equal(await row.locator("details, dl").count(), 0);
                     assert.equal(await row.getAttribute("data-activity-evidence"), null);
                     assert.equal(await row.getAttribute("data-activity-key"), null);
                     assert.equal(await row.locator('[data-plurnk-field="heading"]').innerText(), "Inspect evidence");
                     assert.equal(await row.locator("[data-plurnk-operands]").innerText(), "(evidence.html) {2}");
                     assert.equal(await row.locator("[data-body-reference]").count(), 0, "ambient READ uses the same summary without fetching readback");
-                    await page.evaluate(() => { window.summaryNode = document.querySelector("#worker-activity [data-plurnk-operands]"); });
+                    await page.evaluate(() => { window.summaryNode = document.querySelector("#session-activity [data-plurnk-operands]"); });
                     await receive(structuredClone(ambient));
                     assert.equal(await rows.count(), 1);
                     assert.equal(await row.locator("article > details > pre").count(), 0);
                     assert.equal(await row.locator("button, div, section").count(), 0);
-                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity [data-plurnk-operands]")), true);
-                    await receive({ ...ambient, value: { ...ambient.value, state: "failed", status_rx: 409, source: "message://child/1" } });
+                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#session-activity [data-plurnk-operands]")), true);
+                    await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, state: "failed", status: 409, source: "message://child/1" } } });
                     assert.equal(await rows.count(), 1, "a row update is not a new event history");
                     assert.equal(await row.getAttribute("data-plurnk-state"), "failed");
                     assert.equal(await row.getAttribute("data-plurnk-source"), null);
-                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#worker-activity [data-plurnk-operands]")), true);
+                    assert.equal(await page.evaluate(() => window.summaryNode === document.querySelector("#session-activity [data-plurnk-operands]")), true);
                     assert.equal(reads.length, 0);
 
-                    await receive({ ...ambient, value: { ...ambient.value, id: 18, attrs: { kind: "emission" } } });
+                    await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, id: 18, attrs: { kind: "emission" } } } });
                     assert.equal(await rows.count(), 1, "an emission announcement duplicates already-rendered operations");
-                    await receive({ ...ambient, value: { ...ambient.value, id: 19, op: null, origin: "model", attrs: { kind: "emissionAttempt" },
-                        body: undefined, tx: source, status_rx: 400, state: "failed" } });
+                    await receive({ ...ambient, rawInput: source, _meta: { plurnk: { ...ambient._meta.plurnk, id: 19, op: null, origin: "model", attrs: { kind: "emissionAttempt" },
+                        body: undefined, status: 400, state: "failed" } } });
                     assert.match(await rows.nth(1).locator("article").getAttribute("aria-label"), /^Rejected emission/u);
                     assert.equal(await rows.nth(1).innerText(), "");
-                    await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12,
-                        reasoning: { url: new URL("/acp/7/12/entry?target=reasoning%3A%2F%2Fchild%2F1%2F2", url).href, mimeType: "text/plain" } } });
+                    await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, subagentRunId: "ops://child/7", sessionId: 12,
+                        reasoning: { url: new URL("/acp/7/12/entry?target=reasoning%3A%2F%2Fchild%2F1%2F2", url).href, mimeType: "text/plain" } } } });
                     const child = rows.nth(2);
-                    assert.equal(await child.getAttribute("data-plurnk-worker"), "12");
+                    assert.equal(await child.getAttribute("data-plurnk-session"), "12");
                     assert.equal(await child.getAttribute("data-subagent-run-id"), "ops://child/7");
                     assert.equal(await child.locator("details > details > summary").textContent(), "Reasoning");
                     assert.equal(reads.some((url) => new URL(url).searchParams.get("target")?.startsWith("reasoning:")), false, "closed foreign reasoning is not fetched");
@@ -99,7 +102,8 @@ export default async function verifyActivity(t) {
                     await child.locator('[data-body-state="loaded"]').waitFor();
                     assert.equal(await body.textContent(), source);
 
-                    const outside = { type: "CUSTOM", name: "plurnk.outside", value: { coordinate: "user-1-2", text: source, tokens: 21 } };
+                    const outside = { sessionUpdate: "agent_message_chunk", messageId: "user-1-2", content: { type: "text", text: source },
+                        _meta: { plurnk: { op: "outside-", outside: { coordinate: "user-1-2", tokens: 21 } } } };
                     await receive(outside);
                     await receive(outside);
                     const prose = rows.nth(3);
@@ -107,24 +111,28 @@ export default async function verifyActivity(t) {
                     assert.equal(await prose.getAttribute("data-plurnk-tokens"), null);
                     assert.equal(await prose.getAttribute("data-activity-text"), null);
                     assert.equal(await prose.getByRole("article", { name: "Outside operations", exact: true }).count(), 1);
-                    await receive({ ...outside, value: { ...outside.value, text: "Changed evidence", tokens: 3 } });
+                    await receive({ ...outside, content: { type: "text", text: "Changed evidence" }, _meta: { plurnk: { op: "outside-", outside: { coordinate: "user-1-2", tokens: 3 } } } });
                     assert.equal(await rows.count(), 4);
                     assert.equal(await prose.locator("article > details > pre").textContent(), "Changed evidence");
                     assert.equal(await activity.locator("img, script, form, a").count(), 0);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
-                    assert.equal(await page.locator("#worker-status").getAttribute("data-connection"), "initial");
+                    assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "initial");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                    for (const value of [{}, { ...ambient.value, worker_id: 0 }, { ...ambient.value, sequence: NaN },
-                        { ...ambient.value, reasoning: { url: 123 } }, { ...ambient.value, source: {} }]) {
-                        await assert.rejects(receive({ ...ambient, value }), /Ambient/u);
+                    for (const row of [{}, { ...ambient._meta.plurnk, sessionId: 0, body: undefined }, { ...ambient._meta.plurnk, sequence: NaN },
+                        { ...ambient._meta.plurnk, reasoning: { url: 123 } }, { ...ambient._meta.plurnk, source: {} }]) {
+                        await assert.rejects(receive({ ...ambient, _meta: { plurnk: row } }), /Ambient/u);
                     }
-                    for (const value of [{}, { ...outside.value, tokens: -1 }, { ...outside.value, text: {} }]) {
-                        await assert.rejects(receive({ ...outside, value }), /Outside/u);
+                    for (const [content, meta] of [
+                        [{ type: "text", text: source }, { op: "outside-", outside: {} }],
+                        [{ type: "text", text: source }, { op: "outside-", outside: { coordinate: "user-1-2", tokens: -1 } }],
+                        [{ type: "text", text: {} }, { op: "outside-", outside: { coordinate: "user-1-2", tokens: 21 } }],
+                    ]) {
+                        await assert.rejects(receive({ sessionUpdate: "agent_message_chunk", messageId: "user-1-2", content, _meta: { plurnk: meta } }), /Outside/u);
                     }
                     assert.equal(await rows.count(), 4, "invalid evidence does not mutate the valid view");
 
                     const setBody = async (address) => {
-                        await receive({ ...ambient, subagentRunId: "ops://child/7", value: { ...ambient.value, worker_id: 12, reasoning: { url: address } } });
+                        await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, subagentRunId: "ops://child/7", sessionId: 12, reasoning: { url: address } } } });
                         await child.locator("details > details").evaluate((element) => { element.open = true; });
                         await body.scrollIntoViewIfNeeded();
                     };
