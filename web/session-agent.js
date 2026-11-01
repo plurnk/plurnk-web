@@ -432,6 +432,14 @@ export class SessionTranslator {
                     continue;
                 }
 
+                if (
+                    (typeof plurnk?.origin === "string" && plurnk.origin !== "model")
+                    || plurnk?.op === null
+                    || (isRecord(plurnk?.attrs) && plurnk.attrs.kind === "emissionAttempt")
+                ) {
+                    continue;
+                }
+
                 const existingCall = messages
                     .flatMap((m) => (m.role === "assistant" ? m.toolCalls ?? [] : []))
                     .find((c) => c.id === toolCallId);
@@ -765,16 +773,13 @@ export default class SessionAgent {
 
         /** @type {typeof globalThis.fetch} */
         const acpFetch = async (input, init) => {
+            const mergedHeaders = new Headers(init?.headers);
+            for (const [key, value] of Object.entries(this.headers)) {
+                mergedHeaders.set(key, value);
+            }
             const response = await this.#fetch(input, {
                 ...init,
-                headers: {
-                    ...this.headers,
-                    ...(init?.headers instanceof Headers
-                        ? Object.fromEntries(init.headers.entries())
-                        : isRecord(init?.headers)
-                            ? init.headers
-                            : {}),
-                },
+                headers: mergedHeaders,
             });
             if (!response.ok && this.#streamProblem === undefined) {
                 const refusalError = await problemFromResponse(response.clone());
@@ -1660,9 +1665,17 @@ export default class SessionAgent {
             } = metaPlurnk;
             Object.assign(prevPlurnk, structuredClone(rest));
             if (isRecord(status)) {
+                const normalizedStatus = structuredClone(status);
+                for (const field of ["claimedAt", "terminatedAt"]) {
+                    if (typeof normalizedStatus[field] === "string") {
+                        const raw = normalizedStatus[field];
+                        const parsed = Date.parse(raw.includes("T") ? raw : `${raw.replace(" ", "T")}Z`);
+                        normalizedStatus[field] = Number.isFinite(parsed) ? parsed : null;
+                    }
+                }
                 prevPlurnk.status = {
                     ...(isRecord(prevPlurnk.status) ? prevPlurnk.status : {}),
-                    ...structuredClone(status),
+                    ...normalizedStatus,
                 };
             }
             if (isRecord(workspace)) {

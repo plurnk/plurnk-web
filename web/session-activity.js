@@ -65,6 +65,8 @@ export default function activity(root, read) {
             return;
         }
         if (update.sessionUpdate !== "tool_call_update") return;
+        if (plurnk.proposal !== undefined || plurnk.interaction !== undefined) return;
+        if (update.rawInput === undefined && update.rawOutput === undefined && update.name === undefined) return;
         const op = plurnk.op !== undefined ? plurnk.op : (update.name ?? null);
         const isDischarge = typeof update.toolCallId === "string"
             && typeof plurnk.coordinate === "string"
