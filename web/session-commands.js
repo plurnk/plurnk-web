@@ -5,8 +5,18 @@ import describeFailure from "./failure.js";
 /** {§web-session-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
 const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop"]);
 
-/** @param {string} text */
-export const isCommand = (text) => text.trimStart().startsWith("/");
+/**
+ * @param {string} text
+ * @param {readonly { name: string }[]} [availableCommands]
+ */
+export function isCommand(text, availableCommands = []) {
+    const trimmed = text.trimStart();
+    if (!trimmed.startsWith("/")) return false;
+    const match = /^\/(\S*)/u.exec(trimmed);
+    const name = match?.[1] ?? "";
+    if (!name || commands.has(name)) return true;
+    return !availableCommands.some((entry) => entry?.name === name);
+}
 
 /** @param {string} text */
 export function parseCommand(text) {

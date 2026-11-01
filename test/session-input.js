@@ -21,7 +21,7 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                 headers.Authorization = `Bearer ${(await response.json()).access_token}`;
             }
             const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers });
-            const initialized = await setup.runAgent({
+            const initialized = await setup.send({
                 workspace,
                 action: selector === null
                     ? { kind: "session/new" }
@@ -159,7 +159,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
                 const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user" });
-                await setup.runAgent({ workspace: "composer", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "composer", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext({ viewport: { width: 320, height: 700 } });
@@ -261,7 +261,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
                 const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user" });
-                await setup.runAgent({ workspace: "review", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "review", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
@@ -305,7 +305,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
                 const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user" });
-                await setup.runAgent({ workspace: "arrival", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "arrival", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 // The message Run's response stays open after its interrupt arrives, until the journey releases it.
                 const arrived = Promise.withResolvers();
                 const release = Promise.withResolvers();
@@ -610,10 +610,6 @@ export default async function verifySessionInput({ t, withDaemon }) {
         });
         let truncateNextPrompt = true;
         await page.route("**/acp", async (route) => {
-            if (truncateNextPrompt && route.request().method() === "GET" && route.request().headers()["acp-session-id"]) {
-                // Truncate actual daemon delivery before the first update frame arrives, without inventing an event or changing the admitted input.
-                return route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
-            }
             if (!truncateNextPrompt || route.request().postDataJSON()?.method !== "session/prompt") {
                 return route.continue();
             }
@@ -621,6 +617,10 @@ export default async function verifySessionInput({ t, withDaemon }) {
             try {
                 const response = await route.fetch();
                 assert.equal(response.status(), 202);
+                const connId = route.request().headers()["acp-connection-id"];
+                if (connId) {
+                    await fetch(route.request().url(), { method: "DELETE", headers: { "acp-connection-id": connId } });
+                }
                 const deadline = Date.now() + 2000;
                 while (model.requests.length === 0 && Date.now() < deadline) {
                     await new Promise((r) => setTimeout(r, 10));

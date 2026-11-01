@@ -40,7 +40,7 @@ export default function conversation(root, readBody) {
         if (Array.isArray(content)) {
             for (const [index, part] of content.entries()) {
                 if (part?.type === "text" && typeof part.text === "string") text(outlet, part.text, rich, `${scope}-part-${index}`);
-                else if (part?.type === "document" && part.source?.type === "url" && typeof part.source.value === "string") reference.append(outlet, part.source);
+                else if (part?.type === "resource_link" && typeof part.uri === "string") reference.append(outlet, part);
             }
         } else if (typeof content === "string") {
             text(outlet, content, rich, scope);
@@ -53,26 +53,25 @@ export default function conversation(root, readBody) {
         const identities = new Set(messages.map(({ id }) => id));
         if (identities.size !== messages.length) throw new Error("Conversation has duplicate message identities.");
         const suppliedCalls = messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []);
-        const calls = new Map(suppliedCalls.map((call) => [call.id, call]));
+        const calls = new Map(suppliedCalls.map((call) => [call.toolCallId, call]));
         if (calls.size !== suppliedCalls.length) throw new Error("Conversation has duplicate call identities.");
         // {§web-operation-summary} Later observations have their own row metadata, unlike an immediate receipt.
         const immediate = messages.flatMap((message) => message.role === "tool"
-            && !message.metadata?.plurnk && typeof calls.get(message.toolCallId)?.metadata?.plurnk?.op === "string" ? [message] : []);
+            && !message._meta?.plurnk && typeof calls.get(message.toolCallId)?._meta?.plurnk?.op === "string" ? [message] : []);
         const results = new Map(immediate.map((message) => [message.toolCallId, message]));
         if (results.size !== immediate.length) throw new Error("Operation has duplicate immediate receipts.");
         const folded = new Set(immediate.map(({ id }) => id));
         const entries = messages.flatMap((message) => {
             if (folded.has(message.id)) return [];
             // {§web-session-reasoning} An empty live reasoning message is not a transcript body.
-            if (message.role === "reasoning" && !message.content && message.metadata?.plurnk?.body === undefined) return [];
-            const operations = message.role === "assistant" ? (message.toolCalls ?? []).filter((call) => !call.metadata?.plurnk?.synthetic) : [];
+            if (message.role === "reasoning" && !message.content && message._meta?.plurnk?.body === undefined) return [];
+            const operations = message.role === "assistant" ? message.toolCalls ?? [] : [];
             const hasContent = Array.isArray(message.content) ? message.content.length > 0 : Boolean(message.content);
-            if (!hasContent && !operations.length && message.role === "assistant" && (message.toolCalls?.length ?? 0) > 0) return [];
             /** @type {Entry[]} */
             const content = hasContent || !operations.length ? [{ message }] : [];
             return [...content, ...operations.map((call) => ({ message, call }))];
         });
-        const keys = entries.map(({ message, call }) => JSON.stringify([message.id, call?.id ?? null]));
+        const keys = entries.map(({ message, call }) => JSON.stringify([message.id, call?.toolCallId ?? null]));
         const visibleIds = new Set(keys);
         const rows = new Map(Array.from(list.querySelectorAll(":scope > [data-message-id]"), (child) => {
             const row = /** @type {HTMLElement} */ (child);
@@ -95,24 +94,25 @@ export default function conversation(root, readBody) {
                 row = element;
             }
             const answered = message.role === "tool" ? calls.get(message.toolCallId) : undefined;
-            const operation = call?.metadata?.plurnk?.op === call?.function.name ? call : undefined;
-            const args = operation ? argumentsOf(operation.function.arguments) : null;
+            const operation = call?._meta?.plurnk?.op === call?.name ? call : undefined;
+            const args = operation ? argumentsOf(operation.rawInput) : null;
             // {§web-working-notes} NOTE calls project semantic bodies and categories without duplicating arguments.
-            const category = operation?.function.name === "NOTE" && typeof args?.body === "string"
+            const category = operation?.name === "NOTE" && typeof args?.body === "string"
                 ? typeof args.aside === "string" && args.aside ? args.aside : "note" : null;
-            const facts = record((call ? call.metadata : message.metadata)?.plurnk);
+            const facts = record((call ? call._meta : message._meta)?.plurnk);
             const op = facts?.op;
             const isReplyOp = (/** @type {unknown} */ value) => value === "SEND" || value === "DONE" || value === "FAIL";
-            const ownResult = call ? results.get(call.id) : undefined;
-            const receipt = ownResult ? receiptOf(ownResult.content)
-                : message.role === "tool" && facts && !isReplyOp(op) ? receiptOf(message.content) : record(facts?.receipt);
-            const operationName = call?.function.name ?? (typeof op === "string" ? op : null);
+            const ownResult = call ? results.get(call.toolCallId) : undefined;
+            const receipt = ownResult ? (receiptOf(ownResult.rawOutput) ?? receiptOf(ownResult.content))
+                : message.role === "tool" && facts && !isReplyOp(op) ? (receiptOf(message.rawOutput) ?? receiptOf(message.content) ?? record(facts?.receipt))
+                : (call ? receiptOf(call.rawOutput) : null) ?? record(facts?.receipt);
+            const operationName = call?.name ?? (typeof op === "string" ? op : null);
             const summarized = typeof op === "string" && Boolean(operationName);
             const error = ownResult?.error ?? (message.role === "tool" ? message.error : undefined) ?? "";
             const labels = { user: "User", assistant: "Assistant", reasoning: "Reasoning", tool: "Result", activity: "Activity", system: "System", developer: "Developer" };
-            const label = call ? [call.function.name, category].filter(Boolean).join(" · ")
+            const label = call ? [call.name, category].filter(Boolean).join(" · ")
                 : summarized ? operationName
-                : message.role === "tool" ? `Result · ${answered?.function.name ?? message.toolCallId}`
+                : message.role === "tool" ? `Result · ${answered?.name ?? message.toolCallId}`
                 : message.role === "activity" ? message.activityType : labels[message.role];
             const author = "name" in message ? message.name : undefined;
             the(row, {
@@ -123,7 +123,7 @@ export default function conversation(root, readBody) {
                 subagentRunId: message.subagentRunId ?? null,
                 messageError: error ? true : null,
                 toolCallId: message.role === "tool" ? message.toolCallId : null,
-                callId: call?.id ?? null,
+                callId: call?.toolCallId ?? null,
                 plurnkType: typeof op === "string" ? op : null,
                 plurnkNote: category,
                 plurnkSession: typeof facts?.sessionId === "number" ? facts.sessionId : (typeof facts?.session === "number" ? facts.session : null),
@@ -131,26 +131,26 @@ export default function conversation(root, readBody) {
                 plurnkSignal: typeof receipt?.completion === "number" ? receipt.completion : typeof facts?.signal === "number" ? facts.signal : null,
                 plurnkState: typeof facts?.state === "string" ? facts.state : null,
             });
-            const linked = message.role === "reasoning" ? message.metadata?.plurnk?.body : undefined;
+            const linked = message.role === "reasoning" ? message._meta?.plurnk?.body : undefined;
             if (linked !== undefined && (typeof linked?.url !== "string" || typeof linked?.mimeType !== "string")) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
             }
             /** @type {string | readonly import("./session-agent.js").MessagePart[] | undefined} */
             const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && !isReplyOp(op) ? ""
-                : linked ? [{ type: /** @type {const} */ ("document"), source: { type: /** @type {const} */ ("url"), value: linked.url, mimeType: linked.mimeType } }] : message.content;
-            const rich = call ? isReplyOp(operation?.function.name)
+                : linked ? [{ type: /** @type {const} */ ("resource_link"), uri: linked.url, mimeType: linked.mimeType }] : message.content;
+            const rich = call ? isReplyOp(operation?.name)
                 : message.role === "tool" ? isReplyOp(facts?.op)
                 : message.role !== "reasoning" && message.role !== "activity";
             const hasBody = typeof content === "string" ? Boolean(content) : Array.isArray(content) && content.some((part) =>
                 part?.type === "text" && typeof part.text === "string" && Boolean(part.text)
-                || part?.type === "document" && part.source?.type === "url" && typeof part.source.value === "string");
+                || part?.type === "resource_link" && typeof part.uri === "string" && Boolean(part.uri));
             const initiallyOpen = message.role === "user" || isReplyOp(op) || message.role === "assistant" && !call;
             const frame = card(row, hasBody, initiallyOpen);
-            body(frame.body, content, rich, call ? `call-${call.id}` : `message-${message.id}`);
+            body(frame.body, content, rich, call ? `call-${call.toolCallId}` : `message-${message.id}`);
             if (summarized) operationSummary(frame.header, operationName, args, receipt, facts, error);
             else {
                 frame.header.replaceChildren();
-                if (message.role === "reasoning") $.clone(frame.header, "#operation-header").textContent = reasoningCoordinate(message.metadata?.plurnk?.coordinate);
+                if (message.role === "reasoning") $.clone(frame.header, "#operation-header").textContent = reasoningCoordinate(message._meta?.plurnk?.coordinate);
                 if (error) $.clone(frame.header, "#operation-outcome").textContent = error;
                 if (!frame.body && !frame.header.hasChildNodes()) frame.header.remove();
             }

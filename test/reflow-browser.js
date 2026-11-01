@@ -17,15 +17,15 @@ export default async function verifyReflow(t) {
     ]));
     const messages = [
         { id: "note", role: "assistant", toolCalls: [{
-            id: "note-call", type: "function",
-            function: { name: "NOTE", arguments: JSON.stringify({ aside: "idea", body: literal }) },
-            metadata: { plurnk: { op: "NOTE" } },
+            toolCallId: "note-call",
+            name: "NOTE", rawInput: { aside: "idea", body: literal },
+            _meta: { plurnk: { op: "NOTE" } },
         }] },
         { id: "output", role: "tool", toolCallId: "external-call", content: output },
         { id: "reasoning", role: "reasoning", content: literal },
-        { id: "fetched", role: "user", content: [{ type: "document", source: {
-            type: "url", value: new URL("/acp/reflow-body", url).href, mimeType: "text/plain",
-        } }] },
+        { id: "fetched", role: "user", content: [{ type: "resource_link",
+            uri: new URL("/acp/reflow-body", url).href, name: "body", mimeType: "text/plain",
+        }] },
         { id: "code", role: "assistant", content: `\`\`\`text\n${token}\n\`\`\`` },
     ];
     try {

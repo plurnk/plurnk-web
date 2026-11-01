@@ -6,15 +6,15 @@ import browserDiagnostics from "./browser-diagnostics.js";
 // {§web-conversation-surfaces} Exercise real semantic rows and compiled theme CSS.
 export const messages = [
     { id: "user", role: "user", content: "Please inspect [the evidence](https://example.com/)." },
-    { id: "decorated-user", role: "user", content: "An incoming user message.", metadata: { plurnk: { op: "SEND", origin: "_plurnk" } } },
+    { id: "decorated-user", role: "user", content: "An incoming user message.", _meta: { plurnk: { op: "SEND", origin: "_plurnk" } } },
     { id: "assistant", role: "assistant", content: "I will inspect [the evidence](https://example.com/).", toolCalls: [
-        { id: "generic", type: "function", function: { name: "SEND", arguments: "{}" } },
-        ...["READ", "NOTE", "SEND"].map((op) => ({ id: op, type: "function", function: { name: op,
-            arguments: JSON.stringify({ aside: op === "NOTE" ? "fact" : "Inspect the evidence", body: "Retained **content**.",
-                target: { raw: "evidence.txt" } }) }, metadata: { plurnk: { op } } })),
+        { toolCallId: "generic", name: "SEND", rawInput: {} },
+        ...["READ", "NOTE", "SEND"].map((op) => ({ toolCallId: op, name: op,
+            rawInput: { aside: op === "NOTE" ? "fact" : "Inspect the evidence", body: "Retained **content**.",
+                target: { raw: "evidence.txt" } }, _meta: { plurnk: { op } } })),
     ] },
-    { id: "reply", role: "tool", toolCallId: "delivered", content: "Here is [the answer](https://example.com/).", metadata: { plurnk: { op: "SEND", signal: 200 } } },
-    { id: "cancelled", role: "tool", toolCallId: "cancelled", content: "Unable to complete.", metadata: { plurnk: { op: "SEND", signal: 499 } } },
+    { id: "reply", role: "tool", toolCallId: "delivered", content: "Here is [the answer](https://example.com/).", _meta: { plurnk: { op: "SEND", signal: 200 } } },
+    { id: "cancelled", role: "tool", toolCallId: "cancelled", content: "Unable to complete.", _meta: { plurnk: { op: "SEND", signal: 499 } } },
     { id: "result", role: "tool", toolCallId: "unmatched", content: "Literal result." },
     { id: "reasoning", role: "reasoning", content: "Consider the evidence." },
     { id: "system", role: "system", content: "System [content](https://example.com/)." },

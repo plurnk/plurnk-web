@@ -51,7 +51,7 @@ test("{§web-session-history} reading pins displaced observations only until ret
 
 test("{§web-session-history} late results update an archived call once, then survive its final refetch", () => {
     const history = new HistoryPages();
-    const call = { id: "call-message", role: "assistant", toolCalls: [{ id: "call", type: "function", function: { name: "READ", arguments: "{}" } }] };
+    const call = { id: "call-message", role: "assistant", toolCalls: [{ toolCallId: "call", name: "READ", rawInput: {} }] };
     const result = { id: "result", role: "tool", toolCallId: "call", content: "live result" };
     history.snapshot(snapshot([message("new")], "/old"), false);
     history.live([message("new")]);
@@ -76,7 +76,7 @@ test("{§web-session-history} late results update an archived call once, then su
 
 test("{§web-session-history} multiple late receipts preserve their supplied order beside an archived call", () => {
     const history = new HistoryPages();
-    const call = { id: "calls", role: "assistant", toolCalls: ["one", "two"].map((id) => ({ id, type: "function", function: { name: "READ", arguments: "{}" } })) };
+    const call = { id: "calls", role: "assistant", toolCalls: ["one", "two"].map((toolCallId) => ({ toolCallId, name: "READ", rawInput: {} })) };
     const results = ["one", "two"].map((id) => ({ id: `result-${id}`, role: "tool", toolCallId: id, content: id }));
     history.snapshot(snapshot([message("now")], "/old"), false);
     history.live([message("now")]);

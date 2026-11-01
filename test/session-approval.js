@@ -59,9 +59,11 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         await page.close();
         // The proposal waits with no page open on its session.
         const agent = new SessionAgent({ url: new URL("/acp", base).href, sessionId, headers });
-        agent.addMessage({ id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: approval-automatic." });
         const controller = new AbortController();
-        const running = agent.runAgent({ abortController: controller }).catch(() => {});
+        const running = agent.send({
+            abortController: controller,
+            message: { id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: approval-automatic." },
+        }).catch(() => {});
         try {
             await context.route("http://elsewhere.test/**", (route) => route.fulfill({ contentType: "text/html",
                 body: `<!doctype html><title>Elsewhere</title><link rel="icon" href="data:,"><a href="${path}">Open the session</a>` }));
@@ -82,6 +84,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             assert.equal(model.requests.length, 2);
         } finally {
             controller.abort();
+            agent.close();
             await running;
         }
         checkBrowser();
@@ -304,7 +307,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.match(await calls.nth(1).locator('[data-plurnk-field="outcome"]').textContent(), /The proposal was rejected \([^)]+\)\./u);
         const messages = await observeMessages(requests[0].params.sessionId, base, headers);
         const accepted = await calls.first().getAttribute("data-call-id");
-        const result = messages.find((message) => message.role === "tool" && message.toolCallId === accepted && message.metadata?.plurnk?.op === "READ");
+        const result = messages.find((message) => message.role === "tool" && message.toolCallId === accepted && message._meta?.plurnk?.op === "READ");
         assert.ok(result, "the accepted command's stream output remains correlated with its call");
         assert.equal((await inspectResult(result.content, undefined, base)).content, "first");
         assert.equal(model.requests.length, 2);
@@ -321,15 +324,18 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
         for (const name of ["one", "two"]) {
             const fork = new SessionAgent({ url: new URL("/acp", base).href, sessionId, headers });
-            const { result } = await fork.runAgent({ action: { kind: "session/fork", name } });
+            const { result } = await fork.send({ action: { kind: "session/fork", name } });
             assert.equal(result.ok, true, JSON.stringify(result));
             const child = new SessionAgent({ url: new URL("/acp", base).href, sessionId: `${sessionId.split("#")[0]}#${name}`, headers });
-            child.addMessage({ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: held-approval-${name}.` });
             const reasoning = Promise.withResolvers();
             const controller = new AbortController();
-            const running = child.runAgent({ abortController: controller }, { onThoughtChunk: () => { reasoning.resolve(); } });
+            const running = child.send({
+                abortController: controller,
+                message: { id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: held-approval-${name}.` },
+            }, { onThoughtChunk: () => { reasoning.resolve(); } });
             await reasoning.promise;
             controller.abort();
+            child.close();
             await running.catch(() => {});
         }
         model.release("held-approval-one");

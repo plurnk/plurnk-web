@@ -1,16 +1,95 @@
 import { $, the } from "on_the_money";
-import { buildResumeArray } from "./session-agent.js";
 import answerForm from "./answer-form.js";
 
-/** @typedef {import("./session-agent.js").PendingInterrupt[]} Interrupts */
-/** {§web-session-approval} The daemon cancels a proposal at its deadline; past it by this page's clock, the page answers nothing.
- * @param {Interrupts[number]} interrupt
- */
-const expired = (interrupt) => interrupt.expiresAt !== undefined && Date.parse(interrupt.expiresAt) <= Date.now();
-/** @param {Interrupts[number]} interrupt */
-const proposal = (interrupt) => /** @type {import("@plurnk/plurnk-contracts").ProposalProjection | undefined} */ (interrupt.metadata?.plurnk?.proposal);
+/** @typedef {import("./session-agent.js").SessionGate} SessionGate */
+/** @typedef {import("./session-agent.js").GateResolution} GateResolution */
 
-/** {§web-session-approval} {§web-session-questions} Apply the configured client choice to the SDK's complete set.
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** {§web-session-approval} The daemon cancels a proposal at its deadline; past it by this page's clock, the page answers nothing.
+ * @param {SessionGate} gate
+ */
+const expired = (gate) => gate.expiresAt !== undefined && Date.parse(gate.expiresAt) <= Date.now();
+
+/** @param {SessionGate} gate */
+const proposal = (gate) => gate.method === "session/request_permission"
+    ? /** @type {import("@plurnk/plurnk-contracts").ProposalProjection | undefined} */ (gate._meta?.plurnk?.proposal)
+    : undefined;
+
+/** @param {SessionGate} gate @returns {string} */
+const allowOptionId = (gate) => {
+    const id = gate.method === "session/request_permission"
+        ? gate.options?.find((opt) => typeof opt.kind === "string" && opt.kind.startsWith("allow"))?.optionId
+        : undefined;
+    return typeof id === "string" && id.length > 0 ? id : "allow_once";
+};
+
+/** @param {SessionGate} gate @returns {string} */
+const rejectOptionId = (gate) => {
+    const id = gate.method === "session/request_permission"
+        ? gate.options?.find((opt) => typeof opt.kind === "string" && opt.kind.startsWith("reject"))?.optionId
+        : undefined;
+    return typeof id === "string" && id.length > 0 ? id : "reject_once";
+};
+
+/**
+ * @param {string} toolName
+ * @param {Extract<SessionGate, { method: "elicitation/create" }>} gate
+ * @returns {Record<string, unknown> | undefined}
+ */
+function elicitationSchema(toolName, gate) {
+    if (gate.mode === "url") {
+        return {
+            oneOf: [{
+                type: "object",
+                required: ["action"],
+                additionalProperties: false,
+                properties: {
+                    action: { enum: ["accept", "decline", "cancel"] },
+                },
+            }],
+        };
+    }
+    const requested = isRecord(gate._meta?.plurnk?.interaction?.request)
+        && "requestedSchema" in gate._meta.plurnk.interaction.request
+        && isRecord(gate._meta.plurnk.interaction.request.requestedSchema)
+        ? gate._meta.plurnk.interaction.request.requestedSchema
+        : isRecord(gate.requestedSchema)
+            ? gate.requestedSchema
+            : undefined;
+    if (!requested) return undefined;
+    if (
+        toolName === "mcp_input_required"
+        && !Array.isArray(requested.oneOf)
+        && !(isRecord(requested.properties) && isRecord(requested.properties.response) && Array.isArray(requested.properties.response.oneOf))
+    ) {
+        return {
+            oneOf: [
+                {
+                    type: "object",
+                    required: ["action", "content"],
+                    additionalProperties: false,
+                    properties: {
+                        action: { const: "accept" },
+                        content: requested,
+                    },
+                },
+                {
+                    type: "object",
+                    required: ["action"],
+                    additionalProperties: false,
+                    properties: {
+                        action: { enum: ["decline", "cancel"] },
+                    },
+                },
+            ],
+        };
+    }
+    return requested;
+}
+
+/** {§web-session-approval} {§web-session-questions} Apply the configured client choice to the complete pending gate set.
  * @param {Element} controls @param {boolean} yolo
  */
 export default function reviewRequests(controls, yolo) {
@@ -18,29 +97,29 @@ export default function reviewRequests(controls, yolo) {
     const outlet = $(form, "[data-requests]");
     if (!(form instanceof HTMLFormElement) || !outlet) throw new Error("Review template is incomplete.");
     const list = outlet;
-    /** @type {Array<() => Promise<import("./session-agent.js").ResumeResolution | undefined>>} */
+    /** @type {Array<() => Promise<GateResolution | undefined>>} */
     let responses = [];
-    /** @type {Interrupts} */
+    /** @type {readonly SessionGate[]} */
     let current = [];
     let supported = false;
     /** @type {Map<string, Element>} */
     const rows = new Map();
     function mode() {
         const late = supported && current.some(expired);
-        const manual = !supported ? 0 : late ? current.length : current.filter((interrupt) => !yolo || proposal(interrupt) === undefined).length;
+        const manual = !supported ? 0 : late ? current.length : current.filter((gate) => !yolo || proposal(gate) === undefined).length;
         the(form, { requestCount: manual, deadlinePassed: late ? "" : null });
         return !supported ? "unsupported" : late ? "expired" : manual > 0 ? "manual" : "automatic";
     }
-    /** @param {Interrupts[number]} interrupt @param {number} index @param {Element} [before] */
-    function presentProposal(interrupt, index, before) {
-        const facts = proposal(interrupt);
+    /** @param {SessionGate} gate @param {number} index @param {Element} [before] */
+    function presentProposal(gate, index, before) {
+        const facts = proposal(gate);
         if (!facts) throw new Error("Proposal presentation has no facts.");
         const row = before ? $.clone(before, "#session-proposal", { position: "beforebegin" }) : $.clone(list, "#session-proposal");
-        rows.set(interrupt.id, row);
+        rows.set(gate.id, row);
         the(row, {
-            interruptId: interrupt.id, proposalChoice: `decision-${index}`, proposalSession: facts.session,
-            proposalOp: facts.op, proposalDeadline: interrupt.expiresAt ?? "",
-            proposalDeadlineLabel: interrupt.expiresAt === undefined ? "" : new Date(interrupt.expiresAt).toLocaleString(),
+            interruptId: gate.id, proposalChoice: `decision-${index}`, proposalSession: facts.session,
+            proposalOp: facts.op, proposalDeadline: gate.expiresAt ?? "",
+            proposalDeadlineLabel: gate.expiresAt === undefined ? "" : new Date(gate.expiresAt).toLocaleString(),
         });
         const target = $(row, "[data-proposal-target]");
         const body = $(row, "[data-proposal-body]");
@@ -58,82 +137,147 @@ export default function reviewRequests(controls, yolo) {
             yolo = value;
             if (supported) {
                 for (let index = current.length - 1; index >= 0; index--) {
-                    const interrupt = current[index];
-                    if (!proposal(interrupt)) continue;
+                    const gate = current[index];
+                    if (!proposal(gate)) continue;
                     if (yolo) {
-                        rows.get(interrupt.id)?.remove();
-                        rows.delete(interrupt.id);
-                    } else if (!rows.has(interrupt.id)) {
+                        rows.get(gate.id)?.remove();
+                        rows.delete(gate.id);
+                    } else if (!rows.has(gate.id)) {
                         const next = current.slice(index + 1).map(({ id }) => rows.get(id)).find(Boolean);
-                        presentProposal(interrupt, index, next);
+                        presentProposal(gate, index, next);
                     }
                 }
             }
             return mode();
         },
-        /** @param {Interrupts} interrupts @param {import("./session-agent.js").Message[]} [messages] */
-        present(interrupts, messages = []) {
-            current = interrupts;
-            const calls = messages.flatMap((message) => message.role === "assistant" ? message.toolCalls ?? [] : []);
-            supported = interrupts.length > 0 && interrupts.every((interrupt) => {
-                const facts = proposal(interrupt);
-                return facts !== undefined ? facts.disposition.decision === "review"
-                    : interrupt.reason === "tool_call" && interrupt.responseSchema !== undefined
-                        && calls.some(({ id }) => id === interrupt.toolCallId);
+        /** @param {readonly SessionGate[]} gates */
+        present(gates) {
+            current = gates;
+            supported = gates.length > 0 && gates.every((gate) => {
+                if (gate.method === "session/request_permission") {
+                    const facts = proposal(gate);
+                    return facts !== undefined && facts.disposition.decision === "review";
+                }
+                if (gate.method === "elicitation/create") {
+                    const interaction = gate._meta?.plurnk?.interaction;
+                    const toolName = typeof interaction?.request?.toolName === "string"
+                        ? interaction.request.toolName
+                        : (typeof gate._meta?.plurnk?.toolName === "string" ? gate._meta.plurnk.toolName : "question");
+                    return elicitationSchema(toolName, gate) !== undefined;
+                }
+                return false;
             });
             list.replaceChildren();
             rows.clear();
-            responses = (supported ? interrupts : []).map((interrupt, index) => {
-                const facts = proposal(interrupt);
-                if (facts === undefined) {
-                    const call = calls.find(({ id }) => id === interrupt.toolCallId);
-                    if (!call || !interrupt.responseSchema) throw new Error("Question interrupt has no request contract.");
-                    const interaction = /** @type {import("@plurnk/plurnk-contracts").ClientInteractionProjection | undefined} */ (interrupt.metadata?.plurnk?.interaction);
+            responses = (supported ? gates : []).map((gate, index) => {
+                if (gate.method === "elicitation/create") {
+                    const interaction = gate._meta?.plurnk?.interaction;
+                    const toolName = typeof interaction?.request?.toolName === "string"
+                        ? interaction.request.toolName
+                        : (typeof gate._meta?.plurnk?.toolName === "string" ? gate._meta.plurnk.toolName : "question");
+                    const responseSchema = elicitationSchema(toolName, gate);
+                    if (!responseSchema) throw new Error("Elicitation gate has no request schema.");
                     const row = $.clone(list, "#session-question");
-                    rows.set(interrupt.id, row);
+                    rows.set(gate.id, row);
                     the(row, {
-                        interruptId: interrupt.id,
+                        interruptId: gate.id,
                         requestSession: interaction?.sessionId ?? "",
-                        requestTool: call.function.name,
+                        requestTool: toolName,
                         responseError: "",
                     });
                     const message = $(row, "[data-request-message]");
                     const args = $(row, "[data-request-arguments]");
                     const schema = $(row, "[data-request-schema]");
                     if (!message || !args || !schema) throw new Error("Question template has no content outlets.");
-                    message.textContent = interrupt.message ?? "Provide the requested input.";
-                    args.textContent = call.function.arguments;
-                    schema.textContent = JSON.stringify(interrupt.responseSchema, null, 2);
-                    const answer = answerForm(row, interrupt.responseSchema);
+                    message.textContent = gate.message ?? interaction?.request?.message ?? "Provide the requested input.";
+                    const rawArguments = gate._meta?.plurnk?.arguments;
+                    args.textContent = typeof rawArguments === "string"
+                        ? rawArguments
+                        : rawArguments !== undefined
+                            ? JSON.stringify(rawArguments)
+                            : interaction?.request !== undefined
+                                ? JSON.stringify(interaction.request)
+                                : JSON.stringify({
+                                    ...(gate.mode ? { mode: gate.mode } : {}),
+                                    ...(gate.message ? { message: gate.message } : {}),
+                                    ...(gate.requestedSchema ? { requestedSchema: gate.requestedSchema } : {}),
+                                    ...(gate.url ? { url: gate.url } : {}),
+                                    ...(gate.elicitationId ? { elicitationId: gate.elicitationId } : {}),
+                                });
+                    schema.textContent = JSON.stringify(responseSchema, null, 2);
+                    const answer = answerForm(row, responseSchema);
                     return async () => {
                         const result = await answer.read();
-                        return result && { interruptId: interrupt.id, ...result };
+                        if (!result) return undefined;
+                        if (result.status === "cancelled") {
+                            return {
+                                id: gate.id,
+                                method: /** @type {const} */ ("elicitation/create"),
+                                response: { action: /** @type {const} */ ("cancel") },
+                            };
+                        }
+                        const payload = result.payload;
+                        if (toolName === "mcp_input_required" || gate.mode === "url") {
+                            const inner = isRecord(payload) && isRecord(payload.response) ? payload.response : payload;
+                            if (isRecord(inner) && (inner.action === "accept" || inner.action === "decline" || inner.action === "cancel")) {
+                                return {
+                                    id: gate.id,
+                                    method: /** @type {const} */ ("elicitation/create"),
+                                    response: inner.action === "accept" && isRecord(inner.content)
+                                        ? { action: /** @type {const} */ ("accept"), content: inner.content }
+                                        : { action: inner.action },
+                                };
+                            }
+                        }
+                        return {
+                            id: gate.id,
+                            method: /** @type {const} */ ("elicitation/create"),
+                            response: {
+                                action: /** @type {const} */ ("accept"),
+                                content: isRecord(payload) ? payload : { value: payload },
+                            },
+                        };
                     };
                 }
-                if (!yolo || interrupts.some(expired)) presentProposal(interrupt, index);
+                if (!yolo || gates.some(expired)) presentProposal(gate, index);
                 return async () => {
                     if (yolo) return {
-                        interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision: "accept", outcome: "client_yolo" },
+                        id: gate.id,
+                        method: /** @type {const} */ ("session/request_permission"),
+                        response: {
+                            outcome: { outcome: /** @type {const} */ ("selected"), optionId: allowOptionId(gate) },
+                            _meta: { plurnk: { outcome: /** @type {const} */ ("client_yolo") } },
+                        },
                     };
                     const values = new FormData(form);
                     const decision = values.get(`decision-${index}`);
                     if (decision !== "accept" && decision !== "reject") throw new Error("Approval form has no decision.");
-                    return { interruptId: interrupt.id, status: /** @type {const} */ ("resolved"), payload: { decision } };
+                    return {
+                        id: gate.id,
+                        method: /** @type {const} */ ("session/request_permission"),
+                        response: {
+                            outcome: {
+                                outcome: /** @type {const} */ ("selected"),
+                                optionId: decision === "accept" ? allowOptionId(gate) : rejectOptionId(gate),
+                            },
+                        },
+                    };
                 };
             });
             return mode();
         },
-        /** @param {Interrupts} interrupts */
-        async decisions(interrupts) {
+        /** @param {readonly SessionGate[]} gates @returns {Promise<GateResolution[] | undefined>} */
+        async decisions(gates) {
             if (mode() === "expired") return;
             if (!form.reportValidity()) return;
             const results = await Promise.all(responses.map((read) => read()));
             if (results.some((result) => result === undefined)) return;
-            return buildResumeArray(interrupts, Object.fromEntries(results.map((result) => {
-                if (!result) throw new Error("Review response is missing.");
-                const { interruptId, ...resolution } = result;
-                return [interruptId, resolution];
-            })));
+            const byId = new Map(results.flatMap((res) => res ? [[res.id, res]] : []));
+            return gates.map(({ id }) => {
+                const entry = byId.get(id);
+                if (!entry) throw new Error(`Missing resolution for gate: ${id}`);
+                return entry;
+            });
         },
     };
 }

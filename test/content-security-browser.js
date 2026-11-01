@@ -65,10 +65,10 @@ export default async function verifyContentSecurity(t) {
                     await t.test("rich messages and SEND share the sanitizer; NOTE and reasoning remain literal", async () => {
                         const messages = ["user", "assistant", "system", "developer"].map((role) => ({ id: role, role, content: hostile }));
                         messages.push({ id: "send", role: "assistant", toolCalls: [{
-                            id: "send-call", type: "function", function: { name: "SEND", arguments: JSON.stringify({ body: hostile }) }, metadata: { plurnk: { op: "SEND" } },
-                        }] }, { id: "reply", role: "tool", toolCallId: "child-work", content: hostile, metadata: { plurnk: { op: "SEND" } } },
-                        { id: "note", role: "assistant", toolCalls: [{ id: "note-call", type: "function",
-                            function: { name: "NOTE", arguments: JSON.stringify({ body: hostile, aside: injection }) }, metadata: { plurnk: { op: "NOTE" } } }] },
+                            toolCallId: "send-call", name: "SEND", rawInput: { body: hostile }, _meta: { plurnk: { op: "SEND" } },
+                        }] }, { id: "reply", role: "tool", toolCallId: "child-work", content: hostile, _meta: { plurnk: { op: "SEND" } } },
+                        { id: "note", role: "assistant", toolCalls: [{ toolCallId: "note-call",
+                            name: "NOTE", rawInput: { body: hostile, aside: injection }, _meta: { plurnk: { op: "NOTE" } } }] },
                         { id: "reasoning", role: "reasoning", content: hostile });
                         await present(messages);
                         const bodies = page.locator("[data-messages] article:has(> details > p > strong)");
@@ -93,10 +93,10 @@ export default async function verifyContentSecurity(t) {
                     });
 
                     await t.test("identity and errors remain literal; unrecognized payloads are not rendered", async () => {
-                        const call = { id: injection, type: "function", function: { name: injection, arguments: hostile } };
+                        const call = { toolCallId: injection, name: injection, rawInput: { html: hostile } };
                         const messages = [
                             { id: injection, role: "assistant", name: injection, subagentRunId: injection, content: "", toolCalls: [call] },
-                            { id: "result", role: "tool", toolCallId: call.id, content: hostile, error: injection },
+                            { id: "result", role: "tool", toolCallId: call.toolCallId, content: hostile, error: injection },
                             { id: "activity", role: "activity", activityType: injection, content: { html: hostile } },
                             { id: "parts", role: "user", content: [{ type: "text", text: hostile }, { type: "binary", mimeType: "image/svg+xml", url: "https://example.invalid/media.svg" }] },
                         ];
@@ -111,7 +111,7 @@ export default async function verifyContentSecurity(t) {
                         assert.equal(await page.locator("[data-message-id=parts] article > details > pre").count(), 0,
                             "unsupported parts stay in JavaScript, not a metadata dump or implicit fetch");
                         assert.equal(await page.locator("#session-conversation script, #session-conversation img, #session-conversation form").count(), 0);
-                        assert.equal(await page.locator("[data-message-id=result]").getAttribute("data-tool-call-id"), call.id);
+                        assert.equal(await page.locator("[data-message-id=result]").getAttribute("data-tool-call-id"), call.toolCallId);
                     });
 
                     await t.test("streaming and replay cannot activate partial markup or escaped code", async () => {

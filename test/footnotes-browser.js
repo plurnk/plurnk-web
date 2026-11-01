@@ -123,11 +123,11 @@ export default async function verifyFootnotes(t) {
                         const roles = ["user", "assistant", "system", "developer"];
                         const messages = roles.map((role) => ({ id: role, role, content }));
                         messages.push(...["\ud800", "\ufffd"].map((id) => ({ id, role: "assistant", content })));
-                        messages.push({ id: "replies", role: "assistant", toolCalls: ["assistant", "reply/分析%\""].map((id) => ({
-                            id, type: "function", function: { name: "SEND", arguments: JSON.stringify({ body: content }) }, metadata: { plurnk: { op: "SEND" } },
+                        messages.push({ id: "replies", role: "assistant", toolCalls: ["assistant", "reply/分析%\""].map((toolCallId) => ({
+                            toolCallId, name: "SEND", rawInput: { body: content }, _meta: { plurnk: { op: "SEND" } },
                         })) });
-                        messages.push({ id: "note", role: "assistant", toolCalls: [{ id: "note-call", type: "function",
-                            function: { name: "NOTE", arguments: JSON.stringify({ body: content }) }, metadata: { plurnk: { op: "NOTE" } } }] },
+                        messages.push({ id: "note", role: "assistant", toolCalls: [{ toolCallId: "note-call",
+                            name: "NOTE", rawInput: { body: content }, _meta: { plurnk: { op: "NOTE" } } }] },
                         { id: "reasoning", role: "reasoning", content });
                         messages.push({ id: "receipt", role: "tool", toolCallId: "opaque-call", content });
                         await present(messages);

@@ -28,8 +28,8 @@ const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
     { id: "thought", role: "reasoning", content: "First I will inspect the file." },
     { id: "operations", role: "assistant", content: "", toolCalls: [
-        { id: "call/one#%", type: "function", function: { name: "READ", arguments: '{"path":"witness.txt"}' } },
-        { id: "call-two", type: "function", function: { name: "READ", arguments: '{"path":"missing.txt"}' } },
+        { toolCallId: "call/one#%", name: "READ", rawInput: { path: "witness.txt" } },
+        { toolCallId: "call-two", name: "READ", rawInput: { path: "missing.txt" } },
     ] },
     { id: "evidence", role: "tool", toolCallId: "call/one#%", content: "cobalt heron\n".repeat(40) },
     { id: "failure", role: "tool", toolCallId: "call-two", content: "Partial result", error: "Entry not found" },
@@ -55,8 +55,8 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                     await t.test("{§web-working-notes} semantic entries expose content and accessible identity, not protocol envelopes", async () => {
                         const source = [{ id: "notebook", role: "assistant", subagentRunId: "child-run", toolCalls:
                             ["fact", "idea", "plan", "note", "custom"].map((aside, index) => ({
-                                id: `note-${index}`, type: "function", function: { name: "NOTE", arguments: JSON.stringify({ aside, body: `A **${aside}**.` }) },
-                                metadata: { plurnk: { op: "NOTE", coordinate: `1/2/${index}`, session: 9, state: "resolved", status: 200,
+                                toolCallId: `note-${index}`, name: "NOTE", rawInput: { aside, body: `A **${aside}**.` },
+                                _meta: { plurnk: { op: "NOTE", coordinate: `1/2/${index}`, session: 9, state: "resolved", status: 200,
                                     attrs: { privateFixtureMarker: "not-a-presentation-field" } } },
                             })),
                         }];
@@ -150,22 +150,22 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                     });
 
                     await t.test("{§web-session-conversation} call identities stay exact without inventing fragment navigation", async () => {
-                        const calls = ["call/a", "call%2Fa"].map((id) => ({
-                            id, type: "function", function: { name: "READ", arguments: '{"path":"evidence.txt"}' },
+                        const calls = ["call/a", "call%2Fa"].map((toolCallId) => ({
+                            toolCallId, name: "READ", rawInput: { path: "evidence.txt" },
                         }));
                         await present([{ id: "operations", role: "assistant", content: "", toolCalls: calls },
-                            ...calls.map(({ id }, index) => ({ id: `result-${index}`, role: "tool", toolCallId: id, content: "Evidence" }))]);
+                            ...calls.map(({ toolCallId }, index) => ({ id: `result-${index}`, role: "tool", toolCallId, content: "Evidence" }))]);
                         for (const [index, call] of calls.entries()) {
                             const result = row(`result-${index}`);
-                            assert.equal(await result.getAttribute("data-tool-call-id"), call.id);
+                            assert.equal(await result.getAttribute("data-tool-call-id"), call.toolCallId);
                             assert.equal(await result.locator("a").count(), 0);
                         }
                     });
 
                     await t.test("{§web-session-conversation} mixed content and calls preserve their order, identity and supplied metadata across snapshots", async () => {
-                        const call = (id) => ({ id, type: "function", function: { name: "lookup", arguments: "{}" } });
+                        const call = (toolCallId) => ({ toolCallId, name: "lookup", rawInput: {} });
                         const message = { id: "mixed", role: "assistant", content: "First the explanation.", toolCalls: [call("one"), call("two")],
-                            metadata: { plurnk: { op: "SEND", status: 200, address: "message://user/example" } } };
+                            _meta: { plurnk: { op: "SEND", status: 200, address: "message://user/example" } } };
                         await present([message]);
                         const entries = page.locator("[data-messages] > li");
                         assert.deepEqual(await entries.evaluateAll((rows) => rows.map((row) => [row.dataset.messageId, row.dataset.callId ?? null])),
@@ -173,7 +173,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         assert.equal(await entries.first().getAttribute("data-plurnk-type"), "SEND");
                         assert.equal(await entries.nth(1).getAttribute("data-plurnk-type"), null, "a call does not inherit unrelated message metadata");
                         await entries.nth(2).evaluate((element) => { window.retainedCall = element; });
-                        await present([{ ...message, content: "", metadata: {}, toolCalls: [call("two")] }]);
+                        await present([{ ...message, content: "", _meta: {}, toolCalls: [call("two")] }]);
                         assert.equal(await entries.count(), 1);
                         assert.equal(await entries.first().evaluate((element) => element === window.retainedCall), true);
                         assert.equal(await entries.first().getAttribute("data-plurnk-type"), null);
@@ -245,8 +245,8 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                     });
 
                     await t.test("{§web-session-conversation} unchanged operation bodies preserve native text selection", async () => {
-                        const source = [{ id: "edit", role: "assistant", toolCalls: [{ id: "edit-call", type: "function",
-                            function: { name: "EDIT", arguments: '{"body":"Replacement text"}' }, metadata: { plurnk: { op: "EDIT" } } }] }];
+                        const source = [{ id: "edit", role: "assistant", toolCalls: [{ toolCallId: "edit-call",
+                            name: "EDIT", rawInput: { body: "Replacement text" }, _meta: { plurnk: { op: "EDIT" } } }] }];
                         await present(source);
                         await row("edit").locator("summary").click();
                         const before = await page.evaluate(() => {
@@ -303,10 +303,9 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
 
                     await t.test("{§web-working-notes} NOTE retains call/result identity and selected content without an arguments copy", async () => {
                         const body = "A **provisional hypothesis**, not an answer.\n\n<script>window.pwned = true</script>";
-                        const argumentsText = JSON.stringify({ aside: "idea", body });
-                        const call = { id: "note-call", type: "function", function: { name: "NOTE", arguments: argumentsText }, metadata: { plurnk: { op: "NOTE" } } };
+                        const call = { toolCallId: "note-call", name: "NOTE", rawInput: { aside: "idea", body }, _meta: { plurnk: { op: "NOTE" } } };
                         const note = { id: "note", role: "assistant", content: "", subagentRunId: "child-run", toolCalls: [call] };
-                        const result = { id: "note-result", role: "tool", toolCallId: call.id,
+                        const result = { id: "note-result", role: "tool", toolCallId: call.toolCallId,
                             content: '{"status":500,"problem":{"title":"Note storage failed","detail":"The note could not be persisted."}}', error: "Note storage failed" };
                         await present([note, result]);
                         const item = row("note");
@@ -340,29 +339,29 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                     });
 
                     await t.test("{§web-working-notes} incomplete arguments are not content and are never repaired or guessed", async () => {
-                        const display = async (argumentsText, metadata = { plurnk: { op: "NOTE" } }, name = "NOTE") => {
-                            await present([{ id: "streamed-note", role: "assistant", toolCalls: [{ id: "streamed-call", type: "function", function: { name, arguments: argumentsText }, metadata }] }]);
+                        const display = async (rawInput, _meta = { plurnk: { op: "NOTE" } }, name = "NOTE") => {
+                            await present([{ id: "streamed-note", role: "assistant", toolCalls: [{ toolCallId: "streamed-call", name, rawInput, _meta }] }]);
                         };
                         const item = row("streamed-note");
-                        await display('{"body":"**unfinished');
+                        await display(undefined);
                         await item.evaluate((element) => { window.streamedCall = element; });
-                        for (const argumentsText of ['{"body":"**unfinished', "null", "[]", '{"body":42}', '{"body":{"raw":"**not a string**"}}']) {
-                            await display(argumentsText);
+                        for (const rawInput of [undefined, null, [], { body: 42 }, { body: { raw: "**not a string**" } }]) {
+                            await display(rawInput);
                             assert.equal(await item.getAttribute("data-plurnk-note"), null);
                             assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                             assert.equal(await item.evaluate((element) => element === window.streamedCall), true);
                         }
-                        const complete = '{"body":"**Now complete**","aside":"fact"}';
+                        const complete = { body: "**Now complete**", aside: "fact" };
                         await display(complete);
                         assert.equal(await item.locator("article > details > pre").textContent(), "**Now complete**");
                         assert.equal(await item.getAttribute("data-plurnk-note"), "fact");
                         assert.equal(await item.evaluate((element) => element === window.streamedCall), true);
-                        for (const [metadata, name] of [[{}, "NOTE"], [{ plurnk: { op: "error" } }, "NOTE"], [{ plurnk: { op: "NOTE" } }, "lookup"]]) {
-                            await display(complete, metadata, name);
+                        for (const [_meta, name] of [[{}, "NOTE"], [{ plurnk: { op: "error" } }, "NOTE"], [{ plurnk: { op: "NOTE" } }, "lookup"]]) {
+                            await display(complete, _meta, name);
                             assert.equal(await item.getAttribute("data-plurnk-note"), null);
                             assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                         }
-                        await display('{"body":"","aside":null}');
+                        await display({ body: "", aside: null });
                         assert.equal(await item.locator("article").textContent(), "");
                         assert.equal(await item.getByRole("article", { name: "NOTE · note", exact: true }).count(), 1);
                     });
@@ -394,6 +393,6 @@ test("{§web-math-content} a missing math chunk preserves source, reports failur
 test("{§web-conversation-content} {§web-browser-security} adversarial content across roles, streaming and replay", { timeout: 60_000 }, verifyContentSecurity);
 test("{§web-diagram-content} {§web-content-reflow} static Mermaid images through the real conversation outlet", { timeout: 60_000 }, verifyMermaid);
 test("{§web-diagram-content} unavailable diagram compilation preserves source and ordinary messages", verifyUnavailableMermaid);
-test("{§web-session-approval} native review controls project complete SDK interrupt sets", { timeout: 60_000 }, verifyApproval);
+test("{§web-session-approval} native review controls project complete SDK gate sets", { timeout: 60_000 }, verifyApproval);
 test("{§web-session-questions} native and JSON answers preserve the full response contract", { timeout: 60_000 }, verifyInteractions);
 test("{§web-session-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifySessionCards);

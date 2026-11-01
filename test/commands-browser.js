@@ -127,6 +127,10 @@ export default async function verifyCommands(t) {
                     }
                     await page.setViewportSize({ width: 320, height: 700 });
                     const command = (text) => page.evaluate((text) => window.command(text), text);
+                    const isCommand = (text, available = []) => page.evaluate(({ text, available }) => window.isCommand(text, available), { text, available });
+                    assert.equal(await isCommand("/skill run", [{ name: "skill" }]), false, "advertised availableCommands pass through to session/prompt");
+                    assert.equal(await isCommand("/model", [{ name: "skill" }]), true, "local slash commands remain intercepted");
+                    assert.equal(await isCommand("/quit", [{ name: "skill" }]), true, "unadvertised unknown slash commands remain intercepted locally");
                     const rows = page.locator("#session-command-results > ul > li");
                     for (const text of ["/", "  /help /model \n", "/yolo"]) assert.equal(await command(text), true);
                     for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b", "/capabilities {"]) {

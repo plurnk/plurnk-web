@@ -9,8 +9,8 @@ const selection = (path, marks, pattern) => ({
     matcher: pattern ? { raw: pattern } : null,
 });
 const call = (id, name, args) => ({ id, role: "assistant", toolCalls: [{
-    id: `${id}-call`, type: "function", function: { name, arguments: JSON.stringify(args) },
-    metadata: { plurnk: { op: name, attrs: { sentinel: "private envelope" } } },
+    toolCallId: `${id}-call`, name, rawInput: args,
+    _meta: { plurnk: { op: name, attrs: { sentinel: "private envelope" } } },
 }] });
 const result = (id, receipt) => ({ id: `${id}-result`, role: "tool", toolCallId: `${id}-call`, content: JSON.stringify(receipt) });
 
@@ -67,7 +67,7 @@ export default async function verifySemanticContent(t) {
 
                     const read = call("read", "READ", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
                     const readResult = result("read", { status: 200, lineOrdinals: [1, 8], range: { unit: "line", total: 50, requested: [1, -1], returned: [1, 8] } });
-                    readResult.content = [{ type: "text", text: readResult.content }, { type: "document", source: { type: "url", value: new URL("/acp/body", url).href, mimeType: "text/plain" } }];
+                    readResult.content = [{ type: "text", text: readResult.content }, { type: "resource_link", uri: new URL("/acp/body", url).href, name: "body", mimeType: "text/plain" }];
                     await present([read, readResult]);
                     assert.equal(await field(row("read"), "heading").innerText(), "Looking for mudkips");
                     assert.equal(await row("read").locator("[data-plurnk-operands]").innerText(), "(README.md) <1,-1> /mudkips/ {2}");
@@ -103,7 +103,7 @@ export default async function verifySemanticContent(t) {
                     await present([call("find", "FIND", {}), result("find", { status: 204, range: { unit: "result", total: 0, requested: [1, -1] } })]);
                     assert.equal(await field(row("find"), "count").textContent(), "{0}");
                     const rejected = call("invalid", "READ", { text: "READ (missing closing syntax" });
-                    rejected.toolCalls[0].metadata.plurnk.op = "error";
+                    rejected.toolCalls[0]._meta.plurnk.op = "error";
                     await present([rejected, result("invalid", { status: 400, problem: { title: "Invalid operation" } })]);
                     assert.equal(await field(row("invalid"), "path").count(), 0, "rejected syntax is not reparsed into imagined operands");
                     assert.equal(await field(row("invalid"), "outcome").textContent(), "Invalid operation");
@@ -138,8 +138,8 @@ export default async function verifySemanticContent(t) {
                     await present([
                         call("send", "SEND", { body: { raw: "Actual **reply**.", json: null } }), result("send", { status: 200, completion: 200 }),
                         call("work", "WORK", { target: { raw: "helper" }, aside: "Delegate" }), result("work", { status: 202 }),
-                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', metadata: { plurnk: { op: "SEND", status: 200, signal: 200 } } },
-                        { id: "observation", role: "tool", toolCallId: "work-call", content: '{"status":200,"path":"ops://helper/1","range":{"unit":"line","total":2,"requested":[1,-1],"returned":[1,2]}}', metadata: { plurnk: { op: "READ", status: 200 } } },
+                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', _meta: { plurnk: { op: "SEND", status: 200, signal: 200 } } },
+                        { id: "observation", role: "tool", toolCallId: "work-call", content: '{"status":200,"path":"ops://helper/1","range":{"unit":"line","total":2,"requested":[1,-1],"returned":[1,2]}}', _meta: { plurnk: { op: "READ", status: 200 } } },
                     ]);
                     assert.deepEqual(await list.locator(":scope > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)), ["send", "work", "child-reply", "observation"]);
                     assert.equal(await row("send").locator("article > details > p > strong").textContent(), "reply");
@@ -158,10 +158,10 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await row("hostile").locator("script, img, form, a").count(), 0);
                     assert.equal(await page.evaluate(() => window.summaryExecuted), undefined);
                     assert.deepEqual(requests, []);
-                    const speech = { id: "speech", role: "assistant", content: "Unchanged body.", metadata: { plurnk: { op: "SEND", aside: "Earlier aside" } } };
+                    const speech = { id: "speech", role: "assistant", content: "Unchanged body.", _meta: { plurnk: { op: "SEND", aside: "Earlier aside" } } };
                     await present([speech]);
                     await row("speech").locator("article > details > p").evaluate((element) => { window.speechBody = element; });
-                    await present([{ ...speech, metadata: {} }]);
+                    await present([{ ...speech, _meta: {} }]);
                     assert.equal(await row("speech").locator("header, [data-plurnk-operands]").count(), 0, "changed metadata cannot retain a stale summary");
                     assert.equal(await row("speech").locator("article > details > p").evaluate((element) => element === window.speechBody), true);
                     checkBrowser();

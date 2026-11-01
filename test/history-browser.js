@@ -12,12 +12,12 @@ const toUpdate = (m) => {
         return {
             sessionUpdate: "tool_call",
             messageId: m.id,
-            toolCallId: tc.id,
-            name: tc.function.name,
-            title: tc.function.name,
-            rawInput: JSON.parse(tc.function.arguments),
+            toolCallId: tc.toolCallId,
+            name: tc.name,
+            title: tc.name,
+            rawInput: tc.rawInput,
             status: "pending",
-            _meta: tc.metadata,
+            _meta: tc._meta,
         };
     }
     if (m.role === "tool") {
@@ -129,8 +129,8 @@ export default async function verifyHistory(t) {
                     // Fresh component state, non-final page and late result through the real SDK.
                     await page.reload();
                     await page.waitForFunction(() => typeof window.run === "function");
-                    const call = { id: "call-message", role: "assistant", toolCalls: [{ id: "call", type: "function",
-                        function: { name: "READ", arguments: JSON.stringify({ target: { raw: "evidence.txt" } }) }, metadata: { plurnk: { op: "READ" } } }] };
+                    const call = { id: "call-message", role: "assistant", toolCalls: [{ toolCallId: "call",
+                        name: "READ", rawInput: { target: { raw: "evidence.txt" } }, _meta: { plurnk: { op: "READ" } } }] };
                     pages.set("/history/call", pageEnvelope([call], null));
                     events = snapshot([message("now")], "/history/call");
                     await run();

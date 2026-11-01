@@ -4,9 +4,9 @@ import browserDiagnostics from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 
 const call = (id, op, body, aside = "") => ({
-    id, role: "assistant", toolCalls: [{ id: `${id}-call`, type: "function",
-        function: { name: op, arguments: JSON.stringify({ body, aside, target: { raw: "file.txt" } }) },
-        metadata: { plurnk: { op } },
+    id, role: "assistant", toolCalls: [{ toolCallId: `${id}-call`,
+        name: op, rawInput: { body, aside, target: { raw: "file.txt" } },
+        _meta: { plurnk: { op } },
     }],
 });
 
@@ -36,11 +36,11 @@ export default async function verifyDisclosures(t) {
                         { id: "user", role: "user", content: "Question" },
                         { id: "answer", role: "assistant", content: "**Answer**\n\nAnother paragraph." },
                         call("send", "SEND", "Delivered reply"),
-                        { id: "cancel", role: "tool", toolCallId: "cancel-call", content: "Cancelled reply", metadata: { plurnk: { op: "SEND", signal: 499 } } },
+                        { id: "cancel", role: "tool", toolCallId: "cancel-call", content: "Cancelled reply", _meta: { plurnk: { op: "SEND", signal: 499 } } },
                         call("note", "NOTE", "Literal <pre>\n**fact**", "fact"),
                         call("edit", "EDIT", "Replacement", "Update the file"),
                         { id: "tool", role: "tool", toolCallId: "opaque-call", content: "Tool output", error: "Tool failed" },
-                        { id: "reasoning", role: "reasoning", content: "Working", metadata: { plurnk: { coordinate: "1/3" } } },
+                        { id: "reasoning", role: "reasoning", content: "Working", _meta: { plurnk: { coordinate: "1/3" } } },
                         call("read", "READ", ""),
                         call("empty", "NOTE", ""),
                         call("wrapped", "EDIT", "Replacement", "Update the file after checking the existing implementation and its complete contract"),
@@ -112,7 +112,7 @@ export default async function verifyDisclosures(t) {
                     assert.equal(await disclosure("note").evaluate((node) => node.open), false);
                     const previousReads = reads;
                     const reference = [{ id: "reference", role: "tool", toolCallId: "opaque-reference", content: [{
-                        type: "document", source: { type: "url", value: new URL("/acp/disclosure-body", url).href, mimeType: "text/plain" },
+                        type: "resource_link", uri: new URL("/acp/disclosure-body", url).href, name: "body", mimeType: "text/plain",
                     }] }];
                     await present(reference);
                     await row("reference").scrollIntoViewIfNeeded();
@@ -128,7 +128,7 @@ export default async function verifyDisclosures(t) {
                     await present([provisional]);
                     assert.equal(await row(provisional.id).getByText("Entry missing", { exact: true }).count(), 1);
                     await present([{ ...provisional, content: JSON.stringify({ status: 404, problem: { title: "Entry missing" } }),
-                        metadata: { plurnk: { op: "READ", status: 404 } },
+                        _meta: { plurnk: { op: "READ", status: 404 } },
                     }]);
                     assert.equal(await row(provisional.id).getByText("Entry missing", { exact: true }).count(), 1, "late operation attribution retains one diagnostic, not two renderers' copies");
                     assert.equal(await disclosure(provisional.id).count(), 0, "attributed READ has no receipt-body disclosure");

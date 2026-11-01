@@ -52,7 +52,7 @@ export default async function verifyBodies(t) {
                     });
                     const messages = [{ id: "before-result", role: "assistant", content: "Earlier content.\n\n".repeat(80) },
                         { id: "result", role: "user", content: [
-                        { type: "document", source: { type: "url", value: address, mimeType: "text/html" } },
+                        { type: "resource_link", uri: address, mimeType: "text/html" },
                     ] }];
                     await page.evaluate((messages) => { window.messages = messages; window.present(messages); }, messages);
                     const result = page.locator('[data-message-id="result"]');
@@ -74,7 +74,7 @@ export default async function verifyBodies(t) {
 
                     const presentReference = async (value) => {
                         const replacement = structuredClone(messages);
-                        replacement[1].content[0].source.value = value;
+                        replacement[1].content[0].uri = value;
                         await page.evaluate((messages) => window.present(messages), replacement);
                         await result.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                     };

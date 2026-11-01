@@ -46,11 +46,11 @@ export default function bodyReferences(root, read) {
     }
 
     return {
-        /** @param {Element} outlet @param {{value: string, mimeType?: string}} source @param {string} [label] */
+        /** @param {Element} outlet @param {{uri: string, mimeType?: string}} source @param {string} [label] */
         append(outlet, source, label) {
             const body = $.clone(outlet, "#conversation-body-reference");
             if (label) body.setAttribute("aria-label", label);
-            pending.set(body, source.value);
+            pending.set(body, source.uri);
             observer.observe(body);
         },
         prune() {

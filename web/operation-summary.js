@@ -8,9 +8,12 @@ export function record(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? /** @type {RecordValue} */ (value) : null;
 }
 
-/** @param {string} text @returns {RecordValue | null} */
-export function argumentsOf(text) {
-    try { return record(JSON.parse(text)); }
+/** @param {unknown} value @returns {RecordValue | null} */
+export function argumentsOf(value) {
+    const direct = record(value);
+    if (direct) return direct;
+    if (typeof value !== "string") return null;
+    try { return record(JSON.parse(value)); }
     catch (error) {
         if (error instanceof SyntaxError) return null;
         throw error;
@@ -19,10 +22,17 @@ export function argumentsOf(text) {
 
 /** @param {unknown} content @returns {RecordValue | null} */
 export function receiptOf(content) {
+    const direct = record(content);
+    if (direct && Number.isInteger(direct.status)) return direct;
     const texts = typeof content === "string" ? [content]
-        : Array.isArray(content) ? content.filter((part) => part?.type === "text").map((part) => part.text) : [];
+        : Array.isArray(content)
+            ? content.flatMap((part) => {
+                if (part?.type === "text" && typeof part.text === "string") return [part.text];
+                if (part?.type === "content" && part.content?.type === "text" && typeof part.content.text === "string") return [part.content.text];
+                return [];
+            })
+            : [];
     for (const text of texts) {
-        if (typeof text !== "string") continue;
         const receipt = argumentsOf(text);
         if (receipt && Number.isInteger(receipt.status)) return receipt;
     }

@@ -90,8 +90,8 @@ export async function verifyMermaid(t) {
                         const roles = ["user", "assistant", "system", "developer"];
                         await page.evaluate(({ content, roles }) => window.present([
                             ...roles.map((role) => ({ id: role, role, content })),
-                            { id: "notes", role: "assistant", content: "", toolCalls: [{ id: "note", type: "function", function: { name: "NOTE", arguments: JSON.stringify({ aside: "idea", body: content }) }, metadata: { plurnk: { op: "NOTE" } } }] },
-                            { id: "send", role: "assistant", toolCalls: [{ id: "send-call", type: "function", function: { name: "SEND", arguments: JSON.stringify({ body: content }) }, metadata: { plurnk: { op: "SEND" } } }] },
+                            { id: "notes", role: "assistant", content: "", toolCalls: [{ toolCallId: "note", name: "NOTE", rawInput: { aside: "idea", body: content }, _meta: { plurnk: { op: "NOTE" } } }] },
+                            { id: "send", role: "assistant", toolCalls: [{ toolCallId: "send-call", name: "SEND", rawInput: { body: content }, _meta: { plurnk: { op: "SEND" } } }] },
                             { id: "reasoning", role: "reasoning", content },
                             { id: "result", role: "tool", toolCallId: "opaque-call", content },
                         ]), { content, roles });

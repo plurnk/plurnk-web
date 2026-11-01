@@ -13,10 +13,16 @@ export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
 
 /**
  * @typedef {{
- *   id: string,
- *   type: "function",
- *   function: { name: string, arguments: string },
- *   metadata?: { plurnk?: Record<string, any> },
+ *   toolCallId: string,
+ *   name: string,
+ *   title?: string,
+ *   kind?: string,
+ *   status?: string,
+ *   rawInput?: unknown,
+ *   rawOutput?: unknown,
+ *   locations?: readonly { path: string, line?: number | null }[],
+ *   content?: readonly Record<string, unknown>[],
+ *   _meta?: { plurnk?: Record<string, any> } | null,
  * }} ToolCall
  */
 
@@ -25,8 +31,10 @@ export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
  *   type: "text",
  *   text: string,
  * } | {
- *   type: "document",
- *   source: { type: "url", value: string, mimeType: string },
+ *   type: "resource_link",
+ *   uri: string,
+ *   name?: string,
+ *   mimeType?: string,
  * }} MessagePart
  */
 
@@ -36,9 +44,9 @@ export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
  *   content?: string | readonly MessagePart[],
  *   name?: string,
  *   subagentRunId?: string,
- *   metadata?: { plurnk?: Record<string, any> },
+ *   _meta?: { plurnk?: Record<string, any> } | null,
  * } & (
- *   | { role: "tool", toolCallId: string, error?: string }
+ *   | { role: "tool", toolCallId: string, rawOutput?: unknown, error?: string }
  *   | { role: "assistant", toolCalls?: ToolCall[], error?: string }
  *   | { role: "activity", activityType?: string, error?: string }
  *   | { role: "user" | "reasoning" | "system" | "developer", error?: string }
@@ -56,26 +64,62 @@ export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
 /**
  * @typedef {{
  *   id: string,
- *   reason: "approval" | "tool_call",
+ *   method: "session/request_permission",
+ *   sessionId?: string,
+ *   toolCall?: Record<string, unknown>,
+ *   options?: readonly Record<string, unknown>[],
  *   expiresAt?: string,
- *   toolCallId?: string,
- *   message?: string,
- *   responseSchema?: Record<string, unknown>,
- *   metadata?: {
+ *   _meta?: {
  *     plurnk?: {
  *       proposal?: import("@plurnk/plurnk-contracts").ProposalProjection,
- *       interaction?: import("@plurnk/plurnk-contracts").ClientInteractionProjection,
- *     }
- *   }
- * }} PendingInterrupt
+ *     },
+ *   } | null,
+ * }} PermissionGate
  */
 
 /**
  * @typedef {{
- *   interruptId: string,
- *   status: "resolved" | "cancelled",
- *   payload?: unknown,
- * }} ResumeResolution
+ *   id: string,
+ *   method: "elicitation/create",
+ *   sessionId?: string,
+ *   mode?: "form" | "url",
+ *   message?: string,
+ *   requestedSchema?: Record<string, unknown>,
+ *   url?: string,
+ *   elicitationId?: string,
+ *   expiresAt?: string,
+ *   _meta?: {
+ *     plurnk?: {
+ *       interaction?: import("@plurnk/plurnk-contracts").ClientInteractionProjection,
+ *       toolName?: string,
+ *       arguments?: unknown,
+ *     },
+ *   } | null,
+ * }} ElicitationGate
+ */
+
+/**
+ * @typedef {PermissionGate | ElicitationGate} SessionGate
+ */
+
+/**
+ * @typedef {{
+ *   id: string,
+ *   method: "session/request_permission",
+ *   response: {
+ *     outcome: { outcome: "selected", optionId: string } | { outcome: "cancelled" },
+ *     _meta?: Record<string, unknown>,
+ *   },
+ * } | {
+ *   id: string,
+ *   method: "elicitation/create",
+ *   response: {
+ *     action: "accept",
+ *     content?: Record<string, unknown>,
+ *   } | {
+ *     action: "decline" | "cancel",
+ *   },
+ * }} GateResolution
  */
 
 /**
@@ -97,7 +141,7 @@ export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
  *   onUserMessage?: (args: { messageId: string }) => void | Promise<void>,
  *   onStateChanged?: (args: { state: Record<string, unknown> }) => void | Promise<void>,
  *   onSettled?: (args: { stopReason: string, meta?: Record<string, unknown>, result?: unknown }) => void | Promise<void>,
- *   onError?: (args: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }) => void | Promise<void>,
+ *   onError?: (args: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown, settled?: boolean }) => void | Promise<void>,
  * }} SessionSubscriber
  */
 
@@ -105,11 +149,11 @@ export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
  * @typedef {{
  *   abortController?: AbortController,
  *   message?: { id: string, role: "user", content: string },
- *   resume?: readonly ResumeResolution[],
+ *   resolutions?: readonly GateResolution[],
  *   action?: Record<string, unknown>,
  *   workspace?: string,
  *   projectRoot?: string,
- *   interrupts?: readonly string[],
+ *   gates?: readonly string[],
  * }} SessionRunOptions
  */
 
@@ -128,12 +172,10 @@ function extractChunkContent(content, defaultMime) {
     if (!isRecord(content)) return "";
     if (content.type === "resource_link" && typeof content.uri === "string") {
         return [{
-            type: "document",
-            source: {
-                type: "url",
-                value: content.uri,
-                mimeType: typeof content.mimeType === "string" ? content.mimeType : defaultMime,
-            },
+            type: "resource_link",
+            uri: content.uri,
+            ...(typeof content.name === "string" ? { name: content.name } : {}),
+            mimeType: typeof content.mimeType === "string" ? content.mimeType : defaultMime,
         }];
     }
     if (content.type === "text" && typeof content.text === "string") {
@@ -162,12 +204,10 @@ function extractToolResultContent(contentBlocks, rawOutput) {
                     parts.push({ type: "text", text: inner.text });
                 } else if (inner.type === "resource_link" && typeof inner.uri === "string") {
                     parts.push({
-                        type: "document",
-                        source: {
-                            type: "url",
-                            value: inner.uri,
-                            mimeType: typeof inner.mimeType === "string" ? inner.mimeType : "text/plain",
-                        },
+                        type: "resource_link",
+                        uri: inner.uri,
+                        ...(typeof inner.name === "string" ? { name: inner.name } : {}),
+                        mimeType: typeof inner.mimeType === "string" ? inner.mimeType : "text/plain",
                     });
                 }
             }
@@ -235,9 +275,9 @@ export class SessionTranslator {
                         found.content = chunk;
                     } else if (typeof found.content === "string") {
                         if (
-                            (plurnk?.id !== undefined && found.metadata?.plurnk?.id === plurnk.id)
+                            (plurnk?.id !== undefined && found._meta?.plurnk?.id === plurnk.id)
                             || found.content === chunk
-                            || found.metadata?.plurnk === undefined
+                            || found._meta?.plurnk === undefined
                         ) {
                             found.content = chunk;
                         } else {
@@ -248,10 +288,10 @@ export class SessionTranslator {
                     }
                     if (subagentRunId) found.subagentRunId = subagentRunId;
                     if (plurnk) {
-                        found.metadata = {
-                            ...found.metadata,
+                        found._meta = {
+                            ...found._meta,
                             plurnk: {
-                                ...(isRecord(found.metadata?.plurnk) ? found.metadata.plurnk : {}),
+                                ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
                                 ...structuredClone(plurnk),
                             },
                         };
@@ -262,7 +302,7 @@ export class SessionTranslator {
                         role: "user",
                         content: chunk,
                         ...(subagentRunId ? { subagentRunId } : {}),
-                        ...(plurnk ? { metadata: { plurnk: structuredClone(plurnk) } } : {}),
+                        ...(plurnk ? { _meta: { plurnk: structuredClone(plurnk) } } : {}),
                     });
                 }
                 continue;
@@ -280,7 +320,7 @@ export class SessionTranslator {
                     if (Array.isArray(chunk)) {
                         found.content = chunk;
                     } else if (typeof found.content === "string") {
-                        if (plurnk?.id !== undefined && found.metadata?.plurnk?.id === plurnk.id) {
+                        if (plurnk?.id !== undefined && found._meta?.plurnk?.id === plurnk.id) {
                             found.content = chunk;
                         } else {
                             found.content += chunk;
@@ -290,10 +330,10 @@ export class SessionTranslator {
                     }
                     if (subagentRunId) found.subagentRunId = subagentRunId;
                     if (plurnk) {
-                        found.metadata = {
-                            ...found.metadata,
+                        found._meta = {
+                            ...found._meta,
                             plurnk: {
-                                ...(isRecord(found.metadata?.plurnk) ? found.metadata.plurnk : {}),
+                                ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
                                 ...structuredClone(plurnk),
                             },
                         };
@@ -304,7 +344,7 @@ export class SessionTranslator {
                         role: "assistant",
                         content: chunk,
                         ...(subagentRunId ? { subagentRunId } : {}),
-                        ...(plurnk ? { metadata: { plurnk: structuredClone(plurnk) } } : {}),
+                        ...(plurnk ? { _meta: { plurnk: structuredClone(plurnk) } } : {}),
                     });
                 }
                 continue;
@@ -333,10 +373,10 @@ export class SessionTranslator {
                 if (found) {
                     if (subagentRunId) found.subagentRunId = subagentRunId;
                     if (mergedPlurnk) {
-                        found.metadata = {
-                            ...found.metadata,
+                        found._meta = {
+                            ...found._meta,
                             plurnk: {
-                                ...(isRecord(found.metadata?.plurnk) ? found.metadata.plurnk : {}),
+                                ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
                                 ...mergedPlurnk,
                             },
                         };
@@ -347,7 +387,7 @@ export class SessionTranslator {
                         role: "reasoning",
                         content: "",
                         ...(subagentRunId ? { subagentRunId } : {}),
-                        ...(mergedPlurnk ? { metadata: { plurnk: mergedPlurnk } } : {}),
+                        ...(mergedPlurnk ? { _meta: { plurnk: mergedPlurnk } } : {}),
                     });
                 }
                 continue;
@@ -361,47 +401,7 @@ export class SessionTranslator {
                         : "";
                 if (!toolCallId) continue;
 
-                const isSyntheticInteraction = toolCallId.startsWith("int:") || isRecord(plurnk?.interaction);
-                if (isSyntheticInteraction) {
-                    const interaction = isRecord(plurnk?.interaction) ? plurnk.interaction : undefined;
-                    const req = isRecord(interaction?.request) ? interaction.request : undefined;
-                    const name = typeof update.name === "string" && update.name.length > 0
-                        ? update.name
-                        : typeof req?.toolName === "string"
-                            ? req.toolName
-                            : "question";
-                    const rawArgs = update.rawInput !== undefined ? update.rawInput : req;
-                    const args = rawArgs !== undefined
-                        ? (typeof rawArgs === "string" ? rawArgs : JSON.stringify(rawArgs))
-                        : "{}";
-                    const existingCall = messages
-                        .flatMap((m) => (m.role === "assistant" ? m.toolCalls ?? [] : []))
-                        .find((c) => c.id === toolCallId);
-                    if (existingCall) {
-                        if (typeof update.name === "string" && update.name.length > 0) {
-                            existingCall.function.name = update.name;
-                        }
-                        if (update.rawInput !== undefined) {
-                            existingCall.function.arguments = args;
-                        }
-                    } else {
-                        messages.push({
-                            id: `call:${toolCallId}`,
-                            role: "assistant",
-                            content: "",
-                            toolCalls: [{
-                                id: toolCallId,
-                                type: "function",
-                                function: { name, arguments: args },
-                                metadata: {
-                                    plurnk: {
-                                        ...(plurnk ? structuredClone(plurnk) : {}),
-                                        synthetic: true,
-                                    },
-                                },
-                            }],
-                        });
-                    }
+                if (toolCallId.startsWith("int:") || isRecord(plurnk?.interaction)) {
                     continue;
                 }
 
@@ -430,15 +430,19 @@ export class SessionTranslator {
                     const foundObs = messages.find((m) => m.id === obsId);
                     if (foundObs) {
                         foundObs.content = obsContent;
-                        foundObs.metadata = { plurnk: structuredClone(plurnk) };
+                        if (foundObs.role === "tool" && update.rawOutput !== undefined) {
+                            foundObs.rawOutput = structuredClone(update.rawOutput);
+                        }
+                        foundObs._meta = { plurnk: structuredClone(plurnk) };
                     } else {
                         messages.push({
                             id: obsId,
                             role: "tool",
                             toolCallId,
                             content: obsContent,
+                            ...(update.rawOutput !== undefined ? { rawOutput: structuredClone(update.rawOutput) } : {}),
                             ...(subagentRunId ? { subagentRunId } : {}),
-                            metadata: { plurnk: structuredClone(plurnk) },
+                            _meta: { plurnk: structuredClone(plurnk) },
                         });
                     }
                     continue;
@@ -454,7 +458,7 @@ export class SessionTranslator {
 
                 const existingCall = messages
                     .flatMap((m) => (m.role === "assistant" ? m.toolCalls ?? [] : []))
-                    .find((c) => c.id === toolCallId);
+                    .find((c) => c.toolCallId === toolCallId);
                 const hasCallDefinition =
                     kind === "tool_call"
                     || typeof update.name === "string"
@@ -463,24 +467,34 @@ export class SessionTranslator {
 
                 if (existingCall) {
                     if (typeof update.name === "string" && update.name.length > 0) {
-                        existingCall.function.name = update.name;
+                        existingCall.name = update.name;
                     } else if (typeof plurnk?.op === "string" && plurnk.op.length > 0) {
-                        existingCall.function.name = plurnk.op;
+                        existingCall.name = plurnk.op;
                     }
+                    if (typeof update.title === "string") existingCall.title = update.title;
+                    if (typeof update.kind === "string") existingCall.kind = update.kind;
+                    if (typeof update.status === "string") existingCall.status = update.status;
                     if (update.rawInput !== undefined) {
-                        existingCall.function.arguments = typeof update.rawInput === "string"
-                            ? update.rawInput
-                            : JSON.stringify(update.rawInput);
+                        existingCall.rawInput = structuredClone(update.rawInput);
+                    }
+                    if (update.rawOutput !== undefined) {
+                        existingCall.rawOutput = structuredClone(update.rawOutput);
+                    }
+                    if (Array.isArray(update.locations)) {
+                        existingCall.locations = structuredClone(update.locations);
+                    }
+                    if (Array.isArray(update.content)) {
+                        existingCall.content = structuredClone(update.content);
                     }
                     if (plurnk) {
-                        const prevPlurnk = isRecord(existingCall.metadata?.plurnk)
-                            ? { ...existingCall.metadata.plurnk }
+                        const prevPlurnk = isRecord(existingCall._meta?.plurnk)
+                            ? { ...existingCall._meta.plurnk }
                             : {};
                         if ((update.status === "completed" || update.status === "failed") && plurnk.proposal === undefined) {
                             delete prevPlurnk.proposal;
                         }
-                        existingCall.metadata = {
-                            ...existingCall.metadata,
+                        existingCall._meta = {
+                            ...existingCall._meta,
                             plurnk: {
                                 ...prevPlurnk,
                                 ...structuredClone(plurnk),
@@ -495,13 +509,7 @@ export class SessionTranslator {
                             : typeof update.title === "string" && update.title.length > 0
                                 ? update.title
                                 : "tool";
-                    const args = update.rawInput !== undefined
-                        ? (typeof update.rawInput === "string" ? update.rawInput : JSON.stringify(update.rawInput))
-                        : "{}";
                     const callPlurnk = plurnk ? structuredClone(plurnk) : {};
-                    if (toolCallId.startsWith("int:") && callPlurnk.op === undefined) {
-                        callPlurnk.synthetic = true;
-                    }
                     messages.push({
                         id: typeof update.messageId === "string" && update.messageId.length > 0
                             ? update.messageId
@@ -510,17 +518,22 @@ export class SessionTranslator {
                         content: "",
                         ...(subagentRunId ? { subagentRunId } : {}),
                         toolCalls: [{
-                            id: toolCallId,
-                            type: "function",
-                            function: { name, arguments: args },
-                            ...(Object.keys(callPlurnk).length > 0 ? { metadata: { plurnk: callPlurnk } } : {}),
+                            toolCallId,
+                            name,
+                            ...(typeof update.title === "string" ? { title: update.title } : {}),
+                            ...(typeof update.kind === "string" ? { kind: update.kind } : {}),
+                            ...(typeof update.status === "string" ? { status: update.status } : {}),
+                            ...(update.rawInput !== undefined ? { rawInput: structuredClone(update.rawInput) } : {}),
+                            ...(update.rawOutput !== undefined ? { rawOutput: structuredClone(update.rawOutput) } : {}),
+                            ...(Array.isArray(update.locations) ? { locations: structuredClone(update.locations) } : {}),
+                            ...(Array.isArray(update.content) ? { content: structuredClone(update.content) } : {}),
+                            ...(Object.keys(callPlurnk).length > 0 ? { _meta: { plurnk: callPlurnk } } : {}),
                         }],
                     });
                 }
 
                 const hasReceipt =
-                    !toolCallId.startsWith("int:")
-                    && update.status !== "pending"
+                    update.status !== "pending"
                     && (update.rawOutput !== undefined
                         || (Array.isArray(update.content)
                             && update.content.some((b) => isRecord(b) && b.type === "content")));
@@ -530,14 +543,18 @@ export class SessionTranslator {
                         : `${toolCallId}:result`;
                     const resultContent = extractToolResultContent(update.content, update.rawOutput);
                     const existingResult = messages.find((m) => m.id === resultId && m.role === "tool");
-                    if (existingResult) {
+                    if (existingResult && existingResult.role === "tool") {
                         existingResult.content = resultContent;
+                        if (update.rawOutput !== undefined) {
+                            existingResult.rawOutput = structuredClone(update.rawOutput);
+                        }
                     } else {
                         messages.push({
                             id: resultId,
                             role: "tool",
                             toolCallId,
                             content: resultContent,
+                            ...(update.rawOutput !== undefined ? { rawOutput: structuredClone(update.rawOutput) } : {}),
                         });
                     }
                 }
@@ -556,86 +573,6 @@ export function randomUUID() {
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-/**
- * {§web-session-approval} {§web-session-questions} Build a complete ordered resolution array for the presented interrupts.
- * @param {readonly PendingInterrupt[]} pendingInterrupts
- * @param {Record<string, { status: "resolved" | "cancelled", payload?: unknown }>} resolutions
- * @returns {ResumeResolution[]}
- */
-export function buildResumeArray(pendingInterrupts, resolutions) {
-    if (!Array.isArray(pendingInterrupts) || pendingInterrupts.length === 0) {
-        throw new Error("No pending interrupts to resume.");
-    }
-    if (!resolutions || typeof resolutions !== "object") {
-        throw new Error("Resolutions must be an object keyed by interrupt ID.");
-    }
-    const ids = new Set(pendingInterrupts.map(({ id }) => id));
-    for (const key of Object.keys(resolutions)) {
-        if (!ids.has(key)) throw new Error(`Unknown interrupt ID: ${key}`);
-    }
-    return pendingInterrupts.map(({ id }) => {
-        const entry = resolutions[id];
-        if (!entry || (entry.status !== "resolved" && entry.status !== "cancelled")) {
-            throw new Error(`Missing resolution for interrupt: ${id}`);
-        }
-        return {
-            interruptId: id,
-            status: entry.status,
-            ...(Object.hasOwn(entry, "payload") ? { payload: entry.payload } : {}),
-        };
-    });
-}
-
-/**
- * @param {string} toolName
- * @param {Record<string, unknown>} params
- * @param {Record<string, unknown>} [reqRecord]
- * @returns {Record<string, unknown>}
- */
-function buildElicitationResponseSchema(toolName, params, reqRecord) {
-    if (params.mode === "url") {
-        return {
-            oneOf: [{
-                type: "object",
-                required: ["action"],
-                additionalProperties: false,
-                properties: {
-                    action: { enum: ["accept", "decline", "cancel"] },
-                },
-            }],
-        };
-    }
-    const requestedSchema = isRecord(reqRecord?.requestedSchema)
-        ? reqRecord.requestedSchema
-        : isRecord(params.requestedSchema)
-            ? params.requestedSchema
-            : { type: "object" };
-    if (toolName === "mcp_input_required") {
-        return {
-            oneOf: [
-                {
-                    type: "object",
-                    required: ["action", "content"],
-                    additionalProperties: false,
-                    properties: {
-                        action: { const: "accept" },
-                        content: requestedSchema,
-                    },
-                },
-                {
-                    type: "object",
-                    required: ["action"],
-                    additionalProperties: false,
-                    properties: {
-                        action: { enum: ["decline", "cancel"] },
-                    },
-                },
-            ],
-        };
-    }
-    return requestedSchema;
 }
 
 /** {§web-session-observer} {§web-session-reasoning} Official ACP v2 client over `/acp`. */
@@ -658,10 +595,7 @@ export default class SessionAgent {
     #activeController = undefined;
     /**
      * @type {Map<string, {
-     *   kind: "proposal" | "interaction",
-     *   toolName?: string,
-     *   mode?: string,
-     *   options?: readonly Record<string, unknown>[],
+     *   method: "session/request_permission" | "elicitation/create",
      *   resolve: (value: Record<string, unknown>) => void,
      *   reject: (reason?: unknown) => void,
      * }>}
@@ -671,10 +605,10 @@ export default class SessionAgent {
     #cancelledSubmittedGates = new Set();
     /** @type {Set<string>} */
     #submittedGateIds = new Set();
-    /** @type {PendingInterrupt[]} */
-    #allPendingInterrupts = [];
+    /** @type {SessionGate[]} */
+    #allPendingGates = [];
     /** @type {readonly string[] | undefined} */
-    #heldInterruptIds = undefined;
+    #heldGateIds = undefined;
     /** @type {number} */
     #inFlightPostCount = 0;
     /** @type {Promise<void>} */
@@ -683,15 +617,15 @@ export default class SessionAgent {
     #gateCoalesceTimer = undefined;
     /** @type {(() => void) | undefined} */
     #onGateSettled = undefined;
-    /** @type {((outcome: { stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error }) => void) | undefined} */
+    /** @type {((outcome: { stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown, settled?: boolean }, transportError?: Error }) => void) | undefined} */
     #onLiveOutcome = undefined;
-    /** @type {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error } | undefined} */
+    /** @type {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown, settled?: boolean }, transportError?: Error } | undefined} */
     #queuedLiveOutcome = undefined;
     /** @type {Promise<{ result: unknown, meta?: Record<string, unknown> }> | undefined} */
     #inFlightRequest = undefined;
     /** @type {{ message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown } | undefined} */
     #streamProblem = undefined;
-    /** @type {{ messageId: string, coordinate: string } | undefined} */
+    /** @type {{ messageId: string, body: Record<string, unknown> } | undefined} */
     #pendingLiveThought = undefined;
     /** @type {boolean} */
     #needsConnectionSse = false;
@@ -703,7 +637,6 @@ export default class SessionAgent {
      *   headers?: Record<string, string>,
      *   state?: Record<string, unknown>,
      *   messages?: Message[],
-     *   initialMessages?: Message[],
      *   fetch?: typeof globalThis.fetch,
      * }} [config]
      */
@@ -713,23 +646,15 @@ export default class SessionAgent {
         this.headers = { ...config.headers };
         /** @type {Record<string, unknown>} */
         this.state = isRecord(config.state) ? structuredClone(config.state) : {};
-        const initial = config.messages ?? config.initialMessages;
         /** @type {Message[]} */
-        this.messages = Array.isArray(initial) ? structuredClone(initial) : [];
-        /** @type {PendingInterrupt[]} */
-        this.pendingInterrupts = [];
+        this.messages = Array.isArray(config.messages) ? structuredClone(config.messages) : [];
+        /** @type {SessionGate[]} */
+        this.pendingGates = [];
         /** @type {AbortController | undefined} */
         this.abortController = undefined;
         /** @type {boolean} */
         this.isRunning = false;
         this.#fetch = config.fetch ?? ((url, init) => globalThis.fetch(url, init));
-    }
-
-    /**
-     * @param {Message} message
-     */
-    addMessage(message) {
-        this.messages.push(structuredClone(message));
     }
 
     abortRun() {
@@ -748,12 +673,13 @@ export default class SessionAgent {
         this.#inFlightRequest = undefined;
         this.#pendingLiveThought = undefined;
         this.#streamProblem = undefined;
-        this.#heldInterruptIds = undefined;
+        this.#heldGateIds = undefined;
         for (const [, entry] of this.#gateResolvers) {
             entry.reject(new DOMException("The operation was aborted.", "AbortError"));
         }
         this.#gateResolvers.clear();
-        this.#allPendingInterrupts = [];
+        this.#allPendingGates = [];
+        this.pendingGates = [];
         this.#submittedGateIds.clear();
         this.#cancelledSubmittedGates.clear();
         this.#connController?.abort();
@@ -766,19 +692,19 @@ export default class SessionAgent {
     }
 
     /**
-     * @param {PendingInterrupt} entry
+     * @param {SessionGate} entry
      * @returns {string}
      */
-    #interruptSessionKey(entry) {
-        const plurnk = isRecord(entry.metadata) && isRecord(entry.metadata.plurnk)
-            ? entry.metadata.plurnk
-            : undefined;
-        const proposal = isRecord(plurnk?.proposal) ? plurnk.proposal : undefined;
-        if (typeof proposal?.session === "string") return proposal.session;
-        if (typeof proposal?.sessionId === "number") return String(proposal.sessionId);
-        const interaction = isRecord(plurnk?.interaction) ? plurnk.interaction : undefined;
-        if (typeof interaction?.session === "string") return interaction.session;
-        if (typeof interaction?.sessionId === "number") return String(interaction.sessionId);
+    #gateSessionKey(entry) {
+        if (entry.method === "session/request_permission") {
+            const prop = /** @type {Record<string, unknown> | undefined} */ (entry._meta?.plurnk?.proposal);
+            if (typeof prop?.session === "string") return prop.session;
+            if (typeof prop?.sessionId === "number") return String(prop.sessionId);
+            return "";
+        }
+        const inter = /** @type {Record<string, unknown> | undefined} */ (entry._meta?.plurnk?.interaction);
+        if (typeof inter?.session === "string") return inter.session;
+        if (typeof inter?.sessionId === "number") return String(inter.sessionId);
         return "";
     }
 
@@ -790,16 +716,17 @@ export default class SessionAgent {
         const nextDescendants = status.descendants.map((d) => {
             if (!isRecord(d)) return d;
             const matchingGates = [];
-            for (const item of this.#allPendingInterrupts) {
-                const itemPlurnk = isRecord(item.metadata) && isRecord(item.metadata.plurnk)
-                    ? item.metadata.plurnk
+            for (const item of this.#allPendingGates) {
+                const prop = item.method === "session/request_permission"
+                    ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal)
                     : undefined;
-                const prop = isRecord(itemPlurnk?.proposal) ? itemPlurnk.proposal : undefined;
-                const inter = isRecord(itemPlurnk?.interaction) ? itemPlurnk.interaction : undefined;
-                const matchesProp = prop !== undefined
+                const inter = item.method === "elicitation/create"
+                    ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.interaction)
+                    : undefined;
+                const matchesProp = isRecord(prop)
                     && ((typeof d.id === "number" && prop.sessionId === d.id)
                         || (typeof d.name === "string" && prop.session === d.name));
-                const matchesInter = inter !== undefined
+                const matchesInter = isRecord(inter)
                     && ((typeof d.id === "number" && inter.sessionId === d.id)
                         || (typeof d.name === "string" && inter.session === d.name));
                 if (matchesProp && prop !== undefined) {
@@ -830,20 +757,20 @@ export default class SessionAgent {
         return changed;
     }
 
-    #syncPendingInterrupts() {
-        if (this.#allPendingInterrupts.length === 0) {
-            this.pendingInterrupts = [];
+    #syncPendingGates() {
+        if (this.#allPendingGates.length === 0) {
+            this.pendingGates = [];
         } else {
-            const firstSession = this.#interruptSessionKey(this.#allPendingInterrupts[0]);
-            this.pendingInterrupts = this.#allPendingInterrupts.filter(
-                (item) => this.#interruptSessionKey(item) === firstSession,
+            const firstSession = this.#gateSessionKey(this.#allPendingGates[0]);
+            this.pendingGates = this.#allPendingGates.filter(
+                (item) => this.#gateSessionKey(item) === firstSession,
             );
         }
         return this.#syncDescendantGates();
     }
 
     /**
-     * @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error }} outcome
+     * @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown, settled?: boolean }, transportError?: Error }} outcome
      */
     #emitLiveOutcome(outcome) {
         if (this.#onLiveOutcome !== undefined) {
@@ -861,21 +788,95 @@ export default class SessionAgent {
             this.#gateCoalesceTimer = undefined;
             void this.#notificationChain.then(async () => {
                 if (this.#connController?.signal.aborted) return;
-                this.#syncPendingInterrupts();
+                this.#syncPendingGates();
                 if (!this.#bufferingReplay) {
                     await this.#subscriber.onStateChanged?.({ state: this.state });
                 }
                 this.#onGateSettled?.();
-                const held = this.#heldInterruptIds;
-                const currentIds = this.pendingInterrupts.map(({ id }) => id);
+                const held = this.#heldGateIds;
+                const currentIds = this.pendingGates.map(({ id }) => id);
                 const sameHeld = held !== undefined
                     && held.length === currentIds.length
                     && currentIds.every((id, idx) => id === held[idx]);
-                if (!sameHeld) {
+                if (!sameHeld && this.pendingGates.length > 0) {
                     this.#emitLiveOutcome({ stopReason: "interrupt" });
                 }
             });
         });
+    }
+
+    /**
+     * @param {string} gateId
+     */
+    #cancelGateById(gateId) {
+        const existed = this.#gateResolvers.has(gateId)
+            || this.#allPendingGates.some((item) => item.id === gateId);
+        if (!existed) return;
+        this.#gateResolvers.delete(gateId);
+        this.#allPendingGates = this.#allPendingGates.filter((item) => item.id !== gateId);
+        const changed = this.#syncPendingGates();
+        if (this.#submittedGateIds.has(gateId)) {
+            this.#cancelledSubmittedGates.add(gateId);
+        }
+        if (this.#connController?.signal.aborted) {
+            return;
+        }
+        setTimeout(() => {
+            void this.#notificationChain.then(async () => {
+                if (this.#connController?.signal.aborted) return;
+                if (changed && !this.#bufferingReplay) {
+                    await this.#subscriber.onStateChanged?.({ state: this.state });
+                }
+                if (this.pendingGates.length > 0) {
+                    this.#emitLiveOutcome({ stopReason: "interrupt" });
+                } else if (this.#heldGateIds !== undefined) {
+                    this.#emitLiveOutcome({ stopReason: "end_turn" });
+                } else if (this.#inFlightRequest === undefined) {
+                    const status = isRecord(this.state.plurnk) && isRecord(this.state.plurnk.status)
+                        ? this.state.plurnk.status
+                        : undefined;
+                    const lifecycle = typeof status?.lifecycle === "string" ? status.lifecycle : "idle";
+                    if (!["queued", "running", "parked"].includes(lifecycle)) {
+                        this.#emitLiveOutcome({ stopReason: "end_turn" });
+                    }
+                }
+            });
+        });
+    }
+
+    /**
+     * @param {readonly unknown[]} descendants
+     */
+    #pruneDescendantGatesFromStatus(descendants) {
+        for (const item of [...this.#allPendingGates]) {
+            const prop = item.method === "session/request_permission"
+                ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal)
+                : undefined;
+            const inter = item.method === "elicitation/create"
+                ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.interaction)
+                : undefined;
+            const desc = descendants.find((d) => {
+                if (!isRecord(d)) return false;
+                if (typeof d.id === "number" && (prop?.sessionId === d.id || inter?.sessionId === d.id)) {
+                    return true;
+                }
+                if (typeof d.name === "string" && (prop?.session === d.name || inter?.session === d.name)) {
+                    return true;
+                }
+                return false;
+            });
+            if (isRecord(desc) && Array.isArray(desc.gates)) {
+                const stillPending = desc.gates.some((g) => {
+                    if (!isRecord(g)) return false;
+                    if (typeof prop?.logEntryId === "number" && g.logEntryId === prop.logEntryId) return true;
+                    if (typeof inter?.interactionId === "number" && g.interactionId === inter.interactionId) return true;
+                    return false;
+                });
+                if (!stillPending) {
+                    this.#cancelGateById(item.id);
+                }
+            }
+        }
     }
 
     async #drainNotifications() {
@@ -973,7 +974,6 @@ export default class SessionAgent {
                 && response.body
             ) {
                 const reader = response.body.getReader();
-                const decoder = new TextDecoder();
                 const notifyStreamEnd = () => {
                     if (init?.signal?.aborted) return;
                     void this.#notificationChain.then(() => {
@@ -993,14 +993,6 @@ export default class SessionAgent {
                                 controller.close();
                                 notifyStreamEnd();
                                 return;
-                            }
-                            if (value && this.#submittedGateIds.size > 0) {
-                                const text = decoder.decode(value, { stream: true });
-                                if (text.includes('"$/cancel_request"')) {
-                                    for (const id of this.#submittedGateIds) {
-                                        this.#cancelledSubmittedGates.add(id);
-                                    }
-                                }
                             }
                             controller.enqueue(value);
                         } catch (err) {
@@ -1057,21 +1049,24 @@ export default class SessionAgent {
                 : undefined;
             const proposal = isRecord(metaPlurnk?.proposal) ? metaPlurnk.proposal : undefined;
             const logEntryId = typeof proposal?.logEntryId === "number" ? proposal.logEntryId : randomUUID();
-            const interruptId = `proposal:${logEntryId}:${randomUUID().slice(0, 8)}`;
+            const gateId = `proposal:${logEntryId}:${randomUUID().slice(0, 8)}`;
             const rawExpires = proposal?.expiresAt;
             const expiresAt = typeof rawExpires === "number"
                 ? new Date(rawExpires).toISOString()
                 : typeof rawExpires === "string"
                     ? rawExpires
                     : undefined;
-            /** @type {PendingInterrupt} */
+            /** @type {PermissionGate} */
             const entry = {
-                id: interruptId,
-                reason: "approval",
+                id: gateId,
+                method: "session/request_permission",
+                ...(typeof params.sessionId === "string" ? { sessionId: params.sessionId } : {}),
+                ...(isRecord(params.toolCall) ? { toolCall: structuredClone(params.toolCall) } : {}),
+                ...(Array.isArray(params.options) ? { options: structuredClone(params.options) } : {}),
                 ...(expiresAt !== undefined ? { expiresAt } : {}),
                 ...(proposal !== undefined
                     ? {
-                        metadata: {
+                        _meta: {
                             plurnk: {
                                 proposal: /** @type {import("@plurnk/plurnk-contracts").ProposalProjection} */ (
                                     /** @type {unknown} */ (structuredClone(proposal))
@@ -1081,16 +1076,12 @@ export default class SessionAgent {
                     }
                     : {}),
             };
-            this.#allPendingInterrupts.push(entry);
-            this.#syncPendingInterrupts();
+            this.#allPendingGates.push(entry);
+            this.#syncPendingGates();
 
             return await new Promise((resolve, reject) => {
-                const options = Array.isArray(params.options)
-                    ? /** @type {readonly Record<string, unknown>[]} */ (params.options)
-                    : [];
-                this.#gateResolvers.set(interruptId, {
-                    kind: "proposal",
-                    options,
+                this.#gateResolvers.set(gateId, {
+                    method: "session/request_permission",
                     resolve: (res) => {
                         ctx.signal.removeEventListener("abort", onCancel);
                         resolve(/** @type {never} */ (res));
@@ -1101,35 +1092,7 @@ export default class SessionAgent {
                     },
                 });
                 const onCancel = () => {
-                    this.#gateResolvers.delete(interruptId);
-                    this.#allPendingInterrupts = this.#allPendingInterrupts.filter((item) => item.id !== interruptId);
-                    const changed = this.#syncPendingInterrupts();
-                    if (this.#submittedGateIds.has(interruptId)) {
-                        this.#cancelledSubmittedGates.add(interruptId);
-                    }
-                    if (connController.signal.aborted) {
-                        reject(new DOMException("The operation was aborted.", "AbortError"));
-                        return;
-                    }
-                    setTimeout(() => {
-                        void this.#notificationChain.then(async () => {
-                            if (connController.signal.aborted) return;
-                            if (changed && !this.#bufferingReplay) {
-                                await this.#subscriber.onStateChanged?.({ state: this.state });
-                            }
-                            if (this.pendingInterrupts.length > 0) {
-                                this.#onLiveOutcome?.({ stopReason: "interrupt" });
-                            } else if (this.#inFlightRequest === undefined) {
-                                const status = isRecord(this.state.plurnk) && isRecord(this.state.plurnk.status)
-                                    ? this.state.plurnk.status
-                                    : undefined;
-                                const lifecycle = typeof status?.lifecycle === "string" ? status.lifecycle : "idle";
-                                if (!["queued", "running", "parked"].includes(lifecycle)) {
-                                    this.#onLiveOutcome?.({ stopReason: "end_turn" });
-                                }
-                            }
-                        });
-                    });
+                    this.#cancelGateById(gateId);
                     reject(new DOMException("The operation was aborted.", "AbortError"));
                 };
                 ctx.signal.onabort = onCancel;
@@ -1147,47 +1110,40 @@ export default class SessionAgent {
             const interactionId = typeof interaction?.interactionId === "number"
                 ? interaction.interactionId
                 : randomUUID();
-            const interruptId = `int:${interactionId}:${randomUUID().slice(0, 8)}`;
-            const toolCallId = typeof params.toolCallId === "string"
-                ? params.toolCallId
-                : `int:${interactionId}`;
+            const gateId = `int:${interactionId}:${randomUUID().slice(0, 8)}`;
             const reqRecord = isRecord(interaction?.request) ? interaction.request : {};
-            const toolName = typeof reqRecord.toolName === "string" ? reqRecord.toolName : "question";
             const message = typeof params.message === "string"
                 ? params.message
                 : typeof reqRecord.message === "string"
                     ? reqRecord.message
                     : undefined;
-            const responseSchema = buildElicitationResponseSchema(toolName, params, reqRecord);
+            const requestedSchema = isRecord(params.requestedSchema)
+                ? params.requestedSchema
+                : isRecord(reqRecord.requestedSchema)
+                    ? reqRecord.requestedSchema
+                    : undefined;
+            const mode = params.mode === "url" ? "url" : "form";
+            const rawExpires = interaction?.expiresAt;
+            const expiresAt = typeof rawExpires === "number"
+                ? new Date(rawExpires).toISOString()
+                : typeof rawExpires === "string"
+                    ? rawExpires
+                    : undefined;
 
-            const hasCall = this.messages
-                .flatMap((m) => (m.role === "assistant" ? m.toolCalls ?? [] : []))
-                .some((c) => c.id === toolCallId);
-            if (!hasCall) {
-                this.messages = SessionTranslator.projectMessages([
-                    {
-                        sessionUpdate: "tool_call_update",
-                        toolCallId,
-                        name: toolName,
-                        title: toolName,
-                        kind: "other",
-                        status: "in_progress",
-                        rawInput: reqRecord,
-                        ...(interaction ? { _meta: { plurnk: { interaction } } } : {}),
-                    },
-                ], this.messages);
-            }
-
-            /** @type {PendingInterrupt} */
+            /** @type {ElicitationGate} */
             const entry = {
-                id: interruptId,
-                reason: "tool_call",
-                toolCallId,
+                id: gateId,
+                method: "elicitation/create",
+                ...(typeof params.sessionId === "string" ? { sessionId: params.sessionId } : {}),
+                mode,
                 ...(message !== undefined ? { message } : {}),
-                responseSchema: structuredClone(responseSchema),
+                ...(requestedSchema !== undefined ? { requestedSchema: structuredClone(requestedSchema) } : {}),
+                ...(typeof params.url === "string" ? { url: params.url } : {}),
+                ...(typeof params.elicitationId === "string" ? { elicitationId: params.elicitationId } : {}),
+                ...(expiresAt !== undefined ? { expiresAt } : {}),
                 ...(interaction !== undefined
                     ? {
-                        metadata: {
+                        _meta: {
                             plurnk: {
                                 interaction: /** @type {import("@plurnk/plurnk-contracts").ClientInteractionProjection} */ (
                                     /** @type {unknown} */ (structuredClone(interaction))
@@ -1197,14 +1153,12 @@ export default class SessionAgent {
                     }
                     : {}),
             };
-            this.#allPendingInterrupts.push(entry);
-            this.#syncPendingInterrupts();
+            this.#allPendingGates.push(entry);
+            this.#syncPendingGates();
 
             return await new Promise((resolve, reject) => {
-                this.#gateResolvers.set(interruptId, {
-                    kind: "interaction",
-                    toolName,
-                    mode: typeof params.mode === "string" ? params.mode : "form",
+                this.#gateResolvers.set(gateId, {
+                    method: "elicitation/create",
                     resolve: (res) => {
                         ctx.signal.removeEventListener("abort", onCancel);
                         resolve(/** @type {never} */ (res));
@@ -1215,35 +1169,7 @@ export default class SessionAgent {
                     },
                 });
                 const onCancel = () => {
-                    this.#gateResolvers.delete(interruptId);
-                    this.#allPendingInterrupts = this.#allPendingInterrupts.filter((item) => item.id !== interruptId);
-                    const changed = this.#syncPendingInterrupts();
-                    if (this.#submittedGateIds.has(interruptId)) {
-                        this.#cancelledSubmittedGates.add(interruptId);
-                    }
-                    if (connController.signal.aborted) {
-                        reject(new DOMException("The operation was aborted.", "AbortError"));
-                        return;
-                    }
-                    setTimeout(() => {
-                        void this.#notificationChain.then(async () => {
-                            if (connController.signal.aborted) return;
-                            if (changed && !this.#bufferingReplay) {
-                                await this.#subscriber.onStateChanged?.({ state: this.state });
-                            }
-                            if (this.pendingInterrupts.length > 0) {
-                                this.#onLiveOutcome?.({ stopReason: "interrupt" });
-                            } else if (this.#inFlightRequest === undefined) {
-                                const status = isRecord(this.state.plurnk) && isRecord(this.state.plurnk.status)
-                                    ? this.state.plurnk.status
-                                    : undefined;
-                                const lifecycle = typeof status?.lifecycle === "string" ? status.lifecycle : "idle";
-                                if (!["queued", "running", "parked"].includes(lifecycle)) {
-                                    this.#onLiveOutcome?.({ stopReason: "end_turn" });
-                                }
-                            }
-                        });
-                    });
+                    this.#cancelGateById(gateId);
                     reject(new DOMException("The operation was aborted.", "AbortError"));
                 };
                 ctx.signal.onabort = onCancel;
@@ -1277,22 +1203,22 @@ export default class SessionAgent {
      * @param {SessionRunOptions} [options]
      * @param {SessionSubscriber} [subscriber]
      */
-    async connectAgent(options = {}, subscriber = {}) {
+    async resume(options = {}, subscriber = {}) {
         const controller = options.abortController ?? this.abortController ?? new AbortController();
         this.#activeController = controller;
         this.isRunning = true;
         this.#subscriber = subscriber;
         const { signal } = controller;
-        const heldInterrupts = Array.isArray(options.interrupts) ? [...options.interrupts] : [];
+        const heldGates = Array.isArray(options.gates) ? [...options.gates] : [];
 
         try {
-            this.#heldInterruptIds = heldInterrupts.length > 0 ? heldInterrupts : undefined;
-            if (heldInterrupts.length > 0 && this.#conn !== undefined) {
-                const currentIds = this.pendingInterrupts.map(({ id }) => id);
-                const sameSet = currentIds.length === heldInterrupts.length
-                    && currentIds.every((id, idx) => id === heldInterrupts[idx]);
+            this.#heldGateIds = heldGates.length > 0 ? heldGates : undefined;
+            if (heldGates.length > 0 && this.#conn !== undefined) {
+                const currentIds = this.pendingGates.map(({ id }) => id);
+                const sameSet = currentIds.length === heldGates.length
+                    && currentIds.every((id, idx) => id === heldGates[idx]);
                 if (!sameSet) {
-                    const stopReason = this.pendingInterrupts.length > 0 ? "interrupt" : "end_turn";
+                    const stopReason = this.pendingGates.length > 0 ? "interrupt" : "end_turn";
                     await subscriber.onSettled?.({ stopReason, result: {} });
                     return { result: {}, stopReason };
                 }
@@ -1310,8 +1236,8 @@ export default class SessionAgent {
                 return { result: {}, stopReason: outcome.stopReason, meta: outcome.meta };
             }
 
-            this.#allPendingInterrupts = [];
-            this.pendingInterrupts = [];
+            this.#allPendingGates = this.#allPendingGates.filter((item) => this.#gateResolvers.has(item.id));
+            this.#syncPendingGates();
             this.#queuedLiveOutcome = undefined;
             this.#pendingLiveThought = undefined;
             this.#bufferingReplay = true;
@@ -1353,33 +1279,6 @@ export default class SessionAgent {
                 const history = isRecord(metaPlurnk?.history) ? metaPlurnk.history : undefined;
                 if (history !== undefined) {
                     this.messages = SessionTranslator.projectMessages(replayed, []);
-                    const statusObj = isRecord(metaPlurnk?.status) ? metaPlurnk.status : undefined;
-                    const wsObj = isRecord(metaPlurnk?.workspace) ? metaPlurnk.workspace : undefined;
-                    const numericSessionId = typeof metaPlurnk?.sessionId === "number"
-                        ? metaPlurnk.sessionId
-                        : (isRecord(metaPlurnk?.session) && typeof metaPlurnk.session.id === "number" ? metaPlurnk.session.id : undefined);
-                    const inboxItems = Array.isArray(statusObj?.inbox) ? statusObj.inbox : [];
-                    if (inboxItems.length > 0 && typeof wsObj?.id === "number" && typeof numericSessionId === "number") {
-                        const existingIds = new Set(this.messages.map((m) => m.id));
-                        const baseOrigin = typeof globalThis.location?.origin === "string" && globalThis.location.origin !== "null"
-                            ? globalThis.location.origin
-                            : "http://127.0.0.1";
-                        for (const item of inboxItems) {
-                            if (!isRecord(item) || typeof item.id !== "string" || typeof item.path !== "string" || existingIds.has(item.id)) {
-                                continue;
-                            }
-                            const entryUrl = new URL(
-                                `/acp/${encodeURIComponent(String(wsObj.id))}/${encodeURIComponent(String(numericSessionId))}/entry?target=${encodeURIComponent(item.path)}`,
-                                new URL(this.url, baseOrigin).origin,
-                            ).href;
-                            const res = await this.#fetch(entryUrl, { headers: new Headers(this.headers), signal });
-                            if (res.ok) {
-                                const content = await res.text();
-                                this.messages.push({ id: item.id, role: "user", content });
-                                existingIds.add(item.id);
-                            }
-                        }
-                    }
                     const older = typeof history.older === "string" ? history.older : null;
                     await subscriber.onMessagesSnapshot?.({
                         snapshot: {
@@ -1406,7 +1305,7 @@ export default class SessionAgent {
                 });
             }
 
-            if (this.pendingInterrupts.length > 0) {
+            if (this.pendingGates.length > 0) {
                 this.#queuedLiveOutcome = undefined;
                 await subscriber.onSettled?.({ stopReason: "interrupt", meta: metaPlurnk, result: rawResult });
                 return { result: rawResult, stopReason: "interrupt", meta: metaPlurnk };
@@ -1423,9 +1322,6 @@ export default class SessionAgent {
                 return { result: rawResult, stopReason: "end_turn", meta: metaPlurnk };
             }
             const stopReason = outcome.stopReason;
-            if (stopReason !== "interrupt") {
-                this.close();
-            }
             await subscriber.onSettled?.({ stopReason, meta: outcome.meta ?? metaPlurnk, result: rawResult });
             return { result: rawResult, stopReason, meta: outcome.meta ?? metaPlurnk };
         } catch (error) {
@@ -1442,27 +1338,17 @@ export default class SessionAgent {
      * @param {SessionRunOptions} [options]
      * @param {SessionSubscriber} [subscriber]
      */
-    async runAgent(options = {}, subscriber = {}) {
+    async send(options = {}, subscriber = {}) {
         if (options.action) {
             return await this.#runAction(options, subscriber);
         }
-        if (Array.isArray(options.resume) && options.resume.length > 0) {
-            return await this.#runResume(options.resume, options, subscriber);
+        if (Array.isArray(options.resolutions) && options.resolutions.length > 0) {
+            return await this.#runGateResolutions(options.resolutions, options, subscriber);
         }
-        const lastMessage = this.messages.at(-1);
-        const message = options.message ?? (
-            lastMessage?.role === "user" && typeof lastMessage.content === "string"
-                ? {
-                    id: lastMessage.id,
-                    role: /** @type {const} */ ("user"),
-                    content: lastMessage.content,
-                }
-                : undefined
-        );
-        if (message) {
-            return await this.#runPrompt(message, options, subscriber);
+        if (options.message) {
+            return await this.#runPrompt(options.message, options, subscriber);
         }
-        return await this.connectAgent(options, subscriber);
+        return await this.resume(options, subscriber);
     }
 
     /**
@@ -1613,8 +1499,8 @@ export default class SessionAgent {
         this.#replayUpdates = [];
         this.#pendingLiveThought = undefined;
         this.#queuedLiveOutcome = undefined;
-        this.#allPendingInterrupts = [];
-        this.pendingInterrupts = [];
+        this.#allPendingGates = this.#allPendingGates.filter((item) => this.#gateResolvers.has(item.id));
+        this.#syncPendingGates();
         const { signal } = controller;
 
         try {
@@ -1667,11 +1553,11 @@ export default class SessionAgent {
     }
 
     /**
-     * @param {readonly ResumeResolution[]} resolutions
+     * @param {readonly GateResolution[]} resolutions
      * @param {SessionRunOptions} options
      * @param {SessionSubscriber} subscriber
      */
-    async #runResume(resolutions, options, subscriber) {
+    async #runGateResolutions(resolutions, options, subscriber) {
         const controller = options.abortController ?? this.abortController ?? new AbortController();
         this.#activeController = controller;
         this.isRunning = true;
@@ -1686,7 +1572,7 @@ export default class SessionAgent {
         try {
             this.#needsConnectionSse = false;
             await this.#ensureConnection(signal);
-            let missingGateKind = /** @type {"proposal" | "interaction" | undefined} */ (undefined);
+            let missingGate = false;
             const plurnkState = isRecord(this.state.plurnk) ? this.state.plurnk : undefined;
             const statusState = isRecord(plurnkState?.status) ? plurnkState.status : undefined;
             const rawParts = typeof this.sessionId === "string" ? this.sessionId.split("#") : [];
@@ -1694,9 +1580,9 @@ export default class SessionAgent {
             const boundId = typeof statusState?.id === "number" ? String(statusState.id) : "";
             let resolvedDescendantOnly = resolutions.length > 0;
             for (const res of resolutions) {
-                const existing = this.#allPendingInterrupts.find((item) => item.id === res.interruptId);
+                const existing = this.#allPendingGates.find((item) => item.id === res.id);
                 if (existing) {
-                    const key = this.#interruptSessionKey(existing);
+                    const key = this.#gateSessionKey(existing);
                     if (!key || key === boundName || key === boundId) {
                         resolvedDescendantOnly = false;
                     }
@@ -1706,65 +1592,23 @@ export default class SessionAgent {
             }
 
             for (const res of resolutions) {
-                const gate = this.#gateResolvers.get(res.interruptId);
-                this.#allPendingInterrupts = this.#allPendingInterrupts.filter((item) => item.id !== res.interruptId);
+                const gate = this.#gateResolvers.get(res.id);
+                this.#allPendingGates = this.#allPendingGates.filter((item) => item.id !== res.id);
                 if (!gate) {
-                    missingGateKind = res.interruptId.startsWith("int:") ? "interaction" : "proposal";
+                    missingGate = true;
                     continue;
                 }
-                this.#gateResolvers.delete(res.interruptId);
-                this.#submittedGateIds.add(res.interruptId);
-                if (gate.kind === "proposal") {
-                    if (res.status === "cancelled") {
-                        gate.resolve({ outcome: { outcome: "cancelled" } });
-                    } else {
-                        const payload = isRecord(res.payload) ? res.payload : {};
-                        const decision = payload.decision === "reject" ? "reject" : "accept";
-                        const scope = payload.scope === "always" ? "always" : "once";
-                        const targetKind = `${decision === "accept" ? "allow" : "reject"}_${scope}`;
-                        const matched = gate.options?.find((opt) => opt.kind === targetKind || opt.optionId === targetKind);
-                        const optionId = typeof matched?.optionId === "string" ? matched.optionId : targetKind;
-                        gate.resolve({
-                            outcome: {
-                                outcome: "selected",
-                                optionId,
-                            },
-                        });
-                    }
-                } else {
-                    if (res.status === "cancelled") {
-                        gate.resolve({ action: "cancel" });
-                    } else if (
-                        isRecord(res.payload)
-                        && (res.payload.action === "accept" || res.payload.action === "decline" || res.payload.action === "cancel")
-                        && (gate.toolName === "mcp_input_required" || gate.mode === "url")
-                    ) {
-                        gate.resolve(res.payload);
-                    } else {
-                        gate.resolve({
-                            action: "accept",
-                            content: isRecord(res.payload) ? res.payload : { value: res.payload },
-                        });
-                    }
-                }
+                this.#gateResolvers.delete(res.id);
+                this.#submittedGateIds.add(res.id);
+                gate.resolve(/** @type {Record<string, unknown>} */ (res.response));
             }
 
-            const gatesChanged = this.#syncPendingInterrupts();
+            const gatesChanged = this.#syncPendingGates();
 
-            if (missingGateKind !== undefined) {
-                const isInteraction = missingGateKind === "interaction";
-                const problem = {
-                    type: isInteraction
-                        ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
-                        : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
-                    title: isInteraction ? "Interaction not pending" : "Proposal not pending",
-                    status: 409,
-                    detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
-                };
+            if (missingGate) {
                 await subscriber.onError?.({
-                    message: problem.detail,
-                    status: 409,
-                    problem,
+                    message: "Request is no longer pending.",
+                    settled: true,
                 });
             }
 
@@ -1775,7 +1619,7 @@ export default class SessionAgent {
             const boundLifecycle = typeof statusState?.lifecycle === "string" ? statusState.lifecycle : "idle";
             if (
                 (resolvedDescendantOnly && !["queued", "running", "parked"].includes(boundLifecycle))
-                || this.pendingInterrupts.length > 0
+                || this.pendingGates.length > 0
             ) {
                 await new Promise((r) => setTimeout(r));
                 await this.#outboundPostChain;
@@ -1783,26 +1627,15 @@ export default class SessionAgent {
                 if (gatesChanged && !this.#bufferingReplay) {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
-                if (this.#cancelledSubmittedGates.size > 0 && missingGateKind === undefined) {
-                    const firstId = [...this.#cancelledSubmittedGates][0] ?? "";
-                    const isInteraction = firstId.startsWith("int:");
-                    const problem = {
-                        type: isInteraction
-                            ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
-                            : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
-                        title: isInteraction ? "Interaction not pending" : "Proposal not pending",
-                        status: 409,
-                        detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
-                    };
+                if (this.#cancelledSubmittedGates.size > 0 && !missingGate) {
                     await subscriber.onError?.({
-                        message: problem.detail,
-                        status: 409,
-                        problem,
+                        message: "Request is no longer pending.",
+                        settled: true,
                     });
                 }
-                const nextStop = this.pendingInterrupts.length > 0 ? "interrupt" : "end_turn";
-                if (nextStop !== "interrupt") {
-                    this.close();
+                const nextStop = this.pendingGates.length > 0 ? "interrupt" : "end_turn";
+                if (nextStop === "interrupt") {
+                    this.#queuedLiveOutcome = undefined;
                 }
                 await subscriber.onSettled?.({ stopReason: nextStop, result: {} });
                 return { result: {}, stopReason: nextStop };
@@ -1820,27 +1653,13 @@ export default class SessionAgent {
                 this.close();
                 return { result: {}, stopReason: "end_turn", meta: outcome.meta };
             }
-            if (this.#cancelledSubmittedGates.size > 0 && missingGateKind === undefined) {
-                const firstId = [...this.#cancelledSubmittedGates][0] ?? "";
-                const isInteraction = firstId.startsWith("int:");
-                const problem = {
-                    type: isInteraction
-                        ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
-                        : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
-                    title: isInteraction ? "Interaction not pending" : "Proposal not pending",
-                    status: 409,
-                    detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
-                };
+            if (this.#cancelledSubmittedGates.size > 0 && !missingGate) {
                 await subscriber.onError?.({
-                    message: problem.detail,
-                    status: 409,
-                    problem,
+                    message: "Request is no longer pending.",
+                    settled: true,
                 });
             }
             const stopReason = outcome.stopReason;
-            if (stopReason !== "interrupt") {
-                this.close();
-            }
             const metaPlurnk = outcome.meta;
             const terminalResult = isRecord(metaPlurnk?.terminal) && isRecord(metaPlurnk.terminal.result)
                 ? metaPlurnk.terminal.result
@@ -1898,6 +1717,9 @@ export default class SessionAgent {
                 return { result: undefined, stopReason: "error", meta: raced.meta };
             }
             if (raced.stopReason === "interrupt") {
+                if (this.#queuedLiveOutcome?.stopReason === "interrupt") {
+                    this.#queuedLiveOutcome = undefined;
+                }
                 await subscriber.onSettled?.({ stopReason: "interrupt", meta: raced.meta, result: {} });
                 return { result: {}, stopReason: "interrupt", meta: raced.meta };
             }
@@ -1932,7 +1754,7 @@ export default class SessionAgent {
         const hasImmediateOutcome = typeof rawResult.stopReason === "string"
             || typeof metaPlurnk?.stopReason === "string"
             || metaPlurnk?.terminal !== undefined
-            || this.pendingInterrupts.length > 0;
+            || this.pendingGates.length > 0;
         if (liveOutcome === undefined && !hasImmediateOutcome) {
             liveOutcome = await outcomePromise;
         }
@@ -1954,20 +1776,9 @@ export default class SessionAgent {
         }
 
         if (this.#cancelledSubmittedGates.size > 0) {
-            const firstId = [...this.#cancelledSubmittedGates][0] ?? "";
-            const isInteraction = firstId.startsWith("int:");
-            const problem = {
-                type: isInteraction
-                    ? "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending"
-                    : "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
-                title: isInteraction ? "Interaction not pending" : "Proposal not pending",
-                status: 409,
-                detail: isInteraction ? "Interaction is no longer pending." : "Proposal is no longer pending.",
-            };
             await subscriber.onError?.({
-                message: problem.detail,
-                status: 409,
-                problem,
+                message: "Request is no longer pending.",
+                settled: true,
             });
         }
 
@@ -1975,7 +1786,7 @@ export default class SessionAgent {
             this.close();
             return { result: rawResult, stopReason: "end_turn", meta: metaPlurnk };
         }
-        const rawStopReason = this.pendingInterrupts.length > 0
+        const rawStopReason = this.pendingGates.length > 0
             ? "interrupt"
             : typeof liveOutcome?.stopReason === "string"
                 ? liveOutcome.stopReason
@@ -1985,8 +1796,8 @@ export default class SessionAgent {
                         ? rawResult.stopReason
                         : "end_turn";
         const stopReason = rawStopReason === "eof" ? "end_turn" : rawStopReason;
-        if (stopReason !== "interrupt") {
-            this.close();
+        if (stopReason === "interrupt" && this.#queuedLiveOutcome?.stopReason === "interrupt") {
+            this.#queuedLiveOutcome = undefined;
         }
         const terminalResult = isRecord(metaPlurnk?.terminal) && isRecord(metaPlurnk.terminal.result)
             ? metaPlurnk.terminal.result
@@ -2021,7 +1832,7 @@ export default class SessionAgent {
 
     /**
      * @param {AbortSignal} signal
-     * @returns {Promise<{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown } }>}
+     * @returns {Promise<{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown, settled?: boolean } }>}
      */
     #waitForLiveOutcome(signal) {
         if (this.#queuedLiveOutcome !== undefined) {
@@ -2043,7 +1854,7 @@ export default class SessionAgent {
                         : new DOMException("The operation was aborted.", "AbortError"),
                 );
             };
-            /** @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown }, transportError?: Error }} outcome */
+            /** @param {{ stopReason: string, meta?: Record<string, unknown>, error?: { message: string, status?: number, problem?: Record<string, unknown>, terminal?: unknown, settled?: boolean }, transportError?: Error }} outcome */
             const settle = (outcome) => {
                 signal.onabort = null;
                 if (this.#onLiveOutcome === settle) {
@@ -2091,6 +1902,9 @@ export default class SessionAgent {
             } = metaPlurnk;
             Object.assign(prevPlurnk, structuredClone(rest));
             if (isRecord(status)) {
+                if (Array.isArray(status.descendants)) {
+                    this.#pruneDescendantGatesFromStatus(status.descendants);
+                }
                 const normalizedStatus = structuredClone(status);
                 for (const field of ["claimedAt", "terminatedAt"]) {
                     if (typeof normalizedStatus[field] === "string") {
@@ -2115,6 +1929,7 @@ export default class SessionAgent {
                 plurnk: prevPlurnk,
                 ...(budget !== undefined ? { budget: structuredClone(budget) } : {}),
             };
+            this.#syncDescendantGates();
         } else if (Array.isArray(rawResult.configOptions) || Array.isArray(rawResult.availableCommands)) {
             this.state = {
                 ...this.state,
@@ -2131,18 +1946,12 @@ export default class SessionAgent {
      */
     async #handleError(error, signal, subscriber, actionKind) {
         if (signal.aborted && this.#streamProblem === undefined) {
-            if (this.pendingInterrupts.length === 0) {
-                this.close();
-            }
             throw signal.reason instanceof Error
                 ? signal.reason
                 : new DOMException("The operation was aborted.", "AbortError");
         }
         await this.#drainNotifications();
         if (signal.aborted && this.#streamProblem === undefined) {
-            if (this.pendingInterrupts.length === 0) {
-                this.close();
-            }
             throw signal.reason instanceof Error
                 ? signal.reason
                 : new DOMException("The operation was aborted.", "AbortError");
@@ -2213,37 +2022,14 @@ export default class SessionAgent {
         if (!pending) return;
         this.#pendingLiveThought = undefined;
         const found = this.messages.find((m) => m.id === pending.messageId && m.role === "reasoning");
-        if (!found || (isRecord(found.metadata?.plurnk) && found.metadata.plurnk.body !== undefined)) {
+        if (!found || (isRecord(found._meta?.plurnk) && found._meta.plurnk.body !== undefined)) {
             return;
         }
-        const plurnkState = isRecord(this.state.plurnk) ? this.state.plurnk : undefined;
-        const ws = isRecord(plurnkState?.workspace) ? plurnkState.workspace : undefined;
-        const st = isRecord(plurnkState?.status) ? plurnkState.status : undefined;
-        const rawParts = typeof this.sessionId === "string" ? this.sessionId.split("#") : [];
-        const workspaceId = typeof ws?.id === "number"
-            ? String(ws.id)
-            : typeof plurnkState?.workspaceId === "number"
-                ? String(plurnkState.workspaceId)
-                : (rawParts[0] || "1");
-        const numericSessionId = typeof st?.id === "number"
-            ? String(st.id)
-            : typeof plurnkState?.sessionId === "number"
-                ? String(plurnkState.sessionId)
-                : isRecord(plurnkState?.session) && typeof plurnkState.session.id === "number"
-                    ? String(plurnkState.session.id)
-                    : (rawParts[1] && /^[1-9]\d*$/u.test(rawParts[1]) ? rawParts[1] : "1");
-        const sessionName = typeof st?.name === "string" ? st.name : (rawParts[1] || "user");
-        const target = `reasoning://${sessionName}/${pending.coordinate}`;
-        const body = {
-            url: `/acp/${encodeURIComponent(workspaceId)}/${encodeURIComponent(numericSessionId)}/entry?target=${encodeURIComponent(target)}`,
-            mimeType: "text/plain",
-        };
-        found.metadata = {
-            ...found.metadata,
+        found._meta = {
+            ...found._meta,
             plurnk: {
-                ...(isRecord(found.metadata?.plurnk) ? found.metadata.plurnk : {}),
-                coordinate: pending.coordinate,
-                body,
+                ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
+                body: pending.body,
             },
         };
         await subscriber.onMessagesChanged?.({ messages: this.messages });
@@ -2261,6 +2047,7 @@ export default class SessionAgent {
         if (kind === "user_message_chunk" && typeof update.messageId === "string") {
             await subscriber.onUserMessage?.({ messageId: update.messageId });
         }
+        let projectedUpdate = update;
         if (kind === "agent_thought_chunk") {
             const id = typeof update.messageId === "string" && update.messageId.length > 0
                 ? update.messageId
@@ -2270,19 +2057,25 @@ export default class SessionAgent {
             if (this.#pendingLiveThought && this.#pendingLiveThought.messageId !== id) {
                 await this.#finalizeLiveThought(subscriber);
             }
-            const hasExplicitBody = (isRecord(update.content) && update.content.type === "resource_link")
-                || plurnk?.body !== undefined;
-            if (hasExplicitBody) {
+            const isResourceLink = isRecord(update.content) && update.content.type === "resource_link";
+            if (isResourceLink) {
                 this.#pendingLiveThought = undefined;
-            } else if (id && typeof plurnk?.coordinate === "string") {
-                this.#pendingLiveThought = { messageId: id, coordinate: plurnk.coordinate };
+            } else if (id && isRecord(plurnk?.body)) {
+                this.#pendingLiveThought = { messageId: id, body: structuredClone(plurnk.body) };
+                const { body: _body, ...restPlurnk } = plurnk;
+                projectedUpdate = {
+                    ...update,
+                    _meta: {
+                        ...(isRecord(update._meta) ? update._meta : {}),
+                        plurnk: restPlurnk,
+                    },
+                };
             }
             if (
                 isRecord(update.content)
                 && update.content.type === "text"
                 && typeof update.content.text === "string"
                 && update.content.text.length > 0
-                && !hasExplicitBody
             ) {
                 await subscriber.onThoughtChunk?.({ update });
             }
@@ -2293,7 +2086,7 @@ export default class SessionAgent {
         ) {
             await this.#finalizeLiveThought(subscriber);
         }
-        this.messages = SessionTranslator.projectMessages([update], this.messages);
+        this.messages = SessionTranslator.projectMessages([projectedUpdate], this.messages);
         await subscriber.onMessagesChanged?.({ messages: this.messages });
     }
 
@@ -2303,8 +2096,10 @@ export default class SessionAgent {
      * @param {SessionSubscriber} subscriber
      */
     async #handleSessionUpdate(sessionId, update, subscriber) {
-        await subscriber.onSessionUpdate?.({ update, sessionId });
         const kind = update.sessionUpdate;
+        if (!(this.#bufferingReplay && kind === "agent_thought_chunk")) {
+            await subscriber.onSessionUpdate?.({ update, sessionId });
+        }
         const plurnk = isRecord(update._meta) && isRecord(update._meta.plurnk)
             ? update._meta.plurnk
             : undefined;
@@ -2421,6 +2216,33 @@ export default class SessionAgent {
                                 ? "failed"
                                 : "completed";
             if (childId !== undefined && childName !== undefined) {
+                if (stateObj.state === "idle") {
+                    for (const item of [...this.#allPendingGates]) {
+                        const key = this.#gateSessionKey(item);
+                        if (key === childName || key === String(childId)) {
+                            this.#cancelGateById(item.id);
+                        }
+                    }
+                } else if (stateObj.state === "running") {
+                    const coord = typeof plurnk?.coordinate === "string"
+                        ? plurnk.coordinate.split("#")[1]
+                        : undefined;
+                    for (const item of [...this.#allPendingGates]) {
+                        const key = this.#gateSessionKey(item);
+                        if (key !== childName && key !== String(childId)) continue;
+                        if (item.method === "session/request_permission") {
+                            const prop = /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal);
+                            if (coord !== undefined && prop?.coordinate === coord) {
+                                this.#cancelGateById(item.id);
+                            }
+                        } else if (item.method === "elicitation/create") {
+                            this.#cancelGateById(item.id);
+                        }
+                    }
+                }
+                if (Array.isArray(plurnk?.gates)) {
+                    this.#pruneDescendantGatesFromStatus([{ id: childId, name: childName, gates: plurnk.gates }]);
+                }
                 const idx = descendants.findIndex((d) => isRecord(d) && (d.id === childId || d.name === childName));
                 const nextEntry = {
                     ...(idx !== -1 && isRecord(descendants[idx]) ? descendants[idx] : {}),
@@ -2452,13 +2274,28 @@ export default class SessionAgent {
         }
 
         if (kind === "state_update") {
-            if (
-                (update.state === "running" || update.state === "idle")
-                && this.#inFlightPostCount > 0
-                && this.#submittedGateIds.size > 0
-            ) {
-                for (const id of this.#submittedGateIds) {
-                    this.#cancelledSubmittedGates.add(id);
+            if (update.state === "running" || update.state === "idle") {
+                if (this.#inFlightPostCount > 0 && this.#submittedGateIds.size > 0) {
+                    for (const id of this.#submittedGateIds) {
+                        this.#cancelledSubmittedGates.add(id);
+                    }
+                }
+                if (this.#bufferingReplay) {
+                    for (const item of [...this.#allPendingGates]) {
+                        this.#cancelGateById(item.id);
+                    }
+                } else {
+                    const plurnkState = isRecord(this.state.plurnk) ? this.state.plurnk : undefined;
+                    const statusState = isRecord(plurnkState?.status) ? plurnkState.status : undefined;
+                    const rawParts = typeof this.sessionId === "string" ? this.sessionId.split("#") : [];
+                    const boundName = typeof statusState?.name === "string" ? statusState.name : (rawParts[1] || "user");
+                    const boundId = typeof statusState?.id === "number" ? String(statusState.id) : "";
+                    for (const item of [...this.#allPendingGates]) {
+                        const key = this.#gateSessionKey(item);
+                        if (!key || key === boundName || key === boundId) {
+                            this.#cancelGateById(item.id);
+                        }
+                    }
                 }
             }
             await this.#finalizeLiveThought(subscriber);
@@ -2485,7 +2322,7 @@ export default class SessionAgent {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
             }
-            if (update.state === "requires_action" && !this.#bufferingReplay && this.pendingInterrupts.length > 0) {
+            if (update.state === "requires_action" && !this.#bufferingReplay && this.pendingGates.length > 0) {
                 await subscriber.onSettled?.({ stopReason: "interrupt", meta: plurnk, result: {} });
             }
             if (update.state === "idle" && isRecord(plurnk?.terminal)) {
@@ -2559,6 +2396,9 @@ export default class SessionAgent {
                 stateChanged = true;
             }
             if (isRecord(plurnk?.status)) {
+                if (Array.isArray(plurnk.status.descendants)) {
+                    this.#pruneDescendantGatesFromStatus(plurnk.status.descendants);
+                }
                 Object.assign(prevStatus, structuredClone(plurnk.status));
                 prevPlurnk.status = prevStatus;
                 stateChanged = true;
@@ -2582,6 +2422,7 @@ export default class SessionAgent {
                     ...this.state,
                     plurnk: prevPlurnk,
                 };
+                this.#syncDescendantGates();
                 if (!this.#bufferingReplay) {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
@@ -2664,6 +2505,32 @@ export default class SessionAgent {
             || kind === "tool_call"
             || kind === "tool_call_update"
         ) {
+            if (
+                (kind === "tool_call" || kind === "tool_call_update")
+                && typeof update.toolCallId === "string"
+                && typeof update.status === "string"
+                && update.status !== "pending"
+            ) {
+                for (const item of [...this.#allPendingGates]) {
+                    if (item.method === "session/request_permission") {
+                        const prop = /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal);
+                        if (
+                            prop?.coordinate === update.toolCallId
+                            || (isRecord(item.toolCall) && item.toolCall.toolCallId === update.toolCallId)
+                        ) {
+                            this.#cancelGateById(item.id);
+                        }
+                    } else if (
+                        item.method === "elicitation/create"
+                        && (update.status === "completed" || update.status === "failed")
+                    ) {
+                        const inter = /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.interaction);
+                        if (typeof inter?.interactionId === "number" && `int:${inter.interactionId}` === update.toolCallId) {
+                            this.#cancelGateById(item.id);
+                        }
+                    }
+                }
+            }
             if (this.#bufferingReplay) {
                 this.#replayUpdates.push(update);
                 return;
