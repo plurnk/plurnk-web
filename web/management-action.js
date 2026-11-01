@@ -90,6 +90,11 @@ export default async function managementAction(kind, params, sessionId, auth, si
         return outcome;
     } catch (error) {
         if (httpFailure !== undefined) throw httpFailure;
+        if (signal.aborted) {
+            throw signal.reason instanceof Error
+                ? signal.reason
+                : new DOMException("The operation was aborted.", "AbortError");
+        }
         if (typeof error === "object" && error !== null && "data" in error) {
             const data = /** @type {Record<string, unknown> | null | undefined} */ (error.data);
             const plurnk = data && typeof data.plurnk === "object" && data.plurnk !== null

@@ -6,6 +6,36 @@ import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 const message = (id, content = id) => ({ id, role: "user", content });
 const userChunk = (id, text = id) => ({ sessionUpdate: "user_message_chunk", messageId: id, content: { type: "text", text } });
+const toUpdate = (m) => {
+    if (m.role === "assistant" && m.toolCalls?.[0]) {
+        const tc = m.toolCalls[0];
+        return {
+            sessionUpdate: "tool_call",
+            messageId: m.id,
+            toolCallId: tc.id,
+            name: tc.function.name,
+            title: tc.function.name,
+            rawInput: JSON.parse(tc.function.arguments),
+            status: "pending",
+            _meta: tc.metadata,
+        };
+    }
+    if (m.role === "tool") {
+        return {
+            sessionUpdate: "tool_call_update",
+            toolCallId: m.toolCallId,
+            status: "completed",
+            rawOutput: m.content,
+            _meta: { plurnk: { messageId: m.id } },
+        };
+    }
+    return userChunk(m.id, m.content);
+};
+const pageEnvelope = (messages, older = null) => ({
+    session: "7#user",
+    history: { older },
+    updates: messages.map(toUpdate),
+});
 const snapshot = (messages, older) => ({
     updates: messages.map((m) => userChunk(m.id, m.content)),
     result: { _meta: { plurnk: { history: { older } } } },
@@ -55,7 +85,7 @@ export default async function verifyHistory(t) {
                     const older = "/history/old?opaque=%2F%23%25";
                     const live = [message("current", "Current text.\n\n".repeat(35)), message("tail", "Newest text.")];
                     const old = [message("old", "Old text.\n\n".repeat(35)), message("current", "Stale current text.")];
-                    pages.set("/history/old", { final: true, messages: old, older: null });
+                    pages.set("/history/old", pageEnvelope(old, null));
                     events = snapshot(live, older);
                     await run();
                     await settled();
@@ -101,7 +131,7 @@ export default async function verifyHistory(t) {
                     await page.waitForFunction(() => typeof window.run === "function");
                     const call = { id: "call-message", role: "assistant", toolCalls: [{ id: "call", type: "function",
                         function: { name: "READ", arguments: JSON.stringify({ target: { raw: "evidence.txt" } }) }, metadata: { plurnk: { op: "READ" } } }] };
-                    pages.set("/history/call", { final: false, messages: [call], older: null });
+                    pages.set("/history/call", pageEnvelope([call], null));
                     events = snapshot([message("now")], "/history/call");
                     await run();
                     await page.getByRole("button", { name: "Load previous loop" }).click();
@@ -118,7 +148,7 @@ export default async function verifyHistory(t) {
                     await page.getByRole("alert").filter({ hasText: "Read request failed (503)." }).waitFor();
                     assert.equal(await page.locator('[data-call-id="call"] [data-plurnk-field="count"]').textContent(), "{2}", "failed revalidation cannot hide a confirmed result");
                     check(engine !== firefox ? [httpFailure("/history/call", 503)] : []);
-                    pages.set("/history/call", { final: true, messages: [call, result], older: null });
+                    pages.set("/history/call", pageEnvelope([call, result], null));
                     await page.getByRole("button", { name: "Load previous loop" }).click();
                     await page.waitForFunction(() => !document.querySelector('[data-history-boundary] [aria-busy="true"]'));
                     await settled();
@@ -137,7 +167,7 @@ export default async function verifyHistory(t) {
                     await page.getByRole("alert").filter({ hasText: "Read request failed (503)." }).waitFor();
                     assert.deepEqual(await ids(), ["retained"]);
                     check(engine !== firefox ? [httpFailure("/history/failure", 503)] : []);
-                    pages.set("/history/failure", { final: true, messages: [message("retried")], older: null });
+                    pages.set("/history/failure", pageEnvelope([message("retried")], null));
                     await page.getByRole("button", { name: "Load previous loop" }).click();
                     await page.locator('[data-message-id="retried"]').waitFor();
                     assert.deepEqual(await ids(), ["retried", "retained"]);
@@ -147,7 +177,7 @@ export default async function verifyHistory(t) {
                     const started = Promise.withResolvers();
                     pages.set("/history/held", async (route) => {
                         started.resolve(); await held.promise;
-                        await route.fulfill({ json: { final: true, messages: [message("abandoned")], older: null } });
+                        await route.fulfill({ json: pageEnvelope([message("abandoned")], null) });
                     });
                     events = snapshot([message("new-window")], "/history/held");
                     await run();

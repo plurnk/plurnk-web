@@ -39,6 +39,20 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     let acpHandler = null;
     let connSeq = 0;
     const sseStreams = new Map();
+    const getStream = (key) => {
+        if (!sseStreams.has(key)) sseStreams.set(key, { res: null, queue: [], closed: false });
+        return sseStreams.get(key);
+    };
+    const writeSse = (key, data) => {
+        const entry = getStream(key);
+        if (entry.res && !entry.res.writableEnded) entry.res.write(data);
+        else entry.queue.push(data);
+    };
+    const closeSse = (key) => {
+        const entry = getStream(key);
+        entry.closed = true;
+        if (entry.res && !entry.res.writableEnded) entry.res.end();
+    };
     const handleAcp = async (request, response) => {
         if (request.method === "GET") {
             const connId = request.headers["acp-connection-id"] ?? "";
@@ -51,18 +65,23 @@ export default async function conversationFixture(entryURL = new URL("./conversa
                 "connection": "keep-alive",
             });
             response.flushHeaders();
-            sseStreams.set(key, response);
+            response.write(":\n\n");
+            const entry = getStream(key);
+            entry.res = response;
+            for (const chunk of entry.queue.splice(0)) response.write(chunk);
+            if (entry.closed) response.end();
             request.on("close", () => {
-                if (sseStreams.get(key) === response) sseStreams.delete(key);
+                if (entry.res === response) entry.res = null;
             });
             return;
         }
         if (request.method === "DELETE") {
             const connId = request.headers["acp-connection-id"] ?? "";
-            for (const [key, stream] of sseStreams) {
+            for (const [key, entry] of sseStreams) {
                 if (key.startsWith(`${connId}:`)) {
                     sseStreams.delete(key);
-                    stream.end();
+                    entry.closed = true;
+                    if (entry.res && !entry.res.writableEnded) entry.res.end();
                 }
             }
             response.writeHead(202, privateHeaders);
@@ -92,25 +111,23 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         }
         const connId = request.headers["acp-connection-id"] ?? "";
         const sessionId = request.headers["acp-session-id"] ?? input.params?.sessionId ?? "";
-        const sse = sseStreams.get(`${connId}:${sessionId}`) ?? sseStreams.get(`${connId}:`);
-        const outcome = await acpHandler(input, request.headers);
+        const key = `${connId}:${sessionId}`;
         response.writeHead(202, privateHeaders);
         response.end();
-        if (sse && !sse.writableEnded) {
-            for (const update of outcome.updates ?? []) {
-                sse.write(`data: ${JSON.stringify({
-                    jsonrpc: "2.0",
-                    method: "session/update",
-                    params: { sessionId, update },
-                })}\n\n`);
-            }
-            const rpcFrame = outcome.error
-                ? { jsonrpc: "2.0", id: input.id, error: outcome.error }
-                : { jsonrpc: "2.0", id: input.id, result: outcome.result ?? {} };
-            sse.write(`data: ${JSON.stringify(rpcFrame)}\n\n`);
-            if (outcome.closeStream) {
-                sse.end();
-            }
+        const outcome = await acpHandler(input, request.headers);
+        for (const update of outcome.updates ?? []) {
+            writeSse(key, `data: ${JSON.stringify({
+                jsonrpc: "2.0",
+                method: "session/update",
+                params: { sessionId, update },
+            })}\n\n`);
+        }
+        const rpcFrame = outcome.error
+            ? { jsonrpc: "2.0", id: input.id, error: outcome.error }
+            : { jsonrpc: "2.0", id: input.id, result: outcome.result ?? {} };
+        writeSse(key, `data: ${JSON.stringify(rpcFrame)}\n\n`);
+        if (outcome.closeStream) {
+            closeSse(key);
         }
     };
     const server = createServer((request, response) => {
@@ -127,7 +144,9 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         onAcp: (handler) => { acpHandler = handler; },
         server: {
             close: async () => {
-                for (const stream of sseStreams.values()) stream.end();
+                for (const entry of sseStreams.values()) {
+                    if (entry.res && !entry.res.writableEnded) entry.res.end();
+                }
                 sseStreams.clear();
                 await module.close();
                 await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

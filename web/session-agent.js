@@ -479,7 +479,9 @@ export class SessionTranslator {
                         ? (typeof update.rawInput === "string" ? update.rawInput : JSON.stringify(update.rawInput))
                         : "{}";
                     messages.push({
-                        id: `call:${toolCallId}`,
+                        id: typeof update.messageId === "string" && update.messageId.length > 0
+                            ? update.messageId
+                            : `call:${toolCallId}`,
                         role: "assistant",
                         content: "",
                         ...(subagentRunId ? { subagentRunId } : {}),

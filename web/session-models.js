@@ -54,16 +54,19 @@ export async function sessionEffort(call, selection) {
         ? response.configOptions.find((option) => option?.configId === "thought_level")
         : undefined;
     const status = response?._meta?.plurnk?.status;
-    if (!thought || !Array.isArray(thought.options) || !status || !Object.hasOwn(status, "model")) {
+    if (!Array.isArray(response?.configOptions) || !status || !Object.hasOwn(status, "model")) {
         throw new Error("Effort result is invalid.");
     }
     const model = status.model === null ? null : Validator.assertModelRoute(status.model);
+    const supported = thought && Array.isArray(thought.options) && model !== null
+        ? thought.options.map((option) => Validator.assertEffort(option?.value))
+        : [];
     if (model === null || model.effort === undefined) {
-        return { effort: null, source: "default", supported: [] };
+        return { effort: null, source: "default", supported };
     }
     return {
         effort: Validator.assertEffort(model.effort),
         source: model.effortSource ?? "default",
-        supported: thought.options.map((option) => Validator.assertEffort(option?.value)),
+        supported,
     };
 }
