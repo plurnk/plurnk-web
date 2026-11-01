@@ -31,8 +31,9 @@ export default function reasoningPreview(root, limit) {
                 || (update.sessionUpdate === "notice"
                     && isRecord(update._meta)
                     && isRecord(update._meta.plurnk)
-                    && isRecord(update._meta.plurnk.notice)
-                    && update._meta.plurnk.notice.kind === "turn_generated")
+                    && (typeof update._meta.plurnk.id === "number"
+                        || (isRecord(update._meta.plurnk.notice)
+                            && update._meta.plurnk.notice.kind === "turn_generated")))
             ) {
                 clear();
                 return;

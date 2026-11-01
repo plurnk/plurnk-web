@@ -66,9 +66,13 @@ export default function activity(root, read) {
             rows.set(key, row);
             return;
         }
-        if (update.sessionUpdate !== "tool_call_update") return;
+        const isNoticeRow = update.sessionUpdate === "notice"
+            && !Object.hasOwn(plurnk, "notice")
+            && !Object.hasOwn(plurnk, "problem")
+            && Object.hasOwn(plurnk, "id");
+        if (update.sessionUpdate !== "tool_call_update" && !isNoticeRow) return;
         if (plurnk.proposal !== undefined || plurnk.interaction !== undefined) return;
-        if (update.rawInput === undefined && update.rawOutput === undefined && update.name === undefined) return;
+        if (!isNoticeRow && update.rawInput === undefined && update.rawOutput === undefined && update.name === undefined) return;
         const op = plurnk.op !== undefined ? plurnk.op : (update.name ?? null);
         if (!attribution && typeof plurnk.coordinate === "string" && update.toolCallId === plurnk.coordinate) {
             if (plurnk.origin === "model") ambientCalls.delete(plurnk.coordinate);
@@ -91,7 +95,7 @@ export default function activity(root, read) {
         const statusRx = plurnk.status;
         const state = typeof plurnk.state === "string"
             ? plurnk.state
-            : (update.status === "completed" ? "resolved" : update.status);
+            : (update.status === "completed" ? "resolved" : (update.status ?? (statusRx >= 400 ? "failed" : "resolved")));
         if (!Number.isSafeInteger(id) || id <= 0
             || !Number.isSafeInteger(sessionId) || sessionId <= 0
             || ![loopSeq, turnSeq, sequence].every((val) => Number.isSafeInteger(val) && val >= 0)
@@ -107,7 +111,9 @@ export default function activity(root, read) {
         const row = rows.get(key) ?? $.clone(list, "#session-ambient");
         const operation = op ?? (plurnk.attrs?.kind === "emissionAttempt" ? "Rejected emission" : "Log entry");
         const args = typeof update.rawInput === "string" ? argumentsOf(update.rawInput) : record(update.rawInput);
-        const receipt = typeof update.rawOutput === "string" ? argumentsOf(update.rawOutput) : record(update.rawOutput);
+        const receipt = typeof update.rawOutput === "string"
+            ? argumentsOf(update.rawOutput)
+            : (record(update.rawOutput) ?? record(plurnk.receipt));
         const coordinate = `${loopSeq}/${turnSeq}/${sequence}`;
         const target = typeof plurnk.target === "string" ? plurnk.target : update.locations?.[0]?.path;
         the(row, {

@@ -24,7 +24,7 @@ export default async function startModel({ approvalCommand = "printf approved" }
     const streamStarted = Promise.withResolvers();
     const programs = [
         { reasoning: "I will read the requested project file.", content: "```READ (witness.txt)\n```" },
-        { reasoning: "The file confirms the browser connection.", content: "```SEND [200]\nBrowser connection verified: cobalt heron.\n```" },
+        { reasoning: "The file confirms the browser connection.", content: "```DONE\nBrowser connection verified: cobalt heron.\n```" },
     ];
     let turn = 0;
     const server = createServer(async (request, response) => {
@@ -84,12 +84,12 @@ export default async function startModel({ approvalCommand = "printf approved" }
                             ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (session://user/identity.md) <1,2>\n```"
                         : lifecycle.startsWith("execution-") && visit === 1
                             ? `\`\`\`sh\nprintf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}\n\`\`\`\n\`\`\`WAIT\n\`\`\``
-                        : lifecycle === "math" ? "```SEND [200]\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
-                        : lifecycle === "diagrams" ? `\`\`\`\`SEND [200]\n${diagramContent}\n\`\`\`\``
-                        : lifecycle === "footnotes" ? `\`\`\`NOTE <!-- fact -->\n${footnoteAnswer}\n\`\`\`\n\`\`\`SEND [200]\n${footnoteAnswer}\n\`\`\``
-                        : lifecycle === "notes" ? "```NOTE <!-- fact -->\nA **working fact**, not the answer.\n```\n```NOTE <!-- idea -->\nA provisional hypothesis.\n```\n```NOTE <!-- plan -->\nCheck the hypothesis.\n```\n```SEND [200]\nCompleted notes.\n```"
-                        : lifecycle === "content-security" ? `\`\`\`NOTE <!-- fact -->\n${contentAttack}\n\`\`\`\n\`\`\`SEND [200]\n${contentAttack}\n\`\`\``
-                        : `\`\`\`SEND [200]\nCompleted ${lifecycle}.\n\`\`\``;
+                        : lifecycle === "math" ? "```DONE\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
+                        : lifecycle === "diagrams" ? `\`\`\`\`DONE\n${diagramContent}\n\`\`\`\``
+                        : lifecycle === "footnotes" ? `\`\`\`NOTE <!-- fact -->\n${footnoteAnswer}\n\`\`\`\n\`\`\`DONE\n${footnoteAnswer}\n\`\`\``
+                        : lifecycle === "notes" ? "```NOTE <!-- fact -->\nA **working fact**, not the answer.\n```\n```NOTE <!-- idea -->\nA provisional hypothesis.\n```\n```NOTE <!-- plan -->\nCheck the hypothesis.\n```\n```DONE\nCompleted notes.\n```"
+                        : lifecycle === "content-security" ? `\`\`\`NOTE <!-- fact -->\n${contentAttack}\n\`\`\`\n\`\`\`DONE\n${contentAttack}\n\`\`\``
+                        : `\`\`\`DONE\nCompleted ${lifecycle}.\n\`\`\``;
                     frame({ content });
                     const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);
                     frame({}, "stop", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });

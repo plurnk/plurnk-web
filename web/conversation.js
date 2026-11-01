@@ -102,9 +102,10 @@ export default function conversation(root, readBody) {
                 ? typeof args.aside === "string" && args.aside ? args.aside : "note" : null;
             const facts = record((call ? call.metadata : message.metadata)?.plurnk);
             const op = facts?.op;
+            const isReplyOp = (/** @type {unknown} */ value) => value === "SEND" || value === "DONE" || value === "FAIL";
             const ownResult = call ? results.get(call.id) : undefined;
             const receipt = ownResult ? receiptOf(ownResult.content)
-                : message.role === "tool" && facts && op !== "SEND" ? receiptOf(message.content) : record(facts?.receipt);
+                : message.role === "tool" && facts && !isReplyOp(op) ? receiptOf(message.content) : record(facts?.receipt);
             const operationName = call?.function.name ?? (typeof op === "string" ? op : null);
             const summarized = typeof op === "string" && Boolean(operationName);
             const error = ownResult?.error ?? (message.role === "tool" ? message.error : undefined) ?? "";
@@ -135,15 +136,15 @@ export default function conversation(root, readBody) {
                 throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
             }
             /** @type {string | readonly import("./session-agent.js").MessagePart[] | undefined} */
-            const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && op !== "SEND" ? ""
+            const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && !isReplyOp(op) ? ""
                 : linked ? [{ type: /** @type {const} */ ("document"), source: { type: /** @type {const} */ ("url"), value: linked.url, mimeType: linked.mimeType } }] : message.content;
-            const rich = call ? operation?.function.name === "SEND"
-                : message.role === "tool" ? facts?.op === "SEND"
+            const rich = call ? isReplyOp(operation?.function.name)
+                : message.role === "tool" ? isReplyOp(facts?.op)
                 : message.role !== "reasoning" && message.role !== "activity";
             const hasBody = typeof content === "string" ? Boolean(content) : Array.isArray(content) && content.some((part) =>
                 part?.type === "text" && typeof part.text === "string" && Boolean(part.text)
                 || part?.type === "document" && part.source?.type === "url" && typeof part.source.value === "string");
-            const initiallyOpen = message.role === "user" || op === "SEND" || message.role === "assistant" && !call;
+            const initiallyOpen = message.role === "user" || isReplyOp(op) || message.role === "assistant" && !call;
             const frame = card(row, hasBody, initiallyOpen);
             body(frame.body, content, rich, call ? `call-${call.id}` : `message-${message.id}`);
             if (summarized) operationSummary(frame.header, operationName, args, receipt, facts, error);

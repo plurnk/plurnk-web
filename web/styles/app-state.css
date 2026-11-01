@@ -36,7 +36,7 @@ body:not(:has(#session-status:is([data-connection="disconnected"], [data-connect
     --pico-card-background-color: var(--plurnk-user-surface);
 }
 
-#session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]:not([data-message-role="user"])) {
+#session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]:not([data-message-role="user"]), [data-plurnk-type="DONE"]:not([data-message-role="user"]), [data-plurnk-type="FAIL"]:not([data-message-role="user"])) {
     --pico-card-background-color: var(--plurnk-reply-surface);
 }
 
@@ -189,8 +189,8 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 [data-plurnk-type="BARE"] { --plurnk-operation-glyph: "☁️"; }
 [data-plurnk-type="WAIT"] { --plurnk-operation-glyph: "⏳"; }
 [data-plurnk-type="SEND"] { --plurnk-operation-glyph: "✉️"; }
-[data-plurnk-type="SEND"][data-plurnk-signal="200"] { --plurnk-operation-glyph: "🐹"; }
-[data-plurnk-type="SEND"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
+[data-plurnk-type="DONE"], [data-plurnk-type="SEND"][data-plurnk-signal="200"] { --plurnk-operation-glyph: "🐹"; }
+[data-plurnk-type="SEND"][data-plurnk-signal="499"], [data-plurnk-type="FAIL"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
 [data-plurnk-type="WARN"] { --plurnk-operation-glyph: "⚠️"; }
 
 [data-plurnk-type="FAIL"],

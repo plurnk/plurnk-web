@@ -416,7 +416,7 @@ export class SessionTranslator {
                         continue;
                     }
                     const obsId = plurnk.coordinate;
-                    const obsContent = plurnk.op === "SEND"
+                    const obsContent = plurnk.op === "SEND" || plurnk.op === "DONE" || plurnk.op === "FAIL"
                         ? (() => {
                             if (Array.isArray(update.content)) {
                                 const first = update.content[0];
@@ -2523,7 +2523,7 @@ export default class SessionAgent {
             const prevPlurnk = isRecord(this.state.plurnk) ? { ...this.state.plurnk } : {};
             const prevStatus = isRecord(prevPlurnk.status) ? { ...prevPlurnk.status } : {};
             const notice = isRecord(plurnk?.notice) ? plurnk.notice : undefined;
-            if (notice?.kind === "turn_generated") {
+            if (notice?.kind === "turn_generated" || typeof plurnk?.id === "number") {
                 await this.#finalizeLiveThought(subscriber);
             }
             let stateChanged = false;
