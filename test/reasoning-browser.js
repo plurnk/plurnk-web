@@ -64,7 +64,7 @@ export default async function verifyReasoning(t) {
                     await endAttempt(message.id);
                     assert.equal(await text.textContent(), "");
                     assert.equal(await preview.isVisible(), false);
-                    const linked = { ...message, metadata: { plurnk: { coordinate: "1/3", body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" } } } };
+                    const linked = { ...message, _meta: { plurnk: { coordinate: "1/3", body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" } } } };
                     await page.evaluate((message) => { window.messages = [message]; window.present(window.messages); }, linked);
                     assert.equal(await page.locator('[data-message-id="attempt"] [data-body-reference]').count(), 1,
                         "late metadata on an empty SDK reasoning message must expose its body");
@@ -95,7 +95,7 @@ export default async function verifyReasoning(t) {
                     assert.equal(await preview.isVisible(), false, "replay does not reconstruct previews");
 
                     await delta("next", "<script>window.pwned = true</script>");
-                    await endAttempt(linked.id, linked.metadata);
+                    await endAttempt(linked.id, linked._meta);
                     assert.equal(await text.textContent(), "<script>window.pwned = true</script>", "late link folding cannot clear a newer attempt");
                     assert.equal(await preview.locator("script").count(), 0);
                     assert.equal(await page.evaluate(() => window.pwned), undefined);
@@ -116,7 +116,7 @@ export default async function verifyReasoning(t) {
                     assert.deepEqual(await page.evaluate(() => window.messages), [linked]);
                     for (const body of [null, false, {}, { url: "/reasoning" }, { url: 42, mimeType: "text/plain" }]) {
                         await assert.rejects(page.evaluate((body) => window.present([{
-                            id: "invalid", role: "reasoning", content: "", metadata: { plurnk: { body } },
+                            id: "invalid", role: "reasoning", content: "", _meta: { plurnk: { body } },
                         }]), body), /Reasoning body reference must supply its URL and MIME type/u);
                     }
                     checkBrowser();

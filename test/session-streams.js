@@ -91,7 +91,7 @@ export default async function verifySessionStreams({ t, withDaemon }) {
                 assert.equal(read.params.kind, "entry.read");
                 assert.equal(read.params.params?.target ?? read.params.target, target);
                 const inspection = new SessionAgent({ url: new URL("/acp", base).href, sessionId: `${setup.state.plurnk.workspace.id}#user`, headers });
-                await inspection.runAgent({ action: { kind: "entry.read", target } });
+                await inspection.send({ action: { kind: "entry.read", target } });
                 assert.deepEqual(inspection.messages, [], "management evidence is not appended to SDK conversation");
                 checkBrowser();
             }, { authenticated: cancelled }));

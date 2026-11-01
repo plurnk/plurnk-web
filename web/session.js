@@ -17,20 +17,10 @@ import sessionCommands, { isCommand } from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 
-/** @typedef {{message?: {id: string, role: "user", content: string}, resume?: readonly import("./session-agent.js").ResumeResolution[]}} Submission */
+/** @typedef {{message?: {id: string, role: "user", content: string}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
 
 // {§web-session-status} Repaint elapsed and WAIT at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
-
-// {§web-session-approval} These refusals require fresh observation, never replay of the answer.
-const SETTLED_INTERRUPTS = new Set([
-    "https://problems.plurnk.xyz/acp/interrupt/interrupt-not-pending",
-    "https://problems.plurnk.xyz/proposal/resolution/proposal-not-pending",
-    "https://problems.plurnk.xyz/interaction/resolution/interaction-not-pending",
-    "interrupt-not-pending",
-    "proposal-not-pending",
-    "interaction-not-pending",
-]);
 
 /** {§web-session-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback
  * here hands its first failure to `fail` and skips the rest, so the run ends with that cause.
@@ -93,7 +83,7 @@ export default function observeSession(element) {
     if (!(streamList instanceof HTMLElement)) throw new Error("Session document has no stream outlet.");
     const streams = sessionStreams(streamList, (target) => readEntry(target, sessionId, auth, resources.signal));
     const presentState = sessionState(element);
-    let agent = new SessionAgent({ url: "/acp", sessionId });
+    const agent = new SessionAgent({ url: "/acp", sessionId });
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
     /** @type {{message: {id: string, role: "user", content: string}, retryable: boolean} | undefined} */
@@ -104,6 +94,12 @@ export default function observeSession(element) {
     let cancellation;
     // {§web-session-input} An interrupt that has arrived and is not yet presented holds Send until its review appears.
     let arriving = false;
+    const availableCommands = () => {
+        const plurnk = /** @type {Record<string, unknown> | undefined} */ (agent.state.plurnk);
+        return Array.isArray(plurnk?.availableCommands)
+            ? /** @type {readonly { name: string }[]} */ (plurnk.availableCommands)
+            : [];
+    };
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
     const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, sessionId, auth, signal);
     const toggleYolo = async () => {
@@ -111,10 +107,9 @@ export default function observeSession(element) {
         approval.setAttribute("aria-pressed", String(enabled));
         approval.title = `${enabled ? "Auto" : "Manual"} Approval (/yolo)`;
         const mode = review.automatic(enabled);
-        const current = agent;
         if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
-            const resume = await review.decisions(current.pendingInterrupts);
-            if (resume && current === agent && the(element, "connection") === "interrupted" && !cancellation) connect({ resume });
+            const resolutions = await review.decisions(agent.pendingGates);
+            if (resolutions && the(element, "connection") === "interrupted" && !cancellation) connect({ resolutions });
         }
         availability();
         return enabled;
@@ -128,7 +123,7 @@ export default function observeSession(element) {
         const commandPending = the(controls, "command-pending") !== null;
         the(controls, {
             liveWork: live ? "" : null,
-            sendUnavailable: (isCommand(draft.value) ? !commandPending
+            sendUnavailable: (isCommand(draft.value, availableCommands()) ? !commandPending
                 : current === "connected" && !arriving && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
         });
@@ -164,11 +159,7 @@ export default function observeSession(element) {
         try {
             while (!signal.aborted) {
                 if (!holding) connection("connecting", "Connecting…");
-                if (!submission && !holding) {
-                    agent.close();
-                    agent = new SessionAgent({ url: "/acp", sessionId });
-                }
-                if (!submission?.resume && !holding) review.present([]);
+                if (!submission?.resolutions && !holding) review.present([]);
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
                 agent.url = "/acp";
@@ -227,12 +218,11 @@ export default function observeSession(element) {
                             availability();
                         }
                     },
-                    onError: ({ message, status: errStatus, problem: errProblem, terminal: errTerminal }) => {
+                    onError: ({ message, status: errStatus, problem: errProblem, terminal: errTerminal, settled: errSettled }) => {
                         if (signal.aborted) return;
                         terminal = errTerminal !== undefined;
                         problem = errStatus ?? (typeof errProblem?.status === "number" ? errProblem.status : undefined);
-                        const problemType = typeof errProblem?.type === "string" ? errProblem.type : "";
-                        settled = problem === 409 && SETTLED_INTERRUPTS.has(problemType);
+                        settled = Boolean(errSettled);
                         // An observer sent nothing: the session's own failure shows in its status, not as this page's request.
                         if (terminal && submission) the(feedback, "command-error", message);
                         else refusal = message;
@@ -240,8 +230,8 @@ export default function observeSession(element) {
                 };
                 const delivered = failing(subscriber, (error) => { intake = { error }; run.abort(error); });
                 try {
-                    if (submission) await agent.runAgent({ abortController: run, message: submission.message, resume: submission.resume }, delivered);
-                    else await agent.connectAgent(holding ? { interrupts: agent.pendingInterrupts.map(({ id }) => id) } : {}, delivered);
+                    if (submission) await agent.send({ abortController: run, message: submission.message, resolutions: submission.resolutions }, delivered);
+                    else await agent.resume(holding ? { abortController: run, gates: agent.pendingGates.map(({ id }) => id) } : { abortController: run }, delivered);
                 } catch (error) {
                     if (intake === undefined) throw error;
                 }
@@ -252,12 +242,12 @@ export default function observeSession(element) {
                 signal.throwIfAborted();
                 if (interrupted) {
                     holding = false;
-                    const mode = review.present(agent.pendingInterrupts, agent.messages);
+                    const mode = review.present(agent.pendingGates);
                     arriving = false;
                     if (mode === "automatic") {
-                        const resume = await review.decisions(agent.pendingInterrupts);
-                        if (!resume) throw new Error("Automatic approval did not resolve its presented set.");
-                        submission = { resume };
+                        const resolutions = await review.decisions(agent.pendingGates);
+                        if (!resolutions) throw new Error("Automatic approval did not resolve its presented set.");
+                        submission = { resolutions };
                         continue;
                     }
                     connection("interrupted", "Input required");
@@ -268,7 +258,7 @@ export default function observeSession(element) {
                     submission = undefined;
                     continue;
                 }
-                if (settled && submission?.resume) the(feedback, "command-error", `Response not accepted: ${refusal}`);
+                if (settled && submission?.resolutions) the(feedback, "command-error", `Response not accepted: ${refusal}`);
                 else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a session outcome."), { status: problem });
                 holding = false;
                 submission = undefined;
@@ -281,7 +271,7 @@ export default function observeSession(element) {
             const guidance = signedOut ? "Sign in to connect to this session again." : "Displayed values are no longer live. Reconnect to check the session.";
             the(connectionNotice, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
             if (pending) the(feedback, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
-            if (submission?.resume) the(feedback, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            if (submission?.resolutions) the(feedback, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
         } finally {
             arriving = false;
             availability();
@@ -314,6 +304,7 @@ export default function observeSession(element) {
         event.preventDefault();
         if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) {
             the(feedback, "command-error", "");
+            agent.close();
             connect();
         }
     });
@@ -327,7 +318,7 @@ export default function observeSession(element) {
     on(compose, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(controls, "send-unavailable") !== null) return;
-        if (isCommand(draft.value)) {
+        if (isCommand(draft.value, availableCommands())) {
             const text = draft.value;
             the(controls, "command-pending", "");
             availability();
@@ -354,14 +345,13 @@ export default function observeSession(element) {
     on(review.form, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(review.form, "review-unavailable") !== null || the(review.form, "request-count") === "0") return;
-        const current = agent;
-        const reading = review.decisions(current.pendingInterrupts);
+        const reading = review.decisions(agent.pendingGates);
         the(review.form, "review-unavailable", "");
         try {
-            const resume = await reading;
-            if (!resume || current !== agent || cancellation || the(element, "connection") !== "interrupted") return;
+            const resolutions = await reading;
+            if (!resolutions || cancellation || the(element, "connection") !== "interrupted") return;
             the(feedback, { messageStatus: "", commandError: "" });
-            connect({ resume });
+            connect({ resolutions });
         } catch (error) {
             const { message, recovery } = await describeFailure(error);
             the(feedback, { messageStatus: "", commandError: `Responses could not be submitted: ${[message, recovery].filter(Boolean).join(" ")}` });
@@ -378,7 +368,6 @@ export default function observeSession(element) {
             const wasLive = Boolean(status && ["queued", "running", "parked"].includes(status.lifecycle));
             await action("session/cancel", {}, controller.signal);
             controller.signal.throwIfAborted();
-            if (the(element, "connection") === "interrupted") connect();
             return wasLive ? "Stop requested." : "No active work to stop.";
         } finally {
             cancellation = undefined;

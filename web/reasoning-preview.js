@@ -44,8 +44,7 @@ export default function reasoningPreview(root, limit) {
                 ? update._meta.plurnk
                 : undefined;
             const coordinate = metaPlurnk?.coordinate;
-            const body = metaPlurnk?.body;
-            if (block?.type === "resource_link" || body !== undefined) {
+            if (block?.type === "resource_link") {
                 if (update.messageId === the(outlet, "reasoning-id")) clear();
                 return;
             }

@@ -17,14 +17,14 @@ export default class HistoryPages {
     #pages = [];
 
     /**
-     * @param {{ messages: readonly Message[], older?: unknown, metadata?: { plurnk?: { history?: { older?: unknown } } } }} event
+     * @param {{ messages: readonly Message[], older?: unknown, _meta?: { plurnk?: { history?: { older?: unknown } } } }} event
      * @param {boolean} reading
      */
     snapshot(event, reading) {
-        const history = event.metadata?.plurnk?.history;
+        const history = event._meta?.plurnk?.history;
         const older = event.older !== undefined
             ? event.older
-            : (history !== undefined && "older" in history ? (history.older ?? null) : (event.metadata?.plurnk !== undefined ? null : undefined));
+            : (history !== undefined && "older" in history ? (history.older ?? null) : (event._meta?.plurnk !== undefined ? null : undefined));
         if (older !== null && (typeof older !== "string" || !older.trim())) throw new TypeError("History boundary must be a URL or null.");
         unique(event.messages);
         const incoming = new Set(event.messages.map(({ id }) => id));
@@ -42,9 +42,9 @@ export default class HistoryPages {
         for (const page of this.#pages) {
             if (page.final) continue;
             const ids = new Set(page.messages.map(({ id }) => id));
-            const calls = new Set(page.messages.flatMap((message) => message.role === "assistant" ? message.toolCalls?.map(({ id }) => id) ?? [] : []));
+            const calls = new Set(page.messages.flatMap((message) => message.role === "assistant" ? message.toolCalls?.map(({ toolCallId }) => toolCallId) ?? [] : []));
             const observed = messages.filter((message) => ids.has(message.id)
-                || (message.role === "tool" && !message.metadata?.plurnk && calls.has(message.toolCallId)));
+                || (message.role === "tool" && !message._meta?.plurnk && calls.has(message.toolCallId)));
             page.messages = merge(page.messages, observed);
         }
     }
@@ -85,12 +85,12 @@ export default class HistoryPages {
         const ordered = [...messages.values()];
         // A delayed immediate receipt belongs beside its archived invocation, not at the live tail.
         const calls = new Map(this.#pages.flatMap(({ messages }) => messages).flatMap((message) => message.role === "assistant"
-            ? (message.toolCalls ?? []).map(({ id }) => [id, message]) : []));
+            ? (message.toolCalls ?? []).map(({ toolCallId }) => [toolCallId, message]) : []));
         /** @type {Map<string, Message[]>} */
         const results = new Map();
         const placed = new Set();
         for (const message of ordered) {
-            if (message.role !== "tool" || message.metadata?.plurnk) continue;
+            if (message.role !== "tool" || message._meta?.plurnk) continue;
             const call = calls.get(message.toolCallId);
             if (!call) continue;
             const group = results.get(call.id) ?? [];

@@ -11,7 +11,7 @@ import disconnectProxy from "./disconnect-proxy.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 import { inspectResult } from "./result-body.js";
 
-async function controller(base, secret, messages = []) {
+async function controller(base, secret) {
     const headers = {};
     if (secret) {
         const grant = await fetch(new URL("/oauth/token", base), {
@@ -20,7 +20,7 @@ async function controller(base, secret, messages = []) {
         assert.equal(grant.status, 200);
         headers.Authorization = `Bearer ${(await grant.json()).access_token}`;
     }
-    return new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers, initialMessages: messages });
+    return new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers });
 }
 
 async function connection(page, state) {
@@ -36,7 +36,7 @@ const value = (page, key) => key === "lifecycle"
     : page.locator(`#session-status [data-text="${key}"]`).textContent();
 const family = (page) => page.locator("#session-descendants > summary").getAttribute("aria-label");
 const deadline = (page) => page.locator('#session-status [data-text="wait"]').getAttribute("datetime");
-const prompt = (name) => [{ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: ${name}.` }];
+const prompt = (name) => ({ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: ${name}.` });
 const entryRequest = (request, scheme) => {
     const url = new URL(request.url());
     return /\/acp\/\d+\/\d+\/entry$/u.test(url.pathname) && url.searchParams.get("target")?.startsWith(`${scheme}:`);
@@ -50,12 +50,12 @@ export default async function verifySessionPage({ t, withDaemon }) {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
                 const workspace = "family-status";
                 const setup = await controller(base);
-                await setup.runAgent({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const workspaceId = setup.state.plurnk.workspace.id;
                 const fork = async (session, name) => {
                     const request = await controller(base);
                     request.sessionId = `${workspaceId}#${session}`;
-                    const { result, meta } = await request.runAgent({ action: { kind: "session/fork", name } });
+                    const { result, meta } = await request.send({ action: { kind: "session/fork", name } });
                     assert.equal(result.ok, true, JSON.stringify(result));
                     assert.equal(meta?.sessionName ?? result.result?._meta?.plurnk?.sessionName, name);
                 };
@@ -73,14 +73,14 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     assert.equal(await page.locator("#session-descendants > ul").isVisible(), false);
                     const running = [];
                     for (const name of ["child", "grandchild"]) {
-                        const request = await controller(base, undefined, prompt(`status-${name}`));
+                        const request = await controller(base);
                         request.sessionId = `${workspaceId}#${name}`;
                         const starts = [Promise.withResolvers(), Promise.withResolvers()];
                         let call = 0;
-                        const completion = request.runAgent({}, {
+                        const completion = request.send({ message: prompt(`status-${name}`) }, {
                             onThoughtChunk: () => { starts[call++]?.resolve(); },
                         });
-                        running.push({ name, completion, second: starts[1].promise });
+                        running.push({ name, request, completion, second: starts[1].promise });
                         await Promise.race([starts[0].promise, completion.then(() => assert.fail(`${name} completed before its first call began`))]);
                     }
                     await page.waitForFunction(() => document.querySelector("#session-descendants > summary")?.getAttribute("aria-label") === "Descendant sessions: 2; active direct children: 1");
@@ -97,9 +97,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         model.release(`status-${name}`);
                         await Promise.race([second, completion.then(() => assert.fail(`${name} completed before its second call began`))]);
                     }
-                    for (const { name, completion } of running.toReversed()) {
+                    for (const { name, request, completion } of running.toReversed()) {
                         model.release(`status-${name}`);
                         await completion;
+                        request.close();
                     }
                     await page.waitForFunction(() => document.querySelector("#session-descendants > summary")?.getAttribute("aria-label") === "Descendant sessions: 2; active direct children: 0"
                         && document.querySelector('#session-status [data-text="input"]')?.textContent === "2k");
@@ -122,7 +123,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
                 const setup = await controller(base);
-                await setup.runAgent({ workspace: "wait-status", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "wait-status", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 const proxy = await disconnectProxy(base);
                 try {
@@ -192,7 +193,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 PLURNK_MODEL_unavailable: "browser-fixture/browser-fixture", PLURNK_PROVIDERS_EFFORT_unavailable: "invalid",
             }, async (base) => {
                 const setup = await controller(base);
-                await setup.runAgent({ workspace: "diagnostics", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "diagnostics", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
@@ -224,8 +225,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             && body?.method === "session/resume"
                             && body?.params?._meta?.plurnk?.control === false;
                     });
-                    const run = await controller(base, undefined, prompt("diagnostics"));
-                    await run.runAgent({ workspace: "diagnostics" });
+                    const run = await controller(base);
+                    await run.send({ workspace: "diagnostics", message: prompt("diagnostics") });
+                    run.close();
                     await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     await reattached;
                     await connected(page);
@@ -260,7 +262,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_PASS: "content-password", PLURNK_SECRET: secret }, async (base) => {
                 const setup = await controller(base, secret);
-                await setup.runAgent({ workspace: "content-security", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "content-security", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
@@ -280,15 +282,16 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.waitForURL(path);
                     await connected(page);
                     const header = await page.locator("body > header").evaluate((element) => element.outerHTML);
-                    const run = await controller(base, secret, prompt("content-security"));
-                    await run.runAgent({ workspace: "content-security" });
+                    const run = await controller(base, secret);
+                    await run.send({ workspace: "content-security", message: prompt("content-security") });
+                    run.close();
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, contentAttack, "the protocol preserves the source; the browser owns its interpretation");
                     const verify = async () => {
                         await connected(page);
                         await page.waitForFunction(() => [...document.querySelectorAll('[data-message-role="assistant"] > article strong')].some((element) => element.textContent === "Readable evidence"));
                         const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.count(), 1);
-                        assert.equal(JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments).body, contentAttack);
+                        assert.equal(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.name === "NOTE").rawInput.body, contentAttack);
                         assert.equal(await note.locator("article > details > pre").textContent(), contentAttack);
                         assert.equal(await note.locator("pre > *").count(), 0, "NOTE content cannot become HTML elements");
                         assert.equal(await page.locator("[data-messages]").locator("article script, article img, article form, article [id]").count(), 0);
@@ -326,7 +329,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
                 const setup = await controller(base);
-                await setup.runAgent({ workspace: "notes", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "notes", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
@@ -334,8 +337,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     const page = await context.newPage();
                     await page.goto(new URL("/~/notes@user/", base).href);
                     await connected(page);
-                    const run = await controller(base, undefined, prompt("notes"));
-                    await run.runAgent({ workspace: "notes" });
+                    const run = await controller(base);
+                    await run.send({ workspace: "notes", message: prompt("notes") });
+                    run.close();
                     const verify = async () => {
                         const notes = page.locator('[data-messages] [data-plurnk-note]');
                         await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-note]').length === 3);
@@ -346,7 +350,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(await note.locator("details").evaluate((node) => node.open), false);
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
                         assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
-                        const args = JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments);
+                        const args = run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.name === "NOTE").rawInput;
                         assert.equal(args.body, "A **working fact**, not the answer.");
                         assert.equal(args.aside, "fact");
                         const id = await note.getAttribute("data-call-id");
@@ -375,7 +379,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
                 const setup = await controller(base);
-                await setup.runAgent({ workspace: "footnotes", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "footnotes", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
@@ -383,8 +387,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     const page = await context.newPage();
                     await page.goto(new URL("/~/footnotes@user/", base).href);
                     await connected(page);
-                    const run = await controller(base, undefined, prompt("footnotes"));
-                    await run.runAgent({ workspace: "footnotes" });
+                    const run = await controller(base);
+                    await run.send({ workspace: "footnotes", message: prompt("footnotes") });
+                    run.close();
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, footnoteAnswer);
                     const verify = async () => {
                         await connected(page);
@@ -392,7 +397,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
                         const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
-                        assert.equal(JSON.parse(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.function.name === "NOTE").function.arguments).body, footnoteAnswer);
+                        assert.equal(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.name === "NOTE").rawInput.body, footnoteAnswer);
                         assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
                         assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");
                         const ids = await answer.locator("[id]").evaluateAll((elements) => elements.map(({ id }) => id));
@@ -426,7 +431,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
                 const setup = await controller(base);
-                await setup.runAgent({ workspace: "math", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "math", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
@@ -437,8 +442,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.goto(new URL("/~/math@user/", base).href);
                     await connected(page);
                     assert.ok(!requests.some((path) => /math-renderer-|Temml-/u.test(path)), "no math code, style or font load before a formula exists");
-                    const run = await controller(base, undefined, prompt("math"));
-                    await run.runAgent({ workspace: "math" });
+                    const run = await controller(base);
+                    await run.send({ workspace: "math", message: prompt("math") });
+                    run.close();
                     await page.locator("math mfrac").waitFor();
                     assert.equal(await page.locator("math annotation").textContent(), String.raw`\mathscr{F}=\frac{a}{b}`);
                     await page.evaluate(() => document.fonts.ready);
@@ -466,7 +472,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 assert.equal(denied.status, 401, "the packed compiler uses web session admission");
                 assert.equal((await denied.json()).status, 401);
                 const setup = await controller(base, secret);
-                await setup.runAgent({ workspace: "diagrams", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "diagrams", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
@@ -488,8 +494,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.waitForURL(path);
                     await connected(page);
                     assert.ok(!requests.some((path) => path.endsWith("/render/mermaid")), "an idle session requests no compilation");
-                    const run = await controller(base, secret, prompt("diagrams"));
-                    await run.runAgent({ workspace: "diagrams" });
+                    const run = await controller(base, secret);
+                    await run.send({ workspace: "diagrams", message: prompt("diagrams") });
+                    run.close();
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, diagramContent);
                     const verify = async () => {
                         const figure = page.locator('[data-message-role="assistant"] [data-diagram]:not([hidden])');
@@ -522,11 +529,14 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_DIAGRAM_PENDING: "1", PLURNK_WEB_DIAGRAM_THREADS: "1" }, async (base) => {
                 const setup = await controller(base);
-                await setup.runAgent({ workspace: "burst", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                await setup.send({ workspace: "burst", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
                 // One loop with two diagram bodies, the message's and the reply's, which replay renders together.
-                const run = await controller(base, undefined, [{ id: crypto.randomUUID(), role: "user",
-                    content: "Lifecycle fixture: diagrams.\n\n```mermaid\nflowchart LR\n Browser --> Web\n```" }]);
-                await run.runAgent({ workspace: "burst" });
+                const run = await controller(base);
+                await run.send({
+                    workspace: "burst",
+                    message: { id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: diagrams.\n\n```mermaid\nflowchart LR\n Browser --> Web\n```" },
+                });
+                run.close();
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
@@ -560,13 +570,13 @@ export default async function verifySessionPage({ t, withDaemon }) {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_MEMBERS_witness: "witness.txt" }, async (base) => {
                 const setup = await controller(base);
                 let created;
-                await setup.runAgent({
+                await setup.send({
                     workspace: "conversation",
                     projectRoot,
                     action: { kind: "session/set_config_option", configId: "model", value: "browser" },
                 }, { onSettled: ({ result }) => { created = result; } });
                 assert.equal(created?.ok, true, JSON.stringify(created));
-                const run = await controller(base, undefined, prompt("conversation"));
+                const run = await controller(base);
                 let completion;
                 const browser = await chromium.launch();
                 try {
@@ -578,7 +588,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.goto(new URL("/~/conversation@user/", base).href);
                     await connected(page);
                     assert.equal(model.requests.length, 0, "viewing an idle session starts no inference");
-                    completion = run.runAgent({ workspace: "conversation" });
+                    completion = run.send({ workspace: "conversation", message: prompt("conversation") });
                     const preview = page.locator("[data-reasoning-preview]");
                     await preview.getByText("Considering conversation.", { exact: true }).waitFor();
                     assert.equal(await page.locator('[data-message-role="reasoning"]').count(), 0,
@@ -677,6 +687,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     checkBrowser();
                 } finally {
                     run.abortRun();
+                    run.close();
                     await completion;
                     await browser.close();
                 }
@@ -697,7 +708,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const action = async (kind, parameters = {}, selected = workspace) => {
                     const agent = await controller(base, secret);
                     let result;
-                    await agent.runAgent({ workspace: selected, action: { kind, ...parameters } }, {
+                    await agent.send({ workspace: selected, action: { kind, ...parameters } }, {
                         onSettled: ({ result: outcome }) => { result = outcome; },
                     });
                     assert.equal(result?.ok, true, JSON.stringify(result));
@@ -755,9 +766,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     assert.equal(model.requests.length, 0);
 
                     for (let turn = 1; turn <= 2; turn++) {
-                        const run = await controller(base, secret, prompt("held-session-page"));
+                        const run = await controller(base, secret);
                         const ready = Promise.withResolvers();
-                        const completion = run.runAgent({ workspace }, {
+                        const completion = run.send({ workspace, message: prompt("held-session-page") }, {
                             onThoughtChunk: () => { ready.resolve(); },
                         });
                         await ready.promise;
@@ -784,6 +795,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         }
                         model.release("held-session-page");
                         await completion;
+                        run.close();
                         await page.waitForFunction((count) => document.querySelector('[data-text="input"]')?.textContent === String(400 * count)
                             && document.querySelector('[data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed", turn);
                         await connected();
@@ -793,10 +805,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(model.requests.length, turn, "observation never submits a prompt");
                     }
 
-                    const cancelled = await controller(base, secret, prompt("held-page-cancel"));
+                    const cancelled = await controller(base, secret);
                     const ready = Promise.withResolvers();
                     let terminal;
-                    const cancellation = cancelled.runAgent({ workspace }, {
+                    const cancellation = cancelled.send({ workspace, message: prompt("held-page-cancel") }, {
                         onThoughtChunk: () => { ready.resolve(); },
                         onSettled: (event) => { terminal = event; },
                     });
@@ -804,8 +816,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "running");
                     const cancelAgent = await controller(base, secret);
                     cancelAgent.sessionId = identity;
-                    await cancelAgent.runAgent({ action: { kind: "session/cancel", reason: "browser-stop" } });
+                    await cancelAgent.send({ action: { kind: "session/cancel", reason: "browser-stop" } });
                     await cancellation;
+                    cancelled.close();
                     assert.equal(terminal?.stopReason, "cancelled");
                     assert.equal(terminal.meta.terminal.result.problem.reason, "browser-stop");
                     await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled");
@@ -830,16 +843,17 @@ export default async function verifySessionPage({ t, withDaemon }) {
 
                     const renamed = "renamed observer";
                     await action("workspace.rename", { name: renamed });
-                    const afterRename = await controller(base, secret, prompt("held-page-rename"));
+                    const afterRename = await controller(base, secret);
                     afterRename.sessionId = identity;
                     const readyAfterRename = Promise.withResolvers();
-                    const completionAfterRename = afterRename.runAgent({}, {
+                    const completionAfterRename = afterRename.send({ message: prompt("held-page-rename") }, {
                         onThoughtChunk: () => { readyAfterRename.resolve(); },
                     });
                     await readyAfterRename.promise;
                     await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "running");
                     model.release("held-page-rename");
                     await completionAfterRename;
+                    afterRename.close();
                     await page.waitForFunction(() => document.querySelector('[data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     await connected();
                     assert.equal(observations.at(-1).params.sessionId, identity, "the open page reattaches by ID after another client renames its workspace");
@@ -873,9 +887,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const secret = crypto.randomUUID();
         try {
             await withDaemon({ ...model.env, PLURNK_PASS: "revocation-password", PLURNK_SECRET: secret }, async (base) => {
-                const run = await controller(base, secret, prompt("held-page-revocation"));
+                const run = await controller(base, secret);
                 const ready = Promise.withResolvers();
-                const completion = run.runAgent({ workspace: "observer-revocation" }, {
+                const completion = run.send({ workspace: "observer-revocation", message: prompt("held-page-revocation") }, {
                     onThoughtChunk: () => { ready.resolve(); },
                 });
                 await ready.promise;
@@ -915,7 +929,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.getByRole("link", { name: "Sign in", exact: true }).click();
                     assert.equal(await page.getByLabel("Password", { exact: true }).isVisible(), true);
                     checkBrowser();
-                } finally { run.abortRun(); await browser.close(); }
+                } finally { run.abortRun(); run.close(); await browser.close(); }
             });
         } finally { await model.close(); }
     });
@@ -924,10 +938,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base, daemon) => {
-                const run = await controller(base, undefined, prompt("approval"));
+                const run = await controller(base);
                 const parameters = { workspace: "observer-approval" };
-                await run.runAgent(parameters);
-                assert.equal(run.pendingInterrupts.length, 1);
+                await run.send({ ...parameters, message: prompt("approval") });
+                assert.equal(run.pendingGates.length, 1);
                 const browser = await chromium.launch();
                 const proxy = await disconnectProxy(base);
                 try {
@@ -953,9 +967,17 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     }).length, 1, "one held passive observation");
                     assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);
                     for (const request of requests) assert.equal(request.headers().authorization, undefined);
-                    await run.runAgent({ ...parameters, resume: [{ interruptId: run.pendingInterrupts[0].id, status: "resolved", payload: { decision: "accept" } }] });
-                    assert.equal(run.pendingInterrupts.length, 0);
+                    await run.send({
+                        ...parameters,
+                        resolutions: [{
+                            id: run.pendingGates[0].id,
+                            method: "session/request_permission",
+                            response: { outcome: { outcome: "selected", optionId: "allow_once" } },
+                        }],
+                    });
+                    assert.equal(run.pendingGates.length, 0);
                     assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed approval.");
+                    run.close();
                     await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                     await connected(page);
                     assert.equal(model.requests.length, 2);

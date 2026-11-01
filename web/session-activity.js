@@ -35,7 +35,7 @@ export default function activity(root, read) {
         if (references.get(outlet) === revision) return header;
         for (const node of Array.from(outlet.childNodes)) if (node !== header) node.remove();
         if (body) $.clone(outlet, "#conversation-literal").textContent = body;
-        if (reasoning) inspect.append($.clone(outlet, "#activity-reasoning"), { value: reasoning.url, mimeType: reasoning.mimeType });
+        if (reasoning) inspect.append($.clone(outlet, "#activity-reasoning"), { uri: reasoning.url, mimeType: reasoning.mimeType });
         references.set(outlet, revision);
         inspect.prune();
         return header;
@@ -83,10 +83,7 @@ export default function activity(root, read) {
             && update.toolCallId !== plurnk.coordinate
             && !ambientCalls.has(update.toolCallId);
         if (!attribution && (isDischarge || (plurnk.origin === "model" && op !== null && plurnk.attrs?.kind !== "emissionAttempt"))) return;
-        const entryMatch = typeof plurnk.body?.url === "string"
-            ? /\/acp\/[1-9]\d*\/([1-9]\d*)\/entry/u.exec(plurnk.body.url)
-            : null;
-        const sessionId = typeof plurnk.sessionId === "number" ? plurnk.sessionId : (entryMatch ? Number(entryMatch[1]) : 0);
+        const sessionId = plurnk.sessionId;
         const id = plurnk.id;
         const loopSeq = plurnk.loopSeq;
         const turnSeq = plurnk.turnSeq;

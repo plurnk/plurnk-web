@@ -44,8 +44,8 @@ async function answer(page, form = review(page)) {
 const questionResult = async (page, base, headers) => {
     const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
     const messages = await observeMessages(sessionId, base, headers);
-    const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.function.name === "plurnk_question").map(({ id }) => id));
-    const result = messages.find((message) => message.role === "tool" && message.metadata?.plurnk && ids.has(message.toolCallId));
+    const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.name === "plurnk_question").map(({ toolCallId }) => toolCallId));
+    const result = messages.find((message) => message.role === "tool" && message._meta?.plurnk && ids.has(message.toolCallId));
     assert.ok(result, "the daemon retains the question's exact correlated response");
     return inspectResult(result.content, headers.Authorization?.slice("Bearer ".length), base);
 };
@@ -245,18 +245,19 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         await connected(page);
         const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
         const fork = new SessionAgent({ url: new URL("/acp", base).href, sessionId, headers });
-        const { result, meta } = await fork.runAgent({ action: { kind: "session/fork", name: "child" } });
+        const { result, meta } = await fork.send({ action: { kind: "session/fork", name: "child" } });
         assert.equal(result.ok, true, JSON.stringify(result));
         const childSessionId = String(meta?.sessionId ?? result.result?._meta?.plurnk?.sessionId ?? "");
         const child = new SessionAgent({ url: new URL("/acp", base).href, sessionId: `${sessionId.split("#")[0]}#child`, headers });
-        child.addMessage({ id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: held-question-child." });
         const reasoning = Promise.withResolvers();
         const controller = new AbortController();
-        const running = child.runAgent({
+        const running = child.send({
             abortController: controller,
+            message: { id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: held-question-child." },
         }, { onThoughtChunk: () => reasoning.resolve() });
         await reasoning.promise;
         controller.abort();
+        child.close();
         await running.catch(() => {});
         model.release("held-question-child");
         await interrupted(page);

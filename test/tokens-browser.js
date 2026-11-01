@@ -82,19 +82,19 @@ export default async function verifyTokens({ t, withDaemon }) {
                         async discover(token) {
                             const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             try {
-                                const outcome = await agent.runAgent({ action: { kind: "providers/list" } });
+                                const outcome = await agent.send({ action: { kind: "providers/list" } });
                                 return { stopReason: outcome.stopReason, result: outcome.result };
                             } catch (error) { return { status: error.status }; }
                         },
                         async create(token) {
                             const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "tokens", headers: { Authorization: `Bearer ${token}` } });
                             // A session-setting action creates this model-less fixture; observation cannot.
-                            const outcome = await agent.runAgent({ workspace: "tokens", action: { kind: "session/set_config_option", configId: "spawn_model", value: "inherit" } });
+                            const outcome = await agent.send({ workspace: "tokens", action: { kind: "session/set_config_option", configId: "spawn_model", value: "inherit" } });
                             return { stopReason: outcome.stopReason, action: outcome.result };
                         },
                         observe(token) {
                             this.agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "tokens", headers: { Authorization: `Bearer ${token}` } });
-                            this.pending = this.agent.connectAgent({ workspace: "tokens" }, {
+                            this.pending = this.agent.resume({ workspace: "tokens" }, {
                                 onMessagesSnapshot: ({ snapshot }) => { this.snapshot = snapshot; },
                                 onError: (err) => { this.streamError = err; },
                             }).catch((error) => { this.failure = error.message; }).finally(() => { this.settled = true; });
@@ -161,10 +161,12 @@ export default async function verifyTokens({ t, withDaemon }) {
                         if (!response.ok) throw new Error(`Token request failed: ${response.status}`);
                         const { access_token } = await response.json();
                         const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "revocation",
-                            initialMessages: [{ id: "revocation-prompt", role: "user", content: "Lifecycle fixture: held-revocation." }],
                             headers: { Authorization: `Bearer ${access_token}` } });
                         const state = globalThis.revocation = { agent, reasoned: false, streamError: null, settled: false, error: null };
-                        state.pending = agent.runAgent({ workspace: "revocation" }, {
+                        state.pending = agent.send({
+                            workspace: "revocation",
+                            message: { id: "revocation-prompt", role: "user", content: "Lifecycle fixture: held-revocation." },
+                        }, {
                             onThoughtChunk: () => { state.reasoned = true; },
                             onError: (err) => { state.streamError = err; },
                         }).catch((error) => { state.error = error.message; }).finally(() => { state.settled = true; });
@@ -188,7 +190,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                         const { default: SessionAgent } = await import("/__test__/session-agent.js");
                         const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "revocation", headers: { Authorization: `Bearer ${access}` } });
                         const state = globalThis.survivor = { agent, snapshot: null, outcome: null, settled: false, error: null };
-                        state.pending = agent.connectAgent({ workspace: "revocation" }, {
+                        state.pending = agent.resume({ workspace: "revocation" }, {
                             onMessagesSnapshot: ({ snapshot }) => { state.snapshot = snapshot; },
                             onSettled: (outcome) => { state.outcome = outcome; },
                         }).catch((error) => { state.error = error.message; }).finally(() => { state.settled = true; });

@@ -68,7 +68,7 @@ export default function sessionHistory(root, main, readBody, readPage) {
     }
 
     return {
-        /** @param {{ messages: readonly import("./session-agent.js").Message[], older?: unknown, metadata?: { plurnk?: { history?: { older?: unknown } } } }} event */
+        /** @param {{ messages: readonly import("./session-agent.js").Message[], older?: unknown, _meta?: { plurnk?: { history?: { older?: unknown } } } }} event */
         snapshot(event) {
             pages.snapshot(event, !scroll.following);
             const retained = new Set([...pages.mutable(), ...pages.view().gaps.map(({ url }) => url)]);

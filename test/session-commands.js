@@ -187,7 +187,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.deepEqual(await capabilities.locator("dt").allTextContents(), ["Service", "Workspace", "Effective"]);
             const policy = { deny: [{ runtime: "sh" }] };
             await submit(`/capabilities ${JSON.stringify(policy)}`);
-            const { result } = await setup.runAgent({ workspace, action: { kind: "workspace.capabilities.get" } });
+            const { result } = await setup.send({ workspace, action: { kind: "workspace.capabilities.get" } });
             assert.equal(result.ok, true, JSON.stringify(result));
             assert.deepEqual(result.result.workspace, policy);
             await submit("/capabilities {}");

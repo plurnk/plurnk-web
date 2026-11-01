@@ -22,7 +22,7 @@ export default async function readHistory(address, auth, signal) {
         /** @type {readonly import("./session-agent.js").AcpSessionUpdate[]} */ (raw.updates),
     );
     if (new Set(messages.map(({ id }) => id)).size !== messages.length) throw new Error("History page has duplicate message identities.");
-    const completed = new Set(messages.flatMap((message) => message.role === "tool" && !message.metadata?.plurnk ? [message.toolCallId] : []));
-    const open = messages.some((message) => message.role === "assistant" && (message.toolCalls ?? []).some(({ id }) => !completed.has(id)));
+    const completed = new Set(messages.flatMap((message) => message.role === "tool" && !message._meta?.plurnk ? [message.toolCallId] : []));
+    const open = messages.some((message) => message.role === "assistant" && (message.toolCalls ?? []).some(({ toolCallId }) => !completed.has(toolCallId)));
     return { final: !open, older: raw.history.older ?? null, messages };
 }
