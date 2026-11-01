@@ -23,7 +23,9 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
             const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers });
             const initialized = await setup.runAgent({
                 workspace,
-                action: { kind: "session/set_config_option", configId: "model", value: selector ?? "" },
+                action: selector === null
+                    ? { kind: "session/new" }
+                    : { kind: "session/set_config_option", configId: "model", value: selector },
             });
             assert.equal(initialized.result.ok, true, JSON.stringify(initialized.result));
             const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${hostname} 127.0.0.1`, "--no-proxy-server"] });

@@ -273,14 +273,13 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             const delivery = Promise.withResolvers();
             const hold = async (route) => {
                 const body = route.request().postDataJSON();
-                if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control !== false) await delivery.promise;
+                if (body?.method === "session/resume") await delivery.promise;
                 await route.continue();
             };
             await page.route("**/acp", hold);
             try {
                 const receiving = page.waitForRequest((request) => new URL(request.url()).pathname === "/acp"
-                    && request.postDataJSON()?.method === "session/resume"
-                    && request.postDataJSON()?.params?._meta?.plurnk?.control !== false);
+                    && request.postDataJSON()?.method === "session/resume");
                 await send("/model");
                 await receiving;
                 await field.fill("/help effort");
@@ -309,9 +308,11 @@ export default async function verifySessionCommands({ t, withDaemon }) {
                 "before the stream opens": (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify(problem) }),
                 "as an ACP stream error": (route) => {
                     const { id } = route.request().postDataJSON();
-                    return route.fulfill({ contentType: "text/event-stream", body: [
-                        { jsonrpc: "2.0", id, error: { code: -32000, message: problem.detail, data: { plurnk: { problem } } } },
-                    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+                    return route.fulfill({
+                        headers: { "acp-connection-id": "refused" },
+                        contentType: "application/json",
+                        body: JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message: problem.detail, data: { plurnk: { problem } } } }),
+                    });
                 },
             };
             const settings = page.locator("#session-effort-settings");

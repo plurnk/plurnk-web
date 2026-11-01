@@ -675,6 +675,8 @@ export default class SessionAgent {
     #streamProblem = undefined;
     /** @type {{ messageId: string, coordinate: string } | undefined} */
     #pendingLiveThought = undefined;
+    /** @type {boolean} */
+    #needsConnectionSse = false;
 
     /**
      * @param {{
@@ -792,6 +794,20 @@ export default class SessionAgent {
             const mergedHeaders = new Headers(init?.headers);
             for (const [key, value] of Object.entries(this.headers)) {
                 mergedHeaders.set(key, value);
+            }
+            if (Boolean(this.sessionId) && !this.#needsConnectionSse && init?.method === "GET" && !mergedHeaders.has("acp-session-id")) {
+                return new Response(new ReadableStream({
+                    start(controller) {
+                        if (init.signal) {
+                            init.signal.onabort = () => {
+                                try { controller.close(); } catch { /* ignore */ }
+                            };
+                        }
+                    },
+                }), {
+                    status: 200,
+                    headers: { "Content-Type": "text/event-stream" },
+                });
             }
             const response = await this.#fetch(input, {
                 ...init,
@@ -1148,6 +1164,7 @@ export default class SessionAgent {
             this.#pendingLiveThought = undefined;
             this.#bufferingReplay = true;
             this.#replayUpdates = [];
+            this.#needsConnectionSse = false;
             const conn = await this.#ensureConnection(signal);
 
             const params = {
@@ -1283,12 +1300,28 @@ export default class SessionAgent {
         const { kind, params: nestedParams, ...rest } = rawAction;
         const actionParams = isRecord(nestedParams) ? nestedParams : rest;
         const actionKind = typeof kind === "string" ? kind : "";
+        const needsConnSse = !this.sessionId || actionKind === "session/new" || actionKind === "providers/list" || actionKind === "session/list";
+        if (needsConnSse && !this.#needsConnectionSse && this.#conn !== undefined) {
+            this.close();
+        }
+        this.#needsConnectionSse = needsConnSse;
         const hadConn = this.#conn !== undefined && this.#connController !== undefined && !this.#connController.signal.aborted;
 
         try {
             const conn = await this.#ensureConnection(signal);
             let response;
-            if (actionKind === "session/set_config_option") {
+            if (actionKind === "session/new") {
+                response = await conn.agent.request(methods.agent.session.new, {
+                    cwd: "/",
+                    _meta: {
+                        plurnk: {
+                            ...(this.sessionId ? { session: this.sessionId } : {}),
+                            ...(options.workspace ? { workspace: options.workspace } : {}),
+                            ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
+                        },
+                    },
+                });
+            } else if (actionKind === "session/set_config_option") {
                 const configId = String(actionParams.configId ?? "");
                 const rawVal = String(actionParams.value ?? "");
                 const value = configId === "spawn_model" && rawVal === "" ? "inherit" : rawVal;
@@ -1405,6 +1438,7 @@ export default class SessionAgent {
         const { signal } = controller;
 
         try {
+            this.#needsConnectionSse = false;
             const conn = await this.#ensureConnection(signal);
             const params = {
                 sessionId: this.sessionId ?? "user",
@@ -1463,6 +1497,7 @@ export default class SessionAgent {
         const { signal } = controller;
 
         try {
+            this.#needsConnectionSse = false;
             await this.#ensureConnection(signal);
             let missingGateKind = /** @type {"proposal" | "interaction" | undefined} */ (undefined);
 

@@ -163,10 +163,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await setTimeout(1100);
                     assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
                     assert.equal(model.requests.length, 1, "delivery loss does not wake or cancel work");
-                    checkBrowser([
-                        /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
-                        /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
-                    ]);
+                    checkBrowser([/^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u]);
                     await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                     await connected(page);
                     assert.equal(await value(page, "lifecycle"), "parked");
@@ -985,10 +982,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     const afterLoss = requests.length;
                     await setTimeout(1100);
                     assert.equal(requests.length, afterLoss, "an available endpoint does not trigger automatic retries after connection loss");
-                    checkBrowser([
-                        /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
-                        /^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u,
-                    ]);
+                    checkBrowser([/^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u]);
                     const card = page.locator('#session-connection');
                     assert.equal(await card.isVisible(), true);
                     for (const colorScheme of ["light", "dark"]) {

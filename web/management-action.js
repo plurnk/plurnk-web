@@ -21,6 +21,24 @@ export default async function managementAction(kind, params, sessionId, auth, si
     let httpFailure;
     /** @type {typeof fetch} */
     const acpFetch = async (input, init) => {
+        if (init?.method === "DELETE") {
+            return new Response(null, { status: 204 });
+        }
+        const reqHeaders = new Headers(init?.headers);
+        if (kind !== "providers/list" && sessionId && init?.method === "GET" && !reqHeaders.has("acp-session-id")) {
+            return new Response(new ReadableStream({
+                start(controller) {
+                    if (init.signal) {
+                        init.signal.onabort = () => {
+                            try { controller.close(); } catch { /* ignore */ }
+                        };
+                    }
+                },
+            }), {
+                status: 200,
+                headers: { "Content-Type": "text/event-stream" },
+            });
+        }
         const response = await fetch(input, {
             ...init,
             signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]),

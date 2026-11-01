@@ -54,6 +54,8 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         if (entry.res && !entry.res.writableEnded) entry.res.end();
     };
     const handleAcp = async (request, response) => {
+        request.on("error", () => {});
+        response.on("error", () => {});
         if (request.method === "GET") {
             const connId = request.headers["acp-connection-id"] ?? "";
             const sessionId = request.headers["acp-session-id"] ?? "";
@@ -133,7 +135,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     const server = createServer((request, response) => {
         const path = new URL(request.url, "http://fixture.invalid").pathname;
         if (routes.has(path)) { routes.get(path)(request, response); return; }
-        if (path === "/acp" && acpHandler) { void handleAcp(request, response); return; }
+        if (path === "/acp" && acpHandler) { void handleAcp(request, response).catch(() => {}); return; }
         if (path === "/render/mermaid") { void serve(request, response); return; }
         const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);
         response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.type ?? "text/plain" });
