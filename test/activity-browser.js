@@ -45,11 +45,11 @@ export default async function verifyActivity(t) {
                     assert.equal(await rows.count(), 0);
                     const ambient = {
                         sessionUpdate: "tool_call_update", toolCallId: "1/2/3", status: "completed",
-                        rawInput: { target: { raw: "evidence.html" }, aside: "Inspect evidence" },
+                        rawInput: { aside: "Inspect evidence" },
                         rawOutput: { status: 200, range: { unit: "line", total: 2, requested: [1, -1], returned: [1, 2] } },
                         _meta: { plurnk: {
                             id: 17, sessionId: 9, loopSeq: 1, turnSeq: 2, sequence: 3, coordinate: "1/2/3",
-                            origin: "_plurnk", op: "READ", source: null, state: "resolved", status: 200, attrs: {},
+                            origin: "_plurnk", op: "READ", address: "evidence.html", source: null, state: "resolved", status: 200, attrs: {},
                             body: { url: new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href, mimeType: "text/html" },
                         } },
                     };
@@ -85,14 +85,16 @@ export default async function verifyActivity(t) {
                     await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, id: 18, attrs: { kind: "emission" } } } });
                     assert.equal(await rows.count(), 1, "an emission announcement duplicates already-rendered operations");
                     await receive({ ...ambient, rawInput: source, _meta: { plurnk: { ...ambient._meta.plurnk, id: 19, op: null, origin: "model", attrs: { kind: "emissionAttempt" },
-                        body: undefined, status: 400, state: "failed" } } });
+                        address: null, body: undefined, status: 400, state: "failed" } } });
                     assert.match(await rows.nth(1).locator("article").getAttribute("aria-label"), /^Rejected emission/u);
                     assert.equal(await rows.nth(1).innerText(), "");
-                    await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, subagentRunId: "ops://child/7", sessionId: 12,
+                    await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, address: undefined,
+                        scheme: "session", hostname: "child", pathname: "/plan.md", subagentRunId: "ops://child/7", sessionId: 12,
                         reasoning: { url: new URL("/acp/7/12/entry?target=reasoning%3A%2F%2Fchild%2F1%2F2", url).href, mimeType: "text/plain" } } } });
                     const child = rows.nth(2);
                     assert.equal(await child.getAttribute("data-plurnk-session"), "12");
                     assert.equal(await child.getAttribute("data-subagent-run-id"), "ops://child/7");
+                    assert.equal(await child.locator("[data-plurnk-operands]").innerText(), "(session://child/plan.md) {2}");
                     assert.equal(await child.locator("details > details > summary").textContent(), "Reasoning");
                     assert.equal(reads.some((url) => new URL(url).searchParams.get("target")?.startsWith("reasoning:")), false, "closed foreign reasoning is not fetched");
                     await child.locator("article > details > summary").click();
@@ -118,7 +120,8 @@ export default async function verifyActivity(t) {
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     for (const row of [{}, { ...ambient._meta.plurnk, sessionId: 0, body: undefined }, { ...ambient._meta.plurnk, sequence: NaN },
-                        { ...ambient._meta.plurnk, reasoning: { url: 123 } }, { ...ambient._meta.plurnk, source: {} }]) {
+                        { ...ambient._meta.plurnk, reasoning: { url: 123 } }, { ...ambient._meta.plurnk, source: {} },
+                        { ...ambient._meta.plurnk, address: {} }, { ...ambient._meta.plurnk, target: {} }]) {
                         await assert.rejects(receive({ ...ambient, _meta: { plurnk: row } }), /Ambient/u);
                     }
                     for (const [content, meta] of [
@@ -131,7 +134,8 @@ export default async function verifyActivity(t) {
                     assert.equal(await rows.count(), 4, "invalid evidence does not mutate the valid view");
 
                     const setBody = async (address) => {
-                        await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, subagentRunId: "ops://child/7", sessionId: 12, reasoning: { url: address } } } });
+                        await receive({ ...ambient, _meta: { plurnk: { ...ambient._meta.plurnk, address: undefined,
+                            scheme: "session", hostname: "child", pathname: "/plan.md", subagentRunId: "ops://child/7", sessionId: 12, reasoning: { url: address } } } });
                         await child.locator("details > details").evaluate((element) => { element.open = true; });
                         await body.scrollIntoViewIfNeeded();
                     };
