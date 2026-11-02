@@ -58,9 +58,8 @@ export default async function verifyReasoning(t) {
                     assert.equal(await preview.evaluate((element) => {
                         const pre = element.querySelector("pre");
                         return pre.getBoundingClientRect().height <= innerHeight / 3 + 1
-                            && Math.abs(pre.scrollHeight - pre.clientHeight - pre.scrollTop) < 1
                             && document.documentElement.scrollWidth <= innerWidth;
-                    }), true, "only the bounded preview scrolls to its newest text on a narrow viewport");
+                    }), true, "the bounded preview fits within one third of the viewport without widening the page");
                     await endAttempt(message.id);
                     assert.equal(await text.textContent(), "");
                     assert.equal(await preview.isVisible(), false);

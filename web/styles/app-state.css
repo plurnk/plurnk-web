@@ -189,8 +189,8 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 [data-plurnk-type="BARE"] { --plurnk-operation-glyph: "☁️"; }
 [data-plurnk-type="WAIT"] { --plurnk-operation-glyph: "⏳"; }
 [data-plurnk-type="SEND"] { --plurnk-operation-glyph: "✉️"; }
-[data-plurnk-type="DONE"], [data-plurnk-type="SEND"][data-plurnk-signal="200"] { --plurnk-operation-glyph: "🐹"; }
-[data-plurnk-type="SEND"][data-plurnk-signal="499"], [data-plurnk-type="FAIL"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
+[data-plurnk-type="DONE"] { --plurnk-operation-glyph: "🐹"; }
+[data-plurnk-type="FAIL"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
 [data-plurnk-type="WARN"] { --plurnk-operation-glyph: "⚠️"; }
 
 [data-plurnk-type="FAIL"],
@@ -232,11 +232,6 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 
 [data-history-boundary] [data-text="history-error"]:empty {
     display: none;
-}
-
-/* {§web-session-history} Following holds main's end itself; the browser's scroll anchoring would read as the reader moving. */
-main[data-following] {
-    overflow-anchor: none;
 }
 
 /* {§web-session-streams} A supplied exit code is shown; none is supplied for a stream without a process. */

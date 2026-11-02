@@ -137,16 +137,16 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
 
                     await present([
-                        call("send", "SEND", { body: { raw: "Actual **reply**.", json: null } }), result("send", { status: 200, completion: 200 }),
+                        call("done", "DONE", { body: { raw: "Actual **reply**.", json: null } }), result("done", { status: 200, completion: 200 }),
                         call("work", "WORK", { target: { raw: "helper" }, aside: "Delegate" }), result("work", { status: 202 }),
-                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', _meta: { plurnk: { op: "SEND", status: 200, signal: 200 } } },
+                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', _meta: { plurnk: { op: "DONE", status: 200, signal: 200 } } },
                         { id: "observation", role: "tool", toolCallId: "work-call", content: '{"status":200,"path":"ops://helper/1","range":{"unit":"line","total":2,"requested":[1,-1],"returned":[1,2]}}', _meta: { plurnk: { op: "READ", status: 200 } } },
                     ]);
-                    assert.deepEqual(await list.locator(":scope > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)), ["send", "work", "child-reply", "observation"]);
-                    assert.equal(await row("send").locator("article > details > p > strong").textContent(), "reply");
-                    assert.match(await glyph(row("send")), /🐹/u);
+                    assert.deepEqual(await list.locator(":scope > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)), ["done", "work", "child-reply", "observation"]);
+                    assert.equal(await row("done").locator("article > details > p > strong").textContent(), "reply");
+                    assert.match(await glyph(row("done")), /🐹/u);
                     await assert.rejects(present([call("duplicate", "WAIT", {}), result("duplicate", { status: 200 }), { ...result("duplicate", { status: 200 }), id: "other-result" }]), /Operation has duplicate immediate receipts\./u);
-                    assert.equal(await row("send").count(), 1, "a rejected snapshot leaves the last valid projection intact");
+                    assert.equal(await row("done").count(), 1, "a rejected snapshot leaves the last valid projection intact");
                     assert.equal(await row("child-reply").locator("article > details > p").innerText(), '{"answer":"Delivered reply"}', "JSON-looking delivered speech remains content");
                     assert.equal(await field(row("observation"), "path").textContent(), "(ops://helper/1)");
                     assert.equal(await field(row("observation"), "aside").count(), 0, "later observations do not borrow the invocation's aside");
