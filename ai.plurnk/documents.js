@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { directoryPath } from "./directory-addresses.js";
-import { escapeHtml } from "./http.js";
+import { escapeHtml, RequestError } from "./http.js";
 
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
@@ -25,7 +25,7 @@ export default class Documents {
         return path;
     }
 
-    /** @param {string} document @param {boolean} yolo @param {number} reasoningPreviewChars */
+    /** @param {string} document @param {boolean | null} yolo @param {number | null} reasoningPreviewChars */
     constructor(document, yolo, reasoningPreviewChars) {
         this.#yolo = yolo;
         this.#reasoningPreviewChars = reasoningPreviewChars;
@@ -385,6 +385,9 @@ export default class Documents {
         }
         const session = sessions.find(({ name, origin }) => name === directory.session && origin === "model");
         if (session === undefined) return null;
+        if (this.#yolo === null || this.#reasoningPreviewChars === null) {
+            throw new RequestError(503, "Session pages are unavailable because their configuration is invalid.");
+        }
         const parent = this.#parent(session, byId);
         const label = parent === null ? "" : parent.origin === "model"
             ? this.#link(parent.name, { kind: "session", workspace: workspace.name, session: parent.name })

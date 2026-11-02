@@ -6,14 +6,7 @@ import { setImmediate } from "node:timers/promises";
 const workspace = { id: 1, name: "example", project_root: null, project_label: null };
 
 async function fixture(t, createModule, { credentials, ...port } = {}) {
-    const original = process.env.PLURNK_AUTH;
-    process.env.PLURNK_AUTH = credentials ? "1" : "0";
-    let module;
-    try { module = createModule(); }
-    finally {
-        if (original === undefined) delete process.env.PLURNK_AUTH;
-        else process.env.PLURNK_AUTH = original;
-    }
+    const module = createModule();
     let handler;
     await module.setup({ credentials });
     await module.start({ credentials, listWorkspaces: async () => [workspace], listSessions: async () => [], ...port,
@@ -230,32 +223,30 @@ export default async function verifyRouteSettlement(t, createModule) {
     });
 
     await t.test("stop and close tolerate incomplete startup", async () => {
-        const original = process.env.PLURNK_AUTH;
-        process.env.PLURNK_AUTH = "1";
-        try {
-            for (const failStart of [false, true]) {
-                const module = createModule();
-                if (failStart) await assert.rejects(module.start({ credentials: { face: () => null } }), /completed module setup/u);
-                module.stop();
-                await module.close();
-                await module.close();
-            }
+        for (const failStart of [false, true]) {
             const module = createModule();
-            let subscribed = false;
-            const credentials = {
-                registerClient: () => ({ clientId: "plurnk-web", clientSecret: "fixture-only" }),
-                face: () => ({ issuer: () => "https://authority.example" }),
-                onRevoked() { subscribed = true; return () => { subscribed = false; }; },
-            };
-            await module.setup({ credentials });
-            const failure = new Error("host refused route registration");
-            await assert.rejects(module.start({ credentials, registerHttpRoute() { throw failure; } }), (error) => error === failure);
-            assert.equal(subscribed, true);
+            if (failStart) {
+                await assert.rejects(
+                    module.start({ credentials: { face: () => ({ issuer: () => "https://authority.example" }) } }),
+                    /completed module setup/u,
+                );
+            }
+            module.stop();
             await module.close();
-            assert.equal(subscribed, false);
-        } finally {
-            if (original === undefined) delete process.env.PLURNK_AUTH;
-            else process.env.PLURNK_AUTH = original;
+            await module.close();
         }
+        const module = createModule();
+        let subscribed = false;
+        const credentials = {
+            registerClient: () => ({ clientId: "plurnk-web", clientSecret: "fixture-only" }),
+            face: () => ({ issuer: () => "https://authority.example" }),
+            onRevoked() { subscribed = true; return () => { subscribed = false; }; },
+        };
+        await module.setup({ credentials });
+        const failure = new Error("host refused route registration");
+        await assert.rejects(module.start({ credentials, registerHttpRoute() { throw failure; } }), (error) => error === failure);
+        assert.equal(subscribed, true);
+        await module.close();
+        assert.equal(subscribed, false);
     });
 }

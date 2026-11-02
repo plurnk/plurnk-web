@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { MIMEType } from "node:util";
-import { Knob } from "@plurnk/plurnk-meta";
+import { ConfigurationError, Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
 import indexDocument from "./index-document.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
@@ -15,13 +15,25 @@ import Diagrams from "./diagrams.js";
 /** {§web-host} {§web-configuration} {§web-package} @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
-    const yolo = Knob.flag("PLURNK_WEB_YOLO");
-    const reasoningPreviewChars = Knob.integer("PLURNK_WEB_REASONING_PREVIEW_CHARS", 1);
-    const authenticate = Knob.flag("PLURNK_AUTH");
-    const limits = { ttl: Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1) };
-    const formBytes = Knob.integer("PLURNK_WEB_FORM_BYTES", 1);
-    const creations = new Creations({ ttl: Knob.integer("PLURNK_WEB_CREATE_TTL_SEC", 1), tokens: Knob.integer("PLURNK_WEB_CREATE_TOKENS", 1) });
-    const diagrams = new Diagrams();
+    /** @type {import("@plurnk/plurnk-modules").ContainedConfiguration[]} */
+    const contained = [];
+    /** @template T @param {() => T} read @returns {T | null} */
+    const contain = (read) => {
+        try { return read(); }
+        catch (error) {
+            if (!(error instanceof ConfigurationError)) throw error;
+            contained.push({ key: error.key, message: error.message });
+            return null;
+        }
+    };
+    const yolo = contain(() => Knob.flag("PLURNK_WEB_YOLO"));
+    const reasoningPreviewChars = contain(() => Knob.integer("PLURNK_WEB_REASONING_PREVIEW_CHARS", 1));
+    const limits = { ttl: contain(() => Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1)) };
+    const createTtl = contain(() => Knob.integer("PLURNK_WEB_CREATE_TTL_SEC", 1));
+    const createTokens = contain(() => Knob.integer("PLURNK_WEB_CREATE_TOKENS", 1));
+    const formBytes = contain(() => Knob.integer("PLURNK_WEB_FORM_BYTES", 1));
+    const creations = createTtl !== null && createTokens !== null ? new Creations({ ttl: createTtl, tokens: createTokens }) : null;
+    const diagrams = Diagrams.create(contain);
     /** @type {{ clientId: string, clientSecret: string } | null} */
     let registration = null;
     /** @type {Session | null} */
@@ -33,8 +45,9 @@ export default function createModule() {
 
     return {
         mounts: ["/"],
+        contained: Object.freeze(contained),
         async setup({ credentials }) {
-            if (!authenticate) return;
+            if (!credentials) return;
             // {§web-authorization-style} The same built stylesheet serves both document owners.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
@@ -45,9 +58,9 @@ export default function createModule() {
             registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["acp"], stylesheetPath });
         },
         async start(seam) {
-            if (authenticate) {
-                const face = seam.credentials.face();
-                if (registration === null || face === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
+            const face = seam.credentials?.face() ?? null;
+            if (face !== null) {
+                if (registration === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
                 session = new Session(seam.credentials, registration, face, limits);
             }
             // {§web-assets} Requests select entries, never filesystem paths.
@@ -85,6 +98,7 @@ export default function createModule() {
                     admitted = sessions ? inventory != null : session?.admitted(req) ?? false;
                     if (diagram) {
                         if (session !== null && !admitted) throw new RequestError(401, "Sign in to render diagrams.");
+                        if (diagrams === null) throw new RequestError(503, "Diagram compilation is unavailable because its configuration is invalid.");
                         await diagrams.serve(req, res);
                         return;
                     }
@@ -125,6 +139,14 @@ export default function createModule() {
                             || (type.params.has("charset") && type.params.get("charset")?.toLowerCase() !== "utf-8")) {
                             throw new RequestError(415, "Use UTF-8 application/x-www-form-urlencoded.");
                         }
+                        if (formBytes === null) {
+                            req.resume();
+                            throw new RequestError(503, "Form submissions are unavailable because PLURNK_WEB_FORM_BYTES is invalid.");
+                        }
+                        if ((creation || sessionCreation) && creations === null) {
+                            req.resume();
+                            throw new RequestError(503, "Creation forms are unavailable because their configuration is invalid.");
+                        }
                         let size = 0;
                         const chunks = [];
                         for await (const chunk of req.iterator({ destroyOnReturn: false })) {
@@ -135,7 +157,7 @@ export default function createModule() {
                         let fields;
                         try { fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
                         catch (cause) { throw new RequestError(400, "Invalid form data.", { cause }); }
-                        if (creation) {
+                        if (creation && creations !== null) {
                             const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
                             if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
                             // An empty name is no name: the daemon names the workspace.
@@ -161,7 +183,7 @@ export default function createModule() {
                             redirect(res, path);
                             return;
                         }
-                        if (sessionCreation) {
+                        if (sessionCreation && creations !== null) {
                             const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
                             const targetName = fields.get("workspace");
                             if (!formToken || !targetName) throw new RequestError(400, "Expected session creation token and workspace name.");
@@ -282,7 +304,7 @@ export default function createModule() {
             const cleanup = new AsyncDisposableStack();
             cleanup.defer(() => session?.close());
             cleanup.defer(async () => { await Promise.allSettled(requests); });
-            cleanup.defer(() => diagrams.close());
+            cleanup.defer(() => diagrams?.close());
             await cleanup.disposeAsync();
         },
     };

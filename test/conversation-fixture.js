@@ -8,11 +8,7 @@ import createModule from "../ai.plurnk/module.js";
 
 // A component fixture using the real document and browser modules, not a second HTML implementation.
 export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url), routes = new Map()) {
-    const original = process.env.PLURNK_AUTH;
-    process.env.PLURNK_AUTH = "0";
     const module = createModule();
-    if (original === undefined) delete process.env.PLURNK_AUTH;
-    else process.env.PLURNK_AUTH = original;
     let serve;
     await module.start({ registerHttpRoute(_path, handler) { serve = handler; } });
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));

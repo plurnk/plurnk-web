@@ -8,21 +8,53 @@ const MAX_TIMER_DELAY = 2 ** 31 - 1;
 
 /** {§web-diagram-service} Owns bounded presentation work, never daemon agent work. */
 export default class Diagrams {
-    #threads = Knob.integer("PLURNK_WEB_DIAGRAM_THREADS", 1);
-    #pending = Knob.integer("PLURNK_WEB_DIAGRAM_PENDING", 1);
-    #timeout = Knob.integer("PLURNK_WEB_DIAGRAM_TIMEOUT_MS", 1);
-    #input = Knob.integer("PLURNK_WEB_DIAGRAM_INPUT_BYTES", 1);
-    #output = Knob.integer("PLURNK_WEB_DIAGRAM_OUTPUT_BYTES", 1);
-    #edges = Knob.integer("PLURNK_WEB_DIAGRAM_EDGES", 1);
+    #threads;
+    #pending;
+    #timeout;
+    #input;
+    #output;
+    #edges;
     /** @type {Piscina<Parameters<typeof import("./diagram-compiler.js").default>[0], ReturnType<typeof import("./diagram-compiler.js").default>> | undefined} */
     #pool;
     #active = 0;
     #stop = new AbortController();
 
-    constructor() {
+    /**
+     * @param {{ threads: number, pending: number, timeout: number, input: number, output: number, edges: number }} [limits]
+     */
+    constructor(limits) {
+        this.#threads = limits?.threads ?? Knob.integer("PLURNK_WEB_DIAGRAM_THREADS", 1);
+        this.#pending = limits?.pending ?? Knob.integer("PLURNK_WEB_DIAGRAM_PENDING", 1);
+        this.#timeout = limits?.timeout ?? Knob.integer("PLURNK_WEB_DIAGRAM_TIMEOUT_MS", 1);
+        this.#input = limits?.input ?? Knob.integer("PLURNK_WEB_DIAGRAM_INPUT_BYTES", 1);
+        this.#output = limits?.output ?? Knob.integer("PLURNK_WEB_DIAGRAM_OUTPUT_BYTES", 1);
+        this.#edges = limits?.edges ?? Knob.integer("PLURNK_WEB_DIAGRAM_EDGES", 1);
         if (this.#timeout > MAX_TIMER_DELAY) {
             throw new ConfigurationError("PLURNK_WEB_DIAGRAM_TIMEOUT_MS", `must not exceed ${MAX_TIMER_DELAY} milliseconds`);
         }
+    }
+
+    /**
+     * @param {<T>(read: () => T) => T | null} contain
+     * @returns {Diagrams | null}
+     */
+    static create(contain) {
+        const threads = contain(() => Knob.integer("PLURNK_WEB_DIAGRAM_THREADS", 1));
+        const pending = contain(() => Knob.integer("PLURNK_WEB_DIAGRAM_PENDING", 1));
+        const timeout = contain(() => {
+            const ms = Knob.integer("PLURNK_WEB_DIAGRAM_TIMEOUT_MS", 1);
+            if (ms > MAX_TIMER_DELAY) {
+                throw new ConfigurationError("PLURNK_WEB_DIAGRAM_TIMEOUT_MS", `must not exceed ${MAX_TIMER_DELAY} milliseconds`);
+            }
+            return ms;
+        });
+        const input = contain(() => Knob.integer("PLURNK_WEB_DIAGRAM_INPUT_BYTES", 1));
+        const output = contain(() => Knob.integer("PLURNK_WEB_DIAGRAM_OUTPUT_BYTES", 1));
+        const edges = contain(() => Knob.integer("PLURNK_WEB_DIAGRAM_EDGES", 1));
+        if (threads === null || pending === null || timeout === null || input === null || output === null || edges === null) {
+            return null;
+        }
+        return new Diagrams({ threads, pending, timeout, input, output, edges });
     }
 
     /** @param {string} source @param {AbortSignal} signal */

@@ -10,13 +10,6 @@ const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot:
 
 // {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
 async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceHidden = async ({ workspaceId, hidden }) => ({ id: workspaceId, hidden_at: hidden ? new Date().toISOString() : null }), setSessionHidden = async ({ sessionId, hidden }) => ({ id: sessionId, hidden_at: hidden ? new Date().toISOString() : null, sessionIds: [sessionId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", hidden_at: null }] } = {}) {
-    const originalAuth = process.env.PLURNK_AUTH;
-    process.env.PLURNK_AUTH = auth ? "1" : "0";
-    t.after(() => {
-        if (originalAuth === undefined) delete process.env.PLURNK_AUTH;
-        else process.env.PLURNK_AUTH = originalAuth;
-    });
-
     const created = [];
     let handler;
     const module = createModule();
@@ -36,7 +29,7 @@ async function fixture(t, { auth = false, admitted = true, create = async () => 
     const seam = {
         credentials: {
             ...credentials,
-            face: () => ({ issuer: () => base }),
+            face: () => auth ? { issuer: () => base } : null,
         },
         registerHttpRoute(_prefix, serve) { handler = serve; },
         listWorkspaces: async () => workspaces,
