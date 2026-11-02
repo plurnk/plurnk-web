@@ -1,14 +1,13 @@
 import { $, on, the } from "on_the_money";
 import conversation from "./conversation.js";
-import conversationScroll from "./conversation-scroll.js";
 import HistoryPages from "./history-pages.js";
 
 /** {§web-session-history} One renderer for live and archival projections, no SDK writes.
- * @param {HTMLElement} root @param {HTMLElement} main
+ * @param {HTMLElement} root
  * @param {(address: string) => Promise<string>} readBody
  * @param {(address: string, signal: AbortSignal) => Promise<import("./history-pages.js").Page>} readPage
  */
-export default function sessionHistory(root, main, readBody, readPage) {
+export default function sessionHistory(root, readBody, readPage) {
     const outlet = $(root, "[data-messages]");
     if (!(outlet instanceof HTMLUListElement)) throw new Error("History has no message list.");
     const list = outlet;
@@ -21,35 +20,32 @@ export default function sessionHistory(root, main, readBody, readPage) {
     /** @type {Map<string, string>} */
     const errors = new Map();
     let paused = false;
-    const scroll = conversationScroll(main, root, () => { pages.follow(); render(); });
 
-    function render(prepend = false) {
+    function render() {
         if (paused) return;
         const { messages, gaps } = pages.view();
         for (const [url] of errors) {
             if (!gaps.some((gap) => gap.url === url) && pages.mutable().includes(url)) gaps.push({ url, before: pages.first(url) });
         }
         const visible = new Set(gaps.map(({ url }) => url));
-        scroll.update(() => {
-            renderMessages(messages);
-            for (const [url, control] of controls) if (!visible.has(url)) { control.remove(); controls.delete(url); }
-            for (const { url, before } of gaps) {
-                let control = controls.get(url);
-                if (!control) {
-                    control = $.clone(list, "#conversation-history");
-                    controls.set(url, control);
-                    on(control, "submit", "form", (event) => { event.preventDefault(); void load(url, true); });
-                }
-                the(control, { historyPending: pending.has(url) ? "true" : null, historyError: errors.get(url) ?? "" });
-                const target = Array.from(list.children).find((row) => row.getAttribute("data-message-id") === before) ?? null;
-                if (control.nextElementSibling !== target) list.insertBefore(control, target);
+        renderMessages(messages);
+        for (const [url, control] of controls) if (!visible.has(url)) { control.remove(); controls.delete(url); }
+        for (const { url, before } of gaps) {
+            let control = controls.get(url);
+            if (!control) {
+                control = $.clone(list, "#conversation-history");
+                controls.set(url, control);
+                on(control, "submit", "form", (event) => { event.preventDefault(); void load(url); });
             }
-            the(root, "conversation-empty", messages.length === 0 && gaps.length === 0);
-        }, prepend);
+            the(control, { historyPending: pending.has(url) ? "true" : null, historyError: errors.get(url) ?? "" });
+            const target = Array.from(list.children).find((row) => row.getAttribute("data-message-id") === before) ?? null;
+            if (control.nextElementSibling !== target) list.insertBefore(control, target);
+        }
+        the(root, "conversation-empty", messages.length === 0 && gaps.length === 0);
     }
 
-    /** @param {string} url @param {boolean} [explicit] */
-    async function load(url, explicit = false) {
+    /** @param {string} url */
+    async function load(url) {
         if (pending.has(url) || paused) return;
         const controller = new AbortController();
         pending.set(url, controller);
@@ -58,7 +54,7 @@ export default function sessionHistory(root, main, readBody, readPage) {
         try {
             const page = await readPage(url, controller.signal);
             controller.signal.throwIfAborted();
-            if (pages.accept(url, page)) render(explicit);
+            if (pages.accept(url, page)) render();
         } catch (error) {
             if (!controller.signal.aborted) errors.set(url, error instanceof Error ? error.message : String(error));
         } finally {
@@ -68,9 +64,9 @@ export default function sessionHistory(root, main, readBody, readPage) {
     }
 
     return {
-        /** @param {{ messages: readonly import("./session-agent.js").Message[], older?: unknown, _meta?: { plurnk?: { history?: { older?: unknown } } } }} event */
+        /** @param {{ messages: readonly import("./session-agent.js").Message[], older: unknown }} event */
         snapshot(event) {
-            pages.snapshot(event, !scroll.following);
+            pages.snapshot(event);
             const retained = new Set([...pages.mutable(), ...pages.view().gaps.map(({ url }) => url)]);
             for (const [url, controller] of pending) if (!retained.has(url)) { controller.abort(); pending.delete(url); }
             for (const [url] of errors) if (!retained.has(url)) errors.delete(url);
@@ -80,10 +76,9 @@ export default function sessionHistory(root, main, readBody, readPage) {
         present(messages) { pages.live(messages); render(); },
         pause() {
             paused = true;
-            scroll.pause();
             for (const controller of pending.values()) controller.abort();
             pending.clear();
         },
-        resume() { paused = false; scroll.resume(); },
+        resume() { paused = false; },
     };
 }

@@ -17,24 +17,14 @@ export default class HistoryPages {
     #pages = [];
 
     /**
-     * @param {{ messages: readonly Message[], older?: unknown, _meta?: { plurnk?: { history?: { older?: unknown } } } }} event
-     * @param {boolean} reading
+     * @param {{ messages: readonly Message[], older: unknown }} event
      */
-    snapshot(event, reading) {
-        const history = event._meta?.plurnk?.history;
-        const rawOlder = event.older !== undefined
-            ? event.older
-            : (history !== undefined && "older" in history ? (history.older ?? null) : (event._meta?.plurnk !== undefined ? null : undefined));
-        if (rawOlder !== null && (typeof rawOlder !== "string" || !rawOlder.trim())) {
+    snapshot(event) {
+        if (event.older !== null && (typeof event.older !== "string" || !event.older.trim())) {
             throw new TypeError("History boundary must be a URL or null.");
         }
-        const older = typeof rawOlder === "string" ? rawOlder : null;
+        const older = typeof event.older === "string" ? event.older : null;
         unique(event.messages);
-        const incoming = new Set(event.messages.map(({ id }) => id));
-        if (!reading) this.follow();
-        else if (this.#window.messages.some(({ id }) => !incoming.has(id))) {
-            this.#pages.unshift(this.#window);
-        }
         this.#window = { url: null, messages: event.messages, older, final: false };
     }
 
@@ -51,8 +41,6 @@ export default class HistoryPages {
             page.messages = merge(page.messages, observed);
         }
     }
-
-    follow() { this.#pages = this.#pages.filter(({ url }) => url !== null); }
 
     mutable() { return this.#pages.flatMap(({ url, final }) => url !== null && !final ? [url] : []); }
 

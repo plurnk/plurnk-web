@@ -6,7 +6,7 @@ import readBody from "../web/read-body.js";
 
 await the.boot({ persistKeys: [] });
 const resources = new AbortController();
-const history = sessionHistory(document.querySelector("#session-conversation"), document.querySelector("main"),
+const history = sessionHistory(document.querySelector("#session-conversation"),
     (address) => readBody(address, "session", resources.signal),
     (address, signal) => readHistory(address, "session", AbortSignal.any([signal, resources.signal])));
 window.agent = new SessionAgent({ url: "/acp", sessionId: "7#user" });

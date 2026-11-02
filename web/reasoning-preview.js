@@ -59,7 +59,6 @@ export default function reasoningPreview(root, limit) {
             if (block.text) {
                 const tail = Array.from(text.textContent + block.text).slice(-limit).join("");
                 if (text.textContent !== tail) text.textContent = tail;
-                text.scrollTop = text.scrollHeight;
             }
         },
     };

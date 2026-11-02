@@ -1611,8 +1611,7 @@ export default class SessionAgent {
                 });
             } else if (actionKind === "session/set_config_option") {
                 const configId = String(actionParams.configId ?? "");
-                const rawVal = String(actionParams.value ?? "");
-                const value = configId === "spawn_model" && rawVal === "" ? "inherit" : rawVal;
+                const value = String(actionParams.value ?? "");
                 response = await conn.agent.request(methods.agent.session.setConfigOption, {
                     sessionId: this.sessionId ?? "user",
                     type: "id",
@@ -2130,17 +2129,9 @@ export default class SessionAgent {
                 if (Array.isArray(status.descendants)) {
                     this.#pruneDescendantGatesFromStatus(status.descendants);
                 }
-                const normalizedStatus = structuredClone(status);
-                for (const field of ["claimedAt", "terminatedAt"]) {
-                    if (typeof normalizedStatus[field] === "string") {
-                        const raw = normalizedStatus[field];
-                        const parsed = Date.parse(raw.includes("T") ? raw : `${raw.replace(" ", "T")}Z`);
-                        normalizedStatus[field] = Number.isFinite(parsed) ? parsed : null;
-                    }
-                }
                 prevPlurnk.status = {
                     ...(isRecord(prevPlurnk.status) ? prevPlurnk.status : {}),
-                    ...normalizedStatus,
+                    ...structuredClone(status),
                 };
             }
             if (isRecord(workspace)) {

@@ -70,7 +70,7 @@ export default function observeSession(element) {
     const draft = field;
     the(feedback, "message-status", "");
     let resources = new AbortController();
-    const transcript = sessionHistory(history, main, (address) => readBody(address, auth, resources.signal),
+    const transcript = sessionHistory(history, (address) => readBody(address, auth, resources.signal),
         (address, signal) => readHistory(address, auth, AbortSignal.any([signal, resources.signal])));
     const preview = reasoningPreview(history, Number(element.dataset.reasoningPreviewChars));
     const diagnosticList = $("#session-diagnostics");

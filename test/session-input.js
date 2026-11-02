@@ -440,20 +440,15 @@ export default async function verifySessionInput({ t, withDaemon }) {
         }
     }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
-    await t.test("{§web-session-history} on a conversation longer than the view, a review, a failure and command output appear in view", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
+    await t.test("{§web-session-history} on a conversation longer than the view, a review, a failure and command output follow the conversation in main", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         const send = page.getByRole("button", { name: "Send", exact: true });
-        // Visible within main's scroll area, its end included, once the page has laid it out: where a reader following the
-        // conversation is looking.
-        const inView = async (locator) => {
-            const element = await locator.elementHandle();
-            return page.waitForFunction((target) => {
-                const view = document.querySelector("main").getBoundingClientRect();
-                const box = target.getBoundingClientRect();
-                return box.height > 0 && box.top < view.bottom && box.bottom <= view.bottom + 1;
-            }, element, { timeout: 2000 }).then(() => true, () => false);
-        };
+        const afterConversation = (selector) => page.evaluate((targetSelector) => {
+            const conversation = document.querySelector("#session-conversation");
+            const target = document.querySelector(targetSelector);
+            return Boolean(conversation && target && target.closest("main") && (conversation.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING));
+        }, selector);
         await text.fill(["Lifecycle fixture: long-note.", ...Array.from({ length: 150 }, (_, index) => `Line ${index + 1} of a long note.`)].join("\n"));
         await send.click();
         await page.getByText("Completed long-note.", { exact: true }).waitFor();
@@ -462,18 +457,18 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await send.click();
         const help = page.locator("#session-command-results > ul > li").last();
         await help.locator('[data-command-state="done"]').waitFor();
-        assert.equal(await inView(help), true, "command output appears in view");
+        assert.equal(await afterConversation("#session-command-results"), true, "command output follows the conversation in main");
         await text.fill("Lifecycle fixture: approval-input.");
         await send.click();
         const review = page.getByRole("form", { name: "Review requests", exact: true });
         await review.waitFor();
-        assert.equal(await inView(review), true, "a review appears in view");
+        assert.equal(await afterConversation('[aria-label="Review requests"]'), true, "a review follows the conversation in main");
         await page.route("**/acp", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
             type: "https://problems.plurnk.xyz/fixture/stop-refused", title: "Conflict", status: 409, detail: "The fixture refused Stop." }) }), { times: 1 });
         await page.getByRole("button", { name: "Stop", exact: true }).click();
         const failure = page.getByRole("alert").filter({ hasText: "The fixture refused Stop." });
         await failure.waitFor();
-        assert.equal(await inView(failure), true, "a failure appears in view");
+        assert.equal(await afterConversation('[aria-label="Message feedback"]'), true, "a failure follows the conversation in main");
         checkBrowser([httpFailure("/acp", 409)]);
     }, { env: { PLURNK_WEB_YOLO: "0" } }));
 

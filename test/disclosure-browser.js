@@ -36,7 +36,7 @@ export default async function verifyDisclosures(t) {
                         { id: "user", role: "user", content: "Question" },
                         { id: "answer", role: "assistant", content: "**Answer**\n\nAnother paragraph." },
                         call("send", "SEND", "Delivered reply"),
-                        { id: "cancel", role: "tool", toolCallId: "cancel-call", content: "Cancelled reply", _meta: { plurnk: { op: "SEND", signal: 499 } } },
+                        { id: "cancel", role: "tool", toolCallId: "cancel-call", content: "Cancelled reply", _meta: { plurnk: { op: "FAIL", signal: 499 } } },
                         call("note", "NOTE", "Literal <pre>\n**fact**", "fact"),
                         call("edit", "EDIT", "Replacement", "Update the file"),
                         { id: "tool", role: "tool", toolCallId: "opaque-call", content: "Tool output", error: "Tool failed" },

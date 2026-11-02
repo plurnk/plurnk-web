@@ -56,7 +56,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         const source = [{ id: "notebook", role: "assistant", subagentRunId: "child-run", toolCalls:
                             ["fact", "idea", "plan", "note", "custom"].map((aside, index) => ({
                                 toolCallId: `note-${index}`, name: "NOTE", rawInput: { aside, body: `A **${aside}**.` },
-                                _meta: { plurnk: { op: "NOTE", coordinate: `1/2/${index}`, session: 9, state: "resolved", status: 200,
+                                _meta: { plurnk: { op: "NOTE", coordinate: `1/2/${index}`, sessionId: 9, state: "resolved", status: 200,
                                     attrs: { privateFixtureMarker: "not-a-presentation-field" } } },
                             })),
                         }];

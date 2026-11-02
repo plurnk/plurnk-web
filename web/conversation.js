@@ -128,7 +128,7 @@ export default function conversation(root, readBody) {
                 callId: call?.toolCallId ?? null,
                 plurnkType: typeof op === "string" ? op : null,
                 plurnkNote: category,
-                plurnkSession: typeof facts?.sessionId === "number" ? facts.sessionId : (typeof facts?.session === "number" ? facts.session : null),
+                plurnkSession: typeof facts?.sessionId === "number" ? facts.sessionId : null,
                 plurnkStatus: typeof receipt?.status === "number" ? receipt.status : typeof facts?.status === "number" ? facts.status : null,
                 plurnkSignal: typeof receipt?.completion === "number" ? receipt.completion : typeof facts?.signal === "number" ? facts.signal : null,
                 plurnkState: typeof facts?.state === "string" ? facts.state : null,
