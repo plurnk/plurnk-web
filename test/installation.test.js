@@ -34,8 +34,12 @@ const root = new URL("../", import.meta.url);
 test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000 }, async (t) => {
     const packages = await candidatePackages();
     const directory = await mkdtemp(join(tmpdir(), "plurnk-web-install-"));
+    /** @type {Set<{ stop(): Promise<unknown> }>} */
+    const activeDaemons = new Set();
     t.after(async () => {
         await closeSharedDaemons();
+        await Promise.allSettled([...activeDaemons].map((daemon) => daemon.stop()));
+        activeDaemons.clear();
         await closeSharedBrowsers();
         await rm(directory, { recursive: true, force: true });
     });
@@ -106,6 +110,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     });
     const withDaemon = async (overrides, verify) => {
         const daemon = await start(overrides, await mkdtemp(join(directory, "scenario-")));
+        activeDaemons.add(daemon);
         const failures = [];
         try {
             await verify(new URL("/", daemon.url).href, daemon);
@@ -113,6 +118,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
             failures.push(error);
         }
         try {
+            activeDaemons.delete(daemon);
             assert.deepEqual(await daemon.stop(), { code: 0, signal: null }, daemon.stderr());
         } catch (error) {
             failures.push(error);

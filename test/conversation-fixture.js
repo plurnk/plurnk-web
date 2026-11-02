@@ -6,33 +6,62 @@ import Documents from "../ai.plurnk/documents.js";
 import { privateHeaders } from "../ai.plurnk/http.js";
 import createModule from "../ai.plurnk/module.js";
 
+/** @type {Promise<Map<string, { body: Buffer | string, type: string }>> | null} */
+let baseAssetsPromise = null;
+/** @type {Map<string, Promise<{ assets: Map<string, { body: Buffer | string, type: string }>, document: Buffer }>>} */
+const compiledEntries = new Map();
+
+async function compileEntry(entryURL) {
+    let pending = compiledEntries.get(entryURL.href);
+    if (!pending) {
+        pending = (async () => {
+            if (!baseAssetsPromise) {
+                baseAssetsPromise = (async () => {
+                    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+                    return new Map(await Promise.all(inventory.map(async ([path, file, type]) =>
+                        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), type }])));
+                })();
+            }
+            const baseAssets = await baseAssetsPromise;
+            const assets = new Map(baseAssets);
+            const built = await build({
+                logLevel: "error",
+                build: { write: false, rolldownOptions: { input: fileURLToPath(entryURL) } },
+            });
+            const [{ output }] = /** @type {{ output: any[] }[]} */ (Array.isArray(built) ? built : [built]);
+            for (const entry of output) assets.set(`/${entry.fileName}`, {
+                body: entry.type === "chunk" ? entry.code : entry.source,
+                type: entry.type === "chunk" ? "text/javascript" : entry.fileName.endsWith(".css") ? "text/css" : entry.fileName.endsWith(".woff2") ? "font/woff2" : "text/plain",
+            });
+            const entry = output.find((entry) => entry.type === "chunk" && entry.isEntry);
+            const template = baseAssets.get("/index.html").body.toString()
+                // The component entry has its own module graph, not the production entry's preloads.
+                .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
+                .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
+            const documents = new Documents(template, false, 64);
+            const document = await documents.read({ kind: "session", workspace: "conversation", session: "user" }, {
+                listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null, archived_at: null }],
+                listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null }],
+            }, false);
+            return { assets, document };
+        })();
+        compiledEntries.set(entryURL.href, pending);
+    }
+    return pending;
+}
+
 // A component fixture using the real document and browser modules, not a second HTML implementation.
 export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url), routes = new Map()) {
-    const module = createModule();
-    let serve;
-    await module.start(/** @type {any} */ ({ registerHttpRoute(_path, handler) { serve = handler; } }));
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
-    const assets = new Map(await Promise.all(inventory.map(async ([path, file, type]) =>
-        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), type }])));
-    const built = await build({
-        logLevel: "error",
-        build: { write: false, rolldownOptions: { input: fileURLToPath(entryURL) } },
-    });
-    const [{ output }] = /** @type {{ output: any[] }[]} */ (Array.isArray(built) ? built : [built]);
-    for (const entry of output) assets.set(`/${entry.fileName}`, {
-        body: entry.type === "chunk" ? entry.code : entry.source,
-        type: entry.type === "chunk" ? "text/javascript" : entry.fileName.endsWith(".css") ? "text/css" : entry.fileName.endsWith(".woff2") ? "font/woff2" : "text/plain",
-    });
-    const entry = output.find((entry) => entry.type === "chunk" && entry.isEntry);
-    const template = assets.get("/index.html").body.toString()
-        // The component entry has its own module graph, not the production entry's preloads.
-        .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
-        .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
-    const documents = new Documents(template, false, 64);
-    const document = await documents.read({ kind: "session", workspace: "conversation", session: "user" }, {
-        listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null, hidden_at: null }],
-        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", hidden_at: null }],
-    }, false);
+    const { assets, document } = await compileEntry(entryURL);
+    let module = null;
+    let serve = null;
+    const ensureModule = async () => {
+        if (!serve) {
+            module = createModule();
+            await module.start(/** @type {any} */ ({ registerHttpRoute(_path, handler) { serve = handler; } }));
+        }
+        return serve;
+    };
     let acpHandler = null;
     let connSeq = 0;
     const sseStreams = new Map();
@@ -133,7 +162,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         const path = new URL(request.url, "http://fixture.invalid").pathname;
         if (routes.has(path)) { routes.get(path)(request, response); return; }
         if (path === "/acp" && acpHandler) { void handleAcp(request, response).catch(() => {}); return; }
-        if (path === "/render/mermaid") { void serve(request, response); return; }
+        if (path === "/render/mermaid") { void ensureModule().then((handler) => handler(request, response)); return; }
         const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);
         response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.type ?? "text/plain" });
         response.end(asset?.body ?? "Not found");
@@ -147,7 +176,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
                     if (entry.res && !entry.res.writableEnded) entry.res.end();
                 }
                 sseStreams.clear();
-                await module.close();
+                await module?.close();
                 await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
             },
         },

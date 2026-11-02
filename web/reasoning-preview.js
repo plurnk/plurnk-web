@@ -43,7 +43,6 @@ export default function reasoningPreview(root, limit) {
             const metaPlurnk = isRecord(update._meta) && isRecord(update._meta.plurnk)
                 ? update._meta.plurnk
                 : undefined;
-            const coordinate = metaPlurnk?.coordinate;
             if (block?.type === "resource_link") {
                 if (update.messageId === the(outlet, "reasoning-id")) clear();
                 return;
@@ -54,7 +53,9 @@ export default function reasoningPreview(root, limit) {
             }
             if (update.messageId !== the(outlet, "reasoning-id")) {
                 clear();
-                the(outlet, { reasoningId: update.messageId, reasoningCoordinate: reasoningCoordinate(coordinate) });
+                the(outlet, { reasoningId: update.messageId, reasoningCoordinate: reasoningCoordinate(metaPlurnk) });
+            } else if (metaPlurnk !== undefined) {
+                the(outlet, "reasoning-coordinate", reasoningCoordinate(metaPlurnk));
             }
             if (block.text) {
                 const tail = Array.from(text.textContent + block.text).slice(-limit).join("");

@@ -36,8 +36,8 @@ differing labels keep ☁️ on the workspace name and show 🗂️ on a separat
 Folder labels use the daemon's home abbreviation, not the browser's.
 The workspace list, workspace pages and session pages offer native header actions alongside the breadcrumbs:
 - On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal to create a new folderless workspace; left unnamed, the daemon names it ({§web-workspace-creation}).
-- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️`, `🗑️` and `➕` open native `<dialog>` modals to rename the current workspace ({§web-workspace-rename}), hide the workspace ({§web-workspace-hide}), or create an independent model session; left unnamed, the daemon names it ({§web-session-creation}).
-- On `/<workspace>@<session>/`: breadcrumb navigation carries `🗑️` to hide the session and its descendants ({§web-session-hide}).
+- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️`, `🗑️` and `➕` open native `<dialog>` modals to rename the current workspace ({§web-workspace-rename}), archive the workspace ({§web-workspace-archive}), or create an independent model session; left unnamed, the daemon names it ({§web-session-creation}).
+- On `/<workspace>@<session>/`: breadcrumb navigation carries `🗑️` to archive the session and its descendants ({§web-session-archive}).
 Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow at the end of `<main>` when JavaScript is disabled; with JavaScript a closed modal shows nothing.
 Creation forms carry a hidden token so a retried submission converges on the created place instead of re-executing.
 Anonymous daemons refuse cross-site form posts, but a page that makes the browser reach
@@ -123,8 +123,9 @@ inspection nor navigation cancels execution.
 Live reasoning appears in one temporary plain-text preview, cleared when the
 attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bounds
 its retained tail (4096 Unicode code points by default). Completed turns keep
-their reasoning in collapsed disclosures; opening one retrieves the full
-trace when visible, without adding it to later prompt submissions.
+their reasoning in collapsed disclosures headed by `<session> > Loop <loop> > Turn <turn>`;
+opening one retrieves the full trace when visible, without adding it to later prompt submissions.
+Turns and loops in the conversation transcript are separated by native `<hr>` boundaries.
 
 **Send** also supports follow-ups while the session is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
@@ -261,14 +262,15 @@ that build on the daemon's existing port; restart the daemon to load a new build
 `npm run preview` previews the last build locally without a daemon. It is not the
 production server. Vite is development tooling only.
 
-`npm test` checks specification tags and witnesses using Plurnk's shared
-development checker, server and browser JavaScript, OTM's HTML/JavaScript/CSS
-contracts and the module, then packs and installs the plugin
-with packed platform packages and the terminal client in a temporary directory. These may be published
+`npm test` builds the frontend and checks specification tags and witnesses using
+Plurnk's shared development checker, server and browser JavaScript, OTM's
+HTML/JavaScript/CSS contracts, the module, and the three-engine browser component
+suites. `npm run test:installation` packs and installs the plugin with packed
+platform packages and the terminal client in a temporary directory. These may be published
 archives obtained with `npm pack` or locally built candidates. `test:candidate`
 gates the committed HEAD in a throwaway clone: `npm ci` from the lockfile, the
-archives installed beside it without saving, then the full gate with
-`PLURNK_WEB_TEST_PACKAGES` naming the archive directory. The checkout is only read.
+archives installed beside it without saving, then `npm test` and
+`npm run test:installation` with `PLURNK_WEB_TEST_PACKAGES` naming the archive directory. The checkout is only read.
 The installed test uses an
 isolated configuration, database and dynamically assigned port, plus Playwright
 Chromium. Component coverage also exercises native conversation behavior in Firefox

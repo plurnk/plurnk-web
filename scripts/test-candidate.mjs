@@ -33,6 +33,7 @@ try {
     // Candidate public declarations and authorization specimens beside the locked registry graph.
     await npm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", ...archives], clone);
     await npm(["test"], clone);
+    await npm(["run", "test:installation"], clone);
 } catch (error) {
     console.error(`The gate failed; its clone remains at ${clone}`);
     throw error;

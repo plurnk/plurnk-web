@@ -230,7 +230,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 | `/~/` | `listWorkspaces()`: native list articles for the shown workspaces with exact-name links under {§web-page-shell}, and the folderless creation form under {§web-workspace-creation}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
 | Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listSessions(id)` census rendered under {§web-session-directory}. |
 | Session directory | Exact-name model-session lookup; identity, breadcrumbs and actual parent under {§web-session-directory}, plus passive status under {§web-session-observer} and conversation under {§web-session-conversation}. |
-| Hidden workspace/session | The daemon's `hidden_at` mark leaves a workspace out of `/~/` and a session, with the sessions beneath it, out of its workspace's tree; its own page still opens by its exact address. |
+| Archived workspace/session | The daemon's `archived_at` mark leaves a workspace out of `/~/` and a session, with the sessions beneath it, out of its workspace's tree; its own page still opens by its exact address. |
 | Missing workspace/session | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
 
@@ -308,36 +308,36 @@ flow at the end of `<main>` and submits cleanly.
 | Convergence | The form token acts as idempotency key: racing double-clicks and retries converge to the single created session. Expiry and bounds share the creation limits. |
 | Success and failure | Missing workspace answers 404. Success 303-redirects to the new session's canonical directory address (`directoryPath({ kind: "session", workspace, session })`). A refusal or failure answers as {§web-workspace-creation}'s Failure row says; a session name without a directory address is an internal violation, not a refusal. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
-## §web-workspace-hide Workspace hide
+## §web-workspace-archive Workspace archive
 
-Workspace page (`/~/<workspace>/`) headers carry a native hide trigger button (`🗑️`);
+Workspace page (`/~/<workspace>/`) headers carry a native archive trigger button (`🗑️`);
 daemon, session, account and error documents never do. Activating the trigger opens a native
-`<dialog>` modal (`#dialog-workspace-hide`). When JavaScript is disabled, the form renders in normal
+`<dialog>` modal (`#dialog-workspace-archive`). When JavaScript is disabled, the form renders in normal
 flow at the end of `<main>` and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | A native modal (`#dialog-workspace-hide`) containing one `method="post" action="/workspaces/hide"` form with the current workspace name in a hidden `workspace` field, a message explaining that hiding leaves files and history intact, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
-| Delivery | Uses the public `setWorkspaceHidden({ workspaceId, hidden: true })` contract on `ApplicationPort`. Missing workspace answers 404. A refusal (such as live work) answers with the daemon's status and detail. Success 303-redirects to `/~/`. |
+| Form | A native modal (`#dialog-workspace-archive`) containing one `method="post" action="/workspaces/archive"` form with the current workspace name in a hidden `workspace` field, a message explaining that archiving leaves files and history intact, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
+| Delivery | Uses the public `setWorkspaceArchived({ workspaceId, archived: true })` contract on `ApplicationPort`. Missing workspace answers 404. A refusal (such as live work) answers with the daemon's status and detail. Success 303-redirects to `/~/`. |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
 
-## §web-session-hide Session hide
+## §web-session-archive Session archive
 
-Session page (`/~/<workspace>@<session>/`) headers carry a native hide trigger button (`🗑️`);
+Session page (`/~/<workspace>@<session>/`) headers carry a native archive trigger button (`🗑️`);
 daemon, workspace, account and error documents never do. Activating the trigger opens a native
-`<dialog>` modal (`#dialog-session-hide`). When JavaScript is disabled, the form renders in normal
+`<dialog>` modal (`#dialog-session-archive`). When JavaScript is disabled, the form renders in normal
 flow at the end of `<main>` and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
-| Form | A native modal (`#dialog-session-hide`) containing one `method="post" action="/sessions/hide"` form with the current workspace name in a hidden `workspace` field, the session name in a hidden `session` field, an explanation that hiding removes the session and its descendants without destroying history, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
-| Delivery | Uses the public `setSessionHidden({ workspaceId, sessionId, hidden: true })` contract on `ApplicationPort`. Missing workspace or session answers 404. A refusal (such as live work covered by the subtree) answers with the daemon's status and detail. Success 303-redirects to the workspace address (`directoryPath({ kind: "workspace", workspace })`). |
+| Form | A native modal (`#dialog-session-archive`) containing one `method="post" action="/sessions/archive"` form with the current workspace name in a hidden `workspace` field, the session name in a hidden `session` field, an explanation that archiving removes the session and its descendants without destroying history, and Cancel and Confirm buttons. Dismissing via Cancel or Escape performs no mutation. |
+| Delivery | Uses the public `setSessionArchived({ workspaceId, sessionId, archived: true })` contract on `ApplicationPort`. Missing workspace or session answers 404. A refusal (such as live work covered by the subtree) answers with the daemon's status and detail. Success 303-redirects to the workspace address (`directoryPath({ kind: "workspace", workspace })`). |
 | Origin and method | Only POST is permitted; GET and HEAD answer 405 with `Allow: POST`. Strict same-origin enforcement applies in both auth and anonymous postures. |
 
 ## §web-session-directory Model-session navigation
 | Boundary | Representation |
 |---|---|
-| Membership | Every shown `origin: model` session (`hidden_at: null`) appears once, regardless of owner, lifecycle or name spelling. Non-model bookkeeping sessions have no directory row or session page; their direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
+| Membership | Every shown `origin: model` session (`archived_at: null`) appears once, regardless of owner, lifecycle or name spelling. Non-model bookkeeping sessions have no directory row or session page; their direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
 | Roots | Shown model sessions with `parentSessionId: null` form the primary list. |
 | Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
 | Card identity | Two lines: a named ant link to the session, its lifecycle glyph, optional actual parent followed by `>`, and the session name; then a folder/cloud marker and a real link to its workspace. Model parents are links; bookkeeping parents are escaped text, never fabricated session destinations. Folder presence comes from `project_root`, not the workspace name. Kind and permission owner do not become visible metadata rows. |
@@ -554,7 +554,7 @@ capability, persistence or execution policy. Client commands require no inferenc
 | Delivered replies | SEND, DONE and FAIL bodies use the same sanitized Markdown renderer as assistant prose. A tool result attributed to a SEND, DONE or FAIL row is the delivered reply itself, not an operation receipt; render its complete content without unwrapping JSON-shaped replies as metadata. Other authored operation bodies remain literal preformatted text. |
 | Other messages | System/developer messages use the same accessible article boundary. Text and supported document parts retain their original order. Unmapped structured payloads stay in JavaScript; do not serialize them into the document. No inline media player or attachment service. Supplied subagent invocation IDs identify attribution, never mistaken for the parent's output. |
 | Semantics | Entry attributes carry only identity, role, attribution, operation/category and result state relevant to presentation or interaction. Text lives in content nodes, not duplicate data attributes. Structured protocol metadata remains in JavaScript, not attributes or generic JSON disclosures. Accessible naming is independent of visible labels and decorative glyphs. Native structure and controls supply meaning and behavior; CSS alone owns arrangement and decoration. An empty body stays empty; do not invent visible labels or controls to fill it. |
-| Layout | Native unnumbered `ul` and content articles, preserving client order and authored Markdown list semantics, with body disclosure under {§web-card-disclosure}. No wrapper solely to reproduce protocol nesting, duplicate session heading, chat bubbles, application classes or virtual-DOM framework. Literal content wraps under {§web-content-reflow}; explicit code, tables, formulas and diagrams scroll locally when too wide. |
+| Layout | Native unnumbered `ul` and content articles, preserving client order and authored Markdown list semantics, with body disclosure under {§web-card-disclosure} and a native `hr` preceding the first entry of each subsequent turn or loop. No wrapper solely to reproduce protocol nesting, duplicate session heading, chat bubbles, application classes or virtual-DOM framework. Literal content wraps under {§web-content-reflow}; explicit code, tables, formulas and diagrams scroll locally when too wide. |
 | Connection | The existing connection notice governs whether displayed history is live. Only a supplied empty message collection says “No messages.” Unknown history and deliberately unrendered reasoning placeholders do not imply emptiness. A transport failure retains the last observed projection, never an invented empty or successfully completed conversation. |
 
 ## §web-card-disclosure Card bodies
@@ -618,10 +618,10 @@ color. Non-conversation cards retain their existing Pico presentation.
 | Boundary | Contract |
 |---|---|
 | Negotiation | Every browser ACP request supplies `_meta.plurnk.reasoning: "link"`, including observation, held observation, prompt submission, resume and management requests. Preserve other request properties. The ACP client keeps the standard empty reasoning messages and their metadata; web never writes preview or fetched text into them. Unnegotiated third-party clients retain the daemon's standard reasoning behavior. |
-| Preview | `agent_thought_chunk` session updates feed one literal-text article outside the message list, with a 💭 header and supplied `_meta.plurnk.coordinate` when present. A new attempt replaces its predecessor. A delta must name that active message. No Markdown interpretation, transcript entry, hidden full-trace accumulator or browser persistence. |
+| Preview | `agent_thought_chunk` session updates feed one literal-text article outside the message list, with a 💭 header and `<sessionName> > Loop <loop> > Turn <turn>` (or `Loop <loop> > Turn <turn>` when `sessionName` is absent) from `_meta.plurnk` when present. A new attempt replaces its predecessor. A delta must name that active message. No Markdown interpretation, transcript entry, hidden full-trace accumulator or browser persistence. |
 | Retention | `PLURNK_WEB_REASONING_PREVIEW_CHARS` is a positive integer read at module startup and projected explicitly into session documents. Retain only the newest configured number of Unicode code points across fragments. CSS bounds the visible area to one third of the dynamic viewport. Streaming updates do not move focus or announce each token. |
 | Clearing | The matching reasoning-message end clears its preview. Turn start, terminal outcome, delivery failure, delivery handoff and page departure clear it too. Reattachment never reconstructs a preview from snapshots or body links. A link-only repeated start/end cannot clear another attempt's preview. No preview is retained as evidence of a failed request. |
-| History | A reasoning message's `_meta.plurnk.body` supplies its exact URL and MIME type, including when metadata arrives after an empty message. An article contains its initially collapsed native disclosure, headed by a decorative 💭 and `L{loop}/T{turn}` from `_meta.plurnk.coordinate` when available; its accessible name identifies reasoning independently of the glyph. Message IDs and reference URLs are opaque, never sources of coordinates. The disclosure defers the read until opened and visible under {§web-result-bodies}. No second Read body control. Identity, order, attribution and unchanged loaded outlets survive ordinary snapshots. |
+| History | A reasoning message's `_meta.plurnk.body` supplies its exact URL and MIME type, including when metadata arrives after an empty message. An article contains its initially collapsed native disclosure, headed by a decorative 💭 and `<sessionName> > Loop <loop> > Turn <turn>` (or `Loop <loop> > Turn <turn>` when `sessionName` is absent) from `_meta.plurnk` when available; its accessible name identifies reasoning independently of the glyph. Message IDs and reference URLs are opaque, never sources of coordinates. The disclosure defers the read until opened and visible under {§web-result-bodies}. No second Read body control. Identity, order, attribution and unchanged loaded outlets survive ordinary snapshots. |
 | Ownership | The preview is presentation only. Its clearing does not cancel inference or erase daemon evidence. Full reasoning is read-only, literal on-demand inspection; neither reading nor streaming contributes text to subsequent client requests. |
 
 ## §web-conversation-content Untrusted message content

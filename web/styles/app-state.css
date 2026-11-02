@@ -178,6 +178,7 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 }
 
 [data-plurnk-type="NOTE"] { --plurnk-operation-glyph: "🗒️"; }
+[data-plurnk-type="TODO"] { --plurnk-operation-glyph: "🚧"; }
 [data-plurnk-type="FIND"] { --plurnk-operation-glyph: "🔎"; }
 [data-plurnk-type="READ"] { --plurnk-operation-glyph: "📖"; }
 [data-plurnk-type="EDIT"] { --plurnk-operation-glyph: "📝"; }

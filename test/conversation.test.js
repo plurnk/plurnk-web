@@ -151,7 +151,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                                 sessionUpdate: "agent_thought_chunk",
                                 messageId: "reasoning-1",
                                 content: { type: "resource_link", uri: "/reasoning/1", name: "reasoning", mimeType: "text/plain" },
-                                _meta: { plurnk: { id: 2, coordinate: "1/1" } },
+                                _meta: { plurnk: { id: 2, sessionName: "user", loopSeq: 1, turnSeq: 1, coordinate: "1/1" } },
                             },
                             {
                                 sessionUpdate: "tool_call",
@@ -215,6 +215,19 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             await ids(),
                             ["prompt-1", "reasoning-1", "1/1/3", "msg-4", "follow-up-1", "msg-6"],
                             "published follow-up heads Turn 2 ahead of Turn 2's response",
+                        );
+                        assert.deepEqual(
+                            await page.locator("[data-messages] > li").evaluateAll((rows) =>
+                                rows.map((row) => [row.dataset.messageId, row.querySelector(":scope > hr") !== null])),
+                            [
+                                ["prompt-1", false],
+                                ["reasoning-1", false],
+                                ["1/1/3", false],
+                                ["msg-4", false],
+                                ["follow-up-1", true],
+                                ["msg-6", false],
+                            ],
+                            "{§web-session-conversation} a turn boundary renders a native <hr> before the first entry of the new turn",
                         );
 
                         // An unobserved follow-up from a cancelled loop stays at the end of its loop on replay,

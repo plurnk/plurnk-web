@@ -9,7 +9,7 @@ import createModule from "../ai.plurnk/module.js";
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 
 // {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
-async function fixture(t, { auth = false, admitted = true, create = async (/** @type {any} */ _args) => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceHidden = async ({ workspaceId, hidden }) => ({ id: workspaceId, hidden_at: hidden ? new Date().toISOString() : null }), setSessionHidden = async ({ sessionId, hidden }) => ({ id: sessionId, hidden_at: hidden ? new Date().toISOString() : null, sessionIds: [sessionId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", hidden_at: null }] } = {}) {
+async function fixture(t, { auth = false, admitted = true, create = async (/** @type {any} */ _args) => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceArchived = async ({ workspaceId, archived }) => ({ id: workspaceId, archived_at: archived ? new Date().toISOString() : null }), setSessionArchived = async ({ sessionId, archived }) => ({ id: sessionId, archived_at: archived ? new Date().toISOString() : null, sessionIds: [sessionId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", archived_at: null }] } = {}) {
     const created = [];
     let handler;
     const module = createModule();
@@ -37,8 +37,8 @@ async function fixture(t, { auth = false, admitted = true, create = async (/** @
         createWorkspace: async (args) => { created.push(args); return create(args); },
         renameWorkspace: rename,
         createSession,
-        setWorkspaceHidden,
-        setSessionHidden,
+        setWorkspaceArchived,
+        setSessionArchived,
     };
     await module.start(/** @type {any} */ (seam));
     const server = createServer(handler);
@@ -248,7 +248,7 @@ test("{§web-workspace-creation} {§web-session-creation} an empty name is no na
 test("{§web-workspace-rename} workspace rename updates name and redirects to new canonical path", async (t) => {
     const renamed = [];
     const { base } = await fixture(t, {
-        workspaces: [{ id: 7, name: "old-name", project_root: null, project_label: null, hidden_at: null }],
+        workspaces: [{ id: 7, name: "old-name", project_root: null, project_label: null, archived_at: null }],
         rename: async (id, name) => { renamed.push({ id, name }); return { id, name }; },
     });
 
@@ -290,7 +290,7 @@ test("{§web-workspace-rename} workspace rename updates name and redirects to ne
 test("{§web-session-creation} session creation creates independent session and redirects", async (t) => {
     const createdSessions = [];
     const { base } = await fixture(t, {
-        workspaces: [{ id: 7, name: "my-workspace", project_root: null, project_label: null, hidden_at: null }],
+        workspaces: [{ id: 7, name: "my-workspace", project_root: null, project_label: null, archived_at: null }],
         createSession: async (args) => { createdSessions.push(args); return { sessionId: 10, sessionName: args.name || "bob" }; },
     });
 
@@ -337,13 +337,13 @@ test("{§web-session-creation} session creation creates independent session and 
     assert.equal(createdSessions.length, 2);
 });
 
-test("{§web-workspace-hide} workspace hide calls daemon and redirects to /~/", async (t) => {
-    const hidden = [];
+test("{§web-workspace-archive} workspace archive calls daemon and redirects to /~/", async (t) => {
+    const archived = [];
     const { base } = await fixture(t, {
-        workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, hidden_at: null }],
-        setWorkspaceHidden: async (args) => { hidden.push(args); return { id: args.workspaceId, hidden_at: "2026-10-23T00:00:00Z" }; },
+        workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, archived_at: null }],
+        setWorkspaceArchived: async (args) => { archived.push(args); return { id: args.workspaceId, archived_at: "2026-10-23T00:00:00Z" }; },
     });
-    const hidePost = (body, headers = {}) => fetch(new URL("/workspaces/hide", base), {
+    const archivePost = (body, headers = {}) => fetch(new URL("/workspaces/archive", base), {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
         body: new URLSearchParams(body),
@@ -352,39 +352,39 @@ test("{§web-workspace-hide} workspace hide calls daemon and redirects to /~/", 
 
     // Method guard
     for (const method of ["GET", "HEAD"]) {
-        const res = await fetch(new URL("/workspaces/hide", base), { method, redirect: "manual" });
+        const res = await fetch(new URL("/workspaces/archive", base), { method, redirect: "manual" });
         assert.equal(res.status, 405, method);
         assert.equal(res.headers.get("allow"), "POST");
     }
 
     // Origin check
-    const foreign = await hidePost({ workspace: "target-ws" }, { origin: "https://evil.example" });
+    const foreign = await archivePost({ workspace: "target-ws" }, { origin: "https://evil.example" });
     assert.equal(foreign.status, 403);
 
     // Missing workspace 404
-    const missing = await hidePost({ workspace: "nonexistent" });
+    const missing = await archivePost({ workspace: "nonexistent" });
     assert.equal(missing.status, 404);
 
     // Empty workspace 400
-    const empty = await hidePost({ workspace: "" });
+    const empty = await archivePost({ workspace: "" });
     assert.equal(empty.status, 400);
 
-    // Successful hide
-    const res = await hidePost({ workspace: "target-ws" });
+    // Successful archive
+    const res = await archivePost({ workspace: "target-ws" });
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), "/~/");
-    assert.deepEqual(hidden, [{ workspaceId: 7, hidden: true }]);
+    assert.deepEqual(archived, [{ workspaceId: 7, archived: true }]);
 });
 
-test("{§web-session-hide} session hide calls daemon and redirects to workspace address", async (t) => {
-    const hidden = [];
+test("{§web-session-archive} session archive calls daemon and redirects to workspace address", async (t) => {
+    const archived = [];
     const { base } = await fixture(t, {
-        workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, hidden_at: null }],
-        sessions: [{ id: 10, name: "target-session", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", hidden_at: null }],
-        setSessionHidden: async (args) => { hidden.push(args); return { id: args.sessionId, hidden_at: "2026-10-23T00:00:00Z", sessionIds: [args.sessionId] }; },
+        workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, archived_at: null }],
+        sessions: [{ id: 10, name: "target-session", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", archived_at: null }],
+        setSessionArchived: async (args) => { archived.push(args); return { id: args.sessionId, archived_at: "2026-10-23T00:00:00Z", sessionIds: [args.sessionId] }; },
     });
 
-    const hidePost = (body, headers = {}) => fetch(new URL("/sessions/hide", base), {
+    const archivePost = (body, headers = {}) => fetch(new URL("/sessions/archive", base), {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
         body: new URLSearchParams(body),
@@ -393,30 +393,30 @@ test("{§web-session-hide} session hide calls daemon and redirects to workspace 
 
     // Method guard
     for (const method of ["GET", "HEAD"]) {
-        const res = await fetch(new URL("/sessions/hide", base), { method, redirect: "manual" });
+        const res = await fetch(new URL("/sessions/archive", base), { method, redirect: "manual" });
         assert.equal(res.status, 405, method);
         assert.equal(res.headers.get("allow"), "POST");
     }
 
     // Origin check
-    const foreign = await hidePost({ workspace: "target-ws", session: "target-session" }, { origin: "https://evil.example" });
+    const foreign = await archivePost({ workspace: "target-ws", session: "target-session" }, { origin: "https://evil.example" });
     assert.equal(foreign.status, 403);
 
     // Missing workspace 404
-    const missingWs = await hidePost({ workspace: "nonexistent", session: "target-session" });
+    const missingWs = await archivePost({ workspace: "nonexistent", session: "target-session" });
     assert.equal(missingWs.status, 404);
 
     // Missing session 404
-    const missingSession = await hidePost({ workspace: "target-ws", session: "nonexistent" });
+    const missingSession = await archivePost({ workspace: "target-ws", session: "nonexistent" });
     assert.equal(missingSession.status, 404);
 
     // Empty fields 400
-    const empty = await hidePost({ workspace: "target-ws", session: "" });
+    const empty = await archivePost({ workspace: "target-ws", session: "" });
     assert.equal(empty.status, 400);
 
-    // Successful hide
-    const res = await hidePost({ workspace: "target-ws", session: "target-session" });
+    // Successful archive
+    const res = await archivePost({ workspace: "target-ws", session: "target-session" });
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), "/~/target-ws/");
-    assert.deepEqual(hidden, [{ workspaceId: 7, sessionId: 10, hidden: true }]);
+    assert.deepEqual(archived, [{ workspaceId: 7, sessionId: 10, archived: true }]);
 });

@@ -9,9 +9,6 @@ import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-cli
 import { Validator } from "@plurnk/plurnk-contracts";
 import problemFromResponse from "./problem-response.js";
 
-// Firefox delays resolving fetch() on chunked text/event-stream responses until the first body byte arrives.
-const SSE_HEADERS_FLUSH_MS = 25;
-
 export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
 
 /**
@@ -261,25 +258,11 @@ function insertMessage(messages, item) {
     if (isUnobservedUser) {
         const targetLoopId = loopIdOf(item);
         if (targetLoopId !== undefined) {
-            let idx = messages.findIndex((m) => {
+            const idx = messages.findIndex((m) => {
                 const lid = loopIdOf(m);
                 return lid !== undefined && lid > targetLoopId;
             });
             if (idx !== -1) {
-                const nextMsg = messages[idx];
-                const prevMsg = idx > 0 ? messages[idx - 1] : undefined;
-                if (prevMsg && prevMsg.role === "reasoning" && loopIdOf(prevMsg) === undefined) {
-                    const nextLoopSeq = nextMsg._meta?.plurnk?.loopSeq
-                        ?? (nextMsg.role === "assistant" ? nextMsg.toolCalls?.[0]?._meta?.plurnk?.loopSeq : undefined);
-                    const prevCoord = prevMsg._meta?.plurnk?.coordinate;
-                    if (
-                        typeof prevCoord === "string"
-                        && typeof nextLoopSeq === "number"
-                        && Number(prevCoord.split("/")[0]) === nextLoopSeq
-                    ) {
-                        idx -= 1;
-                    }
-                }
                 messages.splice(idx, 0, item);
                 return;
             }
@@ -1090,14 +1073,8 @@ export default class SessionAgent {
                         });
                     }
                 });
-                const isFirefox = typeof navigator !== "undefined" && navigator.userAgent.includes("Firefox");
-                const initialResponse = isFirefox
-                    ? await Promise.race([
-                        fetchPromise,
-                        new Promise((resolve) => setTimeout(() => resolve(null), SSE_HEADERS_FLUSH_MS)),
-                    ])
-                    : await fetchPromise;
-                if (initialResponse !== null && !initialResponse.ok) {
+                const initialResponse = await fetchPromise;
+                if (!initialResponse.ok) {
                     if (this.#streamProblem === undefined) {
                         const refusalError = await problemFromResponse(initialResponse.clone());
                         this.#streamProblem = refusalError
@@ -1114,14 +1091,12 @@ export default class SessionAgent {
                     return initialResponse;
                 }
                 if (
-                    initialResponse !== null
-                    && (!initialResponse.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
-                        || !initialResponse.body)
+                    !initialResponse.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
+                    || !initialResponse.body
                 ) {
                     return initialResponse;
                 }
-                /** @type {ReadableStreamDefaultReader<Uint8Array> | undefined} */
-                let reader = initialResponse?.body?.getReader();
+                const reader = initialResponse.body.getReader();
                 const notifyStreamEnd = () => {
                     if (fetchSignal.aborted) return;
                     void this.#notificationChain.then(() => {
@@ -1136,36 +1111,6 @@ export default class SessionAgent {
                 const wrappedBody = new ReadableStream({
                     pull: async (controller) => {
                         try {
-                            if (!reader) {
-                                const resolved = await fetchPromise;
-                                if (!resolved.ok) {
-                                    if (this.#streamProblem === undefined) {
-                                        const refusalError = await problemFromResponse(resolved.clone());
-                                        this.#streamProblem = refusalError
-                                            ? {
-                                                message: refusalError.message,
-                                                status: refusalError.status,
-                                                problem: isRecord(refusalError.cause) ? refusalError.cause : undefined,
-                                            }
-                                            : {
-                                                message: resolved.statusText || `HTTP ${resolved.status}`,
-                                                status: resolved.status,
-                                            };
-                                    }
-                                    notifyStreamEnd();
-                                    controller.error(new Error(this.#streamProblem.message));
-                                    return;
-                                }
-                                if (
-                                    !resolved.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
-                                    || !resolved.body
-                                ) {
-                                    controller.close();
-                                    notifyStreamEnd();
-                                    return;
-                                }
-                                reader = resolved.body.getReader();
-                            }
                             const { done, value } = await reader.read();
                             if (done) {
                                 controller.close();
@@ -1178,12 +1123,12 @@ export default class SessionAgent {
                             controller.error(err);
                         }
                     },
-                    cancel: (reason) => reader ? reader.cancel(reason) : undefined,
+                    cancel: (reason) => reader.cancel(reason),
                 });
                 return new Response(wrappedBody, {
-                    status: initialResponse?.status ?? 200,
-                    statusText: initialResponse?.statusText ?? "OK",
-                    headers: initialResponse?.headers ?? { "Content-Type": "text/event-stream" },
+                    status: initialResponse.status,
+                    statusText: initialResponse.statusText,
+                    headers: initialResponse.headers,
                 });
             }
             const isPost = init?.method === "POST";
@@ -2542,9 +2487,6 @@ export default class SessionAgent {
                 if (!this.#bufferingReplay) {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
-            }
-            if (update.state === "requires_action" && !this.#bufferingReplay && this.pendingGates.length > 0) {
-                await subscriber.onSettled?.({ stopReason: "interrupt", meta: plurnk, result: {} });
             }
             if (update.state === "idle" && isRecord(plurnk?.terminal)) {
                 const stopReason = typeof update.stopReason === "string" ? update.stopReason : "end_turn";

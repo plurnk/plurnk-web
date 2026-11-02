@@ -21,8 +21,8 @@ import Diagrams from "./diagrams.js";
  *   createWorkspace: (args: { name?: string, projectRoot: string | null }) => Promise<string | { workspaceName: string, projectRoot: string | null }>,
  *   renameWorkspace: (workspaceId: number, name: string) => Promise<{ name: string }>,
  *   createSession: (args: { workspaceId: number, name?: string }) => Promise<{ sessionName: string }>,
- *   setWorkspaceHidden: (args: { workspaceId: number, hidden: boolean }) => Promise<unknown>,
- *   setSessionHidden: (args: { workspaceId: number, sessionId: number, hidden: boolean }) => Promise<unknown>,
+ *   setWorkspaceArchived: (args: { workspaceId: number, archived: boolean }) => Promise<unknown>,
+ *   setSessionArchived: (args: { workspaceId: number, sessionId: number, archived: boolean }) => Promise<unknown>,
  * }} Port
  */
 /** {§web-host} {§web-configuration} {§web-package} @returns {import("@plurnk/plurnk-modules").DaemonModule<SetupPort, Port>} */
@@ -102,8 +102,8 @@ export default function createModule() {
                 const creation = pathname === "/workspaces/new";
                 const rename = pathname === "/workspaces/rename";
                 const sessionCreation = pathname === "/sessions/new";
-                const workspaceHide = pathname === "/workspaces/hide";
-                const sessionHide = pathname === "/sessions/hide";
+                const workspaceArchive = pathname === "/workspaces/archive";
+                const sessionArchive = pathname === "/sessions/archive";
                 const diagram = pathname === "/render/mermaid";
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
@@ -129,8 +129,8 @@ export default function createModule() {
                         else session.logout(req, res);
                         return;
                     }
-                    if (creation || rename || sessionCreation || workspaceHide || sessionHide) {
-                        const actionName = creation ? "create a workspace" : rename ? "rename a workspace" : sessionCreation ? "create a session" : workspaceHide ? "hide a workspace" : "hide a session";
+                    if (creation || rename || sessionCreation || workspaceArchive || sessionArchive) {
+                        const actionName = creation ? "create a workspace" : rename ? "rename a workspace" : sessionCreation ? "create a session" : workspaceArchive ? "archive a workspace" : "archive a session";
                         if (req.method !== "POST") {
                             res.setHeader("allow", "POST");
                             throw new RequestError(405, `Use POST to ${actionName}.`);
@@ -217,18 +217,18 @@ export default function createModule() {
                             }));
                             return;
                         }
-                        if (workspaceHide) {
+                        if (workspaceArchive) {
                             const targetName = fields.get("workspace");
                             if (!targetName) throw new RequestError(400, "Expected workspace name.");
                             const workspaces = await seam.listWorkspaces();
                             const ws = workspaces.find(({ name }) => name === targetName);
                             if (!ws) throw new RequestError(404, "Workspace not found.");
-                            try { await seam.setWorkspaceHidden({ workspaceId: ws.id, hidden: true }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not hide the workspace."); }
+                            try { await seam.setWorkspaceArchived({ workspaceId: ws.id, archived: true }); }
+                            catch (cause) { throw refusal(cause, "The daemon could not archive the workspace."); }
                             redirect(res, "/~/");
                             return;
                         }
-                        if (sessionHide) {
+                        if (sessionArchive) {
                             const targetName = fields.get("workspace");
                             const targetSession = fields.get("session");
                             if (!targetName || !targetSession) throw new RequestError(400, "Expected workspace and session name.");
@@ -238,8 +238,8 @@ export default function createModule() {
                             const workspaceSessions = await seam.listSessions(ws.id);
                             const target = workspaceSessions.find(({ name }) => name === targetSession);
                             if (!target) throw new RequestError(404, "Session not found.");
-                            try { await seam.setSessionHidden({ workspaceId: ws.id, sessionId: target.id, hidden: true }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not hide the session."); }
+                            try { await seam.setSessionArchived({ workspaceId: ws.id, sessionId: target.id, archived: true }); }
+                            catch (cause) { throw refusal(cause, "The daemon could not archive the session."); }
                             const path = directoryPath({ kind: "workspace", workspace: ws.name });
                             if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
                             redirect(res, path);

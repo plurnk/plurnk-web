@@ -35,7 +35,7 @@ export default async function verifySemanticContent(t) {
                     const row = (id) => list.locator(`[data-message-id="${id}"]`);
                     const field = (item, name) => item.locator(`[data-plurnk-field="${name}"]`);
                     const glyph = (item) => field(item, "heading").evaluate((element) => getComputedStyle(element, "::before").content);
-                    const glyphs = { FIND: "🔎", READ: "📖", EDIT: "📝", COPY: "🖨️", MOVE: "📦", KILL: "🗑️", WAIT: "⏳", WORK: "🐜", FORK: "🔱", BARE: "☁️", WARN: "⚠️", FAIL: "⛔", INFO: "📌", sh: "⚙️", mcp: "⚙️", schedule: "⚙️", members: "⚙️" };
+                    const glyphs = { FIND: "🔎", READ: "📖", EDIT: "📝", COPY: "🖨️", MOVE: "📦", KILL: "🗑️", WAIT: "⏳", WORK: "🐜", FORK: "🔱", BARE: "☁️", TODO: "🚧", WARN: "⚠️", FAIL: "⛔", INFO: "📌", sh: "⚙️", mcp: "⚙️", schedule: "⚙️", members: "⚙️" };
                     const names = Object.keys(glyphs);
                     const messages = names.flatMap((name) => [
                         call(name, name, { ...selection("README.md", [1, -1], "/mudkips/"), aside: `Actual ${name} aside` }),
