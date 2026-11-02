@@ -10,8 +10,6 @@ import { directoryPath, parseDirectory } from "../ai.plurnk/directory-addresses.
 import createModule from "../ai.plurnk/module.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-process.env.PLURNK_AUTH = "0";
-
 const directories = [
     [{ kind: "daemon" }, "/~/"],
     ...[

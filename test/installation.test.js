@@ -191,7 +191,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     await verifySessionQuestions({ t, withDaemon });
     await verifySharedReview({ t, withDaemon, consumer });
 
-    await t.test("{§web-host} disabled and invalid settings do not claim root", async () => {
+    await t.test("{§web-host} {§web-configuration} disabled and invalid settings do not claim root; contained settings withhold only their part", async () => {
         for (const value of ["0", "invalid"]) {
             await withDaemon({ PLURNK_WEB_ENABLED: value }, async (base, daemon) => {
                 const res = await fetch(base);
@@ -203,6 +203,15 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
                 }
             });
         }
+        await withDaemon({ PLURNK_AUTH: "0", PLURNK_WEB_DIAGRAM_THREADS: "0" }, async (base, daemon) => {
+            assert.equal((await fetch(base)).status, 200);
+            assert.equal((await fetch(new URL("/render/mermaid", base), {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ source: "flowchart LR\n A-->B" }),
+            })).status, 503);
+            assert.match(daemon.stdout() + daemon.stderr(), /PLURNK_WEB_DIAGRAM_THREADS/u);
+        });
     });
 
     await t.test("{§web-assets} missing packaged bytes fail startup", async () => {

@@ -36,7 +36,7 @@ export default class Session {
      * @param {import("@plurnk/plurnk-contracts").CredentialAuthority} credentials
      * @param {{ clientId: string, clientSecret: string }} registration
      * @param {import("@plurnk/plurnk-contracts").CredentialFace} face
-     * @param {{ ttl: number }} limits
+     * @param {{ ttl: number | null }} limits
      */
     constructor(credentials, registration, face, limits) {
         this.#credentials = credentials;
@@ -147,6 +147,7 @@ export default class Session {
             : directory === null ? null : directoryPath(directory);
         if (target === null) throw new RequestError(400, "Invalid return page.");
         if (this.admitted(req)) { redirect(res, target); return; }
+        if (this.#limits.ttl === null) throw new RequestError(503, "Browser sign-in is unavailable because PLURNK_WEB_LOGIN_TTL_SEC is invalid.");
         const { server } = await this.#metadata();
         if (!server.authorization_endpoint) throw new Error("The daemon's authorization metadata omits its authorization endpoint.");
 

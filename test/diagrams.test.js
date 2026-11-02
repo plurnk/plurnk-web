@@ -7,7 +7,7 @@ import { Piscina } from "piscina";
 import createModule from "../ai.plurnk/module.js";
 
 async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
-    const env = { PLURNK_AUTH: "0", ...overrides };
+    const { PLURNK_AUTH = "0", ...env } = overrides;
     const original = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
     Object.assign(process.env, env);
     const module = createModule();
@@ -17,7 +17,7 @@ async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
     }
     const claims = { kind: "session", clientId: "plurnk-web", scopes: ["acp"] };
     const credentials = { registerClient: () => ({ clientId: "plurnk-web", clientSecret: "test-only" }),
-        face: () => ({ issuer: () => "http://test.invalid" }), onRevoked: () => unsubscribe,
+        face: () => PLURNK_AUTH === "1" ? { issuer: () => "http://test.invalid" } : null, onRevoked: () => unsubscribe,
         verify: (token) => token === "valid" ? claims : null };
     let handler;
     await module.setup({ credentials });

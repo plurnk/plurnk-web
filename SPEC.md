@@ -30,7 +30,7 @@ does not depend on this package. More-specific mounts retain their ownership.
 | Boundary | Contract |
 |---|---|
 | Module choices | `ai.plurnk/.env.defaults` declares enablement, browser approval mode, reasoning-preview retention, the sign-in time limit, workspace creation limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
-| Invalid input | Refuse the affected module through the host's configuration diagnostic. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. Disabled web does not inspect unused web settings. |
+| Invalid input | An invalid `PLURNK_WEB_ENABLED` refuses the module. Other invalid web settings are reported in `module.contained` and withhold only the part each configures (503 when requested), leaving the rest of the module operational. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. Disabled web does not inspect unused web settings. |
 | Other owners | Consume daemon authentication and credential policy through their existing configuration and public seams, never web-owned substitutes. |
 | Browser | Receives only explicit public document projections, not the environment, credentials or a second set of deployment defaults. Vite compiles assets independently of operator configuration. |
 
