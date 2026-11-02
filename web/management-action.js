@@ -1,6 +1,10 @@
+import { Validator } from "@plurnk/plurnk-contracts";
 import { PROTOCOL_VERSION, client, createHttpStream, methods } from "./session-agent.js";
 import accessHeaders from "./access-headers.js";
 import problemFromResponse from "./problem-response.js";
+
+// Firefox delays resolving fetch() on chunked text/event-stream responses until the first body byte arrives.
+const SSE_HEADERS_FLUSH_MS = 25;
 
 /** {§web-session-commands} Isolated action delivery never owns observation, conversation or work lifetime. A refusal, before the
  * stream opens or as an ACP error, is the daemon's Problem: the thrown Error carries it as its cause.
@@ -9,7 +13,6 @@ import problemFromResponse from "./problem-response.js";
  * @returns {Promise<unknown>}
  */
 export default async function managementAction(kind, params, sessionId, auth, signal) {
-    const { Validator } = await import("@plurnk/plurnk-contracts");
     /** @param {unknown} value */
     const refused = (value) => {
         const problem = Validator.assertProblemDetails(value);
@@ -19,14 +22,18 @@ export default async function managementAction(kind, params, sessionId, auth, si
     signal.throwIfAborted();
     /** @type {Error | undefined} */
     let httpFailure;
+    let connected = false;
     const needsConnSse = kind === "providers/list";
     /** @type {typeof fetch} */
     const acpFetch = async (input, init) => {
         if (init?.method === "DELETE") {
+            if (connected && !signal.aborted && httpFailure === undefined && kind !== "session/cancel") {
+                await fetch(input, init).catch(() => {});
+            }
             return new Response(null, { status: 204 });
         }
         const reqHeaders = new Headers(init?.headers);
-        if (!needsConnSse && init?.method === "GET" && !reqHeaders.has("acp-session-id")) {
+        if (init?.method === "GET" && ((!needsConnSse && !reqHeaders.has("acp-session-id")) || kind === "session/cancel")) {
             return new Response(new ReadableStream({
                 start(controller) {
                     if (init.signal) {
@@ -40,9 +47,53 @@ export default async function managementAction(kind, params, sessionId, auth, si
                 headers: { "Content-Type": "text/event-stream" },
             });
         }
+        const fetchSignal = AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]);
+        if (init?.method === "GET" && navigator.userAgent.includes("Firefox")) {
+            const fetchPromise = fetch(input, { ...init, signal: fetchSignal });
+            const initial = await Promise.race([
+                fetchPromise,
+                new Promise((resolve) => setTimeout(() => resolve(null), SSE_HEADERS_FLUSH_MS)),
+            ]);
+            if (initial !== null) {
+                if (!initial.ok && httpFailure === undefined) {
+                    const refusalError = await problemFromResponse(initial.clone());
+                    httpFailure = refusalError !== null
+                        ? refusalError
+                        : Object.assign(new Error(initial.statusText || `Request failed (${initial.status}).`), { status: initial.status });
+                }
+                return initial;
+            }
+            /** @type {ReadableStreamDefaultReader<Uint8Array> | undefined} */
+            let reader;
+            return new Response(new ReadableStream({
+                async pull(controller) {
+                    if (!reader) {
+                        const resolved = await fetchPromise;
+                        if (!resolved.ok && httpFailure === undefined) {
+                            const refusalError = await problemFromResponse(resolved.clone());
+                            httpFailure = refusalError !== null
+                                ? refusalError
+                                : Object.assign(new Error(resolved.statusText || `Request failed (${resolved.status}).`), { status: resolved.status });
+                        }
+                        if (!resolved.ok || !resolved.body) {
+                            controller.error(httpFailure ?? new Error("ACP SSE stream failed."));
+                            return;
+                        }
+                        reader = resolved.body.getReader();
+                    }
+                    const { done, value } = await reader.read();
+                    if (done) controller.close();
+                    else controller.enqueue(value);
+                },
+                cancel: (reason) => reader ? reader.cancel(reason) : undefined,
+            }), {
+                status: 200,
+                headers: { "Content-Type": "text/event-stream" },
+            });
+        }
         const response = await fetch(input, {
             ...init,
-            signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]),
+            signal: fetchSignal,
         });
         if (!response.ok && httpFailure === undefined) {
             const refusalError = await problemFromResponse(response.clone());
@@ -67,6 +118,7 @@ export default async function managementAction(kind, params, sessionId, auth, si
             protocolVersion: PROTOCOL_VERSION,
             info: { name: "@plurnk/plurnk-web", version: "1.0.0" },
         });
+        connected = true;
         signal.throwIfAborted();
         let outcome;
         if (kind === "providers/list") {

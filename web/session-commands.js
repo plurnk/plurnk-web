@@ -1,4 +1,5 @@
 import { $, $$, the } from "on_the_money";
+import { Validator } from "@plurnk/plurnk-contracts";
 import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
 import describeFailure from "./failure.js";
 
@@ -75,8 +76,6 @@ export default function sessionCommands(controls, actions) {
             } else if (name === "stop") {
                 message = await actions.stop();
             } else {
-                const { Validator } = await import("@plurnk/plurnk-contracts");
-                signal.throwIfAborted();
                 if (name === "models") {
                     const { aliases: matches, catalog } = await listModels(call, rest);
                     signal.throwIfAborted();

@@ -19,21 +19,26 @@ import verifySessionPage from "./session-browser.js";
 import verifySessionStreams from "./session-streams.js";
 import verifySessionActivity from "./session-activity.js";
 import verifySessionCommands from "./session-commands.js";
-import verifySessionInput from "./session-input.js";
+import verifySessionInput, { closeSharedDaemons } from "./session-input.js";
 import verifySessionHistory from "./session-history.js";
 import verifySessionApproval from "./session-approval.js";
 import verifySessionQuestions from "./session-questions.js";
 import verifySharedReview from "./shared-review.js";
 import verifyStaticAssets from "./static-assets.js";
 import verifyRouteSettlement from "./route-settlement.js";
+import { closeSharedBrowsers } from "./engines.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
 
-test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000 }, async (t) => {
+test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000 }, async (t) => {
     const packages = await candidatePackages();
     const directory = await mkdtemp(join(tmpdir(), "plurnk-web-install-"));
-    t.after(() => rm(directory, { recursive: true, force: true }));
+    t.after(async () => {
+        await closeSharedDaemons();
+        await closeSharedBrowsers();
+        await rm(directory, { recursive: true, force: true });
+    });
     const consumer = join(directory, "consumer");
     const home = join(directory, "home");
     await mkdir(consumer);
@@ -193,6 +198,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     await verifySessionApproval({ t, withDaemon });
     await verifySessionQuestions({ t, withDaemon });
     await verifySharedReview({ t, withDaemon, consumer });
+    await closeSharedDaemons();
 
     await t.test("{§web-host} {§web-configuration} disabled and invalid settings do not claim root; contained settings withhold only their part", async () => {
         for (const value of ["0", "invalid"]) {

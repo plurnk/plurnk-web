@@ -1,4 +1,5 @@
 import { $, the } from "on_the_money";
+import { Validator } from "@plurnk/plurnk-contracts";
 import entryOutput from "./entry-output.js";
 
 /** {§web-session-streams} Only supplied conclusions become observed outcomes.
@@ -24,7 +25,6 @@ export default function sessionStreams(root, read) {
                 || !Number.isSafeInteger(sessionId) || sessionId <= 0 || !target) {
                 throw new Error("Stream event has no resource identity.");
             }
-            const { Validator } = await import("@plurnk/plurnk-contracts");
             const result = Validator.assertOperationResult(plurnk.result);
             const scheme = typeof plurnk.scheme === "string"
                 ? plurnk.scheme

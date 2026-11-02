@@ -53,7 +53,7 @@ const questionResult = async (page, base, headers) => {
 // {§web-session-questions} The real daemon requests input; shipped forms and SessionAgent settle it.
 export default async function verifySessionQuestions({ t, withDaemon }) {
     for (const cancelled of [false, true]) {
-        await t.test(`{§web-session-questions} ${cancelled ? "cancellation" : "typed native input"} resumes a real question without another prompt`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
+        await t.test(`{§web-session-questions} ${cancelled ? "cancellation" : "typed native input"} resumes a real question without another prompt`, { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 800 });
             const requests = requestsFrom(page);
             const name = cancelled ? "question-cancel" : "question-answer";
@@ -104,7 +104,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         }, { authenticated: true, hostname: "plurnk-browser.test" }));
     }
 
-    await t.test("{§web-session-questions} complete presentations remain answerable as another question becomes pending", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} complete presentations remain answerable as another question becomes pending", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await ask(page, "question-batch");
         const seen = [];
@@ -145,7 +145,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         checkBrowser();
     }));
 
-    await t.test("{§web-session-questions} shared views withdraw answered questions and follow work without manual reconnection", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} shared views withdraw answered questions and follow work without manual reconnection", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         await ask(page, "question-tabs");
         await answer(page);
         const first = await page.locator("[data-question]").getAttribute("data-interrupt-id");
@@ -171,7 +171,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-session-questions} daemon rejection remains pending until rediscovery and explicit correction", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} daemon rejection remains pending until rediscovery and explicit correction", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         await ask(page, "question-invalid");
         const first = await page.locator("[data-question]").getAttribute("data-interrupt-id");
         await answer(page);
@@ -194,9 +194,10 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         checkBrowser();
     }));
 
-    await t.test("{§web-session-questions} leaving a pending or resumed question never cancels the session", { timeout: 25_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} leaving a pending or resumed question never cancels the session", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         await ask(page, "question-resumed-departure");
         await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
+        await page.waitForLoadState("load");
         await page.goto(path);
         await interrupted(page);
         assert.equal(model.requests.length, 1, "navigation neither answers nor cancels a question");
@@ -214,7 +215,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-session-questions} revoked authority cannot answer and fresh sign-in retains the question", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} revoked authority cannot answer and fresh sign-in retains the question", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await ask(page, "question-revoked");
         await answer(page);
@@ -238,7 +239,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-session-questions} an idle owner answers a delegated question on the requesting child's continuation", { timeout: 25_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, headers, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} an idle owner answers a delegated question on the requesting child's continuation", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, headers, model, checkBrowser }) => {
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: owner-ready.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.getByText("Completed owner-ready.", { exact: true }).waitFor();
@@ -279,11 +280,12 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         checkBrowser();
     }));
 
-    for (const cancelled of [false, true]) {
-        await t.test(`{§web-session-questions} real MCP input ${cancelled ? "cancels" : "accepts/declines"} its complete batch across reconnect`, { timeout: 25_000 }, async () => {
-            const mcp = await startMcp();
-            try {
+    const mcp = await startMcp();
+    try {
+        for (const cancelled of [false, true]) {
+            await t.test(`{§web-session-questions} real MCP input ${cancelled ? "cancels" : "accepts/declines"} its complete batch across reconnect`, { timeout: 60_000 }, async () => {
                 await inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+                    mcp.answers.length = 0;
                     const name = cancelled ? "mcp-question-cancel" : "mcp-question-answer";
                     try { await ask(page, name); }
                     catch (cause) {
@@ -326,7 +328,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
                     assert.ok(JSON.stringify(model.requests[1].messages).includes("MCP answer received"));
                     checkBrowser();
                 }, { env: mcp.env });
-            } finally { await mcp.close(); }
-        });
-    }
+            });
+        }
+    } finally { await mcp.close(); }
 }

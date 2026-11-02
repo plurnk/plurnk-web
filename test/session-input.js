@@ -1,17 +1,53 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer, request } from "node:http";
-import { chromium } from "playwright";
+import { after } from "node:test";
 import SessionAgent from "../web/session-agent.js";
+import disconnectProxy from "./disconnect-proxy.js";
+import { engines, launchBrowser } from "./engines.js";
 import startModel from "./model-fixture.js";
-import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
+import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 
-export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser" } = {}) {
-    const model = await startModel(modelOptions);
-    const secret = crypto.randomUUID();
-    const workspace = `input-${crypto.randomUUID()}`;
-    try {
-        await withDaemon({ ...model.env, ...env, PLURNK_AUTH: authenticated ? "1" : "0", PLURNK_PASS: "compose-password", PLURNK_SECRET: secret }, async (base) => {
+/**
+ * @typedef {object} SharedDaemonEntry
+ * @property {Awaited<ReturnType<typeof startModel>>} model
+ * @property {string} secret
+ * @property {string} base
+ * @property {Record<string, string>} headers
+ * @property {() => Promise<void>} close
+ */
+
+/** @type {Map<string, Promise<SharedDaemonEntry>>} */
+const sharedDaemons = new Map();
+
+/**
+ * Reuse one warm daemon + model fixture per `(authenticated, env)` configuration across isolated workspace tests.
+ * @param {(overrides: Record<string, string>, verify: (base: string) => Promise<void>) => Promise<void>} withDaemon
+ * @param {boolean} authenticated
+ * @param {Record<string, string>} env
+ */
+async function acquireSharedDaemon(withDaemon, authenticated, env) {
+    const key = JSON.stringify({
+        authenticated,
+        env: Object.entries(env).sort(([a], [b]) => a.localeCompare(b)),
+    });
+    let pending = sharedDaemons.get(key);
+    if (!pending) {
+        pending = (async () => {
+            const model = await startModel();
+            const secret = crypto.randomUUID();
+            const ready = Promise.withResolvers();
+            const release = Promise.withResolvers();
+            const done = withDaemon(
+                { ...model.env, ...env, PLURNK_AUTH: authenticated ? "1" : "0", PLURNK_PASS: "compose-password", PLURNK_SECRET: secret },
+                async (base) => {
+                    ready.resolve(base);
+                    await release.promise;
+                },
+            );
+            done.catch((error) => ready.reject(error));
+            const base = await ready.promise;
+            /** @type {Record<string, string>} */
             const headers = {};
             if (authenticated) {
                 const response = await fetch(new URL("/oauth/token", base), {
@@ -20,56 +56,81 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                 assert.equal(response.status, 200);
                 headers.Authorization = `Bearer ${(await response.json()).access_token}`;
             }
-            const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers });
-            const initialized = await setup.send({
-                workspace,
-                action: selector === null
-                    ? { kind: "session/new" }
-                    : { kind: "session/set_config_option", configId: "model", value: selector },
-            });
-            assert.equal(initialized.result.ok, true, JSON.stringify(initialized.result));
-            const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${hostname} 127.0.0.1`, "--no-proxy-server"] });
-            try {
-                const context = await browser.newContext();
-                const checkBrowser = browserDiagnostics(context);
-                const frames = [];
-                context.on("response", (response) => {
-                    const path = new URL(response.url()).pathname;
-                    if (path !== "/acp") return;
-                    const record = { path, events: [] };
-                    frames.push(record);
-                    void response.text().then((body) => {
-                        record.events = body.split("\n\n").filter((frame) => frame.startsWith("data: ")).map((frame) => {
-                            const event = JSON.parse(frame.slice(6));
-                            const update = event.params?.update;
-                            return { method: event.method, sessionUpdate: update?.sessionUpdate, messageId: update?.messageId, toolCallId: update?.toolCallId };
-                        });
-                    }).catch((error) => { record.error = String(error); });
-                });
-                const page = await context.newPage();
-                const address = new URL(`/~/${workspace}@user/`, base);
-                address.hostname = hostname;
-                const path = address.href;
-                await page.goto(path);
-                if (authenticated) {
-                    await page.getByLabel("Password", { exact: true }).fill("compose-password");
-                    await page.getByRole("button", { name: "Continue", exact: true }).click();
-                    await page.waitForURL(path);
-                }
-                await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-                try { await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers, secret }); }
-                catch (cause) {
-                    const document = page.isClosed() ? "Page closed" : await page.locator("main").textContent();
-                    const message = `Session journey failed: ${JSON.stringify({ document, frames, modelErrors: model.errors.map(String) })}`;
-                    try { checkBrowser(); }
-                    catch (diagnostic) { throw new AggregateError([cause, diagnostic], message, { cause: diagnostic }); }
-                    throw new Error(message, { cause });
-                }
-                assert.deepEqual(model.errors, []);
-            } finally { await browser.close(); }
-        });
-    } finally { await model.close(); }
+            return {
+                model,
+                secret,
+                base,
+                headers,
+                async close() {
+                    release.resolve();
+                    await Promise.allSettled([done, model.close()]);
+                },
+            };
+        })();
+        sharedDaemons.set(key, pending);
+    }
+    return pending;
 }
+
+export async function closeSharedDaemons() {
+    const entries = [...sharedDaemons.values()];
+    sharedDaemons.clear();
+    await Promise.allSettled(entries.map(async (entry) => (await entry).close()));
+}
+
+after(closeSharedDaemons);
+
+export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser" } = {}) {
+    const shared = await acquireSharedDaemon(withDaemon, authenticated, env);
+    const { model, secret, base } = shared;
+    for (const engine of engines) {
+        model.reset(modelOptions);
+        const headers = { ...shared.headers };
+        const workspace = `input-${engine.name()}-${crypto.randomUUID()}`;
+        const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers });
+        const initialized = await setup.send({
+            workspace,
+            action: selector === null
+                ? { kind: "session/new" }
+                : { kind: "session/set_config_option", configId: "model", value: selector },
+        });
+        assert.equal(initialized.result.ok, true, JSON.stringify(initialized.result));
+        const hostProxy = hostname === "127.0.0.1" ? null : await disconnectProxy(base);
+        const browser = await launchBrowser(engine);
+        try {
+            const context = await browser.newContext(hostProxy ? { proxy: { server: hostProxy.url } } : undefined);
+            const checkBrowser = browserDiagnostics(context);
+            const page = await context.newPage();
+            const address = new URL(`/~/${workspace}@user/`, base);
+            address.hostname = hostname;
+            const path = address.href;
+            await page.goto(path);
+            if (authenticated) {
+                await page.getByLabel("Password", { exact: true }).fill("compose-password");
+                await page.getByRole("button", { name: "Continue", exact: true }).click();
+                await page.waitForURL(path);
+                if (hostname !== "127.0.0.1" && engine.name() === "firefox") {
+                    checkBrowser([/^warning \/oauth\/authorize: .*Password fields present on an insecure \(http:\/\/\) page/u]);
+                }
+            }
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+            try { await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers, secret, engine }); }
+            catch (cause) {
+                const document = page.isClosed() ? "Page closed" : await page.locator("main").textContent();
+                const message = `Session journey failed (${engine.name()}): ${JSON.stringify({ document, modelErrors: model.errors.map(String) })}`;
+                try { checkBrowser(); }
+                catch (diagnostic) { throw new AggregateError([cause, diagnostic], message, { cause: diagnostic }); }
+                throw new Error(message, { cause });
+            }
+            assert.deepEqual(model.errors, []);
+        } finally {
+            setup.close();
+            await browser.close();
+            await hostProxy?.close();
+        }
+    }
+}
+
 
 // {§web-session-input} Exercise the shipped controls against the real daemon, not an injected SDK.
 export default async function verifySessionInput({ t, withDaemon }) {
@@ -158,268 +219,226 @@ export default async function verifySessionInput({ t, withDaemon }) {
             checkBrowser();
         }, { hostname }));
     }
-    await t.test("{§web-session-input} native Send continues an observed session and Stop explicitly cancels its work", async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
-                const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user" });
-                await setup.send({ workspace: "composer", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                const browser = await chromium.launch();
-                try {
-                    const context = await browser.newContext({ viewport: { width: 320, height: 700 } });
-                    const checkBrowser = browserDiagnostics(context);
-                    const page = await context.newPage();
-                    const inputs = [];
-                    page.on("request", (request) => {
-                        const body = request.postDataJSON();
-                        if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
-                            inputs.push(body);
+    await t.test("{§web-session-input} native Send continues an observed session and Stop explicitly cancels its work", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        await page.setViewportSize({ width: 320, height: 700 });
+        const inputs = [];
+        page.on("request", (request) => {
+            const body = request.postDataJSON();
+            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
+                inputs.push(body);
+            }
+        });
+        assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
+        const text = page.getByRole("textbox", { name: "Message", exact: true });
+        const send = page.getByRole("button", { name: "Send", exact: true });
+        const stop = page.getByRole("button", { name: "Stop", exact: true });
+        assert.equal(await send.isEnabled(), true);
+        assert.equal(await stop.count(), 0, "idle work has no Stop in the accessible controls");
+        assert.equal(model.requests.length, 0, "opening a composer remains passive");
+        await text.fill("   \n   ");
+        await send.click();
+        assert.equal(await text.evaluate((element) => element.validity.customError), true);
+        assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
+        assert.equal(inputs.length, 0, "whitespace-only messages are not submitted");
+
+        const body = "  Lifecycle fixture: held-input.\nKeep this exact text.  ";
+        await text.fill(body);
+        await send.click();
+        await page.getByText("Considering held-input.", { exact: true }).waitFor({ state: "attached" });
+        assert.equal(await text.inputValue(), "", "daemon admission clears the submitted draft");
+        assert.equal(await send.isEnabled(), true, "a running session can receive a follow-up");
+        assert.equal(await stop.isEnabled(), true);
+        assert.equal(inputs[0].params.prompt[0].text, body);
+        assert.equal(inputs[0].params._meta.plurnk.reasoning, "link");
+        assert.equal(inputs[0].params._meta.plurnk.workspace, undefined);
+
+        await text.fill("Lifecycle fixture: follow-up.");
+        await send.click();
+        await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
+        assert.equal(await send.isEnabled(), true, "accepted input is acknowledged before the next model turn");
+        assert.equal(model.requests.length, 1, "handoff neither restarts nor cancels the running inference");
+        assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
+            "{§web-session-reasoning} delivery handoff clears the old live preview");
+        assert.equal(JSON.stringify(inputs[1].params.prompt).includes("Considering held-input."), false);
+        assert.equal(await page.locator('#session-status [data-text="inbox"]').textContent(), "1");
+        const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
+        assert.deepEqual(accepted, inputs.map((input) => input.params.messageId), "accepted message identities belong to their conversation entries, not a second inventory");
+        await page.reload();
+        await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).waitFor();
+        assert.deepEqual(await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), accepted);
+        assert.equal(model.requests.length, 1, "fresh replay includes the accepted follow-up without resubmitting it");
+        assert.equal(await page.locator('#session-status [data-text="inbox"]').textContent(), "1", "accepted-unobserved state survives attachment");
+        model.release("held-input");
+        await page.getByText("Completed follow-up.", { exact: true }).waitFor();
+        assert.equal(await text.inputValue(), "");
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected"
+            && document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
+        assert.equal(model.requests.length, 2);
+        assert.equal(await stop.count(), 0, "completed work has no Stop");
+        assert.equal(await page.locator('#session-status [data-text="inbox"]').textContent(), "0");
+        assert.equal(await page.locator('[data-status-field="inbox"]').isVisible(), false, "observed messages clear the pending indicator");
+        assert.equal(await page.locator('[data-message-role="user"]').count(), 2);
+        assert.equal(await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).count(), 1, "arrival does not repeat accepted text");
+        assert.equal(inputs.length, 2);
+        const history = await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
+        assert.ok(history.length > 2 && history.every(Boolean));
+        assert.equal(new Set(history).size, history.length);
+        const turnTexts = await page.locator("[data-messages] > li").allTextContents();
+        const firstPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: held-input."));
+        const firstDoneIdx = turnTexts.findIndex((entry) => entry.includes("Completed held-input."));
+        const followUpPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: follow-up."));
+        const followUpDoneIdx = turnTexts.findIndex((entry) => entry.includes("Completed follow-up."));
+        assert.ok(firstPromptIdx !== -1 && firstPromptIdx < firstDoneIdx, "initial prompt heads its turn");
+        assert.ok(firstDoneIdx < followUpPromptIdx, "accepted follow-up stays after the turn that was running when it arrived");
+        assert.ok(followUpPromptIdx < followUpDoneIdx, "accepted follow-up heads the turn that observes it");
+        await page.reload();
+        await page.getByText("Completed follow-up.", { exact: true }).waitFor();
+        assert.deepEqual(await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), history);
+        assert.equal(model.requests.length, 2);
+
+        await text.fill("Lifecycle fixture: held-input-stop.");
+        await send.click();
+        await page.getByText("Considering held-input-stop.", { exact: true }).waitFor({ state: "attached" });
+        await text.fill("Lifecycle fixture: cancelled-follow-up.");
+        await send.click();
+        await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
+        await text.fill("Unsent draft survives Stop.");
+        await stop.click();
+        await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled"
+            && document.querySelector("#session-status")?.dataset.connection === "connected");
+        assert.equal(await text.inputValue(), "Unsent draft survives Stop.");
+        assert.equal(await stop.count(), 0, "confirmed cancellation removes Stop");
+        assert.equal(model.requests.length, 3);
+        const action = inputs.at(-1);
+        assert.equal(action.params.sessionId, inputs[0].params.sessionId);
+        assert.equal(action.method, "session/cancel");
+        assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false);
+        assert.equal(action.params.prompt, undefined, "cancellation does not resubmit conversation history");
+        await text.fill("Lifecycle fixture: after-stop.");
+        await send.click();
+        await page.getByText("Completed after-stop.", { exact: true }).waitFor();
+        for (const pass of ["live", "reloaded"]) {
+            if (pass === "reloaded") {
+                await page.reload();
+                await page.getByText("Completed after-stop.", { exact: true }).waitFor();
+            }
+            const items = await page.locator("[data-messages] > li").allTextContents();
+            const stopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: held-input-stop."));
+            const cancelledFollowIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: cancelled-follow-up."));
+            const afterStopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: after-stop."));
+            const afterStopDoneIdx = items.findIndex((entry) => entry.includes("Completed after-stop."));
+            assert.ok(stopPromptIdx !== -1 && stopPromptIdx < cancelledFollowIdx, `${pass}: cancelled follow-up follows its loop's prompt`);
+            assert.ok(cancelledFollowIdx < afterStopPromptIdx, `${pass}: cancelled loop's unobserved follow-up does not float below a later loop`);
+            assert.ok(afterStopPromptIdx < afterStopDoneIdx, `${pass}: subsequent loop prompt heads its turn`);
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
+        checkBrowser();
+    }));
+
+    await t.test("{§web-session-input} a manual approval stays pending; Stop and a subsequent message need no approval-state workaround", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        const text = page.getByRole("textbox", { name: "Message", exact: true });
+        const send = page.getByRole("button", { name: "Send", exact: true });
+        const stop = page.getByRole("button", { name: "Stop", exact: true });
+        await text.fill("Lifecycle fixture: approval-input.");
+        await send.click();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
+        assert.equal(await text.inputValue(), "");
+        assert.equal(await send.isDisabled(), true);
+        assert.equal(await stop.isEnabled(), true);
+        assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
+        assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "only the user can choose a decision");
+        assert.equal(model.requests.length, 1);
+        assert.equal(await page.locator('[data-message-role="tool"]').count(), 0, "no approval is fabricated");
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
+        assert.equal(model.requests.length, 1, "reopening does not answer the gate");
+        await text.fill("A draft to keep.");
+        await stop.click();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected"
+            && document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled");
+        assert.equal(await text.inputValue(), "A draft to keep.");
+        await text.fill("Lifecycle fixture: after-stop.");
+        await send.click();
+        await page.getByText("Completed after-stop.", { exact: true }).waitFor();
+        assert.equal(model.requests.length, 2);
+        checkBrowser();
+    }, { env: { PLURNK_WEB_YOLO: "0" } }));
+
+    await t.test("{§web-session-input} Send waits while an arriving interrupt is not yet presented", () => inputPage(withDaemon, async ({ page, base, workspace, model, checkBrowser }) => {
+        // The message Run's response stays open after its interrupt arrives, until the journey releases it.
+        const arrived = Promise.withResolvers();
+        const release = Promise.withResolvers();
+        const proxy = createServer((req, res) => {
+            let reqBody = "";
+            req.on("data", (chunk) => { reqBody += chunk; });
+            req.on("end", () => {
+                const isSseGet = req.url === "/acp" && req.method === "GET" && Boolean(req.headers["acp-session-id"]);
+                const upstream = request(new URL(req.url, base), { method: req.method, headers: req.headers }, (response) => {
+                    res.writeHead(response.statusCode, response.headers);
+                    res.flushHeaders();
+                    if (!isSseGet) {
+                        response.pipe(res);
+                        return;
+                    }
+                    let buffer = "";
+                    let gateChain = Promise.resolve();
+                    response.setEncoding("utf8");
+                    response.on("data", (chunk) => {
+                        buffer += chunk;
+                        const parts = buffer.split("\n\n");
+                        buffer = parts.pop() ?? "";
+                        for (const frame of parts) {
+                            const payload = `${frame}\n\n`;
+                            if (/"method":"session\/request_permission"/u.test(frame)) {
+                                arrived.resolve();
+                                gateChain = gateChain.then(() => release.promise).then(() => {
+                                    if (!res.destroyed) res.write(payload);
+                                });
+                            } else {
+                                gateChain = gateChain.then(() => {
+                                    if (!res.destroyed) res.write(payload);
+                                });
+                            }
                         }
                     });
-                    await page.goto(new URL("/~/composer@user/", base).href);
-                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-                    assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
-                    const text = page.getByRole("textbox", { name: "Message", exact: true });
-                    const send = page.getByRole("button", { name: "Send", exact: true });
-                    const stop = page.getByRole("button", { name: "Stop", exact: true });
-                    assert.equal(await send.isEnabled(), true);
-                    assert.equal(await stop.count(), 0, "idle work has no Stop in the accessible controls");
-                    assert.equal(model.requests.length, 0, "opening a composer remains passive");
-                    await text.fill("   \n   ");
-                    await send.click();
-                    assert.equal(await text.evaluate((element) => element.validity.customError), true);
-                    assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
-                    assert.equal(inputs.length, 0, "whitespace-only messages are not submitted");
-
-                    const body = "  Lifecycle fixture: held-input.\nKeep this exact text.  ";
-                    await text.fill(body);
-                    await send.click();
-                    await page.getByText("Considering held-input.", { exact: true }).waitFor({ state: "attached" });
-                    assert.equal(await text.inputValue(), "", "daemon admission clears the submitted draft");
-                    assert.equal(await send.isEnabled(), true, "a running session can receive a follow-up");
-                    assert.equal(await stop.isEnabled(), true);
-                    assert.equal(inputs[0].params.prompt[0].text, body);
-                    assert.equal(inputs[0].params._meta.plurnk.reasoning, "link");
-                    assert.equal(inputs[0].params._meta.plurnk.workspace, undefined);
-
-                    await text.fill("Lifecycle fixture: follow-up.");
-                    await send.click();
-                    await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
-                    assert.equal(await send.isEnabled(), true, "accepted input is acknowledged before the next model turn");
-                    assert.equal(model.requests.length, 1, "handoff neither restarts nor cancels the running inference");
-                    assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
-                        "{§web-session-reasoning} delivery handoff clears the old live preview");
-                    assert.equal(JSON.stringify(inputs[1].params.prompt).includes("Considering held-input."), false);
-                    assert.equal(await page.locator('#session-status [data-text="inbox"]').textContent(), "1");
-                    const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
-                    assert.deepEqual(accepted, inputs.map((input) => input.params.messageId), "accepted message identities belong to their conversation entries, not a second inventory");
-                    await page.reload();
-                    await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).waitFor();
-                    assert.deepEqual(await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), accepted);
-                    assert.equal(model.requests.length, 1, "fresh replay includes the accepted follow-up without resubmitting it");
-                    assert.equal(await page.locator('#session-status [data-text="inbox"]').textContent(), "1", "accepted-unobserved state survives attachment");
-                    model.release("held-input");
-                    await page.getByText("Completed follow-up.", { exact: true }).waitFor();
-                    assert.equal(await text.inputValue(), "");
-                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected"
-                        && document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
-                    assert.equal(model.requests.length, 2);
-                    assert.equal(await stop.count(), 0, "completed work has no Stop");
-                    assert.equal(await page.locator('#session-status [data-text="inbox"]').textContent(), "0");
-                    assert.equal(await page.locator('[data-status-field="inbox"]').isVisible(), false, "observed messages clear the pending indicator");
-                    assert.equal(await page.locator('[data-message-role="user"]').count(), 2);
-                    assert.equal(await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).count(), 1, "arrival does not repeat accepted text");
-                    assert.equal(inputs.length, 2);
-                    const history = await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
-                    assert.ok(history.length > 2 && history.every(Boolean));
-                    assert.equal(new Set(history).size, history.length);
-                    const turnTexts = await page.locator("[data-messages] > li").allTextContents();
-                    const firstPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: held-input."));
-                    const firstDoneIdx = turnTexts.findIndex((entry) => entry.includes("Completed held-input."));
-                    const followUpPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: follow-up."));
-                    const followUpDoneIdx = turnTexts.findIndex((entry) => entry.includes("Completed follow-up."));
-                    assert.ok(firstPromptIdx !== -1 && firstPromptIdx < firstDoneIdx, "initial prompt heads its turn");
-                    assert.ok(firstDoneIdx < followUpPromptIdx, "accepted follow-up stays after the turn that was running when it arrived");
-                    assert.ok(followUpPromptIdx < followUpDoneIdx, "accepted follow-up heads the turn that observes it");
-                    await page.reload();
-                    await page.getByText("Completed follow-up.", { exact: true }).waitFor();
-                    assert.deepEqual(await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), history);
-                    assert.equal(model.requests.length, 2);
-
-                    await text.fill("Lifecycle fixture: held-input-stop.");
-                    await send.click();
-                    await page.getByText("Considering held-input-stop.", { exact: true }).waitFor({ state: "attached" });
-                    await text.fill("Lifecycle fixture: cancelled-follow-up.");
-                    await send.click();
-                    await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
-                    await text.fill("Unsent draft survives Stop.");
-                    await stop.click();
-                    await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled"
-                        && document.querySelector("#session-status")?.dataset.connection === "connected");
-                    assert.equal(await text.inputValue(), "Unsent draft survives Stop.");
-                    assert.equal(await stop.count(), 0, "confirmed cancellation removes Stop");
-                    assert.equal(model.requests.length, 3);
-                    const action = inputs.at(-1);
-                    assert.equal(action.params.sessionId, inputs[0].params.sessionId);
-                    assert.equal(action.method, "session/cancel");
-                    assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false);
-                    assert.equal(action.params.prompt, undefined, "cancellation does not resubmit conversation history");
-                    await text.fill("Lifecycle fixture: after-stop.");
-                    await send.click();
-                    await page.getByText("Completed after-stop.", { exact: true }).waitFor();
-                    for (const pass of ["live", "reloaded"]) {
-                        if (pass === "reloaded") {
-                            await page.reload();
-                            await page.getByText("Completed after-stop.", { exact: true }).waitFor();
-                        }
-                        const items = await page.locator("[data-messages] > li").allTextContents();
-                        const stopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: held-input-stop."));
-                        const cancelledFollowIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: cancelled-follow-up."));
-                        const afterStopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: after-stop."));
-                        const afterStopDoneIdx = items.findIndex((entry) => entry.includes("Completed after-stop."));
-                        assert.ok(stopPromptIdx !== -1 && stopPromptIdx < cancelledFollowIdx, `${pass}: cancelled follow-up follows its loop's prompt`);
-                        assert.ok(cancelledFollowIdx < afterStopPromptIdx, `${pass}: cancelled loop's unobserved follow-up does not float below a later loop`);
-                        assert.ok(afterStopPromptIdx < afterStopDoneIdx, `${pass}: subsequent loop prompt heads its turn`);
-                    }
-                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                    assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
-                    assert.deepEqual(model.errors, []);
-                    checkBrowser();
-                } finally { await browser.close(); }
-            });
-        } finally { await model.close(); }
-    });
-
-    await t.test("{§web-session-input} a manual approval stays pending; Stop and a subsequent message need no approval-state workaround", async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
-                const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user" });
-                await setup.send({ workspace: "review", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                const browser = await chromium.launch();
-                try {
-                    const context = await browser.newContext();
-                    const checkBrowser = browserDiagnostics(context);
-                    const page = await context.newPage();
-                    await page.goto(new URL("/~/review@user/", base).href);
-                    const text = page.getByRole("textbox", { name: "Message", exact: true });
-                    const send = page.getByRole("button", { name: "Send", exact: true });
-                    const stop = page.getByRole("button", { name: "Stop", exact: true });
-                    await text.fill("Lifecycle fixture: approval-input.");
-                    await send.click();
-                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
-                    assert.equal(await text.inputValue(), "");
-                    assert.equal(await send.isDisabled(), true);
-                    assert.equal(await stop.isEnabled(), true);
-                    assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
-                    assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "only the user can choose a decision");
-                    assert.equal(model.requests.length, 1);
-                    assert.equal(await page.locator('[data-message-role="tool"]').count(), 0, "no approval is fabricated");
-                    await page.reload();
-                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
-                    assert.equal(model.requests.length, 1, "reopening does not answer the gate");
-                    await text.fill("A draft to keep.");
-                    await stop.click();
-                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected"
-                        && document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled");
-                    assert.equal(await text.inputValue(), "A draft to keep.");
-                    await text.fill("Lifecycle fixture: after-stop.");
-                    await send.click();
-                    await page.getByText("Completed after-stop.", { exact: true }).waitFor();
-                    assert.equal(model.requests.length, 2);
-                    assert.deepEqual(model.errors, []);
-                    checkBrowser();
-                } finally { await browser.close(); }
-            });
-        } finally { await model.close(); }
-    });
-
-    await t.test("{§web-session-input} Send waits while an arriving interrupt is not yet presented", async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base) => {
-                const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user" });
-                await setup.send({ workspace: "arrival", action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                // The message Run's response stays open after its interrupt arrives, until the journey releases it.
-                const arrived = Promise.withResolvers();
-                const release = Promise.withResolvers();
-                const proxy = createServer((req, res) => {
-                    let reqBody = "";
-                    req.on("data", (chunk) => { reqBody += chunk; });
-                    req.on("end", () => {
-                        const isSseGet = req.url === "/acp" && req.method === "GET" && Boolean(req.headers["acp-session-id"]);
-                        const upstream = request(new URL(req.url, base), { method: req.method, headers: req.headers }, (response) => {
-                            res.writeHead(response.statusCode, response.headers);
-                            res.flushHeaders();
-                            if (!isSseGet) {
-                                response.pipe(res);
-                                return;
-                            }
-                            let buffer = "";
-                            let gateChain = Promise.resolve();
-                            response.setEncoding("utf8");
-                            response.on("data", (chunk) => {
-                                buffer += chunk;
-                                const parts = buffer.split("\n\n");
-                                buffer = parts.pop() ?? "";
-                                for (const frame of parts) {
-                                    const payload = `${frame}\n\n`;
-                                    if (/"method":"session\/request_permission"/u.test(frame)) {
-                                        arrived.resolve();
-                                        gateChain = gateChain.then(() => release.promise).then(() => {
-                                            if (!res.destroyed) res.write(payload);
-                                        });
-                                    } else {
-                                        gateChain = gateChain.then(() => {
-                                            if (!res.destroyed) res.write(payload);
-                                        });
-                                    }
-                                }
-                            });
-                            response.on("end", () => {
-                                gateChain = gateChain.then(() => {
-                                    if (buffer.length > 0 && !res.destroyed) res.write(buffer);
-                                    if (!res.destroyed) res.end();
-                                });
-                            });
+                    response.on("end", () => {
+                        gateChain = gateChain.then(() => {
+                            if (buffer.length > 0 && !res.destroyed) res.write(buffer);
+                            if (!res.destroyed) res.end();
                         });
-                        upstream.on("error", (error) => res.destroy(error));
-                        upstream.end(reqBody);
                     });
                 });
-                proxy.listen(0, "127.0.0.1");
-                await once(proxy, "listening");
-                const browser = await chromium.launch();
-                try {
-                    const context = await browser.newContext();
-                    const checkBrowser = browserDiagnostics(context);
-                    const page = await context.newPage();
-                    page.setDefaultTimeout(5000);
-                    await page.goto(`http://127.0.0.1:${proxy.address().port}/~/arrival@user/`);
-                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-                    const text = page.getByRole("textbox", { name: "Message", exact: true });
-                    const send = page.getByRole("button", { name: "Send", exact: true });
-                    await text.fill("Lifecycle fixture: approval-input.");
-                    await send.click();
-                    await arrived.promise;
-                    await text.fill("A follow-up.");
-                    await page.waitForFunction(() => document.querySelector('button[aria-label="Send"]')?.disabled === true, null, { timeout: 2000 });
-                    release.resolve();
-                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
-                    assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true, "the review appears");
-                    assert.doesNotMatch(await page.locator("main").innerText(), /unconfirmed/u, "nothing was sent");
-                    assert.equal(await text.inputValue(), "A follow-up.", "the follow-up stays a draft");
-                    assert.equal(model.requests.length, 1);
-                    checkBrowser();
-                } finally {
-                    release.resolve();
-                    await browser.close();
-                    proxy.closeAllConnections();
-                    proxy.close();
-                }
+                upstream.on("error", (error) => res.destroy(error));
+                upstream.end(reqBody);
             });
-        } finally { await model.close(); }
-    });
+        });
+        proxy.listen(0, "127.0.0.1");
+        await once(proxy, "listening");
+        try {
+            page.setDefaultTimeout(5000);
+            await page.goto(`http://127.0.0.1:${/** @type {import("node:net").AddressInfo} */ (proxy.address()).port}/~/${workspace}@user/`);
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+            const text = page.getByRole("textbox", { name: "Message", exact: true });
+            const send = page.getByRole("button", { name: "Send", exact: true });
+            await text.fill("Lifecycle fixture: approval-input.");
+            await send.click();
+            await arrived.promise;
+            await text.fill("A follow-up.");
+            await page.waitForFunction(() => document.querySelector('button[aria-label="Send"]')?.disabled === true, null, { timeout: 2000 });
+            release.resolve();
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
+            assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true, "the review appears");
+            assert.doesNotMatch(await page.locator("main").innerText(), /unconfirmed/u, "nothing was sent");
+            assert.equal(await text.inputValue(), "A follow-up.", "the follow-up stays a draft");
+            assert.equal(model.requests.length, 1);
+            checkBrowser();
+        } finally {
+            release.resolve();
+            proxy.closeAllConnections();
+            proxy.close();
+        }
+    }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
     await t.test("{§web-session-history} on a conversation longer than the view, a review, a failure and command output appear in view", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
         page.setDefaultTimeout(5000);
@@ -501,8 +520,10 @@ export default async function verifySessionInput({ t, withDaemon }) {
             await send.click();
             await page.getByText(`Considering held-${departure}-input.`, { exact: true }).waitFor({ state: "attached" });
             assert.equal(await text.inputValue(), "");
-            if (departure === "navigate") await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
-            else await page.close();
+            if (departure === "navigate") {
+                await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
+                await page.waitForLoadState("load");
+            } else await page.close();
             model.release(`held-${departure}-input`);
             await observer.getByText(`Completed held-${departure}-input.`, { exact: true }).waitFor();
             if (departure === "navigate") {
@@ -548,11 +569,11 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await text.inputValue(), "Lifecycle fixture: delivery-retry.");
         assert.equal(await send.isDisabled(), true);
         assert.match(await page.locator('[aria-label="Message feedback"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
-        assert.match(await page.locator('#session-connection').innerText(), /Failed to fetch/u, "the transport failure remains visible beside the stale state");
+        assert.match(await page.locator('#session-connection').innerText(), /Failed to fetch|NetworkError|Load failed/u, "the transport failure remains visible beside the stale state");
         assert.equal(model.requests.length, 0);
         assert.equal(requests.length, 1);
         checkBrowser([
-            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
+            networkFailure("/acp"),
         ]);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
@@ -743,7 +764,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await page.getByText("Completed held-stop-failure.", { exact: true }).waitFor();
         assert.equal(model.requests.length, 1);
         checkBrowser([
-            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
+            networkFailure("/acp"),
         ]);
     }));
 

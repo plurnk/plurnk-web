@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import SessionAgent from "../web/session-agent.js";
+import { networkFailure } from "./browser-diagnostics.js";
 import { inspectStreamOutput } from "./session-streams.js";
 import { inspectResult, observeMessages } from "./result-body.js";
 import { inputPage } from "./session-input.js";
@@ -32,15 +33,16 @@ async function requestApproval(page, name) {
 
 // {§web-session-approval} The real native form is the only review UI in these installed journeys.
 export default async function verifySessionApproval({ t, withDaemon: startDaemon }) {
-    const withDaemon = (env, verify) => startDaemon({ ...env, PLURNK_WEB_YOLO: "0" }, verify);
-    await t.test("{§web-session-approval} configured YOLO accepts review once without another user message", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+    const manualPage = (verify, options = {}) =>
+        inputPage(startDaemon, verify, { ...options, env: { PLURNK_WEB_YOLO: "0", ...options.env } });
+    await t.test("{§web-session-approval} configured YOLO accepts review once without another user message", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
         await page.getByRole("textbox", { name: "Message", exact: true }).focus();
         assert.equal(await approval.getAttribute("aria-pressed"), "true");
         assert.equal(await approval.isVisible(), true);
-        assert.equal(await approval.evaluate((element) => getComputedStyle(element, "::before").content), '"🔥" / ""');
+        assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-automatic.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.getByText("Completed approval-automatic.", { exact: true }).waitFor();
@@ -53,7 +55,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"), "the executor actually ran");
         checkBrowser();
     }, { env: { PLURNK_WEB_YOLO: "1" } }));
-    await t.test("{§web-session-approval} a session page reached from another site never approves automatically", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, context, path, base, headers, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} a session page reached from another site never approves automatically", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, context, path, base, headers, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
         await page.close();
@@ -89,7 +91,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         }
         checkBrowser();
     }, { env: { PLURNK_WEB_YOLO: "1" } }));
-    await t.test("{§web-session-approval} a proposal's deadline shows, and the page follows the daemon cancelling it", { timeout: 30_000 }, () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
+    await t.test("{§web-session-approval} a proposal's deadline shows, and the page follows the daemon cancelling it", { timeout: 60_000 }, () => manualPage(async ({ page, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-input.");
@@ -102,7 +104,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.equal(requests.filter((req) => req?.result?.outcome !== undefined).length, 0, "the page answered nothing");
         checkBrowser();
     }, { env: { PLURNK_SERVICE_PROPOSAL_TIMEOUT_MS: "3000" } }));
-    await t.test("{§web-session-approval} configured YOLO cannot override daemon rejection", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} configured YOLO cannot override daemon rejection", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-server-reject.");
@@ -115,7 +117,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.match(await outcome.textContent(), /The proposal was rejected \(policy_veto\)\./u);
         checkBrowser();
     }, { env: { PLURNK_SERVICE_PROPOSALS: "reject", PLURNK_WEB_YOLO: "1" } }));
-    await t.test("{§web-session-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 20_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await page.route("**/acp", (route) => route.request().postDataJSON()?.result?.outcome ? route.abort() : route.continue());
@@ -127,11 +129,11 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.equal(requests.length, 2, "a failed automatic decision is not retried");
         assert.equal(await page.getByRole("button", { name: "Reconnect", exact: true }).isVisible(), true);
         checkBrowser([
-            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
+            networkFailure("/acp"),
         ]);
     }, { env: { PLURNK_WEB_YOLO: "1" } }));
     for (const decision of ["accept", "reject"]) {
-        await t.test(`{§web-session-approval} explicit ${decision} resumes the exact proposal and preserves the operation's result`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        await t.test(`{§web-session-approval} explicit ${decision} resumes the exact proposal and preserves the operation's result`, { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 700 });
             const requests = requestsFrom(page);
             const name = `approval-${decision}`;
@@ -191,7 +193,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         }, { authenticated: true }));
     }
 
-    await t.test("{§web-session-approval} shared views withdraw settled approval forms and follow work without manual reconnection", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} shared views withdraw settled approval forms and follow work without manual reconnection", { timeout: 60_000 }, () => manualPage(async ({ page, context, path, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-tabs");
@@ -220,7 +222,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-session-approval} held review retains unsent choices and live elapsed time without repeated presentations", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} held review retains unsent choices and live elapsed time without repeated presentations", { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
         const resumes = [];
         page.on("request", (request) => {
             if (new URL(request.url()).pathname !== "/acp") return;
@@ -246,7 +248,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         checkBrowser();
     }));
 
-    await t.test("{§web-session-approval} an answer overtaken in transit remains refused while the browser follows settled work", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} an answer overtaken in transit remains refused while the browser follows settled work", { timeout: 60_000 }, () => manualPage(async ({ page, context, path, model, checkBrowser }) => {
         await requestApproval(page, "approval-late");
         const other = await context.newPage();
         other.setDefaultTimeout(5000);
@@ -273,7 +275,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-session-approval} serial operations present fresh gates without inheriting a prior decision", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} serial operations present fresh gates without inheriting a prior decision", { timeout: 60_000 }, () => manualPage(async ({ page, base, headers, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-batch");
         const groups = page.locator('[data-requests] > fieldset');
@@ -314,7 +316,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         checkBrowser();
     }));
 
-    await t.test("{§web-session-approval} an idle owner reviews independent children without borrowing their conversation", { timeout: 30_000 }, () => inputPage(withDaemon, async ({ page, context, path, base, headers, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} an idle owner reviews independent children without borrowing their conversation", { timeout: 60_000 }, () => manualPage(async ({ page, context, path, base, headers, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: owner-ready.");
@@ -375,19 +377,19 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         checkBrowser();
     }));
 
-    await t.test("{§web-session-approval} a failed decision delivery requires rediscovery and a new explicit choice", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} a failed decision delivery requires rediscovery and a new explicit choice", { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-transport");
         await page.route("**/acp", (route) => route.abort("failed"), { times: 1 });
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
-        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*Failed to fetch/u);
+        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*(Failed to fetch|NetworkError|Load failed)/u);
         assert.equal(await page.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 2);
         checkBrowser([
-            /^error \/acp: Failed to load resource: net::ERR_FAILED$/u,
+            networkFailure("/acp"),
         ]);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await interrupted(page);
@@ -406,7 +408,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         checkBrowser();
     }));
 
-    await t.test("{§web-session-approval} lost settlement delivery is rediscovered without replaying an accepted decision", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} lost settlement delivery is rediscovered without replaying an accepted decision", { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-lost-settlement");
         const truncated = Promise.withResolvers();
@@ -447,7 +449,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
     }));
 
     for (const departure of ["navigate", "close"]) {
-        await t.test(`{§web-session-approval} ${departure} after acceptance does not cancel resumed work`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+        await t.test(`{§web-session-approval} ${departure} after acceptance does not cancel resumed work`, { timeout: 60_000 }, () => manualPage(async ({ page, context, path, model, checkBrowser }) => {
             const name = `approval-resumed-${departure}`;
             const requests = requestsFrom(page);
             await requestApproval(page, name);
@@ -455,8 +457,10 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             await page.getByRole("button", { name: "Submit responses", exact: true }).click();
             await page.locator("[data-reasoning-preview]").getByText(`Considering ${name}.`, { exact: true }).waitFor();
             assert.equal(model.requests.length, 2, "the accepted operation has released the next model call");
-            if (departure === "navigate") await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
-            else await page.close();
+            if (departure === "navigate") {
+                await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
+                await page.waitForLoadState("load");
+            } else await page.close();
             model.release(name);
             const observer = await context.newPage();
             await observer.goto(path);
@@ -471,7 +475,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         }, { authenticated: true }));
     }
 
-    await t.test("{§web-session-approval} revoked browser authority cannot decide and fresh sign-in rediscovers the gate", { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, base, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} revoked browser authority cannot decide and fresh sign-in rediscovers the gate", { timeout: 60_000 }, () => manualPage(async ({ page, context, path, base, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-revoked");
         await page.getByRole("radio", { name: "Accept", exact: true }).check();

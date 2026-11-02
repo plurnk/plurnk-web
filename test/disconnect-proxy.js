@@ -4,7 +4,9 @@ import { createServer, request } from "node:http";
 /** {§web-session-observer} Cut real sockets without mocking or interpreting ACP bytes. */
 export default async function disconnectProxy(target) {
     const server = createServer((req, res) => {
-        const upstream = request(new URL(req.url, target), { method: req.method, headers: req.headers }, (response) => {
+        const incoming = new URL(req.url ?? "/", target);
+        const destination = new URL(`${incoming.pathname}${incoming.search}`, target);
+        const upstream = request(destination, { method: req.method, headers: req.headers }, (response) => {
             res.writeHead(response.statusCode, response.headers);
             res.flushHeaders();
             response.on("error", (error) => res.destroy(error));
