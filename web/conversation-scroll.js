@@ -26,11 +26,11 @@ export default function conversationScroll(main, conversation, followed) {
         if (following && !wasFollowing) followed();
     });
     // Following holds the end of main: the conversation and what follows it, such as a review or a failure, as each grows.
-    const observer = new ResizeObserver(tail);
-    const watch = () => { observer.observe(main); for (const child of main.children) observer.observe(child); };
-    const added = new MutationObserver(watch);
+    const added = new MutationObserver(tail);
+    const watch = () => {
+        added.observe(main, { childList: true, subtree: true, attributes: true, characterData: true });
+    };
     watch();
-    added.observe(main, { childList: true });
     return {
         get following() { return following; },
         /** @param {() => void} update @param {boolean} [prepend] */
@@ -45,7 +45,7 @@ export default function conversationScroll(main, conversation, followed) {
             if (bottom()) follow(true);
             tail();
         },
-        pause() { paused = true; observer.disconnect(); added.disconnect(); },
-        resume() { paused = false; watch(); added.observe(main, { childList: true }); },
+        pause() { paused = true; added.disconnect(); },
+        resume() { paused = false; watch(); },
     };
 }

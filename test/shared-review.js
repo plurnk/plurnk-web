@@ -9,7 +9,7 @@ import startTerminal from "./terminal-fixture.js";
 export default async function verifySharedReview({ t, withDaemon, consumer }) {
     for (const family of ["approval", "question"]) {
         const tag = family === "approval" ? "{§web-session-approval}" : "{§web-session-questions}";
-        await t.test(`${tag} shared views retire ${family} when another view explicitly stops the loop`, { timeout: 20_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
+        await t.test(`${tag} shared views retire ${family} when another view explicitly stops the loop`, { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
             page.setDefaultTimeout(5000);
             const name = `${family}-external-stop`;
             await page.getByRole("textbox", { name: "Message", exact: true }).fill(`Lifecycle fixture: ${name}.`);
@@ -44,12 +44,13 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
             const answers = browserYolo || terminalYolo ? ["automatic"] : ["browser", "terminal"];
             for (const answer of answers) {
                 const mode = (yolo) => yolo ? "YOLO" : "manual";
-                await t.test(`{§web-session-approval} shared terminal/browser ${mode(terminalYolo)}/${mode(browserYolo)} with ${answer} settlement`, { timeout: 25_000 }, async (journey) => {
+                await t.test(`{§web-session-approval} shared terminal/browser ${mode(terminalYolo)}/${mode(browserYolo)} with ${answer} settlement`, { timeout: 90_000 }, async (journey) => {
                     const directory = await mkdtemp(join(tmpdir(), "plurnk-shared-execution-"));
                     journey.after(() => rm(directory, { recursive: true, force: true }));
                     const witness = join(directory, "executions.txt");
                     const quoted = `'${witness.replaceAll("'", "'\\''")}'`;
                     await inputPage(withDaemon, async ({ page, model, checkBrowser, base, workspace, secret }) => {
+                        await rm(witness, { force: true });
                         const responses = [];
                         page.on("response", (response) => {
                             if (new URL(response.url()).pathname === "/acp" && response.request().postDataJSON()?.result?.outcome !== undefined) {

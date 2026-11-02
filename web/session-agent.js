@@ -9,6 +9,9 @@ import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-cli
 import { Validator } from "@plurnk/plurnk-contracts";
 import problemFromResponse from "./problem-response.js";
 
+// Firefox delays resolving fetch() on chunked text/event-stream responses until the first body byte arrives.
+const SSE_HEADERS_FLUSH_MS = 25;
+
 export { PROTOCOL_VERSION, Validator, client, createHttpStream, methods };
 
 /**
@@ -900,6 +903,12 @@ export default class SessionAgent {
     #syncPendingGates() {
         if (this.#allPendingGates.length === 0) {
             this.pendingGates = [];
+        } else if (
+            this.#heldGateIds !== undefined
+            && this.#heldGateIds.length > 0
+            && this.#heldGateIds.every((id) => this.#allPendingGates.some((item) => item.id === id))
+        ) {
+            this.pendingGates = this.#allPendingGates.filter((item) => this.#heldGateIds?.includes(item.id));
         } else {
             const firstSession = this.#gateSessionKey(this.#allPendingGates[0]);
             this.pendingGates = this.#allPendingGates.filter(
@@ -1064,6 +1073,119 @@ export default class SessionAgent {
                     headers: { "Content-Type": "text/event-stream" },
                 });
             }
+            const fetchSignal = init?.signal
+                ? AbortSignal.any([init.signal, connController.signal])
+                : connController.signal;
+            if (init?.method === "GET") {
+                const fetchPromise = this.#fetch(input, {
+                    ...init,
+                    headers: mergedHeaders,
+                    signal: fetchSignal,
+                });
+                fetchPromise.catch((err) => {
+                    if (!connController.signal.aborted && !init.signal?.aborted) {
+                        this.#emitLiveOutcome({
+                            stopReason: "transport_error",
+                            transportError: err instanceof Error ? err : new Error(String(err)),
+                        });
+                    }
+                });
+                const isFirefox = typeof navigator !== "undefined" && navigator.userAgent.includes("Firefox");
+                const initialResponse = isFirefox
+                    ? await Promise.race([
+                        fetchPromise,
+                        new Promise((resolve) => setTimeout(() => resolve(null), SSE_HEADERS_FLUSH_MS)),
+                    ])
+                    : await fetchPromise;
+                if (initialResponse !== null && !initialResponse.ok) {
+                    if (this.#streamProblem === undefined) {
+                        const refusalError = await problemFromResponse(initialResponse.clone());
+                        this.#streamProblem = refusalError
+                            ? {
+                                message: refusalError.message,
+                                status: refusalError.status,
+                                problem: isRecord(refusalError.cause) ? refusalError.cause : undefined,
+                            }
+                            : {
+                                message: initialResponse.statusText || `HTTP ${initialResponse.status}`,
+                                status: initialResponse.status,
+                            };
+                    }
+                    return initialResponse;
+                }
+                if (
+                    initialResponse !== null
+                    && (!initialResponse.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
+                        || !initialResponse.body)
+                ) {
+                    return initialResponse;
+                }
+                /** @type {ReadableStreamDefaultReader<Uint8Array> | undefined} */
+                let reader = initialResponse?.body?.getReader();
+                const notifyStreamEnd = () => {
+                    if (fetchSignal.aborted) return;
+                    void this.#notificationChain.then(() => {
+                        if (fetchSignal.aborted) return;
+                        if (this.#streamProblem !== undefined) {
+                            this.#emitLiveOutcome({ stopReason: "error", error: this.#streamProblem });
+                        } else {
+                            this.#emitLiveOutcome({ stopReason: "eof" });
+                        }
+                    });
+                };
+                const wrappedBody = new ReadableStream({
+                    pull: async (controller) => {
+                        try {
+                            if (!reader) {
+                                const resolved = await fetchPromise;
+                                if (!resolved.ok) {
+                                    if (this.#streamProblem === undefined) {
+                                        const refusalError = await problemFromResponse(resolved.clone());
+                                        this.#streamProblem = refusalError
+                                            ? {
+                                                message: refusalError.message,
+                                                status: refusalError.status,
+                                                problem: isRecord(refusalError.cause) ? refusalError.cause : undefined,
+                                            }
+                                            : {
+                                                message: resolved.statusText || `HTTP ${resolved.status}`,
+                                                status: resolved.status,
+                                            };
+                                    }
+                                    notifyStreamEnd();
+                                    controller.error(new Error(this.#streamProblem.message));
+                                    return;
+                                }
+                                if (
+                                    !resolved.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
+                                    || !resolved.body
+                                ) {
+                                    controller.close();
+                                    notifyStreamEnd();
+                                    return;
+                                }
+                                reader = resolved.body.getReader();
+                            }
+                            const { done, value } = await reader.read();
+                            if (done) {
+                                controller.close();
+                                notifyStreamEnd();
+                                return;
+                            }
+                            controller.enqueue(value);
+                        } catch (err) {
+                            notifyStreamEnd();
+                            controller.error(err);
+                        }
+                    },
+                    cancel: (reason) => reader ? reader.cancel(reason) : undefined,
+                });
+                return new Response(wrappedBody, {
+                    status: initialResponse?.status ?? 200,
+                    statusText: initialResponse?.statusText ?? "OK",
+                    headers: initialResponse?.headers ?? { "Content-Type": "text/event-stream" },
+                });
+            }
             const isPost = init?.method === "POST";
             if (isPost) {
                 this.#inFlightPostCount += 1;
@@ -1073,6 +1195,7 @@ export default class SessionAgent {
                 const fetchPromise = this.#fetch(input, {
                     ...init,
                     headers: mergedHeaders,
+                    signal: fetchSignal,
                 });
                 if (isPost) {
                     this.#outboundPostChain = this.#outboundPostChain
@@ -1107,46 +1230,6 @@ export default class SessionAgent {
                         status: response.status,
                     };
                 }
-            }
-            if (
-                response.ok
-                && response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
-                && response.body
-            ) {
-                const reader = response.body.getReader();
-                const notifyStreamEnd = () => {
-                    if (init?.signal?.aborted) return;
-                    void this.#notificationChain.then(() => {
-                        if (init?.signal?.aborted) return;
-                        if (this.#streamProblem !== undefined) {
-                            this.#emitLiveOutcome({ stopReason: "error", error: this.#streamProblem });
-                        } else {
-                            this.#emitLiveOutcome({ stopReason: "eof" });
-                        }
-                    });
-                };
-                const wrappedBody = new ReadableStream({
-                    pull: async (controller) => {
-                        try {
-                            const { done, value } = await reader.read();
-                            if (done) {
-                                controller.close();
-                                notifyStreamEnd();
-                                return;
-                            }
-                            controller.enqueue(value);
-                        } catch (err) {
-                            notifyStreamEnd();
-                            controller.error(err);
-                        }
-                    },
-                    cancel: (reason) => reader.cancel(reason),
-                });
-                return new Response(wrappedBody, {
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: response.headers,
-                });
             }
             return response;
         };
@@ -1639,6 +1722,7 @@ export default class SessionAgent {
         this.#replayUpdates = [];
         this.#pendingLiveThought = undefined;
         this.#queuedLiveOutcome = undefined;
+        this.#heldGateIds = undefined;
         this.#allPendingGates = this.#allPendingGates.filter((item) => this.#gateResolvers.has(item.id));
         this.#syncPendingGates();
         const { signal } = controller;
@@ -1707,6 +1791,7 @@ export default class SessionAgent {
         this.#submittedGateIds.clear();
         this.#cancelledSubmittedGates.clear();
         this.#queuedLiveOutcome = undefined;
+        this.#heldGateIds = undefined;
         const { signal } = controller;
 
         try {
@@ -1752,7 +1837,7 @@ export default class SessionAgent {
                 });
             }
 
-            if (this.#inFlightRequest !== undefined) {
+            if (this.pendingGates.length === 0 && this.#inFlightRequest !== undefined) {
                 return await this.#awaitRequestOrInterrupt(this.#inFlightRequest, signal, subscriber);
             }
 

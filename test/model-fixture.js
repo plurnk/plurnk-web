@@ -16,12 +16,13 @@ export const diagramContent = "```mermaid\nflowchart LR\n Client --> Daemon\n```
 export const footnoteAnswer = "**Footnote witness**[^a], repeated[^a], distinct[^a-2].\n\n[^a]: First definition.\n\n[^a-2]: Second definition.";
 export const outsideText = "Outside evidence, not the final answer.";
 
-export default async function startModel({ approvalCommand = "printf approved" } = {}) {
+export default async function startModel({ approvalCommand: initialApprovalCommand = "printf approved" } = {}) {
+    let approvalCommand = initialApprovalCommand;
     const requests = [];
     const errors = [];
     const pending = new Map();
     const visits = new Map();
-    const streamStarted = Promise.withResolvers();
+    let streamStarted = Promise.withResolvers();
     const programs = [
         { reasoning: "I will read the requested project file.", content: "```READ (witness.txt)\n```" },
         { reasoning: "The file confirms the browser connection.", content: "```DONE\nBrowser connection verified: cobalt heron.\n```" },
@@ -127,7 +128,19 @@ export default async function startModel({ approvalCommand = "printf approved" }
     return {
         requests,
         errors,
-        streamStarted: streamStarted.promise,
+        get streamStarted() {
+            return streamStarted.promise;
+        },
+        reset({ approvalCommand: nextApprovalCommand = initialApprovalCommand } = {}) {
+            approvalCommand = nextApprovalCommand;
+            requests.length = 0;
+            errors.length = 0;
+            for (const gate of pending.values()) gate.resolve();
+            pending.clear();
+            visits.clear();
+            turn = 0;
+            streamStarted = Promise.withResolvers();
+        },
         release(name) {
             const gate = pending.get(name);
             assert.ok(gate, `the ${name} request reached the controlled model`);
