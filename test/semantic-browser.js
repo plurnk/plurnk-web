@@ -66,6 +66,7 @@ export default async function verifySemanticContent(t) {
                     assert.deepEqual(await page.evaluate(() => window.source), messages, "projection never rewrites SDK authority");
 
                     const read = call("read", "READ", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
+                    /** @type {any} */
                     const readResult = result("read", { status: 200, lineOrdinals: [1, 8], range: { unit: "line", total: 50, requested: [1, -1], returned: [1, 8] } });
                     readResult.content = [{ type: "text", text: readResult.content }, { type: "resource_link", uri: new URL("/acp/body", url).href, name: "body", mimeType: "text/plain" }];
                     await present([read, readResult]);
@@ -77,7 +78,7 @@ export default async function verifySemanticContent(t) {
                     assert.deepEqual(requests, [], "a READ summary never fetches its readback body");
                     await present([read, result("read", { status: 404, problem: { title: "Entry not found", detail: "README.md is missing.", recovery: "Choose an existing path." } })]);
                     assert.equal(await field(row("read"), "outcome").textContent(), "Entry not found — README.md is missing. — Choose an existing path.");
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         const appearance = await field(row("read"), "outcome").evaluate((element) => ({
                             outcome: getComputedStyle(element).color,

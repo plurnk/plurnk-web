@@ -47,7 +47,7 @@ export default async function verifySessionCards(t) {
                         const name = `~/research/<script>&"${"long-".repeat(12)}`;
                         const workspacePath = directoryPath({ kind: "workspace", workspace: name });
                         html = await documents.read({ kind: "workspace", workspace: name }, {
-                            listWorkspaces: async () => [{ id: 7, name, project_root, project_label: project_root }],
+                            listWorkspaces: async () => [{ id: 7, name, project_root, project_label: project_root, hidden_at: null }],
                             listSessions: async () => sessions,
                         }, false);
                         await page.goto(new URL(workspacePath, base).href);
@@ -76,7 +76,7 @@ export default async function verifySessionCards(t) {
                         assert.equal(await link("child").isVisible(), false);
                         assert.equal(await card("done").locator(":scope > details").count(), 0, "a leaf has no fabricated answer or empty disclosure");
                         assert.equal(await card("done").locator(":scope > header").count(), 1);
-                        for (const colorScheme of ["light", "dark"]) {
+                        for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                             await page.emulateMedia({ colorScheme });
                             for (const width of [320, 1280]) {
                                 await page.setViewportSize({ width, height: 844 });

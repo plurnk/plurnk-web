@@ -27,6 +27,7 @@ async function fixture(t) {
             for (const [token, claims] of records) if (claims.family === family) records.delete(token);
             for (const listener of listeners) listener(family);
         },
+        sessions: () => [],
     };
     const pair = (change = {}) => ({
         access_token: authority.issue({ ...common, ...change, kind: "access", ttlMs: 300_000 }).token,
@@ -105,11 +106,11 @@ test("{§web-access-token} logout during refresh cannot resurrect a session", as
 });
 
 test("{§web-access-token} invalid refresh ends the family while a failed endpoint is surfaced", async (t) => {
-    for (const [error, status] of [["invalid_grant", 401], ["temporarily_unavailable", 502]]) {
+    for (const [error, status] of /** @type {const} */ ([["invalid_grant", 401], ["temporarily_unavailable", 502]])) {
         await t.test(error, async (t) => {
             const f = await fixture(t);
             f.expire();
-            const rejected = assert.rejects(f.session.token(f.request, response()), (failure) => {
+            const rejected = assert.rejects(f.session.token(f.request, response()), (/** @type {any} */ failure) => {
                 assert.equal(failure.status, status);
                 assert.equal(failure.cause.error, error);
                 return true;
@@ -123,12 +124,12 @@ test("{§web-access-token} invalid refresh ends the family while a failed endpoi
 });
 
 test("{§web-access-token} refresh preserves family, subject, registered client and scope", async (t) => {
-    for (const [name, change, expected] of [
+    for (const [name, change, expected] of /** @type {const} */ ([
         ["family", { family: "foreign" }, /changed the web grant during refresh/u],
         ["subject", { subject: "foreign" }, /changed the web grant during refresh/u],
         ["client", { clientId: "foreign" }, /outside the registered web grant/u],
         ["scope", { scopes: [] }, /outside the registered web grant/u],
-    ]) {
+    ])) {
         await t.test(name, async (t) => {
             const f = await fixture(t);
             f.expire();

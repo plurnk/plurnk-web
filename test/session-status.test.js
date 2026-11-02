@@ -49,10 +49,10 @@ test("{§web-session-status} model identity, effort, direct children and budgets
     assert.equal(Object.hasOwn(unselected, "curation"), false);
     const selected = gauges({ ...idle, model: { alias: "local", provider: "host", model: "qwen", effort: "high", effortSource: "explicit" },
         descendants: [
-            { id: 2, name: "first", parentSessionId: 1, kind: "work", lifecycle: "queued", gates: 0 },
-            { id: 3, name: "nested", parentSessionId: 2, kind: "work", lifecycle: "running", gates: 2 },
-            { id: 4, name: "second", parentSessionId: 1, kind: "fork", lifecycle: "parked", gates: 0 },
-            { id: 5, name: "finished", parentSessionId: 1, kind: "bare", lifecycle: "completed", gates: 0 },
+            { id: 2, name: "first", parentSessionId: 1, kind: /** @type {const} */ ("work"), lifecycle: /** @type {const} */ ("queued"), gates: 0 },
+            { id: 3, name: "nested", parentSessionId: 2, kind: /** @type {const} */ ("work"), lifecycle: /** @type {const} */ ("running"), gates: 2 },
+            { id: 4, name: "second", parentSessionId: 1, kind: /** @type {const} */ ("fork"), lifecycle: /** @type {const} */ ("parked"), gates: 0 },
+            { id: 5, name: "finished", parentSessionId: 1, kind: /** @type {const} */ ("bare"), lifecycle: /** @type {const} */ ("completed"), gates: 0 },
         ], inbox: [{ path: "message://user/one", id: "one", loopId: 2, lifecycle: "queued" }] },
     { contextTokens: 0, contextCapacity: 32768, curationWeight: 4200, curationBudget: 8000 });
     assert.equal(selected.model, "local");
@@ -75,7 +75,7 @@ test("{§web-session-status} model identity, effort, direct children and budgets
 });
 
 test("{§web-session-descendants} nesting preserves supplied parentage and sibling order", () => {
-    const session = (id, parentSessionId) => ({ id, parentSessionId, name: `session-${id}`, kind: "work", lifecycle: "idle", gates: 0 });
+    const session = (id, parentSessionId) => ({ id, parentSessionId, name: `session-${id}`, kind: /** @type {const} */ ("work"), lifecycle: /** @type {const} */ ("idle"), gates: 0 });
     const rows = [session(2, 1), session(4, 2), session(7, 4), session(5, 2), session(3, 1)];
     const tree = descendantTree(rows);
     const identities = (nodes) => nodes.map(({ session, children }) => [session.id, identities(children)]);

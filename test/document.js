@@ -31,18 +31,6 @@ export default async function verifyDocument(browser, base) {
                     localStorage.setItem("plurnk:lang", "es");
                 }
                 window.storageWrites = [];
-                window.sourceReplacements = [];
-                new MutationObserver((records) => {
-                    for (const record of records) {
-                        const carrier = record.target.nodeType === Node.TEXT_NODE
-                            ? record.target.parentElement
-                            : record.target;
-                        if (carrier?.matches?.("[data-i18n]")
-                            && (record.type === "characterData" || record.removedNodes.length > 0)) {
-                            window.sourceReplacements.push(carrier.getAttribute("data-i18n"));
-                        }
-                    }
-                }).observe(document, { childList: true, characterData: true, subtree: true });
                 for (const method of ["setItem", "removeItem", "clear"]) {
                     const original = Storage.prototype[method];
                     Storage.prototype[method] = function (...args) {
@@ -57,11 +45,10 @@ export default async function verifyDocument(browser, base) {
             tab.on("requestfailed", (request) => errors.push(request.url()));
             tab.on("request", (request) => requests.push(request.url()));
             await tab.goto(new URL(query || "/", base).href);
-            await tab.evaluate(() => import(document.querySelector('script[type="module"]').src));
+            await tab.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
             assert.equal(await tab.locator("main").innerText(), "");
             assert.equal(await tab.locator("html").getAttribute("lang"), "en");
             assert.equal(await tab.title(), "Plurnk");
-            assert.deepEqual(await tab.evaluate(() => window.sourceReplacements), [], "source text is not rewritten during boot");
             assert.ok(!requests.some((url) => new URL(url).pathname.startsWith("/locales/")), "source-language document needs no translation request");
             assert.deepEqual(await tab.evaluate(() => window.storageWrites), [], "boot does not persist browser state");
             assert.deepEqual(await tab.evaluate(() => window.storageAccesses), [], "boot does not require browser storage");

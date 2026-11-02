@@ -11,8 +11,21 @@ import { readAsset, sendAsset } from "./static-assets.js";
 import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
 
-/** @typedef {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "credentials" | "registerHttpRoute" | "listWorkspaces" | "listSessions" | "createWorkspace" | "renameWorkspace" | "createSession" | "setWorkspaceHidden" | "setSessionHidden">} Port */
-/** {§web-host} {§web-configuration} {§web-package} @returns {import("@plurnk/plurnk-modules").DaemonModule<Pick<Port, "credentials">, Port>} */
+/** @typedef {{ credentials?: Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort["credentials"], "registerClient"> | null }} SetupPort */
+/**
+ * @typedef {{
+ *   credentials?: (import("./session.js").SessionCredentials & Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort["credentials"], "face">) | null,
+ *   registerHttpRoute: import("@plurnk/plurnk-contracts/port").ApplicationPort["registerHttpRoute"],
+ *   listWorkspaces: () => Promise<readonly import("./documents.js").DirectoryWorkspace[]>,
+ *   listSessions: (workspaceId: number) => Promise<readonly import("./documents.js").DirectorySession[]>,
+ *   createWorkspace: (args: { name?: string, projectRoot: string | null }) => Promise<string | { workspaceName: string, projectRoot: string | null }>,
+ *   renameWorkspace: (workspaceId: number, name: string) => Promise<{ name: string }>,
+ *   createSession: (args: { workspaceId: number, name?: string }) => Promise<{ sessionName: string }>,
+ *   setWorkspaceHidden: (args: { workspaceId: number, hidden: boolean }) => Promise<unknown>,
+ *   setSessionHidden: (args: { workspaceId: number, sessionId: number, hidden: boolean }) => Promise<unknown>,
+ * }} Port
+ */
+/** {§web-host} {§web-configuration} {§web-package} @returns {import("@plurnk/plurnk-modules").DaemonModule<SetupPort, Port>} */
 export default function createModule() {
     if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
     /** @type {import("@plurnk/plurnk-modules").ContainedConfiguration[]} */
@@ -58,10 +71,11 @@ export default function createModule() {
             registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["acp"], stylesheetPath });
         },
         async start(seam) {
-            const face = seam.credentials?.face() ?? null;
-            if (face !== null) {
+            const credentials = seam.credentials;
+            const face = credentials?.face() ?? null;
+            if (face !== null && credentials) {
                 if (registration === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
-                session = new Session(seam.credentials, registration, face, limits);
+                session = new Session(credentials, registration, face, limits);
             }
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */

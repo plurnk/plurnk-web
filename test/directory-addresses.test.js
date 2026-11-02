@@ -10,6 +10,7 @@ import { directoryPath, parseDirectory } from "../ai.plurnk/directory-addresses.
 import createModule from "../ai.plurnk/module.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
+/** @type {[import("../ai.plurnk/directory-addresses.js").Directory, string][]} */
 const directories = [
     [{ kind: "daemon" }, "/~/"],
     ...[
@@ -40,10 +41,10 @@ const directories = [
         ["a/index.html/", "a/index.html/"],
         ["a\u0000\t\n\rb", "a%00%09%0A%0Db"],
         ['<a href="x">&</a>', "%3Ca%20href%3D%22x%22%3E%26%3C/a%3E"],
-    ].flatMap(([workspace, encoded]) => [
+    ].flatMap(([workspace, encoded]) => /** @type {[import("../ai.plurnk/directory-addresses.js").Directory, string][]} */ ([
         [{ kind: "workspace", workspace }, `/~/${encoded}/`],
         [{ kind: "session", workspace, session: "user_1" }, `/~/${encoded}@user_1/`],
-    ]),
+    ])),
 ];
 
 test("{§web-directory-addresses} generated paths preserve exact identities through URL parsing", () => {
@@ -75,7 +76,7 @@ test("{§web-directory-addresses} delimiters precede one decoding pass", () => {
 
 test("{§web-directory-addresses} unrepresentable legacy names are not repaired or aliased", () => {
     for (const workspace of ["", ".", "..", "a/./b", "../a", "a/..", "a//../", "\ud800", "a\udfff"]) {
-        for (const directory of [{ kind: "workspace", workspace }, { kind: "session", workspace, session: "user" }]) {
+        for (const directory of /** @type {const} */ ([{ kind: "workspace", workspace }, { kind: "session", workspace, session: "user" }])) {
             assert.equal(directoryPath(directory), null, JSON.stringify(directory));
         }
     }
@@ -96,7 +97,7 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
     const source = await readFile(new URL("../web/index.html", import.meta.url), "utf8");
     const compiled = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
     // Test documents only: no workspace enumeration, authentication or product route is simulated.
-    const document = (template, directory) => template.replace("</main>", `<pre id="address" data-text="address">${
+    const render = (template, directory) => template.replace("</main>", `<pre id="address" data-text="address">${
         JSON.stringify(directory).replaceAll("&", "&amp;").replaceAll("<", "&lt;")
     }</pre><ul>${directories.map(([entry], index) => `<li><a href="${directoryPath(entry)}" data-i18n="case-${index}">Case ${index}</a></li>`).join("")}</ul>
         <a href="./index.html" data-i18n="explicit">Explicit index</a>
@@ -106,10 +107,10 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
         res.end(html);
     };
     let assets;
-    await createModule().start({ registerHttpRoute(_prefix, handler) { assets = handler; } });
+    await createModule().start(/** @type {any} */ ({ registerHttpRoute(_prefix, handler) { assets = handler; } }));
     const production = createHttpServer((req, res) => {
         const directory = parseDirectory(req.url);
-        if (directory) respond(res, document(compiled, directory));
+        if (directory) respond(res, render(compiled, directory));
         else assets(req, res);
     });
     t.after(() => new Promise((resolve, reject) => production.close((error) => error ? reject(error) : resolve())));
@@ -124,14 +125,14 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
                 const directory = parseDirectory(req.url);
                 if (!directory) return next();
                 try {
-                    respond(res, await server.transformIndexHtml(req.url, document(source, directory)));
+                    respond(res, await server.transformIndexHtml(req.url, render(source, directory)));
                 } catch (error) { next(error); }
             });
         },
         configurePreviewServer(server) {
             server.middlewares.use((req, res, next) => {
                 const directory = parseDirectory(req.url);
-                if (directory) respond(res, document(compiled, directory));
+                if (directory) respond(res, render(compiled, directory));
                 else next();
             });
         },
@@ -145,7 +146,8 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
     t.after(() => browser.close());
 
     for (const server of [production, development.httpServer, built.httpServer]) {
-        const base = `http://127.0.0.1:${server.address().port}`;
+        const address = /** @type {import("node:net").AddressInfo} */ (server.address());
+        const base = `http://127.0.0.1:${address.port}`;
         for (const javaScriptEnabled of [false, true]) {
             const context = await browser.newContext({ javaScriptEnabled });
             const checkBrowser = browserDiagnostics(context);
@@ -155,7 +157,7 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
                 page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
                 await page.goto(`${base}/~/`);
                 for (const [index, [directory, path]] of directories.entries()) {
-                    if (javaScriptEnabled) await page.evaluate(() => import(document.querySelector('script[type="module"]').src));
+                    if (javaScriptEnabled) await page.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
                     const before = navigations.length;
                     await page.getByRole("link", { name: `Case ${index}`, exact: true }).click();
                     assert.equal(page.url(), base + path);

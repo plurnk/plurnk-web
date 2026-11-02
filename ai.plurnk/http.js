@@ -28,9 +28,11 @@ export function refusal(cause, failed, retry = undefined) {
     return new RequestError(problem.status, problem.detail ?? problem.title, { cause, recovery, retry });
 }
 
-/** @param {import("node:http").IncomingMessage} req @param {string} name */
+/** @param {import("@plurnk/plurnk-contracts").RequestHeaders} req @param {string} name */
 export function cookie(req, name) {
-    const values = (req.headers.cookie ?? "").split(";").map((part) => part.trim())
+    const raw = req.headers.cookie;
+    const header = typeof raw === "string" ? raw : "";
+    const values = header.split(";").map((part) => part.trim())
         .filter((part) => part.startsWith(`${name}=`));
     return values.length === 1 ? values[0].slice(name.length + 1) : null;
 }
@@ -45,7 +47,7 @@ export const privateHeaders = {
 };
 
 /** {§web-workspace-creation} A browser that reports where a request came from must report this origin, in either posture.
- * @param {import("node:http").IncomingMessage} req
+ * @param {import("@plurnk/plurnk-contracts").RequestHeaders} req
  */
 export function sameOriginFetch(req) {
     const site = req.headers["sec-fetch-site"];
@@ -54,11 +56,13 @@ export function sameOriginFetch(req) {
 
 /** {§web-session-approval} The person reached this page from this origin or through the browser itself (address bar, bookmark),
  * by its Fetch Metadata; another site, a sibling site or no metadata is not their own navigation.
- * @param {import("node:http").IncomingMessage} req
+ * @param {import("@plurnk/plurnk-contracts").RequestHeaders} req
  */
 export const ownNavigation = (req) => req.headers["sec-fetch-site"] === "same-origin" || req.headers["sec-fetch-site"] === "none";
 
-/** @param {import("node:http").ServerResponse} res @param {string} location */
+/** @typedef {{ setHeader(name: string, value: string | readonly string[]): unknown, writeHead(statusCode: number, headers?: import("node:http").OutgoingHttpHeaders): unknown, end(chunk?: unknown): unknown }} HttpResponse */
+
+/** @param {Pick<HttpResponse, "writeHead" | "end">} res @param {string} location */
 export function redirect(res, location) {
     res.writeHead(303, { ...privateHeaders, location });
     res.end();

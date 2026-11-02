@@ -63,6 +63,7 @@ export default async function verifyContentSecurity(t) {
                     const original = await shell();
 
                     await t.test("rich messages and SEND share the sanitizer; NOTE and reasoning remain literal", async () => {
+                        /** @type {any[]} */
                         const messages = ["user", "assistant", "system", "developer"].map((role) => ({ id: role, role, content: hostile }));
                         messages.push({ id: "send", role: "assistant", toolCalls: [{
                             toolCallId: "send-call", name: "SEND", rawInput: { body: hostile }, _meta: { plurnk: { op: "SEND" } },

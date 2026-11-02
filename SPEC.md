@@ -337,6 +337,8 @@ flow at the end of `<main>` and submits cleanly.
 ## §web-session-directory Model-session navigation
 | Boundary | Representation |
 |---|---|
+| Membership | Every shown `origin: model` session (`hidden_at: null`) appears once, regardless of owner, lifecycle or name spelling. Non-model bookkeeping sessions have no directory row or session page; their direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
+| Roots | Shown model sessions with `parentSessionId: null` form the primary list. |
 | Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
 | Card identity | Two lines: a named ant link to the session, its lifecycle glyph, optional actual parent followed by `>`, and the session name; then a folder/cloud marker and a real link to its workspace. Model parents are links; bookkeeping parents are escaped text, never fabricated session destinations. Folder presence comes from `project_root`, not the workspace name. Kind and permission owner do not become visible metadata rows. |
 | Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the session statusline; the icon has a literal accessible name/title. These are directory facts at page load, not locally inferred or continuously updated status. No reply content, completion timestamp or recency ordering is inferred from this census. |
@@ -784,7 +786,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Browser mechanisms | OTM public APIs and native controls; reusable gaps are repaired upstream rather than through local shims. |
 | Document content | Native text or sanitized fragments enter template-owned outlets under {§web-conversation-content}. No competing state/translation writer or body attribute mirror. Unchanged text retains its nodes and native selection. |
 | Visual state | Native element state or semantic attributes projected through CSS; no imperative style mutation. |
-| Static checks | General JavaScript correctness and modern-idiom rules cover the server module, browser, tests and build tooling. OTM HTML/JavaScript/CSS rules and unsafe-HTML sink checks cover browser authoring. Separate browser/server type checks enforce public client types with DOM libraries and no Node globals in browser code; the application port remains server-only. |
+| Static checks | General JavaScript correctness and modern-idiom rules cover the server module, browser, tests and build tooling. OTM HTML/JavaScript/CSS rules and unsafe-HTML sink checks cover browser authoring. Separate server, browser and test type checks enforce public client types with DOM libraries and no Node globals in browser code; the application port remains server-only, and test callers are checked against module and browser signatures. |
 
 ## §web-browser-security Browser execution and diagnostics
 

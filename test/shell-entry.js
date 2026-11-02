@@ -3,9 +3,9 @@ import conversation from "../web/conversation.js";
 import sessionState from "../web/session-state.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
-const status = $("#session-status");
+const status = /** @type {HTMLElement} */ ($("#session-status"));
 const controls = $.clone(status, "#session-controls");
 the(controls, { liveWork: "", sendUnavailable: null, stopUnavailable: null, messageStatus: "" });
 the(status, { connection: "connected", connectionLabel: "Connected" });
-window.present = conversation($("#session-conversation"));
+window.present = conversation(/** @type {HTMLElement} */ ($("#session-conversation")), async () => "");
 window.presentState = sessionState(status);

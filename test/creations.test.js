@@ -65,12 +65,12 @@ test("{§web-workspace-creation} a settled failure is retained under its token, 
 });
 
 test("{§web-workspace-creation} envelope violations fail visibly instead of adapting the creation", async () => {
-    for (const [returned, message] of [
+    for (const [returned, message] of /** @type {const} */ ([
         [{ workspaceId: 1, workspaceName: "foldered", projectRoot: "/srv/project", projectLabel: null },
             /The daemon created a workspace with a project folder from a folderless request\./u],
         [{ workspaceId: 1, workspaceName: "../legacy", projectRoot: null, projectLabel: null },
             /The daemon returned a workspace name without a directory address\./u],
-    ]) {
+    ])) {
         const creations = new Creations({ ttl: 600, tokens: 128 });
         await assert.rejects(creations.submit(randomUUID(), async () => returned), message);
     }

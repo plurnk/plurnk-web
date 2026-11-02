@@ -493,8 +493,8 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         assert.equal(await item.locator("article > details > pre").textContent(), "**Now complete**");
                         assert.equal(await item.getAttribute("data-plurnk-note"), "fact");
                         assert.equal(await item.evaluate((element) => element === window.streamedCall), true);
-                        for (const [_meta, name] of [[{}, "NOTE"], [{ plurnk: { op: "error" } }, "NOTE"], [{ plurnk: { op: "NOTE" } }, "lookup"]]) {
-                            await display(complete, _meta, name);
+                        for (const [_meta, name] of /** @type {const} */ ([[{}, "NOTE"], [{ plurnk: { op: "error" } }, "NOTE"], [{ plurnk: { op: "NOTE" } }, "lookup"]])) {
+                            await display(complete, /** @type {any} */ (_meta), name);
                             assert.equal(await item.getAttribute("data-plurnk-note"), null);
                             assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                         }

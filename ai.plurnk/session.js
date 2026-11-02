@@ -16,6 +16,9 @@ export const CLIENT = "plurnk-web";
 
 /** @typedef {{ access: string, refresh: string, claims: import("@plurnk/plurnk-contracts").CredentialClaims, refreshing: Promise<void> | null }} Grant */
 /** @typedef {{ verifier: string, target: string, redirectUri: string, expires: number }} Transaction */
+/** @typedef {import("@plurnk/plurnk-contracts").RequestHeaders & { url?: string }} SessionRequest */
+/** @typedef {import("./http.js").HttpResponse} SessionResponse */
+/** @typedef {Pick<import("@plurnk/plurnk-contracts").CredentialAuthority, "verify" | "issue" | "revokeFamily" | "sessions" | "onRevoked">} SessionCredentials */
 
 /** {§web-session} A consumer of the daemon's authority, never an independent issuer or session inventory. */
 export default class Session {
@@ -33,7 +36,7 @@ export default class Session {
     #unsubscribe;
 
     /**
-     * @param {import("@plurnk/plurnk-contracts").CredentialAuthority} credentials
+     * @param {SessionCredentials} credentials
      * @param {{ clientId: string, clientSecret: string }} registration
      * @param {import("@plurnk/plurnk-contracts").CredentialFace} face
      * @param {{ ttl: number | null }} limits
@@ -48,7 +51,7 @@ export default class Session {
     }
 
     /** {§web-session} The daemon's issuer for this request: its configured origin, else the address the browser reached.
-     * @param {import("node:http").IncomingMessage} req
+     * @param {SessionRequest} req
      */
     #issuer(req) { return this.#face.issuer(req); }
 
@@ -63,18 +66,18 @@ export default class Session {
         return this.#authority;
     }
 
-    /** @param {import("node:http").IncomingMessage} req */
+    /** @param {SessionRequest} req */
     #claims(req) {
         const token = cookie(req, this.#session(req));
         const claims = token === null ? null : this.#credentials.verify(token);
         return claims?.kind === "session" && claims.clientId === this.#client.client_id && claims.scopes.includes("acp") ? claims : null;
     }
 
-    /** @param {import("node:http").IncomingMessage} req */
+    /** @param {SessionRequest} req */
     admitted(req) { return this.#claims(req) !== null; }
 
     /** {§web-account} The authority owns the inventory; the cookie identifies its current family.
-     * @param {import("node:http").IncomingMessage} req
+     * @param {SessionRequest} req
      */
     account(req) {
         const claims = this.#claims(req);
@@ -83,7 +86,7 @@ export default class Session {
         };
     }
 
-    /** @param {import("node:http").IncomingMessage} req */
+    /** @param {SessionRequest} req */
     #mutation(req) {
         const account = this.account(req);
         if (account === null) throw new RequestError(401, "Sign in again before managing sessions.");
@@ -91,7 +94,7 @@ export default class Session {
         return account;
     }
 
-    /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res @param {string} family */
+    /** @param {SessionRequest} req @param {SessionResponse} res @param {string} family */
     revoke(req, res, family) {
         const account = this.#mutation(req);
         if (!account.sessions.some((entry) => entry.family === family)) throw new RequestError(404, "Session not found.");
@@ -100,44 +103,44 @@ export default class Session {
         redirect(res, "/account/sessions/");
     }
     /** {§web-workspace-creation} Module-owned form mutations use the daemon's own origin.
-     * @param {import("node:http").IncomingMessage} req
+     * @param {SessionRequest} req
      */
     sameOriginForm(req) {
         if (req.headers.origin !== this.#issuer(req)) throw new RequestError(403, "Same-origin form required.");
         sameOriginFetch(req);
     }
 
-    /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
+    /** @param {SessionRequest} req @param {SessionResponse} res */
     revokeOthers(req, res) {
         const account = this.#mutation(req);
         for (const entry of account.sessions) if (entry.family !== account.family) this.#credentials.revokeFamily(entry.family);
         redirect(res, "/account/sessions/");
     }
 
-    /** @param {import("node:http").IncomingMessage} req */
+    /** @param {SessionRequest} req */
     #secure(req) { return this.#issuer(req).startsWith("https:"); }
 
-    /** @param {import("node:http").IncomingMessage} req */
+    /** @param {SessionRequest} req */
     #session(req) { return `${this.#secure(req) ? HOST_ONLY : ""}${SESSION}`; }
 
-    /** @param {import("node:http").IncomingMessage} req @param {string} state */
+    /** @param {SessionRequest} req @param {string} state */
     #transaction(req, state) { return `${this.#secure(req) ? SECURE_ONLY : ""}${TRANSACTION}${state}`; }
 
-    /** @param {import("node:http").IncomingMessage} req @param {string} name @param {string} value @param {string} path @param {number} ttl */
+    /** @param {SessionRequest} req @param {string} name @param {string} value @param {string} path @param {number} ttl */
     #cookie(req, name, value, path, ttl) {
         return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.ceil(ttl))}`
             + (this.#secure(req) ? "; Secure" : "");
     }
 
     /** {§web-session} Where a browser starts sign-in: the issuer's own address, so its transaction and callback share one host.
-     * @param {import("node:http").IncomingMessage} req @param {string} returnTo
+     * @param {SessionRequest} req @param {string} returnTo
      */
     signIn(req, returnTo) {
         const location = new URL(`/auth/login?${new URLSearchParams({ return: returnTo })}`, this.#issuer(req));
         return location.host === req.headers.host ? `${location.pathname}${location.search}` : location.href;
     }
 
-    /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
+    /** @param {SessionRequest} req @param {SessionResponse} res */
     async login(req, res) {
         const issuer = this.#issuer(req);
         const requested = new URL(req.url ?? "/", issuer).searchParams.get("return") ?? "/~/";
@@ -167,7 +170,7 @@ export default class Session {
         redirect(res, url.href);
     }
 
-    /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
+    /** @param {SessionRequest} req @param {SessionResponse} res */
     async callback(req, res) {
         const url = new URL(req.url ?? "/", this.#issuer(req));
         const state = url.searchParams.get("state") ?? "";
@@ -280,7 +283,7 @@ export default class Session {
     }
 
     /** {§web-access-token} Share one standard refresh across concurrent tabs; authority owns validity.
-     * @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res
+     * @param {SessionRequest} req @param {SessionResponse} res
      */
     async token(req, res) {
         const claims = this.#claims(req);
@@ -303,7 +306,7 @@ export default class Session {
         res.end(body);
     }
 
-    /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
+    /** @param {SessionRequest} req @param {SessionResponse} res */
     logout(req, res) {
         this.sameOriginForm(req);
         const claims = this.#claims(req);

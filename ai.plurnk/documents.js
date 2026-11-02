@@ -5,6 +5,8 @@ import { escapeHtml, RequestError } from "./http.js";
 
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
+/** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly hidden_at: string | null }} DirectoryWorkspace */
+/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly lifecycle: string, readonly hidden_at: string | null }} DirectorySession */
 /** {§web-document} {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
 export default class Documents {
     #beforeTitle;
@@ -84,7 +86,7 @@ export default class Documents {
     }
 
     /** {§web-account} Only authority-supplied facts are presented as session information.
-     * @param {{ family: string, sessions: readonly import("@plurnk/plurnk-contracts").CredentialSession[] }} account
+     * @param {{ family: string, sessions: readonly Pick<import("@plurnk/plurnk-contracts").CredentialSession, "family" | "createdAt" | "expiresAt" | "clients">[] }} account
      */
     sessions({ family, sessions }) {
         const time = (/** @type {number} */ timestamp) => {
@@ -248,8 +250,8 @@ export default class Documents {
     }
 
     /** {§web-session-directory}
-     * @param {import("@plurnk/plurnk-contracts").ApplicationSessionProjection} session
-     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationSessionProjection>} sessions
+     * @param {DirectorySession} session
+     * @param {ReadonlyMap<number, DirectorySession>} sessions
      */
     #parent(session, sessions) {
         if (session.parentSessionId === null) return null;
@@ -260,8 +262,8 @@ export default class Documents {
 
     /** {§web-session-directory} The same identity is a leaf header or a native disclosure summary.
      * @param {{name: string, project_root: string | null}} workspace
-     * @param {import("@plurnk/plurnk-contracts").ApplicationSessionProjection} session
-     * @param {import("@plurnk/plurnk-contracts").ApplicationSessionProjection | null} parent
+     * @param {DirectorySession} session
+     * @param {DirectorySession | null} parent
      */
     #sessionIdentity(workspace, session, parent) {
         const path = directoryPath({ kind: "session", workspace: workspace.name, session: session.name });
@@ -282,7 +284,7 @@ export default class Documents {
 
     /** {§web-session-directory}
      * @param {{name: string, project_root: string | null}} workspace
-     * @param {ReadonlyMap<number, import("@plurnk/plurnk-contracts").ApplicationSessionProjection>} sessions
+     * @param {ReadonlyMap<number, DirectorySession>} sessions
      */
     #sessionTree(workspace, sessions) {
         // {§web-directory-documents} A hidden session leaves the tree; its page still opens by its address.
@@ -294,7 +296,7 @@ export default class Documents {
             return parent !== null && parent.origin !== "model";
         });
         let rendered = 0;
-        /** @param {readonly import("@plurnk/plurnk-contracts").ApplicationSessionProjection[]} entries @returns {string} */
+        /** @param {readonly DirectorySession[]} entries @returns {string} */
         const list = (entries) => entries.length === 0 ? ""
             : `<ul>${entries.map((session) => {
                 rendered++;
@@ -353,7 +355,7 @@ export default class Documents {
     }
     /**
      * @param {import("./directory-addresses.js").Directory} directory
-     * @param {Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort, "listWorkspaces" | "listSessions">} port
+     * @param {{ listWorkspaces(): Promise<readonly DirectoryWorkspace[]>, listSessions(workspaceId: number): Promise<readonly DirectorySession[]> }} port
      * @param {boolean} authenticated
      * @param {boolean} [own] {§web-session-approval} whether the person reached the page by their own navigation; only then
      * does a session page start with the configured automatic approval

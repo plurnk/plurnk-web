@@ -36,7 +36,7 @@ const value = (page, key) => key === "lifecycle"
     : page.locator(`#session-status [data-text="${key}"]`).textContent();
 const family = (page) => page.locator("#session-descendants > summary").getAttribute("aria-label");
 const deadline = (page) => page.locator('#session-status [data-text="wait"]').getAttribute("datetime");
-const prompt = (name) => ({ id: crypto.randomUUID(), role: "user", content: `Lifecycle fixture: ${name}.` });
+const prompt = (name) => ({ id: crypto.randomUUID(), role: /** @type {const} */ ("user"), content: `Lifecycle fixture: ${name}.` });
 const entryRequest = (request, scheme) => {
     const url = new URL(request.url());
     return /\/acp\/\d+\/\d+\/entry$/u.test(url.pathname) && url.searchParams.get("target")?.startsWith(`${scheme}:`);
@@ -51,7 +51,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const workspace = "family-status";
                 const setup = await controller(base);
                 await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                const workspaceId = setup.state.plurnk.workspace.id;
+                const workspaceId = /** @type {any} */ (setup.state.plurnk).workspace.id;
                 const fork = async (session, name) => {
                     const request = await controller(base);
                     request.sessionId = `${workspaceId}#${session}`;
@@ -216,6 +216,8 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     assert.equal(await problem.locator("code").count(), 0, "the message is content, not a duplicated diagnostic payload");
                     assert.equal(await problem.locator("article > details").evaluate((node) => node.open), false);
                     assert.equal(await problem.locator("summary").isVisible(), true);
+                    assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "connected", "error-level diagnostic does not disconnect the session");
+                    assert.equal(await value(page, "lifecycle"), "idle", "diagnostic severity does not drive session lifecycle");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "configuration evidence is not a fabricated conversation");
                     await notice.evaluate((element) => { window.retainedNotice = element; });
                     const count = await rows.count();
@@ -291,7 +293,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await page.waitForFunction(() => [...document.querySelectorAll('[data-message-role="assistant"] > article strong')].some((element) => element.textContent === "Readable evidence"));
                         const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.count(), 1);
-                        assert.equal(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.name === "NOTE").rawInput.body, contentAttack);
+                        assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, contentAttack);
                         assert.equal(await note.locator("article > details > pre").textContent(), contentAttack);
                         assert.equal(await note.locator("pre > *").count(), 0, "NOTE content cannot become HTML elements");
                         assert.equal(await page.locator("[data-messages]").locator("article script, article img, article form, article [id]").count(), 0);
@@ -350,7 +352,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(await note.locator("details").evaluate((node) => node.open), false);
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
                         assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
-                        const args = run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.name === "NOTE").rawInput;
+                        const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput);
                         assert.equal(args.body, "A **working fact**, not the answer.");
                         assert.equal(args.aside, "fact");
                         const id = await note.getAttribute("data-call-id");
@@ -397,7 +399,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
                         const note = page.locator('[data-messages] [data-plurnk-note]');
                         assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
-                        assert.equal(run.messages.flatMap((message) => message.toolCalls ?? []).find((call) => call.name === "NOTE").rawInput.body, footnoteAnswer);
+                        assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, footnoteAnswer);
                         assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
                         assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");
                         const ids = await answer.locator("[id]").evaluateAll((elements) => elements.map(({ id }) => id));
@@ -628,13 +630,13 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     const successfulId = await successful.getAttribute("data-call-id");
                     const evidence = run.messages.find((message) => message.role === "tool" && message.toolCallId === successfulId);
                     assert.equal((await inspectResult(evidence.content, undefined, base)).content, "cobalt heron", "actual READ bytes remain accessible through the public evidence resource");
-                    const missing = run.messages.filter(({ role, content }) => role === "tool" && typeof content === "string")
-                        .map(({ content }) => JSON.parse(content)).find(({ problem }) => problem?.title === "Entry not found");
+                    const missing = run.messages.filter(({ role }) => role === "tool")
+                        .flatMap(({ content }) => typeof content === "string" ? [JSON.parse(content)] : []).find(({ problem }) => problem?.title === "Entry not found");
                     assert.ok(missing, "the fixture actually produced a missing-entry Problem");
                     assert.ok((await readRows.locator('[data-plurnk-field="outcome"]').allTextContents()).some((text) => text.includes(missing.problem.detail)), "the real operation diagnostic is visible content");
                     assert.equal(requests.filter((request) => entryRequest(request, "log")).length, 0, "the browser does not fetch READ bodies for its summary");
                     assert.equal(await readRows.locator("a, button, [data-body-reference]").count(), 0);
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "long literal receipts do not widen the viewport");
                         const incoming = page.locator('[data-message-role="user"]').first();
@@ -1007,7 +1009,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     checkBrowser([/^error \/acp: Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING$/u]);
                     const card = page.locator('#session-connection');
                     assert.equal(await card.isVisible(), true);
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         const style = await card.evaluate((element) => ({ padding: getComputedStyle(element).paddingInlineStart, shadow: getComputedStyle(element).boxShadow }));
                         assert.ok(parseFloat(style.padding) > 0);

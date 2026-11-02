@@ -110,7 +110,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
     const checkBrowser = browserDiagnostics(context);
     const port = {
         listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, hidden_at: null }],
-        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle" }],
+        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", hidden_at: null }],
     };
     let html;
     await context.route("http://web.test/**", (route) => {
@@ -125,7 +125,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
         assert.equal(await indicator.count(), 1);
         assert.equal(await indicator.getAttribute("title"), "Disconnected");
         assert.match(await indicator.evaluate((element) => getComputedStyle(element, "::before").content), /🔌/u);
-        for (const colorScheme of ["light", "dark"]) {
+        for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
             await page.emulateMedia({ colorScheme });
             for (const state of ["initial", "connecting", "connected", "interrupted", "disconnected", "signed-out", "connected"]) {
                 await page.locator("#session-status").evaluate((element, state) => { element.dataset.connection = state; }, state);
@@ -199,7 +199,8 @@ test("{§web-build} production prunes unused CSS without dropping native state s
             },
         }],
     });
-    const css = bundle.output.filter((entry) => entry.type === "asset" && entry.fileName.endsWith(".css"))
+    const [{ output }] = /** @type {{ output: any[] }[]} */ (Array.isArray(bundle) ? bundle : [bundle]);
+    const css = output.filter((entry) => entry.type === "asset" && entry.fileName.endsWith(".css"))
         .map((entry) => entry.source).join("\n");
     assert.doesNotMatch(css, /unused-build-witness/u);
     assert.match(css, /aria-invalid/u);

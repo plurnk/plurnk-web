@@ -790,13 +790,12 @@ export default class SessionAgent {
      */
     #gateSessionKey(entry) {
         if (entry.method === "session/request_permission") {
-            const prop = /** @type {Record<string, unknown> | undefined} */ (entry._meta?.plurnk?.proposal);
+            const prop = entry._meta?.plurnk?.proposal;
             if (typeof prop?.session === "string") return prop.session;
             if (typeof prop?.sessionId === "number") return String(prop.sessionId);
             return "";
         }
-        const inter = /** @type {Record<string, unknown> | undefined} */ (entry._meta?.plurnk?.interaction);
-        if (typeof inter?.session === "string") return inter.session;
+        const inter = entry._meta?.plurnk?.interaction;
         if (typeof inter?.sessionId === "number") return String(inter.sessionId);
         return "";
     }
@@ -811,17 +810,16 @@ export default class SessionAgent {
             const matchingGates = [];
             for (const item of this.#allPendingGates) {
                 const prop = item.method === "session/request_permission"
-                    ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal)
+                    ? item._meta?.plurnk?.proposal
                     : undefined;
                 const inter = item.method === "elicitation/create"
-                    ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.interaction)
+                    ? item._meta?.plurnk?.interaction
                     : undefined;
                 const matchesProp = isRecord(prop)
                     && ((typeof d.id === "number" && prop.sessionId === d.id)
                         || (typeof d.name === "string" && prop.session === d.name));
                 const matchesInter = isRecord(inter)
-                    && ((typeof d.id === "number" && inter.sessionId === d.id)
-                        || (typeof d.name === "string" && inter.session === d.name));
+                    && typeof d.id === "number" && inter.sessionId === d.id;
                 if (matchesProp && prop !== undefined) {
                     matchingGates.push(structuredClone(prop));
                 } else if (matchesInter && inter !== undefined) {
@@ -943,17 +941,17 @@ export default class SessionAgent {
     #pruneDescendantGatesFromStatus(descendants) {
         for (const item of [...this.#allPendingGates]) {
             const prop = item.method === "session/request_permission"
-                ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal)
+                ? item._meta?.plurnk?.proposal
                 : undefined;
             const inter = item.method === "elicitation/create"
-                ? /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.interaction)
+                ? item._meta?.plurnk?.interaction
                 : undefined;
             const desc = descendants.find((d) => {
                 if (!isRecord(d)) return false;
                 if (typeof d.id === "number" && (prop?.sessionId === d.id || inter?.sessionId === d.id)) {
                     return true;
                 }
-                if (typeof d.name === "string" && (prop?.session === d.name || inter?.session === d.name)) {
+                if (typeof d.name === "string" && prop?.session === d.name) {
                     return true;
                 }
                 return false;
@@ -2324,7 +2322,7 @@ export default class SessionAgent {
                         const key = this.#gateSessionKey(item);
                         if (key !== childName && key !== String(childId)) continue;
                         if (item.method === "session/request_permission") {
-                            const prop = /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal);
+                            const prop = item._meta?.plurnk?.proposal;
                             if (coord !== undefined && prop?.coordinate === coord) {
                                 this.#cancelGateById(item.id);
                             }
@@ -2606,7 +2604,7 @@ export default class SessionAgent {
             ) {
                 for (const item of [...this.#allPendingGates]) {
                     if (item.method === "session/request_permission") {
-                        const prop = /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.proposal);
+                        const prop = item._meta?.plurnk?.proposal;
                         if (
                             prop?.coordinate === update.toolCallId
                             || (isRecord(item.toolCall) && item.toolCall.toolCallId === update.toolCallId)
@@ -2617,7 +2615,7 @@ export default class SessionAgent {
                         item.method === "elicitation/create"
                         && (update.status === "completed" || update.status === "failed")
                     ) {
-                        const inter = /** @type {Record<string, unknown> | undefined} */ (item._meta?.plurnk?.interaction);
+                        const inter = item._meta?.plurnk?.interaction;
                         if (typeof inter?.interactionId === "number" && `int:${inter.interactionId}` === update.toolCallId) {
                             this.#cancelGateById(item.id);
                         }

@@ -50,6 +50,7 @@ export default async function verifyBodies(t) {
                             await route.fulfill({ contentType: "text/html", body: source });
                         }
                     });
+                    /** @type {any[]} */
                     const messages = [{ id: "before-result", role: "assistant", content: "Earlier content.\n\n".repeat(80) },
                         { id: "result", role: "user", content: [
                         { type: "resource_link", uri: address, mimeType: "text/html" },

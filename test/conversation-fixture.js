@@ -10,14 +10,15 @@ import createModule from "../ai.plurnk/module.js";
 export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url), routes = new Map()) {
     const module = createModule();
     let serve;
-    await module.start({ registerHttpRoute(_path, handler) { serve = handler; } });
+    await module.start(/** @type {any} */ ({ registerHttpRoute(_path, handler) { serve = handler; } }));
     const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, type]) =>
         [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), type }])));
-    const { output } = await build({
+    const built = await build({
         logLevel: "error",
         build: { write: false, rolldownOptions: { input: fileURLToPath(entryURL) } },
     });
+    const [{ output }] = /** @type {{ output: any[] }[]} */ (Array.isArray(built) ? built : [built]);
     for (const entry of output) assets.set(`/${entry.fileName}`, {
         body: entry.type === "chunk" ? entry.code : entry.source,
         type: entry.type === "chunk" ? "text/javascript" : entry.fileName.endsWith(".css") ? "text/css" : entry.fileName.endsWith(".woff2") ? "font/woff2" : "text/plain",
@@ -29,8 +30,8 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
     const documents = new Documents(template, false, 64);
     const document = await documents.read({ kind: "session", workspace: "conversation", session: "user" }, {
-        listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null }],
-        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle" }],
+        listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null, hidden_at: null }],
+        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", hidden_at: null }],
     }, false);
     let acpHandler = null;
     let connSeq = 0;

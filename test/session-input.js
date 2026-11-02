@@ -88,6 +88,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await field.fill(" \n ");
         await field.press("Control+Enter");
         assert.equal(await field.evaluate((element) => element.validity.customError), true, "the ordinary submit handler rejects whitespace");
+        assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
         assert.equal(inputs.length, 0);
         await field.fill("Lifecycle fixture: keyboard-input.");
         await field.press("End");
@@ -98,6 +99,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
         for (const flags of [{ isComposing: true }, { repeat: true }, { altKey: true }]) {
             await field.dispatchEvent("keydown", { key: "Enter", ctrlKey: true, ...flags });
         }
+        assert.equal(await field.inputValue(), body);
+        assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
         assert.equal(inputs.length, 0, "editing and composition do not submit");
         await field.press("Control+Enter");
         await page.getByText("Completed keyboard-input.", { exact: true }).waitFor({ timeout: 5000 });
@@ -116,6 +119,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isDisabled(), true);
         await field.press("Control+Enter");
         assert.equal(await field.inputValue(), "Retain this draft while disconnected.");
+        assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
         assert.equal(inputs.length, 1, "keyboard submission cannot bypass unavailable delivery");
         assert.equal(model.requests.length, 1);
         checkBrowser([
@@ -183,6 +187,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
                     assert.equal(model.requests.length, 0, "opening a composer remains passive");
                     await text.fill("   \n   ");
                     await send.click();
+                    assert.equal(await text.evaluate((element) => element.validity.customError), true);
+                    assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
                     assert.equal(inputs.length, 0, "whitespace-only messages are not submitted");
 
                     const body = "  Lifecycle fixture: held-input.\nKeep this exact text.  ";
@@ -198,7 +204,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
 
                     await text.fill("Lifecycle fixture: follow-up.");
                     await send.click();
-                    await page.waitForFunction(() => document.querySelector("#session-message")?.value === "", undefined, { timeout: 1000 });
+                    await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
                     assert.equal(await send.isEnabled(), true, "accepted input is acknowledged before the next model turn");
                     assert.equal(model.requests.length, 1, "handoff neither restarts nor cancels the running inference");
                     assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
@@ -245,7 +251,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
                     await page.getByText("Considering held-input-stop.", { exact: true }).waitFor({ state: "attached" });
                     await text.fill("Lifecycle fixture: cancelled-follow-up.");
                     await send.click();
-                    await page.waitForFunction(() => document.querySelector("#session-message")?.value === "", undefined, { timeout: 1000 });
+                    await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
                     await text.fill("Unsent draft survives Stop.");
                     await stop.click();
                     await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled"
@@ -685,7 +691,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await page.getByText("Considering held-unobserved.", { exact: true }).waitFor({ state: "attached" });
         await text.fill("Lifecycle fixture: unobserved-follow-up.");
         await send.click();
-        await page.waitForFunction(() => document.querySelector("#session-message")?.value === "", undefined, { timeout: 1000 });
+        await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
         const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
         assert.equal(accepted.length, 2);
         assert.equal(await text.inputValue(), "");
