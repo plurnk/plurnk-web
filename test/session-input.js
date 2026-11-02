@@ -227,6 +227,14 @@ export default async function verifySessionInput({ t, withDaemon }) {
                     const history = await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
                     assert.ok(history.length > 2 && history.every(Boolean));
                     assert.equal(new Set(history).size, history.length);
+                    const turnTexts = await page.locator("[data-messages] > li").allTextContents();
+                    const firstPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: held-input."));
+                    const firstDoneIdx = turnTexts.findIndex((entry) => entry.includes("Completed held-input."));
+                    const followUpPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: follow-up."));
+                    const followUpDoneIdx = turnTexts.findIndex((entry) => entry.includes("Completed follow-up."));
+                    assert.ok(firstPromptIdx !== -1 && firstPromptIdx < firstDoneIdx, "initial prompt heads its turn");
+                    assert.ok(firstDoneIdx < followUpPromptIdx, "accepted follow-up stays after the turn that was running when it arrived");
+                    assert.ok(followUpPromptIdx < followUpDoneIdx, "accepted follow-up heads the turn that observes it");
                     await page.reload();
                     await page.getByText("Completed follow-up.", { exact: true }).waitFor();
                     assert.deepEqual(await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), history);
@@ -235,6 +243,9 @@ export default async function verifySessionInput({ t, withDaemon }) {
                     await text.fill("Lifecycle fixture: held-input-stop.");
                     await send.click();
                     await page.getByText("Considering held-input-stop.", { exact: true }).waitFor({ state: "attached" });
+                    await text.fill("Lifecycle fixture: cancelled-follow-up.");
+                    await send.click();
+                    await page.waitForFunction(() => document.querySelector("#session-message")?.value === "", undefined, { timeout: 1000 });
                     await text.fill("Unsent draft survives Stop.");
                     await stop.click();
                     await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "cancelled"
@@ -247,6 +258,23 @@ export default async function verifySessionInput({ t, withDaemon }) {
                     assert.equal(action.method, "session/cancel");
                     assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false);
                     assert.equal(action.params.prompt, undefined, "cancellation does not resubmit conversation history");
+                    await text.fill("Lifecycle fixture: after-stop.");
+                    await send.click();
+                    await page.getByText("Completed after-stop.", { exact: true }).waitFor();
+                    for (const pass of ["live", "reloaded"]) {
+                        if (pass === "reloaded") {
+                            await page.reload();
+                            await page.getByText("Completed after-stop.", { exact: true }).waitFor();
+                        }
+                        const items = await page.locator("[data-messages] > li").allTextContents();
+                        const stopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: held-input-stop."));
+                        const cancelledFollowIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: cancelled-follow-up."));
+                        const afterStopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: after-stop."));
+                        const afterStopDoneIdx = items.findIndex((entry) => entry.includes("Completed after-stop."));
+                        assert.ok(stopPromptIdx !== -1 && stopPromptIdx < cancelledFollowIdx, `${pass}: cancelled follow-up follows its loop's prompt`);
+                        assert.ok(cancelledFollowIdx < afterStopPromptIdx, `${pass}: cancelled loop's unobserved follow-up does not float below a later loop`);
+                        assert.ok(afterStopPromptIdx < afterStopDoneIdx, `${pass}: subsequent loop prompt heads its turn`);
+                    }
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
                     assert.deepEqual(model.errors, []);

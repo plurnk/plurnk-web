@@ -235,6 +235,84 @@ function extractToolResultContent(contentBlocks, rawOutput) {
     return "";
 }
 
+/**
+ * @param {Message} item
+ * @returns {number | undefined}
+ */
+function loopIdOf(item) {
+    const p = item._meta?.plurnk;
+    if (typeof p?.loopId === "number") return p.loopId;
+    if (item.role === "assistant" && Array.isArray(item.toolCalls) && item.toolCalls.length > 0) {
+        const cp = item.toolCalls[0]._meta?.plurnk;
+        if (typeof cp?.loopId === "number") return cp.loopId;
+    }
+    return undefined;
+}
+
+/**
+ * @param {Message[]} messages
+ * @param {Message} item
+ */
+function insertMessage(messages, item) {
+    const isUnobservedUser = item.role === "user" && item._meta?.plurnk?.published === false;
+    if (isUnobservedUser) {
+        const targetLoopId = loopIdOf(item);
+        if (targetLoopId !== undefined) {
+            let idx = messages.findIndex((m) => {
+                const lid = loopIdOf(m);
+                return lid !== undefined && lid > targetLoopId;
+            });
+            if (idx !== -1) {
+                const nextMsg = messages[idx];
+                const prevMsg = idx > 0 ? messages[idx - 1] : undefined;
+                if (prevMsg && prevMsg.role === "reasoning" && loopIdOf(prevMsg) === undefined) {
+                    const nextLoopSeq = nextMsg._meta?.plurnk?.loopSeq
+                        ?? (nextMsg.role === "assistant" ? nextMsg.toolCalls?.[0]?._meta?.plurnk?.loopSeq : undefined);
+                    const prevCoord = prevMsg._meta?.plurnk?.coordinate;
+                    if (
+                        typeof prevCoord === "string"
+                        && typeof nextLoopSeq === "number"
+                        && Number(prevCoord.split("/")[0]) === nextLoopSeq
+                    ) {
+                        idx -= 1;
+                    }
+                }
+                messages.splice(idx, 0, item);
+                return;
+            }
+        }
+        messages.push(item);
+        return;
+    }
+
+    let itemLoopId = loopIdOf(item);
+    if (itemLoopId === undefined && item.role === "tool") {
+        const callMsg = messages.find(
+            (m) => m.role === "assistant" && m.toolCalls?.some((c) => c.toolCallId === item.toolCallId),
+        );
+        if (callMsg) {
+            itemLoopId = loopIdOf(callMsg);
+        }
+    }
+    const unobservedIdx = messages.findIndex((m) => {
+        if (m.role !== "user" || m._meta?.plurnk?.published !== false) return false;
+        const uLid = loopIdOf(m);
+        if (itemLoopId !== undefined && uLid !== undefined) {
+            return uLid >= itemLoopId;
+        }
+        if (itemLoopId === undefined) {
+            const lc = m._meta?.plurnk?.lifecycle;
+            return lc === "running" || lc === "queued" || lc === "parked";
+        }
+        return false;
+    });
+    if (unobservedIdx !== -1) {
+        messages.splice(unobservedIdx, 0, item);
+    } else {
+        messages.push(item);
+    }
+}
+
 /** {§web-session-conversation} {§web-session-history} Project standard ACP v2 session updates into transcript messages. */
 export class SessionTranslator {
     /** @type {Set<string>} */
@@ -271,6 +349,10 @@ export class SessionTranslator {
                 const chunk = extractChunkContent(update.content, "text/plain");
                 const found = messages.find((m) => m.id === id && m.role === "user");
                 if (found) {
+                    const wasUnobserved = found._meta?.plurnk?.published === false;
+                    const nowPublished = plurnk !== undefined
+                        && plurnk.published !== false
+                        && (plurnk.id !== undefined || plurnk.coordinate !== undefined);
                     if (Array.isArray(chunk)) {
                         found.content = chunk;
                     } else if (typeof found.content === "string") {
@@ -288,16 +370,27 @@ export class SessionTranslator {
                     }
                     if (subagentRunId) found.subagentRunId = subagentRunId;
                     if (plurnk) {
+                        const nextPlurnk = {
+                            ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
+                            ...structuredClone(plurnk),
+                        };
+                        if (nowPublished) {
+                            delete nextPlurnk.published;
+                        }
                         found._meta = {
                             ...found._meta,
-                            plurnk: {
-                                ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
-                                ...structuredClone(plurnk),
-                            },
+                            plurnk: nextPlurnk,
                         };
                     }
+                    if (wasUnobserved && nowPublished) {
+                        const oldIdx = messages.indexOf(found);
+                        if (oldIdx !== -1) {
+                            messages.splice(oldIdx, 1);
+                            insertMessage(messages, found);
+                        }
+                    }
                 } else {
-                    messages.push({
+                    insertMessage(messages, {
                         id,
                         role: "user",
                         content: chunk,
@@ -339,7 +432,7 @@ export class SessionTranslator {
                         };
                     }
                 } else {
-                    messages.push({
+                    insertMessage(messages, {
                         id,
                         role: "assistant",
                         content: chunk,
@@ -382,7 +475,7 @@ export class SessionTranslator {
                         };
                     }
                 } else {
-                    messages.push({
+                    insertMessage(messages, {
                         id,
                         role: "reasoning",
                         content: "",
@@ -435,7 +528,7 @@ export class SessionTranslator {
                         }
                         foundObs._meta = { plurnk: structuredClone(plurnk) };
                     } else {
-                        messages.push({
+                        insertMessage(messages, {
                             id: obsId,
                             role: "tool",
                             toolCallId,
@@ -510,7 +603,7 @@ export class SessionTranslator {
                                 ? update.title
                                 : "tool";
                     const callPlurnk = plurnk ? structuredClone(plurnk) : {};
-                    messages.push({
+                    insertMessage(messages, {
                         id: typeof update.messageId === "string" && update.messageId.length > 0
                             ? update.messageId
                             : `call:${toolCallId}`,
@@ -549,7 +642,7 @@ export class SessionTranslator {
                             existingResult.rawOutput = structuredClone(update.rawOutput);
                         }
                     } else {
-                        messages.push({
+                        insertMessage(messages, {
                             id: resultId,
                             role: "tool",
                             toolCallId,
