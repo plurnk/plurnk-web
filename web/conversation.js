@@ -31,7 +31,9 @@ export default function conversation(root, readBody) {
     /** @param {Element | null} outlet @param {unknown} content @param {boolean} rich @param {string} scope */
     function body(outlet, content, rich, scope) {
         if (!outlet) return;
-        const revision = JSON.stringify([content, rich]);
+        const revision = typeof content === "string"
+            ? `${rich ? "1" : "0"}:${content}`
+            : JSON.stringify([content, rich]);
         if (painted.get(outlet) === revision) return;
         const summary = $(outlet, ":scope > summary");
         if (summary) {
@@ -147,11 +149,18 @@ export default function conversation(root, readBody) {
             const initiallyOpen = message.role === "user" || isReplyOp(op) || message.role === "assistant" && !call;
             const frame = card(row, hasBody, initiallyOpen);
             body(frame.body, content, rich, call ? `call-${call.toolCallId}` : `message-${message.id}`);
-            if (summarized) operationSummary(frame.header, operationName, args, receipt, facts, error);
-            else {
-                frame.header.replaceChildren();
-                if (message.role === "reasoning") $.clone(frame.header, "#operation-header").textContent = reasoningCoordinate(message._meta?.plurnk?.coordinate);
-                if (error) $.clone(frame.header, "#operation-outcome").textContent = error;
+            if (summarized) {
+                painted.delete(frame.header);
+                operationSummary(frame.header, operationName, args, receipt, facts, error);
+            } else {
+                const headerCoordinate = message.role === "reasoning" ? reasoningCoordinate(message._meta?.plurnk?.coordinate) : "";
+                const headerRevision = `${headerCoordinate}\n${error}`;
+                if (painted.get(frame.header) !== headerRevision) {
+                    frame.header.replaceChildren();
+                    if (message.role === "reasoning") $.clone(frame.header, "#operation-header").textContent = headerCoordinate;
+                    if (error) $.clone(frame.header, "#operation-outcome").textContent = error;
+                    painted.set(frame.header, headerRevision);
+                }
                 if (!frame.body && !frame.header.hasChildNodes()) frame.header.remove();
             }
             nameCard(frame.header);

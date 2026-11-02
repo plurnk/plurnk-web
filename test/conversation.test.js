@@ -264,6 +264,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         await row("thought").locator("summary").click();
                         await page.evaluate(() => {
                             window.savedRow = document.querySelector('[data-message-id="thought"]');
+                            window.savedHeader = document.querySelector('[data-message-id="thought"] summary > [data-plurnk-field="heading"]');
                             window.savedBody = document.querySelector('[data-message-id="question"] article');
                             const node = window.savedBody.querySelector("strong").firstChild;
                             const range = document.createRange();
@@ -278,12 +279,28 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         await present(updated);
                         await present(structuredClone(updated));
                         assert.equal(await page.evaluate(() => window.savedRow === document.querySelector('[data-message-id="thought"]')), true);
+                        assert.equal(await page.evaluate(() => window.savedHeader === document.querySelector('[data-message-id="thought"] summary > [data-plurnk-field="heading"]')), true);
                         assert.equal(await page.evaluate(() => window.savedBody === document.querySelector('[data-message-id="question"] article')), true);
                         assert.equal(await row("thought").locator("details").evaluate((details) => details.open), true);
                         assert.equal(await page.evaluate(() => document.activeElement?.outerHTML), focused);
                         assert.equal(await page.evaluate(() => getSelection().toString()), "the evidence");
                         assert.equal(await page.evaluate(() => scrollY), beforeScroll);
                         assert.match(await row("thought").locator("article").textContent(), /Now I have evidence\./u);
+                        assert.equal(
+                            await page.evaluate(() => {
+                                const initial = [
+                                    { id: "first", role: "user", content: "First message" },
+                                    { id: "second", role: "assistant", content: "Streaming" },
+                                ];
+                                const next = window.projectUpdates(
+                                    [{ sessionUpdate: "agent_message_chunk", messageId: "second", content: { type: "text", text: " delta" } }],
+                                    initial,
+                                );
+                                return next[0] === initial[0] && next[1] !== initial[1] && next[1].content === "Streaming delta";
+                            }),
+                            true,
+                            "streaming updates clone only the modified message rather than the entire window",
+                        );
                     });
 
                     await t.test("{§web-session-conversation} call identities stay exact without inventing fragment navigation", async () => {

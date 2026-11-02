@@ -1,4 +1,5 @@
 import { $, the } from "on_the_money";
+import { addressOf } from "@plurnk/plurnk-contracts";
 import bodyReferences from "./body-references.js";
 import card, { nameCard } from "./card.js";
 import operationSummary, { argumentsOf, bodyOf, record } from "./operation-summary.js";
@@ -98,7 +99,9 @@ export default function activity(root, read) {
             || ![loopSeq, turnSeq, sequence].every((val) => Number.isSafeInteger(val) && val >= 0)
             || (op !== null && typeof op !== "string") || typeof origin !== "string"
             || typeof state !== "string" || !Number.isSafeInteger(statusRx)
-            || (plurnk.source !== undefined && plurnk.source !== null && typeof plurnk.source !== "string")) {
+            || (plurnk.source !== undefined && plurnk.source !== null && typeof plurnk.source !== "string")
+            || (plurnk.address !== undefined && plurnk.address !== null && typeof plurnk.address !== "string")
+            || (plurnk.target !== undefined && plurnk.target !== null && typeof plurnk.target !== "string")) {
             throw new TypeError("Ambient row identity or display fields are incomplete.");
         }
         if (plurnk.body !== undefined) referenceOf(plurnk.body);
@@ -112,7 +115,11 @@ export default function activity(root, read) {
             ? argumentsOf(update.rawOutput)
             : (record(update.rawOutput) ?? record(plurnk.receipt));
         const coordinate = `${loopSeq}/${turnSeq}/${sequence}`;
-        const target = typeof plurnk.target === "string" ? plurnk.target : update.locations?.[0]?.path;
+        const address = typeof plurnk.address === "string"
+            ? plurnk.address
+            : typeof plurnk.target === "string"
+                ? plurnk.target
+                : (addressOf(plurnk) ?? update.locations?.[0]?.path);
         the(row, {
             activityKind: "ambient",
             activityLabel: [operation, `Session ${sessionId}`, coordinate, state, String(statusRx),
@@ -124,7 +131,7 @@ export default function activity(root, read) {
             plurnkSignal: typeof plurnk.signal === "number" ? plurnk.signal : null,
         });
         const header = content(row, bodyOf(args, op), reasoning);
-        operationSummary(header, operation, args, receipt, { op, status: statusRx, address: target }, "");
+        operationSummary(header, operation, args, receipt, { op, status: statusRx, address }, "");
         nameCard(header);
         rows.set(key, row);
     };

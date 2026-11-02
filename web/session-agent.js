@@ -325,7 +325,23 @@ export class SessionTranslator {
      */
     static projectMessages(updates, existing = []) {
         /** @type {Message[]} */
-        const messages = existing.map((msg) => structuredClone(msg));
+        const messages = [...existing];
+        /** @type {Set<Message>} */
+        const cloned = new Set();
+        /**
+         * @param {number} index
+         * @returns {Message}
+         */
+        const cloneAt = (index) => {
+            const current = messages[index];
+            if (!cloned.has(current)) {
+                const copy = structuredClone(current);
+                cloned.add(copy);
+                messages[index] = copy;
+                return copy;
+            }
+            return current;
+        };
         for (const update of updates) {
             if (!isRecord(update) || typeof update.sessionUpdate !== "string") continue;
             const kind = update.sessionUpdate;
@@ -347,8 +363,9 @@ export class SessionTranslator {
                             ? plurnk.coordinate
                             : `user-${messages.length + 1}`;
                 const chunk = extractChunkContent(update.content, "text/plain");
-                const found = messages.find((m) => m.id === id && m.role === "user");
-                if (found) {
+                const foundIdx = messages.findIndex((m) => m.id === id && m.role === "user");
+                if (foundIdx !== -1) {
+                    const found = cloneAt(foundIdx);
                     const wasUnobserved = found._meta?.plurnk?.published === false;
                     const nowPublished = plurnk !== undefined
                         && plurnk.published !== false
@@ -390,13 +407,16 @@ export class SessionTranslator {
                         }
                     }
                 } else {
-                    insertMessage(messages, {
+                    /** @type {Message} */
+                    const created = {
                         id,
                         role: "user",
                         content: chunk,
                         ...(subagentRunId ? { subagentRunId } : {}),
                         ...(plurnk ? { _meta: { plurnk: structuredClone(plurnk) } } : {}),
-                    });
+                    };
+                    cloned.add(created);
+                    insertMessage(messages, created);
                 }
                 continue;
             }
@@ -408,8 +428,9 @@ export class SessionTranslator {
                         ? plurnk.coordinate
                         : `assistant-${messages.length + 1}`;
                 const chunk = extractChunkContent(update.content, "text/markdown");
-                const found = messages.find((m) => m.id === id && m.role === "assistant");
-                if (found) {
+                const foundIdx = messages.findIndex((m) => m.id === id && m.role === "assistant");
+                if (foundIdx !== -1) {
+                    const found = cloneAt(foundIdx);
                     if (Array.isArray(chunk)) {
                         found.content = chunk;
                     } else if (typeof found.content === "string") {
@@ -432,13 +453,16 @@ export class SessionTranslator {
                         };
                     }
                 } else {
-                    insertMessage(messages, {
+                    /** @type {Message} */
+                    const created = {
                         id,
                         role: "assistant",
                         content: chunk,
                         ...(subagentRunId ? { subagentRunId } : {}),
                         ...(plurnk ? { _meta: { plurnk: structuredClone(plurnk) } } : {}),
-                    });
+                    };
+                    cloned.add(created);
+                    insertMessage(messages, created);
                 }
                 continue;
             }
@@ -462,8 +486,9 @@ export class SessionTranslator {
                         ...(linkBody && !isRecord(plurnk?.body) ? { body: linkBody } : {}),
                     }
                     : undefined;
-                const found = messages.find((m) => m.id === id && m.role === "reasoning");
-                if (found) {
+                const foundIdx = messages.findIndex((m) => m.id === id && m.role === "reasoning");
+                if (foundIdx !== -1) {
+                    const found = cloneAt(foundIdx);
                     if (subagentRunId) found.subagentRunId = subagentRunId;
                     if (mergedPlurnk) {
                         found._meta = {
@@ -475,13 +500,16 @@ export class SessionTranslator {
                         };
                     }
                 } else {
-                    insertMessage(messages, {
+                    /** @type {Message} */
+                    const created = {
                         id,
                         role: "reasoning",
                         content: "",
                         ...(subagentRunId ? { subagentRunId } : {}),
                         ...(mergedPlurnk ? { _meta: { plurnk: mergedPlurnk } } : {}),
-                    });
+                    };
+                    cloned.add(created);
+                    insertMessage(messages, created);
                 }
                 continue;
             }
@@ -520,15 +548,17 @@ export class SessionTranslator {
                             return extractToolResultContent(update.content, update.rawOutput);
                         })()
                         : extractToolResultContent(update.content, update.rawOutput);
-                    const foundObs = messages.find((m) => m.id === obsId);
-                    if (foundObs) {
+                    const foundObsIdx = messages.findIndex((m) => m.id === obsId);
+                    if (foundObsIdx !== -1) {
+                        const foundObs = cloneAt(foundObsIdx);
                         foundObs.content = obsContent;
                         if (foundObs.role === "tool" && update.rawOutput !== undefined) {
                             foundObs.rawOutput = structuredClone(update.rawOutput);
                         }
                         foundObs._meta = { plurnk: structuredClone(plurnk) };
                     } else {
-                        insertMessage(messages, {
+                        /** @type {Message} */
+                        const created = {
                             id: obsId,
                             role: "tool",
                             toolCallId,
@@ -536,7 +566,9 @@ export class SessionTranslator {
                             ...(update.rawOutput !== undefined ? { rawOutput: structuredClone(update.rawOutput) } : {}),
                             ...(subagentRunId ? { subagentRunId } : {}),
                             _meta: { plurnk: structuredClone(plurnk) },
-                        });
+                        };
+                        cloned.add(created);
+                        insertMessage(messages, created);
                     }
                     continue;
                 }
@@ -549,9 +581,17 @@ export class SessionTranslator {
                     continue;
                 }
 
-                const existingCall = messages
-                    .flatMap((m) => (m.role === "assistant" ? m.toolCalls ?? [] : []))
-                    .find((c) => c.toolCallId === toolCallId);
+                const callOwnerIdx = messages.findIndex(
+                    (m) => m.role === "assistant" && m.toolCalls?.some((c) => c.toolCallId === toolCallId),
+                );
+                const existingCall = callOwnerIdx !== -1
+                    ? (() => {
+                        const owner = cloneAt(callOwnerIdx);
+                        return owner.role === "assistant"
+                            ? owner.toolCalls?.find((c) => c.toolCallId === toolCallId)
+                            : undefined;
+                    })()
+                    : undefined;
                 const hasCallDefinition =
                     kind === "tool_call"
                     || typeof update.name === "string"
@@ -603,7 +643,8 @@ export class SessionTranslator {
                                 ? update.title
                                 : "tool";
                     const callPlurnk = plurnk ? structuredClone(plurnk) : {};
-                    insertMessage(messages, {
+                    /** @type {Message} */
+                    const created = {
                         id: typeof update.messageId === "string" && update.messageId.length > 0
                             ? update.messageId
                             : `call:${toolCallId}`,
@@ -622,7 +663,9 @@ export class SessionTranslator {
                             ...(Array.isArray(update.content) ? { content: structuredClone(update.content) } : {}),
                             ...(Object.keys(callPlurnk).length > 0 ? { _meta: { plurnk: callPlurnk } } : {}),
                         }],
-                    });
+                    };
+                    cloned.add(created);
+                    insertMessage(messages, created);
                 }
 
                 const hasReceipt =
@@ -635,20 +678,26 @@ export class SessionTranslator {
                         ? plurnk.messageId
                         : `${toolCallId}:result`;
                     const resultContent = extractToolResultContent(update.content, update.rawOutput);
-                    const existingResult = messages.find((m) => m.id === resultId && m.role === "tool");
-                    if (existingResult && existingResult.role === "tool") {
-                        existingResult.content = resultContent;
-                        if (update.rawOutput !== undefined) {
-                            existingResult.rawOutput = structuredClone(update.rawOutput);
+                    const existingResultIdx = messages.findIndex((m) => m.id === resultId && m.role === "tool");
+                    if (existingResultIdx !== -1) {
+                        const existingResult = cloneAt(existingResultIdx);
+                        if (existingResult.role === "tool") {
+                            existingResult.content = resultContent;
+                            if (update.rawOutput !== undefined) {
+                                existingResult.rawOutput = structuredClone(update.rawOutput);
+                            }
                         }
                     } else {
-                        insertMessage(messages, {
+                        /** @type {Message} */
+                        const created = {
                             id: resultId,
                             role: "tool",
                             toolCallId,
                             content: resultContent,
                             ...(update.rawOutput !== undefined ? { rawOutput: structuredClone(update.rawOutput) } : {}),
-                        });
+                        };
+                        cloned.add(created);
+                        insertMessage(messages, created);
                     }
                 }
             }
@@ -2112,17 +2161,22 @@ export default class SessionAgent {
         const pending = this.#pendingLiveThought;
         if (!pending) return;
         this.#pendingLiveThought = undefined;
-        const found = this.messages.find((m) => m.id === pending.messageId && m.role === "reasoning");
+        const idx = this.messages.findIndex((m) => m.id === pending.messageId && m.role === "reasoning");
+        const found = idx !== -1 ? this.messages[idx] : undefined;
         if (!found || (isRecord(found._meta?.plurnk) && found._meta.plurnk.body !== undefined)) {
             return;
         }
-        found._meta = {
-            ...found._meta,
-            plurnk: {
-                ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
-                body: pending.body,
+        const updated = {
+            ...found,
+            _meta: {
+                ...found._meta,
+                plurnk: {
+                    ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
+                    body: pending.body,
+                },
             },
         };
+        this.messages = this.messages.with(idx, updated);
         await subscriber.onMessagesChanged?.({ messages: this.messages });
     }
 
