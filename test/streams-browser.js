@@ -25,6 +25,7 @@ export default async function verifyStreams(t) {
                         content, state, contentOffset: 0, contentLength: [...content].length, mimetype: "text/stream", weight: 1,
                     });
                     const entry = { entryId: 9, target: "sh:///silent", channels: { stdout: channel(source), stderr: channel("") } };
+                    /** @type {any} */
                     let result = { ok: true, result: { status: 200, entry } };
                     let held = null;
                     onAcp(async (input, headers) => {

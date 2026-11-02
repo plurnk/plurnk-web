@@ -87,7 +87,7 @@ Escaped \$x$; unclosed $x.
                         await present(source);
                         await page.waitForFunction(() => document.querySelectorAll("[data-math-error]").length >= 2);
                         assert.match(await body.textContent(), /\\notACommand/u);
-                        assert.match(await body.textContent(), /\\secret/u, "macros do not leak between expressions");
+                        assert.ok((await body.locator("[data-math-error]").allTextContents()).includes(String.raw`$\secret$`), "macros do not leak between expressions");
                         assert.equal(await body.locator("[id], a, img, svg, style, script, [data-text], [data-bind], .evil").count(), 0);
                         assert.equal(await page.locator("#session-status").count(), 1);
                         assert.deepEqual(requests.filter((address) => new URL(address).origin !== new URL(url).origin), []);
@@ -106,7 +106,7 @@ Escaped \$x$; unclosed $x.
                                 assert.equal(await body.locator(selector).evaluate((element) => element.scrollWidth > element.clientWidth), true);
                             }
                         }
-                        for (const colorScheme of ["light", "dark"]) {
+                        for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                             await page.emulateMedia({ colorScheme });
                             const colors = await body.locator("math").evaluate((element) => ({ math: getComputedStyle(element).color, text: getComputedStyle(element.closest("article")).color }));
                             assert.equal(colors.math, colors.text, "math inherits the current Pico text color");

@@ -119,13 +119,13 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
     ]);
     let handler;
     await mod.setup({ credentials: { registerClient: () => ({ clientId: "plurnk-web", clientSecret: "sec" }) } });
-    await mod.start({
+    await mod.start(/** @type {any} */ ({
         credentials: { face: () => null },
         registerHttpRoute(_prefix, serve) { handler = serve; },
         listWorkspaces: async () => [{ id: 1, name: "work", project_root: null, project_label: null, hidden_at: null }],
         listSessions: async () => [{ id: 2, name: "user", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", hidden_at: null }],
         renameWorkspace: async (id, name) => ({ id, name }),
-    });
+    }));
     const server = createServer(handler);
     t.after(async () => {
         await mod.close();
@@ -174,10 +174,10 @@ test("{§web-authorization-style} the registered browser client uses the package
 test("{§web-assets} exact public resources and HTTP method matrix", async (t) => {
     assert.equal(process.env.PLURNK_WEB_ENABLED, "1");
     let handler;
-    await createModule().start({ registerHttpRoute(prefix, serve) {
+    await createModule().start(/** @type {any} */ ({ registerHttpRoute(prefix, serve) {
         assert.equal(prefix, "/");
         handler = serve;
-    }, listWorkspaces: async () => [], listSessions: async () => [] });
+    }, listWorkspaces: async () => [], listSessions: async () => [] }));
     const server = createServer(handler);
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
     server.listen(0, "127.0.0.1");
@@ -277,14 +277,14 @@ test("{§web-index-documents} production resolves only admitted directory indexe
         await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
         let registered = false;
         await assert.rejects(fixtureModule().start({ registerHttpRoute() { registered = true; } }),
-            (error) => error.code === "ENOENT" && error.path.endsWith("missing.txt.br"));
+            (/** @type {any} */ error) => error.code === "ENOENT" && error.path.endsWith("missing.txt.br"));
         assert.equal(registered, false);
     });
 });
 
 test("{§web-asset-encoding} static negotiation preserves exact bytes and HTTP semantics", async (t) => {
     let handler;
-    await createModule().start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
+    await createModule().start(/** @type {any} */ ({ registerHttpRoute(_prefix, serve) { handler = serve; } }));
     const server = createServer(handler);
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
     server.listen(0, "127.0.0.1");

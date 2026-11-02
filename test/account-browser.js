@@ -58,7 +58,7 @@ export default async function verifyAccount({ t, withDaemon }) {
                     assert.equal(await nav.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
                     assert.equal(await page.locator("body > footer form").count(), 0);
                     const signOut = nav.getByRole("button", { name: "Sign out", exact: true });
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         for (const state of ["normal", "hover", "focus"]) {
                             if (state === "normal") { await page.mouse.move(0, 0); await signOut.blur(); }

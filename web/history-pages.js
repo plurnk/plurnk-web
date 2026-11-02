@@ -22,10 +22,13 @@ export default class HistoryPages {
      */
     snapshot(event, reading) {
         const history = event._meta?.plurnk?.history;
-        const older = event.older !== undefined
+        const rawOlder = event.older !== undefined
             ? event.older
             : (history !== undefined && "older" in history ? (history.older ?? null) : (event._meta?.plurnk !== undefined ? null : undefined));
-        if (older !== null && (typeof older !== "string" || !older.trim())) throw new TypeError("History boundary must be a URL or null.");
+        if (rawOlder !== null && (typeof rawOlder !== "string" || !rawOlder.trim())) {
+            throw new TypeError("History boundary must be a URL or null.");
+        }
+        const older = typeof rawOlder === "string" ? rawOlder : null;
         unique(event.messages);
         const incoming = new Set(event.messages.map(({ id }) => id));
         if (!reading) this.follow();

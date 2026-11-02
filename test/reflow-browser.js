@@ -33,7 +33,7 @@ export default async function verifyReflow(t) {
             await t.test(engine.name(), async (t) => {
                 const browser = await engine.launch();
                 try {
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await t.test(colorScheme, async () => {
                             const context = await browser.newContext({ colorScheme, viewport: { width: 320, height: 700 } });
                             try {

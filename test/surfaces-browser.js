@@ -45,7 +45,7 @@ export default async function verifySurfaces(t) {
                     for (const disclosure of document.querySelectorAll("[data-messages] > li > article > details")) disclosure.open = true;
                 }, messages);
                 let light;
-                for (const colorScheme of ["light", "dark"]) {
+                for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                     await page.emulateMedia({ colorScheme });
                     await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
                     const colors = await page.evaluate(() => {
@@ -71,12 +71,12 @@ export default async function verifySurfaces(t) {
                                     return { color: rgba(style.color), background: local[3] === 0 ? background : local, tag: element.tagName };
                                 }),
                             }];
-                        }).concat([["outside", { background: rgba(getComputedStyle(document.querySelector("#session-connection")).backgroundColor) }]]));
+                        }).concat([["outside", { background: rgba(getComputedStyle(document.querySelector("#session-connection")).backgroundColor), header: null, text: [] }]]));
                     });
                     const { background: user } = colors.user;
                     const { background: reply } = colors.assistant;
                     const { background: working } = colors.reasoning;
-                    assert.equal(new Set([user, reply, working].map(JSON.stringify)).size, 3, `${colorScheme}: three distinct backgrounds`);
+                    assert.equal(new Set([user, reply, working].map((item) => JSON.stringify(item))).size, 3, `${colorScheme}: three distinct backgrounds`);
                     assert.ok(user[1] > user[0] && user[1] > user[2], "user tint is green");
                     assert.deepEqual(colors["decorated-user"].background, user, "SEND metadata never turns a user's prompt into a model reply");
                     for (const id of ["SEND", "reply", "cancelled", "outside"]) assert.deepEqual(colors[id].background, reply, id);

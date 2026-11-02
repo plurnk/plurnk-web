@@ -19,7 +19,7 @@ test("{§web-contract-checks} the actual web lint command rejects an unresolved 
     await symlink(fileURLToPath(new URL("node_modules", root)), join(directory, "node_modules"), "dir");
     const run = promisify(execFile);
     await run("git", ["init", "--quiet"], { cwd: directory });
-    await assert.rejects(run("npm", ["run", "test:lint"], { cwd: directory }), (error) => {
+    await assert.rejects(run("npm", ["run", "test:lint"], { cwd: directory }), (/** @type {any} */ error) => {
         assert.equal(error.code, 1);
         assert.match(error.stderr, /Unresolved specification-tag citations/u);
         assert.match(error.stderr, /broken\.js:1/u);

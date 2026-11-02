@@ -19,7 +19,7 @@ async function sessionAgentBundle() {
             },
         },
     });
-    const [{ output }] = Array.isArray(built) ? built : [built];
+    const [{ output }] = /** @type {{ output: any[] }[]} */ (Array.isArray(built) ? built : [built]);
     const chunk = output.find((entry) => entry.type === "chunk" && entry.isEntry);
     return async (page, base) => {
         await page.route(new URL("/__test__/session-agent.js", base).href, (route) =>
@@ -76,7 +76,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                 assert.equal((await page.content()).includes(supplied.body.access_token), false);
                 assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
                 await page.evaluate(async () => {
-                    const { default: SessionAgent } = await import("/__test__/session-agent.js");
+                    const { default: SessionAgent } = await import(String("/__test__/session-agent.js"));
                     globalThis.connection = {
                         snapshot: null, streamError: null, settled: false, failure: null,
                         async discover(token) {
@@ -156,13 +156,13 @@ export default async function verifyTokens({ t, withDaemon }) {
                     await page.getByRole("button", { name: "Continue", exact: true }).click();
                     await page.waitForURL(new URL("/account/", base).href);
                     await page.evaluate(async () => {
-                        const { default: SessionAgent } = await import("/__test__/session-agent.js");
+                        const { default: SessionAgent } = await import(String("/__test__/session-agent.js"));
                         const response = await fetch("/auth/token", { method: "POST" });
                         if (!response.ok) throw new Error(`Token request failed: ${response.status}`);
                         const { access_token } = await response.json();
                         const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "revocation",
                             headers: { Authorization: `Bearer ${access_token}` } });
-                        const state = globalThis.revocation = { agent, reasoned: false, streamError: null, settled: false, error: null };
+                        const state = globalThis.revocation = { agent, reasoned: false, streamError: null, settled: false, error: null, pending: null };
                         state.pending = agent.send({
                             workspace: "revocation",
                             message: { id: "revocation-prompt", role: "user", content: "Lifecycle fixture: held-revocation." },
@@ -187,9 +187,9 @@ export default async function verifyTokens({ t, withDaemon }) {
                     assert.equal(exchanged.status, 200);
                     const { access_token } = await exchanged.json();
                     await page.evaluate(async (access) => {
-                        const { default: SessionAgent } = await import("/__test__/session-agent.js");
+                        const { default: SessionAgent } = await import(String("/__test__/session-agent.js"));
                         const agent = new SessionAgent({ url: new URL("/acp", location.href).href, sessionId: "revocation", headers: { Authorization: `Bearer ${access}` } });
-                        const state = globalThis.survivor = { agent, snapshot: null, outcome: null, settled: false, error: null };
+                        const state = globalThis.survivor = { agent, snapshot: null, outcome: null, settled: false, error: null, pending: null };
                         state.pending = agent.resume({ workspace: "revocation" }, {
                             onMessagesSnapshot: ({ snapshot }) => { state.snapshot = snapshot; },
                             onSettled: (outcome) => { state.outcome = outcome; },

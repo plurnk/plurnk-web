@@ -120,6 +120,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const page = await signIn(context, "/~/");
                             const second = await signIn(other, "/~/");
                             await verifyPageShell(page, { title: "Workspaces — Plurnk", kind: "daemon" });
+                            assert.equal(await page.locator("main h1").count(), 0);
                             assert.deepEqual(await page.locator("main > ul > li > article > header > a").allTextContents(), initial.map(({ name }) => name));
                             const entries = page.locator('main > ul > li > article');
                             assert.deepEqual(await entries.locator("header").evaluateAll((elements) => elements.map((element) => getComputedStyle(element, "::before").content.match(/☁️|🗂️/u)?.[0])), initial.map(({ project_root }) => project_root === null ? "☁️" : "🗂️"));
@@ -182,6 +183,8 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await page.getByRole("button", { name: "Sign out" }).click();
                             await page.waitForURL(base);
                             assert.equal((await context.cookies()).some(({ name }) => name === "plurnk_web_session"), false);
+                            const replay = await fetch(new URL("/~/", base), { headers: { cookie: `plurnk_web_session=${cookie.value}` }, redirect: "manual" });
+                            assert.equal(replay.status, 303, "logout revokes the credential, not only the browser cookie");
                             await second.reload();
                             assert.equal(new URL(second.url()).pathname, "/~/", "another browser's grant survives");
                             const secondCookie = (await other.cookies()).find(({ name }) => name === "plurnk_web_session");

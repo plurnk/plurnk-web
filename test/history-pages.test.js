@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import HistoryPages from "../web/history-pages.js";
 
-const message = (id, content = id) => ({ id, role: "user", content });
+const message = (id, content = id) => ({ id, role: /** @type {const} */ ("user"), content });
 const snapshot = (messages, older) => ({ messages, older });
 const ids = (history) => history.view().messages.map(({ id }) => id);
 
@@ -51,8 +51,8 @@ test("{§web-session-history} reading pins displaced observations only until ret
 
 test("{§web-session-history} late results update an archived call once, then survive its final refetch", () => {
     const history = new HistoryPages();
-    const call = { id: "call-message", role: "assistant", toolCalls: [{ toolCallId: "call", name: "READ", rawInput: {} }] };
-    const result = { id: "result", role: "tool", toolCallId: "call", content: "live result" };
+    const call = { id: "call-message", role: /** @type {const} */ ("assistant"), toolCalls: [{ toolCallId: "call", name: "READ", rawInput: {} }] };
+    const result = { id: "result", role: /** @type {const} */ ("tool"), toolCallId: "call", content: "live result" };
     history.snapshot(snapshot([message("new")], "/old"), false);
     history.live([message("new")]);
     history.accept("/old", { final: false, messages: [call], older: null });
@@ -76,8 +76,8 @@ test("{§web-session-history} late results update an archived call once, then su
 
 test("{§web-session-history} multiple late receipts preserve their supplied order beside an archived call", () => {
     const history = new HistoryPages();
-    const call = { id: "calls", role: "assistant", toolCalls: ["one", "two"].map((toolCallId) => ({ toolCallId, name: "READ", rawInput: {} })) };
-    const results = ["one", "two"].map((id) => ({ id: `result-${id}`, role: "tool", toolCallId: id, content: id }));
+    const call = { id: "calls", role: /** @type {const} */ ("assistant"), toolCalls: ["one", "two"].map((toolCallId) => ({ toolCallId, name: "READ", rawInput: {} })) };
+    const results = ["one", "two"].map((id) => ({ id: `result-${id}`, role: /** @type {const} */ ("tool"), toolCallId: id, content: id }));
     history.snapshot(snapshot([message("now")], "/old"), false);
     history.live([message("now")]);
     history.accept("/old", { final: false, messages: [call], older: null });
@@ -94,8 +94,8 @@ test("{§web-session-history} abandoned reads and invalid cursor cycles cannot c
     assert.equal(history.accept("/old", { final: true, messages: [message("old")], older: null }), false);
     assert.deepEqual(ids(history), ["newer"]);
     assert.throws(() => history.accept("/later", { final: true, messages: [], older: "/later" }), /History page repeats its own cursor/u);
-    assert.throws(() => history.snapshot(snapshot([], 42), false), /History boundary must be a URL or null/u);
-    assert.throws(() => history.snapshot({ messages: [] }, false), /History boundary must be a URL or null/u);
+    assert.throws(() => history.snapshot(snapshot([], /** @type {any} */ (42)), false), /History boundary must be a URL or null/u);
+    assert.throws(() => history.snapshot(/** @type {any} */ ({ messages: [] }), false), /History boundary must be a URL or null/u);
     assert.throws(() => history.live([message("duplicate"), message("duplicate")]), /duplicate message identities/u);
     assert.deepEqual(ids(history), ["newer"]);
 });

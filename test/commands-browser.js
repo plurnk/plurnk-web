@@ -24,6 +24,7 @@ export default async function verifyCommands(t) {
                         availableCommands: [],
                         _meta: { plurnk: { status: { model, spawnModel: null } } },
                     });
+                    /** @type {any} */
                     let result = modelResponse(null);
                     let held = undefined;
                     let delayed = undefined;
@@ -80,7 +81,7 @@ export default async function verifyCommands(t) {
                     await page.locator('[aria-label="Session controls"]').evaluate((element) => element.setAttribute("data-live-work", ""));
                     assert.equal(await stop.isVisible(), true, "known live work remains visible even while Stop is unavailable");
                     assert.equal(await stop.isDisabled(), true);
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         assert.equal(await stop.evaluate((button) => {
                             const style = getComputedStyle(button);
@@ -100,7 +101,7 @@ export default async function verifyCommands(t) {
                             "Send joins the textarea with Pico's native group margin");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     }
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         const field = page.getByRole("textbox", { name: "Message", exact: true });
                         for (const draft of ["One line", "First line\nSecond line\nThird line"]) {

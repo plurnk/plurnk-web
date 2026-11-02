@@ -4,8 +4,9 @@ import Session from "../ai.plurnk/session.js";
 
 // {§web-session} The authority decides identity and expiry; a cookie is never a bearer.
 test("{§web-session} only this client's live scoped session admits a document", () => {
+    /** @type {any} */
     let claims = null;
-    const credentials = { verify: () => claims, onRevoked: () => () => {} };
+    const credentials = { verify: () => claims, issue: () => ({ token: "", expiresAt: 0 }), revokeFamily() {}, sessions: () => [], onRevoked: () => () => {} };
     const session = new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "http://127.0.0.1:1066" }, { ttl: 600 });
     const req = { headers: { cookie: "plurnk_web_session=test" } };
     assert.equal(session.admitted(req), false);
@@ -28,8 +29,10 @@ test("{§web-session} HTTPS cookie and session lifetime come from the verified g
     const issued = [];
     const credentials = {
         onRevoked: () => () => {},
-        verify: (token) => token === "access" ? { ...common, kind: "access" } : token === "refresh" ? { ...common, kind: "refresh" } : null,
+        verify: (token) => token === "access" ? { ...common, kind: /** @type {const} */ ("access") } : token === "refresh" ? { ...common, kind: /** @type {const} */ ("refresh") } : null,
         issue: (claims) => { issued.push(claims); return { token: "session", expiresAt }; },
+        revokeFamily() {},
+        sessions: () => [],
     };
     let exchanges = 0;
     t.mock.method(globalThis, "fetch", async (input, options) => {
@@ -82,7 +85,7 @@ test("{§web-session} a sign-in transaction opens only in the browser and module
     t.mock.method(globalThis, "fetch", async () =>
         Response.json({ issuer: origin, authorization_endpoint: `${origin}/oauth/authorize`, token_endpoint: `${origin}/oauth/token` }));
     t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
-    const credentials = { verify: () => null, onRevoked: () => () => {} };
+    const credentials = { verify: () => null, issue: () => ({ token: "", expiresAt: 0 }), revokeFamily() {}, sessions: () => [], onRevoked: () => () => {} };
     const start = async (session) => {
         const headers = new Map();
         await session.login({ headers: {}, url: "/auth/login" }, { setHeader: (name, value) => headers.set(name, value), writeHead: (_status, values) => headers.set("location", values.location), end() {} });
@@ -91,7 +94,7 @@ test("{§web-session} a sign-in transaction opens only in the browser and module
     };
     const callback = async (session, cookie, state) => {
         const headers = new Map();
-        await assert.rejects(session.callback({ headers: { cookie }, url: `/auth/callback?code=test&state=${state}` }, { setHeader: (name, value) => headers.set(name, value) }),
+        await assert.rejects(session.callback({ headers: { cookie }, url: `/auth/callback?code=test&state=${state}` }, { setHeader: (name, value) => headers.set(name, value), writeHead() {}, end() {} }),
             { status: 400, message: "This browser holds no current sign-in for this callback. Start sign-in again." });
         return headers.get("set-cookie");
     };
@@ -102,6 +105,7 @@ test("{§web-session} a sign-in transaction opens only in the browser and module
     assert.equal(first.name, `__Secure-plurnk_web_login_${first.state}`, "under HTTPS a transaction is Secure-prefixed");
     assert.notEqual(first.name, second.name, "concurrent tabs keep their own transactions");
     const tampered = `${first.value.slice(0, -2)}${first.value.endsWith("AA") ? "AB" : "AA"}`;
+    /** @type {[string, string, string, Session?][]} */
     const cases = [
         ["no transaction cookie", "", first.state],
         ["another browser's state", `${second.name}=${second.value}`, first.state],
@@ -130,9 +134,10 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
     const credentials = {
         onRevoked: () => () => {},
         verify: (token) => ["access", "refresh", "old-session"].includes(token)
-            ? { ...common, kind: token === "old-session" ? "session" : token } : null,
+            ? { ...common, kind: /** @type {import("@plurnk/plurnk-contracts").CredentialKind} */ (token === "old-session" ? "session" : token) } : null,
         issue: () => ({ token: "new-session", expiresAt: common.expiresAt }),
         revokeFamily: (family) => revoked.push(family),
+        sessions: () => [],
     };
     t.mock.method(globalThis, "fetch", async (input) => String(input).endsWith("/oauth/token")
         ? Response.json({ access_token: "access", refresh_token: "refresh", token_type: "Bearer", expires_in: 60 })
@@ -153,10 +158,10 @@ test("{§web-session} a second tab's callback does not revoke its own sign-in fa
 });
 
 test("{§web-account} sign-in returns to native account pages without treating query or fragment text as a path", async () => {
-    const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"] }), onRevoked: () => () => {} },
+    const session = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "f", expiresAt: 0 }), issue: () => ({ token: "", expiresAt: 0 }), revokeFamily() {}, sessions: () => [], onRevoked: () => () => {} },
         { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600 });
     const locations = [];
-    const response = { writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
+    const response = { setHeader() {}, writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
     for (const path of ["/account/", "/account/sessions/"]) {
         for (const requested of [path, `${path}index.html`, `${path}?filter=example`, `${path}index.html#section`]) {
             await session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response);
@@ -170,12 +175,13 @@ test("{§web-account} sign-in returns to native account pages without treating q
 });
 
 test("{§web-account} inventory and revocation are scoped to the authenticated subject", () => {
-    const current = { family: "current", subject: "operator", clientId: "plurnk-web", kind: "session", scopes: ["acp"] };
+    const current = { family: "current", subject: "operator", clientId: "plurnk-web", kind: /** @type {const} */ ("session"), scopes: ["acp"], expiresAt: 0, createdAt: 0, clients: ["plurnk-web"] };
     const entries = [current, { ...current, family: "other" }];
     const revoked = [];
     const credentials = {
         onRevoked: () => () => {},
         verify: (token) => token === "current-token" ? current : null,
+        issue: () => ({ token: "", expiresAt: 0 }),
         sessions: (subject) => { assert.equal(subject, "operator"); return entries; },
         revokeFamily: (family) => revoked.push(family),
     };
@@ -207,7 +213,7 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
 });
 
 test("{§web-workspace-creation} module form mutations require the daemon's own origin", () => {
-    const session = new Session({ verify: () => null, onRevoked: () => () => {} },
+    const session = new Session({ verify: () => null, issue: () => ({ token: "", expiresAt: 0 }), revokeFamily() {}, sessions: () => [], onRevoked: () => () => {} },
         { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600 });
     session.sameOriginForm({ headers: { origin: "https://daemon.example" } });
     for (const headers of [{ origin: "https://foreign.example" }, { origin: "https://daemon.example.evil" }, {}]) {
@@ -216,14 +222,14 @@ test("{§web-workspace-creation} module form mutations require the daemon's own 
 });
 
 test("{§web-session} a browser starts sign-in at the issuer's address, and cookie names follow its scheme", () => {
-    const credentials = { verify: () => null, onRevoked: () => () => {} };
+    const credentials = { verify: () => null, issue: () => ({ token: "", expiresAt: 0 }), revokeFamily() {}, sessions: () => [], onRevoked: () => () => {} };
     const at = (issuer) => new Session(credentials, { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => issuer }, { ttl: 600 });
     assert.equal(at("http://127.0.0.1:1066").signIn({ headers: { host: "127.0.0.1:1066" } }, "/~/work/"), "/auth/login?return=%2F%7E%2Fwork%2F",
         "the address the browser reached is the issuer's");
     assert.equal(at("https://daemon.example").signIn({ headers: { host: "10.0.0.5:1066" } }, "/~/work/"), "https://daemon.example/auth/login?return=%2F%7E%2Fwork%2F",
         "another address starts sign-in at the issuer's, where its callback returns");
     assert.equal(at("http://127.0.0.1:1066").admitted({ headers: { cookie: "__Host-plurnk_web_session=x" } }), false, "plain HTTP reads the unprefixed name");
-    const verified = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "f" }), onRevoked: () => () => {} },
+    const verified = new Session({ verify: () => ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"], subject: "operator", family: "f", expiresAt: 0 }), issue: () => ({ token: "", expiresAt: 0 }), revokeFamily() {}, sessions: () => [], onRevoked: () => () => {} },
         { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600 });
     assert.equal(verified.admitted({ headers: { cookie: "plurnk_web_session=x" } }), false, "HTTPS reads only the host-only name");
     assert.equal(verified.admitted({ headers: { cookie: "__Host-plurnk_web_session=x" } }), true);

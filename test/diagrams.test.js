@@ -15,13 +15,13 @@ async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
     }
-    const claims = { kind: "session", clientId: "plurnk-web", scopes: ["acp"] };
+    const claims = /** @type {const} */ ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"] });
     const credentials = { registerClient: () => ({ clientId: "plurnk-web", clientSecret: "test-only" }),
         face: () => PLURNK_AUTH === "1" ? { issuer: () => "http://test.invalid" } : null, onRevoked: () => unsubscribe,
         verify: (token) => token === "valid" ? claims : null };
     let handler;
     await module.setup({ credentials });
-    await module.start({ credentials, ...port, registerHttpRoute(_prefix, serve) { handler = serve; } });
+    await module.start(/** @type {any} */ ({ credentials, ...port, registerHttpRoute(_prefix, serve) { handler = serve; } }));
     const errors = [];
     const server = createServer((req, res) => {
         void handler(req, res).catch((error) => { errors.push(error); res.writeHead(500); res.end(); });
@@ -123,7 +123,7 @@ test("{§web-diagram-service} a slow compiler leaves HTTP responsive, times out 
     const { base, post } = await fixture(t, { PLURNK_WEB_DIAGRAM_THREADS: "1", PLURNK_WEB_DIAGRAM_PENDING: "1", PLURNK_WEB_DIAGRAM_TIMEOUT_MS: "250" });
     const started = Promise.withResolvers();
     const run = Piscina.prototype.run;
-    t.mock.method(Piscina.prototype, "run", function (input, options) {
+    t.mock.method(Piscina.prototype, "run", /** @this {any} */ function (input, options) {
         const result = run.call(this, input, input.source === dense ? { ...options, filename: new URL("./stalled-compiler.js", import.meta.url).href } : options);
         started.resolve();
         return result;
@@ -160,8 +160,8 @@ test("{§web-diagram-service} disconnect and shutdown terminate compilation with
     const run = Piscina.prototype.run;
     let started = Promise.withResolvers();
     let cancelled = Promise.withResolvers();
-    t.mock.method(Piscina.prototype, "run", function (...args) {
-        const task = run.apply(this, args);
+    t.mock.method(Piscina.prototype, "run", /** @this {any} */ function (input, options) {
+        const task = run.call(this, input, options);
         void task.then(() => cancelled.resolve(), () => cancelled.resolve());
         started.resolve();
         return task;
@@ -202,7 +202,7 @@ test("{§web-diagram-service} another module cleanup failure cannot leave the co
     const failure = new Error("credential observer cleanup failed");
     let throws = true;
     const { post, module } = await fixture(t, { PLURNK_AUTH: "1" }, () => { if (throws) throw failure; });
-    await assert.rejects(module.close(), (error) => error === failure);
+    await assert.rejects(async () => { await module.close(); }, (error) => error === failure);
     throws = false;
     await problem(await post(simple, { headers: { cookie: "plurnk_web_session=valid" } }), 503, /The PLURNK service is shutting down\./u);
 });
@@ -220,8 +220,8 @@ test("{§web-route-settlement} compiler cleanup failure still joins requests bef
     await entered.promise;
     const failure = new Error("compiler cleanup failed", { cause: new Error("compiler fixture failure") });
     const destroy = Piscina.prototype.destroy;
-    t.mock.method(Piscina.prototype, "destroy", async function () { await destroy.call(this); throw failure; }, { times: 1 });
-    const closed = assert.rejects(module.close(), (error) => error === failure);
+    t.mock.method(Piscina.prototype, "destroy", /** @this {any} */ async function () { await destroy.call(this); throw failure; }, { times: 1 });
+    const closed = assert.rejects(async () => { await module.close(); }, (error) => error === failure);
     try { await setImmediate(); assert.deepEqual(order, [], "cleanup must not bypass a held request"); }
     finally { release.resolve(); }
     assert.equal((await response).status, 200);

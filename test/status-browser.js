@@ -77,7 +77,7 @@ export default async function verifyStatus(t) {
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "true"));
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "false"));
-                    for (const colorScheme of ["light", "dark"]) {
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         const appearance = await page.locator("#session-status > [data-status-line]").evaluate((element) => {
                             const list = getComputedStyle(element);

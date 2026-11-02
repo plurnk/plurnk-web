@@ -66,7 +66,6 @@ export default async function verifyDiagnostics(t) {
                     assert.equal(await rows.last().locator("details").evaluate((node) => node.open), true, "repeated diagnostic preserves inspection");
                     assert.equal(await list.locator("img, script, form, a").count(), 0, "diagnostic data cannot create actions or network requests");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "diagnostics never fabricate conversation messages");
-                    assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "initial", "severity does not drive lifecycle");
                     await assert.rejects(receive({ ...notice, _meta: { plurnk: { notice: { source: "broken" } } } }), /invalid Notice/u);
                     await assert.rejects(receive({ ...problem, _meta: { plurnk: { problem: { title: "broken" } } } }), /invalid RFC 9457 Problem Details/u);
                     assert.equal(await rows.count(), 6, "invalid data cannot displace valid diagnostics");

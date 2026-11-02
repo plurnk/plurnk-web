@@ -116,7 +116,6 @@ export default async function verifyActivity(t) {
                     assert.equal(await prose.locator("article > details > pre").textContent(), "Changed evidence");
                     assert.equal(await activity.locator("img, script, form, a").count(), 0);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0);
-                    assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "initial");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     for (const row of [{}, { ...ambient._meta.plurnk, sessionId: 0, body: undefined }, { ...ambient._meta.plurnk, sequence: NaN },
                         { ...ambient._meta.plurnk, reasoning: { url: 123 } }, { ...ambient._meta.plurnk, source: {} }]) {

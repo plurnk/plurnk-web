@@ -5,7 +5,7 @@ import { setImmediate } from "node:timers/promises";
 
 const workspace = { id: 1, name: "example", project_root: null, project_label: null };
 
-async function fixture(t, createModule, { credentials, ...port } = {}) {
+async function fixture(t, createModule, /** @type {any} */ { credentials, ...port } = {}) {
     const module = createModule();
     let handler;
     await module.setup({ credentials });

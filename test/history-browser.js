@@ -54,6 +54,7 @@ export default async function verifyHistory(t) {
                     const requests = [];
                     const reads = [];
                     const pages = new Map();
+                    /** @type {any} */
                     let events = [];
                     let credentials = 0;
                     await page.route("**/auth/token", (route) => {

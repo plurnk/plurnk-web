@@ -9,12 +9,12 @@ import createModule from "../ai.plurnk/module.js";
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 
 // {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
-async function fixture(t, { auth = false, admitted = true, create = async () => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceHidden = async ({ workspaceId, hidden }) => ({ id: workspaceId, hidden_at: hidden ? new Date().toISOString() : null }), setSessionHidden = async ({ sessionId, hidden }) => ({ id: sessionId, hidden_at: hidden ? new Date().toISOString() : null, sessionIds: [sessionId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", hidden_at: null }] } = {}) {
+async function fixture(t, { auth = false, admitted = true, create = async (/** @type {any} */ _args) => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceHidden = async ({ workspaceId, hidden }) => ({ id: workspaceId, hidden_at: hidden ? new Date().toISOString() : null }), setSessionHidden = async ({ sessionId, hidden }) => ({ id: sessionId, hidden_at: hidden ? new Date().toISOString() : null, sessionIds: [sessionId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", hidden_at: null }] } = {}) {
     const created = [];
     let handler;
     const module = createModule();
     const credentials = {
-        verify: (token) => token === "valid-session" ? { kind: "session", clientId: "plurnk-web", scopes: ["acp"], family: "f1", subject: "op" } : null,
+        verify: (token) => token === "valid-session" ? /** @type {const} */ ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"], family: "f1", subject: "op" }) : null,
         onRevoked: () => () => {},
     };
     if (auth) {
@@ -40,7 +40,7 @@ async function fixture(t, { auth = false, admitted = true, create = async () => 
         setWorkspaceHidden,
         setSessionHidden,
     };
-    await module.start(seam);
+    await module.start(/** @type {any} */ (seam));
     const server = createServer(handler);
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -141,13 +141,13 @@ test("{§web-workspace-creation} anonymous creation strictly requires matching o
     const { base, created, post } = await fixture(t);
     const token = await formToken(base);
     const host = new URL(base).host;
-    for (const [name, headers, status] of [
+    for (const [name, headers, status] of /** @type {const} */ ([
         ["missing origin", { origin: undefined }, 403],
         ["foreign origin", { origin: "https://evil.example" }, 403],
         ["cross-site fetch metadata", { "sec-fetch-site": "cross-site" }, 403],
         ["matching origin", { origin: `http://${host}` }, 303],
         ["same-origin fetch metadata", { "sec-fetch-site": "same-origin" }, 303],
-    ]) {
+    ])) {
         const res = await post(token, headers);
         assert.equal(res.status, status, name);
     }
@@ -182,11 +182,11 @@ const nameConflict = (name) => Object.assign(new Error(`Workspace name '${name}'
         { recovery: "Choose another workspace name or attach to the existing workspace." }) },
 });
 
-for (const [form, path, fields] of [
+for (const [form, path, fields] of /** @type {const} */ ([
     ["workspace-create", "/workspaces/new", (token, name) => ({ token, name })],
     ["workspace-rename", "/workspaces/rename", (_token, name) => ({ workspace: "work", name })],
     ["session-create", "/sessions/new", (token, name) => ({ token, workspace: "work", name })],
-]) {
+])) {
     for (const refused of [true, false]) {
         test(`{§web-workspace-creation} {§web-workspace-rename} {§web-session-creation} ${form}: a daemon ${refused ? "refusal keeps its status, detail and recovery" : "failure is a 502"}, and the draft comes back with a fresh token`, async (t) => {
             const calls = [];

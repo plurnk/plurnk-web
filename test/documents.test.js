@@ -16,17 +16,17 @@ test("{§web-page-shell} session status sits outside the scrolling main; directo
     assert.match(html, /<\/main><footer id="session-status"/u);
     assert.match(html, /aria-label="Model controls"/u);
     assert.match(html, /aria-label="Session statistics"/u);
-    for (const directory of [{ kind: "daemon" }, { kind: "workspace", workspace: "work" }]) {
+    for (const directory of /** @type {const} */ ([{ kind: "daemon" }, { kind: "workspace", workspace: "work" }])) {
         const listing = (await document.read(directory, port, false)).toString();
         assert.match(listing, /<li[^>]*><article[^>]*><header>/u);
     }
 });
 
 test("{§web-session-approval} a session page starts automatic only when configured and reached by the person's own navigation", async () => {
-    const arrivals = [["same-origin", true], ["none", true], ["cross-site", false], ["same-site", false], [undefined, false]];
+    const arrivals = /** @type {const} */ ([["same-origin", true], ["none", true], ["cross-site", false], ["same-site", false], [undefined, false]]);
     for (const yolo of [true, false]) {
         for (const [site, own] of arrivals) {
-            assert.equal(ownNavigation(/** @type {import("node:http").IncomingMessage} */ ({ headers: site === undefined ? {} : { "sec-fetch-site": site } })), own, String(site));
+            assert.equal(ownNavigation({ headers: site === undefined ? {} : { "sec-fetch-site": site } }), own, String(site));
             const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo, 128);
             const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
                 listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
@@ -62,7 +62,7 @@ test("{§web-session-conversation} only a session document supplies the passive 
     assert.match(html, /<ul[^>]*data-messages[^>]*><\/ul>/u);
     assert.match(html, /Conversation requires JavaScript\./u);
     assert.doesNotMatch(html, /<textarea|contenteditable|<h1\b/u);
-    for (const directory of [{ kind: "daemon" }, { kind: "workspace", workspace: "work" }]) {
+    for (const directory of /** @type {const} */ ([{ kind: "daemon" }, { kind: "workspace", workspace: "work" }])) {
         assert.doesNotMatch((await document.read(directory, port, false)).toString(), /id="session-conversation"/u);
     }
 });
@@ -82,7 +82,7 @@ test("{§web-session-observer} readable names never select the session's live se
 
 test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish workspace names from literal daemon folder labels", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
-    for (const [name, project_root, project_label, icon, label, separateFolder] of [
+    for (const [name, project_root, project_label, icon, label, separateFolder] of /** @type {const} */ ([
         ["~/looks-like-a-folder", null, null, "☁️", "Folderless workspace", false],
         ["~/project", "/home/daemon/project", "~/project", "🗂️", "Project workspace", false],
         ["research<&>", "/home/daemon/project", "~/project", "☁️", "Workspace", true],
@@ -90,9 +90,9 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
         ["~", "/home/daemon", "~", "🗂️", "Project workspace", false],
         ["/", "/", "/", "🗂️", "Project workspace", false],
         ["研究", '/srv/資料 @<script>&"', '/srv/資料 @<script>&"', "☁️", "Workspace", true],
-    ]) {
+    ])) {
         const port = {
-            listWorkspaces: async () => [{ id: 7, name, project_root, project_label }],
+            listWorkspaces: async () => [{ id: 7, name, project_root, project_label, hidden_at: null }],
             listSessions: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
@@ -212,12 +212,12 @@ test("{§web-session-directory} empty and internal-only workspaces have no empty
 
 test("{§web-session-directory} inconsistent topology fails rather than dropping sessions", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
-    for (const [sessions, message] of [
+    for (const [sessions, message] of /** @type {const} */ ([
         [[session(1, "first"), session(1, "second")], "Session directory contains duplicate identities."],
         [[session(1, "missing", 2)], "Session 1 has an absent parent 2."],
         [[session(1, "self", 1)], "Session directory holds shown model sessions that no shown root reaches."],
         [[session(1, "first", 2), session(2, "second", 1)], "Session directory holds shown model sessions that no shown root reaches."],
-    ]) {
+    ])) {
         await assert.rejects(document.read({ kind: "workspace", workspace: "work" }, {
             listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listSessions: async () => sessions,
         }, false), { name: "Error", message });
@@ -263,7 +263,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     assert.match(index, /<script src="\/app.js"><\/script>/u);
     assert.equal(await document.read({ kind: "workspace", workspace: "missing" }, port, false), null);
     assert.deepEqual(calls, ["workspaces", "workspaces"]);
-    const workspace = { kind: "workspace", workspace: '~/a&<script>@"b' };
+    const workspace = /** @type {const} */ ({ kind: "workspace", workspace: '~/a&<script>@"b' });
     const sessions = (await document.read(workspace, port, false)).toString();
     assert.match(sessions, /a%26%3Cscript%3E%40%22b@user\//u);
     assert.match(sessions, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename dialog");

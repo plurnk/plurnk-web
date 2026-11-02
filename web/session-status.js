@@ -41,7 +41,7 @@ function duration(seconds) {
 }
 
 /** {§web-session-observer} Elapsed time is a projection of daemon timestamps, not a browser stopwatch.
- * @param {import("@plurnk/plurnk-acp/client").AcpSessionStatus} status @param {number} now
+ * @param {Pick<import("@plurnk/plurnk-acp/client").AcpSessionStatus, "claimedAt" | "terminatedAt">} status @param {number} now
  */
 export function elapsed(status, now) {
     if (status.claimedAt === null) return "";
@@ -50,7 +50,7 @@ export function elapsed(status, now) {
 }
 
 /** {§web-session-status} Time never supplies a lifecycle transition.
- * @param {import("@plurnk/plurnk-acp/client").AcpSessionStatus} status @param {number} now
+ * @param {Pick<import("@plurnk/plurnk-acp/client").AcpSessionStatus, "claimedAt" | "terminatedAt" | "waitUntil">} status @param {number} now
  */
 export function clocks(status, now) {
     return {
@@ -88,8 +88,22 @@ const occupancy = (used, capacity) => used != null && capacity != null && capaci
     ? `${Math.round(used / capacity * 100)}%/${tokens(capacity)}` : "";
 
 /** {§web-session-status} Unknown complete values and known subtotals are different facts.
- * @param {Omit<import("@plurnk/plurnk-acp/client").AcpSessionStatus, "descendants"> & {descendants: readonly DescendantItem[]}} status
- * @param {import("@plurnk/plurnk-acp/client").AcpBudgetState} [budget]
+ * @param {{
+ *   lifecycle: string,
+ *   loopId?: number | null,
+ *   packetCount?: number | null,
+ *   model: (Partial<NonNullable<import("@plurnk/plurnk-acp/client").AcpSessionStatus["model"]>> & Pick<NonNullable<import("@plurnk/plurnk-acp/client").AcpSessionStatus["model"]>, "provider" | "model">) | null,
+ *   descendants: readonly DescendantItem[],
+ *   inbox: readonly unknown[],
+ *   spend: {
+ *     requests?: number,
+ *     usage?: { inputTokens?: number | null, outputTokens?: number | null } | null,
+ *     knownUsage?: { inputTokens?: number | null, outputTokens?: number | null } | null,
+ *     costUsd?: string | null,
+ *     knownCostUsd?: string | null,
+ *   },
+ * }} status
+ * @param {Partial<import("@plurnk/plurnk-acp/client").AcpBudgetState>} [budget]
  */
 export function gauges(status, budget) {
     const { model, spend } = status;

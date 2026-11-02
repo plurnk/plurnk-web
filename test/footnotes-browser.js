@@ -121,6 +121,7 @@ export default async function verifyFootnotes(t) {
                     await t.test("rich messages and SEND get separate scopes; NOTE and reasoning remain literal", async () => {
                         const content = "A[^a]\n\n[^a]: **Definition**.";
                         const roles = ["user", "assistant", "system", "developer"];
+                        /** @type {any[]} */
                         const messages = roles.map((role) => ({ id: role, role, content }));
                         messages.push(...["\ud800", "\ufffd"].map((id) => ({ id, role: "assistant", content })));
                         messages.push({ id: "replies", role: "assistant", toolCalls: ["assistant", "reply/分析%\""].map((toolCallId) => ({

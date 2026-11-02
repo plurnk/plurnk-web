@@ -4,13 +4,15 @@ import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
 const request = (schema, name = "question") => ({
+    /** @type {any[]} */
     gates: [{
         id: "opaque#question",
         method: "elicitation/create",
         mode: "form",
         message: "Choose the exact answer.",
         requestedSchema: schema,
-        ...(name !== "question" ? { _meta: { plurnk: { toolName: name } } } : {}),
+        /** @type {Record<string, any> | undefined} */
+        _meta: name !== "question" ? { plurnk: { toolName: name } } : undefined,
     }],
 });
 

@@ -140,7 +140,7 @@ export async function verifyMermaid(t) {
                         await image.waitFor();
                         const width = await image.evaluate((image) => image.naturalWidth);
                         assert.ok(width > 320);
-                        for (const colorScheme of ["light", "dark"]) {
+                        for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                             await page.emulateMedia({ colorScheme });
                             for (const viewport of [320, 768, 420]) {
                                 await page.setViewportSize({ width: viewport, height: 640 });

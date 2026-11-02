@@ -25,11 +25,12 @@ export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.locator("[style], [class]").count(), 0);
     if (kind === "error" || kind === "account") {
         const card = page.getByRole("article");
+        assert.equal(await card.count(), 1);
         if (kind === "error") {
             assert.equal(await card.locator('[aria-hidden="true"]').innerText(), "⚠️");
             assert.equal(await card.getByRole("link", { name: "Home", exact: true }).getAttribute("href"), "/");
         }
-        for (const colorScheme of ["light", "dark"]) {
+        for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
             await page.emulateMedia({ colorScheme });
             const style = await card.evaluate((element) => {
                 const card = getComputedStyle(element);

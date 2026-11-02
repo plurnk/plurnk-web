@@ -48,8 +48,11 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
-    for (const expected of ["ai.plurnk/module.js", "ai.plurnk/documents.js", "ai.plurnk/creations.js", "ai.plurnk/session.js"]) {
-        assert.ok(archive.files.some(({ path }) => path === expected), `expected ${expected} in packed package`);
+    for (const name of ["module.js", "index-document.js", "directory-addresses.js", "creations.js", "documents.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js", ".env.defaults", "assets.json"]) {
+        assert.ok(archive.files.some(({ path }) => path === `ai.plurnk/${name}`), `expected ai.plurnk/${name} in packed package`);
+    }
+    for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable.svg", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt"]) {
+        assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), `expected ai.plurnk/dist/${path} in packed package`);
     }
     assert.ok(!archive.files.some(({ path }) => path.endsWith(".png")), "no unused raster fallback is packed");
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|ai\.plurnk\/public)\/|vite\.config|\.map$/u.test(path)));
@@ -60,16 +63,16 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
     await run("npm", ["ls", "--all"], { cwd: consumer, maxBuffer: 8 * 1024 * 1024 });
 
     const require = createRequire(join(consumer, "package.json"));
-    const { default: Launch } = await import(pathToFileURL(require.resolve("@plurnk/plurnk-service/launch")));
+    const { default: Launch } = await import(pathToFileURL(require.resolve("@plurnk/plurnk-service/launch")).href);
     const daemonBin = join(consumer, "node_modules", ".bin", "plurnk-service");
     const plugin = join(consumer, "node_modules", "@plurnk", "plurnk-web");
     await t.test("{§web-route-settlement} the packed module settles admitted requests", async (t) => {
         process.loadEnvFile(join(plugin, "ai.plurnk", ".env.defaults"));
-        const { default: createModule } = await import(pathToFileURL(join(plugin, "ai.plurnk", "module.js")));
+        const { default: createModule } = await import(pathToFileURL(join(plugin, "ai.plurnk", "module.js")).href);
         await verifyRouteSettlement(t, createModule);
     });
     await t.test("{§web-directory-addresses} the packed codec preserves exact names", async () => {
-        const { directoryPath, parseDirectory } = await import(pathToFileURL(join(plugin, "ai.plurnk", "directory-addresses.js")));
+        const { directoryPath, parseDirectory } = await import(pathToFileURL(join(plugin, "ai.plurnk", "directory-addresses.js")).href);
         const directory = { kind: "session", workspace: "~/project @%/index.html", session: "user" };
         const path = directoryPath(directory);
         assert.equal(path, "/~/~/project%20%40%25/index.html@user/");
@@ -147,7 +150,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
                             await tab.goto(base);
                             assert.equal(await tab.locator("main").innerText(), "");
                             assert.equal(await tab.title(), "Plurnk");
-                            for (const [colorScheme, primary] of [["light", "#148800"], ["dark", "#4eb31b"]]) {
+                            for (const [colorScheme, primary] of /** @type {const} */ ([["light", "#148800"], ["dark", "#4eb31b"]])) {
                                 await tab.emulateMedia({ colorScheme });
                                 const rendered = await tab.evaluate(() => {
                                     const root = getComputedStyle(document.documentElement);
@@ -219,7 +222,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
         const saved = join(directory, "index.html");
         await rename(asset, saved);
         try {
-            await assert.rejects(start(), (error) => {
+            await assert.rejects(start(), (/** @type {any} */ error) => {
                 assert.equal(error.kind, "exited");
                 assert.match(error.stdout + error.stderr, /ENOENT/u);
                 assert.match(error.stdout + error.stderr, /index\.html/u);
@@ -239,7 +242,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 360_000
         }));
         await writeFile(join(fixture, "module.js"), 'export default { mounts: ["/"], start(seam) { seam.registerHttpRoute("/", (_req, res) => res.end("conflict")); } };\n');
         try {
-            await assert.rejects(start(), (error) => {
+            await assert.rejects(start(), (/** @type {any} */ error) => {
                 assert.equal(error.kind, "exited");
                 assert.match(error.stdout + error.stderr, /plurnk-web/u);
                 assert.match(error.stdout + error.stderr, /web-conflict-fixture/u);
