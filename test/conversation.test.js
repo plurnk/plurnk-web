@@ -122,6 +122,143 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         assert.equal(await page.locator("[data-empty-conversation]").isVisible(), false);
                     });
 
+                    await t.test("{§web-session-conversation} {§web-session-input} user prompts head their turn while accepted follow-ups stay at the tail of their loop", async () => {
+                        let current = [];
+                        const apply = async (updates) => {
+                            current = await page.evaluate(
+                                ({ updates, current }) => {
+                                    const next = window.projectUpdates(updates, current);
+                                    window.present(next);
+                                    return next;
+                                },
+                                { updates, current },
+                            );
+                        };
+                        await apply([
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "prompt-1",
+                                content: { type: "text", text: "Inspect the turn order." },
+                                _meta: { plurnk: { loopId: 1, lifecycle: "running", published: false } },
+                            },
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "prompt-1",
+                                content: { type: "text", text: "Inspect the turn order." },
+                                _meta: { plurnk: { id: 1, coordinate: "1/1/1", loopId: 1, origin: "operator" } },
+                            },
+                            {
+                                sessionUpdate: "agent_thought_chunk",
+                                messageId: "reasoning-1",
+                                content: { type: "resource_link", uri: "/reasoning/1", name: "reasoning", mimeType: "text/plain" },
+                                _meta: { plurnk: { id: 2, coordinate: "1/1" } },
+                            },
+                            {
+                                sessionUpdate: "tool_call",
+                                toolCallId: "call-1",
+                                title: "NOTE",
+                                status: "in_progress",
+                                rawInput: { aside: "fact", body: "In-flight turn 1 note." },
+                                _meta: { plurnk: { id: 3, op: "NOTE", coordinate: "1/1/3", origin: "model", state: "pending" } },
+                            },
+                        ]);
+                        assert.deepEqual(await ids(), ["prompt-1", "reasoning-1", "1/1/3"]);
+
+                        // A follow-up accepted while Turn 1 is still running sits at the tail of Loop 1
+                        // until Turn 1 finishes, while Turn 1's remaining output precedes it.
+                        await apply([
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "follow-up-1",
+                                content: { type: "text", text: "Proceed to turn 2." },
+                                _meta: { plurnk: { loopId: 1, lifecycle: "running", published: false } },
+                            },
+                        ]);
+                        assert.deepEqual(await ids(), ["prompt-1", "reasoning-1", "1/1/3", "follow-up-1"]);
+
+                        await apply([
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "call-1",
+                                status: "completed",
+                                _meta: { plurnk: { id: 3, op: "NOTE", coordinate: "1/1/3", origin: "model", state: "resolved", status: 200 } },
+                            },
+                            {
+                                sessionUpdate: "agent_message_chunk",
+                                messageId: "msg-4",
+                                content: { type: "text", text: "Completed turn 1." },
+                                _meta: { plurnk: { id: 4, coordinate: "1/1/4" } },
+                            },
+                        ]);
+                        assert.deepEqual(
+                            await ids(),
+                            ["prompt-1", "reasoning-1", "1/1/3", "msg-4", "follow-up-1"],
+                            "active turn output precedes an unobserved follow-up rather than floating the prompt below its turn",
+                        );
+
+                        // Turn 2 publishes follow-up-1 and streams Turn 2 output after it.
+                        await apply([
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "follow-up-1",
+                                content: { type: "text", text: "Proceed to turn 2." },
+                                _meta: { plurnk: { id: 5, coordinate: "1/2/1", loopId: 1, origin: "operator" } },
+                            },
+                            {
+                                sessionUpdate: "agent_message_chunk",
+                                messageId: "msg-6",
+                                content: { type: "text", text: "Completed turn 2." },
+                                _meta: { plurnk: { id: 6, coordinate: "1/2/2" } },
+                            },
+                        ]);
+                        assert.deepEqual(
+                            await ids(),
+                            ["prompt-1", "reasoning-1", "1/1/3", "msg-4", "follow-up-1", "msg-6"],
+                            "published follow-up heads Turn 2 ahead of Turn 2's response",
+                        );
+
+                        // An unobserved follow-up from a cancelled loop stays at the end of its loop on replay,
+                        // even when replay delivers inbox chunks after later loops' updates.
+                        current = [];
+                        await apply([
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "prompt-1",
+                                content: { type: "text", text: "Inspect the turn order." },
+                                _meta: { plurnk: { id: 1, coordinate: "1/1/1", loopId: 1, origin: "operator" } },
+                            },
+                            {
+                                sessionUpdate: "agent_message_chunk",
+                                messageId: "msg-4",
+                                content: { type: "text", text: "Completed turn 1." },
+                                _meta: { plurnk: { id: 4, coordinate: "1/1/4" } },
+                            },
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "prompt-2",
+                                content: { type: "text", text: "Start loop 2." },
+                                _meta: { plurnk: { id: 10, coordinate: "2/1/1", loopId: 2, origin: "operator" } },
+                            },
+                            {
+                                sessionUpdate: "agent_message_chunk",
+                                messageId: "msg-11",
+                                content: { type: "text", text: "Completed loop 2." },
+                                _meta: { plurnk: { id: 11, coordinate: "2/1/2" } },
+                            },
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "cancelled-follow-up",
+                                content: { type: "text", text: "Cancelled before turn 2." },
+                                _meta: { plurnk: { loopId: 1, lifecycle: "cancelled", published: false } },
+                            },
+                        ]);
+                        assert.deepEqual(
+                            await ids(),
+                            ["prompt-1", "msg-4", "cancelled-follow-up", "prompt-2", "msg-11"],
+                            "an unobserved follow-up from a cancelled loop stays with its loop instead of floating below later loops",
+                        );
+                    });
+
                     await t.test("{§web-session-conversation} streaming and reconnect snapshots preserve open details, focus, unchanged body selection and scroll", async () => {
                         await present(messages);
                         await row("thought").locator("summary").click();
