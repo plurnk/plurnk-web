@@ -5,7 +5,7 @@ import { $, on } from "on_the_money";
  * @param {HTMLElement} [root]
  */
 export default function initDialogs(root = document.body) {
-    on(root, "click", "button[data-dialog-target]", (_event, openButton) => {
+    on(root, "click", "[data-dialog-target]", (_event, openButton) => {
         if (!(openButton instanceof HTMLButtonElement)) return;
         const id = openButton.dataset.dialogTarget;
         const dialog = id ? $(`#${id}`) : null;

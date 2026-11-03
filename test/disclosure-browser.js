@@ -40,7 +40,7 @@ export default async function verifyDisclosures(t) {
                         call("note", "NOTE", "Literal <pre>\n**fact**", "fact"),
                         call("edit", "EDIT", "Replacement", "Update the file"),
                         { id: "tool", role: "tool", toolCallId: "opaque-call", content: "Tool output", error: "Tool failed" },
-                        { id: "reasoning", role: "reasoning", content: "Working", _meta: { plurnk: { coordinate: "1/3" } } },
+                        { id: "reasoning", role: "reasoning", content: "Working", _meta: { plurnk: { sessionName: "user", loopSeq: 1, turnSeq: 3, coordinate: "1/3" } } },
                         call("read", "READ", ""),
                         call("empty", "NOTE", ""),
                         call("wrapped", "EDIT", "Replacement", "Update the file after checking the existing implementation and its complete contract"),

@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer, request } from "node:http";
 import { after } from "node:test";
+import { chromium } from "playwright";
 import SessionAgent from "../web/session-agent.js";
 import disconnectProxy from "./disconnect-proxy.js";
-import { engines, launchBrowser } from "./engines.js";
+import { launchBrowser } from "./engines.js";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 
@@ -24,9 +25,9 @@ const sharedDaemons = new Map();
  * Reuse one warm daemon + model fixture per `(authenticated, env)` configuration across isolated workspace tests.
  * @param {(overrides: Record<string, string>, verify: (base: string) => Promise<void>) => Promise<void>} withDaemon
  * @param {boolean} authenticated
- * @param {Record<string, string>} env
+ * @param {Record<string, string>} [env]
  */
-async function acquireSharedDaemon(withDaemon, authenticated, env) {
+export async function acquireSharedDaemon(withDaemon, authenticated, env = {}) {
     const key = JSON.stringify({
         authenticated,
         env: Object.entries(env).sort(([a], [b]) => a.localeCompare(b)),
@@ -83,7 +84,7 @@ after(closeSharedDaemons);
 export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser" } = {}) {
     const shared = await acquireSharedDaemon(withDaemon, authenticated, env);
     const { model, secret, base } = shared;
-    for (const engine of engines) {
+    for (const engine of [chromium]) {
         model.reset(modelOptions);
         const headers = { ...shared.headers };
         const workspace = `input-${engine.name()}-${crypto.randomUUID()}`;

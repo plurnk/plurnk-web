@@ -9,6 +9,17 @@ import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./oper
 /** @typedef {import("./session-agent.js").ToolCall} ToolCall */
 /** @typedef {{message: Readonly<Message>, call?: ToolCall}} Entry */
 
+/** @param {Record<string, unknown> | null} facts */
+function turnKeyOf(facts) {
+    if (typeof facts?.loopSeq === "number" && typeof facts?.turnSeq === "number") {
+        return `${facts.loopSeq}/${facts.turnSeq}`;
+    }
+    if (typeof facts?.coordinate === "string") {
+        return /^(\d+\/\d+)(?:\/\d+)?$/u.exec(facts.coordinate)?.[1] ?? null;
+    }
+    return null;
+}
+
 /** {§web-session-conversation} DOM identities are presentation state, never a second conversation.
  * @param {HTMLElement} root @param {(address: string) => Promise<string>} readBody
  */
@@ -84,6 +95,8 @@ export default function conversation(root, readBody) {
         }
         /** @type {Element | null} */
         let previous = null;
+        /** @type {string | null} */
+        let previousTurnKey = null;
         for (const [index, { message, call }] of entries.entries()) {
             let row = rows.get(keys[index]);
             if (row && row.dataset.messageRole !== message.role) {
@@ -102,6 +115,15 @@ export default function conversation(root, readBody) {
             const category = operation?.name === "NOTE" && typeof args?.body === "string"
                 ? typeof args.aside === "string" && args.aside ? args.aside : "note" : null;
             const facts = record((call ? call._meta : message._meta)?.plurnk);
+            const turnKey = turnKeyOf(facts ?? (answered ? record(answered._meta?.plurnk) : null));
+            const hasTurnBoundary = previousTurnKey !== null && turnKey !== null && turnKey !== previousTurnKey;
+            if (turnKey !== null) previousTurnKey = turnKey;
+            const existingBoundary = $(row, ":scope > hr");
+            if (hasTurnBoundary && !existingBoundary) {
+                $.clone(row, "#conversation-boundary", { position: "afterbegin" });
+            } else if (!hasTurnBoundary && existingBoundary) {
+                existingBoundary.remove();
+            }
             const op = facts?.op;
             const isReplyOp = (/** @type {unknown} */ value) => value === "SEND" || value === "DONE" || value === "FAIL";
             const ownResult = call ? results.get(call.toolCallId) : undefined;
@@ -153,7 +175,7 @@ export default function conversation(root, readBody) {
                 painted.delete(frame.header);
                 operationSummary(frame.header, operationName, args, receipt, facts, error);
             } else {
-                const headerCoordinate = message.role === "reasoning" ? reasoningCoordinate(message._meta?.plurnk?.coordinate) : "";
+                const headerCoordinate = message.role === "reasoning" ? reasoningCoordinate(message._meta?.plurnk) : "";
                 const headerRevision = `${headerCoordinate}\n${error}`;
                 if (painted.get(frame.header) !== headerRevision) {
                     frame.header.replaceChildren();

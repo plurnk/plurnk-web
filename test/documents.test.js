@@ -5,12 +5,12 @@ import { ownNavigation } from "../ai.plurnk/http.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const session = (id, name, parentSessionId = null, origin = "model", owner = "_plurnk") => ({
-    id, name, parentSessionId, origin, owner, kind: parentSessionId === null ? "root" : "work", lifecycle: "completed", hidden_at: null,
+    id, name, parentSessionId, origin, owner, kind: parentSessionId === null ? "root" : "work", lifecycle: "completed", archived_at: null,
 });
 
 test("{§web-page-shell} session status sits outside the scrolling main; directory entries are native articles", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
-    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => [session(9, "user")] };
     const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, port, false)).toString();
     assert.match(html, /<\/main><footer id="session-status"/u);
@@ -29,7 +29,7 @@ test("{§web-session-approval} a session page starts automatic only when configu
             assert.equal(ownNavigation({ headers: site === undefined ? {} : { "sec-fetch-site": site } }), own, String(site));
             const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, yolo, 128);
             const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
-                listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
+                listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
                 listSessions: async () => [session(9, "user")],
             }, false, own)).toString();
             const automatic = yolo && own;
@@ -54,7 +54,7 @@ test("{§web-authorization-style} the compiled head names one origin-relative ap
 test("{§web-session-conversation} only a session document supplies the passive conversation outlet", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const port = {
-        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => [session(9, "user")],
     };
     const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, port, false)).toString();
@@ -71,7 +71,7 @@ test("{§web-session-observer} readable names never select the session's live se
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     for (const name of ["~/project", "42#alice", "renamed workspace"]) {
         const html = (await document.read({ kind: "session", workspace: name, session: "user" }, {
-            listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, hidden_at: null }],
+            listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, archived_at: null }],
             listSessions: async () => [session(9, "user")],
         }, false)).toString();
         assert.match(html, /data-session-id="7#user"/u);
@@ -92,7 +92,7 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
         ["研究", '/srv/資料 @<script>&"', '/srv/資料 @<script>&"', "☁️", "Workspace", true],
     ])) {
         const port = {
-            listWorkspaces: async () => [{ id: 7, name, project_root, project_label, hidden_at: null }],
+            listWorkspaces: async () => [{ id: 7, name, project_root, project_label, archived_at: null }],
             listSessions: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
@@ -101,7 +101,7 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
         const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
         assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li>/u);
         const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button></li>`), page);
+        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button></li>`), page);
         assert.match(page, /<p[^>]*>No sessions\.<\/p>/u);
         assert.doesNotMatch(page, /<h1\b/u);
         assert.equal(page.match(/aria-current="page"/gu).length, 1, "the workspace breadcrumb has one current item");
@@ -130,7 +130,7 @@ test("{§web-session-directory} model lineage is complete, collapsed and indepen
         session(9, "other", 1, "model", "acp://owner"),
         session(10, "incoming-child", 8),
     ];
-    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listSessions: async () => sessions };
+    const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], listSessions: async () => sessions };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-session-name="${name}" data-bind="href:session-path">${name}</a>`;
     const entry = (name, parent = null, children = "") => {
@@ -174,7 +174,7 @@ test("{§web-session-directory} session pages keep breadcrumb and parent navigat
         session(6, "incoming", 1), session(7, "background-child", 6)];
     let reads = 0;
     const port = {
-        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => { reads++; return sessions; },
     };
     for (const selected of ["parent", "child", "grandchild", "background-child"]) {
@@ -190,7 +190,7 @@ test("{§web-session-directory} session pages keep breadcrumb and parent navigat
 test("{§web-session-streams} the session page has observed outcomes, not an open-stream inventory", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
-        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }],
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => [session(9, "user")],
     }, false)).toString();
     assert.doesNotMatch(html, /data-open-streams|data-no-streams|stream-count|Open streams/u);
@@ -202,7 +202,7 @@ test("{§web-session-directory} empty and internal-only workspaces have no empty
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
     for (const sessions of [[], [session(1, "_plurnk", null, "_plurnk")], [session(3, "user")]]) {
         const html = (await document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listSessions: async () => sessions,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], listSessions: async () => sessions,
         }, false)).toString();
         assert.doesNotMatch(html, /<details|Background work|<ul><\/ul>/u);
         if (sessions.some(({ origin }) => origin === "model")) assert.match(html, /href="\/~\/work@user\/"/u);
@@ -219,7 +219,7 @@ test("{§web-session-directory} inconsistent topology fails rather than dropping
         [[session(1, "first", 2), session(2, "second", 1)], "Session directory holds shown model sessions that no shown root reaches."],
     ])) {
         await assert.rejects(document.read({ kind: "workspace", workspace: "work" }, {
-            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, hidden_at: null }], listSessions: async () => sessions,
+            listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], listSessions: async () => sessions,
         }, false), { name: "Error", message });
     }
 });
@@ -228,9 +228,9 @@ test("{§web-directory-documents} workspace markers describe folder presence wit
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128);
     const html = (await document.read({ kind: "daemon" }, {
         listWorkspaces: async () => [
-            { id: 1, name: "~/looks-like-a-folder", project_root: null, project_label: null, hidden_at: null },
-            { id: 2, name: "research", project_root: "/home/daemon/project", project_label: "~/project", hidden_at: null },
-            { id: 3, name: "../legacy", project_root: null, project_label: null, hidden_at: null },
+            { id: 1, name: "~/looks-like-a-folder", project_root: null, project_label: null, archived_at: null },
+            { id: 2, name: "research", project_root: "/home/daemon/project", project_label: "~/project", archived_at: null },
+            { id: 3, name: "../legacy", project_root: null, project_label: null, archived_at: null },
         ],
         listSessions: async () => { throw new Error("The workspace index needs no session lookup."); },
     }, false)).toString();
@@ -245,7 +245,7 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     const port = {
         listWorkspaces: async () => {
             calls.push("workspaces");
-            return [{ id: 7, name: '~/a&<script>@"b', project_root: null, project_label: null, hidden_at: null }, { id: 8, name: "../legacy", project_root: null, project_label: null, hidden_at: null }];
+            return [{ id: 7, name: '~/a&<script>@"b', project_root: null, project_label: null, archived_at: null }, { id: 8, name: "../legacy", project_root: null, project_label: null, archived_at: null }];
         },
         listSessions: async (id) => { calls.push(id); return [session(1, "user")]; },
     };
@@ -267,21 +267,21 @@ test("{§web-directory-documents} read-only lookup escapes names and never inven
     const sessions = (await document.read(workspace, port, false)).toString();
     assert.match(sessions, /a%26%3Cscript%3E%40%22b@user\//u);
     assert.match(sessions, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u, "workspace page carries the rename dialog");
-    assert.match(sessions, /<dialog id="dialog-workspace-hide">[\s\S]*<form id="workspace-hide" method="post" action="\/workspaces\/hide">/u, "workspace page carries the hide workspace dialog");
+    assert.match(sessions, /<dialog id="dialog-workspace-archive">[\s\S]*<form id="workspace-archive" method="post" action="\/workspaces\/archive">/u, "workspace page carries the archive workspace dialog");
     assert.match(sessions, /<dialog id="dialog-session-create">[\s\S]*<form id="session-create" method="post" action="\/sessions\/new">/u, "workspace page carries the session creation dialog");
     assert.doesNotMatch(sessions.split("<main")[1].split("</main>")[0].replace(/<dialog\b[\s\S]*?<\/dialog>/gu, ""), /<form\b/u,
         "main on workspace page holds forms only inside their dialogs");
     assert.doesNotMatch(sessions, /workspaces\/new/u, "{§web-workspace-creation} workspace pages carry no workspace creation form");
     assert.doesNotMatch(sessions, /<form method="post" action="\/auth\/logout"/u);
     const page = (await document.read({ ...workspace, kind: "session", session: "user" }, port, true)).toString();
-    assert.match(page, /<dialog id="dialog-session-hide">[\s\S]*<form id="session-hide" method="post" action="\/sessions\/hide">/u, "session page carries the hide session dialog");
+    assert.match(page, /<dialog id="dialog-session-archive">[\s\S]*<form id="session-archive" method="post" action="\/sessions\/archive">/u, "session page carries the archive session dialog");
     assert.doesNotMatch(page, /workspaces\/new/u, "{§web-workspace-creation} session pages carry no creation form");
 });
 
 test("{§web-session-status} status is a compact footer after conversation, not a metadata inventory", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, true, 128);
     const html = (await document.read({ kind: "session", workspace: "review", session: "user" }, {
-        listWorkspaces: async () => [{ id: 7, name: "review", project_root: null, project_label: null, hidden_at: null }],
+        listWorkspaces: async () => [{ id: 7, name: "review", project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => [session(1, "user")],
     }, false)).toString();
     assert.match(html, /<footer id="session-status"[^>]*>/u);
@@ -304,7 +304,7 @@ test("{§web-directory-documents} a broken document outlet fails at load", () =>
 test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not path segments", async () => {
     const name = "~/project/a&b<script>";
     const port = {
-        listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, hidden_at: null }],
+        listWorkspaces: async () => [{ id: 7, name, project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => [session(1, "user")],
     };
     const document = new Documents(`<html><head><title data-text="page-title">Plurnk</title></head><body><header>Shared navigation${navigation}</header><main id="main" data-page="home">Home</main></body></html>`, false, 128);
@@ -312,7 +312,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" data-page="session">/u);
-    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="session-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span> <button type="button" data-dialog-target="dialog-session-hide" aria-label="Hide session" title="Hide session">🗑️<\/button><\/li><\/ul><\/nav>/u);
+    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="session-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span> <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session">🗑️<\/button><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template/iu);
     assert.equal(html.replace(/<dialog\b[\s\S]*?<\/dialog>/gu, "").match(/<footer\b/gu).length, 1, "the session status footer is the only document-level footer");
     assert.equal(html.match(/<main\b/gu).length, 1);
@@ -327,7 +327,7 @@ test("{§web-page-shell} empty lists and request failures are useful native docu
     assert.match(empty, /<p[^>]*>No workspaces\.<\/p>/u);
     assert.doesNotMatch(empty, /<ul><\/ul>/u);
     const sessions = (await document.read({ kind: "workspace", workspace: "empty" }, {
-        ...port, listWorkspaces: async () => [{ id: 7, name: "empty", project_root: null, project_label: null, hidden_at: null }],
+        ...port, listWorkspaces: async () => [{ id: 7, name: "empty", project_root: null, project_label: null, archived_at: null }],
     }, false)).toString();
     assert.match(sessions, /data-page="workspace"/u);
     assert.match(sessions, /<p[^>]*>No sessions\.<\/p>/u);
@@ -385,24 +385,24 @@ test("{§web-account} Sessions renders authority facts in a native table without
     assert.doesNotMatch(html, /<script>|<template|last active|device|Signed in as/iu);
 });
 
-test("{§web-directory-documents} hidden places leave the lists, and their own pages still open", async () => {
+test("{§web-directory-documents} archived places leave the lists, and their own pages still open", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
-    const hidden = "2026-10-23T00:00:00.000Z";
+    const archived = "2026-10-23T00:00:00.000Z";
     const port = {
         listWorkspaces: async () => [
-            { id: 7, name: "work", project_root: null, project_label: null, hidden_at: null },
-            { id: 8, name: "shelved", project_root: null, project_label: null, hidden_at: hidden },
+            { id: 7, name: "work", project_root: null, project_label: null, archived_at: null },
+            { id: 8, name: "shelved", project_root: null, project_label: null, archived_at: archived },
         ],
         listSessions: async (id) => id !== 7 ? [session(20, "kept")] : [
-            session(9, "shown"), { ...session(10, "gone"), hidden_at: hidden }, { ...session(11, "gone-child", 10), hidden_at: hidden },
+            session(9, "shown"), { ...session(10, "gone"), archived_at: archived }, { ...session(11, "gone-child", 10), archived_at: archived },
         ],
     };
     const daemon = (await document.read({ kind: "daemon" }, port, false)).toString();
     assert.match(daemon, /href="\/~\/work\/"/u);
-    assert.doesNotMatch(daemon, /shelved/u, "a hidden workspace leaves the workspaces list");
+    assert.doesNotMatch(daemon, /shelved/u, "an archived workspace leaves the workspaces list");
     const workspace = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     assert.match(workspace, />shown</u);
-    assert.doesNotMatch(workspace, /gone/u, "a hidden session and its group leave the tree");
-    assert.ok(await document.read({ kind: "workspace", workspace: "shelved" }, port, false), "a hidden workspace's page opens by its address");
-    assert.ok(await document.read({ kind: "session", workspace: "work", session: "gone" }, port, false), "a hidden session's page opens by its address");
+    assert.doesNotMatch(workspace, /gone/u, "an archived session and its group leave the tree");
+    assert.ok(await document.read({ kind: "workspace", workspace: "shelved" }, port, false), "an archived workspace's page opens by its address");
+    assert.ok(await document.read({ kind: "session", workspace: "work", session: "gone" }, port, false), "an archived session's page opens by its address");
 });

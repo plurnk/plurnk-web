@@ -68,12 +68,12 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 if (claims) port.credentials.revokeFamily(claims.family);
                 res.writeHead(204); res.end(); return;
             }
-            if (req.url === "/__fixture/hide" && req.method === "POST") {
+            if (req.url === "/__fixture/archive" && req.method === "POST") {
                 let body = "";
                 for await (const chunk of req) body += chunk;
-                const { workspaceId, sessionId, hidden } = JSON.parse(body);
-                if (sessionId === undefined) await port.setWorkspaceHidden({ workspaceId, hidden });
-                else await port.setSessionHidden({ workspaceId, sessionId, hidden });
+                const { workspaceId, sessionId, archived } = JSON.parse(body);
+                if (sessionId === undefined) await port.setWorkspaceArchived({ workspaceId, archived });
+                else await port.setSessionArchived({ workspaceId, sessionId, archived });
                 res.writeHead(204); res.end(); return;
             }
             const workspaces = await port.listWorkspaces();
@@ -200,16 +200,16 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 } finally { await browser.close(); }
             });
         });
-        await t.test("{§web-directory-documents} hidden places leave the directories, and their own pages still open", async () => {
+        await t.test("{§web-directory-documents} archived places leave the directories, and their own pages still open", async () => {
             await withDaemon({ PLURNK_AUTH: "0", PLURNK_PASS: "" }, async (base) => {
                 const census = await (await fetch(new URL("/__fixture", base))).json();
                 const shelved = census.find(({ name }) => name === "folderless");
                 const project = census.find(({ name }) => name === names[0]);
                 const review = project.sessions.find(({ name }) => name === "review");
-                const hide = async (place, hidden) => assert.equal((await fetch(new URL("/__fixture/hide", base), {
-                    method: "POST", body: JSON.stringify({ ...place, hidden }) })).status, 204);
-                await hide({ workspaceId: shelved.id }, true);
-                await hide({ workspaceId: project.id, sessionId: review.id }, true);
+                const archive = async (place, archived) => assert.equal((await fetch(new URL("/__fixture/archive", base), {
+                    method: "POST", body: JSON.stringify({ ...place, archived }) })).status, 204);
+                await archive({ workspaceId: shelved.id }, true);
+                await archive({ workspaceId: project.id, sessionId: review.id }, true);
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -219,21 +219,21 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             const page = await context.newPage();
                             await page.goto(new URL("/~/", base).href);
                             assert.deepEqual(await page.locator("main > ul > li > article > header > a").allTextContents(),
-                                census.filter(({ id }) => id !== shelved.id).map(({ name }) => name), "a hidden workspace leaves the list");
+                                census.filter(({ id }) => id !== shelved.id).map(({ name }) => name), "an archived workspace leaves the list");
                             await page.goto(new URL(directoryPath({ kind: "workspace", workspace: project.name }), base).href);
                             const tree = await page.locator("main a[data-session-link]").evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
                             assert.ok(tree.includes("primary") && tree.includes("research"), "shown sessions stay in the tree");
-                            assert.ok(!tree.includes("review") && !tree.includes("evidence"), "a hidden session leaves the tree with the sessions beneath it");
+                            assert.ok(!tree.includes("review") && !tree.includes("evidence"), "an archived session leaves the tree with the sessions beneath it");
                             const opened = await page.goto(new URL(directoryPath({ kind: "session", workspace: project.name, session: "review" }), base).href);
-                            assert.equal(opened.status(), 200, "a hidden session's page opens by its address");
+                            assert.equal(opened.status(), 200, "an archived session's page opens by its address");
                             assert.equal((await page.goto(new URL(directoryPath({ kind: "workspace", workspace: shelved.name }), base).href)).status(), 200,
-                                "a hidden workspace's page opens by its address");
+                                "an archived workspace's page opens by its address");
                             checkBrowser();
                         } finally { await context.close(); }
                     }
                 } finally { await browser.close(); }
-                await hide({ workspaceId: shelved.id }, false);
-                await hide({ workspaceId: project.id, sessionId: review.id }, false);
+                await archive({ workspaceId: shelved.id }, false);
+                await archive({ workspaceId: project.id, sessionId: review.id }, false);
                 const shown = await (await fetch(new URL("/~/", base))).text();
                 assert.match(shown, new RegExp(`href="${directoryPath({ kind: "workspace", workspace: shelved.name })}"`, "u"), "a shown workspace returns to the list");
             });

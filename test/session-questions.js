@@ -228,6 +228,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         assert.equal(model.requests.length, 1);
         checkBrowser();
         await page.getByRole("link", { name: "Sign in", exact: true }).click();
+        await page.waitForLoadState("load");
         await page.getByLabel("Password", { exact: true }).fill("compose-password");
         await page.getByRole("button", { name: "Continue", exact: true }).click();
         await page.waitForURL(path);
@@ -287,8 +288,10 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
                 await inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
                     mcp.answers.length = 0;
                     const name = cancelled ? "mcp-question-cancel" : "mcp-question-answer";
-                    try { await ask(page, name); }
-                    catch (cause) {
+                    try {
+                        await ask(page, name);
+                        await review(page).locator("[data-question]").nth(2).waitFor();
+                    } catch (cause) {
                         throw new Error(`MCP question did not arrive: ${JSON.stringify({ peerErrors: mcp.errors.map(String), page: await page.locator("main").textContent() })}`, { cause });
                     }
                     assert.deepEqual(await review(page).locator('[data-text="request-tool"]').allTextContents(), [

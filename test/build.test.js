@@ -29,7 +29,7 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
             const page = await context.newPage();
             for (const authenticated of [false, true]) {
                 for (const name of ["w", "~/ptl/project", `~/project/${"long-name-".repeat(20)}`]) {
-                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, hidden_at: null }], listSessions: async () => [] };
+                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, archived_at: null }], listSessions: async () => [] };
                     html = await documents.read({ kind: "workspace", workspace: name }, port, authenticated);
                     await page.goto("http://web.test/");
                     assert.equal(await page.locator('header > nav[aria-label="breadcrumb"]').count(), 1);
@@ -109,8 +109,8 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
     const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 320, height: 700 } });
     const checkBrowser = browserDiagnostics(context);
     const port = {
-        listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, hidden_at: null }],
-        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", hidden_at: null }],
+        listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, archived_at: null }],
+        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
     };
     let html;
     await context.route("http://web.test/**", (route) => {

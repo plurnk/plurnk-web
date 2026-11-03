@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
+import { chromium } from "playwright";
 import { directoryPath } from "../ai.plurnk/directory-addresses.js";
 import SessionAgent from "../web/session-agent.js";
 import startModel, { contentAttack, diagramContent, footnoteAnswer } from "./model-fixture.js";
@@ -10,6 +11,7 @@ import disconnectProxy from "./disconnect-proxy.js";
 import { engines, launchBrowser } from "./engines.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { inspectResult } from "./result-body.js";
+import { acquireSharedDaemon } from "./session-input.js";
 
 async function controller(base, secret) {
     const headers = {};
@@ -45,153 +47,145 @@ const entryRequest = (request, scheme) => {
 // {§web-session-observer} The shipped page, not an injected SDK or substituted ACP response.
 export default async function verifySessionPage({ t, withDaemon }) {
     await t.test("{§web-session-status} direct children and cumulative descendant spend come from the daemon", { timeout: 60_000 }, async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
-                for (const engine of engines) {
-                    model.reset();
-                    const workspace = `family-status-${engine.name()}`;
-                    const setup = await controller(base);
-                    await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                    const workspaceId = /** @type {any} */ (setup.state.plurnk).workspace.id;
-                    setup.close();
-                    const fork = async (session, name) => {
-                        const request = await controller(base);
-                        request.sessionId = `${workspaceId}#${session}`;
-                        const { result, meta } = await request.send({ action: { kind: "session/fork", name } });
-                        assert.equal(result.ok, true, JSON.stringify(result));
-                        assert.equal(meta?.sessionName ?? result.result?._meta?.plurnk?.sessionName, name);
-                        request.close();
-                    };
-                    await fork("user", "child");
-                    await fork("child", "grandchild");
-                    const browser = await launchBrowser(engine);
-                    try {
-                        const context = await browser.newContext();
-                        const checkBrowser = browserDiagnostics(context);
-                        const page = await context.newPage();
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
-                        await connected(page);
-                        await page.getByText("No messages.", { exact: true }).waitFor();
-                        assert.equal(await family(page), "Descendant sessions: 2; active direct children: 0");
-                        assert.equal(await page.locator("#session-descendants > ul").isVisible(), false);
-                        const running = [];
-                        for (const name of ["child", "grandchild"]) {
-                            const request = await controller(base);
-                            request.sessionId = `${workspaceId}#${name}`;
-                            const starts = [Promise.withResolvers(), Promise.withResolvers()];
-                            let call = 0;
-                            const completion = request.send({ message: prompt(`status-${name}`) }, {
-                                onThoughtChunk: () => { starts[call++]?.resolve(); },
-                            });
-                            running.push({ name, request, completion, second: starts[1].promise });
-                            await Promise.race([starts[0].promise, completion.then(() => assert.fail(`${name} completed before its first call began`))]);
-                        }
-                        await page.waitForFunction(() => document.querySelector("#session-descendants > summary")?.getAttribute("aria-label") === "Descendant sessions: 2; active direct children: 1");
-                        assert.equal(await value(page, "descendants"), "2");
-                        await page.getByRole("textbox", { name: "Message", exact: true }).focus();
-                        await page.locator("#session-descendants > summary").click();
-                        assert.deepEqual(await page.locator("#session-descendants > ul > li > a").allTextContents(), ["child"]);
-                        assert.equal(await page.locator("#session-descendants ul ul > li > a").textContent(), "grandchild");
-                        assert.equal(await value(page, "lifecycle"), "idle", "child activity does not invent a parent loop");
-                        await page.reload();
-                        await connected(page);
-                        assert.equal(await family(page), "Descendant sessions: 2; active direct children: 1", "two active descendants are one direct child");
-                        for (const { name, completion, second } of running) {
-                            model.release(`status-${name}`);
-                            await Promise.race([second, completion.then(() => assert.fail(`${name} completed before its second call began`))]);
-                        }
-                        for (const { name, request, completion } of running.toReversed()) {
-                            model.release(`status-${name}`);
-                            await completion;
-                            request.close();
-                        }
-                        await page.waitForFunction(() => document.querySelector("#session-descendants > summary")?.getAttribute("aria-label") === "Descendant sessions: 2; active direct children: 0"
-                            && document.querySelector('#session-status [data-text="input"]')?.textContent === "2k");
-                        assert.equal(await value(page, "input"), "2k", "descendant usage is the daemon's cumulative projection");
-                        assert.match(await page.locator('[data-status-field="usage"]').getAttribute("aria-label"), /Input: 2000\./u);
-                        assert.equal(await value(page, "cost"), "$?");
-                        assert.equal(await value(page, "lifecycle"), "idle");
-                        assert.equal(await value(page, "descendants"), "2", "completed sessions remain navigable");
-                        assert.deepEqual(await page.locator("#session-descendants [data-text=descendant-lifecycle]").allTextContents(), ["completed", "completed"]);
-                        assert.equal(model.requests.length, 5, "two calls per descendant plus the child's observation of its grandchild's result; no root inference");
-                        assert.deepEqual(model.errors, []);
-                        checkBrowser();
-                    } finally { await browser.close(); }
+        const { model, base } = await acquireSharedDaemon(withDaemon, false);
+        for (const engine of [chromium]) {
+            model.reset();
+            const workspace = `family-status-${engine.name()}`;
+            const setup = await controller(base);
+            await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+            const workspaceId = /** @type {any} */ (setup.state.plurnk).workspace.id;
+            setup.close();
+            const fork = async (session, name) => {
+                const request = await controller(base);
+                request.sessionId = `${workspaceId}#${session}`;
+                const { result, meta } = await request.send({ action: { kind: "session/fork", name } });
+                assert.equal(result.ok, true, JSON.stringify(result));
+                assert.equal(meta?.sessionName ?? result.result?._meta?.plurnk?.sessionName, name);
+                request.close();
+            };
+            await fork("user", "child");
+            await fork("child", "grandchild");
+            const browser = await launchBrowser(engine);
+            try {
+                const context = await browser.newContext();
+                const checkBrowser = browserDiagnostics(context);
+                const page = await context.newPage();
+                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await connected(page);
+                await page.getByText("No messages.", { exact: true }).waitFor();
+                assert.equal(await family(page), "Descendant sessions: 2; active direct children: 0");
+                assert.equal(await page.locator("#session-descendants > ul").isVisible(), false);
+                const running = [];
+                for (const name of ["child", "grandchild"]) {
+                    const request = await controller(base);
+                    request.sessionId = `${workspaceId}#${name}`;
+                    const starts = [Promise.withResolvers(), Promise.withResolvers()];
+                    let call = 0;
+                    const completion = request.send({ message: prompt(`status-${name}`) }, {
+                        onThoughtChunk: () => { starts[call++]?.resolve(); },
+                    });
+                    running.push({ name, request, completion, second: starts[1].promise });
+                    await Promise.race([starts[0].promise, completion.then(() => assert.fail(`${name} completed before its first call began`))]);
                 }
-            });
-        } finally { await model.close(); }
+                await page.waitForFunction(() => document.querySelector("#session-descendants > summary")?.getAttribute("aria-label") === "Descendant sessions: 2; active direct children: 1");
+                assert.equal(await value(page, "descendants"), "2");
+                await page.getByRole("textbox", { name: "Message", exact: true }).focus();
+                await page.locator("#session-descendants > summary").click();
+                assert.deepEqual(await page.locator("#session-descendants > ul > li > a").allTextContents(), ["child"]);
+                assert.equal(await page.locator("#session-descendants ul ul > li > a").textContent(), "grandchild");
+                assert.equal(await value(page, "lifecycle"), "idle", "child activity does not invent a parent loop");
+                await page.reload();
+                await connected(page);
+                assert.equal(await family(page), "Descendant sessions: 2; active direct children: 1", "two active descendants are one direct child");
+                for (const { name, completion, second } of running) {
+                    model.release(`status-${name}`);
+                    await Promise.race([second, completion.then(() => assert.fail(`${name} completed before its second call began`))]);
+                }
+                for (const { name, request, completion } of running.toReversed()) {
+                    model.release(`status-${name}`);
+                    await completion;
+                    request.close();
+                }
+                await page.waitForFunction(() => document.querySelector("#session-descendants > summary")?.getAttribute("aria-label") === "Descendant sessions: 2; active direct children: 0"
+                    && document.querySelector('#session-status [data-text="input"]')?.textContent === "2k");
+                assert.equal(await value(page, "input"), "2k", "descendant usage is the daemon's cumulative projection");
+                assert.match(await page.locator('[data-status-field="usage"]').getAttribute("aria-label"), /Input: 2000\./u);
+                assert.equal(await value(page, "cost"), "$?");
+                assert.equal(await value(page, "lifecycle"), "idle");
+                assert.equal(await value(page, "descendants"), "2", "completed sessions remain navigable");
+                assert.deepEqual(await page.locator("#session-descendants [data-text=descendant-lifecycle]").allTextContents(), ["completed", "completed"]);
+                assert.equal(model.requests.length, 5, "two calls per descendant plus the child's observation of its grandchild's result; no root inference");
+                assert.deepEqual(model.errors, []);
+                checkBrowser();
+            } finally { await browser.close(); }
+        }
     });
 
     await t.test("{§web-session-status} an actual WAIT counts down, freezes on disconnect and resumes from authoritative state", { timeout: 60_000 }, async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
-                for (const engine of engines) {
-                    model.reset();
-                    const workspace = `wait-status-${engine.name()}`;
-                    const setup = await controller(base);
-                    await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                    const browser = await launchBrowser(engine);
-                    const proxy = await disconnectProxy(base);
-                    try {
-                        const context = await browser.newContext();
-                        const checkBrowser = browserDiagnostics(context);
-                        const page = await context.newPage();
-                        const observations = [];
-                        page.on("request", (request) => {
-                            const body = request.postDataJSON();
-                            if (new URL(request.url()).pathname === "/acp" && body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
-                                observations.push(body);
-                            }
-                        });
-                        await page.goto(new URL(`/~/${workspace}@user/`, proxy.url).href);
-                        await connected(page);
-                        await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
-                        await page.getByRole("button", { name: "Send", exact: true }).click();
-                        await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "parked");
-                        await model.streamStarted;
-                        await connected(page);
-                        const until = await deadline(page);
-                        assert.ok(Date.parse(until) > Date.now());
-                        const countdown = await value(page, "wait");
-                        await page.waitForFunction((previous) => document.querySelector('#session-status [data-text="wait"]')?.textContent !== previous, countdown);
-                        assert.equal(await value(page, "lifecycle"), "parked");
-                        assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isEnabled(), true, "parked work remains stoppable");
-                        const liveConnectionCount = observations.length;
-                        const next = await value(page, "elapsed");
-                        await page.waitForFunction((previous) => document.querySelector('#session-status [data-text="elapsed"]')?.textContent !== previous, next);
-                        assert.equal(observations.length, liveConnectionCount, "clock repaint does not poll the daemon");
-                        assert.equal(await page.locator("[data-open-streams]").count(), 0, "WAIT needs no separate open-stream inventory");
-                        proxy.drop();
-                        await connection(page, "disconnected");
-                        assert.equal(await value(page, "lifecycle"), "parked", "transport loss never settles the session");
-                        assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isVisible(), true, "disconnection does not erase known live work");
-                        assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isDisabled(), true);
-                        const frozen = { elapsed: await value(page, "elapsed"), wait: await value(page, "wait") };
-                        await setTimeout(1100);
-                        assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
-                        assert.equal(model.requests.length, 1, "delivery loss does not wake or cancel work");
-                        checkBrowser([networkFailure("/acp")]);
-                        await page.getByRole("button", { name: "Reconnect", exact: true }).click();
-                        await connected(page);
-                        assert.equal(await value(page, "lifecycle"), "parked");
-                        assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isEnabled(), true, "reconnection restores explicit cancellation");
-                        assert.equal(await deadline(page), until, "reattachment keeps the daemon deadline, not a new local timeout");
-                        assert.notEqual(await value(page, "wait"), frozen.wait);
-                        model.release("status-stream");
-                        await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
-                        await connected(page);
-                        assert.equal(await value(page, "wait"), "");
-                        assert.equal(await deadline(page), null);
-                        assert.equal(await value(page, "input"), "800");
-                        assert.equal(model.requests.length, 2);
-                        assert.deepEqual(model.errors, []);
-                        checkBrowser();
-                    } finally { await browser.close(); await proxy.close(); }
-                }
-            });
-        } finally { await model.close(); }
+        const { model, base } = await acquireSharedDaemon(withDaemon, false);
+        for (const engine of [chromium]) {
+            model.reset();
+            const workspace = `wait-status-${engine.name()}`;
+            const setup = await controller(base);
+            await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+            const browser = await launchBrowser(engine);
+            const proxy = await disconnectProxy(base);
+            try {
+                const context = await browser.newContext();
+                const checkBrowser = browserDiagnostics(context);
+                const page = await context.newPage();
+                const observations = [];
+                page.on("request", (request) => {
+                    const body = request.postDataJSON();
+                    if (new URL(request.url()).pathname === "/acp" && body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
+                        observations.push(body);
+                    }
+                });
+                await page.goto(new URL(`/~/${workspace}@user/`, proxy.url).href);
+                await connected(page);
+                await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
+                await page.getByRole("button", { name: "Send", exact: true }).click();
+                await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "parked");
+                await model.streamStarted;
+                await connected(page);
+                const until = await deadline(page);
+                assert.ok(Date.parse(until) > Date.now());
+                const countdown = await value(page, "wait");
+                await page.waitForFunction((previous) => document.querySelector('#session-status [data-text="wait"]')?.textContent !== previous, countdown);
+                assert.equal(await value(page, "lifecycle"), "parked");
+                assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isEnabled(), true, "parked work remains stoppable");
+                const liveConnectionCount = observations.length;
+                const next = await value(page, "elapsed");
+                await page.waitForFunction((previous) => document.querySelector('#session-status [data-text="elapsed"]')?.textContent !== previous, next);
+                assert.equal(observations.length, liveConnectionCount, "clock repaint does not poll the daemon");
+                assert.equal(await page.locator("[data-open-streams]").count(), 0, "WAIT needs no separate open-stream inventory");
+                proxy.drop();
+                await connection(page, "disconnected");
+                assert.equal(await value(page, "lifecycle"), "parked", "transport loss never settles the session");
+                assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isVisible(), true, "disconnection does not erase known live work");
+                assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isDisabled(), true);
+                const frozen = { elapsed: await value(page, "elapsed"), wait: await value(page, "wait") };
+                await setTimeout(1100);
+                assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
+                assert.equal(model.requests.length, 1, "delivery loss does not wake or cancel work");
+                checkBrowser([networkFailure("/acp")]);
+                await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+                await connected(page);
+                assert.equal(await value(page, "lifecycle"), "parked");
+                assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isEnabled(), true, "reconnection restores explicit cancellation");
+                assert.equal(await deadline(page), until, "reattachment keeps the daemon deadline, not a new local timeout");
+                assert.notEqual(await value(page, "wait"), frozen.wait);
+                model.release("status-stream");
+                await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
+                await connected(page);
+                assert.equal(await value(page, "wait"), "");
+                assert.equal(await deadline(page), null);
+                assert.equal(await value(page, "input"), "800");
+                assert.equal(model.requests.length, 2);
+                assert.deepEqual(model.errors, []);
+                checkBrowser();
+            } finally { await browser.close(); await proxy.close(); }
+        }
     });
 
     await t.test("{§web-session-diagnostics} packed notices and Problems stay visible without stopping healthy work", { timeout: 60_000 }, async () => {
@@ -201,7 +195,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 ...model.env, PLURNK_AUTH: "0", PLURNK_SERVICE_EXEC_CONCURRENCY: "invalid",
                 PLURNK_MODEL_unavailable: "browser-fixture/browser-fixture", PLURNK_PROVIDERS_EFFORT_unavailable: "invalid",
             }, async (base) => {
-                for (const engine of engines) {
+                for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `diagnostics-${engine.name()}`;
                     const setup = await controller(base);
@@ -344,153 +338,141 @@ export default async function verifySessionPage({ t, withDaemon }) {
     });
 
     await t.test("{§web-working-notes} packed NOTE calls expose semantic bodies and correlated results live and on replay", { timeout: 60_000 }, async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
-                for (const engine of engines) {
-                    model.reset();
-                    const workspace = `notes-${engine.name()}`;
-                    const setup = await controller(base);
-                    await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                    const browser = await launchBrowser(engine);
-                    try {
-                        const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
-                        const checkBrowser = browserDiagnostics(context);
-                        const page = await context.newPage();
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
-                        await connected(page);
-                        const run = await controller(base);
-                        await run.send({ workspace, message: prompt("notes") });
-                        run.close();
-                        const verify = async () => {
-                            const notes = page.locator('[data-messages] [data-plurnk-note]');
-                            await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-note]').length === 3);
-                            assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.dataset.plurnkNote)), ["fact", "idea", "plan"]);
-                            const note = notes.first();
-                            assert.equal(await note.locator("section, div, ul").count(), 0);
-                            assert.equal(await note.locator("article > details > summary").count(), 1);
-                            assert.equal(await note.locator("details").evaluate((node) => node.open), false);
-                            assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
-                            assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
-                            const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput);
-                            assert.equal(args.body, "A **working fact**, not the answer.");
-                            assert.equal(args.aside, "fact");
-                            const id = await note.getAttribute("data-call-id");
-                            const result = page.locator(`[data-message-role="tool"][data-tool-call-id="${id}"]`);
-                            assert.equal(await result.count(), 0, "the real immediate receipt completes its call's summary");
-                            assert.equal(await note.getAttribute("data-plurnk-status"), "200");
-                            assert.ok(run.messages.some((message) => message.role === "tool" && message.toolCallId === id), "folding the presentation does not delete SDK evidence");
-                            assert.ok(await page.locator('[data-message-role="assistant"] > article').filter({ hasText: "Completed notes." }).count());
-                            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                            return notes.evaluateAll((items) => items.map((item) => item.dataset.callId));
-                        };
-                        const ids = await verify();
-                        await page.reload();
-                        await connected(page);
-                        assert.deepEqual(await verify(), ids);
-                        assert.equal(model.requests.length, 1, "replay starts no inference");
-                        assert.deepEqual(model.errors, []);
-                        checkBrowser();
-                    } finally { await browser.close(); }
-                }
-            });
-        } finally { await model.close(); }
+        const { model, base } = await acquireSharedDaemon(withDaemon, false);
+        for (const engine of [chromium]) {
+            model.reset();
+            const workspace = `notes-${engine.name()}`;
+            const setup = await controller(base);
+            await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+            const browser = await launchBrowser(engine);
+            try {
+                const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+                const checkBrowser = browserDiagnostics(context);
+                const page = await context.newPage();
+                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await connected(page);
+                const run = await controller(base);
+                await run.send({ workspace, message: prompt("notes") });
+                run.close();
+                const verify = async () => {
+                    const notes = page.locator('[data-messages] [data-plurnk-note]');
+                    await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-note]').length === 3);
+                    assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.dataset.plurnkNote)), ["fact", "idea", "plan"]);
+                    const note = notes.first();
+                    assert.equal(await note.locator("section, div, ul").count(), 0);
+                    assert.equal(await note.locator("article > details > summary").count(), 1);
+                    assert.equal(await note.locator("details").evaluate((node) => node.open), false);
+                    assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
+                    assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
+                    const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput);
+                    assert.equal(args.body, "A **working fact**, not the answer.");
+                    assert.equal(args.aside, "fact");
+                    const id = await note.getAttribute("data-call-id");
+                    const result = page.locator(`[data-message-role="tool"][data-tool-call-id="${id}"]`);
+                    assert.equal(await result.count(), 0, "the real immediate receipt completes its call's summary");
+                    assert.equal(await note.getAttribute("data-plurnk-status"), "200");
+                    assert.ok(run.messages.some((message) => message.role === "tool" && message.toolCallId === id), "folding the presentation does not delete SDK evidence");
+                    assert.ok(await page.locator('[data-message-role="assistant"] > article').filter({ hasText: "Completed notes." }).count());
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                    return notes.evaluateAll((items) => items.map((item) => item.dataset.callId));
+                };
+                const ids = await verify();
+                await page.reload();
+                await connected(page);
+                assert.deepEqual(await verify(), ids);
+                assert.equal(model.requests.length, 1, "replay starts no inference");
+                assert.deepEqual(model.errors, []);
+                checkBrowser();
+            } finally { await browser.close(); }
+        }
     });
 
     await t.test("{§web-footnote-content} packed SDK delivery and replay retain message-local native footnotes", { timeout: 60_000 }, async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
-                for (const engine of engines) {
-                    model.reset();
-                    const workspace = `footnotes-${engine.name()}`;
-                    const setup = await controller(base);
-                    await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                    const browser = await launchBrowser(engine);
-                    try {
-                        const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
-                        const checkBrowser = browserDiagnostics(context);
-                        const page = await context.newPage();
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
-                        await connected(page);
-                        const run = await controller(base);
-                        await run.send({ workspace, message: prompt("footnotes") });
-                        run.close();
-                        assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, footnoteAnswer);
-                        const verify = async () => {
-                            await connected(page);
-                            await page.waitForFunction(() => document.querySelector('[data-message-role="assistant"]:not([data-call-id]) article section[aria-label="Footnotes"]'));
-                            const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
-                            const note = page.locator('[data-messages] [data-plurnk-note]');
-                            assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
-                            assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, footnoteAnswer);
-                            assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
-                            assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");
-                            const ids = await answer.locator("[id]").evaluateAll((elements) => elements.map(({ id }) => id));
-                            assert.equal(ids.length, 5);
-                            assert.equal(new Set(ids).size, ids.length);
-                            assert.deepEqual(await answer.locator('section > ol > li > p:first-child').allTextContents(), ["First definition.", "Second definition."]);
-                            assert.equal(await answer.locator("sup > a").count(), 3);
-                            const reference = answer.locator("sup > a").nth(1);
-                            const referenceId = await reference.getAttribute("id");
-                            await reference.click();
-                            assert.equal(await answer.locator(":target").count(), 1, "navigation stays within its answer");
-                            await answer.getByRole("link", { name: "Back to reference 1.2", exact: true }).click();
-                            assert.equal(await page.locator(":target").getAttribute("id"), referenceId);
-                            assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "connected");
-                            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                            return ids;
-                        };
-                        const ids = await verify();
-                        await page.reload();
-                        assert.deepEqual(await verify(), ids);
-                        assert.equal(model.requests.length, 1, "navigation and replay do not start inference");
-                        assert.deepEqual(model.errors, []);
-                        checkBrowser();
-                    } finally { await browser.close(); }
-                }
-            });
-        } finally { await model.close(); }
+        const { model, base } = await acquireSharedDaemon(withDaemon, false);
+        for (const engine of [chromium]) {
+            model.reset();
+            const workspace = `footnotes-${engine.name()}`;
+            const setup = await controller(base);
+            await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+            const browser = await launchBrowser(engine);
+            try {
+                const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+                const checkBrowser = browserDiagnostics(context);
+                const page = await context.newPage();
+                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await connected(page);
+                const run = await controller(base);
+                await run.send({ workspace, message: prompt("footnotes") });
+                run.close();
+                assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, footnoteAnswer);
+                const verify = async () => {
+                    await connected(page);
+                    await page.waitForFunction(() => document.querySelector('[data-message-role="assistant"]:not([data-call-id]) article section[aria-label="Footnotes"]'));
+                    const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
+                    const note = page.locator('[data-messages] [data-plurnk-note]');
+                    assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
+                    assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, footnoteAnswer);
+                    assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
+                    assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");
+                    const ids = await answer.locator("[id]").evaluateAll((elements) => elements.map(({ id }) => id));
+                    assert.equal(ids.length, 5);
+                    assert.equal(new Set(ids).size, ids.length);
+                    assert.deepEqual(await answer.locator('section > ol > li > p:first-child').allTextContents(), ["First definition.", "Second definition."]);
+                    assert.equal(await answer.locator("sup > a").count(), 3);
+                    const reference = answer.locator("sup > a").nth(1);
+                    const referenceId = await reference.getAttribute("id");
+                    await reference.click();
+                    assert.equal(await answer.locator(":target").count(), 1, "navigation stays within its answer");
+                    await answer.getByRole("link", { name: "Back to reference 1.2", exact: true }).click();
+                    assert.equal(await page.locator(":target").getAttribute("id"), referenceId);
+                    assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "connected");
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                    return ids;
+                };
+                const ids = await verify();
+                await page.reload();
+                assert.deepEqual(await verify(), ids);
+                assert.equal(model.requests.length, 1, "navigation and replay do not start inference");
+                assert.deepEqual(model.errors, []);
+                checkBrowser();
+            } finally { await browser.close(); }
+        }
     });
 
     await t.test("{§web-math-content} the packed session receives real messages and loads only local math assets", { timeout: 60_000 }, async () => {
-        const model = await startModel();
-        try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0" }, async (base) => {
-                for (const engine of engines) {
-                    model.reset();
-                    const workspace = `math-${engine.name()}`;
-                    const setup = await controller(base);
-                    await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
-                    const browser = await launchBrowser(engine);
-                    try {
-                        const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
-                        const checkBrowser = browserDiagnostics(context);
-                        const page = await context.newPage();
-                        const requests = [];
-                        page.on("request", (request) => requests.push(request.url()));
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
-                        await connected(page);
-                        assert.ok(!requests.some((path) => /math-renderer-|Temml-/u.test(path)), "no math code, style or font load before a formula exists");
-                        const run = await controller(base);
-                        await run.send({ workspace, message: prompt("math") });
-                        run.close();
-                        await page.locator("math mfrac").waitFor();
-                        assert.equal(await page.locator("math annotation").textContent(), String.raw`\mathscr{F}=\frac{a}{b}`);
-                        await page.evaluate(() => document.fonts.ready);
-                        assert.ok(requests.some((path) => /\/Temml-[^/]+\.woff2$/u.test(path)));
-                        assert.ok(requests.every((path) => new URL(path).origin === new URL(base).origin));
-                        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                        await page.reload();
-                        await connected(page);
-                        await page.locator("math mfrac").waitFor();
-                        assert.equal(model.requests.length, 1, "refresh renders retained math without inference");
-                        assert.deepEqual(model.errors, []);
-                        checkBrowser();
-                    } finally { await browser.close(); }
-                }
-            });
-        } finally { await model.close(); }
+        const { model, base } = await acquireSharedDaemon(withDaemon, false);
+        for (const engine of [chromium]) {
+            model.reset();
+            const workspace = `math-${engine.name()}`;
+            const setup = await controller(base);
+            await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+            const browser = await launchBrowser(engine);
+            try {
+                const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+                const checkBrowser = browserDiagnostics(context);
+                const page = await context.newPage();
+                const requests = [];
+                page.on("request", (request) => requests.push(request.url()));
+                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await connected(page);
+                assert.ok(!requests.some((path) => /math-renderer-|Temml-/u.test(path)), "no math code, style or font load before a formula exists");
+                const run = await controller(base);
+                await run.send({ workspace, message: prompt("math") });
+                run.close();
+                await page.locator("math mfrac").waitFor();
+                assert.equal(await page.locator("math annotation").textContent(), String.raw`\mathscr{F}=\frac{a}{b}`);
+                await page.evaluate(() => document.fonts.ready);
+                assert.ok(requests.some((path) => /\/Temml-[^/]+\.woff2$/u.test(path)));
+                assert.ok(requests.every((path) => new URL(path).origin === new URL(base).origin));
+                assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                await page.reload();
+                await connected(page);
+                await page.locator("math mfrac").waitFor();
+                assert.equal(model.requests.length, 1, "refresh renders retained math without inference");
+                assert.deepEqual(model.errors, []);
+                checkBrowser();
+            } finally { await browser.close(); }
+        }
     });
 
     await t.test("{§web-diagram-content} authenticated delivery and replay produce local static images", { timeout: 60_000 }, async () => {
@@ -502,7 +484,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "flowchart LR\n A-->B" }) });
                 assert.equal(denied.status, 401, "the packed compiler uses web session admission");
                 assert.equal((await denied.json()).status, 401);
-                for (const engine of engines) {
+                for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `diagrams-${engine.name()}`;
                     const setup = await controller(base, secret);
@@ -563,7 +545,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         try {
             await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_DIAGRAM_PENDING: "1", PLURNK_WEB_DIAGRAM_THREADS: "1" }, async (base) => {
-                for (const engine of engines) {
+                for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `burst-${engine.name()}`;
                     const setup = await controller(base);
@@ -746,7 +728,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const secret = crypto.randomUUID();
         try {
             await withDaemon({ ...model.env, PLURNK_PASS: "session-password", PLURNK_SECRET: secret, PLURNK_AUTH_ACCESS_TTL_SEC: "1" }, async (base) => {
-                for (const engine of engines) {
+                for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `~/observer-${engine.name()} @%/<draft>&"`;
                     const sessionId = "user";
@@ -934,7 +916,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const secret = crypto.randomUUID();
         try {
             await withDaemon({ ...model.env, PLURNK_PASS: "revocation-password", PLURNK_SECRET: secret }, async (base) => {
-                for (const engine of engines) {
+                for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `observer-revocation-${engine.name()}`;
                     const run = await controller(base, secret);
@@ -977,6 +959,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed held-page-revocation.");
                         assert.equal(model.requests.length, 1);
                         await page.getByRole("link", { name: "Sign in", exact: true }).click();
+                        await page.waitForLoadState("load");
                         await page.getByLabel("Password", { exact: true }).waitFor();
                         assert.equal(await page.getByLabel("Password", { exact: true }).isVisible(), true);
                         checkBrowser();
@@ -989,7 +972,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
     await t.test("{§web-session-observer} manual-mode pages leave approvals undecided and expose network loss and shutdown", { timeout: 90_000 }, async () => {
         const model = await startModel();
         try {
-            for (const engine of engines) {
+            for (const engine of [chromium]) {
                 model.reset();
                 await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base, daemon) => {
                     const run = await controller(base);

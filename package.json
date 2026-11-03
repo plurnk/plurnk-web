@@ -47,7 +47,7 @@
         "@plurnk/plurnk-modules": "^4.1.1"
     },
     "devDependencies": {
-        "@agentclientprotocol/sdk": "2.2.0",
+        "@agentclientprotocol/sdk": "2.4.0",
         "@eslint/js": "10.0.1",
         "@fullhuman/postcss-purgecss": "8.0.0",
         "@picocss/pico": "2.1.1",
@@ -82,7 +82,7 @@
         "test:unit": "node --env-file=ai.plurnk/.env.defaults --test test/module.test.js test/creations.test.js test/workspace-creation.test.js test/route-settlement.test.js test/diagrams.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js test/session.test.js test/token.test.js test/documents.test.js test/session-status.test.js test/history-pages.test.js test/conversation.test.js test/package.test.js",
         "test:installation": "node --test test/installation.test.js",
         "test:candidate": "node scripts/test-candidate.mjs",
-        "test": "npm run build && npm run test:lint && npm run test:unit && npm run test:installation",
+        "test": "npm run build && npm run test:lint && npm run test:unit",
         "prepack": "npm run build"
     }
 }

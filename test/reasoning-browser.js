@@ -42,8 +42,11 @@ export default async function verifyReasoning(t) {
                     await page.evaluate((message) => window.present([message]), message);
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "empty attempt messages are not empty history disclosures");
                     assert.equal(await preview.isVisible(), false);
-                    await delta(message.id, "", { plurnk: { coordinate: "1/3" } });
-                    assert.equal(await preview.locator("header").textContent(), "L1/T3");
+                    await delta(message.id, "", { plurnk: { sessionName: "user", loopSeq: 1, turnSeq: 3, coordinate: "1/3" } });
+                    assert.equal(await preview.locator("header").textContent(), "user > Loop 1 > Turn 3");
+                    await delta(message.id, "", { plurnk: { loopSeq: 1, turnSeq: 3, coordinate: "1/3" } });
+                    assert.equal(await preview.locator("header").textContent(), "Loop 1 > Turn 3");
+                    await delta(message.id, "", { plurnk: { sessionName: "user", loopSeq: 1, turnSeq: 3, coordinate: "1/3" } });
                     await delta(message.id, "A provisional ");
                     await delta(message.id, "hypothesis.");
                     assert.equal(await preview.isVisible(), true);
@@ -63,14 +66,25 @@ export default async function verifyReasoning(t) {
                     await endAttempt(message.id);
                     assert.equal(await text.textContent(), "");
                     assert.equal(await preview.isVisible(), false);
-                    const linked = { ...message, _meta: { plurnk: { coordinate: "1/3", body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" } } } };
+                    const linked = {
+                        ...message,
+                        _meta: {
+                            plurnk: {
+                                sessionName: "user",
+                                loopSeq: 1,
+                                turnSeq: 3,
+                                coordinate: "1/3",
+                                body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" },
+                            },
+                        },
+                    };
                     await page.evaluate((message) => { window.messages = [message]; window.present(window.messages); }, linked);
                     assert.equal(await page.locator('[data-message-id="attempt"] [data-body-reference]').count(), 1,
                         "late metadata on an empty SDK reasoning message must expose its body");
                     const row = page.locator('[data-message-id="attempt"]');
-                    assert.equal(await row.locator(":scope > article > details > summary").textContent(), "L1/T3");
+                    assert.equal(await row.locator(":scope > article > details > summary").textContent(), "user > Loop 1 > Turn 3");
                     assert.equal(await row.getByRole("article", { name: "Reasoning", exact: true }).count(), 1);
-                    assert.equal(await row.locator("summary").getAttribute("aria-label"), "Reasoning · L1/T3");
+                    assert.equal(await row.locator("summary").getAttribute("aria-label"), "Reasoning · user > Loop 1 > Turn 3");
                     assert.match(await row.locator('summary > [data-plurnk-field="heading"]').evaluate((element) => getComputedStyle(element, "::before").content), /💭/u);
                     assert.equal(await row.locator("details").getAttribute("open"), null);
                     assert.equal(credentials, 0);

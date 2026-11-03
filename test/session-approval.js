@@ -489,6 +489,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.equal(requests.length, 1, "no resume is sent without a fresh credential");
         checkBrowser();
         await page.getByRole("link", { name: "Sign in", exact: true }).click();
+        await page.waitForLoadState("load");
         await page.getByLabel("Password", { exact: true }).fill("compose-password");
         await page.getByRole("button", { name: "Continue", exact: true }).click();
         await page.waitForURL(path);

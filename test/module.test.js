@@ -122,8 +122,8 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
     await mod.start(/** @type {any} */ ({
         credentials: { face: () => null },
         registerHttpRoute(_prefix, serve) { handler = serve; },
-        listWorkspaces: async () => [{ id: 1, name: "work", project_root: null, project_label: null, hidden_at: null }],
-        listSessions: async () => [{ id: 2, name: "user", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", hidden_at: null }],
+        listWorkspaces: async () => [{ id: 1, name: "work", project_root: null, project_label: null, archived_at: null }],
+        listSessions: async () => [{ id: 2, name: "user", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null }],
         renameWorkspace: async (id, name) => ({ id, name }),
     }));
     const server = createServer(handler);

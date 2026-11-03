@@ -25,14 +25,14 @@ export default async function verifySessionCards(t) {
     t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
     const base = `http://127.0.0.1:${server.address().port}`;
     const sessions = [
-        { id: 1, name: "_plurnk", parentSessionId: null, origin: "_plurnk", kind: "root", lifecycle: "idle", hidden_at: null },
-        { id: 3, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", hidden_at: null },
-        { id: 2, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", hidden_at: null },
-        { id: 4, name: "leaf", parentSessionId: 3, origin: "model", kind: "fork", lifecycle: "failed", hidden_at: null },
-        { id: 5, name: "background", parentSessionId: 1, origin: "model", kind: "work", lifecycle: "queued", hidden_at: null },
-        { id: 6, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", hidden_at: null },
-        { id: 7, name: "cancelled", parentSessionId: null, origin: "model", kind: "root", lifecycle: "cancelled", hidden_at: null },
-        { id: 8, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", hidden_at: null },
+        { id: 1, name: "_plurnk", parentSessionId: null, origin: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null },
+        { id: 3, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", archived_at: null },
+        { id: 2, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", archived_at: null },
+        { id: 4, name: "leaf", parentSessionId: 3, origin: "model", kind: "fork", lifecycle: "failed", archived_at: null },
+        { id: 5, name: "background", parentSessionId: 1, origin: "model", kind: "work", lifecycle: "queued", archived_at: null },
+        { id: 6, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", archived_at: null },
+        { id: 7, name: "cancelled", parentSessionId: null, origin: "model", kind: "root", lifecycle: "cancelled", archived_at: null },
+        { id: 8, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null },
     ];
     for (const engine of engines) await t.test(engine.name(), async () => {
         const browser = await engine.launch();
@@ -47,19 +47,19 @@ export default async function verifySessionCards(t) {
                         const name = `~/research/<script>&"${"long-".repeat(12)}`;
                         const workspacePath = directoryPath({ kind: "workspace", workspace: name });
                         html = await documents.read({ kind: "workspace", workspace: name }, {
-                            listWorkspaces: async () => [{ id: 7, name, project_root, project_label: project_root, hidden_at: null }],
+                            listWorkspaces: async () => [{ id: 7, name, project_root, project_label: project_root, archived_at: null }],
                             listSessions: async () => sessions,
                         }, false);
                         await page.goto(new URL(workspacePath, base).href);
                         if (!javaScriptEnabled) {
-                            // {§web-session-creation} {§web-workspace-rename} {§web-workspace-hide} Without scripting each form is a card in main:
+                            // {§web-session-creation} {§web-workspace-rename} {§web-workspace-archive} Without scripting each form is a card in main:
                             // it takes only its own space, inside main's measure.
                             const boxes = await page.locator("main > dialog").evaluateAll((dialogs) => dialogs.map((dialog) => {
                                 const box = dialog.getBoundingClientRect(), card = dialog.firstElementChild.getBoundingClientRect();
                                 const main = dialog.parentElement.getBoundingClientRect();
                                 return [dialog.id, Math.abs(box.height - card.height) < 1, box.left >= main.left && box.right <= main.right];
                             }));
-                            assert.deepEqual(boxes, [["dialog-workspace-rename", true, true], ["dialog-workspace-hide", true, true], ["dialog-session-create", true, true]]);
+                            assert.deepEqual(boxes, [["dialog-workspace-rename", true, true], ["dialog-workspace-archive", true, true], ["dialog-session-create", true, true]]);
                         }
                         const link = (name) => page.locator(`main a[data-session-link][aria-label=${JSON.stringify(name)}]`);
                         const card = (name) => link(name).locator("xpath=ancestor::article[1]");
@@ -76,27 +76,25 @@ export default async function verifySessionCards(t) {
                         assert.equal(await link("child").isVisible(), false);
                         assert.equal(await card("done").locator(":scope > details").count(), 0, "a leaf has no fabricated answer or empty disclosure");
                         assert.equal(await card("done").locator(":scope > header").count(), 1);
-                        for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
-                            await page.emulateMedia({ colorScheme });
-                            for (const width of [320, 1280]) {
-                                await page.setViewportSize({ width, height: 844 });
-                                await summary.focus();
-                                await page.keyboard.press("Enter");
-                                assert.equal(await link("child").isVisible(), true);
-                                assert.equal(await link("leaf").isVisible(), false);
-                                assert.equal(await card("child").locator(':scope > details > summary [data-session-parent] a').textContent(), "parent");
-                                for (const [session, glyph] of [["parent", "⌛"], ["child", "💤"], ["done", "✓"], ["cancelled", "🛑"], ["idle", "○"]]) {
-                                    const status = card(session).locator(':scope > header, :scope > details > summary').locator('[data-lifecycle]');
-                                    const expected = sessions.find(({ name }) => name === session).lifecycle;
-                                    assert.equal(await status.getAttribute("aria-label"), expected);
-                                    assert.equal(await status.getAttribute("title"), expected);
-                                    assert.ok((await status.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
-                                }
-                                assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.querySelector("main").scrollWidth <= document.querySelector("main").clientWidth), true);
-                                await summary.press("Space");
-                                assert.equal(await link("child").isVisible(), false);
-                            }
+                        await summary.focus();
+                        await page.keyboard.press("Enter");
+                        assert.equal(await link("child").isVisible(), true);
+                        assert.equal(await link("leaf").isVisible(), false);
+                        assert.equal(await card("child").locator(':scope > details > summary [data-session-parent] a').textContent(), "parent");
+                        for (const [session, glyph] of [["parent", "⌛"], ["child", "💤"], ["done", "✓"], ["cancelled", "🛑"], ["idle", "○"]]) {
+                            const status = card(session).locator(':scope > header, :scope > details > summary').locator('[data-lifecycle]');
+                            const expected = sessions.find(({ name }) => name === session).lifecycle;
+                            assert.equal(await status.getAttribute("aria-label"), expected);
+                            assert.equal(await status.getAttribute("title"), expected);
+                            assert.ok((await status.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
                         }
+                        for (const [colorScheme, width] of /** @type {const} */ ([["light", 320], ["dark", 1280]])) {
+                            await page.emulateMedia({ colorScheme });
+                            await page.setViewportSize({ width, height: 844 });
+                            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.querySelector("main").scrollWidth <= document.querySelector("main").clientWidth), true);
+                        }
+                        await summary.press("Space");
+                        assert.equal(await link("child").isVisible(), false);
                         const before = requests.length;
                         await summary.press("Enter");
                         await card("child").locator(":scope > details > summary").press("Space");

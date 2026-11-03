@@ -5,8 +5,8 @@ import { escapeHtml, RequestError } from "./http.js";
 
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
-/** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly hidden_at: string | null }} DirectoryWorkspace */
-/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly lifecycle: string, readonly hidden_at: string | null }} DirectorySession */
+/** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
+/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly lifecycle: string, readonly archived_at: string | null }} DirectorySession */
 /** {§web-document} {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
 export default class Documents {
     #beforeTitle;
@@ -180,44 +180,44 @@ export default class Documents {
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
     /**
-     * {§web-workspace-hide} Native dialog modal to hide the workspace.
+     * {§web-workspace-archive} Native dialog modal to archive the workspace.
      * @param {{name: string}} workspace
      */
-    #workspaceHideForm(workspace) {
-        return '<dialog id="dialog-workspace-hide"><article>'
-            + '<header><p><strong data-i18n="hide-workspace">Hide workspace</strong></p>'
+    #workspaceArchiveForm(workspace) {
+        return '<dialog id="dialog-workspace-archive"><article>'
+            + '<header><p><strong data-i18n="archive-workspace">Archive workspace</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#workspaceHideFields(workspace.name, CANCEL)
+            + this.#workspaceArchiveFields(workspace.name, CANCEL)
             + '</article></dialog>';
     }
 
     /** @param {string} workspace @param {string} cancel */
-    #workspaceHideFields(workspace, cancel) {
-        return '<form id="workspace-hide" method="post" action="/workspaces/hide">'
+    #workspaceArchiveFields(workspace, cancel) {
+        return '<form id="workspace-archive" method="post" action="/workspaces/archive">'
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
-            + '<p data-i18n="hide-workspace-detail">Hiding removes the workspace from directory lists while keeping its files and history intact.</p>'
+            + '<p data-i18n="archive-workspace-detail">Archiving removes the workspace from directory lists while keeping its files and history intact.</p>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
     /**
-     * {§web-session-hide} Native dialog modal to hide the session and its subtree.
+     * {§web-session-archive} Native dialog modal to archive the session and its subtree.
      * @param {{name: string}} workspace
      * @param {{name: string}} session
      */
-    #sessionHideForm(workspace, session) {
-        return '<dialog id="dialog-session-hide"><article>'
-            + '<header><p><strong data-i18n="hide-session">Hide session</strong></p>'
+    #sessionArchiveForm(workspace, session) {
+        return '<dialog id="dialog-session-archive"><article>'
+            + '<header><p><strong data-i18n="archive-session">Archive session</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#sessionHideFields(workspace.name, session.name, CANCEL)
+            + this.#sessionArchiveFields(workspace.name, session.name, CANCEL)
             + '</article></dialog>';
     }
 
     /** @param {string} workspace @param {string} session @param {string} cancel */
-    #sessionHideFields(workspace, session, cancel) {
-        return '<form id="session-hide" method="post" action="/sessions/hide">'
+    #sessionArchiveFields(workspace, session, cancel) {
+        return '<form id="session-archive" method="post" action="/sessions/archive">'
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}">`
             + `<input type="hidden" name="session" value="${escapeHtml(session)}">`
-            + '<p data-i18n="hide-session-detail">Hiding removes the session and its descendants from directory overviews without destroying history.</p>'
+            + '<p data-i18n="archive-session-detail">Archiving removes the session and its descendants from directory overviews without destroying history.</p>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
     /** @param {string | null} projectRoot */
@@ -239,12 +239,12 @@ export default class Documents {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
         const items = [];
         if (directory.kind === "workspace") {
-            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-hide" aria-label="Hide workspace" title="Hide workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button>`);
+            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button>`);
         }
         if (directory.kind === "session") {
             const path = directoryPath({ kind: "workspace", workspace: directory.workspace });
             if (path === null) throw new Error("An admitted session must have a workspace directory address.");
-            items.push(`<span id="session-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, `${current(directory.session)} <button type="button" data-dialog-target="dialog-session-hide" aria-label="Hide session" title="Hide session">🗑️</button>`);
+            items.push(`<span id="session-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, `${current(directory.session)} <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session">🗑️</button>`);
         }
         return this.#breadcrumb(items, directory.kind === "daemon");
     }
@@ -287,8 +287,8 @@ export default class Documents {
      * @param {ReadonlyMap<number, DirectorySession>} sessions
      */
     #sessionTree(workspace, sessions) {
-        // {§web-directory-documents} A hidden session leaves the tree; its page still opens by its address.
-        const models = [...sessions.values()].filter(({ origin, hidden_at }) => origin === "model" && hidden_at === null);
+        // {§web-directory-documents} An archived session leaves the tree; its page still opens by its address.
+        const models = [...sessions.values()].filter(({ origin, archived_at }) => origin === "model" && archived_at === null);
         if (models.length === 0) return '<p data-i18n="no-sessions">No sessions.</p>';
         const children = Map.groupBy(models, ({ parentSessionId }) => parentSessionId);
         const background = models.filter((session) => {
@@ -365,8 +365,8 @@ export default class Documents {
             this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
-            // {§web-directory-documents} A hidden workspace leaves the list; its page still opens by its address.
-            const items = workspaces.filter(({ hidden_at }) => hidden_at === null).map(({ name, project_root }) =>
+            // {§web-directory-documents} An archived workspace leaves the list; its page still opens by its address.
+            const items = workspaces.filter(({ archived_at }) => archived_at === null).map(({ name, project_root }) =>
                 `<li data-directory-entry="workspace" data-folder="${project_root !== null}"><article aria-label="${project_root === null ? "Folderless workspace" : "Project workspace"}"><header>${this.#link(name, { kind: "workspace", workspace: name })}</header></article></li>`).join("");
             const list = items ? `<ul>${items}</ul>` : '<p data-i18n="no-workspaces">No workspaces.</p>';
             return render("Workspaces", list, "", "", this.#creationForm());
@@ -382,7 +382,7 @@ export default class Documents {
             const folder = separateFolder ? '<p><span role="img" aria-label="Project folder">🗂️</span> '
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
-            const dialogs = this.#renameForm(workspace) + this.#workspaceHideForm(workspace) + this.#sessionCreationForm(workspace);
+            const dialogs = this.#renameForm(workspace) + this.#workspaceArchiveForm(workspace) + this.#sessionCreationForm(workspace);
             return render(workspace.name, folder + this.#sessionTree(workspace, byId), marker, "", dialogs);
         }
         const session = sessions.find(({ name, origin }) => name === directory.session && origin === "model");
@@ -399,7 +399,7 @@ export default class Documents {
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
         const status = this.#sessionStatus(directory, workspace.id, authenticated, this.#yolo && own);
-        const dialogs = this.#sessionHideForm(workspace, session);
+        const dialogs = this.#sessionArchiveForm(workspace, session);
         return render(title, `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + (parent === null ? "" : `<p><span data-i18n="parent-session">Parent:</span> ${label}</p>`)
             + status.content, marker, status.footer, dialogs);

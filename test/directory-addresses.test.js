@@ -96,10 +96,15 @@ test("{§web-directory-addresses} unrepresentable legacy names are not repaired 
 test("{§web-directory-addresses} native links round-trip through production, Vite dev and preview fixtures", { timeout: 90_000 }, async (t) => {
     const source = await readFile(new URL("../web/index.html", import.meta.url), "utf8");
     const compiled = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
+    const browserCases = [
+        directories[0],
+        ...["~/ptl/project", "a%40b", "%2E%2E", "分析/🐹", "a/index.html/", '<a href="x">&</a>'].flatMap((name) =>
+            directories.filter(([entry]) => "workspace" in entry && entry.workspace === name)),
+    ];
     // Test documents only: no workspace enumeration, authentication or product route is simulated.
     const render = (template, directory) => template.replace("</main>", `<pre id="address" data-text="address">${
         JSON.stringify(directory).replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-    }</pre><ul>${directories.map(([entry], index) => `<li><a href="${directoryPath(entry)}" data-i18n="case-${index}">Case ${index}</a></li>`).join("")}</ul>
+    }</pre><ul>${browserCases.map(([entry], index) => `<li><a href="${directoryPath(entry)}" data-i18n="case-${index}">Case ${index}</a></li>`).join("")}</ul>
         <a href="./index.html" data-i18n="explicit">Explicit index</a>
         <a href="?query=%2F%40#address" data-i18n="query">Query and fragment</a></main>`);
     const respond = (res, html) => {
@@ -156,7 +161,7 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
                 const navigations = [];
                 page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
                 await page.goto(`${base}/~/`);
-                for (const [index, [directory, path]] of directories.entries()) {
+                for (const [index, [directory, path]] of browserCases.entries()) {
                     if (javaScriptEnabled) await page.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
                     const before = navigations.length;
                     await page.getByRole("link", { name: `Case ${index}`, exact: true }).click();
@@ -164,7 +169,7 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
                     assert.equal(navigations.length, before + 1, "a real document request, not a pushState shell");
                     assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
                 }
-                const [directory, path] = directories.at(-1);
+                const [directory, path] = browserCases.at(-1);
                 await page.reload();
                 assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
                 await page.getByRole("link", { name: "Explicit index", exact: true }).click();
