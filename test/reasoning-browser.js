@@ -82,6 +82,8 @@ export default async function verifyReasoning(t) {
                     assert.equal(await page.locator('[data-message-id="attempt"] [data-body-reference]').count(), 1,
                         "late metadata on an empty SDK reasoning message must expose its body");
                     const row = page.locator('[data-message-id="attempt"]');
+                    assert.equal(await page.locator("[data-operations] > details").evaluate((node) => node.open), false);
+                    await page.locator("[data-operations] > details > summary").click();
                     assert.equal(await row.locator(":scope > article > details > summary").textContent(), "user > Loop 1 > Turn 3");
                     assert.equal(await row.getByRole("article", { name: "Reasoning", exact: true }).count(), 1);
                     assert.equal(await row.locator("summary").getAttribute("aria-label"), "Reasoning · user > Loop 1 > Turn 3");

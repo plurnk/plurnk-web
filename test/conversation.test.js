@@ -49,7 +49,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (messages) => page.evaluate((messages) => window.present(messages), messages);
-                    const ids = () => page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
+                    const ids = () => page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
                     const row = (id) => page.locator(`[data-message-id="${id}"]`);
 
                     await t.test("{§web-working-notes} semantic entries expose content and accessible identity, not protocol envelopes", async () => {
@@ -61,7 +61,12 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             })),
                         }];
                         await present(source);
-                        const entries = page.locator("[data-messages] > li");
+                        const opsGroup = page.locator("[data-operations]");
+                        assert.equal(await opsGroup.count(), 1);
+                        assert.equal(await opsGroup.locator(":scope > details").evaluate((node) => node.open), false);
+                        assert.equal(await opsGroup.locator(":scope > details > summary").getAttribute("aria-label"), "NOTE · fact 1 · NOTE · idea 1 · NOTE · plan 1 · NOTE 2");
+                        await opsGroup.locator(":scope > details > summary").click();
+                        const entries = opsGroup.locator(":scope > details > ul > li");
                         assert.equal(await entries.count(), 5, "each call is one entry; its message is not an extra envelope");
                         for (const [index, category] of ["fact", "idea", "plan", "note", "custom"].entries()) {
                             const entry = entries.nth(index);
@@ -216,19 +221,9 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             ["prompt-1", "reasoning-1", "1/1/3", "msg-4", "follow-up-1", "msg-6"],
                             "published follow-up heads Turn 2 ahead of Turn 2's response",
                         );
-                        assert.deepEqual(
-                            await page.locator("[data-messages] > li").evaluateAll((rows) =>
-                                rows.map((row) => [row.dataset.messageId, row.querySelector(":scope > hr") !== null])),
-                            [
-                                ["prompt-1", false],
-                                ["reasoning-1", false],
-                                ["1/1/3", false],
-                                ["msg-4", false],
-                                ["follow-up-1", true],
-                                ["msg-6", false],
-                            ],
-                            "{§web-session-conversation} a turn boundary renders a native <hr> before the first entry of the new turn",
-                        );
+                        assert.equal(await page.locator('[data-loop-seq="1"] > details').evaluate((node) => node.open), true);
+                        assert.equal(await page.locator('[data-loop-seq="1"] > details > summary').innerText(), "Loop 1");
+                        assert.equal(await page.locator("[data-messages] hr").count(), 0);
 
                         // An unobserved follow-up from a cancelled loop stays at the end of its loop on replay,
                         // even when replay delivers inbox chunks after later loops' updates.
@@ -270,10 +265,133 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             ["prompt-1", "msg-4", "cancelled-follow-up", "prompt-2", "msg-11"],
                             "an unobserved follow-up from a cancelled loop stays with its loop instead of floating below later loops",
                         );
+                        assert.deepEqual(
+                            await page.locator("[data-messages] > [data-loop-seq]").evaluateAll((loops) =>
+                                loops.map((loop) => [
+                                    loop.dataset.loopSeq,
+                                    Array.from(loop.querySelectorAll("[data-message-id]"), (item) => item.dataset.messageId),
+                                ])),
+                            [
+                                ["1", ["prompt-1", "msg-4", "cancelled-follow-up"]],
+                                ["2", ["prompt-2", "msg-11"]],
+                            ],
+                        );
+
+                        // Multi-prompt loop tree with folded operation runs, nested mid-loop prompt completions,
+                        // mid-loop SEND, empty DONE, and loop-level DONE resolving the opening prompt.
+                        await present([
+                            {
+                                id: "prompt-1",
+                                role: "user",
+                                content: "Opening prompt.",
+                                _meta: { plurnk: { op: "SEND", coordinate: "1/1/1", receipt: { status: 200, resource: "message://user/1" } } },
+                            },
+                            {
+                                id: "thought-1",
+                                role: "reasoning",
+                                content: "First thought.",
+                                _meta: { plurnk: { loopSeq: 1, turnSeq: 1, coordinate: "1/1" } },
+                            },
+                            {
+                                id: "work-1",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [
+                                    { toolCallId: "read-1", name: "READ", rawInput: { target: { raw: "a.txt" } }, _meta: { plurnk: { op: "READ", coordinate: "1/1/2" } } },
+                                    { toolCallId: "read-2", name: "READ", rawInput: { target: { raw: "b.txt" } }, _meta: { plurnk: { op: "READ", coordinate: "1/1/3" } } },
+                                    { toolCallId: "sh-1", name: "sh", rawInput: { body: "npm test" }, _meta: { plurnk: { op: "sh", coordinate: "1/1/4" } } },
+                                ],
+                            },
+                            {
+                                id: "prompt-2",
+                                role: "user",
+                                content: "Also check the build.",
+                                _meta: { plurnk: { op: "SEND", coordinate: "1/2/1", receipt: { status: 200, resource: "message://user/2" } } },
+                            },
+                            {
+                                id: "done-2",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [{
+                                    toolCallId: "done-2-call",
+                                    name: "DONE",
+                                    rawInput: { body: { raw: "Build verified." }, target: { raw: "message://user/2" } },
+                                    _meta: { plurnk: { op: "DONE", coordinate: "1/2/2", receipt: { status: 200, completion: 200, repliedTo: ["message://user/2"] } } },
+                                }],
+                            },
+                            {
+                                id: "send-1",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [{
+                                    toolCallId: "send-1-call",
+                                    name: "SEND",
+                                    rawInput: { body: "Intermediate status update." },
+                                    _meta: { plurnk: { op: "SEND", coordinate: "1/2/3", receipt: { status: 200 } } },
+                                }],
+                            },
+                            {
+                                id: "prompt-3",
+                                role: "user",
+                                content: "Acknowledge quietly.",
+                                _meta: { plurnk: { op: "SEND", coordinate: "1/3/1", receipt: { status: 200, resource: "message://user/3" } } },
+                            },
+                            {
+                                id: "done-3",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [{
+                                    toolCallId: "done-3-call",
+                                    name: "DONE",
+                                    rawInput: { body: { raw: "" } },
+                                    _meta: { plurnk: { op: "DONE", coordinate: "1/3/2", receipt: { status: 200, completion: 200, repliedTo: ["message://user/3"] } } },
+                                }],
+                            },
+                            {
+                                id: "done-1",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [{
+                                    toolCallId: "done-1-call",
+                                    name: "DONE",
+                                    rawInput: { body: { raw: "All complete." } },
+                                    _meta: { plurnk: { op: "DONE", coordinate: "1/3/3", receipt: { status: 200, completion: 200, repliedTo: ["message://user/1"] } } },
+                                }],
+                            },
+                        ]);
+                        const loopChildren = page.locator('[data-loop-seq="1"] > details > ul > li');
+                        assert.deepEqual(
+                            await loopChildren.evaluateAll((items) => items.map((item) =>
+                                item.hasAttribute("data-operations") ? `operations:${item.querySelector(":scope > details > summary")?.getAttribute("aria-label")}` : item.dataset.messageId)),
+                            [
+                                "prompt-1",
+                                "operations:Reasoning 1 · READ 2 · sh 1",
+                                "prompt-2",
+                                "send-1",
+                                "prompt-3",
+                                "done-1",
+                            ],
+                        );
+                        assert.equal(await page.locator("[data-operations] > details > summary > span").innerText(), "1 · 2 · sh 1");
+                        assert.deepEqual(
+                            await row("prompt-2").locator(":scope > article > [data-prompt-replies] > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)),
+                            ["done-2"],
+                        );
+                        assert.equal(await row("done-2").locator("article > p").textContent(), "Build verified.");
+                        assert.deepEqual(
+                            await row("prompt-3").locator(":scope > article > [data-prompt-replies] > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)),
+                            ["done-3"],
+                        );
+                        assert.deepEqual(
+                            await row("done-3").locator(":scope > article > *").evaluateAll((nodes) => nodes.map((node) => node.tagName)),
+                            ["HEADER"],
+                            "an empty DONE renders its article header with no body nodes",
+                        );
                     });
 
                     await t.test("{§web-session-conversation} streaming and reconnect snapshots preserve open details, focus, unchanged body selection and scroll", async () => {
                         await present(messages);
+                        await page.locator("[data-operations] > details > summary").click();
                         await row("thought").locator("summary").click();
                         await page.evaluate(() => {
                             window.savedRow = document.querySelector('[data-message-id="thought"]');
@@ -334,7 +452,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         const message = { id: "mixed", role: "assistant", content: "First the explanation.", toolCalls: [call("one"), call("two")],
                             _meta: { plurnk: { op: "SEND", status: 200, address: "message://user/example" } } };
                         await present([message]);
-                        const entries = page.locator("[data-messages] > li");
+                        const entries = page.locator("[data-messages] [data-message-id]");
                         assert.deepEqual(await entries.evaluateAll((rows) => rows.map((row) => [row.dataset.messageId, row.dataset.callId ?? null])),
                             [["mixed", null], ["mixed", "one"], ["mixed", "two"]]);
                         assert.equal(await entries.first().getAttribute("data-plurnk-type"), "SEND");
@@ -371,10 +489,11 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         ];
                         await present(other);
                         assert.deepEqual(await ids(), other.map(({ id }) => id));
+                        await page.locator("[data-operations] > details > summary").first().click();
                         assert.equal(await row("activity").getByRole("article", { name: "progress", exact: true }).count(), 1);
                         assert.equal(await row("activity").locator("article").textContent(), "");
-                        assert.equal(await row("parts").locator("article > details > p").textContent(), "First");
-                        assert.deepEqual(await row("parts").locator("article > details > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["SUMMARY", "P"]);
+                        assert.equal(await row("parts").locator("article > p").textContent(), "First");
+                        assert.deepEqual(await row("parts").locator("article > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["P"]);
                         assert.equal(await row("child").getAttribute("data-subagent-run-id"), "child-run");
                         assert.equal(await row("child").getByRole("article", { name: "Assistant · Subagent child-run", exact: true }).count(), 1);
                         assert.equal(await row("orphan").locator("a").count(), 0);
@@ -415,6 +534,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         const source = [{ id: "edit", role: "assistant", toolCalls: [{ toolCallId: "edit-call",
                             name: "EDIT", rawInput: { body: "Replacement text" }, _meta: { plurnk: { op: "EDIT" } } }] }];
                         await present(source);
+                        await page.locator("[data-operations] > details > summary").click();
                         await row("edit").locator("summary").click();
                         const before = await page.evaluate(() => {
                             const text = document.querySelector("[data-call-id] article > details > pre").firstChild;
@@ -475,6 +595,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         const result = { id: "note-result", role: "tool", toolCallId: call.toolCallId,
                             content: '{"status":500,"problem":{"title":"Note storage failed","detail":"The note could not be persisted."}}', error: "Note storage failed" };
                         await present([note, result]);
+                        await page.locator("[data-operations] > details > summary").click();
                         const item = row("note");
                         assert.equal(await item.getAttribute("data-call-id"), "note-call");
                         assert.equal(await item.getAttribute("data-plurnk-note"), "idea");
@@ -529,6 +650,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                         }
                         await display({ body: "", aside: null });
+                        await page.locator("[data-operations] > details > summary").click();
                         assert.equal(await item.locator("article").textContent(), "");
                         assert.equal(await item.getByRole("article", { name: "NOTE · note", exact: true }).count(), 1);
                     });

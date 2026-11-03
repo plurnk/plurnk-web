@@ -340,13 +340,32 @@
             <pre></pre>
         </article>
     </template>
+    <template id="conversation-loop">
+        <li>
+            <details open>
+                <summary><span><span data-i18n="loop-heading">Loop</span> <span data-text="loop-seq">1</span></span></summary>
+                <ul></ul>
+            </details>
+        </li>
+    </template>
+    <template id="conversation-operations">
+        <li data-operations="">
+            <details>
+                <summary data-bind="aria-label:operations-label"><span></span></summary>
+                <ul></ul>
+            </details>
+        </li>
+    </template>
+    <template id="operation-tally">
+        <span data-operation-tally><span data-plurnk-field="heading"></span><span data-plurnk-field="count"></span></span>
+    </template>
+    <template id="prompt-replies">
+        <ul data-prompt-replies></ul>
+    </template>
     <template id="conversation-message">
         <li>
             <article data-bind="aria-label:message-label"></article>
         </li>
-    </template>
-    <template id="conversation-boundary">
-        <hr>
     </template>
     <!-- {§web-card-disclosure} Summary fields are phrasing content, not nested headers or paragraphs. -->
     <template id="card-disclosure">

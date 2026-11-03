@@ -92,6 +92,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
             const receipt = await questionResult(page, base, headers);
+            await page.locator("[data-operations] > details > summary").first().click();
             const question = page.locator('[data-call-id][data-plurnk-type="plurnk_question"]');
             assert.equal(await question.locator('summary > [data-plurnk-field="heading"]').innerText(), "plurnk_question");
             assert.equal(await question.locator("article > details").evaluate((node) => node.open), false);

@@ -42,7 +42,7 @@ export default async function verifySurfaces(t) {
                     window.present(messages);
                     window.preview.consume({ sessionUpdate: "agent_thought_chunk", messageId: "live", content: { type: "text", text: "Live working material." } });
                     // Contrast covers inspected working bodies too; hidden content has no painted colors.
-                    for (const disclosure of document.querySelectorAll("[data-messages] > li > article > details")) disclosure.open = true;
+                    for (const disclosure of document.querySelectorAll("[data-messages] details")) disclosure.open = true;
                 }, messages);
                 let light;
                 for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
@@ -58,7 +58,7 @@ export default async function verifySurfaces(t) {
                             ctx.fillRect(0, 0, 1, 1);
                             return Array.from(ctx.getImageData(0, 0, 1, 1).data);
                         };
-                        const entries = [...document.querySelectorAll("[data-messages] > li, [data-reasoning-preview]")];
+                        const entries = [...document.querySelectorAll("[data-messages] [data-message-id], [data-reasoning-preview]")];
                         return Object.fromEntries(entries.map((row) => {
                             const article = row.matches("article") ? row : row.querySelector(":scope > article");
                             const background = rgba(getComputedStyle(article).backgroundColor);

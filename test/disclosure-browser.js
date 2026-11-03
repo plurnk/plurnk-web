@@ -46,10 +46,15 @@ export default async function verifyDisclosures(t) {
                         call("wrapped", "EDIT", "Replacement", "Update the file after checking the existing implementation and its complete contract"),
                     ];
                     await present(source);
+                    const loopDisclosure = page.locator('[data-loop-seq="1"] > details');
+                    const opsDisclosure = page.locator("[data-operations] > details");
+                    assert.equal(await loopDisclosure.evaluate((node) => node.open), true, "loop disclosure begins open");
+                    assert.equal(await opsDisclosure.evaluate((node) => node.open), false, "operations run disclosure begins closed");
                     for (const id of ["user", "answer", "send", "cancel"]) {
-                        assert.equal(await disclosure(id).count(), 1, `${id} has a native body disclosure`);
-                        assert.equal(await disclosure(id).evaluate((node) => node.open), true, `${id} begins open`);
+                        assert.equal(await disclosure(id).count(), 0, `${id} is a non-folding article`);
+                        assert.equal(await row(id).locator("article").isVisible(), true);
                     }
+                    await opsDisclosure.locator(":scope > summary").click();
                     for (const id of ["note", "edit", "tool", "reasoning"]) {
                         assert.equal(await disclosure(id).evaluate((node) => node.open), false, `${id} begins closed`);
                         assert.equal(await row(id).locator("pre").isVisible(), false);
@@ -61,12 +66,12 @@ export default async function verifyDisclosures(t) {
                         await page.setViewportSize({ width, height: 844 });
                         for (const id of ["user", "answer", "note", "wrapped", "read"]) {
                             const geometry = await row(id).locator("article").evaluate((article) => {
-                                const shell = article.firstElementChild;
-                                const summary = shell.querySelector("summary");
-                                const last = summary && !shell.open ? summary : shell.lastElementChild;
+                                const shell = article.querySelector(":scope > details");
+                                const summary = shell?.querySelector(":scope > summary") ?? null;
+                                const last = summary && !shell.open ? summary : (shell ?? article).lastElementChild;
                                 return {
                                     padding: Number.parseFloat(getComputedStyle(article).paddingBottom),
-                                    bottom: article.getBoundingClientRect().bottom - (summary ? last : shell).getBoundingClientRect().bottom,
+                                    bottom: article.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom,
                                     heading: summary ? summary.getBoundingClientRect().height : null,
                                     fields: summary?.children.length ? Array.from(summary.children).reduce((total, field) => total + field.getBoundingClientRect().height, 0) : null,
                                     lineHeight: summary ? getComputedStyle(summary).lineHeight : null,
@@ -81,16 +86,15 @@ export default async function verifyDisclosures(t) {
                         assert.ok(await row("answer").locator("p").evaluateAll(([first, second]) => second.getBoundingClientRect().top > first.getBoundingClientRect().bottom),
                             "paragraph separation remains intact");
                     }
-                    await disclosure("user").locator("summary").click();
                     await disclosure("note").locator("summary").focus();
                     await page.keyboard.press("Enter");
-                    assert.equal(await disclosure("user").evaluate((node) => node.open), false);
+                    assert.equal(await opsDisclosure.evaluate((node) => node.open), true);
                     assert.equal(await row("note").locator("pre").isVisible(), true);
                     assert.equal(await row("note").locator("pre").textContent(), "Literal <pre>\n**fact**");
                     await row("note").locator("pre").evaluate((node) => { window.noteBody = node; });
                     const failure = { id: "edit-result", role: "tool", toolCallId: "edit-call", content: JSON.stringify({ status: 409, problem: { title: "Changed on disk" } }) };
                     await present([...source, failure]);
-                    assert.equal(await disclosure("user").evaluate((node) => node.open), false, "replay does not reopen a collapsed reply");
+                    assert.equal(await opsDisclosure.evaluate((node) => node.open), true, "replay does not collapse an unfolded operations run");
                     assert.equal(await disclosure("note").evaluate((node) => node.open), true, "replay does not collapse inspected work");
                     assert.equal(await row("note").locator("pre").evaluate((node) => node === window.noteBody), true);
                     assert.equal(await row("edit").getByText("Update the file", { exact: true }).isVisible(), true);
@@ -103,18 +107,24 @@ export default async function verifyDisclosures(t) {
                     updated[4] = call("note", "NOTE", "New content", "fact");
                     updated[9] = call("empty", "NOTE", "Now present");
                     await present(updated);
-                    assert.equal(await disclosure("user").evaluate((node) => node.open), false);
+                    assert.equal(await opsDisclosure.evaluate((node) => node.open), true);
                     assert.equal(await disclosure("note").evaluate((node) => node.open), true);
                     assert.equal(await disclosure("empty").evaluate((node) => node.open), false, "late body starts at its own default");
                     assert.equal(await row("edit").locator('[data-plurnk-field="outcome"]').count(), 0, "superseded diagnostic is removed");
                     await disclosure("note").locator("summary").focus();
                     await page.keyboard.press("Space");
                     assert.equal(await disclosure("note").evaluate((node) => node.open), false);
+                    await loopDisclosure.locator(":scope > summary").click();
+                    assert.equal(await loopDisclosure.evaluate((node) => node.open), false);
+                    await present(structuredClone(updated));
+                    assert.equal(await loopDisclosure.evaluate((node) => node.open), false, "replay does not reopen a collapsed loop disclosure");
                     const previousReads = reads;
                     const reference = [{ id: "reference", role: "tool", toolCallId: "opaque-reference", content: [{
                         type: "resource_link", uri: new URL("/acp/disclosure-body", url).href, name: "body", mimeType: "text/plain",
                     }] }];
                     await present(reference);
+                    await loopDisclosure.locator(":scope > summary").click();
+                    await page.locator("[data-operations] > details > summary").click();
                     await row("reference").scrollIntoViewIfNeeded();
                     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                     assert.equal(reads, previousReads, "closed tool evidence does not fetch");

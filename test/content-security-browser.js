@@ -72,7 +72,7 @@ export default async function verifyContentSecurity(t) {
                             name: "NOTE", rawInput: { body: hostile, aside: injection }, _meta: { plurnk: { op: "NOTE" } } }] },
                         { id: "reasoning", role: "reasoning", content: hostile });
                         await present(messages);
-                        const bodies = page.locator("[data-messages] article:has(> details > p > strong)");
+                        const bodies = page.locator("[data-messages] article:has(> p > strong)");
                         assert.equal(await bodies.count(), 6);
                         for (const body of await bodies.all()) {
                             assert.equal(await body.locator("strong").textContent(), "Readable evidence");

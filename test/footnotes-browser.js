@@ -51,7 +51,7 @@ export default async function verifyFootnotes(t) {
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
                     const present = (messages) => page.evaluate((messages) => window.present(messages), messages);
-                    const rows = page.locator("[data-messages] > li");
+                    const rows = page.locator("[data-messages] [data-message-id]");
                     const body = () => rows.first().locator(":scope > article");
 
                     await t.test("repeated references and label collisions have unique message-local destinations", async () => {
