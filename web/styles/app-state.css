@@ -172,37 +172,39 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 
 /* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
 [data-plurnk-type] [data-plurnk-field="heading"]::before,
+[data-operation-tally] [data-plurnk-field="heading"]::before,
 [data-diagnostic-level] [data-plurnk-field="heading"]::before {
     content: var(--plurnk-operation-glyph, "⚙️") / "";
     margin-inline-end: 0.5ch;
 }
 
-[data-plurnk-type="NOTE"] { --plurnk-operation-glyph: "🗒️"; }
-[data-plurnk-type="TODO"] { --plurnk-operation-glyph: "🚧"; }
-[data-plurnk-type="FIND"] { --plurnk-operation-glyph: "🔎"; }
-[data-plurnk-type="READ"] { --plurnk-operation-glyph: "📖"; }
-[data-plurnk-type="EDIT"] { --plurnk-operation-glyph: "📝"; }
-[data-plurnk-type="COPY"] { --plurnk-operation-glyph: "🖨️"; }
-[data-plurnk-type="MOVE"] { --plurnk-operation-glyph: "📦"; }
-[data-plurnk-type="KILL"] { --plurnk-operation-glyph: "🗑️"; }
-[data-plurnk-type="WORK"] { --plurnk-operation-glyph: "🐜"; }
-[data-plurnk-type="FORK"] { --plurnk-operation-glyph: "🔱"; }
-[data-plurnk-type="BARE"] { --plurnk-operation-glyph: "☁️"; }
-[data-plurnk-type="WAIT"] { --plurnk-operation-glyph: "⏳"; }
+:is([data-plurnk-type="NOTE"], [data-operation-tally="NOTE"]) { --plurnk-operation-glyph: "🗒️"; }
+:is([data-plurnk-type="TODO"], [data-operation-tally="TODO"]) { --plurnk-operation-glyph: "🚧"; }
+:is([data-plurnk-type="FIND"], [data-operation-tally="FIND"]) { --plurnk-operation-glyph: "🔎"; }
+:is([data-plurnk-type="READ"], [data-operation-tally="READ"]) { --plurnk-operation-glyph: "📖"; }
+:is([data-plurnk-type="EDIT"], [data-operation-tally="EDIT"]) { --plurnk-operation-glyph: "📝"; }
+:is([data-plurnk-type="COPY"], [data-operation-tally="COPY"]) { --plurnk-operation-glyph: "🖨️"; }
+:is([data-plurnk-type="MOVE"], [data-operation-tally="MOVE"]) { --plurnk-operation-glyph: "📦"; }
+:is([data-plurnk-type="KILL"], [data-operation-tally="KILL"]) { --plurnk-operation-glyph: "🗑️"; }
+:is([data-plurnk-type="WORK"], [data-operation-tally="WORK"]) { --plurnk-operation-glyph: "🐜"; }
+:is([data-plurnk-type="FORK"], [data-operation-tally="FORK"]) { --plurnk-operation-glyph: "🔱"; }
+:is([data-plurnk-type="BARE"], [data-operation-tally="BARE"]) { --plurnk-operation-glyph: "☁️"; }
+:is([data-plurnk-type="WAIT"], [data-operation-tally="WAIT"]) { --plurnk-operation-glyph: "⏳"; }
 [data-plurnk-type="SEND"] { --plurnk-operation-glyph: "✉️"; }
 [data-plurnk-type="DONE"] { --plurnk-operation-glyph: "🐹"; }
 [data-plurnk-type="FAIL"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
-[data-plurnk-type="WARN"] { --plurnk-operation-glyph: "⚠️"; }
+:is([data-plurnk-type="WARN"], [data-operation-tally="WARN"]) { --plurnk-operation-glyph: "⚠️"; }
 
 [data-plurnk-type="FAIL"],
-[data-plurnk-type="error"] { --plurnk-operation-glyph: "⛔"; }
-[data-plurnk-type="INFO"] { --plurnk-operation-glyph: "📌"; }
+:is([data-plurnk-type="error"], [data-operation-tally="error"]) { --plurnk-operation-glyph: "⛔"; }
+:is([data-plurnk-type="INFO"], [data-operation-tally="INFO"]) { --plurnk-operation-glyph: "📌"; }
 [data-diagnostic-level="info"] { --plurnk-operation-glyph: "📌"; }
 [data-diagnostic-level="warn"] { --plurnk-operation-glyph: "⚠️"; }
 [data-diagnostic-level="error"] { --plurnk-operation-glyph: "⛔"; }
-[data-plurnk-note="fact"] { --plurnk-operation-glyph: "📊"; }
-[data-plurnk-note="idea"] { --plurnk-operation-glyph: "💡"; }
-[data-plurnk-note="plan"] { --plurnk-operation-glyph: "🚧"; }
+:is([data-plurnk-note="fact"], [data-operation-tally="fact"]) { --plurnk-operation-glyph: "📊"; }
+:is([data-plurnk-note="idea"], [data-operation-tally="idea"]) { --plurnk-operation-glyph: "💡"; }
+:is([data-plurnk-note="plan"], [data-operation-tally="plan"]) { --plurnk-operation-glyph: "🚧"; }
+[data-operation-tally="reasoning"] { --plurnk-operation-glyph: "💭"; }
 
 /* {§web-page-shell} Directory identity remains accessible without decorative glyphs. */
 [data-directory-entry="workspace"] > article > header::before {

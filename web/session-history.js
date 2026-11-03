@@ -28,7 +28,8 @@ export default function sessionHistory(root, readBody, readPage) {
             if (!gaps.some((gap) => gap.url === url) && pages.mutable().includes(url)) gaps.push({ url, before: pages.first(url) });
         }
         const visible = new Set(gaps.map(({ url }) => url));
-        renderMessages(messages);
+        const gapStarts = new Set(gaps.flatMap(({ before }) => before ? [before] : []));
+        renderMessages(messages, gapStarts);
         for (const [url, control] of controls) if (!visible.has(url)) { control.remove(); controls.delete(url); }
         for (const { url, before } of gaps) {
             let control = controls.get(url);
@@ -38,7 +39,9 @@ export default function sessionHistory(root, readBody, readPage) {
                 on(control, "submit", "form", (event) => { event.preventDefault(); void load(url); });
             }
             the(control, { historyPending: pending.has(url) ? "true" : null, historyError: errors.get(url) ?? "" });
-            const target = Array.from(list.children).find((row) => row.getAttribute("data-message-id") === before) ?? null;
+            const target = before === null ? null : Array.from(list.children).find((row) =>
+                row.getAttribute("data-message-id") === before
+                || $(row, `[data-message-id="${CSS.escape(before)}"]`) !== null) ?? null;
             if (control.nextElementSibling !== target) list.insertBefore(control, target);
         }
         the(root, "conversation-empty", messages.length === 0 && gaps.length === 0);

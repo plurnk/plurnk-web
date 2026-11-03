@@ -77,7 +77,7 @@ export default async function verifyHistory(t) {
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.run === "function");
                     const run = () => page.evaluate(() => window.run());
-                    const ids = () => page.locator("[data-messages] > [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
+                    const ids = () => page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
                     const settled = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                     const older = "/history/old?opaque=%2F%23%25";
                     const live = [message("current", "Current text.\n\n".repeat(35)), message("tail", "Newest text.")];
@@ -120,7 +120,7 @@ export default async function verifyHistory(t) {
                     events = snapshot([message("now")], "/history/call");
                     await run();
                     await page.getByRole("button", { name: "Load previous loop" }).click();
-                    await page.locator('[data-call-id="call"]').waitFor();
+                    await page.locator('[data-call-id="call"]').waitFor({ state: "attached" });
                     const result = { id: "receipt", role: "tool", toolCallId: "call", content: '{"status":200,"path":"evidence.txt","range":{"returned":[1,2]}}' };
                     events = [{ sessionUpdate: "tool_call_update", toolCallId: result.toolCallId, status: "completed", rawOutput: result.content, _meta: { plurnk: { messageId: result.id } } }];
                     await run();

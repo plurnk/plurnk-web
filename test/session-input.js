@@ -281,10 +281,10 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await page.locator('[data-message-role="user"]').count(), 2);
         assert.equal(await page.getByText("Lifecycle fixture: follow-up.", { exact: true }).count(), 1, "arrival does not repeat accepted text");
         assert.equal(inputs.length, 2);
-        const history = await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
+        const history = await page.locator("[data-messages] [data-message-id]").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
         assert.ok(history.length > 2 && history.every(Boolean));
         assert.equal(new Set(history).size, history.length);
-        const turnTexts = await page.locator("[data-messages] > li").allTextContents();
+        const turnTexts = await page.locator("[data-messages] [data-message-id] > article > p").allTextContents();
         const firstPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: held-input."));
         const firstDoneIdx = turnTexts.findIndex((entry) => entry.includes("Completed held-input."));
         const followUpPromptIdx = turnTexts.findIndex((entry) => entry.includes("Lifecycle fixture: follow-up."));
@@ -294,7 +294,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.ok(followUpPromptIdx < followUpDoneIdx, "accepted follow-up heads the turn that observes it");
         await page.reload();
         await page.getByText("Completed follow-up.", { exact: true }).waitFor();
-        assert.deepEqual(await page.locator("[data-messages] > li").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), history);
+        assert.deepEqual(await page.locator("[data-messages] [data-message-id]").evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId)), history);
         assert.equal(model.requests.length, 2);
 
         await text.fill("Lifecycle fixture: held-input-stop.");
@@ -323,7 +323,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
                 await page.reload();
                 await page.getByText("Completed after-stop.", { exact: true }).waitFor();
             }
-            const items = await page.locator("[data-messages] > li").allTextContents();
+            const items = await page.locator("[data-messages] [data-message-id] > article > p").allTextContents();
             const stopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: held-input-stop."));
             const cancelledFollowIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: cancelled-follow-up."));
             const afterStopPromptIdx = items.findIndex((entry) => entry.includes("Lifecycle fixture: after-stop."));

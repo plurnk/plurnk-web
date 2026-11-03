@@ -150,6 +150,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             assert.equal(requests.length, 1, "native required controls prevent an unanswered review");
             assert.equal(model.requests.length, 1);
             const reasoning = page.locator('[data-message-role="reasoning"]').first();
+            await page.locator("[data-operations] > details > summary").first().click();
             await reasoning.locator("summary").click();
             await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();
             await reasoning.locator('[data-body-state="loaded"]').waitFor();
@@ -184,10 +185,10 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             assert.equal(await review.isVisible(), false);
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
-            const ids = await page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
+            const ids = await page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
             await page.reload();
             await page.getByText(`Completed ${name}.`, { exact: true }).waitFor();
-            assert.deepEqual(await page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId)), ids);
+            assert.deepEqual(await page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId)), ids);
             assert.equal(model.requests.length, 2);
             checkBrowser();
         }, { authenticated: true }));

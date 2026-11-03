@@ -224,7 +224,7 @@ export default function observeOverview(main) {
             const descendants = children.get(session.id) ?? [];
             const parent = session.parentSessionId === null ? null : byId.get(session.parentSessionId) ?? null;
             const hasBody = descendants.length > 0 || session.reply !== null;
-            const { header, body } = card(row, hasBody, false);
+            const { header, body } = card(row, hasBody);
             const identity = $(header, "[data-session-identity]");
             const workspaceSpan = $(header, "[data-session-workspace]");
             if (identity) {

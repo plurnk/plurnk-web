@@ -362,6 +362,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     assert.equal(await note.locator("section, div, ul").count(), 0);
                     assert.equal(await note.locator("article > details > summary").count(), 1);
                     assert.equal(await note.locator("details").evaluate((node) => node.open), false);
+                    await page.locator("[data-operations] > details > summary").click();
                     assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
                     assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
                     const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput);
@@ -410,6 +411,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.waitForFunction(() => document.querySelector('[data-message-role="assistant"]:not([data-call-id]) article section[aria-label="Footnotes"]'));
                     const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
                     const note = page.locator('[data-messages] [data-plurnk-note]');
+                    await page.locator("[data-operations] > details > summary").click();
                     assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
                     assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, footnoteAnswer);
                     assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
@@ -626,16 +628,17 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(await preview.isVisible(), false);
                         assert.equal(await preview.locator("pre").textContent(), "");
                         const reasoning = page.locator('[data-message-role="reasoning"]').first();
-                        await reasoning.waitFor();
+                        await reasoning.waitFor({ state: "attached" });
                         assert.equal(await reasoning.locator("details").getAttribute("open"), null);
                         assert.equal(requests.some((request) => entryRequest(request, "reasoning")), false,
                             "completed reasoning is a reference, not an automatic fetch");
+                        await page.locator("[data-operations] > details > summary").first().click();
                         await reasoning.locator("summary").click();
                         await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                         await reasoning.locator('[data-body-state="loaded"]').waitFor();
                         assert.equal(await reasoning.locator('[data-body-reference]').textContent(), "Considering conversation.");
                         await reasoning.evaluate((element) => { window.observedReasoning = element; window.observedBody = element.querySelector("[data-body-reference]"); });
-                        const ids = () => page.locator("[data-messages] > li").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
+                        const ids = () => page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
                         const calls = await page.locator("[data-call-id]").evaluateAll((rows) => rows.map((row) => ({
                             id: row.dataset.callId, name: row.dataset.plurnkType, body: row.querySelector("article > details > pre")?.textContent ?? "",
                         })));
@@ -686,7 +689,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(beforeReload.length, new Set(beforeReload).size, "reconnect does not duplicate messages");
                         await page.reload();
                         await connected(page);
-                        await page.waitForFunction((count) => document.querySelectorAll("[data-messages] > li").length === count, beforeReload.length);
+                        await page.waitForFunction((count) => document.querySelectorAll("[data-messages] [data-message-id]").length === count, beforeReload.length);
                         assert.deepEqual(await ids(), beforeReload, "a fresh page reads the same SDK snapshot, without a browser history store");
                         assert.equal(model.requests.length, 3, "two original calls and one explicit follow-up; replay and refresh create none");
                         assert.equal(await preview.isVisible(), false);
