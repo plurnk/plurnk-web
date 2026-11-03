@@ -8,7 +8,7 @@ body > footer {
 }
 
 /* {§web-page-shell} Intrinsic header/footer tracks need no measured offsets. */
-body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="session"])) {
+body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) {
     block-size: 100dvh;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -16,7 +16,7 @@ body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="se
     overflow: hidden;
 }
 
-body > main:is([data-page="daemon"], [data-page="workspace"], [data-page="session"]) {
+body > main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"]) {
     min-block-size: 0;
     overflow: auto;
 }
@@ -155,7 +155,7 @@ table {
 }
 
 /* Pico's `ul li` rule otherwise overrides numbered lists inside the conversation's ul. */
-#session-conversation ol > li {
+:is(#session-conversation, [data-session-reply]) ol > li {
     list-style-type: decimal;
 }
 
@@ -273,7 +273,8 @@ table {
 
 /* {§web-card-disclosure} The card owns outer spacing; its final content adds no second margin. */
 #main li > article > details,
-#main li > article > details > :last-child {
+#main li > article > details > :last-child,
+[data-session-reply] > :last-child {
     margin-block-end: 0;
 }
 
@@ -315,34 +316,35 @@ table {
     min-inline-size: 0;
 }
 
+[data-session-reply] pre,
 #session-conversation pre,
 #session-streams pre,
 #session-activity pre,
 #session-command-results pre,
 #main [aria-label="Review requests"] pre,
-#session-conversation [data-math],
-#session-conversation [data-diagram-viewport] {
+:is(#session-conversation, [data-session-reply]) [data-math],
+:is(#session-conversation, [data-session-reply]) [data-diagram-viewport] {
     max-inline-size: 100%;
     overflow-x: auto;
 }
 
 /* {§web-diagram-content} Preserve readable intrinsic labels; wide images scroll locally. */
-#session-conversation [data-diagram-viewport] > img {
+:is(#session-conversation, [data-session-reply]) [data-diagram-viewport] > img {
     max-inline-size: none;
 }
 
 /* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */
-#session-conversation [data-math="inline"] {
+:is(#session-conversation, [data-session-reply]) [data-math="inline"] {
     display: inline-block;
     vertical-align: middle;
 }
 
-#session-conversation [data-math="block"] {
+:is(#session-conversation, [data-session-reply]) [data-math="block"] {
     display: block;
     margin-block: var(--pico-spacing);
 }
 
-#session-conversation [data-math] > math {
+:is(#session-conversation, [data-session-reply]) [data-math] > math {
     inline-size: max-content;
     min-inline-size: 100%;
 }

@@ -6,10 +6,12 @@ monospace typography. It follows the browser's light/dark preference.
 Conversation cards use a subtle green user tint, ordinary cards for model replies,
 and neutral backgrounds for operations, notes and reasoning.
 Requires a current stable browser; no legacy-browser compatibility layer is shipped.
-No additional server. The root links to the daemon's workspace
-directory at `/~/`; workspace pages list model sessions as real links, with native
-collapsed child branches and a “Background work” section for branches beneath
-internal actors. Bookkeeping sessions are omitted. Session pages show identity,
+No additional server. When signed in (or on an anonymous daemon), the root `/`
+shows a live daemon-wide session overview ordered by most recent delivered reply,
+and links to the daemon's workspace directory at `/~/`; workspace pages show the
+same live session overview for that workspace, with native collapsed child
+branches, on-demand completed-reply disclosures and a “Background work” section
+for branches beneath internal actors. Bookkeeping sessions are omitted. Session pages show identity,
 breadcrumbs, their actual parent, live status and conversation, without a
 duplicate page heading. A native message form sends text; Stop explicitly cancels
 the session's current work. Pending operations have native Accept/Reject review forms;
@@ -26,10 +28,12 @@ Reload restores the page's starting mode. Commands remain available during pendi
 Click the status model or effort to open its form below the conversation. Model
 search offers native suggestions, or accepts an exact alias/provider-model.
 Select Model / Select Effort applies the choice and closes the form; Cancel dismisses it.
-Workspace cards show the session's lifecycle, parent/name and workspace at page load.
-Click the ant to visit the session, or expand the card to see its child tree;
-parent and workspace links navigate independently. Leaves have no empty disclosure.
-These cards are navigation snapshots, not live monitors or completed-reply previews.
+Session cards on `/` and workspace pages show the session's lifecycle, parent/name
+and workspace, ordered with the most recently delivered reply first, and stay live
+over the ACP overview subscription while preserving open disclosures.
+Click the ant to visit the session, or expand the card to see its child tree and
+latest completed reply (loaded on demand when opened); parent and workspace links
+navigate independently. Leaves without a completed reply have no empty disclosure.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 differing labels keep ☁️ on the workspace name and show 🗂️ on a separate folder line.
@@ -301,7 +305,7 @@ streaming and replay against the production content policy in all three engines.
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
 Pico's readable pinned substrate and dependency licenses, and derives a maskable SVG
-from the mascot. The ACP client loads only on session pages; Vite includes the bundled
+from the mascot. The ACP client loads only on session and overview pages; Vite includes the bundled
 dependencies' license notices. Production prunes unused CSS rules, variables and keyframes from
 the browser and server-rendered document sources, plus the authority's publicly
 exported document specimens, before minification. The auth package supplies those

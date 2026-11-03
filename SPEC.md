@@ -226,9 +226,9 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 
 | Document | Content / lookup |
 |---|---|
-| `/` | Public foundation document and a real link to `/~/`. |
+| `/` | Public foundation document and a real link to `/~/` when unauthenticated; live daemon-wide session overview from `readSessionOverview()` under {§web-session-directory} when admitted or in explicit anonymous posture. |
 | `/~/` | `listWorkspaces()`: native list articles for the shown workspaces with exact-name links under {§web-page-shell}, and the folderless creation form under {§web-workspace-creation}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `listSessions(id)` census rendered under {§web-session-directory}. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `readSessionOverview(id)` census rendered under {§web-session-directory}. |
 | Session directory | Exact-name model-session lookup; identity, breadcrumbs and actual parent under {§web-session-directory}, plus passive status under {§web-session-observer} and conversation under {§web-session-conversation}. |
 | Archived workspace/session | The daemon's `archived_at` mark leaves a workspace out of `/~/` and a session, with the sessions beneath it, out of its workspace's tree; its own page still opens by its exact address. |
 | Missing workspace/session | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
@@ -338,20 +338,22 @@ flow at the end of `<main>` and submits cleanly.
 | Boundary | Representation |
 |---|---|
 | Membership | Every shown `origin: model` session (`archived_at: null`) appears once, regardless of owner, lifecycle or name spelling. Non-model bookkeeping sessions have no directory row or session page; their direct page URL returns 404. This is presentation, not an access policy for daemon APIs. |
-| Roots | Shown model sessions with `parentSessionId: null` form the primary list. |
-| Children | Immediate model children nest beneath their actual model parent. Preserve daemon order among siblings. |
+| Roots | Shown model sessions with `parentSessionId: null` form the primary list. Sessions with a delivered reply (`SEND` completion `200` or `499`) order first by most recent delivered reply (`reply.id` descending); sessions with no delivered reply follow in daemon order. On `/`, roots span all non-archived workspaces. |
+| Children | Immediate model children nest beneath their actual model parent, ordered by most recent delivered reply (`reply.id` descending) with no-reply siblings following in daemon order. |
 | Card identity | Two lines: a named ant link to the session, its lifecycle glyph, optional actual parent followed by `>`, and the session name; then a folder/cloud marker and a real link to its workspace. Model parents are links; bookkeeping parents are escaped text, never fabricated session destinations. Folder presence comes from `project_root`, not the workspace name. Kind and permission owner do not become visible metadata rows. |
-| Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the session statusline; the icon has a literal accessible name/title. These are directory facts at page load, not locally inferred or continuously updated status. No reply content, completion timestamp or recency ordering is inferred from this census. |
-| Background | Model sessions with an immediate non-model parent begin branches in one collapsed “Background work” section. Omit it when empty. No A2A-specific classification or reparenting. |
-| Disclosure | Each card is `li > article`. When it has children, one initially closed `details` contains its two-line identity as a phrasing-only `summary`, followed by the actual nested `ul/li` child cards. Leaves use a `header` with the same identity and no empty disclosure. Activating a summary opens the card; activating its ant, parent or workspace link navigates without toggling it. Native keyboard and pointer behavior work without JavaScript; no separate child-count teaser. |
+| Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the session statusline; the icon has a literal accessible name/title. With JavaScript, the ACP `session/list` overview subscription keeps lifecycle, card order, membership and workspace labels live in place. |
+| Background | Model sessions with an immediate non-model parent begin branches in one collapsed “Background work” section, ordered by most recent delivered reply. Omit it when empty. No A2A-specific classification or reparenting. |
+| Disclosure | Each card is `li > article`. When it has children or a delivered reply, one initially closed `details` contains its two-line identity as a phrasing-only `summary`, followed by any nested `ul/li` child cards and a `[data-session-reply]` outlet carrying the reply's `/acp/<workspace ID>/<session ID>/entry` address. Leaves without a delivered reply use a `header` with the same identity and no empty disclosure. Activating a summary opens the card; when opened, JavaScript fetches the reply's entry body once on demand and renders it as sanitized Markdown, offering a native Retry form on failure and ignoring stale reads if a newer reply arrives. Activating its ant, parent or workspace link navigates without toggling it. Native keyboard and pointer behavior work without JavaScript; no separate child-count teaser. |
 | Parent on session page | Show the actual parent's name: a link for a model parent, escaped text for a bookkeeping parent. Roots omit the parent line. URL breadcrumbs remain workspace/session navigation, not invented lineage paths. |
-| Placement | The complete workspace tree belongs only to the workspace page. Session pages retain breadcrumb and parent navigation, and use {§web-session-descendants} for live descendant navigation; no duplicated page-load tree. |
+| Placement | Complete session trees belong to the home overview and workspace pages. Session pages retain breadcrumb and parent navigation, and use {§web-session-descendants} for live descendant navigation; no duplicated page-load tree. |
 | Integrity | Duplicate identities, absent referenced parents and cyclic model parentage are internal contract failures; never silently omit or invent sessions. |
 
 Rendering and expansion perform no attachment, inference, ownership change or
-daemon mutation. There is no browser topology cache, saved expansion state,
-lazy branch request, custom tree role or JavaScript disclosure handler. Opening a
-session page may observe it under {§web-session-observer}, never control it.
+daemon mutation. Opening a card with a delivered reply fetches only that reply's
+read-only entry body on demand; live `_plurnk/overview` updates reconcile cards
+in place while preserving open disclosures, focus and already-rendered reply
+bodies. Opening a session page may observe it under {§web-session-observer},
+never control it.
 
 ## §web-session-observer Read-only session status
 
@@ -359,8 +361,10 @@ The server renders a semantic status footer only for an existing model session,
 with the daemon's qualified session identity (`<workspace ID>#<session name>`) and
 whether access requires a browser session. URLs and breadcrumbs retain readable names;
 renaming a workspace does not redirect an already-open observation to another session.
-No credential appears in the document. JavaScript enhances that footer; other
-pages neither load the ACP client nor request access credentials or ACP streams.
+No credential appears in the document. JavaScript enhances that footer on session
+pages and subscribes to read-only `session/list` overview updates on home and
+workspace pages; other pages neither load the ACP client nor request access
+credentials or ACP streams.
 Without JavaScript the identity and navigation remain usable, with an explicit
 notice that live status requires JavaScript.
 
@@ -722,12 +726,12 @@ limitations do not introduce a second renderer or compatibility polyfill.
 | Shared navigation | Home/brand and the Workspaces breadcrumb root are real links preceding the single `main` landmark (the workspace index instead marks its root as current); no skip-navigation control. Authenticated documents add Account and a compact secondary Sign Out POST form in the header; no footer logout. Anonymous documents omit account/session controls. Native links and controls retain visible keyboard focus. |
 | Header actions | Mascot-only home link with accessible Plurnk name; its square SVG uses the two-character monospace scale (`2ch`) of the navigation emoji, rather than a fixed pixel size. ⚙️ Account, ✖ Sign out: icon-only controls with explicit accessible names and native explanatory titles. Brand and actions align in one horizontal row, including narrow viewports. The workspace root is 🗃️ with an explicit Workspaces accessible name/title, not another menu action; workspace and session names remain text. |
 | Breadcrumb layout | A compact single-row CSS grid keeps the breadcrumb between mascot and menu. Complete names never wrap or abbreviate; overflow scrolls horizontally within the breadcrumb, not the document. Pico's navigation padding belongs inside the breadcrumb's scroll area, with no vertical overflow or clipped content; its keyboard-focus ring stays inward. Native keyboard focus reveals linked ancestors without JavaScript measurements or a responsive navigation widget. The header adds no further block padding. Keyboard order remains mascot, menu, breadcrumb. |
-| Disconnection | A decorative 🔌 with an accessible Disconnected name/title appears immediately left of Account when the session observation is disconnected or signed out. It is absent during initial connection, healthy observation and ordinary input interrupts, and on documents without live observation. CSS projects the existing connection state; no browser-online inference, duplicate state or new action. Existing failure details and recovery controls remain available. |
+| Disconnection | A decorative 🔌 with an accessible Disconnected name/title appears immediately left of Account when the session or overview observation is disconnected or signed out. It is absent during initial connection, healthy observation and ordinary input interrupts, and on documents without live observation. CSS projects the existing connection state; no browser-online inference, duplicate state or new action. Existing failure details and recovery controls remain available. |
 | Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. Home and directory pages omit duplicate headings; the breadcrumb identifies the current session. Account and error pages retain one `h1`. |
 | Directory breadcrumbs | 🗃️ → whole workspace name → session; only applicable ancestors appear. Non-directory pages retain the root link, including Account/session navigation. The current item is text marked `aria-current="page"`. The workspace-page marker follows {§web-workspace-folder}. Slashes in names do not invent intermediate directories. |
 | Empty lists | “No workspaces.” or “No sessions.”; no empty list masquerading as content. |
-| Page width | Home, account and error documents retain a centered 65ch reading measure. Workspaces, Workspace and Session share the available viewport width. Gutters and wrapping preserve narrow-screen usability and complete names. |
-| Viewport layout | Directory/session documents use a viewport-height CSS grid: stationary header, scrollable main, and (on sessions) stationary status/composer footer. Native viewport resizing and textarea sizing handle changing available space; no measured offsets or JavaScript layout controller. Main retains conversation, settings, reviews, detailed connection/message feedback and command results. Reading/form documents retain ordinary page flow. |
+| Page width | Account and error documents retain a centered 65ch reading measure. Home, Workspaces, Workspace and Session share the available viewport width. Gutters and wrapping preserve narrow-screen usability and complete names. |
+| Viewport layout | Home and directory/session documents use a viewport-height CSS grid: stationary header, scrollable main, and (on sessions) stationary status/composer footer. Native viewport resizing and textarea sizing handle changing available space; no measured offsets or JavaScript layout controller. Main retains conversation, settings, reviews, detailed connection/message feedback and command results. Reading/form documents retain ordinary page flow. |
 | Directory entries | Native lists use `li > article`. Workspace headers retain folder/cloud identity; session cards use the identity/disclosure under {§web-session-directory}. Accessible names do not depend on CSS glyphs. Preserve nested child disclosures and the daemon's membership/order; no second browser directory or custom tree widget. |
 | Expected HTTP failures | A Pico `article` card within the same HTML shell: heading, decorative warning emoji, escaped explanation and native Home link. Preserve status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
 
@@ -739,8 +743,8 @@ there is no browser-owned route or session inventory.
 
 ## §web-document Document
 
-The home document contains only the shared navigation and an empty main landmark;
-it initializes OTM from locally packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
+The unauthenticated home document contains only the shared navigation and an empty main landmark;
+admitted home renders the daemon-wide session overview. The document initializes OTM from locally packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
 without application classes. Brand green is `#148800`; dark-mode link colors remain
 bright enough for contrast. Native color-scheme selection is preserved; typography
 uses Pico's system monospace stack and a shared numeric line-height token of 1.25.

@@ -9,7 +9,8 @@ async function fixture(t, createModule, /** @type {any} */ { credentials, ...por
     const module = createModule();
     let handler;
     await module.setup({ credentials });
-    await module.start({ credentials, listWorkspaces: async () => [workspace], listSessions: async () => [], ...port,
+    await module.start({ credentials, listWorkspaces: async () => [workspace], listSessions: async () => [],
+        readSessionOverview: async () => ({ workspaces: [workspace], sessions: [] }), ...port,
         registerHttpRoute(prefix, serve) { assert.equal(prefix, "/"); handler = serve; } });
     const errors = [];
     const server = createServer((req, res) => {
@@ -114,14 +115,14 @@ const sessionCookie = (response) => response.headers.getSetCookie().find((value)
 
 /** {§web-route-settlement} Real HTTP requests through source and packed module entry points. */
 export default async function verifyRouteSettlement(t, createModule) {
-    for (const [name, path] of [["listWorkspaces", "/~/"], ["listSessions", "/~/example/"]]) {
-        await t.test(`close joins ${name} without needing a preceding stop`, async (t) => {
+    for (const [name, path] of [["readSessionOverview", "/"], ["listWorkspaces", "/~/"], ["readSessionOverview", "/~/example/"]]) {
+        await t.test(`close joins ${name} on ${path} without needing a preceding stop`, async (t) => {
             const gate = hold();
             const f = await fixture(t, createModule, { [name]: gate.call });
             const response = fetch(`${f.base}${path}`);
             await gate.entered;
             try { await pending(f.close); }
-            finally { gate.release(name === "listWorkspaces" ? [workspace] : []); }
+            finally { gate.release(name === "listWorkspaces" ? [workspace] : { workspaces: [workspace], sessions: [] }); }
             assert.equal((await response).status, 200);
             await f.close();
             await stopping(await fetch(`${f.base}/`));

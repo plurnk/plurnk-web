@@ -11,3 +11,7 @@ initDialogs();
 
 const session = $("#session-status");
 if (session instanceof HTMLElement) (await import("./session.js")).default(session);
+else {
+    const overview = $("#main[data-auth]");
+    if (overview instanceof HTMLElement) (await import("./overview.js")).default(overview);
+}

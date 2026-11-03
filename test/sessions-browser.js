@@ -180,6 +180,14 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await verifyPageShell(page, { title: "404 Not Found — Plurnk", kind: "error" });
                             await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces" }).click();
                             assert.equal(new URL(page.url()).pathname, "/~/");
+                            await page.getByRole("banner").getByRole("link", { name: "Plurnk", exact: true }).click();
+                            assert.equal(new URL(page.url()).pathname, "/");
+                            await verifyPageShell(page, { title: "Plurnk", kind: "home" });
+                            assert.equal(
+                                await page.locator("main a[data-session-link]").count(),
+                                initial.reduce((sum, ws) => sum + ws.sessions.filter(({ origin }) => origin === "model").length, 0),
+                                "admitted home renders the daemon-wide model session overview",
+                            );
                             await page.getByRole("button", { name: "Sign out" }).click();
                             await page.waitForURL(base);
                             assert.equal((await context.cookies()).some(({ name }) => name === "plurnk_web_session"), false);
