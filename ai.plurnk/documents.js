@@ -6,7 +6,19 @@ import { escapeHtml, RequestError } from "./http.js";
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
 /** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
-/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly lifecycle: string, readonly archived_at: string | null }} DirectorySession */
+/** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499 }} DirectoryReply */
+/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly lifecycle: string, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
+/** @typedef {{ readonly id: number, readonly name: string, readonly projectRoot: string | null }} DirectoryOverviewWorkspace */
+/** @typedef {{ readonly id: number, readonly workspaceId: number, readonly name: string, readonly parentSessionId: number | null, readonly lifecycle: string, readonly reply: DirectoryReply | null }} DirectoryOverviewSession */
+/** @typedef {{ readonly workspaces: readonly DirectoryOverviewWorkspace[], readonly sessions: readonly DirectoryOverviewSession[] }} DirectoryOverview */
+
+/** @param {DirectorySession} a @param {DirectorySession} b */
+const orderByReply = (a, b) => {
+    const aReply = a.reply ?? null;
+    const bReply = b.reply ?? null;
+    return aReply !== null && bReply !== null ? bReply.id - aReply.id
+        : aReply !== null ? -1 : bReply !== null ? 1 : 0;
+};
 /** {§web-document} {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
 export default class Documents {
     #beforeTitle;
@@ -45,14 +57,18 @@ export default class Documents {
         this.#afterMain = parts[2];
     }
 
-    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "session" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] */
-    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "", dialogs = "") {
+    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "session" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] @param {string} [mainAttributes] */
+    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "", dialogs = "", mainAttributes = "") {
         const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
-        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}">${body}${dialogs}</main>${footer}${this.#afterMain}`);
+        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}"${mainAttributes}>${body}${dialogs}</main>${footer}${this.#afterMain}`);
     }
-    /** @param {boolean} authenticated */
-    home(authenticated) { return this.#render("Plurnk", this.#home, "home", authenticated); }
+    /** @param {boolean} authenticated @param {{ readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview> }} [port] */
+    home(authenticated, port) {
+        if (typeof port?.readSessionOverview !== "function") return this.#render("Plurnk", this.#home, "home", authenticated);
+        return port.readSessionOverview({ limit: Number.MAX_SAFE_INTEGER, excerptChars: 1 }).then((overview) =>
+            this.#render("Plurnk", this.#overviewTree(overview), "home", authenticated, this.#breadcrumb(), "", "", ` data-auth="${authenticated ? "session" : "none"}" data-connection="initial"`));
+    }
 
     /** {§web-page-shell} HTTP failures keep native navigation without disclosing request data.
      * @param {number} status @param {string} message @param {boolean} [authenticated]
@@ -282,13 +298,26 @@ export default class Documents {
             + `${this.#link(workspace.name, { kind: "workspace", workspace: workspace.name })}</span>`;
     }
 
-    /** {§web-session-directory}
-     * @param {{name: string, project_root: string | null}} workspace
-     * @param {ReadonlyMap<number, DirectorySession>} sessions
+    /** {§web-session-directory} A finished reply adds a disclosure body outlet addressed at its ACP entry resource.
+     * @param {number} workspaceId
+     * @param {DirectorySession} session
      */
-    #sessionTree(workspace, sessions) {
+    #replyOutlet(workspaceId, session) {
+        const reply = session.reply ?? null;
+        if (reply === null) return "";
+        const target = encodeURIComponent(`log:///${reply.coordinate}`);
+        return `<div data-session-reply="/acp/${workspaceId}/${session.id}/entry?target=${escapeHtml(target)}"></div>`;
+    }
+
+    /** {§web-session-directory}
+     * @param {ReadonlyMap<number, { readonly id: number, readonly name: string, readonly project_root: string | null }>} workspaces
+     * @param {ReadonlyMap<number, DirectorySession & { readonly workspaceId: number }>} sessions
+     */
+    #sessionTree(workspaces, sessions) {
         // {§web-directory-documents} An archived session leaves the tree; its page still opens by its address.
-        const models = [...sessions.values()].filter(({ origin, archived_at }) => origin === "model" && archived_at === null);
+        const models = [...sessions.values()]
+            .filter(({ origin, archived_at }) => origin === "model" && archived_at === null)
+            .toSorted(orderByReply);
         if (models.length === 0) return '<p data-i18n="no-sessions">No sessions.</p>';
         const children = Map.groupBy(models, ({ parentSessionId }) => parentSessionId);
         const background = models.filter((session) => {
@@ -296,14 +325,17 @@ export default class Documents {
             return parent !== null && parent.origin !== "model";
         });
         let rendered = 0;
-        /** @param {readonly DirectorySession[]} entries @returns {string} */
+        /** @param {readonly (DirectorySession & { readonly workspaceId: number })[]} entries @returns {string} */
         const list = (entries) => entries.length === 0 ? ""
             : `<ul>${entries.map((session) => {
                 rendered++;
+                const workspace = workspaces.get(session.workspaceId);
+                if (workspace === undefined) throw new Error(`Session ${session.id} belongs to an absent workspace ${session.workspaceId}.`);
                 const descendants = children.get(session.id) ?? [];
                 const identity = this.#sessionIdentity(workspace, session, this.#parent(session, sessions));
-                const content = descendants.length === 0 ? `<header>${identity}</header>`
-                    : `<details><summary>${identity}</summary>${list(descendants)}</details>`;
+                const reply = this.#replyOutlet(workspace.id, session);
+                const content = descendants.length === 0 && reply === "" ? `<header>${identity}</header>`
+                    : `<details><summary>${identity}</summary>${list(descendants)}${reply}</details>`;
                 return `<li data-directory-entry="session"><article aria-label="Session">${content}</article></li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
@@ -311,6 +343,39 @@ export default class Documents {
             + `${list(background)}</details>`;
         if (rendered !== models.length) throw new Error("Session directory holds shown model sessions that no shown root reaches.");
         return roots + other;
+    }
+
+    /** {§web-session-directory}
+     * @param {DirectoryOverview} overview
+     */
+    #overviewTree(overview) {
+        const workspaces = new Map(overview.workspaces.map(({ id, name, projectRoot }) => [id, { id, name, project_root: projectRoot }]));
+        /** @type {Map<number, DirectorySession & { readonly workspaceId: number }>} */
+        const byId = new Map(overview.sessions.map((session) => [session.id, {
+            id: session.id,
+            workspaceId: session.workspaceId,
+            name: session.name,
+            parentSessionId: session.parentSessionId,
+            origin: "model",
+            lifecycle: session.lifecycle,
+            archived_at: null,
+            reply: session.reply,
+        }]));
+        if (byId.size !== overview.sessions.length) throw new Error("Session directory contains duplicate identities.");
+        for (const session of overview.sessions) {
+            if (session.parentSessionId !== null && !byId.has(session.parentSessionId)) {
+                byId.set(session.parentSessionId, {
+                    id: session.parentSessionId,
+                    workspaceId: session.workspaceId,
+                    name: "_plurnk",
+                    parentSessionId: null,
+                    origin: "_plurnk",
+                    lifecycle: "idle",
+                    archived_at: null,
+                });
+            }
+        }
+        return this.#sessionTree(workspaces, byId);
     }
 
     /** {§web-session-observer} Identity and navigation belong to the document; status arrives through ACP.
@@ -355,14 +420,14 @@ export default class Documents {
     }
     /**
      * @param {import("./directory-addresses.js").Directory} directory
-     * @param {{ listWorkspaces(): Promise<readonly DirectoryWorkspace[]>, listSessions(workspaceId: number): Promise<readonly DirectorySession[]> }} port
+     * @param {{ listWorkspaces(): Promise<readonly DirectoryWorkspace[]>, listSessions(workspaceId: number): Promise<readonly DirectorySession[]>, readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview> }} port
      * @param {boolean} authenticated
      * @param {boolean} [own] {§web-session-approval} whether the person reached the page by their own navigation; only then
      * does a session page start with the configured automatic approval
      */
     async read(directory, port, authenticated, own = false) {
-        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "", dialogs = "") =>
-            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs);
+        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "", dialogs = "", mainAttributes = "") =>
+            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs, mainAttributes);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
             // {§web-directory-documents} An archived workspace leaves the list; its page still opens by its address.
@@ -383,7 +448,18 @@ export default class Documents {
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
             const dialogs = this.#renameForm(workspace) + this.#workspaceArchiveForm(workspace) + this.#sessionCreationForm(workspace);
-            return render(workspace.name, folder + this.#sessionTree(workspace, byId), marker, "", dialogs);
+            const live = typeof port.readSessionOverview === "function";
+            const overview = typeof port.readSessionOverview === "function"
+                ? await port.readSessionOverview({ workspaceId: workspace.id, limit: Number.MAX_SAFE_INTEGER, excerptChars: 1 })
+                : null;
+            const replies = new Map(overview?.sessions.map((entry) => [entry.id, entry.reply]) ?? []);
+            const treeSessions = new Map(sessions.map((entry) => [entry.id, {
+                ...entry,
+                workspaceId: workspace.id,
+                reply: replies.get(entry.id) ?? entry.reply ?? null,
+            }]));
+            const mainAttributes = live ? ` data-workspace-id="${workspace.id}" data-auth="${authenticated ? "session" : "none"}" data-connection="initial"` : "";
+            return render(workspace.name, folder + this.#sessionTree(new Map([[workspace.id, workspace]]), treeSessions), marker, "", dialogs, mainAttributes);
         }
         const session = sessions.find(({ name, origin }) => name === directory.session && origin === "model");
         if (session === undefined) return null;

@@ -406,3 +406,56 @@ test("{§web-directory-documents} archived places leave the lists, and their own
     assert.ok(await document.read({ kind: "workspace", workspace: "shelved" }, port, false), "an archived workspace's page opens by its address");
     assert.ok(await document.read({ kind: "session", workspace: "work", session: "gone" }, port, false), "an archived session's page opens by its address");
 });
+
+test("{§web-session-directory} {§web-directory-documents} home and workspace overviews order by delivered reply recency and expose on-demand reply disclosures", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main id="main" data-page="home"></main>`, false, 128);
+    assert.match((await document.home(false)).toString(), /<main id="main" data-page="home"><\/main>/u);
+    const workspaces = [
+        { id: 7, name: "alpha", project_root: null, project_label: null, projectRoot: null, projectLabel: null, archived_at: null },
+        { id: 8, name: "beta", project_root: "/srv/beta", project_label: "~/beta", projectRoot: "/srv/beta", projectLabel: "~/beta", archived_at: null },
+    ];
+    /** @type {(id: number, coordinate: string, completion?: 200 | 499) => { id: number, coordinate: string, completion: 200 | 499 }} */
+    const reply = (id, coordinate, completion = 200) => ({ id, coordinate, completion });
+    const overviewSessions = [
+        { ...session(1, "_plurnk", null, "_plurnk"), workspaceId: 7, reply: null },
+        { ...session(2, "no-reply-first"), workspaceId: 7, reply: null },
+        { ...session(3, "older-reply"), workspaceId: 7, reply: reply(40, "1/2/3/SEND:40") },
+        { ...session(4, "newer-reply"), workspaceId: 8, reply: reply(95, "2/1/1/DONE:95") },
+        { ...session(5, "child-older", 3), workspaceId: 7, reply: reply(50, "1/3/1/SEND:50") },
+        { ...session(6, "child-newer", 3), workspaceId: 7, reply: reply(80, "1/4/1/FAIL:80", 499) },
+        { ...session(7, "child-silent", 3), workspaceId: 7, reply: null },
+        { ...session(8, "no-reply-second"), workspaceId: 8, reply: null },
+        { ...session(9, "bg-older", 1), workspaceId: 7, reply: reply(10, "1/5/1/SEND:10") },
+        { ...session(10, "bg-newer", 1), workspaceId: 7, reply: reply(60, "1/6/1/SEND:60") },
+    ];
+    const modelOverviewSessions = overviewSessions.filter(({ origin }) => origin === "model");
+    const port = {
+        listWorkspaces: async () => workspaces,
+        listSessions: async (id) => overviewSessions.filter((item) => item.workspaceId === id),
+        readSessionOverview: async (/** @type {{ workspaceId?: number }} */ { workspaceId } = {}) => ({
+            workspaces: workspaceId === undefined ? workspaces : workspaces.filter((ws) => ws.id === workspaceId),
+            sessions: workspaceId === undefined ? modelOverviewSessions : modelOverviewSessions.filter((item) => item.workspaceId === workspaceId),
+        }),
+    };
+    const homeHtml = (await document.home(true, port)).toString();
+    assert.match(homeHtml, /<main id="main" data-page="home" data-auth="session" data-connection="initial">/u);
+    const rootOrder = [...homeHtml.split('<details><summary data-i18n="background-work">')[0].matchAll(/data-session-link href="\/~\/[^@]+@([^"]+)\/"/gu)].map((match) => match[1]);
+    assert.deepEqual(rootOrder, ["newer-reply", "older-reply", "child-newer", "child-older", "child-silent", "no-reply-first", "no-reply-second"]);
+    const bgOrder = [...homeHtml.split('<details><summary data-i18n="background-work">')[1].matchAll(/data-session-link href="\/~\/[^@]+@([^"]+)\/"/gu)].map((match) => match[1]);
+    assert.deepEqual(bgOrder, ["bg-newer", "bg-older"]);
+    assert.ok(homeHtml.includes('data-session-reply="/acp/8/4/entry?target=log%3A%2F%2F%2F2%2F1%2F1%2FDONE%3A95"'), "leaf with delivered reply renders reply disclosure outlet");
+    assert.ok(homeHtml.includes('</ul><div data-session-reply="/acp/7/3/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FSEND%3A40"></div></details>'), "branch with children and reply renders both child list and reply outlet");
+    assert.match(homeHtml, /<header><span data-session-identity><a data-session-link href="\/~\/alpha@no-reply-first\/"/u, "leaf without reply uses header without empty disclosure");
+    const homeFolderMarker = homeHtml.match(/href="\/~\/beta@newer-reply\/"[\s\S]*?<span data-session-workspace><span data-folder="([^"]+)"/u);
+    assert.equal(homeFolderMarker?.[1], "true", "home overview preserves projectRoot folder presence");
+
+    const wsHtml = (await document.read({ kind: "workspace", workspace: "alpha" }, port, false)).toString();
+    assert.match(wsHtml, /<main id="main" data-page="workspace" data-workspace-id="7" data-auth="none" data-connection="initial">/u);
+    const wsOrder = [...wsHtml.split('<details><summary data-i18n="background-work">')[0].matchAll(/data-session-link href="\/~\/alpha@([^"]+)\/"/gu)].map((match) => match[1]);
+    assert.deepEqual(wsOrder, ["older-reply", "child-newer", "child-older", "child-silent", "no-reply-first"]);
+
+    const emptyHome = (await document.home(false, {
+        readSessionOverview: async () => ({ workspaces: [], sessions: [] }),
+    })).toString();
+    assert.match(emptyHome, /<main id="main" data-page="home" data-auth="none" data-connection="initial"><p data-i18n="no-sessions">No sessions\.<\/p><\/main>/u);
+});

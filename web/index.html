@@ -30,6 +30,34 @@
         </nav>
     </header>
     <main id="main" data-page="home"></main>
+    <!-- {§web-session-directory} Inert directory card templates; the overview subscription reconciles them in place. -->
+    <template id="overview-list">
+        <ul></ul>
+    </template>
+    <template id="overview-empty">
+        <p data-i18n="no-sessions">No sessions.</p>
+    </template>
+    <template id="overview-background">
+        <details><summary data-i18n="background-work">Background work</summary><ul></ul></details>
+    </template>
+    <template id="session-card">
+        <li data-directory-entry="session">
+            <article aria-label="Session">
+                <header>
+                    <span data-session-identity><a data-session-link></a> <span data-lifecycle="idle" role="img" aria-label="idle" title="idle"></span> <span></span></span><span data-session-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a data-text="name"></a></span>
+                </header>
+            </article>
+        </li>
+    </template>
+    <template id="session-parent-link">
+        <span data-session-parent><a data-text="name" data-bind="href:session-path"></a> &gt; </span>
+    </template>
+    <template id="session-parent-text">
+        <span data-session-parent><span></span> &gt; </span>
+    </template>
+    <template id="session-reply">
+        <div data-session-reply=""></div>
+    </template>
     <!-- {§web-session-status} Public state supplies literal list values, not document markup. -->
     <template id="session-descendant">
       <li>

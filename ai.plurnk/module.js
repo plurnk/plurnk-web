@@ -18,6 +18,7 @@ import Diagrams from "./diagrams.js";
  *   registerHttpRoute: import("@plurnk/plurnk-contracts/port").ApplicationPort["registerHttpRoute"],
  *   listWorkspaces: () => Promise<readonly import("./documents.js").DirectoryWorkspace[]>,
  *   listSessions: (workspaceId: number) => Promise<readonly import("./documents.js").DirectorySession[]>,
+ *   readSessionOverview?: import("@plurnk/plurnk-contracts/port").ApplicationPort["readSessionOverview"],
  *   createWorkspace: (args: { name?: string, projectRoot: string | null }) => Promise<string | { workspaceName: string, projectRoot: string | null }>,
  *   renameWorkspace: (workspaceId: number, name: string) => Promise<{ name: string }>,
  *   createSession: (args: { workspaceId: number, name?: string }) => Promise<{ sessionName: string }>,
@@ -272,7 +273,7 @@ export default function createModule() {
                             redirect(res, session.signIn(req, req.url ?? "/~/"));
                             return;
                         }
-                        const body = home ? documents.home(admitted) : account ? documents.account() : inventory ? documents.sessions(inventory)
+                        const body = home ? await documents.home(admitted, session === null || admitted ? seam : undefined) : account ? documents.account() : inventory ? documents.sessions(inventory)
                             : directory === null ? null : await documents.read(directory, seam, admitted, ownNavigation(req));
                         if (body === null) throw new RequestError(404, "Workspace or session not found.");
                         res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });

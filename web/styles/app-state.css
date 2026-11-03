@@ -1,5 +1,5 @@
-/* {§web-page-shell} The session is a product surface, not a reading column. */
-body:has(> main:is([data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, main, footer) {
+/* {§web-page-shell} The session and directory views are product surfaces, not reading columns. */
+body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, main, footer) {
     max-inline-size: none;
 }
 
@@ -13,7 +13,7 @@ body > header > nav[aria-label="breadcrumb"] a:focus-visible {
 }
 
 /* {§web-page-shell} An ordinary input interrupt is still a live connection. */
-body:not(:has(#session-status:is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
+body:not(:has(:is(#session-status, #main):is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
     display: none;
 }
 
@@ -215,11 +215,11 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 [data-folder="false"] { --directory-glyph: "☁️"; }
 
 /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
-#session-conversation [data-math-error]::after {
+:is(#session-conversation, [data-session-reply]) [data-math-error]::after {
     content: " (" attr(data-math-error) ")";
 }
 
-#session-conversation [data-diagram-error]::after {
+:is(#session-conversation, [data-session-reply]) [data-diagram-error]::after {
     content: " (" attr(data-diagram-error) ")";
 }
 
