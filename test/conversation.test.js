@@ -54,8 +54,8 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
 
                     await t.test("{§web-working-notes} semantic entries expose content and accessible identity, not protocol envelopes", async () => {
                         const source = [{ id: "notebook", role: "assistant", subagentRunId: "child-run", toolCalls:
-                            ["fact", "idea", "plan", "note", "custom"].map((aside, index) => ({
-                                toolCallId: `note-${index}`, name: "NOTE", rawInput: { aside, body: `A **${aside}**.` },
+                            ["observation", "", "custom"].map((aside, index) => ({
+                                toolCallId: `note-${index}`, name: "NOTE", rawInput: { ...(aside ? { aside } : {}), body: `A **${aside || "note"}**.` },
                                 _meta: { plurnk: { op: "NOTE", coordinate: `1/2/${index}`, sessionId: 9, state: "resolved", status: 200,
                                     attrs: { privateFixtureMarker: "not-a-presentation-field" } } },
                             })),
@@ -64,32 +64,31 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         const opsGroup = page.locator("[data-operations]");
                         assert.equal(await opsGroup.count(), 1);
                         assert.equal(await opsGroup.locator(":scope > details").evaluate((node) => node.open), false);
-                        assert.equal(await opsGroup.locator(":scope > details > summary").getAttribute("aria-label"), "NOTE · fact 1 · NOTE · idea 1 · NOTE · plan 1 · NOTE 2");
+                        assert.equal(await opsGroup.locator(":scope > details > summary").getAttribute("aria-label"), "NOTE 3");
                         await opsGroup.locator(":scope > details > summary").click();
                         const entries = opsGroup.locator(":scope > details > ul > li");
-                        assert.equal(await entries.count(), 5, "each call is one entry; its message is not an extra envelope");
-                        for (const [index, category] of ["fact", "idea", "plan", "note", "custom"].entries()) {
+                        assert.equal(await entries.count(), 3, "each call is one entry; its message is not an extra envelope");
+                        for (const [index, aside] of ["observation", "", "custom"].entries()) {
                             const entry = entries.nth(index);
                             assert.equal(await entry.getAttribute("data-message-id"), "notebook");
                             assert.equal(await entry.getAttribute("data-message-role"), "assistant");
                             assert.equal(await entry.getAttribute("data-call-id"), `note-${index}`);
                             assert.equal(await entry.getAttribute("data-plurnk-type"), "NOTE");
-                            assert.equal(await entry.getAttribute("data-plurnk-note"), category);
                             assert.equal(await entry.getAttribute("data-plurnk-session"), "9");
                             assert.equal(await entry.getAttribute("data-plurnk-status"), "200");
                             assert.equal(await entry.getAttribute("data-plurnk-state"), "resolved");
                             assert.deepEqual(await entry.locator(":scope > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["ARTICLE"]);
-                            assert.equal(await entry.getByRole("article", { name: `NOTE · ${category} · Subagent child-run`, exact: true }).count(), 1);
-                            assert.equal(await entry.locator(":scope > article > details > pre").textContent(), `A **${category}**.`);
-                            assert.equal(await entry.locator('[data-plurnk-field="heading"]').textContent(), category === "custom" ? "custom" : "", "only an uncategorized aside needs visible text");
+                            assert.equal(await entry.getByRole("article", { name: "NOTE · Subagent child-run", exact: true }).count(), 1);
+                            assert.equal(await entry.locator(":scope > article > details > pre").textContent(), `A **${aside || "note"}**.`);
+                            assert.equal(await entry.locator('[data-plurnk-field="heading"]').textContent(), aside);
                             assert.equal(await entry.locator("section, div, ul, li, [data-plurnk-operands]").count(), 0);
                             assert.equal(await entry.locator("details").evaluate((node) => node.open), false);
                             assert.equal(await entry.getAttribute("data-call-arguments"), null);
                         }
                         await entries.first().locator("summary").click();
                         const snapshot = await entries.first().ariaSnapshot();
-                        assert.match(snapshot, /article "NOTE · fact · Subagent child-run"/u);
-                        assert.match(snapshot, /A \*\*fact\*\*\./u, "accessible naming preserves the literal body in the accessibility tree");
+                        assert.match(snapshot, /article "NOTE · Subagent child-run"/u);
+                        assert.match(snapshot, /A \*\*observation\*\*\./u, "accessible naming preserves the literal body in the accessibility tree");
                         assert.doesNotMatch(await page.locator("[data-messages]").innerHTML(), /not-a-presentation-field/u);
                         await present([]);
                     });
@@ -163,7 +162,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                                 toolCallId: "call-1",
                                 title: "NOTE",
                                 status: "in_progress",
-                                rawInput: { aside: "fact", body: "In-flight turn 1 note." },
+                                rawInput: { aside: "observation", body: "In-flight turn 1 note." },
                                 _meta: { plurnk: { id: 3, op: "NOTE", coordinate: "1/1/3", origin: "model", state: "pending" } },
                             },
                         ]);
@@ -387,6 +386,159 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             ["HEADER"],
                             "an empty DONE renders its article header with no body nodes",
                         );
+
+                        // Live loop plan projects open tasks at the tail of an active loop and retires on completion or KILL.
+                        current = [];
+                        await apply([
+                            {
+                                sessionUpdate: "plan_update",
+                                plan: {
+                                    type: "items",
+                                    planId: "plan",
+                                    entries: [{ content: "Survey the environment.", status: "pending", priority: "medium" }],
+                                },
+                                _meta: { plurnk: { id: 19, coordinate: "1/1/1", loopId: 1, loopSeq: 1, origin: "_plurnk" } },
+                            },
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "plan-prompt-1",
+                                content: { type: "text", text: "Execute the checklist." },
+                                _meta: { plurnk: { id: 20, coordinate: "1/1/1", loopId: 1, origin: "operator", receipt: { status: 200, resource: "message://user/20" } } },
+                            },
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "1/1/2",
+                                name: "TODO",
+                                title: "TODO",
+                                status: "completed",
+                                rawInput: { body: { raw: "- [x] Inspect schema\n- [ ] Update parser\n- [ ] Run tests\n" } },
+                                _meta: { plurnk: { id: 21, op: "TODO", coordinate: "1/1/2", origin: "model", state: "resolved", status: 200 } },
+                            },
+                        ]);
+                        const planRow = page.locator('[data-loop-seq="1"] > details > ul > [data-loop-plan]');
+                        assert.equal(await planRow.count(), 1);
+                        assert.equal(await planRow.getByRole("article", { name: "Open tasks", exact: true }).count(), 1);
+                        assert.deepEqual(await planRow.locator("li").allTextContents(), ["Update parser", "Run tests"]);
+                        assert.match(await planRow.locator("li").first().evaluate((el) => getComputedStyle(el, "::before").content), /☐/u);
+                        assert.deepEqual(
+                            await page.locator('[data-loop-seq="1"] > details > ul > li').evaluateAll((items) => items.map((item) =>
+                                item.hasAttribute("data-operations") ? "operations" : item.hasAttribute("data-loop-plan") ? "plan" : item.dataset.messageId)),
+                            ["plan-prompt-1", "operations", "plan"],
+                            "live loop plan sits at the tail of the active loop below operations",
+                        );
+                        await planRow.locator("ul").evaluate((el) => { window.savedPlanList = el; });
+
+                        // ACP plan_update updates open tasks in place, and mid-loop targeted DONE leaves the active loop plan intact.
+                        await apply([
+                            {
+                                sessionUpdate: "plan_update",
+                                plan: {
+                                    type: "items",
+                                    planId: "plan",
+                                    entries: [
+                                        { content: "Inspect schema", status: "completed", priority: "medium" },
+                                        { content: "Update parser", status: "completed", priority: "medium" },
+                                        { content: "Run tests", status: "pending", priority: "medium" },
+                                    ],
+                                },
+                                _meta: { plurnk: { coordinate: "1/1/2" } },
+                            },
+                            {
+                                sessionUpdate: "user_message_chunk",
+                                messageId: "plan-prompt-2",
+                                content: { type: "text", text: "Confirm parser step." },
+                                _meta: { plurnk: { id: 22, coordinate: "1/2/1", loopId: 1, origin: "operator", receipt: { status: 200, resource: "message://user/22" } } },
+                            },
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "1/2/2",
+                                name: "DONE",
+                                title: "DONE",
+                                status: "completed",
+                                rawInput: { body: { raw: "Parser updated." }, target: { raw: "message://user/22" } },
+                                _meta: { plurnk: { id: 23, op: "DONE", coordinate: "1/2/2", origin: "model", receipt: { status: 200, completion: 200, repliedTo: ["message://user/22"] } } },
+                            },
+                        ]);
+                        assert.equal(await planRow.locator("ul").evaluate((el) => el === window.savedPlanList), true);
+                        assert.deepEqual(await planRow.locator("li").allTextContents(), ["Run tests"]);
+                        assert.deepEqual(
+                            await page.locator('[data-loop-seq="1"] > details > ul > li').evaluateAll((items) => items.map((item) =>
+                                item.hasAttribute("data-operations") ? "operations" : item.hasAttribute("data-loop-plan") ? "plan" : item.dataset.messageId)),
+                            ["plan-prompt-1", "operations", "plan-prompt-2", "plan"],
+                        );
+
+                        // KILL (with its synthesized distillation NOTE) or plan_removed retires the live loop plan,
+                        // and loop-level DONE hides any active loop plan.
+                        await apply([
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "1/2/3",
+                                name: "KILL",
+                                title: "KILL",
+                                status: "completed",
+                                rawInput: { target: { raw: "log:///1/1/2" }, body: { raw: "Plan superseded." } },
+                                _meta: { plurnk: { id: 24, op: "KILL", coordinate: "1/2/3", origin: "model", state: "resolved", status: 200 } },
+                            },
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "1/2/4",
+                                name: "NOTE",
+                                title: "NOTE",
+                                status: "completed",
+                                rawInput: { body: "Plan superseded." },
+                                _meta: { plurnk: { id: 25, op: "NOTE", coordinate: "1/2/4", origin: "model", state: "resolved", status: 200, attrs: { distilled: "log:///1/1/2/TODO" } } },
+                            },
+                        ]);
+                        assert.equal(await planRow.count(), 0, "KILL retires the targeted TODO plan");
+                        assert.equal(await page.locator('[data-call-id="1/2/4"]').count(), 0, "synthesized KILL distillation NOTE is not duplicated beside KILL");
+
+                        await apply([
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "1/2/5",
+                                name: "TODO",
+                                title: "TODO",
+                                status: "completed",
+                                rawInput: { body: { raw: "- [ ] Second checklist\n" } },
+                                _meta: { plurnk: { id: 26, op: "TODO", coordinate: "1/2/5", origin: "model", state: "resolved", status: 200 } },
+                            },
+                        ]);
+                        assert.deepEqual(await planRow.locator("li").allTextContents(), ["Second checklist"]);
+
+                        await apply([
+                            {
+                                sessionUpdate: "plan_removed",
+                                planId: "plan",
+                                _meta: { plurnk: { coordinate: "1/2/5", loopSeq: 1 } },
+                            },
+                        ]);
+                        assert.equal(await planRow.count(), 0, "plan_removed retires the targeted TODO plan");
+
+                        await apply([
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "1/2/6",
+                                name: "TODO",
+                                title: "TODO",
+                                status: "completed",
+                                rawInput: { body: { raw: "- [ ] Final verification\n" } },
+                                _meta: { plurnk: { id: 27, op: "TODO", coordinate: "1/2/6", origin: "model", state: "resolved", status: 200 } },
+                            },
+                        ]);
+                        assert.deepEqual(await planRow.locator("li").allTextContents(), ["Final verification"]);
+
+                        await apply([
+                            {
+                                sessionUpdate: "tool_call_update",
+                                toolCallId: "1/2/7",
+                                name: "DONE",
+                                title: "DONE",
+                                status: "completed",
+                                rawInput: { body: { raw: "Checklist finished." } },
+                                _meta: { plurnk: { id: 28, op: "DONE", coordinate: "1/2/7", origin: "model", receipt: { status: 200, completion: 200, repliedTo: ["message://user/20"] } } },
+                            },
+                        ]);
+                        assert.equal(await planRow.count(), 0, "concluding the loop hides the live loop plan while preserving TODO in operations");
                     });
 
                     await t.test("{§web-session-conversation} streaming and reconnect snapshots preserve open details, focus, unchanged body selection and scroll", async () => {
@@ -590,7 +742,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
 
                     await t.test("{§web-working-notes} NOTE retains call/result identity and selected content without an arguments copy", async () => {
                         const body = "A **provisional hypothesis**, not an answer.\n\n<script>window.pwned = true</script>";
-                        const call = { toolCallId: "note-call", name: "NOTE", rawInput: { aside: "idea", body }, _meta: { plurnk: { op: "NOTE" } } };
+                        const call = { toolCallId: "note-call", name: "NOTE", rawInput: { aside: "hypothesis", body }, _meta: { plurnk: { op: "NOTE" } } };
                         const note = { id: "note", role: "assistant", content: "", subagentRunId: "child-run", toolCalls: [call] };
                         const result = { id: "note-result", role: "tool", toolCallId: call.toolCallId,
                             content: '{"status":500,"problem":{"title":"Note storage failed","detail":"The note could not be persisted."}}', error: "Note storage failed" };
@@ -598,8 +750,8 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         await page.locator("[data-operations] > details > summary").click();
                         const item = row("note");
                         assert.equal(await item.getAttribute("data-call-id"), "note-call");
-                        assert.equal(await item.getAttribute("data-plurnk-note"), "idea");
-                        assert.equal(await item.getByRole("article", { name: "NOTE · idea · Subagent child-run", exact: true }).count(), 1);
+                        assert.equal(await item.getByRole("article", { name: "NOTE · Subagent child-run", exact: true }).count(), 1);
+                        assert.equal(await item.locator('[data-plurnk-field="aside"]').textContent(), "hypothesis");
                         assert.equal(await item.locator("article").isVisible(), true);
                         assert.equal(await row("note").getAttribute("data-message-role"), "assistant");
                         assert.equal(await row("note").getAttribute("data-subagent-run-id"), "child-run");
@@ -635,24 +787,22 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         await item.evaluate((element) => { window.streamedCall = element; });
                         for (const rawInput of [undefined, null, [], { body: 42 }, { body: { raw: "**not a string**" } }]) {
                             await display(rawInput);
-                            assert.equal(await item.getAttribute("data-plurnk-note"), null);
                             assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                             assert.equal(await item.evaluate((element) => element === window.streamedCall), true);
                         }
-                        const complete = { body: "**Now complete**", aside: "fact" };
+                        const complete = { body: "**Now complete**", aside: "observation" };
                         await display(complete);
                         assert.equal(await item.locator("article > details > pre").textContent(), "**Now complete**");
-                        assert.equal(await item.getAttribute("data-plurnk-note"), "fact");
+                        assert.equal(await item.locator('[data-plurnk-field="aside"]').textContent(), "observation");
                         assert.equal(await item.evaluate((element) => element === window.streamedCall), true);
                         for (const [_meta, name] of /** @type {const} */ ([[{}, "NOTE"], [{ plurnk: { op: "error" } }, "NOTE"], [{ plurnk: { op: "NOTE" } }, "lookup"]])) {
                             await display(complete, /** @type {any} */ (_meta), name);
-                            assert.equal(await item.getAttribute("data-plurnk-note"), null);
                             assert.equal(await item.locator("article > details > pre, article > details > p").count(), 0);
                         }
                         await display({ body: "", aside: null });
                         await page.locator("[data-operations] > details > summary").click();
                         assert.equal(await item.locator("article").textContent(), "");
-                        assert.equal(await item.getByRole("article", { name: "NOTE · note", exact: true }).count(), 1);
+                        assert.equal(await item.getByRole("article", { name: "NOTE", exact: true }).count(), 1);
                     });
                     checkBrowser();
                 } finally { await browser.close(); }

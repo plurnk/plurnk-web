@@ -201,10 +201,8 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 [data-diagnostic-level="info"] { --plurnk-operation-glyph: "📌"; }
 [data-diagnostic-level="warn"] { --plurnk-operation-glyph: "⚠️"; }
 [data-diagnostic-level="error"] { --plurnk-operation-glyph: "⛔"; }
-:is([data-plurnk-note="fact"], [data-operation-tally="fact"]) { --plurnk-operation-glyph: "📊"; }
-:is([data-plurnk-note="idea"], [data-operation-tally="idea"]) { --plurnk-operation-glyph: "💡"; }
-:is([data-plurnk-note="plan"], [data-operation-tally="plan"]) { --plurnk-operation-glyph: "🚧"; }
 [data-operation-tally="reasoning"] { --plurnk-operation-glyph: "💭"; }
+[data-loop-plan] li::before { content: "☐ " / ""; }
 
 /* {§web-page-shell} Directory identity remains accessible without decorative glyphs. */
 [data-directory-entry="workspace"] > article > header::before {

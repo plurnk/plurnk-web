@@ -1,4 +1,5 @@
 import { $, the } from "on_the_money";
+import { parseTodoItems } from "@plurnk/plurnk-contracts";
 import markdown from "./markdown.js";
 import bodyReferences from "./body-references.js";
 import reasoningCoordinate from "./reasoning-coordinate.js";
@@ -15,7 +16,6 @@ import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./oper
  *   answered?: ToolCall,
  *   operation?: ToolCall,
  *   args: Record<string, unknown> | null,
- *   category: string | null,
  *   facts: Record<string, unknown> | null,
  *   answeredFacts: Record<string, unknown> | null,
  *   op: unknown,
@@ -126,15 +126,6 @@ function tallyBucket(item) {
         return { key: "reasoning", tally: "reasoning", heading: "", label: "Reasoning" };
     }
     const type = typeof item.op === "string" ? item.op : (item.call?.name ?? item.message.role);
-    if (type === "NOTE") {
-        const noteGlyph = item.category === "fact" || item.category === "idea" || item.category === "plan" ? item.category : "note";
-        return {
-            key: `NOTE:${noteGlyph}`,
-            tally: noteGlyph === "note" ? "NOTE" : noteGlyph,
-            heading: "",
-            label: noteGlyph === "note" ? "NOTE" : `NOTE · ${noteGlyph}`,
-        };
-    }
     const showHeading = !GLYPH_OPS.has(type);
     return {
         key: `op:${type}`,
@@ -142,6 +133,54 @@ function tallyBucket(item) {
         heading: showHeading ? `${type} ` : "",
         label: type,
     };
+}
+
+/** @param {PreparedEntry} item */
+function succeededOp(item) {
+    return !item.error
+        && item.call?.status !== "failed"
+        && item.call?.status !== "pending"
+        && !(typeof item.receipt?.status === "number" && item.receipt.status >= 400)
+        && !(typeof item.facts?.status === "number" && item.facts.status >= 400)
+        && item.facts?.state !== "proposed"
+        && item.facts?.state !== "failed"
+        && item.facts?.state !== "cancelled";
+}
+
+/** @param {PreparedEntry[]} loopItems @returns {string[]} */
+function openTasksForLoop(loopItems) {
+    /** @type {Set<string>} */
+    const retiredCoords = new Set();
+    /** @type {PreparedEntry[]} */
+    const todos = [];
+    for (const item of loopItems) {
+        if ((item.op === "TODO" || item.operation?.name === "TODO") && succeededOp(item)) {
+            if (item.facts?.planRemoved === true) continue;
+            todos.push(item);
+        } else if ((item.op === "KILL" || item.operation?.name === "KILL") && succeededOp(item)) {
+            const rawTarget = record(item.args?.target)?.raw ?? item.receipt?.path ?? item.facts?.address ?? item.facts?.target;
+            if (typeof rawTarget === "string" && rawTarget.startsWith("log:///")) {
+                const rawCoord = rawTarget.slice("log:///".length).replace(/\/[A-Za-z_][A-Za-z0-9_]*$/u, "");
+                if (rawCoord) retiredCoords.add(rawCoord);
+            }
+        }
+    }
+    const activeTodo = todos.findLast((item) => {
+        const coord = typeof item.facts?.coordinate === "string" ? item.facts.coordinate : (item.call?.toolCallId ?? "");
+        if (!coord) return true;
+        for (const retired of retiredCoords) {
+            if (coord === retired || coord.startsWith(`${retired}/`)) return false;
+        }
+        return true;
+    });
+    if (!activeTodo) return [];
+    const plan = record(activeTodo.facts?.plan);
+    if (Array.isArray(plan?.entries)) {
+        return plan.entries
+            .filter((entry) => record(entry)?.status === "pending" && typeof record(entry)?.content === "string" && Boolean(record(entry)?.content))
+            .map((entry) => String(record(entry)?.content));
+    }
+    return parseTodoItems(bodyOf(activeTodo.args, "TODO"));
 }
 
 /** @param {Element} parent @param {Element} child @param {Element | null} previous @param {(node: Element) => boolean} [skip] */
@@ -200,7 +239,7 @@ export default function conversation(root, readBody) {
     /** @param {PreparedEntry} item @param {Map<string, HTMLElement>} rows */
     function renderEntry(item, rows) {
         const {
-            key, message, call, answered, operation, args, category,
+            key, message, call, answered, operation, args,
             facts, op, receipt, operationName, summarized, error, conversational,
         } = item;
         let row = rows.get(key);
@@ -214,7 +253,7 @@ export default function conversation(root, readBody) {
             row = element;
         }
         const labels = { user: "User", assistant: "Assistant", reasoning: "Reasoning", tool: "Result", activity: "Activity", system: "System", developer: "Developer" };
-        const label = call ? [call.name, category].filter(Boolean).join(" · ")
+        const label = call ? call.name
             : summarized ? operationName
             : message.role === "tool" ? `Result · ${answered?.name ?? message.toolCallId}`
             : message.role === "activity" ? message.activityType : labels[message.role];
@@ -229,7 +268,6 @@ export default function conversation(root, readBody) {
             toolCallId: message.role === "tool" ? message.toolCallId : null,
             callId: call?.toolCallId ?? null,
             plurnkType: typeof op === "string" ? op : null,
-            plurnkNote: category,
             plurnkSession: typeof facts?.sessionId === "number" ? facts.sessionId : null,
             plurnkStatus: typeof receipt?.status === "number" ? receipt.status : typeof facts?.status === "number" ? facts.status : null,
             plurnkSignal: typeof receipt?.completion === "number" ? receipt.completion : typeof facts?.signal === "number" ? facts.signal : null,
@@ -344,10 +382,8 @@ export default function conversation(root, readBody) {
             const key = JSON.stringify([message.id, call?.toolCallId ?? null]);
             const answered = message.role === "tool" ? calls.get(message.toolCallId) : undefined;
             const operation = call?._meta?.plurnk?.op === call?.name ? call : undefined;
+            // {§web-working-notes} NOTE calls project semantic bodies without duplicating arguments.
             const args = operation ? argumentsOf(operation.rawInput) : null;
-            // {§web-working-notes} NOTE calls project semantic bodies and categories without duplicating arguments.
-            const category = operation?.name === "NOTE" && typeof args?.body === "string"
-                ? typeof args.aside === "string" && args.aside ? args.aside : "note" : null;
             const facts = record((call ? call._meta : message._meta)?.plurnk);
             const answeredFacts = answered ? record(answered._meta?.plurnk) : null;
             const op = facts?.op;
@@ -367,7 +403,7 @@ export default function conversation(root, readBody) {
             const loopId = typeof facts?.loopId === "number" ? facts.loopId
                 : typeof answeredFacts?.loopId === "number" ? answeredFacts.loopId : null;
             return {
-                key, message, call, answered, operation, args, category,
+                key, message, call, answered, operation, args,
                 facts, answeredFacts, op, ownResult, receipt, operationName,
                 summarized, error, conversational, loopSeq, loopId,
                 nestedReplies: [],
@@ -410,6 +446,7 @@ export default function conversation(root, readBody) {
             if (!loops.has(seq)) loopRow.remove();
         }
 
+        const lastLoopSeq = Array.from(loops.keys()).at(-1) ?? null;
         /** @type {Element | null} */
         let previousLoop = null;
         for (const [seq, loopItems] of loops) {
@@ -492,6 +529,29 @@ export default function conversation(root, readBody) {
             }
             for (const opsRow of existingOps) {
                 if (!usedOps.has(opsRow)) opsRow.remove();
+            }
+
+            const loopConcluded = loopItems.some((item) => !nestedSet.has(item) && (item.op === "DONE" || item.op === "FAIL"));
+            const openTasks = seq === lastLoopSeq && !loopConcluded ? openTasksForLoop(loopItems) : [];
+            const existingPlan = $(loopList, ":scope > [data-loop-plan]");
+            if (openTasks.length > 0) {
+                let planRow = existingPlan;
+                if (!planRow) {
+                    const cloned = $.clone(loopList, "#conversation-plan");
+                    if (!(cloned instanceof HTMLElement)) throw new Error("Plan template must contain an HTML element.");
+                    planRow = cloned;
+                }
+                const planList = $(planRow, ":scope > article > ul");
+                if (!(planList instanceof HTMLUListElement)) throw new Error("Plan article has no list.");
+                const planRevision = JSON.stringify(openTasks);
+                if (painted.get(planList) !== planRevision) {
+                    planList.replaceChildren();
+                    $.cloneEach(planList, "#conversation-plan-item", openTasks, (item, task) => the(item, "plan-item", task));
+                    painted.set(planList, planRevision);
+                }
+                placeChild(loopList, planRow, prevBlock);
+            } else if (existingPlan) {
+                existingPlan.remove();
             }
 
             previousLoop = placeChild(list, loopRow, previousLoop, (node) => !node.hasAttribute("data-loop-seq"));

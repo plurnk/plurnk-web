@@ -146,11 +146,11 @@ table {
 }
 
 :is(#session-conversation, #session-diagnostics, #session-activity, #session-streams, #session-command-results) > ul,
-#session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies]) {
+#session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) {
     padding: 0;
 }
 
-#session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies]) > li,
+#session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) > li,
 :is(#session-conversation, #session-diagnostics, #session-activity, #session-streams, #session-command-results) > ul > li,
 [data-directory-entry] {
     list-style: none;

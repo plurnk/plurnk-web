@@ -10,7 +10,7 @@ export const messages = [
     { id: "assistant", role: "assistant", content: "I will inspect [the evidence](https://example.com/).", toolCalls: [
         { toolCallId: "generic", name: "SEND", rawInput: {} },
         ...["READ", "NOTE", "SEND"].map((op) => ({ toolCallId: op, name: op,
-            rawInput: { aside: op === "NOTE" ? "fact" : "Inspect the evidence", body: "Retained **content**.",
+            rawInput: { aside: "Inspect the evidence", body: "Retained **content**.",
                 target: { raw: "evidence.txt" } }, _meta: { plurnk: { op } } })),
     ] },
     { id: "reply", role: "tool", toolCallId: "delivered", content: "Here is [the answer](https://example.com/).", _meta: { plurnk: { op: "DONE", signal: 200 } } },
