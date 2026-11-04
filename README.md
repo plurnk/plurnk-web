@@ -1,6 +1,6 @@
 # plurnk-web
 
-An optional Plurnk daemon plugin serving native OTM documents at `/`.
+A Plurnk daemon plugin serving native OTM documents at `/`.
 Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
 Conversation cards use a subtle green user tint, ordinary cards for model replies,
@@ -129,7 +129,7 @@ attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bound
 its retained tail (4096 Unicode code points by default). Completed turns keep
 their reasoning in collapsed disclosures headed by `<session> > Loop <loop> > Turn <turn>`;
 opening one retrieves the full trace when visible, without adding it to later prompt submissions.
-Turns and loops in the conversation transcript are separated by native `<hr>` boundaries.
+Loops in the conversation transcript use open `Loop <loop>` disclosures with folded operation runs and a live open-task checklist at the tail of an active loop.
 
 **Send** also supports follow-ups while the session is running. The draft clears
 only after the daemon acknowledges it; newer typing is preserved. A failed or
@@ -174,7 +174,7 @@ HTML stays text and images become links. SEND bodies use that same Markdown rend
 NOTE, reasoning and ordinary operation evidence remain literal preformatted text.
 Long lines wrap and settled entries grow with their content; explicit code, tables,
 formulas and diagrams scroll locally when wider than the viewport.
-NOTE retains category and attribution semantics without an enclosing assistant
+NOTE retains attribution semantics without an enclosing assistant
 article, a duplicate arguments view or a body copy in attributes.
 The ACP client owns live messages; archival pages are read-only presentation. Neither
 is saved in browser storage.
@@ -205,26 +205,27 @@ page needs no duplicate English dictionary or browser storage, and has no langua
 picker or stored preferences. Ordinary navigation and forms
 remain native HTML; live session status and conversation require JavaScript.
 
-## Install from source
+## Install
 
-Requires Node.js 26+ and Plurnk service 5.x with its module-client credential and
+Requires Node.js 26+ and Plurnk service 5.2+ with its module-client credential and
 workspace-label APIs
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
 including sign-in inventory, shared browser/module revocation, password-only login,
 and registered authorization-page styles, plus daemon-supplied folder labels).
-Use packed platform packages for development and installed-browser verification.
-The web plugin itself is not yet published.
+`@plurnk/plurnk-service` includes `@plurnk/plurnk-web` by default; it can also be
+installed beside the service directly from npm or a local build:
+
+```sh
+npm install --no-audit --no-fund @plurnk/plurnk-web
+```
+
+To build and verify a candidate archive from source:
 
 ```sh
 npm ci --no-audit --no-fund
 npm run test:candidate -- /path/to/packed-platform-packages
 npm pack
-```
-
-Install the resulting archive beside the service, in the same npm installation:
-
-```sh
-npm install --no-audit --no-fund /path/to/plurnk-plurnk-web-0.1.0.tgz
+npm install --no-audit --no-fund /path/to/plurnk-plurnk-web-1.0.0.tgz
 ```
 
 Restart that daemon and visit its root URL, normally `http://localhost:1066/`.
