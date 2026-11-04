@@ -2,7 +2,7 @@
 
 ## §web-host Hosting
 
-An optional Agent Plugin declares one native Plurnk module. It uses the public
+An Agent Plugin declares one native Plurnk module. It uses the public
 module lifecycle and HTTP registration seam, never a separate listener or process.
 The daemon owns routing precedence, startup readiness and shutdown.
 
@@ -13,8 +13,7 @@ The daemon owns routing precedence, startup readiness and shutdown.
 | Invalid value | Existing configuration diagnostic; no web module activation. |
 | Package absent | No web routes. |
 
-The package's .env.defaults owns the default. Installation is opt-in; the service
-does not depend on this package. More-specific mounts retain their ownership.
+The package's .env.defaults owns the default. More-specific mounts retain their ownership.
 
 ## §web-route-settlement Shutdown admission and settlement
 
