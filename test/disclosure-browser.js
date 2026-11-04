@@ -37,7 +37,7 @@ export default async function verifyDisclosures(t) {
                         { id: "answer", role: "assistant", content: "**Answer**\n\nAnother paragraph." },
                         call("send", "SEND", "Delivered reply"),
                         { id: "cancel", role: "tool", toolCallId: "cancel-call", content: "Cancelled reply", _meta: { plurnk: { op: "FAIL", signal: 499 } } },
-                        call("note", "NOTE", "Literal <pre>\n**fact**", "fact"),
+                        call("note", "NOTE", "Literal <pre>\n**observation**", "observation"),
                         call("edit", "EDIT", "Replacement", "Update the file"),
                         { id: "tool", role: "tool", toolCallId: "opaque-call", content: "Tool output", error: "Tool failed" },
                         { id: "reasoning", role: "reasoning", content: "Working", _meta: { plurnk: { sessionName: "user", loopSeq: 1, turnSeq: 3, coordinate: "1/3" } } },
@@ -90,7 +90,7 @@ export default async function verifyDisclosures(t) {
                     await page.keyboard.press("Enter");
                     assert.equal(await opsDisclosure.evaluate((node) => node.open), true);
                     assert.equal(await row("note").locator("pre").isVisible(), true);
-                    assert.equal(await row("note").locator("pre").textContent(), "Literal <pre>\n**fact**");
+                    assert.equal(await row("note").locator("pre").textContent(), "Literal <pre>\n**observation**");
                     await row("note").locator("pre").evaluate((node) => { window.noteBody = node; });
                     const failure = { id: "edit-result", role: "tool", toolCallId: "edit-call", content: JSON.stringify({ status: 409, problem: { title: "Changed on disk" } }) };
                     await present([...source, failure]);
@@ -104,7 +104,7 @@ export default async function verifyDisclosures(t) {
                     assert.equal(await disclosure("edit").locator("summary").getAttribute("aria-label"), "EDIT · Update the file · Changed on disk · (file.txt)", "summary naming preserves diagnostic and field boundaries");
                     const updated = structuredClone(source);
                     updated[0].content += " updated";
-                    updated[4] = call("note", "NOTE", "New content", "fact");
+                    updated[4] = call("note", "NOTE", "New content", "observation");
                     updated[9] = call("empty", "NOTE", "Now present");
                     await present(updated);
                     assert.equal(await opsDisclosure.evaluate((node) => node.open), true);

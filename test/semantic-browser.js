@@ -119,7 +119,7 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await field(row("invalid"), "outcome").count(), 0, "a cleared outcome leaves no empty paragraph");
 
                     const literal = '**Not emphasis**\n</pre><script>window.contentExecuted=true</script><pre>\n&copy; 分析 🐹';
-                    const note = call("note", "NOTE", { body: literal, aside: "fact" });
+                    const note = call("note", "NOTE", { body: literal, aside: "observation" });
                     await present([note]);
                     await list.locator("[data-operations] > details > summary").click();
                     await row("note").locator("summary").click();
@@ -135,8 +135,8 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await row("note").locator("pre > *, script, strong, code").count(), 0);
                     assert.equal(await row("note").locator("pre").evaluate((element) => element.firstChild === window.bodyNode), true);
                     assert.equal(await page.evaluate(() => getSelection().toString()), literal, "receipt arrival preserves selection");
-                    assert.match(await glyph(row("note")), /📊/u);
-                    assert.equal(await field(row("note"), "aside").count(), 0);
+                    assert.match(await glyph(row("note")), /🗒/u);
+                    assert.equal(await field(row("note"), "aside").textContent(), "observation");
                     const attributes = await row("note").evaluate((element) => [element, ...element.querySelectorAll("*")].flatMap((node) => Array.from(node.attributes, ({ value }) => value)));
                     assert.equal(attributes.some((value) => value.includes(literal)), false, "no body mirror in attributes");
                     assert.equal(await page.evaluate(() => window.contentExecuted), undefined);

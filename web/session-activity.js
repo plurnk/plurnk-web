@@ -127,7 +127,6 @@ export default function activity(root, read) {
             plurnkRow: id, plurnkSession: sessionId, plurnkOrigin: origin,
             plurnkCoordinate: coordinate, plurnkType: op, plurnkState: state,
             plurnkStatus: statusRx, subagentRunId: attribution || null,
-            plurnkNote: op === "NOTE" ? typeof args?.aside === "string" && args.aside ? args.aside : "note" : null,
             plurnkSignal: typeof plurnk.signal === "number" ? plurnk.signal : null,
         });
         const header = content(row, bodyOf(args, op), reasoning);

@@ -563,6 +563,7 @@ export class SessionTranslator {
                     (typeof plurnk?.origin === "string" && plurnk.origin !== "model")
                     || plurnk?.op === null
                     || (isRecord(plurnk?.attrs) && plurnk.attrs.kind === "emissionAttempt")
+                    || (plurnk?.op === "NOTE" && isRecord(plurnk?.attrs) && typeof plurnk.attrs.distilled === "string" && plurnk.attrs.distilled.trim().length > 0)
                 ) {
                     continue;
                 }
@@ -684,6 +685,93 @@ export class SessionTranslator {
                         };
                         cloned.add(created);
                         insertMessage(messages, created);
+                    }
+                }
+                continue;
+            }
+
+            if (kind === "plan_update" && isRecord(update.plan)) {
+                if (typeof plurnk?.origin === "string" && plurnk.origin !== "model") {
+                    continue;
+                }
+                const plan = structuredClone(update.plan);
+                const coordinate = typeof plurnk?.coordinate === "string" && plurnk.coordinate.length > 0
+                    ? plurnk.coordinate
+                    : "";
+                let callOwnerIdx = coordinate
+                    ? messages.findIndex((m) => m.role === "assistant" && m.toolCalls?.some((c) => c.toolCallId === coordinate))
+                    : -1;
+                if (callOwnerIdx === -1) {
+                    callOwnerIdx = messages.findLastIndex((m) => m.role === "assistant" && m.toolCalls?.some((c) =>
+                        c.name === "TODO" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "TODO")));
+                }
+                if (callOwnerIdx !== -1) {
+                    const owner = cloneAt(callOwnerIdx);
+                    const targetCall = owner.role === "assistant"
+                        ? (coordinate
+                            ? owner.toolCalls?.find((c) => c.toolCallId === coordinate)
+                            : owner.toolCalls?.findLast((c) => c.name === "TODO" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "TODO")))
+                        : undefined;
+                    if (targetCall) {
+                        const prevPlurnk = isRecord(targetCall._meta?.plurnk) ? { ...targetCall._meta.plurnk } : {};
+                        delete prevPlurnk.planRemoved;
+                        targetCall._meta = {
+                            ...targetCall._meta,
+                            plurnk: {
+                                ...prevPlurnk,
+                                ...(plurnk ? structuredClone(plurnk) : {}),
+                                op: "TODO",
+                                plan,
+                            },
+                        };
+                    }
+                } else {
+                    const toolCallId = coordinate || "plan";
+                    /** @type {Message} */
+                    const created = {
+                        id: `call:${toolCallId}`,
+                        role: "assistant",
+                        content: "",
+                        ...(subagentRunId ? { subagentRunId } : {}),
+                        toolCalls: [{
+                            toolCallId,
+                            name: "TODO",
+                            status: "completed",
+                            _meta: {
+                                plurnk: {
+                                    ...(plurnk ? structuredClone(plurnk) : {}),
+                                    op: "TODO",
+                                    plan,
+                                },
+                            },
+                        }],
+                    };
+                    cloned.add(created);
+                    insertMessage(messages, created);
+                }
+                continue;
+            }
+
+            if (kind === "plan_removed") {
+                const targetLoopSeq = typeof plurnk?.loopSeq === "number" ? plurnk.loopSeq : null;
+                for (let idx = 0; idx < messages.length; idx++) {
+                    const msg = messages[idx];
+                    if (msg.role !== "assistant" || !msg.toolCalls?.some((c) =>
+                        c.name === "TODO" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "TODO"))) {
+                        continue;
+                    }
+                    const owner = cloneAt(idx);
+                    if (owner.role !== "assistant" || !owner.toolCalls) continue;
+                    for (const call of owner.toolCalls) {
+                        const callPlurnk = isRecord(call._meta?.plurnk) ? call._meta.plurnk : undefined;
+                        if (call.name !== "TODO" && callPlurnk?.op !== "TODO") continue;
+                        if (targetLoopSeq !== null && typeof callPlurnk?.loopSeq === "number" && callPlurnk.loopSeq !== targetLoopSeq) {
+                            continue;
+                        }
+                        /** @type {Record<string, any>} */
+                        const nextPlurnk = { ...(callPlurnk ?? {}), planRemoved: true };
+                        delete nextPlurnk.plan;
+                        call._meta = { ...call._meta, plurnk: nextPlurnk };
                     }
                 }
             }
@@ -1207,7 +1295,19 @@ export default class SessionAgent {
             });
         });
 
-        app.onNotification(methods.client.elicitation.complete, () => {});
+        app.onNotification(methods.client.elicitation.complete, (ctx) => {
+            const elicitationId = isRecord(ctx.params) && typeof ctx.params.elicitationId === "string"
+                ? ctx.params.elicitationId
+                : "";
+            if (!elicitationId) return;
+            for (const item of [...this.#allPendingGates]) {
+                if (item.method === "elicitation/create" && item.elicitationId === elicitationId) {
+                    const resolver = this.#gateResolvers.get(item.id);
+                    this.#cancelGateById(item.id);
+                    resolver?.resolve({ action: "accept" });
+                }
+            }
+        });
 
         app.onRequest(methods.client.session.requestPermission, async (ctx) => {
             await this.#notificationChain;
@@ -2667,6 +2767,8 @@ export default class SessionAgent {
             || kind === "agent_thought_chunk"
             || kind === "tool_call"
             || kind === "tool_call_update"
+            || kind === "plan_update"
+            || kind === "plan_removed"
         ) {
             if (
                 (kind === "tool_call" || kind === "tool_call_update")

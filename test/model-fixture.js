@@ -87,9 +87,9 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                             ? `\`\`\`sh\nprintf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}\n\`\`\`\n\`\`\`WAIT\n\`\`\``
                         : lifecycle === "math" ? "```DONE\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
                         : lifecycle === "diagrams" ? `\`\`\`\`DONE\n${diagramContent}\n\`\`\`\``
-                        : lifecycle === "footnotes" ? `\`\`\`NOTE <!-- fact -->\n${footnoteAnswer}\n\`\`\`\n\`\`\`DONE\n${footnoteAnswer}\n\`\`\``
-                        : lifecycle === "notes" ? "```NOTE <!-- fact -->\nA **working fact**, not the answer.\n```\n```NOTE <!-- idea -->\nA provisional hypothesis.\n```\n```NOTE <!-- plan -->\nCheck the hypothesis.\n```\n```DONE\nCompleted notes.\n```"
-                        : lifecycle === "content-security" ? `\`\`\`NOTE <!-- fact -->\n${contentAttack}\n\`\`\`\n\`\`\`DONE\n${contentAttack}\n\`\`\``
+                        : lifecycle === "footnotes" ? `\`\`\`NOTE <!-- observation -->\n${footnoteAnswer}\n\`\`\`\n\`\`\`DONE\n${footnoteAnswer}\n\`\`\``
+                        : lifecycle === "notes" ? "```NOTE <!-- observation -->\nA **working observation**, not the answer.\n```\n```NOTE <!-- hypothesis -->\nA provisional hypothesis.\n```\n```NOTE\nCheck the hypothesis.\n```\n```DONE\nCompleted notes.\n```"
+                        : lifecycle === "content-security" ? `\`\`\`NOTE <!-- observation -->\n${contentAttack}\n\`\`\`\n\`\`\`DONE\n${contentAttack}\n\`\`\``
                         : `\`\`\`DONE\nCompleted ${lifecycle}.\n\`\`\``;
                     frame({ content });
                     const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);

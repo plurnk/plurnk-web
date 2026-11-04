@@ -301,7 +301,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const verify = async () => {
                             await connected(page);
                             await page.waitForFunction(() => [...document.querySelectorAll('[data-message-role="assistant"] > article strong')].some((element) => element.textContent === "Readable evidence"));
-                            const note = page.locator('[data-messages] [data-plurnk-note]');
+                            const note = page.locator('[data-messages] [data-plurnk-type="NOTE"]');
                             assert.equal(await note.count(), 1);
                             assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, contentAttack);
                             assert.equal(await note.locator("article > details > pre").textContent(), contentAttack);
@@ -355,19 +355,19 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 await run.send({ workspace, message: prompt("notes") });
                 run.close();
                 const verify = async () => {
-                    const notes = page.locator('[data-messages] [data-plurnk-note]');
-                    await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-note]').length === 3);
-                    assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.dataset.plurnkNote)), ["fact", "idea", "plan"]);
+                    const notes = page.locator('[data-messages] [data-plurnk-type="NOTE"]');
+                    await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-type="NOTE"]').length === 3);
                     const note = notes.first();
                     assert.equal(await note.locator("section, div, ul").count(), 0);
                     assert.equal(await note.locator("article > details > summary").count(), 1);
                     assert.equal(await note.locator("details").evaluate((node) => node.open), false);
                     await page.locator("[data-operations] > details > summary").click();
-                    assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
-                    assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
+                    assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-plurnk-field="aside"]')?.textContent ?? "")), ["observation", "hypothesis", ""]);
+                    assert.equal(await note.getByRole("article", { name: "NOTE", exact: true }).count(), 1);
+                    assert.equal(await note.locator("article > details > pre").textContent(), "A **working observation**, not the answer.");
                     const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput);
-                    assert.equal(args.body, "A **working fact**, not the answer.");
-                    assert.equal(args.aside, "fact");
+                    assert.equal(args.body, "A **working observation**, not the answer.");
+                    assert.equal(args.aside, "observation");
                     const id = await note.getAttribute("data-call-id");
                     const result = page.locator(`[data-message-role="tool"][data-tool-call-id="${id}"]`);
                     assert.equal(await result.count(), 0, "the real immediate receipt completes its call's summary");
@@ -410,9 +410,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await connected(page);
                     await page.waitForFunction(() => document.querySelector('[data-message-role="assistant"]:not([data-call-id]) article section[aria-label="Footnotes"]'));
                     const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
-                    const note = page.locator('[data-messages] [data-plurnk-note]');
+                    const note = page.locator('[data-messages] [data-plurnk-type="NOTE"]');
                     await page.locator("[data-operations] > details > summary").click();
-                    assert.equal(await note.getByRole("article", { name: "NOTE · fact", exact: true }).count(), 1);
+                    assert.equal(await note.getByRole("article", { name: "NOTE", exact: true }).count(), 1);
                     assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, footnoteAnswer);
                     assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
                     assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");

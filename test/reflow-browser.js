@@ -5,7 +5,7 @@ import conversationFixture from "./conversation-fixture.js";
 
 // {§web-content-reflow} Compiled semantic content owns its geometry without rewriting its text.
 export default async function verifyReflow(t) {
-    const paragraph = "A provisional idea, with evidence still to inspect. ".repeat(30);
+    const paragraph = "A provisional observation, with evidence still to inspect. ".repeat(30);
     const token = "unbroken".repeat(80);
     const literal = `${paragraph}\n\n    Indented\tcolumns    remain literal.\n${token}\n</pre><script>window.reflowExecuted=true</script>&copy; **not Markdown**\n`;
     const output = Array.from({ length: 60 }, (_, index) => `    ${index}: ${literal}`).join("\n");
@@ -18,7 +18,7 @@ export default async function verifyReflow(t) {
     const messages = [
         { id: "note", role: "assistant", toolCalls: [{
             toolCallId: "note-call",
-            name: "NOTE", rawInput: { aside: "idea", body: literal },
+            name: "NOTE", rawInput: { aside: "observation", body: literal },
             _meta: { plurnk: { op: "NOTE" } },
         }] },
         { id: "output", role: "tool", toolCallId: "external-call", content: output },

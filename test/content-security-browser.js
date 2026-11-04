@@ -85,7 +85,7 @@ export default async function verifyContentSecurity(t) {
                             // A stripped executable URL remains inert even when the user activates its label.
                             await body.locator("a:not([href])").evaluateAll((links) => links.forEach((link) => link.click()));
                         }
-                        assert.equal(await page.locator("[data-plurnk-note]").getAttribute("data-plurnk-note"), injection);
+                        assert.equal(await page.locator('[data-message-id="note"] [data-plurnk-field="aside"]').textContent(), injection);
                         for (const id of ["note", "reasoning"]) {
                             const body = page.locator(`[data-message-id="${id}"]`).locator("article > details > pre");
                             assert.equal(await body.textContent(), hostile);

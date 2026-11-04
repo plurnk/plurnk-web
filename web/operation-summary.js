@@ -105,7 +105,6 @@ export default function operationSummary(summary, name, args, receipt, facts, er
         return;
     }
     const op = textOf(facts?.op) || name;
-    const category = op === "NOTE" ? textOf(args?.aside) || "note" : "";
     const aside = textOf(args?.aside ?? facts?.aside);
     const status = receipt?.status ?? facts?.status;
     const count = countOf(op, receipt);
@@ -113,7 +112,7 @@ export default function operationSummary(summary, name, args, receipt, facts, er
     /** @type {Field[]} */
     const heading = [];
     if (name !== "error" && name === name.toLowerCase()) heading.push(["runtime", name]);
-    if (aside && !(op === "NOTE" && ["fact", "idea", "plan", "note"].includes(category))) heading.push(["aside", aside]);
+    if (aside) heading.push(["aside", aside]);
     const paired = record(args?.source) || record(args?.destination);
     const operands = paired
         ? [operand(record(args?.source), null), operand(record(args?.destination), null)]
