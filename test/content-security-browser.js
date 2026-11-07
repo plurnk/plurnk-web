@@ -62,14 +62,14 @@ export default async function verifyContentSecurity(t) {
                     }));
                     const original = await shell();
 
-                    await t.test("rich messages and SEND share the sanitizer; NOTE and reasoning remain literal", async () => {
+                    await t.test("rich messages and send share the sanitizer; note and reasoning remain literal", async () => {
                         /** @type {any[]} */
                         const messages = ["user", "assistant", "system", "developer"].map((role) => ({ id: role, role, content: hostile }));
                         messages.push({ id: "send", role: "assistant", toolCalls: [{
-                            toolCallId: "send-call", name: "SEND", rawInput: { body: hostile }, _meta: { plurnk: { op: "SEND" } },
-                        }] }, { id: "reply", role: "tool", toolCallId: "child-work", content: hostile, _meta: { plurnk: { op: "SEND" } } },
+                            toolCallId: "send-call", name: "send", rawInput: { body: hostile }, _meta: { plurnk: { op: "send" } },
+                        }] }, { id: "reply", role: "tool", toolCallId: "child-work", content: hostile, _meta: { plurnk: { op: "send" } } },
                         { id: "note", role: "assistant", toolCalls: [{ toolCallId: "note-call",
-                            name: "NOTE", rawInput: { body: hostile, aside: injection }, _meta: { plurnk: { op: "NOTE" } } }] },
+                            name: "note", rawInput: { body: hostile, aside: injection }, _meta: { plurnk: { op: "note" } } }] },
                         { id: "reasoning", role: "reasoning", content: hostile });
                         await present(messages);
                         const bodies = page.locator("[data-messages] article:has(> p > strong)");

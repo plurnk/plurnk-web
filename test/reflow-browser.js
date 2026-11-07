@@ -18,8 +18,8 @@ export default async function verifyReflow(t) {
     const messages = [
         { id: "note", role: "assistant", toolCalls: [{
             toolCallId: "note-call",
-            name: "NOTE", rawInput: { aside: "observation", body: literal },
-            _meta: { plurnk: { op: "NOTE" } },
+            name: "note", rawInput: { aside: "observation", body: literal },
+            _meta: { plurnk: { op: "note" } },
         }] },
         { id: "output", role: "tool", toolCallId: "external-call", content: output },
         { id: "reasoning", role: "reasoning", content: literal },

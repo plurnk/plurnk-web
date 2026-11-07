@@ -4,7 +4,7 @@ import markdown from "./markdown.js";
 import bodyReferences from "./body-references.js";
 import reasoningCoordinate from "./reasoning-coordinate.js";
 import card, { nameCard } from "./card.js";
-import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
+import operationSummary, { GLYPH_OPS, argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
 
 /** @typedef {import("./session-agent.js").Message} Message */
 /** @typedef {import("./session-agent.js").ToolCall} ToolCall */
@@ -31,13 +31,8 @@ import operationSummary, { argumentsOf, bodyOf, receiptOf, record } from "./oper
  * }} PreparedEntry
  */
 
-const GLYPH_OPS = new Set([
-    "NOTE", "TODO", "FIND", "READ", "EDIT", "COPY", "MOVE", "KILL",
-    "WORK", "FORK", "BARE", "WAIT", "SEND", "DONE", "FAIL", "WARN", "INFO", "error",
-]);
-
 /** @param {unknown} value */
-const isReplyOp = (value) => value === "SEND" || value === "DONE" || value === "FAIL";
+const isReplyOp = (value) => value === "send" || value === "done" || value === "fail";
 
 /** @param {Record<string, unknown> | null} facts */
 function explicitLoopSeq(facts) {
@@ -111,7 +106,7 @@ function promptAddresses(item) {
 
 /** @param {PreparedEntry} item */
 function repliedAddresses(item) {
-    if (item.op !== "DONE" && item.op !== "FAIL") return [];
+    if (item.op !== "done" && item.op !== "fail") return [];
     const raw = Array.isArray(item.receipt?.repliedTo) ? item.receipt.repliedTo
         : Array.isArray(item.facts?.repliedTo) ? item.facts.repliedTo : [];
     const list = raw.filter((/** @type {unknown} */ value) => typeof value === "string" && value.length > 0);
@@ -154,10 +149,10 @@ function openTasksForLoop(loopItems) {
     /** @type {PreparedEntry[]} */
     const todos = [];
     for (const item of loopItems) {
-        if ((item.op === "TODO" || item.operation?.name === "TODO") && succeededOp(item)) {
+        if ((item.op === "todo" || item.operation?.name === "todo") && succeededOp(item)) {
             if (item.facts?.planRemoved === true) continue;
             todos.push(item);
-        } else if ((item.op === "KILL" || item.operation?.name === "KILL") && succeededOp(item)) {
+        } else if ((item.op === "kill" || item.operation?.name === "kill") && succeededOp(item)) {
             const rawTarget = record(item.args?.target)?.raw ?? item.receipt?.path ?? item.facts?.address ?? item.facts?.target;
             if (typeof rawTarget === "string" && rawTarget.startsWith("log:///")) {
                 const rawCoord = rawTarget.slice("log:///".length).replace(/\/[A-Za-z_][A-Za-z0-9_]*$/u, "");
@@ -180,7 +175,7 @@ function openTasksForLoop(loopItems) {
             .filter((entry) => record(entry)?.status === "pending" && typeof record(entry)?.content === "string" && Boolean(record(entry)?.content))
             .map((entry) => String(record(entry)?.content));
     }
-    return parseTodoItems(bodyOf(activeTodo.args, "TODO"));
+    return parseTodoItems(bodyOf(activeTodo.args, "todo"));
 }
 
 /** @param {Element} parent @param {Element} child @param {Element | null} previous @param {(node: Element) => boolean} [skip] */
@@ -382,7 +377,7 @@ export default function conversation(root, readBody) {
             const key = JSON.stringify([message.id, call?.toolCallId ?? null]);
             const answered = message.role === "tool" ? calls.get(message.toolCallId) : undefined;
             const operation = call?._meta?.plurnk?.op === call?.name ? call : undefined;
-            // {§web-working-notes} NOTE calls project semantic bodies without duplicating arguments.
+            // {§web-working-notes} note calls project semantic bodies without duplicating arguments.
             const args = operation ? argumentsOf(operation.rawInput) : null;
             const facts = record((call ? call._meta : message._meta)?.plurnk);
             const answeredFacts = answered ? record(answered._meta?.plurnk) : null;
@@ -531,7 +526,7 @@ export default function conversation(root, readBody) {
                 if (!usedOps.has(opsRow)) opsRow.remove();
             }
 
-            const loopConcluded = loopItems.some((item) => !nestedSet.has(item) && (item.op === "DONE" || item.op === "FAIL"));
+            const loopConcluded = loopItems.some((item) => !nestedSet.has(item) && (item.op === "done" || item.op === "fail"));
             const openTasks = seq === lastLoopSeq && !loopConcluded ? openTasksForLoop(loopItems) : [];
             const existingPlan = $(loopList, ":scope > [data-loop-plan]");
             if (openTasks.length > 0) {

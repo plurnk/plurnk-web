@@ -419,14 +419,14 @@ test("{§web-session-directory} {§web-directory-documents} home and workspace o
     const overviewSessions = [
         { ...session(1, "_plurnk", null, "_plurnk"), workspaceId: 7, reply: null },
         { ...session(2, "no-reply-first"), workspaceId: 7, reply: null },
-        { ...session(3, "older-reply"), workspaceId: 7, reply: reply(40, "1/2/3/SEND:40") },
-        { ...session(4, "newer-reply"), workspaceId: 8, reply: reply(95, "2/1/1/DONE:95") },
-        { ...session(5, "child-older", 3), workspaceId: 7, reply: reply(50, "1/3/1/SEND:50") },
-        { ...session(6, "child-newer", 3), workspaceId: 7, reply: reply(80, "1/4/1/FAIL:80", 499) },
+        { ...session(3, "older-reply"), workspaceId: 7, reply: reply(40, "1/2/3/send:40") },
+        { ...session(4, "newer-reply"), workspaceId: 8, reply: reply(95, "2/1/1/done:95") },
+        { ...session(5, "child-older", 3), workspaceId: 7, reply: reply(50, "1/3/1/send:50") },
+        { ...session(6, "child-newer", 3), workspaceId: 7, reply: reply(80, "1/4/1/fail:80", 499) },
         { ...session(7, "child-silent", 3), workspaceId: 7, reply: null },
         { ...session(8, "no-reply-second"), workspaceId: 8, reply: null },
-        { ...session(9, "bg-older", 1), workspaceId: 7, reply: reply(10, "1/5/1/SEND:10") },
-        { ...session(10, "bg-newer", 1), workspaceId: 7, reply: reply(60, "1/6/1/SEND:60") },
+        { ...session(9, "bg-older", 1), workspaceId: 7, reply: reply(10, "1/5/1/send:10") },
+        { ...session(10, "bg-newer", 1), workspaceId: 7, reply: reply(60, "1/6/1/send:60") },
     ];
     const modelOverviewSessions = overviewSessions.filter(({ origin }) => origin === "model");
     const port = {
@@ -443,8 +443,8 @@ test("{§web-session-directory} {§web-directory-documents} home and workspace o
     assert.deepEqual(rootOrder, ["newer-reply", "older-reply", "child-newer", "child-older", "child-silent", "no-reply-first", "no-reply-second"]);
     const bgOrder = [...homeHtml.split('<details><summary data-i18n="background-work">')[1].matchAll(/data-session-link href="\/~\/[^@]+@([^"]+)\/"/gu)].map((match) => match[1]);
     assert.deepEqual(bgOrder, ["bg-newer", "bg-older"]);
-    assert.ok(homeHtml.includes('data-session-reply="/acp/8/4/entry?target=log%3A%2F%2F%2F2%2F1%2F1%2FDONE%3A95"'), "leaf with delivered reply renders reply disclosure outlet");
-    assert.ok(homeHtml.includes('</ul><div data-session-reply="/acp/7/3/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FSEND%3A40"></div></details>'), "branch with children and reply renders both child list and reply outlet");
+    assert.ok(homeHtml.includes('data-session-reply="/acp/8/4/entry?target=log%3A%2F%2F%2F2%2F1%2F1%2Fdone%3A95"'), "leaf with delivered reply renders reply disclosure outlet");
+    assert.ok(homeHtml.includes('</ul><div data-session-reply="/acp/7/3/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2Fsend%3A40"></div></details>'), "branch with children and reply renders both child list and reply outlet");
     assert.match(homeHtml, /<header><span data-session-identity><a data-session-link href="\/~\/alpha@no-reply-first\/"/u, "leaf without reply uses header without empty disclosure");
     const homeFolderMarker = homeHtml.match(/href="\/~\/beta@newer-reply\/"[\s\S]*?<span data-session-workspace><span data-folder="([^"]+)"/u);
     assert.equal(homeFolderMarker?.[1], "true", "home overview preserves projectRoot folder presence");

@@ -107,7 +107,7 @@ test("{§web-session-status} compact accounting preserves exact accessible value
     assert.equal(gauges({ ...idle, spend: { ...idle.spend, costUsd: null, knownCostUsd: "0" } }).cost, "$0.0000 + ?");
 });
 
-test("{§web-session-status} WAIT uses the daemon deadline without changing lifecycle at expiry", () => {
+test("{§web-session-status} wait uses the daemon deadline without changing lifecycle at expiry", () => {
     assert.deepEqual(clocks(idle, 1000), { elapsed: "", wait: "", waitAt: null });
     const waiting = { ...idle, lifecycle: "parked", claimedAt: 1000, waitUntil: 62_001 };
     assert.deepEqual(clocks(waiting, 1001), { elapsed: "0s", wait: "1m01s", waitAt: "1970-01-01T00:01:02.001Z" });

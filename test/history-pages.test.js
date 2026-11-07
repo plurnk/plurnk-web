@@ -38,7 +38,7 @@ test("{§web-session-history} reconnect exposes a gap without fetching or losing
 
 test("{§web-session-history} late results update an archived call once, then survive its final refetch", () => {
     const history = new HistoryPages();
-    const call = { id: "call-message", role: /** @type {const} */ ("assistant"), toolCalls: [{ toolCallId: "call", name: "READ", rawInput: {} }] };
+    const call = { id: "call-message", role: /** @type {const} */ ("assistant"), toolCalls: [{ toolCallId: "call", name: "read", rawInput: {} }] };
     const result = { id: "result", role: /** @type {const} */ ("tool"), toolCallId: "call", content: "live result" };
     history.snapshot(snapshot([message("new")], "/old"));
     history.live([message("new")]);
@@ -63,7 +63,7 @@ test("{§web-session-history} late results update an archived call once, then su
 
 test("{§web-session-history} multiple late receipts preserve their supplied order beside an archived call", () => {
     const history = new HistoryPages();
-    const call = { id: "calls", role: /** @type {const} */ ("assistant"), toolCalls: ["one", "two"].map((toolCallId) => ({ toolCallId, name: "READ", rawInput: {} })) };
+    const call = { id: "calls", role: /** @type {const} */ ("assistant"), toolCalls: ["one", "two"].map((toolCallId) => ({ toolCallId, name: "read", rawInput: {} })) };
     const results = ["one", "two"].map((id) => ({ id: `result-${id}`, role: /** @type {const} */ ("tool"), toolCallId: id, content: id }));
     history.snapshot(snapshot([message("now")], "/old"));
     history.live([message("now")]);

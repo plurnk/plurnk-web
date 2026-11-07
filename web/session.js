@@ -19,7 +19,7 @@ import describeFailure from "./failure.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
 
-// {§web-session-status} Repaint elapsed and WAIT at whole-second precision; no network polling.
+// {§web-session-status} Repaint elapsed and wait at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
 
 /** {§web-session-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback

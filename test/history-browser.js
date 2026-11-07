@@ -115,7 +115,7 @@ export default async function verifyHistory(t) {
                     await page.reload();
                     await page.waitForFunction(() => typeof window.run === "function");
                     const call = { id: "call-message", role: "assistant", toolCalls: [{ toolCallId: "call",
-                        name: "READ", rawInput: { target: { raw: "evidence.txt" } }, _meta: { plurnk: { op: "READ" } } }] };
+                        name: "read", rawInput: { target: { raw: "evidence.txt" } }, _meta: { plurnk: { op: "read" } } }] };
                     pages.set("/history/call", pageEnvelope([call], null));
                     events = snapshot([message("now")], "/history/call");
                     await run();

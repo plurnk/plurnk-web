@@ -100,7 +100,7 @@ Connection failure stops observation and marks the displayed values as stale;
 use **Reconnect** or, after revocation, **Sign in**. Reconnect preserves the current
 draft without resubmitting it; full page reloads do not persist drafts.
 No automatic work retries occur.
-Context occupancy/capacity, pending input, preparation, indexing and the daemon's WAIT
+Context occupancy/capacity, pending input, preparation, indexing and the daemon's `wait`
 countdown appear only when relevant. The countdown is an observation deadline, not
 a promise of completion. A collapsed session-count disclosure opens the live
 descendant tree; no empty tree or metadata inventory occupies the page.
@@ -115,7 +115,7 @@ semantics and accessible names. These observations survive reconnects on the sam
 reloads; they are not replies or a complete activity history.
 Operations show their glyph and aside above the addressed selection, returned count
 and any failure. An immediate receipt completes that summary rather than adding
-another article. Authored bodies appear below it; READ results are not fetched
+another article. Authored bodies appear below it; `read` results are not fetched
 automatically. Reasoning stays collapsed until opened. Fetched bodies are literal text and are never added
 to client-uploaded conversation history or saved in browser storage.
 
@@ -168,18 +168,18 @@ Content and calls are direct semantic entries with accessible names and
 presentation-relevant metadata, not nested protocol inspectors. Bodies use native
 disclosures: user messages and delivered replies start open; notes, tool evidence
 and completed reasoning start closed. Headers, diagnostics and operation details
-remain visible. Opening a body does not start work or add READ receipt readback.
+remain visible. Opening a body does not start work or add `read` receipt readback.
 Markdown is sanitized, raw
-HTML stays text and images become links. SEND bodies use that same Markdown renderer;
-NOTE, reasoning and ordinary operation evidence remain literal preformatted text.
+HTML stays text and images become links. `send` bodies use that same Markdown renderer;
+`note`, reasoning and ordinary operation evidence remain literal preformatted text.
 Long lines wrap and settled entries grow with their content; explicit code, tables,
 formulas and diagrams scroll locally when wider than the viewport.
-NOTE retains attribution semantics without an enclosing assistant
+`note` retains attribution semantics without an enclosing assistant
 article, a duplicate arguments view or a body copy in attributes.
 The ACP client owns live messages; archival pages are read-only presentation. Neither
 is saved in browser storage.
 
-Markdown footnotes use native reference and back-links within each rich message or SEND.
+Markdown footnotes use native reference and back-links within each rich message or `send`.
 Repeated references retain separate return links; definitions never leak between
 messages. Code and unresolved references remain readable source.
 
@@ -207,7 +207,7 @@ remain native HTML; live session status and conversation require JavaScript.
 
 ## Install
 
-Requires Node.js 26+ and Plurnk service 5.2+ with its module-client credential and
+Requires Node.js 26+ and Plurnk service 5.3+ with its module-client credential and
 workspace-label APIs
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
 including sign-in inventory, shared browser/module revocation, password-only login,
@@ -225,7 +225,7 @@ To build and verify a candidate archive from source:
 npm ci --no-audit --no-fund
 npm run test:candidate -- /path/to/packed-platform-packages
 npm pack
-npm install --no-audit --no-fund /path/to/plurnk-plurnk-web-1.0.0.tgz
+npm install --no-audit --no-fund /path/to/plurnk-plurnk-web-1.1.0.tgz
 ```
 
 Restart that daemon and visit its root URL, normally `http://localhost:1066/`.
@@ -292,7 +292,7 @@ cancellation, approval and question interruption and rediscovery,
 shutdown and the real browser sign-in/access-token lifecycle. Held directory and OAuth
 requests verify that module shutdown settles admitted work before releasing resources.
 Cross-client prompt
-delivery, exact READ operands and real command stdout/stderr results are compared live and after
+delivery, exact `read` operands and real command stdout/stderr results are compared live and after
 refresh through the client's messages, without custom-row reconstruction. Standard success,
 cancellation, failure and reported token usage are checked separately. No ACP traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
@@ -300,7 +300,7 @@ Stream journeys also exercise silent executors, never-written channels, explicit
 authenticated output inspection, completion during absence, cancellation and nonzero exit.
 Browser journeys also check console warnings/errors and uncaught exceptions;
 deliberately tested failures require explicit diagnostic expectations.
-Adversarial content checks exercise rich-text roles, NOTE bodies, literal tool data,
+Adversarial content checks exercise rich-text roles, `note` bodies, literal tool data,
 streaming and replay against the production content policy in all three engines.
 
 `web/index.html` and `web/app.js` are the document and browser entry point.

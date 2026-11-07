@@ -36,7 +36,7 @@ body:not(:has(:is(#session-status, #main):is([data-connection="disconnected"], [
     --pico-card-background-color: var(--plurnk-user-surface);
 }
 
-#session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="SEND"]:not([data-message-role="user"]), [data-plurnk-type="DONE"]:not([data-message-role="user"]), [data-plurnk-type="FAIL"]:not([data-message-role="user"])) {
+#session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="send"]:not([data-message-role="user"]), [data-plurnk-type="done"]:not([data-message-role="user"]), [data-plurnk-type="fail"]:not([data-message-role="user"])) {
     --pico-card-background-color: var(--plurnk-reply-surface);
 }
 
@@ -178,26 +178,26 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
     margin-inline-end: 0.5ch;
 }
 
-:is([data-plurnk-type="NOTE"], [data-operation-tally="NOTE"]) { --plurnk-operation-glyph: "🗒️"; }
-:is([data-plurnk-type="TODO"], [data-operation-tally="TODO"]) { --plurnk-operation-glyph: "🚧"; }
-:is([data-plurnk-type="FIND"], [data-operation-tally="FIND"]) { --plurnk-operation-glyph: "🔎"; }
-:is([data-plurnk-type="READ"], [data-operation-tally="READ"]) { --plurnk-operation-glyph: "📖"; }
-:is([data-plurnk-type="EDIT"], [data-operation-tally="EDIT"]) { --plurnk-operation-glyph: "📝"; }
-:is([data-plurnk-type="COPY"], [data-operation-tally="COPY"]) { --plurnk-operation-glyph: "🖨️"; }
-:is([data-plurnk-type="MOVE"], [data-operation-tally="MOVE"]) { --plurnk-operation-glyph: "📦"; }
-:is([data-plurnk-type="KILL"], [data-operation-tally="KILL"]) { --plurnk-operation-glyph: "🗑️"; }
-:is([data-plurnk-type="WORK"], [data-operation-tally="WORK"]) { --plurnk-operation-glyph: "🐜"; }
-:is([data-plurnk-type="FORK"], [data-operation-tally="FORK"]) { --plurnk-operation-glyph: "🔱"; }
-:is([data-plurnk-type="BARE"], [data-operation-tally="BARE"]) { --plurnk-operation-glyph: "☁️"; }
-:is([data-plurnk-type="WAIT"], [data-operation-tally="WAIT"]) { --plurnk-operation-glyph: "⏳"; }
-[data-plurnk-type="SEND"] { --plurnk-operation-glyph: "✉️"; }
-[data-plurnk-type="DONE"] { --plurnk-operation-glyph: "🐹"; }
-[data-plurnk-type="FAIL"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
-:is([data-plurnk-type="WARN"], [data-operation-tally="WARN"]) { --plurnk-operation-glyph: "⚠️"; }
+:is([data-plurnk-type="note"], [data-operation-tally="note"]) { --plurnk-operation-glyph: "🗒️"; }
+:is([data-plurnk-type="todo"], [data-operation-tally="todo"]) { --plurnk-operation-glyph: "🚧"; }
+:is([data-plurnk-type="find"], [data-operation-tally="find"]) { --plurnk-operation-glyph: "🔎"; }
+:is([data-plurnk-type="read"], [data-operation-tally="read"]) { --plurnk-operation-glyph: "📖"; }
+:is([data-plurnk-type="edit"], [data-operation-tally="edit"]) { --plurnk-operation-glyph: "📝"; }
+:is([data-plurnk-type="copy"], [data-operation-tally="copy"]) { --plurnk-operation-glyph: "🖨️"; }
+:is([data-plurnk-type="move"], [data-operation-tally="move"]) { --plurnk-operation-glyph: "📦"; }
+:is([data-plurnk-type="kill"], [data-operation-tally="kill"]) { --plurnk-operation-glyph: "🗑️"; }
+:is([data-plurnk-type="work"], [data-operation-tally="work"]) { --plurnk-operation-glyph: "🐜"; }
+:is([data-plurnk-type="fork"], [data-operation-tally="fork"]) { --plurnk-operation-glyph: "🔱"; }
+:is([data-plurnk-type="bare"], [data-operation-tally="bare"]) { --plurnk-operation-glyph: "☁️"; }
+:is([data-plurnk-type="wait"], [data-operation-tally="wait"]) { --plurnk-operation-glyph: "⏳"; }
+[data-plurnk-type="send"] { --plurnk-operation-glyph: "✉️"; }
+[data-plurnk-type="done"] { --plurnk-operation-glyph: "🐹"; }
+[data-plurnk-type="fail"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
+:is([data-plurnk-type="warn"], [data-operation-tally="warn"]) { --plurnk-operation-glyph: "⚠️"; }
 
-[data-plurnk-type="FAIL"],
+[data-plurnk-type="fail"],
 :is([data-plurnk-type="error"], [data-operation-tally="error"]) { --plurnk-operation-glyph: "⛔"; }
-:is([data-plurnk-type="INFO"], [data-operation-tally="INFO"]) { --plurnk-operation-glyph: "📌"; }
+:is([data-plurnk-type="info"], [data-operation-tally="info"]) { --plurnk-operation-glyph: "📌"; }
 [data-diagnostic-level="info"] { --plurnk-operation-glyph: "📌"; }
 [data-diagnostic-level="warn"] { --plurnk-operation-glyph: "⚠️"; }
 [data-diagnostic-level="error"] { --plurnk-operation-glyph: "⛔"; }
