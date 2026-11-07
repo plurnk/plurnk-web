@@ -3,6 +3,11 @@ import { $, the } from "on_the_money";
 /** @typedef {Record<string, unknown>} RecordValue */
 /** @typedef {[string, string]} Field */
 
+export const GLYPH_OPS = new Set([
+    "note", "todo", "find", "read", "edit", "copy", "move", "kill",
+    "work", "fork", "bare", "wait", "send", "done", "fail", "warn", "info", "error",
+]);
+
 /** @param {unknown} value @returns {RecordValue | null} */
 export function record(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? /** @type {RecordValue} */ (value) : null;
@@ -44,7 +49,7 @@ const textOf = (value) => typeof value === "string" ? value : "";
 
 /** @param {RecordValue | null} args @param {unknown} op @returns {string} */
 export function bodyOf(args, op) {
-    return typeof args?.body === "string" ? args.body : op === "NOTE" ? "" : textOf(record(args?.body)?.raw);
+    return typeof args?.body === "string" ? args.body : op === "note" ? "" : textOf(record(args?.body)?.raw);
 }
 
 /** @param {RecordValue | null} selection @param {unknown} address @returns {Field[]} */
@@ -62,12 +67,12 @@ function operand(selection, address) {
 
 /** @param {string} op @param {RecordValue | null} receipt @returns {number | null} */
 function countOf(op, receipt) {
-    if (op !== "READ" && op !== "FIND") return null;
-    if (op === "READ" && Array.isArray(receipt?.lineOrdinals)) return receipt.lineOrdinals.length;
+    if (op !== "read" && op !== "find") return null;
+    if (op === "read" && Array.isArray(receipt?.lineOrdinals)) return receipt.lineOrdinals.length;
     const range = record(receipt?.range);
     const returned = range?.returned;
     if (Array.isArray(returned) && returned.length === 2 && returned.every(Number.isSafeInteger)) return Math.max(0, returned[1] - returned[0] + 1);
-    return op === "FIND" && typeof range?.total === "number" ? range.total : null;
+    return op === "find" && typeof range?.total === "number" ? range.total : null;
 }
 
 /** @param {RecordValue | null} receipt @param {unknown} status @param {string} error */
@@ -111,7 +116,7 @@ export default function operationSummary(summary, name, args, receipt, facts, er
     const outcome = outcomeOf(receipt, status, error);
     /** @type {Field[]} */
     const heading = [];
-    if (name !== "error" && name === name.toLowerCase()) heading.push(["runtime", name]);
+    if (!GLYPH_OPS.has(name) && name === name.toLowerCase()) heading.push(["runtime", name]);
     if (aside) heading.push(["aside", aside]);
     const paired = record(args?.source) || record(args?.destination);
     const operands = paired

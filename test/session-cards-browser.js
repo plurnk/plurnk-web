@@ -196,9 +196,9 @@ export default async function verifySessionCards(t) {
                 const overviewData = {
                     workspaces: [{ id: 7, name: "work", project_root: null, project_label: null, projectRoot: null, archived_at: null }],
                     sessions: [
-                        { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", archived_at: null, reply: { id: 10, coordinate: "1/1/1/SEND:10", completion: /** @type {const} */ (200) } },
+                        { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", archived_at: null, reply: { id: 10, coordinate: "1/1/1/send:10", completion: /** @type {const} */ (200) } },
                         { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", archived_at: null, reply: null },
-                        { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", archived_at: null, reply: { id: 20, coordinate: "1/2/1/DONE:20", completion: /** @type {const} */ (200) } },
+                        { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", archived_at: null, reply: { id: 20, coordinate: "1/2/1/done:20", completion: /** @type {const} */ (200) } },
                         { id: 8, workspaceId: 7, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null, reply: null },
                     ],
                 };
@@ -232,7 +232,7 @@ export default async function verifySessionCards(t) {
                 listRequests.length = 0;
                 entryHandlers.clear();
                 let doneReads = 0;
-                const doneTarget = "/acp/7/6/entry?target=log%3A%2F%2F%2F1%2F2%2F1%2FDONE%3A20";
+                const doneTarget = "/acp/7/6/entry?target=log%3A%2F%2F%2F1%2F2%2F1%2Fdone%3A20";
                 entryHandlers.set(doneTarget, (req, res) => {
                     doneReads++;
                     assert.equal(req.headers.authorization, "Bearer overview-token");
@@ -240,7 +240,7 @@ export default async function verifySessionCards(t) {
                     res.end("**Delivered reply** <script>window.pwned = true</script>");
                 });
                 let parentFail = true;
-                const parentTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F1%2FSEND%3A10";
+                const parentTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F1%2Fsend%3A10";
                 entryHandlers.set(parentTarget, (_req, res) => {
                     if (parentFail) {
                         res.writeHead(500, { ...privateHeaders, "content-type": "application/problem+json" });
@@ -300,13 +300,13 @@ export default async function verifySessionCards(t) {
 
                 // Stale in-flight read protection + live _plurnk/overview reordering & workspace rename while preserving open state & focus
                 const staleGate = Promise.withResolvers();
-                const midTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F2%2FSEND%3A30";
+                const midTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F2%2Fsend%3A30";
                 entryHandlers.set(midTarget, async (_req, res) => {
                     await staleGate.promise;
                     res.writeHead(200, { ...privateHeaders, "content-type": "text/plain; charset=utf-8" });
                     res.end("Stale intermediate reply");
                 });
-                const newestTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F3%2FSEND%3A40";
+                const newestTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F3%2Fsend%3A40";
                 entryHandlers.set(newestTarget, (_req, res) => {
                     res.writeHead(200, { ...privateHeaders, "content-type": "text/plain; charset=utf-8" });
                     res.end("Newest live reply");
@@ -318,7 +318,7 @@ export default async function verifySessionCards(t) {
                         jsonrpc: "2.0",
                         method: "_plurnk/overview",
                         params: toAcpOverview("work", [
-                            { ...overviewData.sessions[0], reply: { id: 30, coordinate: "1/1/2/SEND:30", completion: 200 } },
+                            { ...overviewData.sessions[0], reply: { id: 30, coordinate: "1/1/2/send:30", completion: 200 } },
                             overviewData.sessions[1],
                             overviewData.sessions[2],
                             overviewData.sessions[3],
@@ -333,7 +333,7 @@ export default async function verifySessionCards(t) {
                         jsonrpc: "2.0",
                         method: "_plurnk/overview",
                         params: toAcpOverview("renamed-work", [
-                            { ...overviewData.sessions[0], lifecycle: "completed", reply: { id: 40, coordinate: "1/1/3/SEND:40", completion: 200 } },
+                            { ...overviewData.sessions[0], lifecycle: "completed", reply: { id: 40, coordinate: "1/1/3/send:40", completion: 200 } },
                             overviewData.sessions[1],
                             overviewData.sessions[2],
                             { ...overviewData.sessions[3], lifecycle: "running" },

@@ -29,9 +29,10 @@ console.log(`Gating ${head} in ${clone}`);
 await git(["clone", "--quiet", "--shared", "--no-checkout", checkout, clone], checkout);
 await git(["checkout", "--quiet", "--detach", head], clone);
 try {
-    await npm(["ci", "--legacy-peer-deps", "--no-audit", "--no-fund"], clone);
+    await npm(["ci", "--no-audit", "--no-fund"], clone);
     // Candidate public declarations and authorization specimens beside the locked registry graph.
-    await npm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", ...archives], clone);
+    const peerArchives = archives.filter((path) => /\/plurnk-plurnk-(?:acp|auth|contracts|meta|modules|parser|spec-check)-/u.test(path));
+    await npm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", ...peerArchives], clone);
     await npm(["test"], clone);
     await npm(["run", "test:installation"], clone);
 } catch (error) {

@@ -24,8 +24,8 @@ export default async function startModel({ approvalCommand: initialApprovalComma
     const visits = new Map();
     let streamStarted = Promise.withResolvers();
     const programs = [
-        { reasoning: "I will read the requested project file.", content: "```READ (witness.txt)\n```" },
-        { reasoning: "The file confirms the browser connection.", content: "```DONE\nBrowser connection verified: cobalt heron.\n```" },
+        { reasoning: "I will read the requested project file.", content: 'await plurnk.read({ path: "witness.txt" });' },
+        { reasoning: "The file confirms the browser connection.", content: 'await plurnk.done({ text: "Browser connection verified: cobalt heron." });' },
     ];
     let turn = 0;
     const server = createServer(async (request, response) => {
@@ -73,24 +73,24 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                 }
                 if (!response.destroyed) {
                     const content = lifecycle === "wait-status" && visit === 1
-                        ? `\`\`\`sh\nnode --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'\n\`\`\`\n\`\`\`WAIT <60>\n\`\`\``
+                        ? `await plurnk.sh({ command: ${JSON.stringify(`node --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'`)} });\nawait plurnk.wait({ seconds: 60 });`
                         : lifecycle === "activity" && visit === 1 ? outsideText
-                        : lifecycle.startsWith("status-") && visit === 1 ? "```READ (session://user/identity.md)\n```"
-                        : lifecycle === "approval-batch" && visit === 1 ? "```sh\nprintf first\n```\n```sh\nprintf second\n```"
-                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `\`\`\`sh\n${approvalCommand}\n\`\`\``
+                        : lifecycle.startsWith("status-") && visit === 1 ? 'await plurnk.read({ path: "session://user/identity.md" });'
+                        : lifecycle === "approval-batch" && visit === 1 ? 'await plurnk.sh({ command: "printf first" });\nawait plurnk.sh({ command: "printf second" });'
+                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `await plurnk.sh({ command: ${JSON.stringify(approvalCommand)} });`
                         : lifecycle === "question-batch" && visit === 1 ? `${questionOperation}\n${questionOperation}`
                         : /^(question|held-question)-/u.test(lifecycle) && visit === 1 ? questionOperation
-                        : lifecycle.startsWith("mcp-question-") && visit === 1 ? "```fixture (batch)\n{}\n```\n```WAIT\n```"
+                        : lifecycle.startsWith("mcp-question-") && visit === 1 ? 'await fixture.batch({});\nawait plurnk.wait();'
                         : lifecycle === "conversation" && visit === 1
-                            ? "```READ (witness.txt) <1,1> /cobalt/ <!-- selected evidence -->\n```\n```READ (session://user/identity.md) <1,2>\n```"
+                            ? 'await plurnk.read({ path: "witness.txt", range: "1,1", pattern: "/cobalt/" }); // selected evidence\nawait plurnk.read({ path: "session://user/identity.md", range: "1,2" });'
                         : lifecycle.startsWith("execution-") && visit === 1
-                            ? `\`\`\`sh\nprintf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}\n\`\`\`\n\`\`\`WAIT\n\`\`\``
-                        : lifecycle === "math" ? "```DONE\nA native formula: $\\mathscr{F}=\\frac{a}{b}$.\n```"
-                        : lifecycle === "diagrams" ? `\`\`\`\`DONE\n${diagramContent}\n\`\`\`\``
-                        : lifecycle === "footnotes" ? `\`\`\`NOTE <!-- observation -->\n${footnoteAnswer}\n\`\`\`\n\`\`\`DONE\n${footnoteAnswer}\n\`\`\``
-                        : lifecycle === "notes" ? "```NOTE <!-- observation -->\nA **working observation**, not the answer.\n```\n```NOTE <!-- hypothesis -->\nA provisional hypothesis.\n```\n```NOTE\nCheck the hypothesis.\n```\n```DONE\nCompleted notes.\n```"
-                        : lifecycle === "content-security" ? `\`\`\`NOTE <!-- observation -->\n${contentAttack}\n\`\`\`\n\`\`\`DONE\n${contentAttack}\n\`\`\``
-                        : `\`\`\`DONE\nCompleted ${lifecycle}.\n\`\`\``;
+                            ? `await plurnk.sh({ command: ${JSON.stringify(`printf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}`)} });\nawait plurnk.wait();`
+                        : lifecycle === "math" ? `await plurnk.done({ text: ${JSON.stringify("A native formula: $\\mathscr{F}=\\frac{a}{b}$.")} });`
+                        : lifecycle === "diagrams" ? `await plurnk.done({ text: ${JSON.stringify(diagramContent)} });`
+                        : lifecycle === "footnotes" ? `await plurnk.note({ text: ${JSON.stringify(footnoteAnswer)} }); // observation\nawait plurnk.done({ text: ${JSON.stringify(footnoteAnswer)} });`
+                        : lifecycle === "notes" ? 'await plurnk.note({ text: "A **working observation**, not the answer." }); // observation\nawait plurnk.note({ text: "A provisional hypothesis." }); // hypothesis\nawait plurnk.note({ text: "Check the hypothesis." });\nawait plurnk.done({ text: "Completed notes." });'
+                        : lifecycle === "content-security" ? `await plurnk.note({ text: ${JSON.stringify(contentAttack)} }); // observation\nawait plurnk.done({ text: ${JSON.stringify(contentAttack)} });`
+                        : `await plurnk.done({ text: ${JSON.stringify(`Completed ${lifecycle}.`)} });`;
                     frame({ content });
                     const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);
                     frame({}, "stop", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });
@@ -105,7 +105,7 @@ export default async function startModel({ approvalCommand: initialApprovalComma
             }
             assert.ok(packet.includes("Read witness.txt and report its contents."));
             assert.ok(turn < programs.length, "no unexpected inference after completion");
-            if (turn === 1) assert.ok(packet.includes("cobalt heron"), "the file READ reaches the next model packet");
+            if (turn === 1) assert.ok(packet.includes("cobalt heron"), "the file read reaches the next model packet");
             const program = programs[turn++];
             response.writeHead(200, { "content-type": "text/event-stream" });
             const frame = (delta, finish_reason = null, usage) => response.write(`data: ${JSON.stringify({

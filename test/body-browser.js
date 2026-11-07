@@ -32,7 +32,7 @@ export default async function verifyBodies(t) {
                     });
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
-                    const address = new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href;
+                    const address = new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2Fread", url).href;
                     const source = '<script>window.bodyExecuted=true</script><img src="/unasked"><form data-action="read-body">Not controls</form>';
                     let failures = 0;
                     const held = Promise.withResolvers();

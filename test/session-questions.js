@@ -44,7 +44,7 @@ async function answer(page, form = review(page)) {
 const questionResult = async (page, base, headers) => {
     const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
     const messages = await observeMessages(sessionId, base, headers);
-    const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.name === "plurnk_question").map(({ toolCallId }) => toolCallId));
+    const ids = new Set(messages.flatMap((message) => message.toolCalls ?? []).filter((call) => call.name === "plurnk").map(({ toolCallId }) => toolCallId));
     const result = messages.find((message) => message.role === "tool" && message._meta?.plurnk && ids.has(message.toolCallId));
     assert.ok(result, "the daemon retains the question's exact correlated response");
     return inspectResult(result.content, headers.Authorization?.slice("Bearer ".length), base);
@@ -93,8 +93,8 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
             const receipt = await questionResult(page, base, headers);
             await page.locator("[data-operations] > details > summary").first().click();
-            const question = page.locator('[data-call-id][data-plurnk-type="plurnk_question"]');
-            assert.equal(await question.locator('summary > [data-plurnk-field="heading"]').innerText(), "plurnk_question");
+            const question = page.locator('[data-call-id][data-plurnk-type="plurnk"]');
+            assert.equal(await question.locator('summary > [data-plurnk-field="heading"]').innerText(), "plurnk");
             assert.equal(await question.locator("article > details").evaluate((node) => node.open), false);
             assert.equal(await question.locator("pre").isVisible(), false);
             assert.deepEqual(JSON.parse(receipt.content), cancelled ? { action: "cancel" } : { action: "accept", content: exactAnswer });

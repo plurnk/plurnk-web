@@ -31,7 +31,7 @@ export default async function verifyApproval(t) {
                     await page.waitForFunction(() => typeof window.review === "function");
                     const form = page.getByRole("form", { name: "Review requests", exact: true });
                     assert.equal(await form.isVisible(), false);
-                    const gates = [gate("id[0]#one"), gate("quote\"<two>", "EDIT")];
+                    const gates = [gate("id[0]#one"), gate("quote\"<two>", "edit")];
                     gates[1]._meta.plurnk.proposal.body = '<form action="/auth/logout"><button data-text="proposal-session">Injected</button></form>\n' + "x".repeat(400);
                     assert.equal(await page.evaluate((values) => window.review(values), gates), true);
                     const groups = form.locator("[data-requests] > fieldset");

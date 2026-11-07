@@ -454,7 +454,7 @@ export default function observeOverview(main) {
         try {
             await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
-                info: { name: "@plurnk/plurnk-web", version: "1.0.0" },
+                info: { name: "@plurnk/plurnk-web", version: "1.1.0" },
                 capabilities: {},
             });
             await sseReady.promise;

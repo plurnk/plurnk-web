@@ -85,13 +85,13 @@ export async function verifyMermaid(t) {
                         assert.deepEqual(requests.slice(before).filter((path) => !path.startsWith("data:")), [new URL("/render/mermaid", url).href]);
                     });
 
-                    await t.test("rich messages and SEND compile diagrams; NOTE, reasoning and receipts remain literal", async () => {
+                    await t.test("rich messages and send compile diagrams; note, reasoning and receipts remain literal", async () => {
                         const content = fenced(diagrams[0]).replace("```mermaid", "```MERMAID example");
                         const roles = ["user", "assistant", "system", "developer"];
                         await page.evaluate(({ content, roles }) => window.present([
                             ...roles.map((role) => ({ id: role, role, content })),
-                            { id: "notes", role: "assistant", content: "", toolCalls: [{ toolCallId: "note", name: "NOTE", rawInput: { aside: "observation", body: content }, _meta: { plurnk: { op: "NOTE" } } }] },
-                            { id: "send", role: "assistant", toolCalls: [{ toolCallId: "send-call", name: "SEND", rawInput: { body: content }, _meta: { plurnk: { op: "SEND" } } }] },
+                            { id: "notes", role: "assistant", content: "", toolCalls: [{ toolCallId: "note", name: "note", rawInput: { aside: "observation", body: content }, _meta: { plurnk: { op: "note" } } }] },
+                            { id: "send", role: "assistant", toolCalls: [{ toolCallId: "send-call", name: "send", rawInput: { body: content }, _meta: { plurnk: { op: "send" } } }] },
                             { id: "reasoning", role: "reasoning", content },
                             { id: "result", role: "tool", toolCallId: "opaque-call", content },
                         ]), { content, roles });

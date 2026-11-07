@@ -65,7 +65,14 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     }
     assert.ok(!archive.files.some(({ path }) => path.endsWith(".png")), "no unused raster fallback is packed");
     assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|ai\.plurnk\/public)\/|vite\.config|\.map$/u.test(path)));
-    await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "web-installation-test", private: true, type: "module" }));
+    await writeFile(join(consumer, "package.json"), JSON.stringify({
+        name: "web-installation-test",
+        private: true,
+        type: "module",
+        overrides: {
+            "@plurnk/plurnk-web": "$@plurnk/plurnk-web",
+        },
+    }));
     await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund",
         ...packages, join(directory, archive.filename)],
     { cwd: consumer, maxBuffer: 8 * 1024 * 1024, timeout: 120_000 });

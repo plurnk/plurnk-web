@@ -121,7 +121,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         }
     });
 
-    await t.test("{§web-session-status} an actual WAIT counts down, freezes on disconnect and resumes from authoritative state", { timeout: 60_000 }, async () => {
+    await t.test("{§web-session-status} an actual wait counts down, freezes on disconnect and resumes from authoritative state", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         for (const engine of [chromium]) {
             model.reset();
@@ -158,7 +158,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const next = await value(page, "elapsed");
                 await page.waitForFunction((previous) => document.querySelector('#session-status [data-text="elapsed"]')?.textContent !== previous, next);
                 assert.equal(observations.length, liveConnectionCount, "clock repaint does not poll the daemon");
-                assert.equal(await page.locator("[data-open-streams]").count(), 0, "WAIT needs no separate open-stream inventory");
+                assert.equal(await page.locator("[data-open-streams]").count(), 0, "wait needs no separate open-stream inventory");
                 proxy.drop();
                 await connection(page, "disconnected");
                 assert.equal(await value(page, "lifecycle"), "parked", "transport loss never settles the session");
@@ -301,11 +301,11 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const verify = async () => {
                             await connected(page);
                             await page.waitForFunction(() => [...document.querySelectorAll('[data-message-role="assistant"] > article strong')].some((element) => element.textContent === "Readable evidence"));
-                            const note = page.locator('[data-messages] [data-plurnk-type="NOTE"]');
+                            const note = page.locator('[data-messages] [data-plurnk-type="note"]');
                             assert.equal(await note.count(), 1);
-                            assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, contentAttack);
+                            assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "note").rawInput).body, contentAttack);
                             assert.equal(await note.locator("article > details > pre").textContent(), contentAttack);
-                            assert.equal(await note.locator("pre > *").count(), 0, "NOTE content cannot become HTML elements");
+                            assert.equal(await note.locator("pre > *").count(), 0, "note content cannot become HTML elements");
                             assert.equal(await page.locator("[data-messages]").locator("article script, article img, article form, article [id]").count(), 0);
                             assert.deepEqual(await page.locator("[data-messages] article [data-bind]").evaluateAll((elements) => elements.map((element) => ({
                                 tag: element.tagName, binding: element.dataset.bind, action: element.dataset.action,
@@ -337,7 +337,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         } finally { await model.close(); }
     });
 
-    await t.test("{§web-working-notes} packed NOTE calls expose semantic bodies and correlated results live and on replay", { timeout: 60_000 }, async () => {
+    await t.test("{§web-working-notes} packed note calls expose semantic bodies and correlated results live and on replay", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         for (const engine of [chromium]) {
             model.reset();
@@ -355,17 +355,17 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 await run.send({ workspace, message: prompt("notes") });
                 run.close();
                 const verify = async () => {
-                    const notes = page.locator('[data-messages] [data-plurnk-type="NOTE"]');
-                    await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-type="NOTE"]').length === 3);
+                    const notes = page.locator('[data-messages] [data-plurnk-type="note"]');
+                    await page.waitForFunction(() => document.querySelectorAll('[data-messages] [data-plurnk-type="note"]').length === 3);
                     const note = notes.first();
                     assert.equal(await note.locator("section, div, ul").count(), 0);
                     assert.equal(await note.locator("article > details > summary").count(), 1);
                     assert.equal(await note.locator("details").evaluate((node) => node.open), false);
                     await page.locator("[data-operations] > details > summary").click();
                     assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-plurnk-field="aside"]')?.textContent ?? "")), ["observation", "hypothesis", ""]);
-                    assert.equal(await note.getByRole("article", { name: "NOTE", exact: true }).count(), 1);
+                    assert.equal(await note.getByRole("article", { name: "note", exact: true }).count(), 1);
                     assert.equal(await note.locator("article > details > pre").textContent(), "A **working observation**, not the answer.");
-                    const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput);
+                    const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "note").rawInput);
                     assert.equal(args.body, "A **working observation**, not the answer.");
                     assert.equal(args.aside, "observation");
                     const id = await note.getAttribute("data-call-id");
@@ -410,10 +410,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await connected(page);
                     await page.waitForFunction(() => document.querySelector('[data-message-role="assistant"]:not([data-call-id]) article section[aria-label="Footnotes"]'));
                     const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
-                    const note = page.locator('[data-messages] [data-plurnk-type="NOTE"]');
+                    const note = page.locator('[data-messages] [data-plurnk-type="note"]');
                     await page.locator("[data-operations] > details > summary").click();
-                    assert.equal(await note.getByRole("article", { name: "NOTE", exact: true }).count(), 1);
-                    assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "NOTE").rawInput).body, footnoteAnswer);
+                    assert.equal(await note.getByRole("article", { name: "note", exact: true }).count(), 1);
+                    assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "note").rawInput).body, footnoteAnswer);
                     assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
                     assert.equal(await note.locator("[id], sup, section").count(), 0, "working notes cannot create footnote navigation");
                     const ids = await answer.locator("[id]").evaluateAll((elements) => elements.map(({ id }) => id));
@@ -642,10 +642,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const calls = await page.locator("[data-call-id]").evaluateAll((rows) => rows.map((row) => ({
                             id: row.dataset.callId, name: row.dataset.plurnkType, body: row.querySelector("article > details > pre")?.textContent ?? "",
                         })));
-                        const reads = calls.filter(({ name }) => name === "READ");
+                        const reads = calls.filter(({ name }) => name === "read");
                         assert.equal(reads.length, 2);
-                        assert.ok(reads.every(({ body }) => body === ""), "bodyless READ calls are semantic entries, not argument envelopes");
-                        const readRows = page.locator('[data-call-id][data-plurnk-type="READ"]');
+                        assert.ok(reads.every(({ body }) => body === ""), "bodyless read calls are semantic entries, not argument envelopes");
+                        const readRows = page.locator('[data-call-id][data-plurnk-type="read"]');
                         const successful = readRows.filter({ has: page.locator('[data-plurnk-field="count"]') });
                         assert.equal(await successful.locator('[data-plurnk-field="path"]').textContent(), "(witness.txt)");
                         assert.equal(await successful.locator('[data-plurnk-field="scope"]').textContent(), "<1,1>");
@@ -654,18 +654,18 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(await successful.locator('[data-plurnk-field="heading"]').innerText(), "selected evidence");
                         const successfulId = await successful.getAttribute("data-call-id");
                         const evidence = run.messages.find((message) => message.role === "tool" && message.toolCallId === successfulId);
-                        assert.equal((await inspectResult(evidence.content, undefined, base)).content, "cobalt heron", "actual READ bytes remain accessible through the public evidence resource");
+                        assert.equal((await inspectResult(evidence.content, undefined, base)).content, "cobalt heron", "actual read bytes remain accessible through the public evidence resource");
                         const missing = run.messages.filter(({ role }) => role === "tool")
                             .flatMap(({ content }) => typeof content === "string" ? [JSON.parse(content)] : []).find(({ problem }) => problem?.title === "Entry not found");
                         assert.ok(missing, "the fixture actually produced a missing-entry Problem");
                         assert.ok((await readRows.locator('[data-plurnk-field="outcome"]').allTextContents()).some((text) => text.includes(missing.problem.detail)), "the real operation diagnostic is visible content");
-                        assert.equal(requests.filter((request) => entryRequest(request, "log")).length, 0, "the browser does not fetch READ bodies for its summary");
+                        assert.equal(requests.filter((request) => entryRequest(request, "log")).length, 0, "the browser does not fetch read bodies for its summary");
                         assert.equal(await readRows.locator("a, button, [data-body-reference]").count(), 0);
                         for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                             await page.emulateMedia({ colorScheme });
                             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "long literal receipts do not widen the viewport");
                             const incoming = page.locator('[data-message-role="user"]').first();
-                            assert.equal(await incoming.getAttribute("data-plurnk-type"), "SEND", "the real daemon decorates incoming user messages");
+                            assert.equal(await incoming.getAttribute("data-plurnk-type"), "send", "the real daemon decorates incoming user messages");
                             const surface = (element) => element.evaluate((node) => getComputedStyle(node.closest("article") ?? node.querySelector("article")).backgroundColor);
                             const colors = await Promise.all([incoming, successful, page.getByText("Completed conversation.", { exact: true })].map(surface));
                             assert.equal(new Set(colors).size, 3, `${colorScheme}: real user, work and delivered reply keep three distinct surfaces`);

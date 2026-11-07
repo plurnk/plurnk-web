@@ -49,8 +49,8 @@ export default async function verifyActivity(t) {
                         rawOutput: { status: 200, range: { unit: "line", total: 2, requested: [1, -1], returned: [1, 2] } },
                         _meta: { plurnk: {
                             id: 17, sessionId: 9, loopSeq: 1, turnSeq: 2, sequence: 3, coordinate: "1/2/3",
-                            origin: "_plurnk", op: "READ", address: "evidence.html", source: null, state: "resolved", status: 200, attrs: {},
-                            body: { url: new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2FREAD", url).href, mimeType: "text/html" },
+                            origin: "_plurnk", op: "read", address: "evidence.html", source: null, state: "resolved", status: 200, attrs: {},
+                            body: { url: new URL("/acp/7/9/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2Fread", url).href, mimeType: "text/html" },
                         } },
                     };
                     await receive(ambient);
@@ -62,13 +62,13 @@ export default async function verifyActivity(t) {
                     assert.equal(await row.getAttribute("data-plurnk-coordinate"), "1/2/3");
                     assert.equal(await row.getAttribute("data-plurnk-state"), "resolved");
                     assert.equal(await row.getAttribute("data-plurnk-status"), "200");
-                    assert.equal(await row.getByRole("article", { name: "READ · Session 9 · 1/2/3 · resolved · 200", exact: true }).count(), 1);
+                    assert.equal(await row.getByRole("article", { name: "read · Session 9 · 1/2/3 · resolved · 200", exact: true }).count(), 1);
                     assert.equal(await row.locator("details, dl").count(), 0);
                     assert.equal(await row.getAttribute("data-activity-evidence"), null);
                     assert.equal(await row.getAttribute("data-activity-key"), null);
                     assert.equal(await row.locator('[data-plurnk-field="heading"]').innerText(), "Inspect evidence");
                     assert.equal(await row.locator("[data-plurnk-operands]").innerText(), "(evidence.html) {2}");
-                    assert.equal(await row.locator("[data-body-reference]").count(), 0, "ambient READ uses the same summary without fetching readback");
+                    assert.equal(await row.locator("[data-body-reference]").count(), 0, "ambient read uses the same summary without fetching readback");
                     await page.evaluate(() => { window.summaryNode = document.querySelector("#session-activity [data-plurnk-operands]"); });
                     await receive(structuredClone(ambient));
                     assert.equal(await rows.count(), 1);

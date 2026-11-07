@@ -310,7 +310,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.match(await calls.nth(1).locator('[data-plurnk-field="outcome"]').textContent(), /The proposal was rejected \([^)]+\)\./u);
         const messages = await observeMessages(requests[0].params.sessionId, base, headers);
         const accepted = await calls.first().getAttribute("data-call-id");
-        const result = messages.find((message) => message.role === "tool" && message.toolCallId === accepted && message._meta?.plurnk?.op === "READ");
+        const result = messages.find((message) => message.role === "tool" && message.toolCallId === accepted && message._meta?.plurnk?.op === "read");
         assert.ok(result, "the accepted command's stream output remains correlated with its call");
         assert.equal((await inspectResult(result.content, undefined, base)).content, "first");
         assert.equal(model.requests.length, 2);

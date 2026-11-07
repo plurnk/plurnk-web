@@ -6,15 +6,15 @@ import browserDiagnostics from "./browser-diagnostics.js";
 // {§web-conversation-surfaces} Exercise real semantic rows and compiled theme CSS.
 export const messages = [
     { id: "user", role: "user", content: "Please inspect [the evidence](https://example.com/)." },
-    { id: "decorated-user", role: "user", content: "An incoming user message.", _meta: { plurnk: { op: "SEND", origin: "_plurnk" } } },
+    { id: "decorated-user", role: "user", content: "An incoming user message.", _meta: { plurnk: { op: "send", origin: "_plurnk" } } },
     { id: "assistant", role: "assistant", content: "I will inspect [the evidence](https://example.com/).", toolCalls: [
-        { toolCallId: "generic", name: "SEND", rawInput: {} },
-        ...["READ", "NOTE", "SEND"].map((op) => ({ toolCallId: op, name: op,
+        { toolCallId: "generic", name: "send", rawInput: {} },
+        ...["read", "note", "send"].map((op) => ({ toolCallId: op, name: op,
             rawInput: { aside: "Inspect the evidence", body: "Retained **content**.",
                 target: { raw: "evidence.txt" } }, _meta: { plurnk: { op } } })),
     ] },
-    { id: "reply", role: "tool", toolCallId: "delivered", content: "Here is [the answer](https://example.com/).", _meta: { plurnk: { op: "DONE", signal: 200 } } },
-    { id: "cancelled", role: "tool", toolCallId: "cancelled", content: "Unable to complete.", _meta: { plurnk: { op: "FAIL", signal: 499 } } },
+    { id: "reply", role: "tool", toolCallId: "delivered", content: "Here is [the answer](https://example.com/).", _meta: { plurnk: { op: "done", signal: 200 } } },
+    { id: "cancelled", role: "tool", toolCallId: "cancelled", content: "Unable to complete.", _meta: { plurnk: { op: "fail", signal: 499 } } },
     { id: "result", role: "tool", toolCallId: "unmatched", content: "Literal result." },
     { id: "reasoning", role: "reasoning", content: "Consider the evidence." },
     { id: "system", role: "system", content: "System [content](https://example.com/)." },
@@ -78,9 +78,9 @@ export default async function verifySurfaces(t) {
                     const { background: working } = colors.reasoning;
                     assert.equal(new Set([user, reply, working].map((item) => JSON.stringify(item))).size, 3, `${colorScheme}: three distinct backgrounds`);
                     assert.ok(user[1] > user[0] && user[1] > user[2], "user tint is green");
-                    assert.deepEqual(colors["decorated-user"].background, user, "SEND metadata never turns a user's prompt into a model reply");
-                    for (const id of ["SEND", "reply", "cancelled", "outside"]) assert.deepEqual(colors[id].background, reply, id);
-                    for (const id of ["generic", "READ", "NOTE", "result", "system", "developer", "preview"]) assert.deepEqual(colors[id].background, working, id);
+                    assert.deepEqual(colors["decorated-user"].background, user, "send metadata never turns a user's prompt into a model reply");
+                    for (const id of ["send", "reply", "cancelled", "outside"]) assert.deepEqual(colors[id].background, reply, id);
+                    for (const id of ["generic", "read", "note", "result", "system", "developer", "preview"]) assert.deepEqual(colors[id].background, working, id);
                     for (const [id, { background, header, text = [] }] of Object.entries(colors)) {
                         assert.equal(background[3], 255, `${id}: opaque background`);
                         if (header) assert.deepEqual(header, background, `${id}: coordinated header and body`);

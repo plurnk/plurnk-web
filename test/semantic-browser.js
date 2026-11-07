@@ -35,17 +35,17 @@ export default async function verifySemanticContent(t) {
                     const row = (id) => list.locator(`[data-message-id="${id}"]`);
                     const field = (item, name) => item.locator(`[data-plurnk-field="${name}"]`);
                     const glyph = (item) => field(item, "heading").evaluate((element) => getComputedStyle(element, "::before").content);
-                    const glyphs = { FIND: "🔎", READ: "📖", EDIT: "📝", COPY: "🖨️", MOVE: "📦", KILL: "🗑️", WAIT: "⏳", WORK: "🐜", FORK: "🔱", BARE: "☁️", TODO: "🚧", WARN: "⚠️", FAIL: "⛔", INFO: "📌", sh: "⚙️", mcp: "⚙️", schedule: "⚙️", members: "⚙️" };
+                    const glyphs = { find: "🔎", read: "📖", edit: "📝", copy: "🖨️", move: "📦", kill: "🗑️", wait: "⏳", work: "🐜", fork: "🔱", bare: "☁️", todo: "🚧", warn: "⚠️", fail: "⛔", info: "📌", sh: "⚙️", mcp: "⚙️", schedule: "⚙️", members: "⚙️" };
                     const names = Object.keys(glyphs);
                     const messages = names.flatMap((name) => [
-                        call(name, name, { ...selection("README.md", [1, -1], "/mudkips/"), aside: `Actual ${name} aside` }),
-                        result(name, { status: 200, path: "README.md", content: "Receipt body is not a summary", range: { unit: "line", total: 40, requested: [1, -1], returned: [1, 3] } }),
+                        call(`glyph-${name}`, name, { ...selection("README.md", [1, -1], "/mudkips/"), aside: `Actual ${name} aside` }),
+                        result(`glyph-${name}`, { status: 200, path: "README.md", content: "Receipt body is not a summary", range: { unit: "line", total: 40, requested: [1, -1], returned: [1, 3] } }),
                     ]);
                     await present(messages);
                     assert.equal(await list.locator("[data-message-id]").count(), names.length, "own receipts complete their call, not a second article");
                     for (const summary of await list.locator("[data-operations] > details > summary").all()) await summary.click();
                     for (const name of names) {
-                        const item = row(name);
+                        const item = row(`glyph-${name}`);
                         assert.equal(await item.locator(":scope > article").count(), 1);
                         assert.deepEqual(await item.locator("article > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["HEADER"]);
                         assert.deepEqual(await item.locator("article > header > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["SPAN", "SPAN"]);
@@ -59,14 +59,14 @@ export default async function verifySemanticContent(t) {
                         assert.ok((await glyph(item)).includes(glyphs[name]), `${name}'s stylesheet glyph survives production pruning`);
                         assert.doesNotMatch(await item.innerText(), /200|Receipt body|private envelope/u);
                     }
-                    assert.equal(await field(row("READ"), "count").textContent(), "{3}");
-                    assert.equal(await field(row("EDIT"), "count").count(), 0, "no generic range-as-line-count guess");
-                    assert.equal(await field(row("mcp"), "runtime").textContent(), "mcp");
-                    assert.match(await glyph(row("READ")), /📖/u);
-                    assert.match(await glyph(row("mcp")), /⚙/u);
+                    assert.equal(await field(row("glyph-read"), "count").textContent(), "{3}");
+                    assert.equal(await field(row("glyph-edit"), "count").count(), 0, "no generic range-as-line-count guess");
+                    assert.equal(await field(row("glyph-mcp"), "runtime").textContent(), "mcp");
+                    assert.match(await glyph(row("glyph-read")), /📖/u);
+                    assert.match(await glyph(row("glyph-mcp")), /⚙/u);
                     assert.deepEqual(await page.evaluate(() => window.source), messages, "projection never rewrites SDK authority");
 
-                    const read = call("read", "READ", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
+                    const read = call("read", "read", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
                     /** @type {any} */
                     const readResult = result("read", { status: 200, lineOrdinals: [1, 8], range: { unit: "line", total: 50, requested: [1, -1], returned: [1, 8] } });
                     readResult.content = [{ type: "text", text: readResult.content }, { type: "resource_link", uri: new URL("/acp/body", url).href, name: "body", mimeType: "text/plain" }];
@@ -77,7 +77,7 @@ export default async function verifySemanticContent(t) {
                     await row("read").scrollIntoViewIfNeeded();
                     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                     assert.equal(await row("read").locator("[data-body-reference], details").count(), 0);
-                    assert.deepEqual(requests, [], "a READ summary never fetches its readback body");
+                    assert.deepEqual(requests, [], "a read summary never fetches its readback body");
                     await present([read, result("read", { status: 404, problem: { title: "Entry not found", detail: "README.md is missing.", recovery: "Choose an existing path." } })]);
                     assert.equal(await field(row("read"), "outcome").textContent(), "Entry not found — README.md is missing. — Choose an existing path.");
                     for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
@@ -96,18 +96,18 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await row("read").getAttribute("data-plurnk-status"), "404");
                     assert.equal(await field(row("read"), "count").count(), 0, "replacement snapshot removes a stale count");
 
-                    await present([call("copy", "COPY", { source: selection("a.txt", [2, 4], "/source/"), destination: selection("b.txt", [9], null) })]);
+                    await present([call("copy", "copy", { source: selection("a.txt", [2, 4], "/source/"), destination: selection("b.txt", [9], null) })]);
                     await list.locator("[data-operations] > details > summary").click();
                     assert.equal(await row("copy").locator("[data-plurnk-operands]").innerText(), "(a.txt) <2,4> /source/ (b.txt) <9>");
                     assert.deepEqual(await row("copy").locator('[data-plurnk-operand]').allTextContents(), ["(a.txt) <2,4> /source/", "(b.txt) <9>"]);
-                    await present([call("wait", "WAIT", { lineMarker: { marks: [600] } }), call("empty", "WAIT", {})]);
+                    await present([call("wait", "wait", { lineMarker: { marks: [600] } }), call("empty", "wait", {})]);
                     await list.locator("[data-operations] > details > summary").click();
                     assert.equal(await row("wait").locator("[data-plurnk-operands]").innerText(), "<600>");
                     assert.equal(await row("empty").locator("article > header").count(), 1);
                     assert.equal(await row("empty").locator("[data-plurnk-operands]").count(), 0, "no empty row or filler text");
-                    await present([call("find", "FIND", {}), result("find", { status: 204, range: { unit: "result", total: 0, requested: [1, -1] } })]);
+                    await present([call("find", "find", {}), result("find", { status: 204, range: { unit: "result", total: 0, requested: [1, -1] } })]);
                     assert.equal(await field(row("find"), "count").textContent(), "{0}");
-                    const rejected = call("invalid", "READ", { text: "READ (missing closing syntax" });
+                    const rejected = call("invalid", "read", { text: "await plurnk.read(" });
                     rejected.toolCalls[0]._meta.plurnk.op = "error";
                     await present([rejected, result("invalid", { status: 400, problem: { title: "Invalid operation" } })]);
                     assert.equal(await field(row("invalid"), "path").count(), 0, "rejected syntax is not reparsed into imagined operands");
@@ -119,7 +119,7 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await field(row("invalid"), "outcome").count(), 0, "a cleared outcome leaves no empty paragraph");
 
                     const literal = '**Not emphasis**\n</pre><script>window.contentExecuted=true</script><pre>\n&copy; 分析 🐹';
-                    const note = call("note", "NOTE", { body: literal, aside: "observation" });
+                    const note = call("note", "note", { body: literal, aside: "observation" });
                     await present([note]);
                     await list.locator("[data-operations] > details > summary").click();
                     await row("note").locator("summary").click();
@@ -142,29 +142,29 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
 
                     await present([
-                        call("done", "DONE", { body: { raw: "Actual **reply**.", json: null } }), result("done", { status: 200, completion: 200 }),
-                        call("work", "WORK", { target: { raw: "helper" }, aside: "Delegate" }), result("work", { status: 202 }),
-                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', _meta: { plurnk: { op: "DONE", status: 200, signal: 200 } } },
-                        { id: "observation", role: "tool", toolCallId: "work-call", content: '{"status":200,"path":"ops://helper/1","range":{"unit":"line","total":2,"requested":[1,-1],"returned":[1,2]}}', _meta: { plurnk: { op: "READ", status: 200 } } },
+                        call("done", "done", { body: { raw: "Actual **reply**.", json: null } }), result("done", { status: 200, completion: 200 }),
+                        call("work", "work", { target: { raw: "helper" }, aside: "Delegate" }), result("work", { status: 202 }),
+                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', _meta: { plurnk: { op: "done", status: 200, signal: 200 } } },
+                        { id: "observation", role: "tool", toolCallId: "work-call", content: '{"status":200,"path":"ops://helper/1","range":{"unit":"line","total":2,"requested":[1,-1],"returned":[1,2]}}', _meta: { plurnk: { op: "read", status: 200 } } },
                     ]);
                     assert.deepEqual(await list.locator("[data-message-id]").evaluateAll((items) => items.map((item) => item.dataset.messageId)), ["done", "work", "child-reply", "observation"]);
                     assert.equal(await row("done").locator("article > p > strong").textContent(), "reply");
                     assert.match(await glyph(row("done")), /🐹/u);
-                    await assert.rejects(present([call("duplicate", "WAIT", {}), result("duplicate", { status: 200 }), { ...result("duplicate", { status: 200 }), id: "other-result" }]), /Operation has duplicate immediate receipts\./u);
+                    await assert.rejects(present([call("duplicate", "wait", {}), result("duplicate", { status: 200 }), { ...result("duplicate", { status: 200 }), id: "other-result" }]), /Operation has duplicate immediate receipts\./u);
                     assert.equal(await row("done").count(), 1, "a rejected snapshot leaves the last valid projection intact");
                     assert.equal(await row("child-reply").locator("article > p").innerText(), '{"answer":"Delivered reply"}', "JSON-looking delivered speech remains content");
                     assert.equal(await field(row("observation"), "path").textContent(), "(ops://helper/1)");
                     assert.equal(await field(row("observation"), "aside").count(), 0, "later observations do not borrow the invocation's aside");
                     assert.equal(await field(row("observation"), "count").textContent(), "{2}");
                     const hostile = '</header><script>window.summaryExecuted=true</script><img src="/unasked">&copy;';
-                    await present([call("hostile", "READ", { ...selection(hostile, [1, 2], hostile), aside: hostile })]);
+                    await present([call("hostile", "read", { ...selection(hostile, [1, 2], hostile), aside: hostile })]);
                     assert.equal(await field(row("hostile"), "aside").textContent(), hostile);
                     assert.equal(await field(row("hostile"), "path").textContent(), `(${hostile})`);
                     assert.equal(await field(row("hostile"), "pattern").textContent(), hostile);
                     assert.equal(await row("hostile").locator("script, img, form, a").count(), 0);
                     assert.equal(await page.evaluate(() => window.summaryExecuted), undefined);
                     assert.deepEqual(requests, []);
-                    const speech = { id: "speech", role: "assistant", content: "Unchanged body.", _meta: { plurnk: { op: "SEND", aside: "Earlier aside" } } };
+                    const speech = { id: "speech", role: "assistant", content: "Unchanged body.", _meta: { plurnk: { op: "send", aside: "Earlier aside" } } };
                     await present([speech]);
                     await row("speech").locator("article > p").evaluate((element) => { window.speechBody = element; });
                     await present([{ ...speech, _meta: {} }]);

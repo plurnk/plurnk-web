@@ -106,7 +106,7 @@ export default function activity(root, read) {
         }
         if (plurnk.body !== undefined) referenceOf(plurnk.body);
         const reasoning = referenceOf(typeof plurnk.reasoning === "string" ? undefined : plurnk.reasoning);
-        if (origin === "_plurnk" && op === "READ" && plurnk.attrs?.kind === "emission") return;
+        if (origin === "_plurnk" && op === "read" && plurnk.attrs?.kind === "emission") return;
         const key = JSON.stringify(["ambient", attribution, sessionId, id]);
         const row = rows.get(key) ?? $.clone(list, "#session-ambient");
         const operation = op ?? (plurnk.attrs?.kind === "emissionAttempt" ? "Rejected emission" : "Log entry");

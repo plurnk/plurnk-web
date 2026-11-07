@@ -523,7 +523,7 @@ export class SessionTranslator {
                         continue;
                     }
                     const obsId = plurnk.coordinate;
-                    const obsContent = plurnk.op === "SEND" || plurnk.op === "DONE" || plurnk.op === "FAIL"
+                    const obsContent = plurnk.op === "send" || plurnk.op === "done" || plurnk.op === "fail"
                         ? (() => {
                             if (Array.isArray(update.content)) {
                                 const first = update.content[0];
@@ -563,7 +563,7 @@ export class SessionTranslator {
                     (typeof plurnk?.origin === "string" && plurnk.origin !== "model")
                     || plurnk?.op === null
                     || (isRecord(plurnk?.attrs) && plurnk.attrs.kind === "emissionAttempt")
-                    || (plurnk?.op === "NOTE" && isRecord(plurnk?.attrs) && typeof plurnk.attrs.distilled === "string" && plurnk.attrs.distilled.trim().length > 0)
+                    || (plurnk?.op === "note" && isRecord(plurnk?.attrs) && typeof plurnk.attrs.distilled === "string" && plurnk.attrs.distilled.trim().length > 0)
                 ) {
                     continue;
                 }
@@ -703,14 +703,14 @@ export class SessionTranslator {
                     : -1;
                 if (callOwnerIdx === -1) {
                     callOwnerIdx = messages.findLastIndex((m) => m.role === "assistant" && m.toolCalls?.some((c) =>
-                        c.name === "TODO" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "TODO")));
+                        c.name === "todo" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "todo")));
                 }
                 if (callOwnerIdx !== -1) {
                     const owner = cloneAt(callOwnerIdx);
                     const targetCall = owner.role === "assistant"
                         ? (coordinate
                             ? owner.toolCalls?.find((c) => c.toolCallId === coordinate)
-                            : owner.toolCalls?.findLast((c) => c.name === "TODO" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "TODO")))
+                            : owner.toolCalls?.findLast((c) => c.name === "todo" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "todo")))
                         : undefined;
                     if (targetCall) {
                         const prevPlurnk = isRecord(targetCall._meta?.plurnk) ? { ...targetCall._meta.plurnk } : {};
@@ -720,7 +720,7 @@ export class SessionTranslator {
                             plurnk: {
                                 ...prevPlurnk,
                                 ...(plurnk ? structuredClone(plurnk) : {}),
-                                op: "TODO",
+                                op: "todo",
                                 plan,
                             },
                         };
@@ -735,12 +735,12 @@ export class SessionTranslator {
                         ...(subagentRunId ? { subagentRunId } : {}),
                         toolCalls: [{
                             toolCallId,
-                            name: "TODO",
+                            name: "todo",
                             status: "completed",
                             _meta: {
                                 plurnk: {
                                     ...(plurnk ? structuredClone(plurnk) : {}),
-                                    op: "TODO",
+                                    op: "todo",
                                     plan,
                                 },
                             },
@@ -757,14 +757,14 @@ export class SessionTranslator {
                 for (let idx = 0; idx < messages.length; idx++) {
                     const msg = messages[idx];
                     if (msg.role !== "assistant" || !msg.toolCalls?.some((c) =>
-                        c.name === "TODO" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "TODO"))) {
+                        c.name === "todo" || (isRecord(c._meta?.plurnk) && c._meta.plurnk.op === "todo"))) {
                         continue;
                     }
                     const owner = cloneAt(idx);
                     if (owner.role !== "assistant" || !owner.toolCalls) continue;
                     for (const call of owner.toolCalls) {
                         const callPlurnk = isRecord(call._meta?.plurnk) ? call._meta.plurnk : undefined;
-                        if (call.name !== "TODO" && callPlurnk?.op !== "TODO") continue;
+                        if (call.name !== "todo" && callPlurnk?.op !== "todo") continue;
                         if (targetLoopSeq !== null && typeof callPlurnk?.loopSeq === "number" && callPlurnk.loopSeq !== targetLoopSeq) {
                             continue;
                         }
@@ -1450,7 +1450,7 @@ export default class SessionAgent {
         try {
             await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
-                info: { name: "@plurnk/plurnk-web", version: "1.0.0" },
+                info: { name: "@plurnk/plurnk-web", version: "1.1.0" },
                 capabilities: {},
             });
         } catch (error) {

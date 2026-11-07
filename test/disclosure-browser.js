@@ -35,15 +35,15 @@ export default async function verifyDisclosures(t) {
                     const source = [
                         { id: "user", role: "user", content: "Question" },
                         { id: "answer", role: "assistant", content: "**Answer**\n\nAnother paragraph." },
-                        call("send", "SEND", "Delivered reply"),
-                        { id: "cancel", role: "tool", toolCallId: "cancel-call", content: "Cancelled reply", _meta: { plurnk: { op: "FAIL", signal: 499 } } },
-                        call("note", "NOTE", "Literal <pre>\n**observation**", "observation"),
-                        call("edit", "EDIT", "Replacement", "Update the file"),
+                        call("send", "send", "Delivered reply"),
+                        { id: "cancel", role: "tool", toolCallId: "cancel-call", content: "Cancelled reply", _meta: { plurnk: { op: "fail", signal: 499 } } },
+                        call("note", "note", "Literal <pre>\n**observation**", "observation"),
+                        call("edit", "edit", "Replacement", "Update the file"),
                         { id: "tool", role: "tool", toolCallId: "opaque-call", content: "Tool output", error: "Tool failed" },
                         { id: "reasoning", role: "reasoning", content: "Working", _meta: { plurnk: { sessionName: "user", loopSeq: 1, turnSeq: 3, coordinate: "1/3" } } },
-                        call("read", "READ", ""),
-                        call("empty", "NOTE", ""),
-                        call("wrapped", "EDIT", "Replacement", "Update the file after checking the existing implementation and its complete contract"),
+                        call("read", "read", ""),
+                        call("empty", "note", ""),
+                        call("wrapped", "edit", "Replacement", "Update the file after checking the existing implementation and its complete contract"),
                     ];
                     await present(source);
                     const loopDisclosure = page.locator('[data-loop-seq="1"] > details');
@@ -101,11 +101,11 @@ export default async function verifyDisclosures(t) {
                     assert.equal(await row("edit").getByText("Changed on disk", { exact: true }).isVisible(), true);
                     assert.equal(await row("edit").locator("pre").isVisible(), false);
                     assert.deepEqual(await disclosure("edit").locator("summary > *").evaluateAll((nodes) => nodes.map((node) => node.dataset.plurnkField ?? (node.hasAttribute("data-plurnk-operands") ? "operands" : null))), ["heading", "outcome", "operands"]);
-                    assert.equal(await disclosure("edit").locator("summary").getAttribute("aria-label"), "EDIT · Update the file · Changed on disk · (file.txt)", "summary naming preserves diagnostic and field boundaries");
+                    assert.equal(await disclosure("edit").locator("summary").getAttribute("aria-label"), "edit · Update the file · Changed on disk · (file.txt)", "summary naming preserves diagnostic and field boundaries");
                     const updated = structuredClone(source);
                     updated[0].content += " updated";
-                    updated[4] = call("note", "NOTE", "New content", "observation");
-                    updated[9] = call("empty", "NOTE", "Now present");
+                    updated[4] = call("note", "note", "New content", "observation");
+                    updated[9] = call("empty", "note", "Now present");
                     await present(updated);
                     assert.equal(await opsDisclosure.evaluate((node) => node.open), true);
                     assert.equal(await disclosure("note").evaluate((node) => node.open), true);
@@ -138,10 +138,10 @@ export default async function verifyDisclosures(t) {
                     await present([provisional]);
                     assert.equal(await row(provisional.id).getByText("Entry missing", { exact: true }).count(), 1);
                     await present([{ ...provisional, content: JSON.stringify({ status: 404, problem: { title: "Entry missing" } }),
-                        _meta: { plurnk: { op: "READ", status: 404 } },
+                        _meta: { plurnk: { op: "read", status: 404 } },
                     }]);
                     assert.equal(await row(provisional.id).getByText("Entry missing", { exact: true }).count(), 1, "late operation attribution retains one diagnostic, not two renderers' copies");
-                    assert.equal(await disclosure(provisional.id).count(), 0, "attributed READ has no receipt-body disclosure");
+                    assert.equal(await disclosure(provisional.id).count(), 0, "attributed read has no receipt-body disclosure");
                     checkBrowser();
                 } finally { await browser.close(); }
             });

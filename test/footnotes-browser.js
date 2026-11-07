@@ -118,17 +118,17 @@ export default async function verifyFootnotes(t) {
                         assert.equal(await body().textContent(), "A[^a]\n");
                     });
 
-                    await t.test("rich messages and SEND get separate scopes; NOTE and reasoning remain literal", async () => {
+                    await t.test("rich messages and send get separate scopes; note and reasoning remain literal", async () => {
                         const content = "A[^a]\n\n[^a]: **Definition**.";
                         const roles = ["user", "assistant", "system", "developer"];
                         /** @type {any[]} */
                         const messages = roles.map((role) => ({ id: role, role, content }));
                         messages.push(...["\ud800", "\ufffd"].map((id) => ({ id, role: "assistant", content })));
                         messages.push({ id: "replies", role: "assistant", toolCalls: ["assistant", "reply/分析%\""].map((toolCallId) => ({
-                            toolCallId, name: "SEND", rawInput: { body: content }, _meta: { plurnk: { op: "SEND" } },
+                            toolCallId, name: "send", rawInput: { body: content }, _meta: { plurnk: { op: "send" } },
                         })) });
                         messages.push({ id: "note", role: "assistant", toolCalls: [{ toolCallId: "note-call",
-                            name: "NOTE", rawInput: { body: content }, _meta: { plurnk: { op: "NOTE" } } }] },
+                            name: "note", rawInput: { body: content }, _meta: { plurnk: { op: "note" } } }] },
                         { id: "reasoning", role: "reasoning", content });
                         messages.push({ id: "receipt", role: "tool", toolCallId: "opaque-call", content });
                         await present(messages);
@@ -142,7 +142,7 @@ export default async function verifyFootnotes(t) {
                             ids.push(...graph.ids);
                         }
                         assert.equal(new Set(ids).size, ids.length);
-                        assert.equal(await page.locator('[data-call-id][data-plurnk-type="SEND"] > article').count(), 2);
+                        assert.equal(await page.locator('[data-call-id][data-plurnk-type="send"] > article').count(), 2);
                         for (const id of ["note", "reasoning", "receipt"]) {
                             const row = page.locator(`[data-message-id="${id}"]`);
                             assert.equal(await row.locator("article > details > pre").textContent(), content);
