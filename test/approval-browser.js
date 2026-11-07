@@ -127,8 +127,50 @@ export default async function verifyApproval(t) {
                     ]);
                     assert.equal(await page.evaluate((values) => window.review(values), [...gates, { id: "unknown" }]), false);
                     assert.equal(await page.evaluate(() => window.responses.length), 2, "unsupported sets are not partially auto-approved");
+                    const multiChoiceQuestion = {
+                        id: "multi-q",
+                        method: "elicitation/create",
+                        mode: "form",
+                        requestedSchema: {
+                            type: "object",
+                            properties: {
+                                store: {
+                                    type: "string",
+                                    title: "Store",
+                                    oneOf: [
+                                        { const: "sqlite", title: "SQLite", description: "Embedded" },
+                                        { const: "postgres", title: "PostgreSQL", description: "Server" },
+                                    ],
+                                },
+                                tiers: {
+                                    type: "array",
+                                    title: "Tiers",
+                                    items: {
+                                        anyOf: [
+                                            { const: "lint", title: "Lint", description: "Static checks" },
+                                            { const: "unit", title: "Unit", description: "Unit suite" },
+                                        ],
+                                    },
+                                },
+                            },
+                            required: ["store", "tiers"],
+                        },
+                    };
+                    assert.equal(await page.evaluate((values) => window.review(values), [multiChoiceQuestion]), true);
+                    await form.getByRole("combobox", { name: "Store", exact: true }).selectOption({ label: "PostgreSQL — Server" });
+                    await form.getByRole("checkbox", { name: "Lint — Static checks", exact: true }).check();
+                    await form.getByRole("checkbox", { name: "Unit — Unit suite", exact: true }).check();
+                    await form.getByRole("button", { name: "Submit responses", exact: true }).click();
+                    await page.waitForFunction(() => window.responses.length === 3);
+                    assert.deepEqual(await page.evaluate(() => window.responses[2]), [
+                        {
+                            id: "multi-q",
+                            method: "elicitation/create",
+                            response: { action: "accept", content: { store: "postgres", tiers: ["lint", "unit"] } },
+                        },
+                    ]);
                     assert.equal(await page.evaluate((values) => window.review(values), [{ ...gate("late"), expiresAt: "2020-01-01T00:00:00.000Z" }]), true);
-                    assert.equal(await page.evaluate(() => window.responses.length), 2, "automatic approval never answers an expired request");
+                    assert.equal(await page.evaluate(() => window.responses.length), 3, "automatic approval never answers an expired request");
                     assert.equal(await form.locator("[data-deadline-notice]").isVisible(), true, "it is presented with its passed deadline");
                     checkBrowser();
                 } finally { await browser.close(); }

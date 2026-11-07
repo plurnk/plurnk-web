@@ -314,6 +314,7 @@
         <select required data-bind="aria-label:answer-label"><option value="" data-i18n="choose-answer">Choose an answer</option></select>
     </template>
     <template id="answer-option"><option data-bind="value:option-value" data-text="option-label">Option</option></template>
+    <template id="answer-choice"><label><input type="checkbox" data-answer-choice data-bind="value:option-value"> <span data-text="option-label">Option</span></label></template>
     <template id="answer-json"><label><span data-i18n="json-answer">Answer (JSON)</span><textarea rows="6" spellcheck="false" required></textarea></label></template>
     <template id="session-proposal">
         <fieldset>
