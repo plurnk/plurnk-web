@@ -30,7 +30,7 @@ search offers native suggestions, or accepts an exact alias/provider-model.
 Select Model / Select Effort applies the choice and closes the form; Cancel dismisses it.
 Session cards on `/` and workspace pages show the session's lifecycle, parent/name
 and workspace, ordered with the most recently delivered reply first, and stay live
-over the ACP overview subscription while preserving open disclosures.
+over the `/notifications` SSE stream while preserving open disclosures.
 Click the ant to visit the session, or expand the card to see its child tree and
 latest completed reply (loaded on demand when opened); parent and workspace links
 navigate independently. Leaves without a completed reply have no empty disclosure.
@@ -306,7 +306,7 @@ streaming and replay against the production content policy in all three engines.
 `web/index.html` and `web/app.js` are the document and browser entry point.
 Vite bundles OTM from its npm entry and compiles the CSS. Build preparation copies
 Pico's readable pinned substrate and dependency licenses, and derives a maskable SVG
-from the mascot. The ACP client loads only on session and overview pages; Vite includes the bundled
+from the mascot. The ACP client loads only on session pages; Vite includes the bundled
 dependencies' license notices. Production prunes unused CSS rules, variables and keyframes from
 the browser and server-rendered document sources, plus the authority's publicly
 exported document specimens, before minification. The auth package supplies those
