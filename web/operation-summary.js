@@ -8,6 +8,8 @@ export const GLYPH_OPS = new Set([
     "work", "fork", "bare", "wait", "send", "done", "fail", "warn", "info", "error",
 ]);
 
+const SCRIPT_OPS = new Set(["sh", "js", "python3"]);
+
 /** @param {unknown} value @returns {RecordValue | null} */
 export function record(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? /** @type {RecordValue} */ (value) : null;
@@ -52,8 +54,17 @@ export function bodyOf(args, op) {
     return typeof args?.body === "string" ? args.body : op === "note" ? "" : textOf(record(args?.body)?.raw);
 }
 
-/** @param {RecordValue | null} selection @param {unknown} address @returns {Field[]} */
-function operand(selection, address) {
+/** @param {string} op @param {RecordValue | null} args @returns {string} */
+function fieldsOf(op, args) {
+    if (GLYPH_OPS.has(op) || SCRIPT_OPS.has(op)) return "";
+    const rawBody = bodyOf(args, op);
+    const bodyArgs = rawBody ? argumentsOf(rawBody) : record(args?.body);
+    const keys = bodyArgs ? Object.keys(bodyArgs) : [];
+    return keys.length ? `{${keys.join(",")}}` : "";
+}
+
+/** @param {RecordValue | null} selection @param {unknown} address @param {string} [fieldsToken] @returns {Field[]} */
+function operand(selection, address, fieldsToken = "") {
     const path = textOf(record(selection?.target)?.raw) || textOf(address);
     const marks = record(selection?.lineMarker)?.marks;
     const pattern = textOf(record(selection?.matcher)?.raw);
@@ -62,6 +73,7 @@ function operand(selection, address) {
     if (path) fields.push(["path", `(${path})`]);
     if (Array.isArray(marks) && marks.length) fields.push(["scope", `<${marks.join(",")}>`]);
     if (pattern) fields.push(["pattern", pattern]);
+    if (fieldsToken) fields.push(["fields", fieldsToken]);
     return fields;
 }
 
@@ -121,7 +133,7 @@ export default function operationSummary(summary, name, args, receipt, facts, er
     const paired = record(args?.source) || record(args?.destination);
     const operands = paired
         ? [operand(record(args?.source), null), operand(record(args?.destination), null)]
-        : [operand(args, receipt?.path ?? facts?.address)];
+        : [operand(args, receipt?.path ?? facts?.address, fieldsOf(op, args))];
     /** @type {Field[]} */
     const result = [];
     if (count !== null) result.push(["count", `{${count}}`]);
