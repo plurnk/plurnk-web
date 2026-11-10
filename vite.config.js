@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import purgeCSS from "@fullhuman/postcss-purgecss";
 import { authorizationDocumentSpecimens } from "@plurnk/plurnk-auth";
-import indexDocument from "./ai.plurnk/index-document.js";
+import indexDocument from "./src/index-document.js";
 
 /** @param {import("vite").ViteDevServer | import("vite").PreviewServer} server */
 function configureDirectories(server) {
@@ -31,7 +31,7 @@ export default defineConfig(({ command }) => ({
             plugins: command === "build" ? [purgeCSS({
                 content: [
                     fileURLToPath(new URL("./web/**/*.{html,js}", import.meta.url)),
-                    fileURLToPath(new URL("./ai.plurnk/documents.js", import.meta.url)),
+                    fileURLToPath(new URL("./src/documents.js", import.meta.url)),
                     // {§web-math-content} The dynamic renderer, not application markup, owns these selectors.
                     fileURLToPath(import.meta.resolve("temml/dist/Temml-Local.css")),
                     ...authorizationDocumentSpecimens().map((raw) => ({ raw, extension: "html" })),
@@ -48,7 +48,7 @@ export default defineConfig(({ command }) => ({
         target: "esnext",
         license: { fileName: "vendor/DEPENDENCIES-LICENSE.txt" },
         modulePreload: { polyfill: false },
-        outDir: fileURLToPath(new URL("./ai.plurnk/dist/", import.meta.url)),
+        outDir: fileURLToPath(new URL("./dist/", import.meta.url)),
         emptyOutDir: true,
     },
 }));

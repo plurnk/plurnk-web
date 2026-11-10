@@ -1,4 +1,4 @@
-import { directoryPath } from "../ai.plurnk/directory-addresses.js";
+import { directoryPath } from "../src/directory-addresses.js";
 
 /** @typedef {Omit<import("@plurnk/plurnk-acp/client").AcpDescendantState, "gates"> & {gates: import("@plurnk/plurnk-acp/client").AcpDescendantState["gates"] | number}} DescendantItem */
 /** @typedef {{session: DescendantItem, children: DescendantNode[]}} DescendantNode */

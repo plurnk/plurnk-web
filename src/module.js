@@ -66,7 +66,7 @@ export default function createModule() {
             if (!credentials) return;
             // {§web-authorization-style} The same built stylesheet serves both document owners.
             /** @type {import("./static-assets.js").AssetEntry[]} */
-            const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
+            const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
             const root = inventory.find(([path]) => path === "/index.html");
             if (!root) throw new Error("The web asset inventory must include index.html.");
             const stylesheetPath = Documents.stylesheet((await readAsset(root[1], root[2], root[3])).body.toString("utf8"));
@@ -82,7 +82,7 @@ export default function createModule() {
             }
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */
-            const inventory = JSON.parse(await readFile(new URL("assets.json", import.meta.url), "utf8"));
+            const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
             const resources = new Map(await Promise.all(inventory.map(async ([pathname, file, mediaType, encoded]) => /** @type {const} */ ([
                 pathname,
                 await readAsset(file, mediaType, encoded),

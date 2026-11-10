@@ -1,5 +1,5 @@
 import { $, $$, on, the } from "on_the_money";
-import { directoryPath } from "../ai.plurnk/directory-addresses.js";
+import { directoryPath } from "../src/directory-addresses.js";
 import accessHeaders from "./access-headers.js";
 import card from "./card.js";
 import markdown from "./markdown.js";

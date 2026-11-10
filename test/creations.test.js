@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import Creations from "../ai.plurnk/creations.js";
-import { RequestError } from "../ai.plurnk/http.js";
+import Creations from "../src/creations.js";
+import { RequestError } from "../src/http.js";
 
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 

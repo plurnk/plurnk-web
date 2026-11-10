@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 // {§web-authorization-style} Verify the authority's actual document with the packed application CSS.
 export default async function verifyAuthorizationPage(page, response, { warning = false, password = false } = {}) {
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const [[stylesheet]] = inventory.filter(([, , type]) => type === "text/css");
     assert.deepEqual(await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href"))), [stylesheet]);
     assert.equal(await page.locator("style, script, [style], [class]").count(), 0);

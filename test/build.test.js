@@ -7,13 +7,13 @@ import { test } from "node:test";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { build } from "vite";
 import { chromium } from "playwright";
-import Documents from "../ai.plurnk/documents.js";
+import Documents from "../src/documents.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
 test("{§web-page-shell} compact header stays on one row and long breadcrumbs scroll without JavaScript", async (t) => {
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
-        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), contentType }])));
+        [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
     const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
     const browser = await chromium.launch();
     t.after(() => browser.close());
@@ -100,9 +100,9 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
 });
 
 test("{§web-page-shell} disconnection is a named header glyph before Account, not a second connection state", async (t) => {
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
-        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), contentType }])));
+        [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
     const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
     const browser = await chromium.launch();
     t.after(() => browser.close());
@@ -147,23 +147,23 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
 });
 
 test("{§web-build} production HTML references compiled assets, not development modules", async () => {
-    const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
+    const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
     assert.match(html, /src="\/assets\/[^"]+\.js"/u);
     assert.match(html, /href="\/assets\/[^"]+\.css"/u);
     assert.doesNotMatch(html, /@vite\/client|\/app\.js|\/styles\/app-/u);
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     for (const asset of [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/gu)].map((match) => match[1])) {
         assert.ok(inventory.some(([path]) => path === asset), `inventory includes ${asset}`);
     }
     assert.ok(inventory.some(([path, , type]) => path === "/index.html" && type === "text/html"));
     assert.ok(inventory.some(([path]) => path === "/manifest.webmanifest"));
-    const license = await readFile(new URL("../ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt", import.meta.url), "utf8");
+    const license = await readFile(new URL("../dist/vendor/DEPENDENCIES-LICENSE.txt", import.meta.url), "utf8");
     assert.match(license, /@agentclientprotocol\/sdk/u);
     assert.match(license, /temml - 0\.14\.0 \(MIT\)/u);
     assert.doesNotMatch(license, /beautiful-mermaid|ondine|piscina|elkjs/u, "diagram compilation is absent from browser dependencies");
     assert.match(license, /marked-footnote - 1\.4\.0 \(MIT\)/u);
     assert.match(license, /MIT/u);
-    const footnoteLicense = await readFile(new URL("../ai.plurnk/dist/vendor/MARKED-FOOTNOTE-LICENSE.txt", import.meta.url), "utf8");
+    const footnoteLicense = await readFile(new URL("../dist/vendor/MARKED-FOOTNOTE-LICENSE.txt", import.meta.url), "utf8");
     assert.match(footnoteLicense, /Copyright \(c\) 2023-2024 Stilearning/u);
     assert.match(footnoteLicense, /The above copyright notice and this permission notice shall be included/u);
     assert.ok(inventory.some(([path]) => path === "/vendor/MARKED-FOOTNOTE-LICENSE.txt"));
@@ -172,7 +172,7 @@ test("{§web-build} production HTML references compiled assets, not development 
     const retained = (name) => `/vendor/${name.replace(/^@/u, "").replaceAll("/", "-").toUpperCase()}-LICENSE.txt`;
     assert.deepEqual(bare.filter((name) => !inventory.some(([path]) => path === retained(name))), [], "a bundled package without its license text");
     for (const name of bare) {
-        const text = await readFile(new URL(`../ai.plurnk/dist${retained(name)}`, import.meta.url), "utf8");
+        const text = await readFile(new URL(`../dist${retained(name)}`, import.meta.url), "utf8");
         assert.ok(text.startsWith(`${name} `) && /Permission|Licensed under|Redistribution/u.test(text), `${retained(name)} holds ${name}'s license`);
     }
     assert.ok(inventory.some(([path, , type]) => /\/Temml-[^/]+\.woff2$/u.test(path) && type === "font/woff2"));
@@ -212,14 +212,14 @@ test("{§web-build} production prunes unused CSS without dropping native state s
 });
 
 test("{§web-asset-encoding} the build records only useful, lossless static representations", async () => {
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     for (const [path, file, mediaType, encoded] of inventory) {
         assert.doesNotMatch(path, /\.(br|gz)$/u, "encoded files have no separate public address");
-        const original = await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url));
+        const original = await readFile(new URL(`../dist/${file}`, import.meta.url));
         if (mediaType === "text/html") assert.deepEqual(encoded, {});
         for (const [coding, representation] of Object.entries(encoded)) {
             assert.ok(["br", "gzip"].includes(coding));
-            const bytes = await readFile(new URL(`../ai.plurnk/dist/${representation}`, import.meta.url));
+            const bytes = await readFile(new URL(`../dist/${representation}`, import.meta.url));
             assert.ok(bytes.byteLength < original.byteLength, `${path} ${coding}`);
             assert.deepEqual(coding === "br" ? brotliDecompressSync(bytes) : gunzipSync(bytes), original);
         }
@@ -228,23 +228,23 @@ test("{§web-asset-encoding} the build records only useful, lossless static repr
 });
 
 test("{§web-language} source-only build declares and packages no dictionary", async () => {
-    const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
+    const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
     assert.doesNotMatch(html, /<meta\b[^>]*name="i18n"/u);
     assert.match(html, /<title data-text="page-title">Plurnk<\/title>/u);
     assert.match(html, /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     assert.ok(!inventory.some(([path]) => path.startsWith("/locales/")));
 });
 
 test("{§web-installation} the modern app declares scalable icons without raster fallbacks", async () => {
-    const manifest = JSON.parse(await readFile(new URL("../ai.plurnk/dist/manifest.webmanifest", import.meta.url), "utf8"));
+    const manifest = JSON.parse(await readFile(new URL("../dist/manifest.webmanifest", import.meta.url), "utf8"));
     assert.deepEqual(manifest.icons.map(({ src, type, sizes, purpose }) => ({ src, type, sizes, purpose })), [
         { src: "/icons/plurnk.svg", type: "image/svg+xml", sizes: "any", purpose: "any" },
         { src: "/icons/plurnk-maskable.svg", type: "image/svg+xml", sizes: "any", purpose: "maskable" },
     ]);
-    const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
+    const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
     assert.doesNotMatch(html, /apple-mobile-web-app|mobile-web-app-capable|apple-touch-icon|\.png/u);
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     assert.ok(!inventory.some(([path]) => path.endsWith(".png")), "no unused raster icon is packed");
 });
 

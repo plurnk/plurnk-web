@@ -21,7 +21,7 @@ const types = {
     ".txt": "text/plain",
     ".woff2": "font/woff2",
 };
-const output = fileURLToPath(new URL("../ai.plurnk/dist/", import.meta.url));
+const output = fileURLToPath(new URL("../dist/", import.meta.url));
 const files = (await readdir(output, { recursive: true, withFileTypes: true }))
     .filter((entry) => entry.isFile())
     .map((entry) => {
@@ -44,5 +44,5 @@ const inventory = await Promise.all(files.map(async ([path, file, type]) => {
     }));
     return [path, file, type, Object.fromEntries(encoded.filter(Boolean))];
 }));
-await writeFile(new URL("../ai.plurnk/assets.json", import.meta.url), JSON.stringify(inventory, null, 2) + "\n");
-console.error(`Built ${inventory.length} production assets in ai.plurnk/dist/.`);
+await writeFile(new URL("../dist/assets.json", import.meta.url), JSON.stringify(inventory, null, 2) + "\n");
+console.error(`Built ${inventory.length} production assets in dist/.`);

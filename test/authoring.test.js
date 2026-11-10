@@ -59,7 +59,7 @@ test("{§web-authoring} browser lint admits native forms and content outlets whi
 
 test("{§web-authoring} all owned JavaScript is checked without imposing browser rules on Node", async () => {
     const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
-    for (const filePath of ["ai.plurnk/specimen.js", "web/specimen.js", "scripts/specimen.mjs", "test/specimen.js", "vite.config.js"]) {
+    for (const filePath of ["src/specimen.js", "web/specimen.js", "scripts/specimen.mjs", "test/specimen.js", "vite.config.js"]) {
         for (const [code, rule] of [
             ['var value = 1; console.log(value);', "no-var"],
             ['let value = 1; console.log(value);', "prefer-const"],
@@ -71,7 +71,7 @@ test("{§web-authoring} all owned JavaScript is checked without imposing browser
         }
     }
     for (const [filePath, code] of [
-        ["ai.plurnk/specimen.js", 'import { readFile } from "node:fs/promises"; await readFile(new URL("assets.json", import.meta.url));'],
+        ["src/specimen.js", 'import { readFile } from "node:fs/promises"; await readFile(new URL("assets.json", import.meta.url));'],
         ["web/specimen.js", 'console.log(document.documentElement.lang);'],
         ["test/specimen.js", 'const browser = { evaluate: (fn) => fn() }; await browser.evaluate(() => document.title); console.log(process.version);'],
     ]) {
@@ -84,7 +84,7 @@ test("{§web-authoring} all owned JavaScript is checked without imposing browser
 
 test("{§web-authoring} runtime timers need an owner, not a blanket ban on numbers", async () => {
     const lint = new ESLint({ cwd: fileURLToPath(new URL("../", import.meta.url)) });
-    for (const filePath of ["ai.plurnk/specimen.js", "web/specimen.js"]) {
+    for (const filePath of ["src/specimen.js", "web/specimen.js"]) {
         const [timer] = await lint.lintText('setInterval(() => console.log("tick"), 1000);', { filePath });
         assert.ok(timer.messages.some(({ ruleId }) => ruleId === "no-restricted-syntax"), filePath);
         const [named] = await lint.lintText('const DISPLAY_SECOND_MS = 1000; setInterval(() => console.log("tick"), DISPLAY_SECOND_MS);', { filePath });

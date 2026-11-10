@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { chromium } from "playwright";
-import { directoryPath } from "../ai.plurnk/directory-addresses.js";
+import { directoryPath } from "../src/directory-addresses.js";
 import SessionAgent from "../web/session-agent.js";
 import startModel, { contentAttack, diagramContent, footnoteAnswer } from "./model-fixture.js";
 import disconnectProxy from "./disconnect-proxy.js";

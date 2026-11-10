@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Session from "../ai.plurnk/session.js";
+import Session from "../src/session.js";
 
 // {§web-session} The authority decides identity and expiry; a cookie is never a bearer.
 test("{§web-session} only this client's live scoped session admits a document", () => {

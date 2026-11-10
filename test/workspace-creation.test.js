@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { Problems } from "@plurnk/plurnk-contracts";
-import createModule from "../ai.plurnk/module.js";
+import createModule from "../src/module.js";
 
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 

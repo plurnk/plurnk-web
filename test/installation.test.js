@@ -29,7 +29,7 @@ import { closeSharedBrowsers } from "./engines.js";
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
 
-test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000 }, async (t) => {
+test("{§web-package} packed module on the candidate daemon", { timeout: 600_000 }, async (t) => {
     const packages = await candidatePackages();
     const directory = await mkdtemp(join(tmpdir(), "plurnk-web-install-"));
     /** @type {Set<{ stop(): Promise<unknown> }>} */
@@ -49,20 +49,21 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     const archives = Object.values(JSON.parse(stdout));
     assert.equal(archives.length, 1);
     const [archive] = archives;
-    assert.ok(archive.files.some(({ path }) => /^ai\.plurnk\/dist\/assets\/.+\.js$/u.test(path)));
-    assert.ok(archive.files.some(({ path }) => /^ai\.plurnk\/dist\/assets\/.+\.css$/u.test(path)));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/OTM-LICENSE.txt"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/PICO-LICENSE.txt"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/dist/vendor/DEPENDENCIES-LICENSE.txt"));
-    assert.ok(archive.files.some(({ path }) => path === "ai.plurnk/assets.json"));
-    for (const name of ["module.js", "index-document.js", "directory-addresses.js", "creations.js", "documents.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js", ".env.defaults", "assets.json"]) {
-        assert.ok(archive.files.some(({ path }) => path === `ai.plurnk/${name}`), `expected ai.plurnk/${name} in packed package`);
+    assert.ok(archive.files.some(({ path }) => /^dist\/assets\/.+\.js$/u.test(path)));
+    assert.ok(archive.files.some(({ path }) => /^dist\/assets\/.+\.css$/u.test(path)));
+    assert.ok(archive.files.some(({ path }) => path === "dist/vendor/OTM-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => path === "dist/vendor/PICO-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => path === "dist/vendor/DEPENDENCIES-LICENSE.txt"));
+    assert.ok(archive.files.some(({ path }) => path === "dist/assets.json"));
+    assert.ok(archive.files.some(({ path }) => path === ".env.defaults"));
+    for (const name of ["module.js", "index-document.js", "directory-addresses.js", "creations.js", "documents.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
+        assert.ok(archive.files.some(({ path }) => path === `src/${name}`), `expected src/${name} in packed package`);
     }
     for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable.svg", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt"]) {
-        assert.ok(archive.files.some((file) => file.path === `ai.plurnk/dist/${path}`), `expected ai.plurnk/dist/${path} in packed package`);
+        assert.ok(archive.files.some((file) => file.path === `dist/${path}`), `expected dist/${path} in packed package`);
     }
     assert.ok(!archive.files.some(({ path }) => path.endsWith(".png")), "no unused raster fallback is packed");
-    assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|ai\.plurnk\/public)\/|vite\.config|\.map$/u.test(path)));
+    assert.ok(!archive.files.some(({ path }) => /^(test|scripts|node_modules|web|public)\/|vite\.config|\.map$/u.test(path)));
     await writeFile(join(consumer, "package.json"), JSON.stringify({
         name: "web-installation-test",
         private: true,
@@ -79,14 +80,14 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     const require = createRequire(join(consumer, "package.json"));
     const { default: Launch } = await import(pathToFileURL(require.resolve("@plurnk/plurnk-service/launch")).href);
     const daemonBin = join(consumer, "node_modules", ".bin", "plurnk-service");
-    const plugin = join(consumer, "node_modules", "@plurnk", "plurnk-web");
+    const webPackage = join(consumer, "node_modules", "@plurnk", "plurnk-web");
     await t.test("{§web-route-settlement} the packed module settles admitted requests", async (t) => {
-        process.loadEnvFile(join(plugin, "ai.plurnk", ".env.defaults"));
-        const { default: createModule } = await import(pathToFileURL(join(plugin, "ai.plurnk", "module.js")).href);
+        process.loadEnvFile(join(webPackage, ".env.defaults"));
+        const { default: createModule } = await import(pathToFileURL(require.resolve("@plurnk/plurnk-web/module")).href);
         await verifyRouteSettlement(t, createModule);
     });
     await t.test("{§web-directory-addresses} the packed codec preserves exact names", async () => {
-        const { directoryPath, parseDirectory } = await import(pathToFileURL(join(plugin, "ai.plurnk", "directory-addresses.js")).href);
+        const { directoryPath, parseDirectory } = await import(pathToFileURL(join(webPackage, "src", "directory-addresses.js")).href);
         const directory = { kind: "session", workspace: "~/project @%/index.html", session: "user" };
         const path = directoryPath(directory);
         assert.equal(path, "/~/~/project%20%40%25/index.html@user/");
@@ -132,10 +133,10 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
         if (failures.length > 1) throw new AggregateError(failures, "Verification and daemon cleanup failed", { cause: failures[0] });
     };
 
-    await t.test("{§web-host} discovery, default floor and route precedence", async (discovery) => {
+    await t.test("{§web-host} composition, default floor and route precedence", async (discovery) => {
         await withDaemon({ PLURNK_AUTH: "0" }, async (base) => {
             await discovery.test("{§web-asset-encoding} packed assets negotiate exact compressed bytes", () =>
-                verifyStaticAssets(base, pathToFileURL(`${plugin}/ai.plurnk/`)));
+                verifyStaticAssets(base, pathToFileURL(`${webPackage}/`)));
             const page = await fetch(base);
             assert.equal(page.status, 200);
             assert.match(await page.text(), /<main\b[^>]*data-page="home"[^>]*data-auth="none"[^>]*><p data-i18n="no-sessions">No sessions\.<\/p><\/main>/u);
@@ -233,7 +234,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     });
 
     await t.test("{§web-assets} missing packaged bytes fail startup", async () => {
-        const asset = join(plugin, "ai.plurnk", "dist", "index.html");
+        const asset = join(webPackage, "dist", "index.html");
         const saved = join(directory, "index.html");
         await rename(asset, saved);
         try {
@@ -249,38 +250,35 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     });
 
     await t.test("{§web-host} duplicate root owner is rejected by the host", async () => {
-        const fixture = join(consumer, "node_modules", "@plurnk", "web-conflict-fixture");
-        await mkdir(fixture);
-        await writeFile(join(fixture, "package.json"), JSON.stringify({
-            name: "@plurnk/web-conflict-fixture", version: "1.0.0", type: "module",
-            exports: { "./module": "./module.js" }, plurnk: { kind: "module", module: "./module" },
-        }));
-        await writeFile(join(fixture, "module.js"), 'export default { mounts: ["/"], start(seam) { seam.registerHttpRoute("/", (_req, res) => res.end("conflict")); } };\n');
+        const conflictHook = join(directory, "conflict-hook.mjs");
+        await writeFile(conflictHook, `import { registerHooks } from "node:module";
+registerHooks({
+    load(url, context, nextLoad) {
+        if (!url.endsWith("/@plurnk/plurnk-acp/dist/daemon-module.js")) return nextLoad(url, context);
+        return {
+            format: "module",
+            shortCircuit: true,
+            source: \`import createAcp from \${JSON.stringify(\`\${url}?real\`)};
+export default () => {
+    const mod = createAcp();
+    return { ...mod, mounts: [...(mod.mounts ?? []), "/"] };
+};\`,
+        };
+    },
+});\n`);
         try {
-            await assert.rejects(start(), (/** @type {any} */ error) => {
+            await assert.rejects(start({ NODE_OPTIONS: `--import=${pathToFileURL(conflictHook).href}` }), (/** @type {any} */ error) => {
                 assert.equal(error.kind, "exited");
                 assert.match(error.stdout + error.stderr, /plurnk-web/u);
-                assert.match(error.stdout + error.stderr, /web-conflict-fixture/u);
+                assert.match(error.stdout + error.stderr, /plurnk-acp/u);
                 return true;
             });
         } finally {
-            await rm(fixture, { recursive: true });
+            await rm(conflictHook, { force: true });
         }
     });
 
-    await t.test("{§web-host} absent package leaves root unclaimed", async () => {
-        const saved = join(directory, "uninstalled-plugin");
-        await rename(plugin, saved);
-        try {
-            await withDaemon({}, async (base) => {
-                const res = await fetch(base);
-                assert.equal(res.status, 404);
-                assert.match((await res.json()).type, /route-not-found/u);
-            });
-        } finally {
-            await rename(saved, plugin);
-        }
-    });
-
-    assert.equal(JSON.parse(await readFile(join(plugin, "plugin.json"), "utf8")).name, "plurnk-web");
+    const installedManifest = JSON.parse(await readFile(join(webPackage, "package.json"), "utf8"));
+    assert.equal(installedManifest.name, "@plurnk/plurnk-web");
+    assert.equal(installedManifest.exports["./module"], "./src/module.js");
 });

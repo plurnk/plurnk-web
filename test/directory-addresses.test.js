@@ -6,11 +6,11 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createServer, preview } from "vite";
-import { directoryPath, parseDirectory } from "../ai.plurnk/directory-addresses.js";
-import createModule from "../ai.plurnk/module.js";
+import { directoryPath, parseDirectory } from "../src/directory-addresses.js";
+import createModule from "../src/module.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-/** @type {[import("../ai.plurnk/directory-addresses.js").Directory, string][]} */
+/** @type {[import("../src/directory-addresses.js").Directory, string][]} */
 const directories = [
     [{ kind: "daemon" }, "/~/"],
     ...[
@@ -41,7 +41,7 @@ const directories = [
         ["a/index.html/", "a/index.html/"],
         ["a\u0000\t\n\rb", "a%00%09%0A%0Db"],
         ['<a href="x">&</a>', "%3Ca%20href%3D%22x%22%3E%26%3C/a%3E"],
-    ].flatMap(([workspace, encoded]) => /** @type {[import("../ai.plurnk/directory-addresses.js").Directory, string][]} */ ([
+    ].flatMap(([workspace, encoded]) => /** @type {[import("../src/directory-addresses.js").Directory, string][]} */ ([
         [{ kind: "workspace", workspace }, `/~/${encoded}/`],
         [{ kind: "session", workspace, session: "user_1" }, `/~/${encoded}@user_1/`],
     ])),
@@ -95,7 +95,7 @@ test("{§web-directory-addresses} unrepresentable legacy names are not repaired 
 
 test("{§web-directory-addresses} native links round-trip through production, Vite dev and preview fixtures", { timeout: 90_000 }, async (t) => {
     const source = await readFile(new URL("../web/index.html", import.meta.url), "utf8");
-    const compiled = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
+    const compiled = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
     const browserCases = [
         directories[0],
         ...["~/ptl/project", "a%40b", "%2E%2E", "分析/🐹", "a/index.html/", '<a href="x">&</a>'].flatMap((name) =>

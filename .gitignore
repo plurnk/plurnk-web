@@ -1,6 +1,5 @@
 node_modules/
-ai.plurnk/dist/
-ai.plurnk/assets.json
+dist/
 web/public/vendor/*
 !web/public/vendor/CFWORKER-JSON-SCHEMA-LICENSE.txt
 !web/public/vendor/MARKED-FOOTNOTE-LICENSE.txt
