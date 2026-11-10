@@ -156,20 +156,6 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
     display: none;
 }
 
-/* {§web-session-activity} Empty observations and inspection outlets have no presentation. */
-#session-activity:not(:has(> ul > li)) {
-    display: none;
-}
-
-/* {§web-session-streams} Observed outcomes and local inspection state control native disclosures. */
-[data-stream-outcomes]:not(:has(ul > li)),
-[data-stream-problem-title=""] [data-stream-failure],
-[data-entry-output]:not([data-output-state="loading"]) [data-output-loading],
-[data-entry-output]:not([data-output-state="error"]) [data-output-failure],
-[data-entry-output][data-output-loaded="false"] [data-output-snapshot] {
-    display: none;
-}
-
 /* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
 [data-plurnk-type] [data-plurnk-field="heading"]::before,
 [data-operation-tally] [data-plurnk-field="heading"]::before,
@@ -204,15 +190,23 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 [data-operation-tally="reasoning"] { --plurnk-operation-glyph: "💭"; }
 [data-loop-plan] li::before { content: "☐ " / ""; }
 
-/* {§web-page-shell} Directory identity remains accessible without decorative glyphs. */
+/* {§web-page-shell} {§web-session-directory} Directory identity remains accessible without decorative glyphs. */
 [data-directory-entry="workspace"] > article > header::before {
     content: var(--directory-glyph) / "";
     margin-inline-end: 0.5ch;
 }
-[data-session-link]::before { content: "🐜" / ""; }
+[data-session-link]::before { content: var(--session-kind-glyph, "💬") / ""; }
+[data-session-kind="work"] { --session-kind-glyph: "🐜"; }
+[data-session-kind="fork"] { --session-kind-glyph: "🔱"; }
+[data-session-gates]::before { content: "🚦 " / ""; }
+[data-session-children]::before { content: "🐜 " / ""; }
 [data-session-workspace] [data-folder]::before { content: var(--directory-glyph) / ""; }
 [data-folder="true"] { --directory-glyph: "🗂️"; }
 [data-folder="false"] { --directory-glyph: "☁️"; }
+
+details[open]:has(> [data-session-reply]) > summary > [data-session-excerpt] {
+    display: none;
+}
 
 /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
 :is(#session-conversation, [data-session-reply]) [data-math-error]::after {
@@ -232,10 +226,5 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 }
 
 [data-history-boundary] [data-text="history-error"]:empty {
-    display: none;
-}
-
-/* {§web-session-streams} A supplied exit code is shown; none is supplied for a stream without a process. */
-[data-stream-outcomes] li:not([data-stream-exit-code]) [data-stream-exit-line] {
     display: none;
 }

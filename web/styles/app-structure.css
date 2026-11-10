@@ -145,13 +145,13 @@ table {
     min-inline-size: 0;
 }
 
-:is(#session-conversation, #session-diagnostics, #session-activity, #session-streams, #session-command-results) > ul,
+:is(#session-conversation, #session-diagnostics, #session-command-results) > ul,
 #session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) {
     padding: 0;
 }
 
 #session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) > li,
-:is(#session-conversation, #session-diagnostics, #session-activity, #session-streams, #session-command-results) > ul > li,
+:is(#session-conversation, #session-diagnostics, #session-command-results) > ul > li,
 [data-directory-entry] {
     list-style: none;
 }
@@ -284,7 +284,7 @@ table {
 }
 
 [data-directory-entry="session"] > article > header:only-child,
-:is(#session-diagnostics, #session-activity) > ul > li > article > header:only-child,
+#session-diagnostics > ul > li > article > header:only-child,
 #session-conversation [data-message-id] > article > header:only-child {
     margin-block-end: calc(var(--pico-block-spacing-vertical) * -1);
     border-block-end: 0;
@@ -301,6 +301,7 @@ table {
 
 #main :is(li > article, li) > details > summary > * {
     grid-column: 1;
+    min-inline-size: 0;
 }
 
 #main :is(li > article, li) > details > summary::after {
@@ -312,9 +313,40 @@ table {
     display: block;
 }
 
-/* {§web-session-directory} Native summaries contain phrasing content, arranged in two rows. */
-:is(header, summary) > :is([data-session-identity], [data-session-workspace]) {
+/* {§web-session-directory} Native summaries contain phrasing content, arranged in compact rows. */
+:is(header, summary) > :is([data-session-identity], [data-session-workspace], [data-session-excerpt]) {
     display: block;
+}
+
+[data-session-identity] > small,
+[data-session-workspace] > time {
+    margin-inline-start: 0.75ch;
+}
+
+[data-session-excerpt] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#overview-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--pico-spacing) * 0.5);
+    margin-block-end: var(--pico-spacing);
+}
+
+#overview-controls > input[type="search"] {
+    flex: 1 1 18ch;
+    min-inline-size: 0;
+    margin: 0;
+}
+
+#overview-controls > select {
+    flex: 0 0 auto;
+    inline-size: auto;
+    margin: 0;
 }
 
 /* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */
@@ -324,8 +356,6 @@ table {
 
 [data-session-reply] pre,
 #session-conversation pre,
-#session-streams pre,
-#session-activity pre,
 #session-command-results pre,
 #main [aria-label="Review requests"] pre,
 :is(#session-conversation, [data-session-reply]) [data-math],

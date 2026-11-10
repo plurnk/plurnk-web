@@ -14,8 +14,6 @@ import verifyStatus from "./status-browser.js";
 import verifyShell from "./shell-browser.js";
 import verifyBodies from "./body-browser.js";
 import verifyReasoning from "./reasoning-browser.js";
-import verifyStreams from "./streams-browser.js";
-import verifyActivity from "./activity-browser.js";
 import verifyCommands from "./commands-browser.js";
 import verifySemanticContent from "./semantic-browser.js";
 import verifyHistory from "./history-browser.js";
@@ -823,8 +821,6 @@ test("{§web-content-reflow} literal content wraps without changing text or expl
 test("{§web-result-bodies} visible content loads securely without an inspection UI", { timeout: 60_000 }, verifyBodies);
 test("{§web-session-reasoning} reasoning stays outside history until explicitly read", { timeout: 60_000 }, verifyReasoning);
 test("{§web-session-history} opaque read-only paging through the official SDK", { timeout: 90_000 }, verifyHistory);
-test("{§web-session-streams} observed executor outcomes and explicit output inspection", { timeout: 60_000 }, verifyStreams);
-test("{§web-session-activity} non-conversation observations retain identity and explicit inspection", { timeout: 60_000 }, verifyActivity);
 test("{§web-session-commands} isolated command delivery and literal results", { timeout: 60_000 }, verifyCommands);
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);

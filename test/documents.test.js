@@ -133,22 +133,25 @@ test("{§web-session-directory} model lineage is complete, collapsed and indepen
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], listSessions: async () => sessions };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-session-name="${name}" data-bind="href:session-path">${name}</a>`;
-    const entry = (id, name, parent = null, children = "") => {
+    const entry = (id, name, parent = null, children = "", childCount = 0) => {
         const lineage = parent === null ? "" : `<span data-session-parent>${parent === "_plurnk" ? "<span>_plurnk</span>" : link(parent)} &gt; </span>`;
+        const childrenBadge = childCount > 0
+            ? `<small data-session-children="${childCount}" aria-label="${childCount} ${childCount === 1 ? "child" : "children"}" title="${childCount} ${childCount === 1 ? "child" : "children"}">${childCount}</small>` : "";
         const identity = `<span data-session-identity><a data-session-link href="/~/work@${name}/" aria-label="${name}" title="Open session ${name}"></a> `
             + '<span data-lifecycle="completed" role="img" aria-label="completed" title="completed"></span> '
-            + `${lineage}<span>${name}</span></span>`
+            + `${lineage}<span>${name}</span>${childrenBadge}</span>`
             + '<span data-session-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a href="/~/work/" data-text="name">work</a></span>';
         const content = children ? `<details><summary>${identity}</summary><ul>${children}</ul></details>` : `<header>${identity}</header>`;
-        return `<li data-directory-entry="session" data-session-key="7:${id}"><article aria-label="Session">${content}</article></li>`;
+        const kind = parent === null ? "root" : "work";
+        return `<li data-directory-entry="session" data-session-key="7:${id}" data-session-kind="${kind}"><article aria-label="Session">${content}</article></li>`;
     };
     assert.ok(html.includes([
         "<ul>",
         entry(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
-        entry(4, "user", null, entry(6, "review", "user", entry(7, "evidence", "review")) + entry(5, "research", "user")),
+        entry(4, "user", null, entry(6, "review", "user", entry(7, "evidence", "review"), 1) + entry(5, "research", "user"), 2),
         "</ul>",
         '<details><summary data-i18n="background-work">Background work</summary><ul>',
-        entry(8, "incoming", "_plurnk", entry(10, "incoming-child", "incoming")),
+        entry(8, "incoming", "_plurnk", entry(10, "incoming-child", "incoming"), 1),
         entry(9, "other", "_plurnk"),
         "</ul></details>",
     ].join("")), html);
@@ -187,14 +190,13 @@ test("{§web-session-directory} session pages keep breadcrumb and parent navigat
     assert.equal(reads, 4, "one authoritative directory read per document; no second client-side directory");
 });
 
-test("{§web-session-streams} the session page has observed outcomes, not an open-stream inventory", async () => {
+test("{§web-session-diagnostics} the session page renders an empty diagnostics list without a static heading", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     const html = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
         listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => [session(9, "user")],
     }, false)).toString();
-    assert.doesNotMatch(html, /data-open-streams|data-no-streams|stream-count|Open streams/u);
-    assert.match(html, /<details[^>]* data-stream-outcomes>/u);
+    assert.match(html, /<section id="session-diagnostics" aria-label="Diagnostics"><ul><\/ul><\/section>/u);
     assert.match(html, /id="session-conversation"/u);
 });
 
@@ -448,6 +450,31 @@ test("{§web-session-directory} {§web-directory-documents} home and workspace o
     assert.match(homeHtml, /<header><span data-session-identity><a data-session-link href="\/~\/alpha@no-reply-first\/"/u, "leaf without reply uses header without empty disclosure");
     const homeFolderMarker = homeHtml.match(/href="\/~\/beta@newer-reply\/"[\s\S]*?<span data-session-workspace><span data-folder="([^"]+)"/u);
     assert.equal(homeFolderMarker?.[1], "true", "home overview preserves projectRoot folder presence");
+
+    const boundedHome = (await document.home(true, {
+        readSessionOverview: async ({ limit, excerptChars }) => {
+            assert.equal(limit, 128);
+            assert.equal(excerptChars, 128);
+            return {
+                workspaces: [workspaces[0]],
+                sessions: [{
+                    ...session(3, "older-reply"),
+                    workspaceId: 7,
+                    kind: /** @type {const} */ ("fork"),
+                    gates: 2,
+                    title: "Investigation #1",
+                    reply: { id: 40, coordinate: "1/2/3/send:40", completion: /** @type {const} */ (200), at: Date.UTC(2026, 10, 10, 2, 15), excerpt: "Resolved root cause", continued: true },
+                }],
+                omitted: 12,
+            };
+        },
+    })).toString();
+    assert.ok(boundedHome.includes('data-session-kind="fork"'));
+    assert.ok(boundedHome.includes('<small data-session-title>Investigation #1</small>'));
+    assert.ok(boundedHome.includes('<small data-session-gates="2" aria-label="2 awaiting input" title="2 awaiting input">2</small>'));
+    assert.ok(boundedHome.includes('<time data-session-time datetime="2026-11-10T02:15:00.000Z" title="2026-11-10T02:15:00.000Z">2026-11-10 02:15 UTC</time>'));
+    assert.ok(boundedHome.includes('<small data-session-excerpt>Resolved root cause…</small>'));
+    assert.ok(boundedHome.includes('<p data-overview-omitted><small><span data-text="overview-omitted">12</span> <span data-i18n="older-sessions-omitted">older sessions omitted — browse all in</span> <a href="/~/" data-i18n="workspaces">Workspaces</a>.</small></p>'));
 
     const wsHtml = (await document.read({ kind: "workspace", workspace: "alpha" }, port, false)).toString();
     assert.match(wsHtml, /<main id="main" data-page="workspace" data-workspace-id="7" data-auth="none" data-connection="initial">/u);
