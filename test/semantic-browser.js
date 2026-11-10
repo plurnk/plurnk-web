@@ -66,6 +66,19 @@ export default async function verifySemanticContent(t) {
                     assert.match(await glyph(row("glyph-mcp")), /⚙/u);
                     assert.deepEqual(await page.evaluate(() => window.source), messages, "projection never rewrites SDK authority");
 
+                    const gitea = call("gitea-read", "gitea", {
+                        target: { raw: "issue_read" },
+                        body: '{"repo":"plurnk-web","username":"plurnk","issue_number":118}',
+                        aside: "aside",
+                    });
+                    await present([gitea, result("gitea-read", { status: 200 })]);
+                    await list.locator("[data-operations] > details > summary").click();
+                    assert.equal(await field(row("gitea-read"), "runtime").textContent(), "gitea");
+                    assert.equal(await field(row("gitea-read"), "aside").textContent(), "aside");
+                    assert.equal(await field(row("gitea-read"), "path").textContent(), "(issue_read)");
+                    assert.equal(await field(row("gitea-read"), "fields").textContent(), "{repo,username,issue_number}");
+                    assert.equal(await row("gitea-read").locator("[data-plurnk-operands]").innerText(), "(issue_read) {repo,username,issue_number}");
+
                     const read = call("read", "read", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
                     /** @type {any} */
                     const readResult = result("read", { status: 200, lineOrdinals: [1, 8], range: { unit: "line", total: 50, requested: [1, -1], returned: [1, 8] } });
