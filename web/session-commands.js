@@ -1,10 +1,22 @@
 import { $, $$, the } from "on_the_money";
-import { Validator } from "@plurnk/plurnk-contracts";
+import { isRecord, parseFamilyCommand, Validator } from "@plurnk/plurnk-contracts";
 import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
 import describeFailure from "./failure.js";
 
 /** {§web-session-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
-const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop"]);
+const familyCommands = new Set(["mcp", "skills", "schedule", "personas", "env"]);
+const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop", ...familyCommands]);
+const helpCommands = new Set([...commands, "learn"]);
+
+const LEARN_PROMPT = "Review this session's work and author or update a reusable workspace skill (`SKILL.md` under `.agents/skills/<name>/SKILL.md`), reading `skill://plurnk/recipes.md` for conventions if needed, then verify it via `plurnk.skills`.";
+
+/** @param {string} text */
+export function expandPromptCommand(text) {
+    const match = /^\/learn(?:\s+([\s\S]*))?$/u.exec(text.trim());
+    if (!match) return text;
+    const focus = match[1]?.trim() ?? "";
+    return focus ? `${LEARN_PROMPT}\n\nFocus: ${focus}` : LEARN_PROMPT;
+}
 
 /**
  * @param {string} text
@@ -15,6 +27,7 @@ export function isCommand(text, availableCommands = []) {
     if (!trimmed.startsWith("/")) return false;
     const match = /^\/(\S*)/u.exec(trimmed);
     const name = match?.[1] ?? "";
+    if (name === "learn") return false;
     if (!name || commands.has(name)) return true;
     return !availableCommands.some((entry) => entry?.name === name);
 }
@@ -36,6 +49,73 @@ export function parseCommand(text) {
         catch (cause) { throw new Error("Capability policy must be valid JSON.", { cause }); }
     }
     return { name, rest, args, policy };
+}
+
+/**
+ * @param {string} family
+ * @param {import("@plurnk/plurnk-contracts").ParsedFamilyCommand} parsed
+ * @param {unknown} res
+ * @returns {{ message: string, literal?: string }}
+ */
+function formatFamilyResult(family, parsed, res) {
+    if (isRecord(res)) {
+        if (parsed.actionName === "workspace.mcp.oauth.begin" || parsed.actionName === "workspace.mcp.oauth.complete") {
+            const alias = typeof res.alias === "string" ? res.alias
+                : typeof parsed.params.alias === "string" ? parsed.params.alias : "";
+            if (isRecord(res.authorization) && typeof res.authorization.url === "string") {
+                return { message: `${alias}: authorization required.`, literal: res.authorization.url };
+            }
+            if (res.status === 202) return { message: `${alias}: Sign-in accepted; tools awaiting activation.` };
+            if (res.status === 200) return { message: `${alias}  active` };
+        }
+        if (isRecord(res.completion) && Array.isArray(res.completion.values)) {
+            const values = res.completion.values.filter((v) => typeof v === "string");
+            return values.length === 0 ? { message: `${family} complete: none` } : { message: "", literal: values.join("\n") };
+        }
+        if (parsed.actionName === "workspace.mcp.skills") {
+            if (isRecord(res.skill) && typeof res.skill.name === "string") {
+                return { message: `${res.skill.name}  verified` };
+            }
+            if (Array.isArray(res.skills)) {
+                if (res.skills.length === 0) return { message: "mcp skills: none" };
+                const lines = res.skills.map((item) => {
+                    if (!isRecord(item)) return String(item);
+                    const name = typeof item.name === "string" ? item.name : "";
+                    const summary = typeof item.description === "string" && item.description.length > 0 ? `  ${item.description}` : "";
+                    return `${name}${summary}`;
+                });
+                return { message: "", literal: lines.join("\n") };
+            }
+        }
+        if (Array.isArray(res.candidates)) {
+            if (res.candidates.length === 0) return { message: `${family} discover: none` };
+            const lines = res.candidates.map((item) => {
+                if (!isRecord(item)) return String(item);
+                const alias = typeof item.alias === "string" && item.alias.length > 0 ? item.alias : "";
+                const summary = typeof item.summary === "string" && item.summary.length > 0 ? item.summary : "";
+                return alias && summary ? `${alias}  ${summary}` : alias || summary;
+            });
+            return { message: "", literal: lines.join("\n") };
+        }
+        if (isRecord(res.definition) && typeof res.definition.alias === "string") {
+            const state = typeof res.definition.state === "string" ? res.definition.state : "active";
+            return { message: `${res.definition.alias}  ${state}` };
+        }
+        const definitions = Array.isArray(res.definitions) ? res.definitions
+            : Array.isArray(res.items) ? res.items : null;
+        if (definitions !== null) {
+            if (definitions.length === 0) return { message: `${family}: none` };
+            const lines = definitions.map((item) => {
+                if (!isRecord(item)) return String(item);
+                const name = typeof item.alias === "string" ? item.alias
+                    : typeof item.name === "string" ? item.name : "";
+                const state = typeof item.state === "string" ? item.state : "active";
+                return `${name}  ${state}`;
+            });
+            return { message: "", literal: lines.join("\n") };
+        }
+    }
+    return { message: `Executed /${family}.` };
 }
 
 /** @typedef {import("./session-models.js").Action} Action */
@@ -66,7 +146,7 @@ export default function sessionCommands(controls, actions) {
             let message = "";
             if (name === "help") {
                 const selected = rest.replace(/^\//u, "");
-                if (selected && !commands.has(selected)) throw new Error(`Unknown command ${rest}. Use /help.`);
+                if (selected && !helpCommands.has(selected)) throw new Error(`Unknown command ${rest}. Use /help.`);
                 const help = $.clone(body, "#command-help");
                 for (const item of $$(help, "[data-command-name]")) {
                     if (selected && the(item, "command-name") !== selected) item.remove();
@@ -75,6 +155,31 @@ export default function sessionCommands(controls, actions) {
                 message = `Approvals: ${await actions.toggleYolo() ? "Automatic" : "Manual"}.`;
             } else if (name === "stop") {
                 message = await actions.stop();
+            } else if (familyCommands.has(name)) {
+                const parsed = parseFamilyCommand(name, args);
+                let params = parsed.params;
+                if (parsed.actionName === "workspace.mcp.oauth.begin") {
+                    const alias = typeof params.alias === "string" ? params.alias : "";
+                    const listed = await call("workspace.mcp.list", {}).catch(() => null);
+                    if (isRecord(listed)) {
+                        const defs = Array.isArray(listed.definitions) ? listed.definitions
+                            : Array.isArray(listed.items) ? listed.items : [];
+                        const entry = defs.find((d) => isRecord(d) && d.alias === alias);
+                        const def = isRecord(entry) && isRecord(entry.definition) ? entry.definition : null;
+                        const auth = def?.type === "streamable-http" && isRecord(def.authorization) ? def.authorization : null;
+                        if (auth?.type === "oauth" && typeof auth.redirectUrl === "string" && auth.redirectUrl.length > 0) {
+                            params = { ...params, redirectUrl: auth.redirectUrl };
+                        }
+                    }
+                }
+                const res = await call(parsed.actionName, params);
+                signal.throwIfAborted();
+                const formatted = formatFamilyResult(name, parsed, res);
+                message = formatted.message;
+                if (formatted.literal) {
+                    const literal = $.clone(body, "#conversation-literal");
+                    literal.textContent = formatted.literal;
+                }
             } else {
                 if (name === "models") {
                     const { aliases: matches, catalog } = await listModels(call, rest);

@@ -124,7 +124,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
         const indicator = page.getByRole("img", { name: "Disconnected", exact: true, includeHidden: true });
         assert.equal(await indicator.count(), 1);
         assert.equal(await indicator.getAttribute("title"), "Disconnected");
-        assert.match(await indicator.evaluate((element) => getComputedStyle(element, "::before").content), /🔌/u);
+        assert.equal(await indicator.locator("svg").count(), 1);
         for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
             await page.emulateMedia({ colorScheme });
             for (const state of ["initial", "connecting", "connected", "interrupted", "disconnected", "signed-out", "connected"]) {
@@ -209,6 +209,7 @@ test("{§web-build} production prunes unused CSS without dropping native state s
     assert.match(css, /prefers-reduced-motion/u);
     assert.ok(css.includes("focus-visible"), "native keyboard-focus selectors survive production pruning");
     assert.match(css, /details\[open\]/u, "native disclosure state survives production pruning");
+    assert.match(css, /#session-conversation :where\(details\s*>\s*ul[^)]*\)\s*>\s*li[\s\S]*?list-style:\s*none/u, "conversation loop and operation list resets survive production pruning");
 });
 
 test("{§web-asset-encoding} the build records only useful, lossless static representations", async () => {

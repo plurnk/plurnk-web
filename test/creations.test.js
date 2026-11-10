@@ -65,15 +65,21 @@ test("{§web-workspace-creation} a settled failure is retained under its token, 
 });
 
 test("{§web-workspace-creation} envelope violations fail visibly instead of adapting the creation", async () => {
-    for (const [returned, message] of /** @type {const} */ ([
+    for (const [returned, options, message] of /** @type {const} */ ([
         [{ workspaceId: 1, workspaceName: "foldered", projectRoot: "/srv/project", projectLabel: null },
-            /The daemon created a workspace with a project folder from a folderless request\./u],
+            undefined, /The daemon created a workspace with a project folder from a folderless request\./u],
+        [{ workspaceId: 1, workspaceName: "folderless", projectRoot: null, projectLabel: null },
+            { folderRequested: true }, /The daemon created a folderless workspace when a project folder was requested\./u],
         [{ workspaceId: 1, workspaceName: "../legacy", projectRoot: null, projectLabel: null },
-            /The daemon returned a workspace name without a directory address\./u],
+            undefined, /The daemon returned a workspace name without a directory address\./u],
     ])) {
         const creations = new Creations({ ttl: 600, tokens: 128 });
-        await assert.rejects(creations.submit(randomUUID(), async () => returned), message);
+        await assert.rejects(creations.submit(randomUUID(), async () => returned, options), message);
     }
+    const foldered = new Creations({ ttl: 600, tokens: 128 });
+    assert.equal(await foldered.submit(randomUUID(), async () => ({
+        workspaceId: 2, workspaceName: "repo", projectRoot: "/srv/repo", projectLabel: "~/repo",
+    }), { folderRequested: true }), "/~/repo/");
 });
 
 test("{§web-workspace-creation} the bound evicts oldest completed entries when full", async () => {

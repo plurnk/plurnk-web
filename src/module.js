@@ -179,10 +179,12 @@ export default function createModule() {
                             if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
                             // An empty name is no name: the daemon names the workspace.
                             const name = fields.get("name") ?? "";
+                            const rawProjectRoot = fields.get("projectRoot") ?? "";
+                            const projectRoot = rawProjectRoot === "" ? null : rawProjectRoot;
                             redirect(res, await creations.submit(formToken, async () => {
-                                try { return await seam.createWorkspace({ ...(name === "" ? {} : { name }), projectRoot: null }); }
-                                catch (cause) { throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(name)); }
-                            }));
+                                try { return await seam.createWorkspace({ ...(name === "" ? {} : { name }), projectRoot }); }
+                                catch (cause) { throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(name, rawProjectRoot)); }
+                            }, { folderRequested: projectRoot !== null }));
                             return;
                         }
                         if (rename) {

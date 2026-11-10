@@ -245,6 +245,40 @@ test("{§web-workspace-creation} {§web-session-creation} an empty name is no na
     assert.deepEqual(sessions, requested.map((named) => ({ workspaceId: 7, ...named })));
 });
 
+test("{§web-workspace-creation} optional projectRoot reaches the daemon verbatim and survives retry on refusal", async (t) => {
+    const invalidPath = (projectRoot) => Object.assign(new Error(`Project root '${projectRoot}' must be an absolute path.`), {
+        result: { status: 400, problem: Problems.create("daemon:workspace", "project-root-not-absolute", 400,
+            `Project root '${projectRoot}' must be an absolute path.`,
+            { recovery: "Supply an absolute directory path on the daemon host." }) },
+    });
+    const { base, created, post } = await fixture(t, {
+        create: async ({ name, projectRoot }) => {
+            if (projectRoot && !projectRoot.startsWith("/")) throw invalidPath(projectRoot);
+            return { workspaceId: 42, workspaceName: name || "foldered", projectRoot, projectLabel: projectRoot };
+        },
+    });
+    const badToken = await formToken(base);
+    const badRes = await post(badToken, {}, { name: "my-repo", projectRoot: "relative/repo" });
+    assert.equal(badRes.status, 400);
+    const badPage = await badRes.text();
+    assert.match(badPage, /Project root &#39;relative\/repo&#39; must be an absolute path\./u);
+    assert.match(badPage, /Supply an absolute directory path on the daemon host\./u);
+    const retry = /<form id="workspace-create"[^>]*>[\s\S]*?<\/form>/u.exec(badPage)?.[0];
+    assert.ok(retry, "refusal offers the workspace creation form again");
+    assert.match(retry, /name="name" value="my-repo"/u, "holding the workspace name draft");
+    assert.match(retry, /name="projectRoot" value="relative\/repo"/u, "holding the projectRoot draft");
+    const retryToken = /name="token" value="([^"]+)"/u.exec(retry)?.[1];
+    assert.ok(retryToken && retryToken !== badToken, "with a fresh token");
+
+    const okRes = await post(retryToken, {}, { name: "my-repo", projectRoot: "/srv/my-repo" });
+    assert.equal(okRes.status, 303);
+    assert.equal(okRes.headers.get("location"), "/~/my-repo/");
+    assert.deepEqual(created, [
+        { name: "my-repo", projectRoot: "relative/repo" },
+        { name: "my-repo", projectRoot: "/srv/my-repo" },
+    ]);
+});
+
 test("{§web-workspace-rename} workspace rename updates name and redirects to new canonical path", async (t) => {
     const renamed = [];
     const { base } = await fixture(t, {

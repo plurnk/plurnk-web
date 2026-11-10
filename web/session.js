@@ -10,7 +10,7 @@ import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import reasoningPreview from "./reasoning-preview.js";
 import managementAction from "./management-action.js";
-import sessionCommands, { isCommand } from "./session-commands.js";
+import sessionCommands, { expandPromptCommand, isCommand } from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 
@@ -77,7 +77,7 @@ export default function observeSession(element) {
     const agent = new SessionAgent({ url: "/acp", sessionId });
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
-    /** @type {{message: {id: string, role: "user", content: string}, retryable: boolean} | undefined} */
+    /** @type {{message: {id: string, role: "user", content: string}, source: string, retryable: boolean} | undefined} */
     let pending;
     /** @type {{controller: AbortController, done: Promise<void>} | undefined} */
     let delivery;
@@ -96,7 +96,8 @@ export default function observeSession(element) {
     const toggleYolo = async () => {
         const enabled = approval.getAttribute("aria-pressed") !== "true";
         approval.setAttribute("aria-pressed", String(enabled));
-        approval.title = `${enabled ? "Auto" : "Manual"} Approval (/yolo)`;
+        approval.title = `${enabled ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)`;
+        the(approval, "yolo-label", enabled ? "YOLO" : "Review");
         const mode = review.automatic(enabled);
         if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
             const resolutions = await review.decisions(agent.pendingGates);
@@ -134,7 +135,7 @@ export default function observeSession(element) {
     /** @param {string} id */
     function acknowledged(id) {
         if (pending?.message.id !== id) return;
-        if (draft.value === pending.message.content) draft.value = "";
+        if (draft.value === pending.source) draft.value = "";
         pending = undefined;
         the(feedback, { messageStatus: "", commandError: "" });
         availability();
@@ -289,6 +290,16 @@ export default function observeSession(element) {
             if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
         }
     });
+    on(document, "keydown", "body", (event) => {
+        if (!(event instanceof KeyboardEvent) || event.key !== "Tab" || !event.shiftKey
+            || event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.repeat) return;
+        if (the(element, "connection") !== "interrupted" || cancellation
+            || !agent.pendingGates.some(({ method }) => method === "session/request_permission")) return;
+        event.preventDefault();
+        void toggleYolo().catch((error) => {
+            if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
+        });
+    });
     on(main, "submit", "#session-reconnect", (event) => {
         event.preventDefault();
         if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) {
@@ -324,9 +335,11 @@ export default function observeSession(element) {
             draft.reportValidity();
             return;
         }
-        const message = pending?.message.content === draft.value ? pending.message
-            : { id: randomUUID(), role: /** @type {const} */ ("user"), content: draft.value };
-        pending = { message, retryable: false };
+        const source = draft.value;
+        const expanded = expandPromptCommand(source);
+        const message = pending?.source === source ? pending.message
+            : { id: randomUUID(), role: /** @type {const} */ ("user"), content: expanded };
+        pending = { message, source, retryable: false };
         the(feedback, { messageStatus: "Sending…", commandError: "" });
         connect({ message });
     });

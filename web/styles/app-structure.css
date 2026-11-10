@@ -63,6 +63,13 @@ body > header > a > img {
     block-size: 2ch;
 }
 
+body > header nav svg {
+    display: inline-block;
+    inline-size: 2ch;
+    block-size: 2ch;
+    vertical-align: middle;
+}
+
 body > header > nav[aria-label="Main navigation"] {
     grid-area: menu;
 }
@@ -145,14 +152,14 @@ table {
     min-inline-size: 0;
 }
 
-:is(#session-conversation, #session-diagnostics, #session-command-results) > ul,
-#session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) {
+#session-conversation :where(details > ul, [data-prompt-replies], [data-loop-plan] > article > ul),
+:is(#session-conversation, #session-diagnostics, #session-command-results) > ul {
     padding: 0;
 }
 
-#session-conversation :where([data-loop-seq] > details > ul, [data-operations] > details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) > li,
-:is(#session-conversation, #session-diagnostics, #session-command-results) > ul > li,
-[data-directory-entry] {
+[data-directory-entry],
+#session-conversation :where(details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) > li,
+:is(#session-conversation, #session-diagnostics, #session-command-results) > ul > li {
     list-style: none;
 }
 
@@ -200,6 +207,19 @@ table {
     padding-inline: var(--pico-form-element-spacing-vertical);
 }
 
+#session-reconnect,
+#session-reconnect > button {
+    inline-size: auto;
+    margin: 0;
+}
+
+article:where(#session-connection) > header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--pico-spacing);
+}
 
 #session-status [data-status-line],
 #session-status [data-status-line] > ul {
@@ -327,6 +347,10 @@ table {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+#session-connection > p:last-child {
+    margin-block-end: 0;
 }
 
 #overview-controls {

@@ -1,5 +1,5 @@
 import { $, the } from "on_the_money";
-import sessionCommands, { isCommand } from "../web/session-commands.js";
+import sessionCommands, { expandPromptCommand, isCommand } from "../web/session-commands.js";
 import managementAction from "../web/management-action.js";
 import sessionSettings from "../web/session-settings.js";
 
@@ -17,4 +17,5 @@ sessionSettings($("#main"), $("#session-status"), call, () => lifetime.signal);
 the($("#session-status"), "lifecycle", "idle");
 window.command = (text) => command(text, lifetime.signal);
 window.isCommand = isCommand;
+window.expandPromptCommand = expandPromptCommand;
 window.depart = () => lifetime.abort();

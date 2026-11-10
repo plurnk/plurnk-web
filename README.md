@@ -17,11 +17,13 @@ duplicate page heading. A native message form sends text; Stop explicitly cancel
 the session's current work. Pending operations have native Accept/Reject review forms;
 questions and MCP input share the same review and resume path.
 The message box also accepts `/help`, `/models [search]`, `/model [selector] [effort]`,
-`/effort [policy]`, `/capabilities [json]`, `/yolo`, and `/stop`. Commands never go
-to the model: their results appear separately from conversation. Model, effort
-and capability changes use daemon actions and retain its validation and active-work
+`/effort [policy]`, `/capabilities [json]`, `/mcp …`, `/skills …`, `/schedule …`, `/personas …`,
+`/env …`, `/learn [instructions]`, `/yolo`, and `/stop`. Client commands never go
+to the model: their results appear separately from conversation, while `/learn` expands into
+a skill-authoring prompt submitted on the session. Model, effort, capability,
+and family management changes use daemon actions and retain its validation and active-work
 restrictions. `/capabilities` shows service, workspace and effective policy; a JSON
-argument replaces the workspace policy. `/yolo` or the 🔥/🐹 status toggle changes only this page's automatic
+argument replaces the workspace policy. `/yolo`, the 🔥 `YOLO` / 🐹 `Review` status toggle, or `Shift+Tab` while a proposal awaits review changes only this page's automatic
 approval preference, including pending proposals; questions still require answers.
 Reload restores the page's starting mode. Commands remain available during pending review.
 `/models` lists aliases and a bounded catalog page; narrow its search for more matches.
@@ -42,10 +44,10 @@ The workspace list marks folderless workspaces with ☁️ and folder-backed one
 On a workspace page, matching workspace/folder labels share one 🗂️ breadcrumb;
 differing labels keep ☁️ on the workspace name and show 🗂️ on a separate folder line.
 Folder labels use the daemon's home abbreviation, not the browser's.
-The workspace list, workspace pages and session pages offer native header actions alongside the breadcrumbs:
-- On `/~/`: `🗃️` followed by `➕` opens a native `<dialog>` modal to create a new folderless workspace; left unnamed, the daemon names it ({§web-workspace-creation}).
-- On `/<workspace>/`: `🗃️` › `☁️ <workspace>` followed by `✏️`, `🗑️` and `➕` open native `<dialog>` modals to rename the current workspace ({§web-workspace-rename}), archive the workspace ({§web-workspace-archive}), or create an independent model session; left unnamed, the daemon names it ({§web-session-creation}).
-- On `/<workspace>@<session>/`: breadcrumb navigation carries `🗑️` to archive the session and its descendants ({§web-session-archive}).
+The workspace list, workspace pages and session pages offer native SVG header actions alongside the breadcrumbs:
+- On `/~/`: Workspaces followed by New workspace opens a native `<dialog>` modal to create a folderless or local-directory workspace (`projectRoot` optional); left unnamed, the daemon names it ({§web-workspace-creation}).
+- On `/<workspace>/`: Workspaces › `☁️ <workspace>` followed by Rename workspace, Archive workspace and New session open native `<dialog>` modals to rename the current workspace ({§web-workspace-rename}), archive the workspace ({§web-workspace-archive}), or create an independent model session; left unnamed, the daemon names it ({§web-session-creation}).
+- On `/<workspace>@<session>/`: breadcrumb navigation carries Archive session to archive the session and its descendants ({§web-session-archive}).
 Modals offer Cancel and Confirm, dismiss on Escape or backdrop click without mutating state, and render in normal flow at the end of `<main>` when JavaScript is disabled; with JavaScript a closed modal shows nothing.
 Creation forms carry a hidden token so a retried submission converges on the created place instead of re-executing.
 Anonymous daemons refuse cross-site form posts, but a page that makes the browser reach
@@ -56,7 +58,7 @@ the bottom. The message field and buttons grow together; Enter remains a newline
 and Ctrl+Enter sends through the same form as Send.
 Page titles, breadcrumbs and empty/error documents support ordinary browser
 navigation with or without JavaScript.
-Header controls: 🗃️ workspace breadcrumb, ⚙️ Account, ✖ Sign out.
+Header controls use crisp `2ch`-scaled SVG icons: Workspaces breadcrumb, Disconnected indicator, Account, and Sign out.
 Breadcrumbs fit between the mascot and menu, or center below them when space is short.
 
 Directories select their `index.html`: `/` and `/index.html` serve the same

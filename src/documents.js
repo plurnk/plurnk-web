@@ -5,6 +5,10 @@ import { escapeHtml, RequestError } from "./http.js";
 
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
+const WORKSPACES_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>';
+const PLUS_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg>';
+const RENAME_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a1.4 1.4 0 0 1 2 2L5.5 12.5 2.5 13.5l1-3 8-8Z"/></svg>';
+const ARCHIVE_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="0.75"/><path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M6.5 9h3"/></svg>';
 /** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
 /** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499, readonly at?: number, readonly excerpt?: string, readonly continued?: boolean }} DirectoryReply */
 /** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
@@ -93,8 +97,8 @@ export default class Documents {
             + '<footer><a href="/" data-i18n="home">Home</a></footer></article>', "error", authenticated);
     }
 
-    /** {§web-workspace-creation} The creation form a refused submission offers again, with its draft and a fresh token. @param {string} name */
-    retryCreation(name) { return this.#creationFields(name, ""); }
+    /** {§web-workspace-creation} The creation form a refused submission offers again, with its draft and a fresh token. @param {string} name @param {string} [projectRoot] */
+    retryCreation(name, projectRoot = "") { return this.#creationFields(name, projectRoot, ""); }
 
     /** {§web-workspace-rename} @param {string} workspace @param {string} name */
     retryRename(workspace, name) { return this.#renameFields(workspace, name, ""); }
@@ -148,16 +152,18 @@ export default class Documents {
         return '<dialog id="dialog-workspace-create"><article>'
             + '<header><p><strong data-i18n="new-workspace">New workspace</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#creationFields("", CANCEL)
+            + this.#creationFields("", "", CANCEL)
             + '</article></dialog>';
     }
 
-    /** @param {string} name @param {string} cancel */
-    #creationFields(name, cancel) {
+    /** @param {string} name @param {string} projectRoot @param {string} cancel */
+    #creationFields(name, projectRoot, cancel) {
         return '<form id="workspace-create" method="post" action="/workspaces/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
             + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Workspace name" aria-label="Workspace name" aria-describedby="workspace-name-hint">`
             + '<small id="workspace-name-hint" data-i18n="workspace-name-hint">Leave it empty and the daemon names the workspace.</small>'
+            + `<input type="text" name="projectRoot" value="${escapeHtml(projectRoot)}" placeholder="/path/to/project (optional)" aria-label="Project path" aria-describedby="workspace-project-hint">`
+            + '<small id="workspace-project-hint" data-i18n="workspace-project-hint">Leave it empty for a folderless workspace, or enter a local directory path on the daemon host.</small>'
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
@@ -252,8 +258,8 @@ export default class Documents {
     /** @param {string[]} [items] @param {boolean} [current] */
     #breadcrumb(items = [], current = false) {
         const root = current
-            ? '<span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️</span> <button type="button" data-dialog-target="dialog-workspace-create" aria-label="New workspace" title="New workspace">➕</button>'
-            : '<a href="/~/" aria-label="Workspaces" title="Workspaces">🗃️</a>';
+            ? `<span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">${WORKSPACES_ICON}</span> <button type="button" data-dialog-target="dialog-workspace-create" aria-label="New workspace" title="New workspace">${PLUS_ICON}</button>`
+            : `<a href="/~/" aria-label="Workspaces" title="Workspaces">${WORKSPACES_ICON}</a>`;
         return `<nav aria-label="breadcrumb"><ul>${[root, ...items].map((item) => `<li>${item}</li>`).join("")}</ul></nav>`;
     }
 
@@ -262,12 +268,12 @@ export default class Documents {
         const current = (/** @type {string} */ name) => `<span aria-current="page" data-text="name">${escapeHtml(name)}</span>`;
         const items = [];
         if (directory.kind === "workspace") {
-            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button>`);
+            items.push(`${marker} ${current(directory.workspace)} <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">${RENAME_ICON}</button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace">${ARCHIVE_ICON}</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">${PLUS_ICON}</button>`);
         }
         if (directory.kind === "session") {
             const path = directoryPath({ kind: "workspace", workspace: directory.workspace });
             if (path === null) throw new Error("An admitted session must have a workspace directory address.");
-            items.push(`<span id="session-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, `${current(directory.session)} <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session">🗑️</button>`);
+            items.push(`<span id="session-workspace">${marker} <a href="${escapeHtml(path)}" data-bind="href:workspace-path" data-text="workspace-name">${escapeHtml(directory.workspace)}</a></span>`, `${current(directory.session)} <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session">${ARCHIVE_ICON}</button>`);
         }
         return this.#breadcrumb(items, directory.kind === "daemon");
     }
@@ -417,7 +423,7 @@ export default class Documents {
             + ` data-session-name="${escapeHtml(directory.session)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + '<div data-status-line><ul aria-label="Model controls">'
-            + `<li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="${automatic}" aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (/yolo)"></button></li>`
+            + `<li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="${automatic}" aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)"><span data-text="yolo-label">${automatic ? "YOLO" : "Review"}</span></button></li>`
             + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="session-model" aria-label="Model" aria-expanded="false" aria-controls="session-model-settings"><span data-text="model">No model</span></button><button type="button" id="session-effort" aria-label="Effort" aria-expanded="false" aria-controls="session-effort-settings"><span data-text="effort"></span></button></li></ul>'
             + '<ul aria-label="Session statistics"><li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
             + '<li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>'
@@ -430,11 +436,10 @@ export default class Documents {
             + '<li data-status-field="preparation" data-text="preparation"></li>'
             + '<li data-status-field="activity" data-text="activity" data-bind="title:activity-message"></li>'
             + '<li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li></ul></div></footer>';
-        const content = '<article id="session-connection" role="alert"><header><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></header>'
-            + '<p data-text="connection-detail">Displayed values are no longer live.</p>'
-            + `<form id="session-reconnect" action="${escapeHtml(path)}" data-bind="action:session-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
-            + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
-            + '</p></article>'
+        const content = '<article id="session-connection" role="alert"><header><span><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></span>'
+            + `<form id="session-reconnect" action="${escapeHtml(path)}" data-bind="action:session-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form>`
+            + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a></header>`
+            + '<p data-text="connection-detail">Displayed values are no longer live.</p></article>'
             + '<section id="session-diagnostics" aria-label="Diagnostics"><ul></ul></section>'
             + '<section id="session-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'

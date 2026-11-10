@@ -34,7 +34,7 @@ test("{§web-session-approval} a session page starts automatic only when configu
             }, false, own)).toString();
             const automatic = yolo && own;
             assert.ok(html.includes(`id="session-yolo" aria-pressed="${automatic}"`), `configured ${yolo}, arrival ${site}`);
-            assert.ok(html.includes(`aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (/yolo)"`));
+            assert.ok(html.includes(`aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)"><span data-text="yolo-label">${automatic ? "YOLO" : "Review"}</span>`));
             assert.ok(html.includes('data-reasoning-preview-chars="128"'), "{§web-session-reasoning} the document carries its supplied preview limit");
             assert.doesNotMatch(html, /PLURNK_|process\.env/u, "a public setting is not an environment dump");
         }
@@ -96,12 +96,12 @@ test("{§web-page-shell} {§web-workspace-folder} breadcrumbs distinguish worksp
             listSessions: async () => [],
         };
         const index = (await document.read({ kind: "daemon" }, port, false)).toString();
-        assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces">🗃️<\/span> <button type="button" data-dialog-target="dialog-workspace-create" aria-label="New workspace" title="New workspace">➕<\/button><\/li><\/ul><\/nav>/u);
+        assert.match(index, /<nav aria-label="breadcrumb"><ul><li><span role="img" aria-current="page" aria-label="Workspaces" title="Workspaces"><svg\b[\s\S]*?<\/svg><\/span> <button type="button" data-dialog-target="dialog-workspace-create" aria-label="New workspace" title="New workspace"><svg\b[\s\S]*?<\/svg><\/button><\/li><\/ul><\/nav>/u);
         assert.doesNotMatch(index, /<h1\b/u);
         const page = (await document.read({ kind: "workspace", workspace: name }, port, false)).toString();
-        assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li>/u);
+        assert.match(page, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*><svg\b[\s\S]*?<\/svg><\/a><\/li>/u);
         const escaped = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-        assert.ok(page.includes(`<li><span role="img" aria-label="${label}">${icon}</span> <span aria-current="page" data-text="name">${escaped}</span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace">✏️</button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace">🗑️</button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">➕</button></li>`), page);
+        assert.match(page, new RegExp(`<li><span role="img" aria-label="${label}">${icon}<\\/span> <span aria-current="page" data-text="name">${escaped.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}<\\/span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace"><svg\\b[\\s\\S]*?<\\/svg><\\/button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace"><svg\\b[\\s\\S]*?<\\/svg><\\/button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session"><svg\\b[\\s\\S]*?<\\/svg><\\/button><\\/li>`, "u"));
         assert.match(page, /<p[^>]*>No sessions\.<\/p>/u);
         assert.doesNotMatch(page, /<h1\b/u);
         assert.equal(page.match(/aria-current="page"/gu).length, 1, "the workspace breadcrumb has one current item");
@@ -293,7 +293,7 @@ test("{§web-session-status} status is a compact footer after conversation, not 
     assert.match(footer, /<details id="session-descendants"><summary/u);
     assert.match(footer, /data-bind="aria-label:lifecycle title:lifecycle"/u);
     assert.doesNotMatch(footer, /<dl|<table|id="(?:session-accounting|workspace-activity|session-inbox)"|data-text="(?:requests|turns|loop)"/u);
-    assert.match(html, /<article id="session-connection" role="alert">[\s\S]*id="session-reconnect"[\s\S]*<\/main><footer/u);
+    assert.match(html, /<article id="session-connection" role="alert"><header>[\s\S]*id="session-reconnect"[\s\S]*data-sign-in[\s\S]*<\/header>[\s\S]*<\/main><footer/u);
     assert.doesNotMatch(footer, /<article|session-reconnect/u, "detailed connection notices cannot crowd the pinned composer");
 });
 
@@ -314,7 +314,7 @@ test("{§web-page-shell} titles and breadcrumbs preserve whole identities, not p
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;@user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" data-page="session">/u);
-    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*>🗃️<\/a><\/li><li><span id="session-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span> <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session">🗑️<\/button><\/li><\/ul><\/nav>/u);
+    assert.match(html, /<nav aria-label="breadcrumb"><ul><li><a href="\/~\/"[^>]*><svg\b[\s\S]*?<\/svg><\/a><\/li><li><span id="session-workspace"><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <a href="\/~\/~\/project\/a%26b%3Cscript%3E\/"[^>]*>~\/project\/a&amp;b&lt;script&gt;<\/a><\/span><\/li><li><span aria-current="page"[^>]*>user<\/span> <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session"><svg\b[\s\S]*?<\/svg><\/button><\/li><\/ul><\/nav>/u);
     assert.doesNotMatch(html, /<script>|<template/iu);
     assert.equal(html.replace(/<dialog\b[\s\S]*?<\/dialog>/gu, "").match(/<footer\b/gu).length, 1, "the session status footer is the only document-level footer");
     assert.equal(html.match(/<main\b/gu).length, 1);

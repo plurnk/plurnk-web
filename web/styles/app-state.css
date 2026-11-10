@@ -17,10 +17,6 @@ body:not(:has(:is(#session-status, #main):is([data-connection="disconnected"], [
     display: none;
 }
 
-[data-connection-indicator] > span::before {
-    content: "🔌" / "";
-}
-
 /* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
 #session-conversation {
     --pico-card-background-color: var(--plurnk-working-surface);
@@ -128,8 +124,8 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 }
 
 /* {§web-session-status} Status fields remain semantic; CSS owns their compact notation. */
-#session-yolo[aria-pressed="true"]::before { content: "🔥" / ""; }
-#session-yolo[aria-pressed="false"]::before { content: "🐹" / ""; }
+#session-yolo[aria-pressed="true"]::before { content: "🔥 " / ""; }
+#session-yolo[aria-pressed="false"]::before { content: "🐹 " / ""; }
 #session-status [data-text="input"]::before { content: "↓" / ""; }
 #session-status [data-text="output"]::before { content: "↑" / ""; }
 #session-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }

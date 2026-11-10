@@ -38,6 +38,7 @@ export default async function verifyStatus(t) {
                     await receive(initial);
                     const statusLine = page.locator("#session-status > [data-status-line]");
                     const draft = page.getByRole("textbox", { name: "Message", exact: true });
+                    assert.equal(await draft.getAttribute("placeholder"), "Message (/help · Shift+Tab YOLO)");
                     const leave = () => page.locator("body > header > a").focus();
                     for (const width of [320, 1280]) {
                         await page.setViewportSize({ width, height: 700 });
@@ -72,6 +73,8 @@ export default async function verifyStatus(t) {
                     const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
                     assert.equal(await approval.getAttribute("type"), "button");
                     assert.equal(await approval.getAttribute("aria-pressed"), "false");
+                    assert.equal(await approval.getAttribute("title"), "Manual Approval (Shift+Tab · /yolo)");
+                    assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Review");
                     assert.equal(await approval.isVisible(), true, "manual approval is an explicit mode, not an absent indicator");
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "true"));

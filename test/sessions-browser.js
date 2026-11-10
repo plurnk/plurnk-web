@@ -182,10 +182,14 @@ export default function createFixtureModule() {
                                 await page.getByRole("link", { name: session.name, exact: true }).click();
                                 assert.equal(await page.locator("main h1").count(), 0, "session identity belongs in the breadcrumb, not a duplicate heading");
                                 await verifyPageShell(page, { title: `${workspace.name}@${session.name} — Plurnk`, kind: "session" });
-                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["🗃️", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`, `${session.name} 🗑️`]);
+                                assert.deepEqual((await page.locator('nav[aria-label="breadcrumb"] li').allTextContents()).map((item) => item.trim()), ["", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`, session.name]);
+                                assert.equal(await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("button", { name: "Archive session", exact: true }).locator("svg").count(), 1);
                                 await page.reload();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: workspace.name, exact: true }).click();
-                                assert.deepEqual(await page.locator('nav[aria-label="breadcrumb"] li').allTextContents(), ["🗃️", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name} ✏️ 🗑️ ➕`]);
+                                assert.deepEqual((await page.locator('nav[aria-label="breadcrumb"] li').allTextContents()).map((item) => item.trim()), ["", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`]);
+                                for (const action of ["Rename workspace", "Archive workspace", "New session"]) {
+                                    assert.equal(await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("button", { name: action, exact: true }).locator("svg").count(), 1);
+                                }
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces", exact: true }).click();
                             }
                             const response = await context.request.get(new URL("/~/index.html?q=hello", base).href);
@@ -451,7 +455,8 @@ export default function createFixtureModule() {
                             const page = await context.newPage();
                             const response = await page.goto(new URL("/~/", base).href);
                             assert.equal(response.status(), 200);
-                            assert.equal(await page.locator('[aria-current="page"]').innerText(), "🗃️");
+                            assert.equal(await page.locator('[aria-current="page"]').getAttribute("aria-label"), "Workspaces");
+                            assert.equal(await page.locator('[aria-current="page"] > svg').count(), 1);
                             assert.equal(new URL(page.url()).pathname, "/~/");
                             assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
                             assert.equal(await page.getByRole("link", { name: "Account", exact: true }).count(), 0);
