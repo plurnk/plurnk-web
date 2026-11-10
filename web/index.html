@@ -40,8 +40,18 @@
     <template id="overview-background">
         <details><summary data-i18n="background-work">Background work</summary><ul></ul></details>
     </template>
+    <template id="overview-controls">
+        <section id="overview-controls" aria-label="Filter sessions">
+            <input type="search" data-overview-search placeholder="Filter sessions…" aria-label="Filter sessions">
+            <select data-overview-scope aria-label="Session scope">
+                <option value="all" data-i18n="filter-all">All sessions</option>
+                <option value="active" data-i18n="filter-active">Active only</option>
+                <option value="roots" data-i18n="filter-roots">Root sessions</option>
+            </select>
+        </section>
+    </template>
     <template id="session-card">
-        <li data-directory-entry="session" data-session-key="">
+        <li data-directory-entry="session" data-session-key="" data-session-kind="root">
             <article aria-label="Session">
                 <header>
                     <span data-session-identity><a data-session-link></a> <span data-lifecycle="idle" role="img" aria-label="idle" title="idle"></span> <span></span></span><span data-session-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a data-text="name"></a></span>
@@ -54,6 +64,21 @@
     </template>
     <template id="session-parent-text">
         <span data-session-parent><span></span> &gt; </span>
+    </template>
+    <template id="session-title-badge">
+        <small data-session-title></small>
+    </template>
+    <template id="session-gates-badge">
+        <small data-session-gates=""></small>
+    </template>
+    <template id="session-children-badge">
+        <small data-session-children=""></small>
+    </template>
+    <template id="session-time-badge">
+        <time data-session-time datetime=""></time>
+    </template>
+    <template id="session-excerpt-line">
+        <small data-session-excerpt></small>
     </template>
     <template id="session-reply">
         <div data-session-reply=""></div>
@@ -69,46 +94,6 @@
     <template id="session-descendant-children">
       <details><summary><span data-i18n="descendant-children">Children:</span> <span data-text="descendant-children"></span></summary><ul></ul></details>
     </template>
-    <!-- {§web-session-streams} Observed outcomes retain explicit output inspection. -->
-    <template id="session-stream-outcome">
-        <li>
-            <details>
-                <summary><code data-text="stream-target">Stream address</code> <span data-text="stream-scheme">Executor</span></summary>
-                <p><span data-i18n="stream-session">Session:</span> <span data-text="stream-session">Session</span></p>
-                <p data-text="stream-summary">Stream concluded.</p>
-                <p data-stream-exit-line><span data-i18n="stream-exit-code">Exit code:</span> <span data-text="stream-exit-code"></span></p>
-                <article data-stream-failure>
-                    <header><span aria-hidden="true" data-i18n="stream-failed-icon">❌</span> <strong data-text="stream-problem-title">Stream failed</strong></header>
-                    <p data-text="stream-problem">Failure details</p>
-                </article>
-            </details>
-        </li>
-    </template>
-    <template id="stream-output">
-        <section data-entry-output aria-label="Output snapshot">
-            <button type="button" data-action="read-output" data-bind="disabled:output-pending" data-i18n="read-output">Read output</button>
-            <p data-output-loading role="status" data-i18n="reading-output">Reading output…</p>
-            <article data-output-failure role="alert">
-                <header><span aria-hidden="true" data-i18n="output-warning">⚠️</span> <strong data-i18n="output-read-failed">Output read failed</strong></header>
-                <p data-text="output-error">The output could not be read.</p>
-            </article>
-            <div data-output-snapshot>
-                <p data-i18n="output-snapshot">Output snapshot; read again to refresh.</p>
-                <ul></ul>
-            </div>
-        </section>
-    </template>
-    <template id="stream-output-channel">
-        <li>
-            <details>
-                <summary><code data-text="output-channel">Channel</code> <span data-text="output-channel-state">State</span></summary>
-                <p><small data-text="output-mime">Content type</small></p>
-                <p><span data-i18n="output-offset">Offset (code points):</span> <span data-text="output-offset">0</span>
-                    <span data-i18n="output-length">Length:</span> <span data-text="output-length">0</span></p>
-                <pre data-output-content></pre>
-            </details>
-        </li>
-    </template>
     <template id="conversation-body-reference">
         <pre data-body-reference data-bind="aria-busy:body-pending"></pre>
     </template>
@@ -123,20 +108,6 @@
         <li>
             <article data-bind="aria-label:diagnostic-label"></article>
         </li>
-    </template>
-    <!-- {§web-session-activity} Observations are literal evidence, not replies or executable markup. -->
-    <template id="session-ambient">
-        <li>
-            <article data-bind="aria-label:activity-label"></article>
-        </li>
-    </template>
-    <template id="session-outside">
-        <li>
-            <article data-bind="aria-label:activity-label"></article>
-        </li>
-    </template>
-    <template id="activity-reasoning">
-        <details><summary data-i18n="activity-reasoning">Reasoning</summary></details>
     </template>
     <!-- {§web-session-input} Native form structure; the session SDK owns delivery. -->
     <template id="session-controls">

@@ -28,10 +28,14 @@ Reload restores the page's starting mode. Commands remain available during pendi
 Click the status model or effort to open its form below the conversation. Model
 search offers native suggestions, or accepts an exact alias/provider-model.
 Select Model / Select Effort applies the choice and closes the form; Cancel dismisses it.
-Session cards on `/` and workspace pages show the session's lifecycle, parent/name
-and workspace, ordered with the most recently delivered reply first, and stay live
-over the `/notifications` SSE stream while preserving open disclosures.
-Click the ant to visit the session, or expand the card to see its child tree and
+Session cards on `/` and workspace pages show the session's kind (`💬` root, `🐜` child work, `🔱` fork),
+lifecycle, parent/name, title, pending gate count, child count, workspace, relative reply age, and a
+single-line reply preview (`PLURNK_WEB_OVERVIEW_EXCERPT_CHARS`), ordered with the most recently delivered
+reply first, and stay live over the `/notifications` SSE stream while preserving open disclosures.
+Overview pages with sessions offer a client-side filter bar to search by session, workspace, title, or
+reply preview and to narrow scope (`All sessions`, `Active only`, `Root sessions`). The root `/`
+overview is bounded by `PLURNK_WEB_OVERVIEW_SESSIONS` and links to `/~/` (`Workspaces`) when older
+sessions are omitted. Click the session glyph to visit the session, or expand the card to see its child tree and
 latest completed reply (loaded on demand when opened); parent and workspace links
 navigate independently. Leaves without a completed reply have no empty disclosure.
 The workspace list marks folderless workspaces with ☁️ and folder-backed ones with 🗂️.
@@ -106,23 +110,14 @@ a promise of completion. A collapsed session-count disclosure opens the live
 descendant tree; no empty tree or metadata inventory occupies the page.
 Workspace names and folder labels
 follow supplied state without changing the observed session or rewriting the URL.
-Daemon notices and nonterminal Problems appear separately under **Observed diagnostics**,
-as literal messages and recovery guidance. Distinct observations remain through reconnects
-on that page; they are not an archive or an indication that the session has stopped.
-**Observed activity** exposes non-conversation log rows and text emitted outside
-operations, retaining source coordinates and supplied session attribution as entry
-semantics and accessible names. These observations survive reconnects on the same page, not
-reloads; they are not replies or a complete activity history.
+Daemon notices and nonterminal Problems appear when present under `#session-diagnostics`,
+as literal messages and recovery guidance; routine turn-progress notices are omitted so the
+section stays hidden during normal operation.
 Operations show their glyph and aside above the addressed selection, returned count
 and any failure. An immediate receipt completes that summary rather than adding
 another article. Authored bodies appear below it; `read` results are not fetched
 automatically. Reasoning stays collapsed until opened. Fetched bodies are literal text and are never added
 to client-uploaded conversation history or saved in browser storage.
-
-**Observed stream outcomes** retains conclusions seen on this page, separately
-from session completion and conversation receipts. **Read output** explicitly
-fetches a literal snapshot of all channels; click again to refresh it. Neither
-inspection nor navigation cancels execution.
 
 Live reasoning appears in one temporary plain-text preview, cleared when the
 attempt ends or delivery disconnects. `PLURNK_WEB_REASONING_PREVIEW_CHARS` bounds
@@ -296,8 +291,6 @@ delivery, exact `read` operands and real command stdout/stderr results are compa
 refresh through the client's messages, without custom-row reconstruction. Standard success,
 cancellation, failure and reported token usage are checked separately. No ACP traffic is
 mocked and no client-owned replay cache hides differences from the daemon's history.
-Stream journeys also exercise silent executors, never-written channels, explicit
-authenticated output inspection, completion during absence, cancellation and nonzero exit.
 Browser journeys also check console warnings/errors and uncaught exceptions;
 deliberately tested failures require explicit diagnostic expectations.
 Adversarial content checks exercise rich-text roles, `note` bodies, literal tool data,

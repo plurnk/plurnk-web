@@ -42,6 +42,8 @@ export default function createModule() {
     };
     const yolo = contain(() => Knob.flag("PLURNK_WEB_YOLO"));
     const reasoningPreviewChars = contain(() => Knob.integer("PLURNK_WEB_REASONING_PREVIEW_CHARS", 1));
+    const overviewSessions = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_SESSIONS", 1));
+    const overviewExcerptChars = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", 1));
     const limits = { ttl: contain(() => Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1)) };
     const createTtl = contain(() => Knob.integer("PLURNK_WEB_CREATE_TTL_SEC", 1));
     const createTokens = contain(() => Knob.integer("PLURNK_WEB_CREATE_TOKENS", 1));
@@ -88,7 +90,7 @@ export default function createModule() {
 
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars);
+            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars, overviewSessions, overviewExcerptChars);
 
             /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
             const serve = async (req, res) => {

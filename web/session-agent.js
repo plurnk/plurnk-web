@@ -220,9 +220,6 @@ function extractToolResultContent(contentBlocks, rawOutput) {
             return parts;
         }
     }
-    if (rawOutput !== undefined) {
-        return typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
-    }
     if (Array.isArray(contentBlocks)) {
         const texts = [];
         for (const block of contentBlocks) {
@@ -230,7 +227,16 @@ function extractToolResultContent(contentBlocks, rawOutput) {
                 texts.push(block.content.text);
             }
         }
-        return texts.join("\n");
+        if (texts.length > 0) {
+            const joined = texts.join("\n");
+            if (rawOutput === undefined) return joined;
+            if (isRecord(rawOutput) && !Object.hasOwn(rawOutput, "content")) {
+                return JSON.stringify({ ...rawOutput, content: joined });
+            }
+        }
+    }
+    if (rawOutput !== undefined) {
+        return typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
     }
     return "";
 }
@@ -843,6 +849,8 @@ export default class SessionAgent {
     #streamProblem = undefined;
     /** @type {{ messageId: string, body: Record<string, unknown> } | undefined} */
     #pendingLiveThought = undefined;
+    /** @type {{ id: string, content: string } | undefined} */
+    #submittedPrompt = undefined;
     /** @type {boolean} */
     #needsConnectionSse = false;
 
@@ -1520,6 +1528,7 @@ export default class SessionAgent {
                 _meta: {
                     plurnk: {
                         control: false,
+                        window: true,
                         reasoning: "link",
                         ...(options.workspace ? { workspace: options.workspace } : {}),
                         ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
@@ -1595,6 +1604,7 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
+            this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
@@ -1742,6 +1752,7 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber, actionKind);
         } finally {
+            this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
@@ -1765,6 +1776,7 @@ export default class SessionAgent {
         this.#bufferingReplay = false;
         this.#replayUpdates = [];
         this.#pendingLiveThought = undefined;
+        this.#submittedPrompt = { id: message.id, content: message.content };
         this.#queuedLiveOutcome = undefined;
         this.#heldGateIds = undefined;
         this.#allPendingGates = this.#allPendingGates.filter((item) => this.#gateResolvers.has(item.id));
@@ -1813,6 +1825,7 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
+            this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
@@ -1958,6 +1971,7 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
+            this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
@@ -2570,7 +2584,19 @@ export default class SessionAgent {
             if (isRecord(plurnk?.status)) {
                 Object.assign(prevStatus, structuredClone(plurnk.status));
             }
-            if (update.state === "running" && prevStatus.lifecycle !== "queued") {
+            const stateNotice = isRecord(plurnk?.notice) ? plurnk.notice : undefined;
+            if (stateNotice?.source === "engine:lifecycle" && stateNotice.kind === "loop_status") {
+                const code = typeof stateNotice.status === "number" ? stateNotice.status : 102;
+                prevStatus.lifecycle = code === 100 ? "queued" : code === 202 ? "parked" : "running";
+                if (typeof stateNotice.loopSeq === "number") prevStatus.loopSeq = stateNotice.loopSeq;
+                if (typeof stateNotice.packetCount === "number") prevStatus.packetCount = stateNotice.packetCount;
+                if (stateNotice.waitUntil === null || typeof stateNotice.waitUntil === "number") {
+                    prevStatus.waitUntil = stateNotice.waitUntil;
+                }
+                if (stateNotice.claimedAt === null || typeof stateNotice.claimedAt === "number") {
+                    prevStatus.claimedAt = stateNotice.claimedAt;
+                }
+            } else if (update.state === "running" && prevStatus.lifecycle !== "queued" && prevStatus.lifecycle !== "parked") {
                 prevStatus.lifecycle = "running";
                 prevStatus.waitUntil = null;
             } else if (update.state === "idle" && isRecord(plurnk?.terminal)) {
@@ -2619,7 +2645,7 @@ export default class SessionAgent {
             return;
         }
 
-        if (kind === "notice") {
+        if (kind === "notice" || kind === "_plurnk_telemetry") {
             const prevPlurnk = isRecord(this.state.plurnk) ? { ...this.state.plurnk } : {};
             const prevStatus = isRecord(prevPlurnk.status) ? { ...prevPlurnk.status } : {};
             const notice = isRecord(plurnk?.notice) ? plurnk.notice : undefined;
@@ -2661,6 +2687,28 @@ export default class SessionAgent {
             if (isRecord(plurnk?.status)) {
                 if (Array.isArray(plurnk.status.descendants)) {
                     this.#pruneDescendantGatesFromStatus(plurnk.status.descendants);
+                }
+                if (Array.isArray(plurnk.status.inbox) && this.#submittedPrompt !== undefined) {
+                    const submitted = this.#submittedPrompt;
+                    const inboxItem = plurnk.status.inbox.find((item) => isRecord(item) && item.id === submitted.id);
+                    if (isRecord(inboxItem) && !this.messages.some((m) => m.id === submitted.id && m.role === "user")) {
+                        this.messages = SessionTranslator.projectMessages([{
+                            sessionUpdate: "user_message_chunk",
+                            messageId: submitted.id,
+                            content: { type: "text", text: submitted.content },
+                            _meta: {
+                                plurnk: {
+                                    loopId: inboxItem.loopId,
+                                    lifecycle: inboxItem.lifecycle,
+                                    published: false,
+                                    ...(isRecord(inboxItem.body) ? { body: structuredClone(inboxItem.body) } : {}),
+                                },
+                            },
+                        }], this.messages);
+                        if (!this.#bufferingReplay) {
+                            await subscriber.onMessagesChanged?.({ messages: this.messages });
+                        }
+                    }
                 }
                 Object.assign(prevStatus, structuredClone(plurnk.status));
                 prevPlurnk.status = prevStatus;

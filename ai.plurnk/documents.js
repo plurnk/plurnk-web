@@ -6,11 +6,11 @@ import { escapeHtml, RequestError } from "./http.js";
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
 /** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
-/** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499 }} DirectoryReply */
-/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly lifecycle: string, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
+/** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499, readonly at?: number, readonly excerpt?: string, readonly continued?: boolean }} DirectoryReply */
+/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
 /** @typedef {{ readonly id: number, readonly name: string, readonly projectRoot: string | null }} DirectoryOverviewWorkspace */
-/** @typedef {{ readonly id: number, readonly workspaceId: number, readonly name: string, readonly parentSessionId: number | null, readonly lifecycle: string, readonly reply: DirectoryReply | null }} DirectoryOverviewSession */
-/** @typedef {{ readonly workspaces: readonly DirectoryOverviewWorkspace[], readonly sessions: readonly DirectoryOverviewSession[] }} DirectoryOverview */
+/** @typedef {{ readonly id: number, readonly workspaceId: number, readonly name: string, readonly parentSessionId: number | null, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly reply: DirectoryReply | null }} DirectoryOverviewSession */
+/** @typedef {{ readonly workspaces: readonly DirectoryOverviewWorkspace[], readonly sessions: readonly DirectoryOverviewSession[], readonly omitted?: number }} DirectoryOverview */
 
 /** @param {DirectorySession} a @param {DirectorySession} b */
 const orderByReply = (a, b) => {
@@ -27,6 +27,8 @@ export default class Documents {
     #home;
     #yolo;
     #reasoningPreviewChars;
+    #overviewSessions;
+    #overviewExcerptChars;
 
     /** {§web-authorization-style} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -39,10 +41,12 @@ export default class Documents {
         return path;
     }
 
-    /** @param {string} document @param {boolean | null} yolo @param {number | null} reasoningPreviewChars */
-    constructor(document, yolo, reasoningPreviewChars) {
+    /** @param {string} document @param {boolean | null} yolo @param {number | null} reasoningPreviewChars @param {number | null} [overviewSessions] @param {number | null} [overviewExcerptChars] */
+    constructor(document, yolo, reasoningPreviewChars, overviewSessions = reasoningPreviewChars, overviewExcerptChars = reasoningPreviewChars) {
         this.#yolo = yolo;
         this.#reasoningPreviewChars = reasoningPreviewChars;
+        this.#overviewSessions = overviewSessions;
+        this.#overviewExcerptChars = overviewExcerptChars;
         const parts = document.split(/<main\b[^>]*>|<\/main>/u);
         if (parts.length !== 3) throw new Error("The web document must contain exactly one main element.");
         const title = parts[0].split(/<title\b[^>]*>|<\/title>/u);
@@ -66,7 +70,10 @@ export default class Documents {
     /** @param {boolean} authenticated @param {{ readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview> }} [port] */
     home(authenticated, port) {
         if (typeof port?.readSessionOverview !== "function") return this.#render("Plurnk", this.#home, "home", authenticated);
-        return port.readSessionOverview({ limit: Number.MAX_SAFE_INTEGER, excerptChars: 1 }).then((overview) =>
+        if (this.#overviewSessions === null || this.#overviewExcerptChars === null) {
+            throw new RequestError(503, "Session overview is unavailable because its configuration is invalid.");
+        }
+        return port.readSessionOverview({ limit: this.#overviewSessions, excerptChars: this.#overviewExcerptChars }).then((overview) =>
             this.#render("Plurnk", this.#overviewTree(overview), "home", authenticated, this.#breadcrumb(), "", "", ` data-auth="${authenticated ? "session" : "none"}" data-connection="initial"`));
     }
 
@@ -280,8 +287,9 @@ export default class Documents {
      * @param {{name: string, project_root: string | null}} workspace
      * @param {DirectorySession} session
      * @param {DirectorySession | null} parent
+     * @param {number} [childrenCount]
      */
-    #sessionIdentity(workspace, session, parent) {
+    #sessionIdentity(workspace, session, parent, childrenCount = 0) {
         const path = directoryPath({ kind: "session", workspace: workspace.name, session: session.name });
         const name = escapeHtml(session.name);
         const ant = path === null ? '<span data-session-link role="img" aria-label="Session"></span>'
@@ -291,11 +299,23 @@ export default class Documents {
             : `<span>${escapeHtml(parent.name)}</span>`;
         const lineage = parent === null ? "" : `<span data-session-parent>${parentName} &gt; </span>`;
         const lifecycle = escapeHtml(session.lifecycle);
+        const title = typeof session.title === "string" && session.title !== ""
+            ? `<small data-session-title>${escapeHtml(session.title)}</small>` : "";
+        const gates = (session.gates ?? 0) > 0
+            ? `<small data-session-gates="${session.gates}" aria-label="${session.gates} awaiting input" title="${session.gates} awaiting input">${session.gates}</small>` : "";
+        const children = childrenCount > 0
+            ? `<small data-session-children="${childrenCount}" aria-label="${childrenCount} ${childrenCount === 1 ? "child" : "children"}" title="${childrenCount} ${childrenCount === 1 ? "child" : "children"}">${childrenCount}</small>` : "";
         const folder = workspace.project_root !== null;
+        const replyAt = typeof session.reply?.at === "number" && Number.isFinite(session.reply.at) ? new Date(session.reply.at).toISOString() : null;
+        const time = replyAt === null ? "" : `<time data-session-time datetime="${replyAt}" title="${replyAt}">${replyAt.slice(0, 16).replace("T", " ")} UTC</time>`;
+        const excerptText = typeof session.reply?.excerpt === "string" && session.reply.excerpt !== ""
+            ? `${session.reply.excerpt}${session.reply.continued ? "…" : ""}` : "";
+        const excerpt = excerptText === "" ? "" : `<small data-session-excerpt>${escapeHtml(excerptText)}</small>`;
         return `<span data-session-identity>${ant} <span data-lifecycle="${lifecycle}" role="img" aria-label="${lifecycle}" title="${lifecycle}"></span> `
-            + `${lineage}<span>${name}</span></span>`
+            + `${lineage}<span>${name}</span>${title}${gates}${children}</span>`
             + `<span data-session-workspace><span data-folder="${folder}" role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}"></span> `
-            + `${this.#link(workspace.name, { kind: "workspace", workspace: workspace.name })}</span>`;
+            + `${this.#link(workspace.name, { kind: "workspace", workspace: workspace.name })}${time}</span>`
+            + excerpt;
     }
 
     /** {§web-session-directory} A finished reply adds a disclosure body outlet addressed at its ACP entry resource.
@@ -332,12 +352,13 @@ export default class Documents {
                 const workspace = workspaces.get(session.workspaceId);
                 if (workspace === undefined) throw new Error(`Session ${session.id} belongs to an absent workspace ${session.workspaceId}.`);
                 const descendants = children.get(session.id) ?? [];
-                const identity = this.#sessionIdentity(workspace, session, this.#parent(session, sessions));
+                const identity = this.#sessionIdentity(workspace, session, this.#parent(session, sessions), descendants.length);
                 const reply = this.#replyOutlet(workspace.id, session);
+                const kind = escapeHtml(session.kind ?? (session.parentSessionId === null ? "root" : "work"));
                 const replyAttr = session.reply ? ` data-reply-id="${session.reply.id}"` : "";
                 const content = descendants.length === 0 && reply === "" ? `<header>${identity}</header>`
                     : `<details><summary>${identity}</summary>${list(descendants)}${reply}</details>`;
-                return `<li data-directory-entry="session" data-session-key="${workspace.id}:${session.id}"${replyAttr}><article aria-label="Session">${content}</article></li>`;
+                return `<li data-directory-entry="session" data-session-key="${workspace.id}:${session.id}" data-session-kind="${kind}"${replyAttr}><article aria-label="Session">${content}</article></li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
         const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
@@ -358,7 +379,10 @@ export default class Documents {
             name: session.name,
             parentSessionId: session.parentSessionId,
             origin: "model",
+            kind: session.kind ?? (session.parentSessionId === null ? "root" : "work"),
             lifecycle: session.lifecycle,
+            gates: session.gates ?? 0,
+            ...(typeof session.title === "string" ? { title: session.title } : {}),
             archived_at: null,
             reply: session.reply,
         }]));
@@ -376,7 +400,10 @@ export default class Documents {
                 });
             }
         }
-        return this.#sessionTree(workspaces, byId);
+        const omitted = (overview.omitted ?? 0) > 0
+            ? `<p data-overview-omitted><small><span data-text="overview-omitted">${overview.omitted}</span> <span data-i18n="older-sessions-omitted">older sessions omitted — browse all in</span> <a href="/~/" data-i18n="workspaces">Workspaces</a>.</small></p>`
+            : "";
+        return this.#sessionTree(workspaces, byId) + omitted;
     }
 
     /** {§web-session-observer} Identity and navigation belong to the document; status arrives through ACP.
@@ -408,11 +435,7 @@ export default class Documents {
             + `<form id="session-reconnect" action="${escapeHtml(path)}" data-bind="action:session-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><p>`
             + `<a data-sign-in href="${escapeHtml(`/auth/login?return=${encodeURIComponent(path)}`)}" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a>`
             + '</p></article>'
-            + '<details id="session-streams" data-stream-outcomes><summary data-i18n="stream-outcomes">Observed stream outcomes</summary>'
-            + '<p data-i18n="stream-outcomes-scope">Conclusions observed on this page, not a complete execution history.</p><ul></ul></details>'
-            + '<section id="session-diagnostics" aria-label="Observed diagnostics"><p data-i18n="observed-diagnostics">Observed diagnostics</p><ul></ul></section>'
-            + '<details id="session-activity"><summary data-i18n="observed-activity">Observed activity</summary>'
-            + '<p data-i18n="activity-scope">Non-conversation evidence observed on this page, not a complete history.</p><ul></ul></details>'
+            + '<section id="session-diagnostics" aria-label="Diagnostics"><ul></ul></section>'
             + '<section id="session-conversation" aria-label="Conversation">'
             + '<p data-empty-conversation data-i18n="no-messages">No messages.</p>'
             + '<noscript><p data-i18n="conversation-needs-js">Conversation requires JavaScript.</p></noscript>'
@@ -450,15 +473,25 @@ export default class Documents {
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
             const dialogs = this.#renameForm(workspace) + this.#workspaceArchiveForm(workspace) + this.#sessionCreationForm(workspace);
             const live = typeof port.readSessionOverview === "function";
-            const overview = typeof port.readSessionOverview === "function"
-                ? await port.readSessionOverview({ workspaceId: workspace.id, limit: Number.MAX_SAFE_INTEGER, excerptChars: 1 })
+            if (live && (this.#overviewSessions === null || this.#overviewExcerptChars === null)) {
+                throw new RequestError(503, "Session overview is unavailable because its configuration is invalid.");
+            }
+            const overview = typeof port.readSessionOverview === "function" && this.#overviewExcerptChars !== null
+                ? await port.readSessionOverview({ workspaceId: workspace.id, limit: Number.MAX_SAFE_INTEGER, excerptChars: this.#overviewExcerptChars })
                 : null;
-            const replies = new Map(overview?.sessions.map((entry) => [entry.id, entry.reply]) ?? []);
-            const treeSessions = new Map(sessions.map((entry) => [entry.id, {
-                ...entry,
-                workspaceId: workspace.id,
-                reply: replies.get(entry.id) ?? entry.reply ?? null,
-            }]));
+            const overviewById = new Map(overview?.sessions.map((entry) => [entry.id, entry]) ?? []);
+            const treeSessions = new Map(sessions.map((entry) => {
+                const info = overviewById.get(entry.id);
+                const sessionTitle = info?.title ?? entry.title;
+                return [entry.id, {
+                    ...entry,
+                    workspaceId: workspace.id,
+                    kind: info?.kind ?? entry.kind,
+                    gates: info?.gates ?? entry.gates ?? 0,
+                    ...(typeof sessionTitle === "string" ? { title: sessionTitle } : {}),
+                    reply: info?.reply ?? entry.reply ?? null,
+                }];
+            }));
             const mainAttributes = live ? ` data-workspace-id="${workspace.id}" data-auth="${authenticated ? "session" : "none"}" data-connection="initial"` : "";
             return render(workspace.name, folder + this.#sessionTree(new Map([[workspace.id, workspace]]), treeSessions), marker, "", dialogs, mainAttributes);
         }

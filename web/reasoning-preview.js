@@ -28,7 +28,7 @@ export default function reasoningPreview(root, limit) {
                 || update.sessionUpdate === "tool_call"
                 || update.sessionUpdate === "tool_call_update"
                 || update.sessionUpdate === "agent_message_chunk"
-                || (update.sessionUpdate === "notice"
+                || ((update.sessionUpdate === "notice" || update.sessionUpdate === "_plurnk_telemetry")
                     && isRecord(update._meta)
                     && isRecord(update._meta.plurnk)
                     && (typeof update._meta.plurnk.id === "number"

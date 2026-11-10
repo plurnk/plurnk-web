@@ -164,10 +164,10 @@ export default async function verifySessionCards(t) {
                 const overviewData = {
                     workspaces: [{ id: 7, name: "work", project_root: null, project_label: null, projectRoot: null, archived_at: null }],
                     sessions: [
-                        { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", archived_at: null, reply: { id: 10, coordinate: "1/1/1/send:10", completion: /** @type {const} */ (200) } },
-                        { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", archived_at: null, reply: null },
-                        { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", archived_at: null, reply: { id: 20, coordinate: "1/2/1/done:20", completion: /** @type {const} */ (200) } },
-                        { id: 8, workspaceId: 7, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null, reply: null },
+                        { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", gates: 1, title: "Root task", archived_at: null, reply: { id: 10, coordinate: "1/1/1/send:10", completion: /** @type {const} */ (200), at: Date.now() - 120_000, excerpt: "Parent preview line", continued: false } },
+                        { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", gates: 0, archived_at: null, reply: null },
+                        { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "fork", lifecycle: "completed", gates: 0, archived_at: null, reply: { id: 20, coordinate: "1/2/1/done:20", completion: /** @type {const} */ (200), at: Date.now() - 30_000, excerpt: "Delivered reply preview", continued: true } },
+                        { id: 8, workspaceId: 7, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", gates: 0, archived_at: null, reply: null },
                     ],
                 };
                 let nextEventId = 0;
@@ -226,9 +226,35 @@ export default async function verifySessionCards(t) {
                 assert.equal(await card("idle").locator(":scope > details").count(), 0, "silent leaf has no disclosure");
                 assert.equal(doneReads, 0, "closed reply disclosure does not fetch entry body at load");
 
-                // Open "done" card: fetches once on demand and renders sanitized Markdown
+                // Session kind glyphs, badges, relative timestamps, excerpts, and filter controls
+                assert.match(await page.locator('main a[data-session-link][aria-label="parent"]').evaluate((el) => getComputedStyle(el, "::before").content), /💬/u);
+                assert.match(await page.locator('main a[data-session-link][aria-label="child"]').evaluate((el) => getComputedStyle(el, "::before").content), /🐜/u);
+                assert.match(await page.locator('main a[data-session-link][aria-label="done"]').evaluate((el) => getComputedStyle(el, "::before").content), /🔱/u);
+                assert.equal(await card("parent").locator("[data-session-title]").textContent(), "Root task");
+                assert.equal(await card("parent").locator("[data-session-gates]").textContent(), "1");
+                assert.equal(await card("parent").locator("[data-session-children]").textContent(), "1");
+                assert.equal(await card("parent").locator("time[data-session-time]").textContent(), "2m ago");
+                assert.equal(await card("done").locator("time[data-session-time]").textContent(), "just now");
+                assert.equal(await card("done").locator("[data-session-excerpt]").textContent(), "Delivered reply preview…");
+                assert.equal(await card("done").locator("[data-session-excerpt]").isVisible(), true);
+
+                // Filter controls: scope and search
+                await page.locator('#overview-controls select[data-overview-scope]').selectOption("active");
+                assert.equal(await card("parent").isVisible(), true);
+                assert.equal(await card("done").isVisible(), false);
+                assert.equal(await card("idle").isVisible(), false);
+                await page.locator('#overview-controls select[data-overview-scope]').selectOption("all");
+                assert.equal(await card("done").isVisible(), true);
+                await page.locator('#overview-controls input[data-overview-search]').fill("Root task");
+                assert.equal(await card("parent").isVisible(), true);
+                assert.equal(await card("done").isVisible(), false);
+                await page.locator('#overview-controls input[data-overview-search]').fill("");
+                assert.equal(await card("done").isVisible(), true);
+
+                // Open "done" card: fetches once on demand and renders sanitized Markdown, hiding the collapsed excerpt
                 const doneSummary = card("done").locator(":scope > details > summary");
                 await doneSummary.press("Enter");
+                assert.equal(await card("done").locator("[data-session-excerpt]").isVisible(), false);
                 const doneOutlet = card("done").locator(":scope > details > [data-session-reply]");
                 await doneOutlet.locator("strong", { hasText: "Delivered reply" }).waitFor();
                 assert.equal(await page.evaluate(() => Boolean(window.pwned)), false);

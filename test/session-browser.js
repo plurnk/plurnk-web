@@ -241,11 +241,8 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await connected(page);
                         assert.equal(await notice.count(), 1, "a replayed warning keeps its existing entry");
                         assert.equal(await problem.count(), 1, "a replayed Problem keeps its existing entry");
-                        const progress = rows.filter({ has: page.getByRole("article", { name: "Information · engine:turn:turn_generated", exact: true }) });
-                        assert.equal(await progress.getAttribute("data-diagnostic-level"), "info");
-                        assert.equal(await progress.getAttribute("data-diagnostic-details"), null, "accounting remains with the status owner, not a diagnostic payload copy");
-                        assert.equal(await rows.filter({ has: page.getByRole("article", { name: "Information · engine:turn:turn_awaiting_model", exact: true }) }).count(), 1);
-                        assert.equal(await rows.count(), count + 2, "new turn progress remains inspectable alongside replayed configuration evidence");
+                        assert.equal(await rows.filter({ hasText: "engine:turn" }).count(), 0, "routine turn progress does not clutter diagnostics");
+                        assert.equal(await rows.count(), count, "healthy turn execution adds no diagnostic entries");
                         assert.equal(await notice.evaluate((element) => element === window.retainedNotice), true);
                         assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed diagnostics.");
                         assert.equal(model.requests.length, 1);

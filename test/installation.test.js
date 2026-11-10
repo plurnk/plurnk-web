@@ -16,8 +16,6 @@ import verifySessions from "./sessions-browser.js";
 import verifyAccount from "./account-browser.js";
 import verifyTokens from "./tokens-browser.js";
 import verifySessionPage from "./session-browser.js";
-import verifySessionStreams from "./session-streams.js";
-import verifySessionActivity from "./session-activity.js";
 import verifySessionCommands from "./session-commands.js";
 import verifySessionInput, { closeSharedDaemons } from "./session-input.js";
 import verifySessionHistory from "./session-history.js";
@@ -203,8 +201,6 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     await verifyAccount({ t, withDaemon });
     await verifyTokens({ t, withDaemon });
     await verifySessionPage({ t, withDaemon });
-    await verifySessionStreams({ t, withDaemon });
-    await verifySessionActivity({ t, withDaemon });
     await verifySessionCommands({ t, withDaemon });
     await verifySessionInput({ t, withDaemon });
     await verifySessionHistory({ t, withDaemon });

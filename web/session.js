@@ -9,9 +9,6 @@ import accessHeaders from "./access-headers.js";
 import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import reasoningPreview from "./reasoning-preview.js";
-import sessionStreams from "./session-streams.js";
-import readEntry from "./read-entry.js";
-import activity from "./session-activity.js";
 import managementAction from "./management-action.js";
 import sessionCommands, { isCommand } from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
@@ -76,12 +73,6 @@ export default function observeSession(element) {
     const diagnosticList = $("#session-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Session document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
-    const activityList = $("#session-activity");
-    if (!(activityList instanceof HTMLElement)) throw new Error("Session document has no activity outlet.");
-    const observeActivity = activity(activityList, (address) => readBody(address, auth, resources.signal));
-    const streamList = $("#session-streams");
-    if (!(streamList instanceof HTMLElement)) throw new Error("Session document has no stream outlet.");
-    const streams = sessionStreams(streamList, (target) => readEntry(target, sessionId, auth, resources.signal));
     const presentState = sessionState(element);
     const agent = new SessionAgent({ url: "/acp", sessionId });
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
@@ -182,8 +173,6 @@ export default function observeSession(element) {
                         if (signal.aborted) return;
                         preview.consume(update);
                         await diagnose(update);
-                        await streams.consume(update);
-                        observeActivity(update);
                     },
                     onMessagesChanged: ({ messages }) => { if (!signal.aborted) transcript.present(messages); },
                     onUserMessage: ({ messageId }) => {

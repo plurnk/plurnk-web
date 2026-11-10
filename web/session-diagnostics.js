@@ -34,9 +34,10 @@ export default function diagnostics(root) {
         const isProblem = !isNotice && Object.hasOwn(plurnk, "problem");
         if (!isNotice && !isProblem) return;
         if (isNotice && typeof plurnk.notice === "object" && plurnk.notice !== null
-            && ((Reflect.get(plurnk.notice, "source") === "engine:lifecycle"
-                && Reflect.get(plurnk.notice, "kind") === "loop_status"
-                && !Object.hasOwn(plurnk.notice, "position"))
+            && (Reflect.get(plurnk.notice, "source") === "engine:turn"
+                || (Reflect.get(plurnk.notice, "source") === "engine:lifecycle"
+                    && Reflect.get(plurnk.notice, "kind") === "loop_status"
+                    && !Object.hasOwn(plurnk.notice, "position"))
                 || (Reflect.get(plurnk.notice, "source") === "engine:derivation"
                     && Reflect.get(plurnk.notice, "kind") === "search_progress"
                     && Reflect.get(plurnk.notice, "phase") !== "failed"))) return;
