@@ -185,7 +185,7 @@ identity, expiry, revocation and the account inventory.
 | Access expiry | Reuse a still-valid access credential; otherwise perform the standard OAuth refresh grant with confidential-client authentication. Concurrent requests in the same family share one refresh, so rotation does not race across tabs. |
 | Grant integrity | Access and refresh credentials must belong to the registered client, subject, scope and family. A refresh cannot change the family or resurrect a revoked sign-in. Failed refreshes are surfaced; no operation is replayed or authority substituted. |
 | Revocation and cleanup | Authority revocation releases the retained grant. Expired grants are pruned on subsequent credential activity; module close releases them and its revocation subscription. Session expiry remains fixed by sign-in, not extended by refresh. |
-| Browser custody | Access credentials are for the same-origin `/acp` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
+| Browser custody | Access credentials are for the same-origin `/acp` and `/notifications` endpoints and live only in JavaScript memory. Refresh credentials and client authentication never leave the server; no local/session storage, URL, document or diagnostic contains them. |
 | Refusals | Missing/expired/revoked sign-in is 401; wrong/missing Origin is 403. Expected endpoint failures use RFC 9457 JSON, not an HTML sign-in redirect. |
 
 Session observation consumes this primitive under {§web-session-observer}; it adds no
@@ -340,7 +340,7 @@ flow at the end of `<main>` and submits cleanly.
 | Roots | Shown model sessions with `parentSessionId: null` form the primary list. Sessions with a delivered reply (`done` or `fail`) order first by most recent delivered reply (`reply.id` descending); sessions with no delivered reply follow in daemon order. On `/`, roots span all non-archived workspaces. |
 | Children | Immediate model children nest beneath their actual model parent, ordered by most recent delivered reply (`reply.id` descending) with no-reply siblings following in daemon order. |
 | Card identity | Two lines: a named ant link to the session, its lifecycle glyph, optional actual parent followed by `>`, and the session name; then a folder/cloud marker and a real link to its workspace. Model parents are links; bookkeeping parents are escaped text, never fabricated session destinations. Folder presence comes from `project_root`, not the workspace name. Kind and permission owner do not become visible metadata rows. |
-| Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the session statusline; the icon has a literal accessible name/title. With JavaScript, the ACP `session/list` overview subscription keeps lifecycle, card order, membership and workspace labels live in place. |
+| Lifecycle | Project the supplied lifecycle with the same glyph vocabulary as the session statusline; the icon has a literal accessible name/title. With JavaScript, the `GET /notifications` SSE stream keeps lifecycle, card order, membership and workspace labels live in place. |
 | Background | Model sessions with an immediate non-model parent begin branches in one collapsed “Background work” section, ordered by most recent delivered reply. Omit it when empty. No A2A-specific classification or reparenting. |
 | Disclosure | Each card is `li > article`. When it has children or a delivered reply, one initially closed `details` contains its two-line identity as a phrasing-only `summary`, followed by any nested `ul/li` child cards and a `[data-session-reply]` outlet carrying the reply's `/acp/<workspace ID>/<session ID>/entry` address. Leaves without a delivered reply use a `header` with the same identity and no empty disclosure. Activating a summary opens the card; when opened, JavaScript fetches the reply's entry body once on demand and renders it as sanitized Markdown, offering a native Retry form on failure and ignoring stale reads if a newer reply arrives. Activating its ant, parent or workspace link navigates without toggling it. Native keyboard and pointer behavior work without JavaScript; no separate child-count teaser. |
 | Parent on session page | Show the actual parent's name: a link for a model parent, escaped text for a bookkeeping parent. Roots omit the parent line. URL breadcrumbs remain workspace/session navigation, not invented lineage paths. |
@@ -349,7 +349,7 @@ flow at the end of `<main>` and submits cleanly.
 
 Rendering and expansion perform no attachment, inference, ownership change or
 daemon mutation. Opening a card with a delivered reply fetches only that reply's
-read-only entry body on demand; live `_plurnk/overview` updates reconcile cards
+read-only entry body on demand; live `GET /notifications` updates reconcile cards
 in place while preserving open disclosures, focus and already-rendered reply
 bodies. Opening a session page may observe it under {§web-session-observer},
 never control it.
@@ -361,9 +361,9 @@ with the daemon's qualified session identity (`<workspace ID>#<session name>`) a
 whether access requires a browser session. URLs and breadcrumbs retain readable names;
 renaming a workspace does not redirect an already-open observation to another session.
 No credential appears in the document. JavaScript enhances that footer on session
-pages and subscribes to read-only `session/list` overview updates on home and
+pages and subscribes to `GET /notifications` updates on home and
 workspace pages; other pages neither load the ACP client nor request access
-credentials or ACP streams.
+credentials or event streams.
 Without JavaScript the identity and navigation remain usable, with an explicit
 notice that live status requires JavaScript.
 

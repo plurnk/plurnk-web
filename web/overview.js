@@ -5,7 +5,6 @@ import card from "./card.js";
 import markdown from "./markdown.js";
 import problemFromResponse from "./problem-response.js";
 import readBody from "./read-body.js";
-import { PROTOCOL_VERSION, client, createHttpStream, methods } from "./session-agent.js";
 
 /**
  * @typedef {{
@@ -29,6 +28,18 @@ import { PROTOCOL_VERSION, client, createHttpStream, methods } from "./session-a
  * }} OverviewSession
  */
 
+const NOTIFICATION_EVENTS = [
+    "workspace/renamed",
+    "workspace/archived",
+    "session/created",
+    "session/archived",
+    "session/deleted",
+    "loop/terminated",
+    "loop/proposal",
+    "loop/interaction",
+    "log/entry",
+].join(",");
+
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -47,6 +58,10 @@ export default function observeOverview(main) {
     let resources = new AbortController();
     /** @type {Map<string, HTMLLIElement>} */
     const rowsByKey = new Map();
+    /** @type {Map<number, { name: string, projectRoot: string | null, projectLabel: string | null }>} */
+    const workspacesById = new Map();
+    /** @type {Map<string, OverviewSession>} */
+    const sessionsByKey = new Map();
     /** @type {WeakMap<Element, symbol>} */
     const activeTokens = new WeakMap();
     /** @type {WeakMap<Element, string>} */
@@ -103,27 +118,81 @@ export default function observeOverview(main) {
         }
     }
 
-    for (const details of $$(main, 'li[data-directory-entry="session"] > article > details')) {
-        if (details instanceof HTMLDetailsElement) bindDisclosure(details);
-    }
+    function hydrateFromDom() {
+        if (workspaceId !== undefined) {
+            const crumbName = $('header nav[aria-label="breadcrumb"] [aria-current="page"][data-text="name"]');
+            const marker = crumbName?.previousElementSibling;
+            const labelEl = $(main, '[data-text="project-label"]');
+            const name = crumbName?.textContent ?? String(workspaceId);
+            const projectLabel = labelEl?.textContent ?? (marker?.getAttribute("aria-label") === "Project workspace" ? name : null);
+            workspacesById.set(workspaceId, { name, projectRoot: projectLabel, projectLabel });
+        }
+        for (const row of $$(main, 'li[data-directory-entry="session"]')) {
+            if (!(row instanceof HTMLLIElement)) continue;
+            const details = $(row, ":scope > article > details");
+            if (details instanceof HTMLDetailsElement) bindDisclosure(details);
+            const rawKey = row.dataset.sessionKey ?? "";
+            const keyMatch = /^(\d+):(\d+)$/u.exec(rawKey);
+            if (!keyMatch) continue;
+            const wsId = Number(keyMatch[1]);
+            const id = Number(keyMatch[2]);
+            const key = `${wsId}:${id}`;
+            rowsByKey.set(key, row);
 
-    /** @param {unknown} payload */
-    function presentOverview(payload) {
-        if (!isRecord(payload) || !Array.isArray(payload.sessions)) return;
-        const meta = isRecord(payload._meta) && isRecord(payload._meta.plurnk) ? payload._meta.plurnk : null;
-        /** @type {Map<number, { name: string, projectRoot: string | null, projectLabel: string | null }>} */
-        const workspacesById = new Map();
-        if (Array.isArray(meta?.workspaces)) {
-            for (const ws of meta.workspaces) {
-                if (isRecord(ws) && typeof ws.id === "number" && typeof ws.name === "string") {
-                    workspacesById.set(ws.id, {
-                        name: ws.name,
-                        projectRoot: typeof ws.projectRoot === "string" ? ws.projectRoot : null,
-                        projectLabel: typeof ws.projectLabel === "string" ? ws.projectLabel : null,
-                    });
+            const parentRow = row.parentElement?.closest('li[data-directory-entry="session"]');
+            const parentKeyMatch = parentRow instanceof HTMLLIElement && parentRow.dataset.sessionKey
+                ? /^(\d+):(\d+)$/u.exec(parentRow.dataset.sessionKey)
+                : null;
+            const enclosingDetails = row.closest("details");
+            const isBackground = parentKeyMatch === null && enclosingDetails instanceof HTMLDetailsElement
+                && $(enclosingDetails, ':scope > summary[data-i18n="background-work"]') !== null;
+            const parentSessionId = parentKeyMatch ? Number(parentKeyMatch[2]) : isBackground ? 0 : null;
+
+            const article = $(row, ":scope > article");
+            const headerOrSummary = article ? $(article, ":scope > header, :scope > details > summary") : null;
+            const identity = headerOrSummary ? $(headerOrSummary, "[data-session-identity]") : null;
+            const workspaceSpan = headerOrSummary ? $(headerOrSummary, "[data-session-workspace]") : null;
+            const name = (identity ? $(identity, ":scope > span:last-child")?.textContent : null) ?? String(id);
+            const lifecycle = (identity ? $(identity, "[data-lifecycle]")?.getAttribute("data-lifecycle") : null) ?? "idle";
+            const workspaceName = (workspaceSpan ? $(workspaceSpan, '[data-text="name"]')?.textContent : null)
+                ?? workspacesById.get(wsId)?.name ?? String(wsId);
+            const hasFolder = workspaceSpan ? $(workspaceSpan, "[data-folder]")?.getAttribute("data-folder") === "true" : false;
+            const projectRoot = hasFolder ? (workspacesById.get(wsId)?.projectRoot ?? "/") : null;
+            if (!workspacesById.has(wsId)) {
+                workspacesById.set(wsId, { name: workspaceName, projectRoot, projectLabel: projectRoot });
+            }
+
+            const replyEl = article ? $(article, ":scope > details > [data-session-reply]") : null;
+            const replyAttr = replyEl?.getAttribute("data-session-reply") ?? null;
+            const rawReplyId = row.dataset.replyId;
+            /** @type {OverviewReply | null} */
+            let reply = null;
+            if (replyAttr) {
+                const targetParam = new URL(replyAttr, location.origin).searchParams.get("target");
+                const coordinate = targetParam?.startsWith("log:///") ? targetParam.slice("log:///".length) : null;
+                const replyId = rawReplyId && /^\d+$/u.test(rawReplyId)
+                    ? Number(rawReplyId)
+                    : coordinate && /:(\d+)$/u.test(coordinate) ? Number(coordinate.split(":").at(-1)) : null;
+                if (coordinate !== null && replyId !== null) {
+                    reply = { id: replyId, coordinate, completion: 200 };
                 }
             }
+
+            sessionsByKey.set(key, {
+                id,
+                workspaceId: wsId,
+                workspaceName,
+                projectRoot,
+                name,
+                parentSessionId,
+                origin: "model",
+                lifecycle,
+                reply,
+            });
         }
+    }
+
+    function reconcileDom() {
         if (workspaceId !== undefined) {
             const currentWs = workspacesById.get(workspaceId);
             if (currentWs) {
@@ -145,34 +214,7 @@ export default function observeOverview(main) {
                 }
             }
         }
-        /** @type {OverviewSession[]} */
-        const rawModels = [];
-        for (const entry of payload.sessions) {
-            if (!isRecord(entry) || entry.archived === true) continue;
-            const p = isRecord(entry._meta) && isRecord(entry._meta.plurnk) ? entry._meta.plurnk : null;
-            if (!p || p.archived === true || typeof p.id !== "number" || typeof p.workspaceId !== "number" || typeof p.name !== "string") continue;
-            const ws = workspacesById.get(p.workspaceId);
-            const workspaceName = typeof p.workspaceName === "string" ? p.workspaceName : ws?.name ?? String(p.workspaceId);
-            const projectRoot = typeof p.projectRoot === "string" ? p.projectRoot : p.projectRoot === null ? null : ws?.projectRoot ?? null;
-            const rawReply = isRecord(p.reply) ? p.reply : null;
-            /** @type {OverviewReply | null} */
-            const reply = rawReply && typeof rawReply.id === "number" && typeof rawReply.coordinate === "string"
-                && (rawReply.completion === 200 || rawReply.completion === 499)
-                ? { id: rawReply.id, coordinate: rawReply.coordinate, completion: rawReply.completion }
-                : null;
-            rawModels.push({
-                id: p.id,
-                workspaceId: p.workspaceId,
-                workspaceName,
-                projectRoot,
-                name: p.name,
-                parentSessionId: typeof p.parentSessionId === "number" ? p.parentSessionId : null,
-                origin: "model",
-                lifecycle: typeof p.lifecycle === "string" ? p.lifecycle : "idle",
-                reply,
-            });
-        }
-        const models = rawModels.toSorted(orderSessions);
+        const models = [...sessionsByKey.values()].toSorted(orderSessions);
         /** @type {Map<number, OverviewSession>} */
         const byId = new Map(models.map((session) => [session.id, session]));
         for (const session of models) {
@@ -204,17 +246,25 @@ export default function observeOverview(main) {
             const key = `${session.workspaceId}:${session.id}`;
             let row = rowsByKey.get(key);
             if (!row || !row.isConnected) {
-                const path = directoryPath({ kind: "session", workspace: session.workspaceName, session: session.name });
-                if (path !== null) {
-                    const link = $(main, `li[data-directory-entry="session"] a[data-session-link][href="${CSS.escape(path)}"]`);
-                    const existing = link?.closest('li[data-directory-entry="session"]');
-                    if (existing instanceof HTMLLIElement && !claimedRows.has(existing)) {
-                        row = existing;
+                const byKey = $(main, `li[data-directory-entry="session"][data-session-key="${CSS.escape(key)}"]`);
+                if (byKey instanceof HTMLLIElement && !claimedRows.has(byKey)) {
+                    row = byKey;
+                } else {
+                    const path = directoryPath({ kind: "session", workspace: session.workspaceName, session: session.name });
+                    if (path !== null) {
+                        const link = $(main, `li[data-directory-entry="session"] a[data-session-link][href="${CSS.escape(path)}"]`);
+                        const existing = link?.closest('li[data-directory-entry="session"]');
+                        if (existing instanceof HTMLLIElement && !claimedRows.has(existing)) {
+                            row = existing;
+                        }
                     }
                 }
                 row ??= /** @type {HTMLLIElement} */ ($.clone(list, "#session-card"));
                 rowsByKey.set(key, row);
             }
+            row.dataset.sessionKey = key;
+            if (session.reply !== null) row.dataset.replyId = String(session.reply.id);
+            else delete row.dataset.replyId;
             claimedRows.add(row);
             return row;
         };
@@ -379,105 +429,205 @@ export default function observeOverview(main) {
         }
     }
 
+    /** @param {unknown} raw */
+    function applyNotification(raw) {
+        if (!isRecord(raw) || typeof raw.event !== "string" || !isRecord(raw.data)) return;
+        const { event, data } = raw;
+        const notifWorkspaceId = typeof raw.workspaceId === "number" ? raw.workspaceId : null;
+        const notifSessionId = typeof raw.sessionId === "number" ? raw.sessionId : null;
+
+        switch (event) {
+            case "workspace/renamed": {
+                const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
+                const name = typeof data.name === "string" ? data.name : null;
+                if (id === null || name === null) return;
+                const prev = workspacesById.get(id);
+                workspacesById.set(id, {
+                    name,
+                    projectRoot: prev?.projectRoot ?? null,
+                    projectLabel: prev?.projectLabel ?? null,
+                });
+                for (const [key, session] of sessionsByKey.entries()) {
+                    if (session.workspaceId === id) {
+                        sessionsByKey.set(key, { ...session, workspaceName: name });
+                    }
+                }
+                reconcileDom();
+                return;
+            }
+            case "workspace/archived": {
+                const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
+                if (id === null || data.archived_at === null || data.archived_at === undefined) return;
+                let removed = false;
+                for (const [key, session] of sessionsByKey.entries()) {
+                    if (session.workspaceId === id) {
+                        sessionsByKey.delete(key);
+                        removed = true;
+                    }
+                }
+                if (removed) reconcileDom();
+                return;
+            }
+            case "session/created": {
+                const id = typeof data.id === "number" ? data.id : notifSessionId;
+                const wsId = typeof data.workspaceId === "number" ? data.workspaceId : notifWorkspaceId;
+                if (id === null || wsId === null || typeof data.name !== "string") return;
+                if (workspaceId !== undefined && wsId !== workspaceId) return;
+                const prevWs = workspacesById.get(wsId);
+                const wsName = typeof data.workspaceName === "string" ? data.workspaceName : prevWs?.name ?? String(wsId);
+                const projRoot = typeof data.projectRoot === "string" ? data.projectRoot : data.projectRoot === null ? null : prevWs?.projectRoot ?? null;
+                const projLabel = typeof data.projectLabel === "string" ? data.projectLabel : data.projectLabel === null ? null : prevWs?.projectLabel ?? projRoot;
+                workspacesById.set(wsId, { name: wsName, projectRoot: projRoot, projectLabel: projLabel });
+                if (data.origin !== "model") return;
+                sessionsByKey.set(`${wsId}:${id}`, {
+                    id,
+                    workspaceId: wsId,
+                    workspaceName: wsName,
+                    projectRoot: projRoot,
+                    name: data.name,
+                    parentSessionId: typeof data.parentSessionId === "number" ? data.parentSessionId : null,
+                    origin: "model",
+                    lifecycle: typeof data.lifecycle === "string" ? data.lifecycle : "idle",
+                    reply: null,
+                });
+                reconcileDom();
+                return;
+            }
+            case "session/archived":
+            case "session/deleted": {
+                if (event === "session/archived" && (data.archived_at === null || data.archived_at === undefined)) return;
+                const wsId = notifWorkspaceId;
+                const ids = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
+                if (wsId === null || ids.length === 0) return;
+                let removed = false;
+                for (const sid of ids) {
+                    if (typeof sid === "number" && sessionsByKey.delete(`${wsId}:${sid}`)) {
+                        removed = true;
+                    }
+                }
+                if (removed) reconcileDom();
+                return;
+            }
+            case "loop/proposal":
+            case "loop/interaction": {
+                if (notifWorkspaceId === null || notifSessionId === null) return;
+                if (event === "loop/proposal" && isRecord(data.disposition) && data.disposition.decision !== "review") return;
+                const key = `${notifWorkspaceId}:${notifSessionId}`;
+                const cur = sessionsByKey.get(key);
+                if (!cur || cur.lifecycle === "running") return;
+                sessionsByKey.set(key, { ...cur, lifecycle: "running" });
+                reconcileDom();
+                return;
+            }
+            case "log/entry": {
+                const entry = isRecord(data.entry) ? data.entry : null;
+                if (!entry) return;
+                const wsId = notifWorkspaceId;
+                const sid = typeof entry.session_id === "number" ? entry.session_id : notifSessionId;
+                if (wsId === null || sid === null) return;
+                const key = `${wsId}:${sid}`;
+                const cur = sessionsByKey.get(key);
+                if (!cur) return;
+                let nextReply = cur.reply;
+                let nextLifecycle = cur.lifecycle;
+                if (
+                    entry.origin === "model"
+                    && entry.state === "resolved"
+                    && (typeof entry.status_rx !== "number" || entry.status_rx < 400)
+                    && (entry.op === "send" || entry.op === "done" || entry.op === "fail")
+                    && typeof entry.id === "number"
+                ) {
+                    const rxCompletion = isRecord(entry.rx) && (entry.rx.completion === 200 || entry.rx.completion === 499)
+                        ? entry.rx.completion
+                        : (Array.isArray(entry.replied_to_sources) && entry.replied_to_sources.length > 0 ? 200 : null);
+                    if (rxCompletion !== null) {
+                        const coordinate = typeof entry.coordinate === "string"
+                            ? entry.coordinate
+                            : `${entry.loop_seq}/${entry.turn_seq}/${entry.sequence}`;
+                        nextReply = { id: entry.id, coordinate, completion: rxCompletion };
+                    }
+                }
+                if (entry.state !== "proposed" && entry.op !== "done" && entry.op !== "fail" && entry.op !== "wait") {
+                    nextLifecycle = "running";
+                }
+                if (nextReply !== cur.reply || nextLifecycle !== cur.lifecycle) {
+                    sessionsByKey.set(key, { ...cur, reply: nextReply, lifecycle: nextLifecycle });
+                    reconcileDom();
+                }
+                return;
+            }
+            case "loop/terminated": {
+                const wsId = notifWorkspaceId;
+                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+                if (wsId === null || sid === null) return;
+                const key = `${wsId}:${sid}`;
+                const cur = sessionsByKey.get(key);
+                if (!cur) return;
+                const status = isRecord(data.result) && typeof data.result.status === "number" ? data.result.status : 200;
+                const lifecycle = status === 200 ? "completed"
+                    : status === 202 ? "parked"
+                        : status === 499 ? "cancelled"
+                            : status >= 400 ? "failed" : "completed";
+                if (cur.lifecycle !== lifecycle) {
+                    sessionsByKey.set(key, { ...cur, lifecycle });
+                    reconcileDom();
+                }
+                return;
+            }
+            default:
+                return;
+        }
+    }
+
+    hydrateFromDom();
+
     /** @param {AbortSignal} signal */
     async function subscribe(signal) {
         the(main, "connection", "connecting");
         const headers = await accessHeaders(auth, signal);
         signal.throwIfAborted();
-        const connController = new AbortController();
-        signal.onabort = () => connController.abort(signal.reason);
-        /** @type {{ message: string, status?: number } | undefined} */
-        let streamProblem;
-        const sseReady = Promise.withResolvers();
-        const streamEnded = Promise.withResolvers();
-
-        /** @type {typeof globalThis.fetch} */
-        const acpFetch = async (input, init) => {
-            if (init?.method === "DELETE") return new Response(null, { status: 204 });
-            const mergedHeaders = new Headers(init?.headers);
-            for (const [key, value] of Object.entries(headers)) mergedHeaders.set(key, value);
-            const fetchSignal = init?.signal
-                ? AbortSignal.any([init.signal, connController.signal])
-                : connController.signal;
-            let response;
-            try {
-                response = await fetch(input, { ...init, headers: mergedHeaders, signal: fetchSignal });
-            } catch (error) {
-                if (init?.method === "GET") sseReady.resolve(undefined);
-                if (!fetchSignal.aborted) streamEnded.reject(error);
-                throw error;
-            }
-            if (!response.ok && streamProblem === undefined) {
-                const refusalError = await problemFromResponse(response.clone());
-                streamProblem = refusalError
-                    ? { message: refusalError.message, status: refusalError.status }
-                    : { message: response.statusText || `HTTP ${response.status}`, status: response.status };
-            }
-            if (init?.method !== "GET") return response;
-            sseReady.resolve(undefined);
-            if (!response.ok || !response.body || !response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
-                if (!fetchSignal.aborted) {
-                    streamEnded.reject(Object.assign(new Error(streamProblem?.message ?? "Overview stream closed."), { status: streamProblem?.status ?? response.status }));
-                }
-                return response;
-            }
-            const reader = response.body.getReader();
-            const wrapped = new ReadableStream({
-                async pull(controller) {
-                    try {
-                        const { done, value } = await reader.read();
-                        if (done) {
-                            controller.close();
-                            if (!fetchSignal.aborted) {
-                                streamEnded.reject(Object.assign(new Error(streamProblem?.message ?? "Overview stream ended."), { status: streamProblem?.status }));
-                            }
-                            return;
-                        }
-                        controller.enqueue(value);
-                    } catch (error) {
-                        if (!fetchSignal.aborted) streamEnded.reject(error);
-                        controller.error(error);
-                    }
-                },
-                cancel: (reason) => reader.cancel(reason),
-            });
-            return new Response(wrapped, { status: response.status, statusText: response.statusText, headers: response.headers });
-        };
-
-        const resolvedUrl = new URL("/acp", location.origin).href;
-        const stream = createHttpStream(resolvedUrl, { fetch: acpFetch, headers, cookies: "omit" });
-        const app = client({ name: "@plurnk/plurnk-web" });
-        app.onNotification("_plurnk/overview", (raw) => raw, ({ params }) => {
-            if (!connController.signal.aborted) presentOverview(params);
+        const query = new URLSearchParams({ event: NOTIFICATION_EVENTS });
+        if (workspaceId !== undefined) query.set("workspace", String(workspaceId));
+        const response = await fetch(`/notifications?${query.toString()}`, {
+            headers: { accept: "text/event-stream", ...headers },
+            signal,
         });
-        const conn = app.connect(stream);
+        if (!response.ok || !response.body || !response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+            const refusalError = await problemFromResponse(response.clone());
+            throw Object.assign(
+                new Error(refusalError?.message ?? (response.statusText || `HTTP ${response.status}`)),
+                { status: refusalError?.status ?? response.status },
+            );
+        }
+        the(main, "connection", "connected");
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = "";
         try {
-            await conn.agent.request(methods.agent.initialize, {
-                protocolVersion: PROTOCOL_VERSION,
-                info: { name: "@plurnk/plurnk-web", version: "1.1.0" },
-                capabilities: {},
-            });
-            await sseReady.promise;
-            const initial = await conn.agent.request(methods.agent.session.list, {
-                _meta: {
-                    plurnk: {
-                        subscribe: true,
-                        ...(workspaceId !== undefined ? { workspaceId } : {}),
-                    },
-                },
-            });
-            if (connController.signal.aborted) return;
-            presentOverview(initial);
-            the(main, "connection", "connected");
-            await streamEnded.promise;
-        } catch (error) {
-            if (streamProblem !== undefined && !signal.aborted) {
-                throw Object.assign(new Error(streamProblem.message), { status: streamProblem.status });
+            for (;;) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += value.replaceAll("\r\n", "\n");
+                for (;;) {
+                    const boundary = buffer.indexOf("\n\n");
+                    if (boundary === -1) break;
+                    const rawFrame = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    const dataLines = [];
+                    for (const line of rawFrame.split("\n")) {
+                        if (line.startsWith("data:")) {
+                            dataLines.push(line.slice(5).replace(/^ /u, ""));
+                        }
+                    }
+                    if (dataLines.length > 0 && !signal.aborted) {
+                        applyNotification(JSON.parse(dataLines.join("\n")));
+                    }
+                }
             }
-            throw error;
+            if (!signal.aborted) {
+                throw new Error("Notifications stream ended.");
+            }
         } finally {
-            connController.abort();
-            conn.close();
+            await reader.cancel().catch(() => undefined);
         }
     }
 

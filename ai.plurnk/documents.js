@@ -334,9 +334,10 @@ export default class Documents {
                 const descendants = children.get(session.id) ?? [];
                 const identity = this.#sessionIdentity(workspace, session, this.#parent(session, sessions));
                 const reply = this.#replyOutlet(workspace.id, session);
+                const replyAttr = session.reply ? ` data-reply-id="${session.reply.id}"` : "";
                 const content = descendants.length === 0 && reply === "" ? `<header>${identity}</header>`
                     : `<details><summary>${identity}</summary>${list(descendants)}${reply}</details>`;
-                return `<li data-directory-entry="session"><article aria-label="Session">${content}</article></li>`;
+                return `<li data-directory-entry="session" data-session-key="${workspace.id}:${session.id}"${replyAttr}><article aria-label="Session">${content}</article></li>`;
             }).join("")}</ul>`;
         const roots = list(children.get(null) ?? []);
         const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'

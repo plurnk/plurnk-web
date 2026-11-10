@@ -14,8 +14,8 @@ export default async function verifySessionCards(t) {
     const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
     let html;
     const requests = [];
-    let currentOverview = { sessions: [], _meta: { plurnk: { workspaces: [] } } };
-    const listRequests = [];
+    /** @type {{ search: string, authorization: string | null }[]} */
+    const notificationRequests = [];
     /** @type {Set<import("node:http").ServerResponse>} */
     const sseStreams = new Set();
     /** @type {Map<string, (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void>} */
@@ -29,52 +29,20 @@ export default async function verifySessionCards(t) {
             response.end(JSON.stringify({ access_token: "overview-token", token_type: "Bearer", expires_in: 300 }));
             return;
         }
-        if (path === "/acp") {
-            if (request.method === "DELETE") {
-                response.writeHead(204, privateHeaders);
-                response.end();
-                return;
-            }
-            if (request.method === "GET") {
-                response.writeHead(200, {
-                    ...privateHeaders,
-                    "content-type": "text/event-stream",
-                    connection: "keep-alive",
-                });
-                response.write(": connected\n\n");
-                sseStreams.add(response);
-                request.on("close", () => sseStreams.delete(response));
-                return;
-            }
-            if (request.method === "POST") {
-                let raw = "";
-                for await (const chunk of request) raw += chunk;
-                const msg = JSON.parse(raw);
-                if (msg.method === "initialize") {
-                    response.writeHead(200, {
-                        ...privateHeaders,
-                        "content-type": "application/json",
-                        "acp-connection-id": "overview-session",
-                    });
-                    response.end(JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: msg.id,
-                        result: { protocolVersion: 2, capabilities: {}, info: { name: "@plurnk/plurnk-service", version: "1.0.0" } },
-                    }));
-                    return;
-                }
-                response.writeHead(202, privateHeaders);
-                response.end();
-                if (msg.id !== undefined) {
-                    const result = msg.method === "session/list"
-                        ? (listRequests.push(msg.params), currentOverview)
-                        : {};
-                    for (const stream of sseStreams) {
-                        stream.write(`data: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n\n`);
-                    }
-                }
-                return;
-            }
+        if (path === "/notifications" && request.method === "GET") {
+            notificationRequests.push({
+                search: url.search,
+                authorization: request.headers.authorization ?? null,
+            });
+            response.writeHead(200, {
+                ...privateHeaders,
+                "content-type": "text/event-stream; charset=utf-8",
+                connection: "keep-alive",
+            });
+            response.write(": heartbeat\n\n");
+            sseStreams.add(response);
+            request.on("close", () => sseStreams.delete(response));
+            return;
         }
         if (path.startsWith("/acp/") && path.endsWith("/entry")) {
             const handler = entryHandlers.get(path + url.search);
@@ -202,34 +170,15 @@ export default async function verifySessionCards(t) {
                         { id: 8, workspaceId: 7, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null, reply: null },
                     ],
                 };
-                const toAcpOverview = (wsName, items) => ({
-                    sessions: items.map((s) => ({
-                        sessionId: `${s.workspaceId}#${s.name}`,
-                        cwd: "",
-                        title: s.name,
-                        _meta: {
-                            plurnk: {
-                                id: s.id,
-                                workspaceId: s.workspaceId,
-                                workspaceName: wsName,
-                                projectRoot: null,
-                                name: s.name,
-                                parentSessionId: s.parentSessionId,
-                                origin: s.origin,
-                                lifecycle: s.lifecycle,
-                                archived: false,
-                                reply: s.reply,
-                            },
-                        },
-                    })),
-                    _meta: {
-                        plurnk: {
-                            workspaces: [{ id: 7, name: wsName, projectRoot: null, projectLabel: null }],
-                        },
-                    },
-                });
-                currentOverview = toAcpOverview("work", overviewData.sessions);
-                listRequests.length = 0;
+                let nextEventId = 0;
+                const emitNotification = (event, workspaceId, sessionId, data) => {
+                    const id = ++nextEventId;
+                    const payload = { id, event, timestamp: Date.now(), workspaceId, sessionId, data };
+                    for (const stream of sseStreams) {
+                        stream.write(`id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+                    }
+                };
+                notificationRequests.length = 0;
                 entryHandlers.clear();
                 let doneReads = 0;
                 const doneTarget = "/acp/7/6/entry?target=log%3A%2F%2F%2F1%2F2%2F1%2Fdone%3A20";
@@ -263,8 +212,9 @@ export default async function verifySessionCards(t) {
                 requests.length = 0;
                 await page.goto(new URL("/~/work/", base).href);
                 await page.locator('main[data-connection="connected"]').waitFor();
-                assert.equal(listRequests.length, 1);
-                assert.deepEqual(listRequests[0], { _meta: { plurnk: { subscribe: true, workspaceId: 7 } } });
+                assert.equal(notificationRequests.length, 1);
+                assert.equal(notificationRequests[0].authorization, "Bearer overview-token");
+                assert.equal(new URLSearchParams(notificationRequests[0].search).get("workspace"), "7");
                 assert.equal(await page.locator("header [data-connection-indicator]").isVisible(), false);
 
                 const rootNames = () => page.locator("main > ul > li > article > header [data-session-link], main > ul > li > article > details > summary [data-session-link]")
@@ -298,7 +248,7 @@ export default async function verifySessionCards(t) {
                 await parentOutlet.getByRole("button", { name: "Retry", exact: true }).click();
                 await parentOutlet.locator("p", { hasText: "Parent initial reply" }).waitFor();
 
-                // Stale in-flight read protection + live _plurnk/overview reordering & workspace rename while preserving open state & focus
+                // Stale in-flight read protection + live /notifications reordering & workspace rename while preserving open state & focus
                 const staleGate = Promise.withResolvers();
                 const midTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F2%2Fsend%3A30";
                 entryHandlers.set(midTarget, async (_req, res) => {
@@ -313,33 +263,58 @@ export default async function verifySessionCards(t) {
                 });
 
                 await doneSummary.focus();
-                for (const stream of sseStreams) {
-                    stream.write(`data: ${JSON.stringify({
-                        jsonrpc: "2.0",
-                        method: "_plurnk/overview",
-                        params: toAcpOverview("work", [
-                            { ...overviewData.sessions[0], reply: { id: 30, coordinate: "1/1/2/send:30", completion: 200 } },
-                            overviewData.sessions[1],
-                            overviewData.sessions[2],
-                            overviewData.sessions[3],
-                        ]),
-                    })}\n\n`);
-                }
+                emitNotification("log/entry", 7, 2, {
+                    entry: {
+                        id: 30,
+                        session_id: 2,
+                        loop_seq: 1,
+                        turn_seq: 1,
+                        sequence: 2,
+                        coordinate: "1/1/2/send:30",
+                        origin: "model",
+                        op: "send",
+                        state: "resolved",
+                        status_rx: 200,
+                        rx: { completion: 200 },
+                    },
+                });
                 await page.locator(`main [data-session-reply="${midTarget}"][aria-busy="true"]`).waitFor();
 
-                // Before midTarget finishes, push a newer reply (id: 40) and rename workspace to "renamed-work"
-                for (const stream of sseStreams) {
-                    stream.write(`data: ${JSON.stringify({
-                        jsonrpc: "2.0",
-                        method: "_plurnk/overview",
-                        params: toAcpOverview("renamed-work", [
-                            { ...overviewData.sessions[0], lifecycle: "completed", reply: { id: 40, coordinate: "1/1/3/send:40", completion: 200 } },
-                            overviewData.sessions[1],
-                            overviewData.sessions[2],
-                            { ...overviewData.sessions[3], lifecycle: "running" },
-                        ]),
-                    })}\n\n`);
-                }
+                // Before midTarget finishes, push a newer reply (id: 40), terminate parent loop, start idle loop, and rename workspace to "renamed-work"
+                emitNotification("log/entry", 7, 2, {
+                    entry: {
+                        id: 40,
+                        session_id: 2,
+                        loop_seq: 1,
+                        turn_seq: 1,
+                        sequence: 3,
+                        coordinate: "1/1/3/send:40",
+                        origin: "model",
+                        op: "send",
+                        state: "resolved",
+                        status_rx: 200,
+                        rx: { completion: 200 },
+                    },
+                });
+                emitNotification("loop/terminated", 7, 2, {
+                    sessionId: 2,
+                    loopId: 1,
+                    result: { status: 200 },
+                });
+                emitNotification("log/entry", 7, 8, {
+                    entry: {
+                        id: 41,
+                        session_id: 8,
+                        loop_seq: 1,
+                        turn_seq: 1,
+                        sequence: 1,
+                        origin: "model",
+                        op: "read",
+                        state: "resolved",
+                        status_rx: 200,
+                    },
+                });
+                emitNotification("workspace/renamed", 7, null, { id: 7, name: "renamed-work" });
                 staleGate.resolve(undefined);
                 await parentOutlet.locator("p", { hasText: "Newest live reply" }).waitFor();
                 assert.equal((await parentOutlet.textContent())?.includes("Stale intermediate reply"), false, "stale in-flight reply read is ignored");

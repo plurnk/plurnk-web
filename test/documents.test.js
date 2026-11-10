@@ -133,23 +133,23 @@ test("{§web-session-directory} model lineage is complete, collapsed and indepen
     const port = { listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], listSessions: async () => sessions };
     const html = (await document.read({ kind: "workspace", workspace: "work" }, port, false)).toString();
     const link = (name) => `<a href="/~/work@${name}/" data-text="name" data-session-name="${name}" data-bind="href:session-path">${name}</a>`;
-    const entry = (name, parent = null, children = "") => {
+    const entry = (id, name, parent = null, children = "") => {
         const lineage = parent === null ? "" : `<span data-session-parent>${parent === "_plurnk" ? "<span>_plurnk</span>" : link(parent)} &gt; </span>`;
         const identity = `<span data-session-identity><a data-session-link href="/~/work@${name}/" aria-label="${name}" title="Open session ${name}"></a> `
             + '<span data-lifecycle="completed" role="img" aria-label="completed" title="completed"></span> '
             + `${lineage}<span>${name}</span></span>`
             + '<span data-session-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a href="/~/work/" data-text="name">work</a></span>';
         const content = children ? `<details><summary>${identity}</summary><ul>${children}</ul></details>` : `<header>${identity}</header>`;
-        return `<li data-directory-entry="session"><article aria-label="Session">${content}</article></li>`;
+        return `<li data-directory-entry="session" data-session-key="7:${id}"><article aria-label="Session">${content}</article></li>`;
     };
     assert.ok(html.includes([
         "<ul>",
-        entry("2bb6a400-7106-4299-ae47-66daea5d6077"),
-        entry("user", null, entry("review", "user", entry("evidence", "review")) + entry("research", "user")),
+        entry(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
+        entry(4, "user", null, entry(6, "review", "user", entry(7, "evidence", "review")) + entry(5, "research", "user")),
         "</ul>",
         '<details><summary data-i18n="background-work">Background work</summary><ul>',
-        entry("incoming", "_plurnk", entry("incoming-child", "incoming")),
-        entry("other", "_plurnk"),
+        entry(8, "incoming", "_plurnk", entry(10, "incoming-child", "incoming")),
+        entry(9, "other", "_plurnk"),
         "</ul></details>",
     ].join("")), html);
     const names = [...html.matchAll(/data-session-link href="\/~\/work@([^"]+)\/"/gu)].map((match) => match[1]);
