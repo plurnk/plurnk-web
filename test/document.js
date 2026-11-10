@@ -46,7 +46,7 @@ export default async function verifyDocument(browser, base) {
             tab.on("request", (request) => requests.push(request.url()));
             await tab.goto(new URL(query || "/", base).href);
             await tab.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
-            assert.equal(await tab.locator("main").innerText(), "");
+            assert.equal(await tab.locator("main").innerText(), "No sessions.");
             assert.equal(await tab.locator("html").getAttribute("lang"), "en");
             assert.equal(await tab.title(), "Plurnk");
             assert.ok(!requests.some((url) => new URL(url).pathname.startsWith("/locales/")), "source-language document needs no translation request");

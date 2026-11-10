@@ -122,7 +122,7 @@ export default async function verifyAccount({ t, withDaemon }) {
                     await nav.getByRole("link", { name: "Account", exact: true }).click();
                     await page.locator("main").getByRole("link", { name: "Sessions", exact: true }).click();
                     await page.getByRole("button", { name: "End this session", exact: true }).click();
-                    await page.waitForURL(base);
+                    await page.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
                     assert.equal(await nav.getByRole("link", { name: "Account", exact: true }).count(), 0);
                     assert.equal(await nav.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
                     await page.goto(new URL("/account/sessions/index.html", base).href);

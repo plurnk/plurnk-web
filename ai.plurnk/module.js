@@ -271,11 +271,11 @@ export default function createModule() {
                             res.setHeader("allow", "GET, HEAD");
                             throw new RequestError(405, "Method not allowed.");
                         }
-                        if (!home && session !== null && !admitted) {
-                            redirect(res, session.signIn(req, req.url ?? "/~/"));
+                        if (session !== null && !admitted) {
+                            redirect(res, session.signIn(req, req.url ?? "/"));
                             return;
                         }
-                        const body = home ? await documents.home(admitted, session === null || admitted ? seam : undefined) : account ? documents.account() : inventory ? documents.sessions(inventory)
+                        const body = home ? await documents.home(admitted, seam) : account ? documents.account() : inventory ? documents.sessions(inventory)
                             : directory === null ? null : await documents.read(directory, seam, admitted, ownNavigation(req));
                         if (body === null) throw new RequestError(404, "Workspace or session not found.");
                         res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });

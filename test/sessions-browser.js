@@ -117,8 +117,10 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                                 await page.waitForURL(new URL(path, base).href);
                                 return page;
                             };
-                            const page = await signIn(context, "/~/");
+                            const page = await signIn(context, "/");
                             const second = await signIn(other, "/~/");
+                            await verifyPageShell(page, { title: "Plurnk", kind: "home" });
+                            await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces", exact: true }).click();
                             await verifyPageShell(page, { title: "Workspaces — Plurnk", kind: "daemon" });
                             assert.equal(await page.locator("main h1").count(), 0);
                             assert.deepEqual(await page.locator("main > ul > li > article > header > a").allTextContents(), initial.map(({ name }) => name));
@@ -183,13 +185,15 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             await page.getByRole("banner").getByRole("link", { name: "Plurnk", exact: true }).click();
                             assert.equal(new URL(page.url()).pathname, "/");
                             await verifyPageShell(page, { title: "Plurnk", kind: "home" });
+                            const totalSessions = initial.reduce((sum, ws) => sum + ws.sessions.filter(({ origin }) => origin === "model").length, 0);
                             assert.equal(
                                 await page.locator("main a[data-session-link]").count(),
-                                initial.reduce((sum, ws) => sum + ws.sessions.filter(({ origin }) => origin === "model").length, 0),
-                                "admitted home renders the daemon-wide model session overview",
+                                Math.min(12, totalSessions),
+                                "admitted home renders the bounded daemon-wide model session overview",
                             );
+                            assert.equal(await page.locator('main [data-text="overview-omitted"]').innerText(), String(totalSessions - 12));
                             await page.getByRole("button", { name: "Sign out" }).click();
-                            await page.waitForURL(base);
+                            await page.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
                             assert.equal((await context.cookies()).some(({ name }) => name === "plurnk_web_session"), false);
                             const replay = await fetch(new URL("/~/", base), { headers: { cookie: `plurnk_web_session=${cookie.value}` }, redirect: "manual" });
                             assert.equal(replay.status, 303, "logout revokes the credential, not only the browser cookie");
@@ -255,7 +259,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                         const checkBrowser = browserDiagnostics(context);
                         try {
                             const page = await context.newPage();
-                            const response = await page.goto(new URL("/~/", base).href);
+                            const response = await page.goto(base);
                             assert.equal(response.status(), 503, "unconfigured sign-in explains the missing configuration, never grants localhost access");
                             assert.match(await page.locator("body").innerText(), /PLURNK_PASS/u);
                             await verifyAuthorizationPage(page, response, { warning: true });
@@ -455,22 +459,22 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                             try {
                                 const enter = async (ctx) => {
                                     const page = await ctx.newPage();
-                                    await page.goto(new URL("/~/", base).href);
+                                    await page.goto(base);
                                     await page.getByLabel("Password", { exact: true }).fill("browser-password");
                                     await page.getByRole("button", { name: "Continue", exact: true }).click();
-                                    await page.waitForURL(new URL("/~/", base).href);
+                                    await page.waitForURL(base);
                                     return page;
                                 };
                                 const page = await enter(context);
                                 const second = await enter(other);
                                 await page.getByRole("button", { name: "Sign out", exact: true }).click();
-                                await page.waitForURL(base);
-                                await page.getByRole("navigation", { name: "breadcrumb", exact: true }).getByRole("link", { name: "Workspaces", exact: true }).click();
-                                await page.waitForLoadState("domcontentloaded");
+                                await page.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
+                                assert.equal(await page.getByLabel("Password", { exact: true }).count(), 1);
+                                await page.goto(new URL("/~/", base).href);
                                 assert.equal(new URL(page.url()).pathname, "/oauth/authorize", "revisiting Workspaces requires sign-in; revoking only the web cookie is insufficient");
                                 assert.equal(await page.getByLabel("Password", { exact: true }).count(), 1);
                                 await second.reload();
-                                assert.equal(new URL(second.url()).pathname, "/~/", "another browser remains admitted");
+                                assert.equal(new URL(second.url()).pathname, "/", "another browser remains admitted");
                                 checkBrowser();
                                 checkOther();
                             } finally { await context.close(); await other.close(); }
@@ -532,6 +536,7 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     const expiring = await authorize(other, pending.headers().location);
                     const signedIn = await other.request.get((await authorize(other, again.headers().location)).headers().location, { maxRedirects: 0 });
                     assert.equal(signedIn.status(), 303, "a real sign-in completes beside another tab's transaction");
+                    assert.equal(signedIn.headers().location, "/");
                     const page = await other.newPage();
                     await page.waitForTimeout(1100);
                     assert.equal((await other.request.get(expiring.headers().location, { maxRedirects: 0 })).status(), 400, "expired transactions cannot establish sessions");
@@ -560,17 +565,16 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                     try {
                         const page = await browser.newPage();
                         const checkBrowser = browserDiagnostics(page.context());
-                        await page.goto(`${issuer}/~/`);
+                        await page.goto(`${issuer}/`);
                         assert.equal(new URL(page.url()).origin, issuer);
                         assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
                         assert.equal(new URL(page.url()).searchParams.get("redirect_uri"), `${issuer}/auth/callback`);
                         await page.getByLabel("Password", { exact: true }).fill("proxy-pass");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
-                        await page.waitForURL(`${issuer}/~/`);
-                        assert.equal(await page.locator('[aria-current="page"]').innerText(), "🗃️");
+                        await page.waitForURL(`${issuer}/`);
                         assert.equal(await page.locator("main h1").count(), 0);
                         await page.getByRole("button", { name: "Sign out" }).click();
-                        await page.waitForURL(`${issuer}/`);
+                        await page.waitForURL((url) => new URL(url).origin === issuer && new URL(url).pathname === "/oauth/authorize");
                         checkBrowser();
                     } finally { await browser.close(); }
                 });

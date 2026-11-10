@@ -133,12 +133,12 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
     };
 
     await t.test("{§web-host} discovery, default floor and route precedence", async (discovery) => {
-        await withDaemon({}, async (base) => {
+        await withDaemon({ PLURNK_AUTH: "0" }, async (base) => {
             await discovery.test("{§web-asset-encoding} packed assets negotiate exact compressed bytes", () =>
                 verifyStaticAssets(base, pathToFileURL(`${plugin}/ai.plurnk/`)));
             const page = await fetch(base);
             assert.equal(page.status, 200);
-            assert.match(await page.text(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
+            assert.match(await page.text(), /<main\b[^>]*data-page="home"[^>]*data-auth="none"[^>]*><p data-i18n="no-sessions">No sessions\.<\/p><\/main>/u);
             const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
             assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the root document");
             assert.equal(await explicitIndex.text(), await (await fetch(base)).text());
@@ -164,7 +164,7 @@ test("{§web-package} packed plugin on the candidate daemon", { timeout: 600_000
                         try {
                             const tab = await context.newPage();
                             await tab.goto(base);
-                            assert.equal(await tab.locator("main").innerText(), "");
+                            assert.equal(await tab.locator("main").innerText(), "No sessions.");
                             assert.equal(await tab.title(), "Plurnk");
                             for (const [colorScheme, primary] of /** @type {const} */ ([["light", "#148800"], ["dark", "#4eb31b"]])) {
                                 await tab.emulateMedia({ colorScheme });

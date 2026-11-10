@@ -143,10 +143,10 @@ export default class Session {
     /** @param {SessionRequest} req @param {SessionResponse} res */
     async login(req, res) {
         const issuer = this.#issuer(req);
-        const requested = new URL(req.url ?? "/", issuer).searchParams.get("return") ?? "/~/";
+        const requested = new URL(req.url ?? "/", issuer).searchParams.get("return") ?? "/";
         const directory = parseDirectory(requested);
         const document = indexDocument(requested.split(/[?#]/u)[0]);
-        const target = ["/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
+        const target = ["/index.html", "/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
             : directory === null ? null : directoryPath(directory);
         if (target === null) throw new RequestError(400, "Invalid return page.");
         if (this.admitted(req)) { redirect(res, target); return; }

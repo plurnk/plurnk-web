@@ -149,7 +149,7 @@ explicitly disabled authentication; directory reads are then anonymous.
 | Authentication enabled, empty password | The authority shows configuration-required information and issues no browser sign-in, including on localhost. Web neither infers anonymous access nor adds a local bypass. |
 | Authentication enabled, configured password | A browser signs in with `PLURNK_PASS` alone. No username field or web-owned identity configuration; a wrong password is refused by the authority at 401. |
 | Authentication explicitly disabled | Anonymous directories; no Account or Sign Out controls. |
-| GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, carried sealed in that browser's own HttpOnly cookie. Return locations are local directory addresses, `/account/` or `/account/sessions/` (also their explicit indexes); never an external URL. |
+| GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, carried sealed in that browser's own HttpOnly cookie. Return locations are `/` (the default), local directory addresses, `/account/` or `/account/sessions/` (also their explicit indexes); never an external URL. |
 | GET `/auth/callback` | Open this browser's transaction for the returned state and clear it whatever the outcome; validate and exchange the code with client authentication. A code the authority already redeemed answers 400. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |
 | Directory admission | Require a live authority-issued session for `plurnk-web` carrying `acp`; a bearer, refresh token, another client's cookie, or a revoked/expired session is not a web session. |
 | POST `/auth/logout` | Require the issuer's exact Origin, revoke this browser's sign-in family and clear the web cookie. The authority sign-in and its module credentials end together; revisiting requires sign-in. Other browser sessions and independently authorized clients remain intact. |
@@ -225,7 +225,7 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 
 | Document | Content / lookup |
 |---|---|
-| `/` | Public foundation document and a real link to `/~/` when unauthenticated; live daemon-wide session overview from `readSessionOverview()` under {§web-session-directory} when admitted or in explicit anonymous posture. |
+| `/` | Live daemon-wide session overview from `readSessionOverview()` under {§web-session-directory}, and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: native list articles for the shown workspaces with exact-name links under {§web-page-shell}, and the folderless creation form under {§web-workspace-creation}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
 | Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `readSessionOverview(id)` census rendered under {§web-session-directory}. |
 | Session directory | Exact-name model-session lookup; identity, breadcrumbs and actual parent under {§web-session-directory}, plus passive status under {§web-session-observer} and conversation under {§web-session-conversation}. |
@@ -722,8 +722,7 @@ there is no browser-owned route or session inventory.
 
 ## §web-document Document
 
-The unauthenticated home document contains only the shared navigation and an empty main landmark;
-admitted home renders the daemon-wide session overview. The document initializes OTM from locally packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
+The home document renders the daemon-wide session overview. The document initializes OTM from locally packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
 without application classes. Brand green is `#148800`; dark-mode link colors remain
 bright enough for contrast. Native color-scheme selection is preserved; typography
 uses Pico's system monospace stack and a shared numeric line-height token of 1.25.

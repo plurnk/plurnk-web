@@ -5,9 +5,6 @@ export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.title(), title);
     assert.equal(await page.locator("main").count(), 1);
     assert.equal(await page.locator("main h1").count(), ["home", "daemon", "workspace", "session"].includes(kind) ? 0 : 1);
-    if (kind === "home" && await page.locator("main[data-connection]").count() === 0) {
-        assert.equal(await page.locator("main").innerText(), "");
-    }
     assert.equal(await page.locator("main").getAttribute("data-page"), kind);
     const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
     const home = page.getByRole("banner").getByRole("link", { name: "Plurnk", exact: true });

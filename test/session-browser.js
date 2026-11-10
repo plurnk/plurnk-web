@@ -943,7 +943,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const second = await context.newPage();
                         await second.goto(new URL("/account/", base).href);
                         await second.getByRole("button", { name: "Sign out", exact: true }).click();
-                        await second.waitForURL(base);
+                        await second.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), true);
                         const frozen = await value(page, "elapsed");
