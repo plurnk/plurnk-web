@@ -29,7 +29,7 @@ Apply the platform's
 [configuration authority](https://github.com/plurnk/plurnk-service/blob/main/ARCHITECTURE.md#configuration-authority):
 deployment choices belong in the owning package's cascading environment.
 
-- This module declares choices in `ai.plurnk/.env.defaults`, consumed through
+- This module declares choices in `.env.defaults`, consumed through
   the shared `Knob` reader after the host assembles the floor. Reads supply no
   replacement default. Invalid configuration goes to the existing capability
   diagnostic; unrelated daemon work remains usable.
@@ -98,7 +98,7 @@ retains the investigation and dependency evidence.
 |---|---|
 | `zod` 3.25.76, an exact direct dependency | The SDK and the page share one copy: `web/schema-validation.js` configures it `jitless` before the SDK loads, as the page's CSP requires, and a second copy would not receive that. It moves only with the SDK's own range. |
 | `ondine` 0.0.1, the server-side diagram compiler | Reviewed 2026-10-23: one maintainer, published 2026-10-19 with SLSA v1 provenance, no dependencies, its compilers WASM. Review it again at every version change. |
-| `@types/negotiator` 0.6 for `negotiator` 1.1 | No 1.x declarations exist; `ai.plurnk/static-assets.js` declares the one 1.x call it relies on, `encoding(available, { preferred })`. |
+| `@types/negotiator` 0.6 for `negotiator` 1.1 | No 1.x declarations exist; `src/static-assets.js` declares the one 1.x call it relies on, `encoding(available, { preferred })`. |
 
 ## Failure and lifetime
 

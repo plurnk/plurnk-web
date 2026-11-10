@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Documents from "../ai.plurnk/documents.js";
-import { ownNavigation } from "../ai.plurnk/http.js";
+import Documents from "../src/documents.js";
+import { ownNavigation } from "../src/http.js";
 
 const navigation = '<template id="session-navigation"><a href="/account/">Account</a><form method="post" action="/auth/logout"><button>Sign out</button></form></template>';
 const session = (id, name, parentSessionId = null, origin = "model", owner = "_plurnk") => ({

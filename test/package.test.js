@@ -13,7 +13,7 @@ test("{§web-package} every package the module imports is a declared dependency"
         "@plurnk/plurnk-modules",
     ]);
     const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})]);
-    const directory = new URL("../ai.plurnk/", import.meta.url);
+    const directory = new URL("../src/", import.meta.url);
     const undeclared = [];
     for (const name of (await readdir(directory)).filter((file) => file.endsWith(".js")).toSorted()) {
         const source = await readFile(new URL(name, directory), "utf8");
@@ -26,7 +26,13 @@ test("{§web-package} every package the module imports is a declared dependency"
     assert.deepEqual(undeclared, [], "a runtime import resolves through a declared dependency");
 });
 
-test("{§web-package} the plugin manifest and the package carry one version", async () => {
-    const read = async (name) => JSON.parse(await readFile(new URL(`../${name}`, import.meta.url), "utf8"));
-    assert.equal((await read("plugin.json")).version, (await read("package.json")).version);
+test("{§web-package} the package exports its native module and ships root defaults", async () => {
+    const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    assert.deepEqual(manifest.exports, {
+        "./module": "./src/module.js",
+        "./package.json": "./package.json",
+    });
+    assert.ok(manifest.files.includes(".env.defaults"));
+    assert.ok(manifest.files.includes("dist/"));
+    assert.match(await readFile(new URL("../.env.defaults", import.meta.url), "utf8"), /PLURNK_WEB_ENABLED=/u);
 });

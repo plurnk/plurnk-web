@@ -6,7 +6,7 @@ import noUnsanitized from "eslint-plugin-no-unsanitized";
 
 // {§web-authoring} {§web-contract-checks} {§web-language} Authoring and specification boundaries are gated by lint.
 export default defineConfig(
-    { ignores: ["ai.plurnk/dist/**", "web/public/**", ".vite-test-*/**", ".module-test-*/**"] },
+    { ignores: ["dist/**", "web/public/**", ".vite-test-*/**", ".module-test-*/**"] },
     {
         files: ["**/*.{js,mjs}"],
         extends: [js.configs.recommended],
@@ -20,7 +20,7 @@ export default defineConfig(
         },
     },
     {
-        files: ["ai.plurnk/**/*.js", "scripts/**/*.mjs", "*.js"],
+        files: ["src/**/*.js", "scripts/**/*.mjs", "*.js"],
         languageOptions: { globals: globals.nodeBuiltin },
     },
     {
@@ -50,7 +50,7 @@ export default defineConfig(
         },
     },
     {
-        files: ["web/**/*.js", "ai.plurnk/**/*.js"],
+        files: ["web/**/*.js", "src/**/*.js"],
         rules: {
             "no-restricted-syntax": ["error", {
                 selector: "CallExpression[callee.type='Identifier'][callee.name=/^(setInterval|setTimeout)$/][arguments.1.type='Literal']",

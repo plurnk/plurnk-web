@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { engines } from "./engines.js";
-import Documents from "../ai.plurnk/documents.js";
-import { directoryPath } from "../ai.plurnk/directory-addresses.js";
-import { privateHeaders } from "../ai.plurnk/http.js";
+import Documents from "../src/documents.js";
+import { directoryPath } from "../src/directory-addresses.js";
+import { privateHeaders } from "../src/http.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
 export default async function verifySessionCards(t) {
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
-        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), contentType }])));
+        [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
     const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
     let html;
     const requests = [];

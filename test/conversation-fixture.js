@@ -2,9 +2,9 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
-import Documents from "../ai.plurnk/documents.js";
-import { privateHeaders } from "../ai.plurnk/http.js";
-import createModule from "../ai.plurnk/module.js";
+import Documents from "../src/documents.js";
+import { privateHeaders } from "../src/http.js";
+import createModule from "../src/module.js";
 
 /** @type {Promise<Map<string, { body: Buffer | string, type: string }>> | null} */
 let baseAssetsPromise = null;
@@ -17,9 +17,9 @@ async function compileEntry(entryURL) {
         pending = (async () => {
             if (!baseAssetsPromise) {
                 baseAssetsPromise = (async () => {
-                    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+                    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
                     return new Map(await Promise.all(inventory.map(async ([path, file, type]) =>
-                        [path, { body: await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url)), type }])));
+                        [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), type }])));
                 })();
             }
             const baseAssets = await baseAssetsPromise;

@@ -8,9 +8,9 @@ import { RequestError } from "./http.js";
  * @param {string} file @param {string} mediaType @param {Record<string, string>} encoded
  */
 export async function readAsset(file, mediaType, encoded) {
-    const body = await readFile(new URL(`dist/${file}`, import.meta.url));
+    const body = await readFile(new URL(`../dist/${file}`, import.meta.url));
     const variants = await Promise.all(Object.entries(encoded).map(async ([encoding, path]) =>
-        /** @type {const} */ ([encoding, await readFile(new URL(`dist/${path}`, import.meta.url))])));
+        /** @type {const} */ ([encoding, await readFile(new URL(`../dist/${path}`, import.meta.url))])));
     const representations = new Map([["identity", body], ...variants]);
     const preferred = [...representations].toSorted(([, a], [, b]) => a.byteLength - b.byteLength).map(([encoding]) => encoding);
     return { body, mediaType, representations, preferred };

@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { Piscina } from "piscina";
-import createModule from "../ai.plurnk/module.js";
+import createModule from "../src/module.js";
 
 async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
     const { PLURNK_AUTH = "0", ...env } = overrides;

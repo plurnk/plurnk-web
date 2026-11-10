@@ -9,5 +9,5 @@
         "strict": true,
         "types": ["node"]
     },
-    "include": ["ai.plurnk/*.js"]
+    "include": ["src/*.js"]
 }

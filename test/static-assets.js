@@ -14,10 +14,10 @@ async function response(base, path, method = "GET", encoding) {
     return { status: incoming.statusCode, headers: incoming.headers, body: Buffer.concat(await Array.fromAsync(incoming)) };
 }
 
-export default async function verifyStaticAssets(base, plugin) {
-    const inventory = JSON.parse(await readFile(new URL("assets.json", plugin), "utf8"));
+export default async function verifyStaticAssets(base, pkgRoot) {
+    const inventory = JSON.parse(await readFile(new URL("dist/assets.json", pkgRoot), "utf8"));
     const [path, file] = inventory.find(([path]) => /\/session-[^/]+\.js$/u.test(path));
-    const original = await readFile(new URL(`dist/${file}`, plugin));
+    const original = await readFile(new URL(`dist/${file}`, pkgRoot));
     for (const [accept, expected] of [
         ["gzip", "gzip"], ["br", "br"], ["BR", "br"],
         [undefined, "identity"], ["", "identity"],

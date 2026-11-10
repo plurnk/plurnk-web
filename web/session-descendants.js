@@ -1,5 +1,5 @@
 import { $, the } from "on_the_money";
-import { directoryPath } from "../ai.plurnk/directory-addresses.js";
+import { directoryPath } from "../src/directory-addresses.js";
 import { descendantTree, gateCount } from "./session-status.js";
 
 /** {§web-session-descendants} Native disclosures retain their own presentation state.

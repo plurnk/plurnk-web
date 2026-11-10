@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { setTimeout } from "node:timers/promises";
-import { directoryPath } from "../ai.plurnk/directory-addresses.js";
+import { directoryPath } from "../src/directory-addresses.js";
 import verifyPageShell from "./page-shell.js";
 
 // {§web-session-directory} Native navigation on the packed daemon, with the browser's JavaScript posture supplied by the caller.

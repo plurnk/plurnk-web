@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Session from "../ai.plurnk/session.js";
+import Session from "../src/session.js";
 
 const response = () => ({
     headers: {}, status: null, body: null,

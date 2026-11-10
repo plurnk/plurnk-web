@@ -1,6 +1,6 @@
 # plurnk-web
 
-A Plurnk daemon plugin serving native OTM documents at `/`.
+A Plurnk daemon module serving native OTM documents at `/`.
 Pico Classless Green supplies the styling, with #148800 brand accents and system
 monospace typography. It follows the browser's light/dark preference.
 Conversation cards use a subtle green user tint, ordinary cards for model replies,
@@ -188,7 +188,7 @@ Mermaid fences become static SVG images compiled by the web module's pinned
 The compiler runs in bounded Node threads; no compiler or WebAssembly is
 sent to the browser. Compilation uses the existing browser session (or the daemon's
 explicitly unauthenticated mode). `PLURNK_WEB_DIAGRAM_*` limits are documented in
-`ai.plurnk/.env.defaults`.
+`.env.defaults`.
 The renderer loads only when needed. Source remains available in a disclosure;
 unsupported or invalid diagrams keep their source and a short error. There are no
 interactive diagrams, remote rendering services or external font requests.
@@ -224,13 +224,12 @@ npm install --no-audit --no-fund /path/to/plurnk-plurnk-web-1.1.0.tgz
 ```
 
 Restart that daemon and visit its root URL, normally `http://localhost:1066/`.
-Native extension trust applies; the standard policy admits `@plurnk/*` packages.
-The plugin inherits the daemon's host and port, and leaves more-specific routes
+The module inherits the daemon's host and port, and leaves more-specific routes
 alone. It does not install or start a service.
 
 Set `PLURNK_WEB_ENABLED=0` in the service environment and restart to disable the
 module without uninstalling it. Module settings, browser approval mode and the sign-in time limit are documented in
-[ai.plurnk/.env.defaults](ai.plurnk/.env.defaults).
+[.env.defaults](.env.defaults).
 
 ## Install as an app
 
@@ -257,7 +256,7 @@ HTML edits reload the page; CSS edits update it in place. This serves the fronte
 only and neither starts nor restarts the daemon. Directory and sign-in requests
 need the daemon; Vite does not emulate its data or authentication.
 
-`npm run build` compiles the frontend into `ai.plurnk/dist/`. The plugin serves
+`npm run build` compiles the frontend into `dist/`. The module serves
 that build on the daemon's existing port; restart the daemon to load a new build.
 `npm run preview` previews the last build locally without a daemon. It is not the
 production server. Vite is development tooling only.
@@ -265,7 +264,7 @@ production server. Vite is development tooling only.
 `npm test` builds the frontend and checks specification tags and witnesses using
 Plurnk's shared development checker, server and browser JavaScript, OTM's
 HTML/JavaScript/CSS contracts, the module, and the three-engine browser component
-suites. `npm run test:installation` packs and installs the plugin with packed
+suites. `npm run test:installation` packs and installs the module with packed
 platform packages and the terminal client in a temporary directory. These may be published
 archives obtained with `npm pack` or locally built candidates. `test:candidate`
 gates the committed HEAD in a throwaway clone: `npm ci` from the lockfile, the
@@ -307,10 +306,10 @@ specimens at build time only; no daemon code enters the browser bundle.
 Browser type checking uses the public runtime-neutral client entry without Node
 globals. The module's server-side port types use their separate public entry;
 type declarations are erased, not bundled.
-The generated asset inventory tells the plugin which production files to serve.
+The generated asset inventory tells the module which production files to serve.
 Static assets negotiate build-time Brotli/gzip representations when smaller, with
 identity delivery available. Private documents and ACP streams are not compressed
-by the plugin; no request-time compression or additional browser dependency is added.
+by the module; no request-time compression or additional browser dependency is added.
 Build output is packed but not committed. [SPEC.md](SPEC.md) defines the contract.
 
 The `web/styles/index.css` import entry composes the four source layers in order

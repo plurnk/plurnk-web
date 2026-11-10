@@ -2,18 +2,18 @@
 
 ## §web-host Hosting
 
-An Agent Plugin declares one native Plurnk module. It uses the public
-module lifecycle and HTTP registration seam, never a separate listener or process.
-The daemon owns routing precedence, startup readiness and shutdown.
+`@plurnk/plurnk-web/module` exports one native Plurnk module composed by the
+service. It uses the public module lifecycle and HTTP registration seam, never a
+separate listener or process. The daemon owns composition, routing precedence,
+startup readiness and shutdown.
 
 | Configuration | Behavior |
 |---|---|
 | PLURNK_WEB_ENABLED=1 | Claim and register `/` on the daemon's existing listener. |
 | PLURNK_WEB_ENABLED=0 | Inert module: no route claims or registration. |
 | Invalid value | Existing configuration diagnostic; no web module activation. |
-| Package absent | No web routes. |
 
-The package's .env.defaults owns the default. More-specific mounts retain their ownership.
+The package's `.env.defaults` owns the default. More-specific mounts retain their ownership.
 
 ## §web-route-settlement Shutdown admission and settlement
 
@@ -28,7 +28,7 @@ The package's .env.defaults owns the default. More-specific mounts retain their 
 
 | Boundary | Contract |
 |---|---|
-| Module choices | `ai.plurnk/.env.defaults` declares enablement, browser approval mode, reasoning-preview retention, overview session and reply-excerpt bounds, the sign-in time limit, workspace creation limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
+| Module choices | `.env.defaults` declares enablement, browser approval mode, reasoning-preview retention, overview session and reply-excerpt bounds, the sign-in time limit, workspace creation limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
 | Invalid input | An invalid `PLURNK_WEB_ENABLED` refuses the module. Other invalid web settings are reported in `module.contained` and withhold only the part each configures (503 when requested), leaving the rest of the module operational. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. Disabled web does not inspect unused web settings. |
 | Other owners | Consume daemon authentication and credential policy through their existing configuration and public seams, never web-owned substitutes. |
 | Browser | Receives only explicit public document projections, not the environment, credentials or a second set of deployment defaults. Vite compiles assets independently of operator configuration. |
@@ -793,9 +793,9 @@ checkout. This checks traceability, not whether a cited test proves its contract
 | Command | Contract |
 |---|---|
 | `npm run dev` | Prepare static assets, then serve `web/` through Vite on loopback with HTML reload and CSS hot updates. No daemon or model is started. |
-| `npm run build` | Prepare assets, clean and compile into `ai.plurnk/dist/`, then generate `ai.plurnk/assets.json` from the complete output. |
+| `npm run build` | Prepare assets, clean and compile into `dist/`, then generate `dist/assets.json` from the complete output. |
 | `npm run preview` | Locally preview the last build through Vite; not a production server. |
-| Daemon startup | Load the inventory and every listed production asset; serve them through the plugin's existing mount. No Vite runtime or development server. |
+| Daemon startup | Load the inventory and every listed production asset; serve them through the module's existing mount. No Vite runtime or development server. |
 
 `web/index.html` owns the document, `web/app.js` imports OTM's npm entry,
 and `web/public/` supplies unchanged public assets. The four CSS source
@@ -831,17 +831,18 @@ References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progre
 
 ## §web-package Package boundary
 
-The npm archive includes the Agent Plugin manifest, native module, defaults,
-document and its complete browser dependency graph, including OTM, Pico, the ACP SDK and artwork licenses,
-and declares its peer ranges on the platform's contracts, modules, auth and ACP packages.
+The npm archive exports `./module` and `./package.json` and includes the native module,
+root `.env.defaults`, document and its complete browser dependency graph, including OTM,
+Pico, the ACP SDK and artwork licenses, and declares its peer ranges on the platform's
+contracts, modules, auth and ACP packages.
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside candidate service archives in an isolated environment and exercises actual module
-discovery, routing and browser execution.
+composition, routing and browser execution.
 Shared-client review verification installs the terminal client archive beside the
 same platform and web archives. A real PTY and headless terminal exercise both
 manual/YOLO choices against the browser; tests observe one execution, convergent
 results and withdrawn review controls, without another prompt or reconnection.
 These drivers are test tooling, not runtime dependencies or a client transport.
 
-Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-modules/SPEC.md),
-[Agent Plugins](https://agent-plugins.org/), and OTM's installed README.
+Upstream contracts: [module lifecycle and mounts](https://github.com/plurnk/plurnk-service/blob/main/plurnk-modules/SPEC.md)
+and OTM's installed README.

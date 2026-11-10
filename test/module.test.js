@@ -5,7 +5,7 @@ import { createServer, request } from "node:http";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { ConfigurationError } from "@plurnk/plurnk-meta";
-import createModule from "../ai.plurnk/module.js";
+import createModule from "../src/module.js";
 import verifyDirectories from "./directories.js";
 import verifyStaticAssets from "./static-assets.js";
 
@@ -157,10 +157,10 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
 });
 
 test("{§web-authorization-style} the registered browser client uses the packaged application stylesheet", async () => {
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const stylesheets = inventory.filter(([, , type]) => type === "text/css");
     assert.ok(stylesheets.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "the inventory also contains independently loaded renderer CSS");
-    const html = await readFile(new URL("../ai.plurnk/dist/index.html", import.meta.url), "utf8");
+    const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
     const stylesheet = /<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/u.exec(html)?.[1];
     assert.ok(stylesheet);
     assert.doesNotMatch(stylesheet, /math-renderer/u);
@@ -193,9 +193,9 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
     assert.equal(indexBody, await (await fetch(`${base}/`)).text());
     const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
     assert.equal(manifestResponse.status, 200, "{§web-installation} manifest is available on the module route");
-    const inventory = JSON.parse(await readFile(new URL("../ai.plurnk/assets.json", import.meta.url), "utf8"));
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     for (const [path, file, type] of inventory) {
-        const expected = path === "/index.html" ? Buffer.from(indexBody) : await readFile(new URL(`../ai.plurnk/dist/${file}`, import.meta.url));
+        const expected = path === "/index.html" ? Buffer.from(indexBody) : await readFile(new URL(`../dist/${file}`, import.meta.url));
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}?ignored=yes`, { method, headers: { "accept-encoding": "identity" } });
             assert.equal(res.status, 200, `${method} ${path}`);
@@ -252,8 +252,9 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const directory = await mkdtemp(new URL("../.module-test-", import.meta.url));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const base = pathToFileURL(`${directory}/`);
+    await mkdir(new URL("src/", base));
     for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "creations.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
-        await copyFile(new URL(`../ai.plurnk/${file}`, import.meta.url), new URL(file, base));
+        await copyFile(new URL(`../src/${file}`, import.meta.url), new URL(`src/${file}`, base));
     }
     await mkdir(new URL("dist/", base));
     const inventory = [
@@ -261,11 +262,11 @@ test("{§web-index-documents} production resolves only admitted directory indexe
         ["/nested/index.html", "nested.html", "text/html", {}],
         ["/nested/child.txt", "child.txt", "text/plain", {}],
     ];
-    await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
+    await writeFile(new URL("dist/assets.json", base), JSON.stringify(inventory));
     await writeFile(new URL("dist/root.html", base), '<title>Plurnk</title><header><template id="session-navigation"></template></header><main><h1>Plurnk</h1></main>');
     await writeFile(new URL("dist/nested.html", base), "<h1>Nested document</h1>");
     await writeFile(new URL("dist/child.txt", base), "Child resource\n");
-    const { default: fixtureModule } = await import(new URL("module.js", base).href);
+    const { default: fixtureModule } = await import(new URL("src/module.js", base).href);
     let handler;
     await fixtureModule().start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
     const server = createServer(handler);
@@ -275,7 +276,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     await verifyDirectories(`http://127.0.0.1:${server.address().port}`);
     await t.test("{§web-asset-encoding} missing declared bytes fail before route registration", async () => {
         inventory[2][3] = { br: "missing.txt.br" };
-        await writeFile(new URL("assets.json", base), JSON.stringify(inventory));
+        await writeFile(new URL("dist/assets.json", base), JSON.stringify(inventory));
         let registered = false;
         await assert.rejects(fixtureModule().start({ registerHttpRoute() { registered = true; } }),
             (/** @type {any} */ error) => error.code === "ENOENT" && error.path.endsWith("missing.txt.br"));
@@ -291,7 +292,7 @@ test("{§web-asset-encoding} static negotiation preserves exact bytes and HTTP s
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
-    await verifyStaticAssets(base, new URL("../ai.plurnk/", import.meta.url));
+    await verifyStaticAssets(base, new URL("../", import.meta.url));
     server.prependListener("request", (_req, res) => res.setHeader("vary", "Origin"));
     const varied = await fetch(`${base}/manifest.webmanifest`, { headers: { "accept-encoding": "gzip" } });
     assert.equal(varied.headers.get("vary"), "Origin, Accept-Encoding");

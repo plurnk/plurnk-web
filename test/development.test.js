@@ -11,9 +11,9 @@ import browserDiagnostics from "./browser-diagnostics.js";
 async function copySources(directory) {
     const root = join(directory, "web");
     await cp(new URL("../web/", import.meta.url), root, { recursive: true });
-    await mkdir(join(directory, "ai.plurnk"));
+    await mkdir(join(directory, "src"));
     for (const name of ["directory-addresses.js", "index-document.js"]) {
-        await cp(new URL(`../ai.plurnk/${name}`, import.meta.url), join(directory, "ai.plurnk", name));
+        await cp(new URL(`../src/${name}`, import.meta.url), join(directory, "src", name));
     }
     return root;
 }

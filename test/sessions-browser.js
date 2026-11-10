@@ -3,17 +3,18 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer, request as httpRequest } from "node:http";
 import { once } from "node:events";
+import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { directoryPath } from "../ai.plurnk/directory-addresses.js";
+import { directoryPath } from "../src/directory-addresses.js";
 import verifyPageShell from "./page-shell.js";
 import verifyAuthorizationPage from "./authorization-page.js";
 import verifySessionDirectory from "./session-directory-browser.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
 
-export default async function verifySessions({ t, consumer, withDaemon }) {
+export default async function verifySessions({ t, consumer, withDaemon: baseWithDaemon }) {
     // {§web-directory-documents} Fixture seeding and censuses use the same public application port,
-    // not the database. Only this isolated install contains the fixture module and its routes.
-    const fixture = join(consumer, "node_modules", "@plurnk", "web-directory-fixture");
+    // not the database. Only this isolated daemon run loads the fixture hook and its routes.
+    const fixture = join(consumer, "web-directory-fixture-hook.mjs");
     const names = ['~/repo with space/@%2F/<script>&"', "folderless", "/root//project/", "分析", "%2E%2E", `~/project/${"long-name-".repeat(12)}`];
     const projectRoot = join(consumer, "directory-project");
     const homeFolders = [
@@ -21,70 +22,89 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
         ["renamed-project", "renamed workspace"],
     ];
     await mkdir(projectRoot);
-    await mkdir(fixture);
-    await writeFile(join(fixture, "package.json"), JSON.stringify({
-        name: "@plurnk/web-directory-fixture", version: "1.0.0", type: "module",
-        exports: { "./module": "./module.js" }, plurnk: { kind: "module", module: "./module" },
-    }));
-    await writeFile(join(fixture, "module.js"), `import { mkdir } from "node:fs/promises";
-    import { homedir } from "node:os";
-    import { join } from "node:path";
-    export default { mounts: ["/__fixture"], async start(port) {
-        for (const name of ${JSON.stringify(names)}) {
-            const existing = (await port.listWorkspaces()).find((workspace) => workspace.name === name);
-            const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
-            const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
-            if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
-                await port.createSession({ workspaceId, name: "user" });
+    await writeFile(fixture, `import { registerHooks } from "node:module";
+registerHooks({
+    load(url, context, nextLoad) {
+        if (!url.endsWith("/@plurnk/plurnk-web/src/module.js")) return nextLoad(url, context);
+        return {
+            format: "module",
+            shortCircuit: true,
+            source: \`import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import createRealModule from \${JSON.stringify(\`\${url}?real\`)};
+export default function createFixtureModule() {
+    const web = createRealModule();
+    if (!web.mounts) return web;
+    return {
+        ...web,
+        mounts: [...web.mounts, "/__fixture"],
+        async start(port) {
+            for (const name of ${JSON.stringify(names)}) {
+                const existing = (await port.listWorkspaces()).find((workspace) => workspace.name === name);
+                const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
+                const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
+                if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
+                    await port.createSession({ workspaceId, name: "user" });
+                }
+                if (name === ${JSON.stringify(names[0])} && !(await port.listSessions(workspaceId)).some((session) => session.name === "primary")) {
+                    const owner = "acp://fixture/threads/primary";
+                    await port.registerSessionOwner(workspaceId, { address: owner, tools: [], interactive: false });
+                    const parent = await port.createSession({ workspaceId, name: "primary", owner });
+                    const review = await port.forkSession({ workspaceId, sessionId: parent.sessionId, name: "review" });
+                    await port.createSession({ workspaceId, name: "research", parentSessionId: parent.sessionId });
+                    await port.createSession({ workspaceId, name: "evidence", parentSessionId: review.sessionId });
+                    await port.createSession({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
+                    const runtime = await port.ensureRuntimeSession(workspaceId);
+                    const incoming = await port.createSession({ workspaceId, name: "incoming", parentSessionId: runtime });
+                    await port.createSession({ workspaceId, name: "incoming-child", parentSessionId: incoming.sessionId });
+                    await port.createSession({ workspaceId, name: "background-peer", parentSessionId: runtime });
+                }
             }
-            if (name === ${JSON.stringify(names[0])} && !(await port.listSessions(workspaceId)).some((session) => session.name === "primary")) {
-                const owner = "acp://fixture/threads/primary";
-                await port.registerSessionOwner(workspaceId, { address: owner, tools: [], interactive: false });
-                const parent = await port.createSession({ workspaceId, name: "primary", owner });
-                const review = await port.forkSession({ workspaceId, sessionId: parent.sessionId, name: "review" });
-                await port.createSession({ workspaceId, name: "research", parentSessionId: parent.sessionId });
-                await port.createSession({ workspaceId, name: "evidence", parentSessionId: review.sessionId });
-                await port.createSession({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
-                const runtime = await port.ensureRuntimeSession(workspaceId);
-                const incoming = await port.createSession({ workspaceId, name: "incoming", parentSessionId: runtime });
-                await port.createSession({ workspaceId, name: "incoming-child", parentSessionId: incoming.sessionId });
-                await port.createSession({ workspaceId, name: "background-peer", parentSessionId: runtime });
+            for (const [folder, name] of ${JSON.stringify(homeFolders)}) {
+                const projectRoot = join(homedir(), folder);
+                await mkdir(projectRoot, { recursive: true });
+                const existing = (await port.listWorkspaces()).find((workspace) => workspace.project_root === projectRoot);
+                const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
+                if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
+                if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
+                    await port.createSession({ workspaceId, name: "user" });
+                }
             }
-        }
-        for (const [folder, name] of ${JSON.stringify(homeFolders)}) {
-            const projectRoot = join(homedir(), folder);
-            await mkdir(projectRoot, { recursive: true });
-            const existing = (await port.listWorkspaces()).find((workspace) => workspace.project_root === projectRoot);
-            const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
-            if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
-            if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
-                await port.createSession({ workspaceId, name: "user" });
-            }
-        }
-        port.registerHttpRoute("/__fixture", async (req, res) => {
-            if (req.url === "/__fixture/revoke" && req.method === "POST") {
-                const token = req.headers.authorization?.slice(7);
-                const claims = token ? port.credentials.verify(token) : null;
-                if (claims) port.credentials.revokeFamily(claims.family);
-                res.writeHead(204); res.end(); return;
-            }
-            if (req.url === "/__fixture/archive" && req.method === "POST") {
-                let body = "";
-                for await (const chunk of req) body += chunk;
-                const { workspaceId, sessionId, archived } = JSON.parse(body);
-                if (sessionId === undefined) await port.setWorkspaceArchived({ workspaceId, archived });
-                else await port.setSessionArchived({ workspaceId, sessionId, archived });
-                res.writeHead(204); res.end(); return;
-            }
-            const workspaces = await port.listWorkspaces();
-            const snapshot = await Promise.all(workspaces.map(async (workspace) => ({ ...workspace,
-                sessions: await Promise.all((await port.listSessions(workspace.id)).map(async (session) => ({ ...session,
-                    loops: await port.listSessionLoops({ workspaceId: workspace.id, sessionId: session.id }),
-                }))),
-            })));
-            res.setHeader("content-type", "application/json"); res.end(JSON.stringify(snapshot));
-        });
-    } };\n`);
+            port.registerHttpRoute("/__fixture", async (req, res) => {
+                if (req.url === "/__fixture/revoke" && req.method === "POST") {
+                    const token = req.headers.authorization?.slice(7);
+                    const claims = token ? port.credentials.verify(token) : null;
+                    if (claims) port.credentials.revokeFamily(claims.family);
+                    res.writeHead(204); res.end(); return;
+                }
+                if (req.url === "/__fixture/archive" && req.method === "POST") {
+                    let body = "";
+                    for await (const chunk of req) body += chunk;
+                    const { workspaceId, sessionId, archived } = JSON.parse(body);
+                    if (sessionId === undefined) await port.setWorkspaceArchived({ workspaceId, archived });
+                    else await port.setSessionArchived({ workspaceId, sessionId, archived });
+                    res.writeHead(204); res.end(); return;
+                }
+                const workspaces = await port.listWorkspaces();
+                const snapshot = await Promise.all(workspaces.map(async (workspace) => ({ ...workspace,
+                    sessions: await Promise.all((await port.listSessions(workspace.id)).map(async (session) => ({ ...session,
+                        loops: await port.listSessionLoops({ workspaceId: workspace.id, sessionId: session.id }),
+                    }))),
+                })));
+                res.setHeader("content-type", "application/json"); res.end(JSON.stringify(snapshot));
+            });
+            return await web.start?.(port);
+        },
+    };
+}\`,
+        };
+    },
+});\n`);
+    const withDaemon = (overrides, verify) => baseWithDaemon({
+        NODE_OPTIONS: `--import=${pathToFileURL(fixture).href}`,
+        ...overrides,
+    }, verify);
     try {
         await t.test("{§web-session} native sign-in, protected lists, logout and independent browsers", async () => {
             await withDaemon({ PLURNK_PASS: "browser-password" }, async (base) => {
@@ -584,5 +604,5 @@ export default async function verifySessions({ t, consumer, withDaemon }) {
                 proxy.close(); proxy.closeAllConnections(); await closed;
             }
         });
-    } finally { await rm(fixture, { recursive: true }); }
+    } finally { await rm(fixture, { force: true }); }
 }

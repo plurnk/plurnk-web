@@ -21,18 +21,18 @@ load their own styles with their lazy modules, not through the shared page style
 The module uses only public Plurnk contracts. It owns no listener, daemon,
 database or agent lifecycle. Before adding a constant, default, limit or setting,
 apply ARCHITECTURE.md's configuration-authority rule: identify the panel choice or
-the mechanism that justifies it. Configuration belongs in ai.plurnk/.env.defaults,
+the mechanism that justifies it. Configuration belongs in .env.defaults,
 read through Knob with no local fallback. Do not create browser-side daemon policy.
 
 Frontend source lives in web/. Vite owns development serving and production
-compilation; the module serves only the built ai.plurnk/dist/ asset inventory.
+compilation; the module serves only the built dist/ asset inventory.
 Keep Vite out of runtime dependencies. Generated assets are packed, not committed.
 
 Commit, then run `npm run test:candidate -- <packed-platform-directory>` with published or
 candidate platform and terminal client archives. It gates the committed HEAD in a throwaway
 clone: `npm ci` from the lockfile, the archives installed beside it without saving, then
 `npm test`, including a packed installation on an isolated daemon. The checkout, which may be
-the plugin root an operator's daemon serves, is only read; a failed gate leaves its clone
+served by an operator's development workflow, is only read; a failed gate leaves its clone
 for diagnosis and names it.
 Commit verified changes using Conventional Commits (`<type>(<scope>): <description> (#N)` or
 `<type>: <description> (#N)`) with the registered agent as author and the operator as
