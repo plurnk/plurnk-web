@@ -54,7 +54,8 @@ export default async function verifyAccount({ t, withDaemon }) {
                     await page.goBack();
                     await page.waitForURL(new URL("/account/sessions/", base).href);
                     const nav = page.getByRole("navigation", { name: "Main navigation", exact: true });
-                    assert.deepEqual(await nav.getByRole("link").allTextContents(), ["⚙️"]);
+                    assert.equal(await nav.getByRole("link").count(), 1);
+                    assert.equal(await nav.getByRole("link", { name: "Account", exact: true }).locator("svg").count(), 1);
                     assert.equal(await nav.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
                     assert.equal(await page.locator("body > footer form").count(), 0);
                     const signOut = nav.getByRole("button", { name: "Sign out", exact: true });

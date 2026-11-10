@@ -130,10 +130,12 @@ export default async function verifyCommands(t) {
                     const command = (text) => page.evaluate((text) => window.command(text), text);
                     const isCommand = (text, available = []) => page.evaluate(({ text, available }) => window.isCommand(text, available), { text, available });
                     assert.equal(await isCommand("/skill run", [{ name: "skill" }]), false, "advertised availableCommands pass through to session/prompt");
+                    assert.equal(await isCommand("/learn distill this", []), false, "/learn expands into a session prompt instead of running locally");
+                    assert.match(await page.evaluate(() => window.expandPromptCommand("/learn focus on tests")), /SKILL\.md[\s\S]*Focus: focus on tests/u);
                     assert.equal(await isCommand("/model", [{ name: "skill" }]), true, "local slash commands remain intercepted");
                     assert.equal(await isCommand("/quit", [{ name: "skill" }]), true, "unadvertised unknown slash commands remain intercepted locally");
                     const rows = page.locator("#session-command-results > ul > li");
-                    for (const text of ["/", "  /help /model \n", "/yolo"]) assert.equal(await command(text), true);
+                    for (const text of ["/", "  /help /model \n", "/help learn", "/yolo"]) assert.equal(await command(text), true);
                     for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b", "/capabilities {"]) {
                         assert.equal(await command(text), false);
                     }
@@ -148,6 +150,28 @@ export default async function verifyCommands(t) {
                     assert.equal(await command("/model"), true);
                     assert.match(await rows.last().textContent(), /<script>/u);
                     assert.equal(await rows.locator("script").count(), 0, "daemon strings remain literal text");
+                    result = { definitions: [{ alias: `mcp-${source}`, state: "active" }] };
+                    assert.equal(await command("/mcp list"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.mcp.list");
+                    assert.match(await rows.last().locator("pre").textContent(), /mcp-<script>/u);
+                    assert.equal(await rows.locator("script").count(), 0);
+                    result = { definitions: [] };
+                    assert.equal(await command("/skills list"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.skills.list");
+                    assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "skills: none");
+                    result = { definitions: [{ alias: "nightly", state: "active" }] };
+                    assert.equal(await command("/schedule list"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.schedule.list");
+                    assert.equal(await rows.last().locator("pre").textContent(), "nightly  active");
+                    result = { definitions: [] };
+                    assert.equal(await command("/personas list"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.personas.list");
+                    assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "personas: none");
+                    result = { definitions: [{ alias: "API_TOKEN", state: "active", definition: { value: "top-secret-value" } }] };
+                    assert.equal(await command("/env list"), true);
+                    assert.equal(requests.at(-1).params.kind, "session.env.list");
+                    assert.equal(await rows.last().locator("pre").textContent(), "API_TOKEN  active");
+                    assert.doesNotMatch(await rows.last().textContent(), /top-secret-value/u);
                     catalog = {
                         aliases: [{ alias: "local", provider: "fixture", model: "small", active: true }],
                         page: { items: [{ selector: "fixture/small", provider: "fixture", providerName: "Fixture",

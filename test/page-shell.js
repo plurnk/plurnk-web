@@ -14,7 +14,8 @@ export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await home.getByRole("img", { name: "Plurnk", exact: true }).getAttribute("src"), "/icons/plurnk.svg");
     assert.equal(await navigation.getByRole("link", { name: "Workspaces", exact: true }).count(), 0, "no redundant workspace action beside the breadcrumb");
     const root = page.locator('header nav[aria-label="breadcrumb"] > ul > li:first-child > [aria-label="Workspaces"]');
-    assert.equal(await root.innerText(), "🗃️");
+    assert.equal(await root.innerText(), "");
+    assert.equal(await root.locator("svg").count(), 1);
     assert.equal(await root.getAttribute("title"), "Workspaces");
     if (kind === "daemon") {
         assert.equal(await root.getAttribute("aria-current"), "page");
@@ -78,10 +79,11 @@ export default async function verifyPageShell(page, { title, kind }) {
             assert.ok(Math.max(...rows) - Math.min(...rows) < 1, "breadcrumb contents remain one horizontally scrollable row");
         }
     }
-    for (const [role, name, glyph] of [["link", "Account", "⚙️"], ["button", "Sign out", "✖"]]) {
+    for (const [role, name] of [["link", "Account"], ["button", "Sign out"]]) {
         const control = navigation.getByRole(role, { name, exact: true });
         if (await control.count() === 0) continue;
-        assert.equal(await control.innerText(), glyph);
+        assert.equal(await control.innerText(), "");
+        assert.equal(await control.locator("svg").count(), 1);
         assert.equal(await control.getAttribute("title"), name, "icon actions retain native explanatory titles");
     }
     assert.equal(await page.getByRole("link", { name: "Skip to content", exact: true }).count(), 0);

@@ -105,11 +105,13 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             });
             await field.focus();
             assert.equal(await approval.getAttribute("aria-pressed"), "false");
-            assert.equal(await approval.getAttribute("title"), "Manual Approval (/yolo)");
+            assert.equal(await approval.getAttribute("title"), "Manual Approval (Shift+Tab · /yolo)");
+            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Review");
             await field.fill("Keep my unsent draft.");
             await approval.click();
             assert.equal(await approval.getAttribute("aria-pressed"), "true");
-            assert.equal(await approval.getAttribute("title"), "Auto Approval (/yolo)");
+            assert.equal(await approval.getAttribute("title"), "Auto Approval (Shift+Tab · /yolo)");
+            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "YOLO");
             await approval.press("Space");
             assert.equal(await approval.getAttribute("aria-pressed"), "false");
             await approval.press("Enter");
@@ -121,7 +123,8 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(model.requests.length, 0);
             await submit("/yolo");
             assert.equal(await approval.getAttribute("aria-pressed"), "false", "the command sees the same native toggle state");
-            assert.equal(await approval.getAttribute("title"), "Manual Approval (/yolo)");
+            assert.equal(await approval.getAttribute("title"), "Manual Approval (Shift+Tab · /yolo)");
+            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Review");
             await approval.click();
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
@@ -136,7 +139,24 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await rows.count(), 0);
             assert.equal(sent.length, 2, "one authored prompt and its standard approval response");
             assert.deepEqual(sent[1].result?.outcome, { outcome: "selected", optionId: "allow_once" });
+            assert.equal(sent[1].result?._meta?.plurnk?.outcome, "client_yolo");
             assert.equal(model.requests.length, 2);
+
+            await field.focus();
+            await approval.click();
+            assert.equal(await approval.getAttribute("aria-pressed"), "false");
+            await send("Lifecycle fixture: approval-shortcut.");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
+            await field.fill("Keep this draft during Shift+Tab.");
+            await field.press("Shift+Tab");
+            await page.getByText("Completed approval-shortcut.", { exact: true }).waitFor();
+            assert.equal(await approval.getAttribute("aria-pressed"), "true");
+            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "YOLO");
+            assert.equal(await field.inputValue(), "Keep this draft during Shift+Tab.");
+            assert.equal(sent.length, 4);
+            assert.deepEqual(sent[3].result?.outcome, { outcome: "selected", optionId: "allow_once" });
+            assert.equal(sent[3].result?._meta?.plurnk?.outcome, "client_yolo");
+            assert.equal(model.requests.length, 4);
             checkBrowser();
         }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
@@ -157,7 +177,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             const { field, submit } = composer(page);
             const help = await submit("/help");
             const names = await help.locator("[data-command-name]").evaluateAll((items) => items.map((item) => item.dataset.commandName));
-            assert.deepEqual(names, ["help", "models", "model", "effort", "capabilities", "yolo", "stop"]);
+            assert.deepEqual(names, ["help", "models", "model", "effort", "capabilities", "mcp", "skills", "schedule", "personas", "env", "learn", "yolo", "stop"]);
             assert.equal(sent.length, 0);
             for (const text of ["/quit", "/import anything", "/model a b c", "/effort low high", "/yolo yes", "/capabilities {"]) {
                 await submit(text, "error");
@@ -191,6 +211,13 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(result.ok, true, JSON.stringify(result));
             assert.deepEqual(result.result.workspace, policy);
             await submit("/capabilities {}");
+            const mcpNone = await submit("/mcp list");
+            assert.match(await mcpNone.textContent(), /mcp: none/u);
+            await submit("/env set MY_VAR top-secret-hello");
+            const envListed = await submit("/env list");
+            assert.equal(await envListed.locator("pre").textContent(), "MY_VAR  active");
+            assert.doesNotMatch(await envListed.textContent(), /top-secret-hello/u);
+            await submit("/env delete MY_VAR");
             await submit("/stop");
             assert.equal(model.requests.length, 0);
             assert.equal(await page.locator("[data-messages] > li").count(), 0);
@@ -202,6 +229,12 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await page.getByText("Completed command-followup.", { exact: true }).waitFor();
             assert.equal(model.requests.length, 1);
             assert.doesNotMatch(JSON.stringify(sent.at(-1).params.prompt), /nonexistent-web-route|\/capabilities|\/models/u);
+            await field.fill("/learn Lifecycle fixture: learn-focus.");
+            await page.getByRole("button", { name: "Send", exact: true }).click();
+            await page.getByText("Completed learn-focus.", { exact: true }).waitFor();
+            await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "");
+            assert.equal(model.requests.length, 2);
+            assert.match(sent.at(-1).params.prompt[0].text, /SKILL\.md[\s\S]*Focus: Lifecycle fixture: learn-focus\./u);
             checkBrowser();
         }, { authenticated: true, env: reasoning }));
 

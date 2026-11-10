@@ -20,11 +20,11 @@
         <a href="/" title="Home"><img src="/icons/plurnk.svg" width="32" height="32" alt="Plurnk"></a>
         <nav aria-label="Main navigation">
             <ul>
-                <li data-connection-indicator><span role="img" aria-label="Disconnected" title="Disconnected"></span></li>
+                <li data-connection-indicator><span role="img" aria-label="Disconnected" title="Disconnected"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5v3M10 2.5v3M4 5.5h8v2a4 4 0 0 1-8 0v-2ZM8 11.5v2M2.5 2.5l11 11"/></svg></span></li>
                 <!-- {§web-page-shell} Instantiated by the document server, not browser JavaScript. -->
                 <template id="session-navigation" data-otm-dynamic>
-                    <li><a href="/account/" aria-label="Account" title="Account" data-text="account-icon">⚙️</a></li>
-                    <li><form method="post" action="/auth/logout"><button type="submit" aria-label="Sign out" title="Sign out" data-text="sign-out-icon">✖</button></form></li>
+                    <li><a href="/account/" aria-label="Account" title="Account"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="2.75"/><path d="M3 13.5c0-2.5 2.2-4.25 5-4.25s5 1.75 5 4.25"/></svg></a></li>
+                    <li><form method="post" action="/auth/logout"><button type="submit" aria-label="Sign out" title="Sign out"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1H6M10.5 11l3-3-3-3M13.5 8H6.5"/></svg></button></form></li>
                 </template>
             </ul>
         </nav>
@@ -115,7 +115,7 @@
             <form id="session-compose">
                 <fieldset role="group" aria-label="Session actions">
                     <button type="submit" form="session-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
-                    <textarea id="session-message" name="message" aria-label="Message" rows="1" required></textarea>
+                    <textarea id="session-message" name="message" aria-label="Message" placeholder="Message (/help · Shift+Tab YOLO)" rows="1" required></textarea>
                     <button type="submit" form="session-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Control+Enter" title="Send (Ctrl+Enter)"></button>
                 </fieldset>
             </form>
@@ -185,6 +185,12 @@
             <li data-command-name="model"><code data-i18n="command-model-usage">/model [selector] [effort]</code> <span data-i18n="command-model-summary">Inspect or select this session's model.</span></li>
             <li data-command-name="effort"><code data-i18n="command-effort-usage">/effort [policy]</code> <span data-i18n="command-effort-summary">Inspect or select this session's reasoning effort.</span></li>
             <li data-command-name="capabilities"><code data-i18n="command-capabilities-usage">/capabilities [json]</code> <span data-i18n="command-capabilities-summary">Inspect or replace the workspace capability policy.</span></li>
+            <li data-command-name="mcp"><code data-i18n="command-mcp-usage">/mcp [list|discover|add|replace|enable|disable|remove|oauth|skills|complete] …</code> <span data-i18n="command-mcp-summary">Inspect or manage workspace MCP servers.</span></li>
+            <li data-command-name="skills"><code data-i18n="command-skills-usage">/skills [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-skills-summary">Inspect or manage workspace skills.</span></li>
+            <li data-command-name="schedule"><code data-i18n="command-schedule-usage">/schedule [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-schedule-summary">Inspect or manage workspace schedules.</span></li>
+            <li data-command-name="personas"><code data-i18n="command-personas-usage">/personas [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-personas-summary">Inspect or manage workspace personas.</span></li>
+            <li data-command-name="env"><code data-i18n="command-env-usage">/env [--scope session|workspace] [list|set|unset] …</code> <span data-i18n="command-env-summary">Inspect or manage session or workspace environment variables.</span></li>
+            <li data-command-name="learn"><code data-i18n="command-learn-usage">/learn [instructions]</code> <span data-i18n="command-learn-summary">Ask the session to distill reusable work into a workspace skill.</span></li>
             <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle automatic approval on this page.</span></li>
             <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this session's active work.</span></li>
         </ul>
@@ -313,7 +319,7 @@
         </article>
     </template>
     <template id="conversation-loop">
-        <li>
+        <li data-loop-seq="">
             <details open>
                 <summary><span><span data-i18n="loop-heading">Loop</span> <span data-text="loop-seq">1</span></span></summary>
                 <ul></ul>
