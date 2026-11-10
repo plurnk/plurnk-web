@@ -66,6 +66,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             message: { id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: approval-automatic." },
         }).catch(() => {});
         try {
+            await running;
             await context.route("http://elsewhere.test/**", (route) => route.fulfill({ contentType: "text/html",
                 body: `<!doctype html><title>Elsewhere</title><link rel="icon" href="data:,"><a href="${path}">Open the session</a>` }));
             const visitor = await context.newPage();

@@ -38,7 +38,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                 const checkBrowser = browserDiagnostics(context);
                 const page = await context.newPage();
                 await mount(page, base);
-                await page.goto(base);
+                await page.goto(new URL("/manifest.webmanifest", base).href);
                 const token = () => page.evaluate(async () => {
                     const response = await fetch("/auth/token", { method: "POST" });
                     return { status: response.status, headers: Object.fromEntries(response.headers), body: await response.json() };
@@ -125,7 +125,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                 const secondTab = await context.newPage();
                 await secondTab.goto(new URL("/account/", base).href);
                 await secondTab.getByRole("button", { name: "Sign out", exact: true }).click();
-                await secondTab.waitForURL(base);
+                await secondTab.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
                 await page.waitForFunction(() => globalThis.connection.settled);
                 const revoked = await page.evaluate(() => ({ streamError: globalThis.connection.streamError, failure: globalThis.connection.failure, running: globalThis.connection.agent.isRunning }));
                 assert.equal(revoked.failure, null);
@@ -175,7 +175,7 @@ export default async function verifyTokens({ t, withDaemon }) {
                     const second = await context.newPage();
                     await second.goto(new URL("/account/", base).href);
                     await second.getByRole("button", { name: "Sign out", exact: true }).click();
-                    await second.waitForURL(base);
+                    await second.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
                     await page.waitForFunction(() => globalThis.revocation.settled);
                     const revoked = await page.evaluate(() => ({ error: globalThis.revocation.error, streamError: globalThis.revocation.streamError }));
                     assert.equal(revoked.error, null);
