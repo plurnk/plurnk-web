@@ -184,12 +184,12 @@ registerHooks({
                                 assert.equal(await page.locator("main h1").count(), 0, "session identity belongs in the breadcrumb, not a duplicate heading");
                                 await verifyPageShell(page, { title: `${workspace.name}@${session.name} — Plurnk`, kind: "session" });
                                 assert.deepEqual((await page.locator('nav[aria-label="breadcrumb"] li').allTextContents()).map((item) => item.trim()), ["", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`, session.name]);
-                                assert.equal(await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("button", { name: "Archive session", exact: true }).locator("svg").count(), 1);
+                                assert.equal(await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("button", { name: "Archive session", exact: true }).locator("svg").count(), javaScriptEnabled ? 1 : 0);
                                 await page.reload();
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: workspace.name, exact: true }).click();
                                 assert.deepEqual((await page.locator('nav[aria-label="breadcrumb"] li').allTextContents()).map((item) => item.trim()), ["", `${sameFolder ? "🗂️" : "☁️"} ${workspace.name}`]);
                                 for (const action of ["Rename workspace", "Archive workspace", "New session"]) {
-                                    assert.equal(await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("button", { name: action, exact: true }).locator("svg").count(), 1);
+                                    assert.equal(await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("button", { name: action, exact: true }).locator("svg").count(), javaScriptEnabled ? 1 : 0);
                                 }
                                 await page.getByRole("navigation", { name: "breadcrumb" }).getByRole("link", { name: "Workspaces", exact: true }).click();
                             }
