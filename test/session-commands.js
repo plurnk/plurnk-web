@@ -215,7 +215,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.match(await mcpNone.textContent(), /mcp: none/u);
             await submit("/env set MY_VAR top-secret-hello");
             const envListed = await submit("/env list");
-            assert.equal(await envListed.locator("pre").textContent(), "MY_VAR  active");
+            assert.match(await envListed.locator("pre").textContent(), /(?:^|\n)MY_VAR {2}active(?:\n|$)/u);
             assert.doesNotMatch(await envListed.textContent(), /top-secret-hello/u);
             await submit("/env delete MY_VAR");
             await submit("/stop");

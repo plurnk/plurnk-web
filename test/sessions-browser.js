@@ -22,17 +22,9 @@ export default async function verifySessions({ t, consumer, withDaemon: baseWith
         ["renamed-project", "renamed workspace"],
     ];
     await mkdir(projectRoot);
-    await writeFile(fixture, `import { registerHooks } from "node:module";
-registerHooks({
-    load(url, context, nextLoad) {
-        if (!url.endsWith("/@plurnk/plurnk-web/src/module.js")) return nextLoad(url, context);
-        return {
-            format: "module",
-            shortCircuit: true,
-            source: \`import { mkdir } from "node:fs/promises";
+    const fixtureBody = `import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import createRealModule from \${JSON.stringify(\`\${url}?real\`)};
 export default function createFixtureModule() {
     const web = createRealModule();
     if (!web.mounts) return web;
@@ -97,7 +89,16 @@ export default function createFixtureModule() {
             return await web.start?.(port);
         },
     };
-}\`,
+}`;
+    await writeFile(fixture, `import { registerHooks } from "node:module";
+const body = ${JSON.stringify(fixtureBody)};
+registerHooks({
+    load(url, context, nextLoad) {
+        if (!url.endsWith("/@plurnk/plurnk-web/src/module.js")) return nextLoad(url, context);
+        return {
+            format: "module",
+            shortCircuit: true,
+            source: \`import createRealModule from \${JSON.stringify(\`\${url}?real\`)};\\n\${body}\`,
         };
     },
 });\n`);
