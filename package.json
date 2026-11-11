@@ -13,7 +13,7 @@
         "url": "git+https://github.com/plurnk/plurnk-web.git"
     },
     "bugs": {
-        "url": "https://repo.possumtech.com/plurnk/plurnk-web/issues"
+        "url": "https://github.com/plurnk/plurnk-web/issues"
     },
     "publishConfig": {
         "access": "public"
