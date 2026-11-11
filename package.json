@@ -19,11 +19,15 @@
         "access": "public"
     },
     "exports": {
-        "./module": "./src/module.js",
+        "./module": {
+            "types": "./types/module.d.ts",
+            "default": "./src/module.js"
+        },
         "./package.json": "./package.json"
     },
     "files": [
         ".env.defaults",
+        "types/module.d.ts",
         "src/module.js",
         "src/index-document.js",
         "src/directory-addresses.js",
