@@ -298,7 +298,7 @@ test("{§web-session-status} status is a compact footer after conversation, not 
 });
 
 test("{§web-directory-documents} a broken document outlet fails at load", () => {
-    for (const html of ["", "<main>unclosed", "<main>a</main><main>b</main>"]) {
+    for (const html of ["", "<main>unclosed", "<main>a</main><main>b</main>", "</main>inverted<main>"]) {
         assert.throws(() => new Documents(html, false, 128), /exactly one main element/u);
     }
 });
@@ -344,10 +344,15 @@ test("{§web-page-shell} empty lists and request failures are useful native docu
 });
 
 test("{§web-page-shell} a missing or duplicate document title fails at load", () => {
-    for (const html of ["<main>Home</main>", "<title>A</title><title>B</title><main>Home</main>"]) {
+    for (const html of ["<main>Home</main>", "<title>A</title><title>B</title><main>Home</main>", "</title>Inverted<title><main>Home</main>"]) {
         assert.throws(() => new Documents(html, false, 128), /exactly one title element/u);
     }
-    assert.throws(() => new Documents('<title>Plurnk</title><main>Home</main>', false, 128), /exactly one session-navigation template/u);
+    for (const html of [
+        "<title>Plurnk</title><main>Home</main>",
+        '<title>Plurnk</title><header><template id="session-navigation"><a href="/account/">Account</a><template id="other"></template></header><main>Home</main>',
+    ]) {
+        assert.throws(() => new Documents(html, false, 128), /exactly one session-navigation template/u);
+    }
 });
 
 test("{§web-page-shell} an absent or ambiguous breadcrumb insertion boundary fails at load", () => {
@@ -356,6 +361,24 @@ test("{§web-page-shell} an absent or ambiguous breadcrumb insertion boundary fa
             name: "Error", message: "The web document must close its header once after session navigation and before main.",
         });
     }
+});
+
+test("{§web-page-shell} named slots tolerate sibling header templates without shifting header or main output", () => {
+    const extraBefore = '<template id="header-leading"><span>Lead</span></template>';
+    const extraAfter = '<template id="workspace-tab"><a>Tab</a></template>';
+    const document = new Documents(
+        `<title>Plurnk</title><header>${extraBefore}${navigation}${extraAfter}</header><main>Home</main>`,
+        false,
+        128,
+    );
+    const unauth = document.home(false).toString();
+    assert.ok(unauth.includes(extraBefore));
+    assert.ok(unauth.includes(extraAfter));
+    assert.equal(unauth.includes("/account/"), false);
+    const auth = document.home(true).toString();
+    assert.ok(auth.includes(extraBefore));
+    assert.ok(auth.includes("/account/"));
+    assert.ok(auth.includes(extraAfter));
 });
 
 test("{§web-account} Account offers native navigation without a fictional profile or inline session inventory", () => {
