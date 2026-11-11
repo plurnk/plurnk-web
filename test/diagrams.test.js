@@ -68,6 +68,17 @@ test("{§web-diagram-service} the module compiles JSON source to a private stand
     assert.match(svg, /Client/u);
     assert.match(svg, /Daemon/u);
     assert.equal(Buffer.byteLength(svg), Number(image.headers.get("content-length")));
+    for (const [source, expected] of /** @type {const} */ ([
+        ["sequenceDiagram\n  Browser->>Daemon: resume", /Browser/u],
+        ["stateDiagram-v2\n  [*] --> Running\n  Running --> Completed", /Running/u],
+        ["erDiagram\n  WORKSPACE ||--o{ SESSION : owns", /WORKSPACE/u],
+        ["classDiagram\n  class SessionAgent {\n    +resume()\n  }", /SessionAgent/u],
+        ["xychart-beta\n  x-axis [t1, t2]\n  bar [3, 7]", /<svg\b/u],
+    ])) {
+        const rendered = await post(source);
+        assert.equal(rendered.status, 200, source);
+        assert.match(await rendered.text(), expected);
+    }
 });
 
 test("{§web-diagram-service} HTTP admission rejects forms, cross-origin requests and malformed input", async (t) => {
