@@ -184,12 +184,20 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             }
             assert.equal(await review.isVisible(), false);
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-            assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
+            const expectedDraftKey = await page.evaluate(() => `plurnk:draft:${document.querySelector("#session-status")?.dataset.sessionId}`);
+            assert.deepEqual(
+                await page.evaluate(() => [Object.keys(localStorage), Object.entries(sessionStorage)]),
+                [[], [[expectedDraftKey, "Keep this newer draft."]]],
+                "only the unsent composer draft enters tab-ephemeral sessionStorage",
+            );
             const ids = await page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
             await page.reload();
             await page.getByText(`Completed ${name}.`, { exact: true }).waitFor();
+            assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this newer draft.");
             assert.deepEqual(await page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId)), ids);
             assert.equal(model.requests.length, 2);
+            await page.getByRole("textbox", { name: "Message", exact: true }).fill("");
+            assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
             checkBrowser();
         }, { authenticated: true }));
     }

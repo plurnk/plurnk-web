@@ -817,4 +817,18 @@ export default async function verifySessionInput({ t, withDaemon }) {
         model.release("held-departure");
         checkBrowser();
     }));
+
+    await t.test("{§web-session-input} unsent composer text survives reload in tab-ephemeral sessionStorage until confirmed", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        const field = page.getByRole("textbox", { name: "Message", exact: true });
+        await field.fill("Lifecycle fixture: draft-reload.");
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+        assert.equal(await field.inputValue(), "Lifecycle fixture: draft-reload.");
+        assert.equal(model.requests.length, 0, "reload restores the draft without auto-sending");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await page.getByText("Completed draft-reload.", { exact: true }).waitFor();
+        assert.equal(await field.inputValue(), "");
+        assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
+        checkBrowser();
+    }));
 }

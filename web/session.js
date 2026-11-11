@@ -65,6 +65,25 @@ export default function observeSession(element) {
         throw new Error("Session controls are incomplete.");
     }
     const draft = field;
+    const draftKey = `plurnk:draft:${sessionId}`;
+    /** @returns {string | null} */
+    function readStoredDraft() {
+        try { return sessionStorage.getItem(draftKey); }
+        catch { return null; }
+    }
+    /** @param {string} value */
+    function writeStoredDraft(value) {
+        try {
+            if (value === "") sessionStorage.removeItem(draftKey);
+            else sessionStorage.setItem(draftKey, value);
+        } catch {
+            // Disabled or quota-exhausted Web Storage degrades cleanly to in-memory editing.
+        }
+    }
+    if (draft.value === "") {
+        const savedDraft = readStoredDraft();
+        if (savedDraft !== null && savedDraft !== "") draft.value = savedDraft;
+    }
     the(feedback, "message-status", "");
     let resources = new AbortController();
     const transcript = sessionHistory(history, (address) => readBody(address, auth, resources.signal),
@@ -135,7 +154,10 @@ export default function observeSession(element) {
     /** @param {string} id */
     function acknowledged(id) {
         if (pending?.message.id !== id) return;
-        if (draft.value === pending.source) draft.value = "";
+        if (draft.value === pending.source) {
+            draft.value = "";
+            writeStoredDraft("");
+        }
         pending = undefined;
         the(feedback, { messageStatus: "", commandError: "" });
         availability();
@@ -308,7 +330,12 @@ export default function observeSession(element) {
             connect();
         }
     });
-    on(compose, "input", "textarea", () => { draft.setCustomValidity(""); availability(); });
+    on(compose, "input", "textarea", () => {
+        draft.setCustomValidity("");
+        const value = draft.value;
+        writeStoredDraft(value.trim() !== "" && !isCommand(value, availableCommands()) ? value : "");
+        availability();
+    });
     on(compose, "keydown", "textarea", (event) => {
         if (!(event instanceof KeyboardEvent) || event.key !== "Enter" || !event.ctrlKey
             || event.altKey || event.metaKey || event.shiftKey || event.isComposing || event.repeat) return;
@@ -323,7 +350,10 @@ export default function observeSession(element) {
             the(controls, "command-pending", "");
             availability();
             try {
-                if (await runCommand(text, resources.signal) && draft.value === text) draft.value = "";
+                if (await runCommand(text, resources.signal) && draft.value === text) {
+                    draft.value = "";
+                    writeStoredDraft("");
+                }
             } finally {
                 the(controls, "command-pending", null);
                 availability();
@@ -406,6 +436,10 @@ export default function observeSession(element) {
     window.onpageshow = (event) => {
         if (event.persisted) {
             resources = new AbortController();
+            if (!pending) {
+                const savedDraft = readStoredDraft() ?? "";
+                if (draft.value !== savedDraft) draft.value = savedDraft;
+            }
             transcript.resume();
             connect();
         }
