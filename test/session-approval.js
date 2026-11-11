@@ -143,6 +143,9 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             assert.equal(await review.locator("[data-requests] > fieldset").count(), 1);
             assert.equal(await review.locator('[data-text="proposal-session"]').innerText(), "user");
             assert.equal(await review.locator('[data-text="proposal-op"]').innerText(), "sh");
+            const targetText = await review.locator("[data-proposal-target]").textContent();
+            assert.ok(targetText && !targetText.includes('"scheme"'), "command proposal shows readable target instead of raw URI object JSON");
+            assert.equal(await review.locator("[data-proposal-diff]").isVisible(), false, "command proposal hides unified diff container");
             assert.equal(await review.locator('[data-proposal-body]').textContent(), "[sh] printf approved");
             assert.equal(await review.locator('[data-text="proposal-details"]').count(), 0, "review facts are not duplicated in an envelope dump");
             assert.equal(await review.locator("input:checked").count(), 0, "permission has no preselected answer");

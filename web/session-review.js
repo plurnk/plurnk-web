@@ -17,6 +17,77 @@ const proposal = (gate) => gate.method === "session/request_permission"
     ? /** @type {import("@plurnk/plurnk-contracts").ProposalProjection | undefined} */ (gate._meta?.plurnk?.proposal)
     : undefined;
 
+/** @param {{ scheme: string | null, authority: string | null, pathname: string | null }} target @returns {string} */
+function formatTargetUri(target) {
+    const { scheme, authority, pathname } = target;
+    if ((scheme === null || scheme === "file") && authority === null && typeof pathname === "string" && pathname.length > 0) {
+        return pathname;
+    }
+    if (typeof scheme === "string" && scheme.length > 0) {
+        if (typeof authority === "string" && authority.length > 0) {
+            return `${scheme}://${authority}${pathname ?? ""}`;
+        }
+        if (typeof pathname === "string" && pathname.length > 0) {
+            return `${scheme}://${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
+        }
+        return `${scheme}:`;
+    }
+    return typeof pathname === "string" ? pathname : "";
+}
+
+/** @param {import("@plurnk/plurnk-contracts").ProposalProjection} facts @returns {string} */
+function formatProposalTarget(facts) {
+    const subject = facts.subject;
+    if (subject?.type === "command") {
+        const explicitTarget = facts.target.scheme !== null && facts.target.scheme !== "sh"
+            ? formatTargetUri(facts.target)
+            : "";
+        return explicitTarget ? `${explicitTarget} (${subject.cwd})` : subject.cwd;
+    }
+    if (subject?.type === "tool_call") {
+        if (typeof subject.diff?.path === "string" && subject.diff.path.length > 0) {
+            return subject.diff.path;
+        }
+        if (Array.isArray(subject.locations) && subject.locations.length > 0) {
+            return subject.locations.map(({ path }) => path).join(", ");
+        }
+    }
+    return formatTargetUri(facts.target);
+}
+
+/** @param {string} line @returns {"meta" | "hunk" | "add" | "del" | "context"} */
+function classifyDiffLine(line) {
+    if (line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("diff --git ") || line.startsWith("index ")) {
+        return "meta";
+    }
+    if (line.startsWith("@@")) return "hunk";
+    if (line.startsWith("+")) return "add";
+    if (line.startsWith("-")) return "del";
+    return "context";
+}
+
+/** @param {Element} codeOutlet @param {string} patch */
+function presentUnifiedDiff(codeOutlet, patch) {
+    codeOutlet.replaceChildren();
+    const lines = patch.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const kind = classifyDiffLine(line);
+        const node = kind === "add"
+            ? $.clone(codeOutlet, "#proposal-diff-add")
+            : kind === "del"
+                ? $.clone(codeOutlet, "#proposal-diff-del")
+                : $.clone(codeOutlet, "#proposal-diff-line");
+        if (kind !== "add" && kind !== "del") {
+            the(node, "diff-line", kind);
+        }
+        node.textContent = line;
+        if (i < lines.length - 1) {
+            codeOutlet.append("\n");
+        }
+    }
+}
+
 /** @param {SessionGate} gate @returns {string} */
 const allowOptionId = (gate) => {
     const id = gate.method === "session/request_permission"
@@ -116,15 +187,26 @@ export default function reviewRequests(controls, yolo) {
         if (!facts) throw new Error("Proposal presentation has no facts.");
         const row = before ? $.clone(before, "#session-proposal", { position: "beforebegin" }) : $.clone(list, "#session-proposal");
         rows.set(gate.id, row);
+        const targetText = formatProposalTarget(facts);
+        const patchText = facts.subject?.type === "tool_call" && typeof facts.subject.diff?.patch === "string" && facts.subject.diff.patch.length > 0
+            ? facts.subject.diff.patch
+            : "";
         the(row, {
             interruptId: gate.id, proposalChoice: `decision-${index}`, proposalSession: facts.session,
             proposalOp: facts.op, proposalDeadline: gate.expiresAt ?? "",
             proposalDeadlineLabel: gate.expiresAt === undefined ? "" : new Date(gate.expiresAt).toLocaleString(),
+            proposalTargetEmpty: targetText ? "false" : "true",
+            proposalHasDiff: patchText ? "true" : "false",
+            proposalBodyEmpty: facts.body ? "false" : "true",
         });
         const target = $(row, "[data-proposal-target]");
+        const diff = $(row, "[data-proposal-diff] > code");
         const body = $(row, "[data-proposal-body]");
-        if (!target || !body) throw new Error("Proposal template has no content outlets.");
-        target.textContent = JSON.stringify(facts.target, null, 2);
+        if (!target || !diff || !body) throw new Error("Proposal template has no content outlets.");
+        target.textContent = targetText;
+        if (patchText) {
+            presentUnifiedDiff(diff, patchText);
+        }
         body.textContent = facts.body;
     }
     the(form, { requestCount: 0, reviewUnavailable: "" });

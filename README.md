@@ -20,7 +20,7 @@ Navigation never creates state or starts inference; closing or reloading a page 
 | --- | --- |
 | Composer | Multiline input (`Enter` newline, `Ctrl+Enter` or `Send` submits, follow-ups allowed while running; `Stop` cancels active work while preserving unsent draft). |
 | Slash commands | `/help`, `/models [search]`, `/model [selector] [effort]`, `/effort [policy]`, `/capabilities [json]`, `/mcp …`, `/skills …`, `/schedule …`, `/personas …`, `/env …`, `/learn [instructions]`, `/yolo`, `/stop`. |
-| Approval & input | Manual review by default (`PLURNK_WEB_YOLO=0`). `🔥 YOLO` / `🐹 Review`, `/yolo`, or `Shift+Tab` toggles per-visit auto-approval (plain-HTTP non-localhost and cross-site navigations force manual review). Questions and MCP elicitations render schema-driven native controls or JSON editors. |
+| Approval & input | Manual review by default (`PLURNK_WEB_YOLO=0`) with readable target paths/URIs and semantic unified diffs on file-edit proposals. `🔥 YOLO` / `🐹 Review`, `/yolo`, or `Shift+Tab` toggles per-visit auto-approval (plain-HTTP non-localhost and cross-site navigations force manual review). Questions and MCP elicitations render schema-driven native controls or JSON editors. |
 | History & disclosures | User messages and delivered replies start open; `note`, tool receipts, and completed reasoning (`PLURNK_WEB_REASONING_PREVIEW_CHARS` while live) start folded; `Load previous loop` paginates older history without mutating model context. |
 | Rich content | Sanitized Markdown with isolated footnotes; client-side [Temml](https://temml.org/) MathML loaded on demand; server-side [Ondine](https://github.com/wevm/ondine) Mermaid SVG compiled in bounded Node worker threads (`PLURNK_WEB_DIAGRAM_*`). Zero browser storage of transcripts or secrets. |
 

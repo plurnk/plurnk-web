@@ -378,6 +378,28 @@ article:where(#session-connection) > header {
     min-inline-size: 0;
 }
 
+[data-proposal-target-line] {
+    margin-block-end: calc(var(--pico-spacing) * 0.5);
+}
+
+[data-proposal-target] {
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+}
+
+[data-proposal-diff] > code {
+    inline-size: max-content;
+    min-inline-size: 100%;
+    padding-block: calc(var(--pico-spacing) * 0.5);
+    padding-inline: 0;
+}
+
+[data-proposal-diff] [data-diff-line] {
+    display: inline-block;
+    min-inline-size: 100%;
+    padding-inline: var(--pico-spacing);
+}
+
 [data-session-reply] pre,
 #session-conversation pre,
 #session-command-results pre,

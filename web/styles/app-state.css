@@ -65,8 +65,33 @@ button[form="session-stop"]::before { content: "⏹️" / ""; }
 
 /* {§web-session-approval} A proposal's deadline, and the notice once it has passed, show only when they apply. */
 [aria-label="Review requests"]:not([data-deadline-passed]) [data-deadline-notice],
-[data-proposal-deadline=""] > [data-proposal-deadline-line] {
+[data-proposal-deadline=""] > [data-proposal-deadline-line],
+[data-proposal-target-empty="true"] > [data-proposal-target-line],
+[data-proposal-has-diff="false"] > [data-proposal-diff],
+[data-proposal-has-diff="true"] > [data-proposal-body-block],
+[data-proposal-body-empty="true"] > [data-proposal-body-block] {
     display: none;
+}
+
+[data-proposal-diff] [data-diff-line="add"] {
+    background-color: var(--plurnk-diff-add-surface);
+    color: var(--plurnk-diff-add-color);
+    text-decoration: none;
+}
+
+[data-proposal-diff] [data-diff-line="del"] {
+    background-color: var(--plurnk-diff-del-surface);
+    color: var(--plurnk-diff-del-color);
+    text-decoration: none;
+}
+
+[data-proposal-diff] [data-diff-line="hunk"] {
+    background-color: var(--plurnk-diff-hunk-surface);
+    color: var(--plurnk-diff-hunk-color);
+}
+
+[data-proposal-diff] [data-diff-line="meta"] {
+    color: var(--plurnk-diff-meta-color);
 }
 
 /* {§web-session-commands} Results have their own literal, non-conversation outlet. */

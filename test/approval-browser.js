@@ -3,6 +3,16 @@ import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
+function contrast(foreground, background) {
+    const luminance = (color) => (color.match(/[\d.]+/gu) ?? []).slice(0, 3)
+        .map((value) => Number(value) / 255)
+        .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+        .reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0);
+    const a = luminance(foreground);
+    const b = luminance(background);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 const gate = (id, op = "sh") => ({
     id, method: "session/request_permission",
     options: [
@@ -37,6 +47,8 @@ export default async function verifyApproval(t) {
                     const groups = form.locator("[data-requests] > fieldset");
                     assert.equal(await groups.count(), 2);
                     assert.deepEqual(await groups.evaluateAll((nodes) => nodes.map((node) => node.dataset.interruptId)), gates.map(({ id }) => id));
+                    assert.equal(await groups.nth(0).locator("[data-proposal-target]").textContent(), "evidence.txt", "file target renders readable pathname instead of raw JSON");
+                    assert.equal(await groups.nth(0).locator("[data-proposal-diff]").isVisible(), false, "non-diff proposal hides unified diff container");
                     assert.equal(await groups.nth(1).getAttribute("data-proposal-body"), null, "the operation body is content, not attribute state");
                     assert.equal(await groups.nth(1).locator('[data-proposal-body]').textContent(), gates[1]._meta.plurnk.proposal.body);
                     assert.equal(await groups.nth(1).locator("details").count(), 0);
@@ -66,6 +78,68 @@ export default async function verifyApproval(t) {
                     assert.equal(await groups.count(), 0);
                     assert.equal(await page.evaluate(() => window.review([])), false);
                     assert.equal(await form.isVisible(), false);
+
+                    // {§web-session-approval} Readable targets and semantic unified diffs present edits without duplicating body text.
+                    const httpGate = gate("http-target", "fetch");
+                    httpGate._meta.plurnk.proposal.target = { scheme: "https", authority: "api.example.test:8443", pathname: "/v1/items" };
+                    const commandGate = gate("cmd-target", "sh");
+                    commandGate._meta.plurnk.proposal.target = { scheme: "sh", authority: null, pathname: "/a1b2c3d4" };
+                    commandGate._meta.plurnk.proposal.subject = { type: "command", command: "npm test", cwd: "/srv/workspace/project-with-very-long-directory-name-for-narrow-viewports" };
+                    const patch = [
+                        "--- a/src/app.js",
+                        "+++ b/src/app.js",
+                        "@@ -1,3 +1,3 @@",
+                        " const ready = true;",
+                        '-<form action="/auth/logout"><button>Old</button></form>',
+                        `+<script>window.pwned = true;</script>${"x".repeat(200)}`,
+                    ].join("\n");
+                    const diffGate = gate("diff-target", "edit");
+                    diffGate._meta.plurnk.proposal.body = "Replacement body text that must not duplicate the unified diff";
+                    diffGate._meta.plurnk.proposal.subject = {
+                        type: "tool_call",
+                        kind: "edit",
+                        title: "edit src/app.js",
+                        locations: [{ path: "src/app.js" }],
+                        diff: { path: "src/app.js", patch },
+                    };
+                    assert.equal(await page.evaluate((values) => window.review(values), [httpGate, commandGate, diffGate]), true);
+                    assert.equal(await groups.nth(0).locator("[data-proposal-target]").textContent(), "https://api.example.test:8443/v1/items");
+                    assert.equal(await groups.nth(1).locator("[data-proposal-target]").textContent(), "/srv/workspace/project-with-very-long-directory-name-for-narrow-viewports");
+                    const diffGroup = groups.nth(2);
+                    assert.equal(await diffGroup.locator("[data-proposal-target]").textContent(), "src/app.js");
+                    assert.equal(await diffGroup.locator("[data-proposal-diff]").isVisible(), true);
+                    assert.equal(await diffGroup.locator("[data-proposal-body-block]").isVisible(), false, "unified diff replaces raw body text instead of duplicating it");
+                    assert.equal(await diffGroup.locator("[data-proposal-diff]").textContent(), patch);
+                    assert.equal(await diffGroup.locator('ins[data-diff-line="add"]').count(), 1);
+                    assert.equal(await diffGroup.locator('del[data-diff-line="del"]').count(), 1);
+                    assert.equal(await diffGroup.locator('[data-diff-line="hunk"]').count(), 1);
+                    assert.equal(await diffGroup.locator('[data-diff-line="meta"]').count(), 2);
+                    assert.equal(await diffGroup.locator('[data-diff-line="context"]').count(), 1);
+                    assert.equal(await form.locator("form, script, [data-proposal-diff] button").count(), 0);
+                    assert.equal(await page.evaluate(() => window.pwned), undefined);
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "proposal card stays within narrow viewport");
+                    assert.equal(
+                        await diffGroup.locator("[data-proposal-diff]").evaluate((el) => el.scrollWidth > el.clientWidth),
+                        true,
+                        "long unified diff lines scroll horizontally inside their container",
+                    );
+                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
+                        await page.emulateMedia({ colorScheme });
+                        for (const kind of /** @type {const} */ (["add", "del", "hunk"])) {
+                            const colors = await diffGroup.locator(`[data-diff-line="${kind}"]`).evaluate((el) => {
+                                const style = getComputedStyle(el);
+                                return { color: style.color, background: style.backgroundColor, decoration: style.textDecorationLine };
+                            });
+                            assert.ok(
+                                contrast(colors.color, colors.background) >= 4.5,
+                                `${colorScheme}: ${kind} diff line contrast must be at least 4.5:1`,
+                            );
+                            if (kind === "del") {
+                                assert.equal(colors.decoration, "none", `${colorScheme}: deleted diff line avoids obscuring punctuation with strikethrough`);
+                            }
+                        }
+                    }
+                    await page.emulateMedia({ colorScheme: null });
 
                     // {§web-session-approval} A deadline is a native time; past it the page presents the set and answers nothing.
                     assert.equal(await page.evaluate((values) => window.review(values), gates), true);
