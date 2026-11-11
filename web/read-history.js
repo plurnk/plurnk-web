@@ -1,5 +1,5 @@
 import "./schema-validation.js";
-import { SessionTranslator } from "./session-agent.js";
+import { SessionTranslator } from "./session-translator.js";
 import { z } from "zod/v4";
 import daemonRead from "./daemon-read.js";
 
@@ -19,7 +19,7 @@ export default async function readHistory(address, auth, signal) {
     const response = await daemonRead(address, auth, signal);
     const raw = PageSchema.parse(await response.json());
     const messages = SessionTranslator.projectMessages(
-        /** @type {readonly import("./session-agent.js").AcpSessionUpdate[]} */ (raw.updates),
+        /** @type {readonly import("./session-translator.js").AcpSessionUpdate[]} */ (raw.updates),
     );
     if (new Set(messages.map(({ id }) => id)).size !== messages.length) throw new Error("History page has duplicate message identities.");
     const completed = new Set(messages.flatMap((message) => message.role === "tool" && !message._meta?.plurnk ? [message.toolCallId] : []));

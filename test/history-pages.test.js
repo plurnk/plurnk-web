@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import HistoryPages from "../web/history-pages.js";
+import { SessionTranslator } from "../web/session-translator.js";
 
 const message = (id, content = id) => ({ id, role: /** @type {const} */ ("user"), content });
 const snapshot = (messages, older) => ({ messages, older });
@@ -94,4 +95,39 @@ test("{§web-session-history} a cyclic daemon page chain fails without accepting
     history.accept("/b", { final: true, messages: [message("b")], older: "/a" });
     assert.throws(() => history.accept("/a", { final: true, messages: [message("a")], older: "/b" }), /History page cursors form a cycle/u);
     assert.deepEqual(ids(history), ["b", "latest"]);
+});
+
+test("{§web-session-conversation} {§web-session-history} ambient call tracking is isolated per session projection", () => {
+    const sessionAAmbient = new Set();
+    const afterAmbientCall = SessionTranslator.projectMessages([
+        {
+            sessionUpdate: "tool_call",
+            toolCallId: "shared-call-1",
+            name: "read",
+            _meta: { plurnk: { coordinate: "shared-call-1", origin: "system", op: "read" } },
+        },
+    ], [], sessionAAmbient);
+    assert.deepEqual(afterAmbientCall, []);
+    assert.equal(sessionAAmbient.has("shared-call-1"), true);
+
+    const sessionADischarge = SessionTranslator.projectMessages([
+        {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "shared-call-1",
+            rawOutput: "ambient receipt",
+            _meta: { plurnk: { coordinate: "obs:1", origin: "system", op: "read" } },
+        },
+    ], afterAmbientCall, sessionAAmbient);
+    assert.deepEqual(sessionADischarge, [], "ambient call discharge stays suppressed within the originating session");
+
+    const sessionBDischarge = SessionTranslator.projectMessages([
+        {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "shared-call-1",
+            rawOutput: "model receipt",
+            _meta: { plurnk: { coordinate: "obs:1", origin: "model", op: "read" } },
+        },
+    ]);
+    assert.equal(sessionBDischarge.length, 1, "another session sharing toolCallId is unaffected by session A's ambient set");
+    assert.equal(sessionBDischarge[0].id, "obs:1");
 });
