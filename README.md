@@ -204,7 +204,7 @@ remain native HTML; live session status and conversation require JavaScript.
 
 ## Install
 
-Requires Node.js 26+ and Plurnk service 5.3+ with its module-client credential and
+Requires Node.js 26+ and Plurnk service 6.0+, which composes `@plurnk/plurnk-web/module` statically and supplies its module-client credential and
 workspace-label APIs
 ([credential authority](https://github.com/plurnk/plurnk-service/blob/main/plurnk-core/SPEC.md),
 including sign-in inventory, shared browser/module revocation, password-only login,
@@ -222,7 +222,7 @@ To build and verify a candidate archive from source:
 npm ci --no-audit --no-fund
 npm run test:candidate -- /path/to/packed-platform-packages
 npm pack
-npm install --no-audit --no-fund /path/to/plurnk-plurnk-web-1.1.0.tgz
+npm install --no-audit --no-fund /path/to/plurnk-plurnk-web-2.0.0.tgz
 ```
 
 Restart that daemon and visit its root URL, normally `http://localhost:1066/`.
