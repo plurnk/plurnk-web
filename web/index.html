@@ -294,15 +294,19 @@
     <template id="answer-choice"><label><input type="checkbox" data-answer-choice data-bind="value:option-value"> <span data-text="option-label">Option</span></label></template>
     <template id="answer-json"><label><span data-i18n="json-answer">Answer (JSON)</span><textarea rows="6" spellcheck="false" required></textarea></label></template>
     <template id="session-proposal">
-        <fieldset>
+        <fieldset data-proposal-target-empty="false" data-proposal-has-diff="false" data-proposal-body-empty="false">
             <legend><span data-text="proposal-session">Session</span> <code data-text="proposal-op">Operation</code></legend>
-            <pre><code data-proposal-target></code></pre>
-            <pre><code data-proposal-body></code></pre>
+            <p data-proposal-target-line><code data-proposal-target></code></p>
+            <pre data-proposal-diff><code></code></pre>
+            <pre data-proposal-body-block><code data-proposal-body></code></pre>
             <p data-proposal-deadline-line><span data-i18n="decide-by">Decide by</span> <time data-bind="datetime:proposal-deadline" data-text="proposal-deadline-label"></time></p>
             <label><input type="radio" value="accept" required data-bind="name:proposal-choice"> <span data-i18n="accept">Accept</span></label>
             <label><input type="radio" value="reject" required data-bind="name:proposal-choice"> <span data-i18n="reject">Reject</span></label>
         </fieldset>
     </template>
+    <template id="proposal-diff-add"><ins data-diff-line="add"></ins></template>
+    <template id="proposal-diff-del"><del data-diff-line="del"></del></template>
+    <template id="proposal-diff-line"><span data-diff-line="context"></span></template>
     <!-- {§web-session-conversation} Inert document-owned structure; the ACP client supplies its values. -->
     <template id="conversation-history">
         <li data-history-boundary>
