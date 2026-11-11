@@ -280,5 +280,8 @@ export default () => {
 
     const installedManifest = JSON.parse(await readFile(join(webPackage, "package.json"), "utf8"));
     assert.equal(installedManifest.name, "@plurnk/plurnk-web");
-    assert.equal(installedManifest.exports["./module"], "./src/module.js");
+    assert.deepEqual(installedManifest.exports["./module"], {
+        types: "./types/module.d.ts",
+        default: "./src/module.js",
+    });
 });

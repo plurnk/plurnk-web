@@ -29,10 +29,14 @@ test("{§web-package} every package the module imports is a declared dependency"
 test("{§web-package} the package exports its native module and ships root defaults", async () => {
     const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
     assert.deepEqual(manifest.exports, {
-        "./module": "./src/module.js",
+        "./module": {
+            types: "./types/module.d.ts",
+            default: "./src/module.js",
+        },
         "./package.json": "./package.json",
     });
     assert.ok(manifest.files.includes(".env.defaults"));
+    assert.ok(manifest.files.includes("types/module.d.ts"));
     assert.ok(manifest.files.includes("dist/"));
     assert.match(await readFile(new URL("../.env.defaults", import.meta.url), "utf8"), /PLURNK_WEB_ENABLED=/u);
 });
