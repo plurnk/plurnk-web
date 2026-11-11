@@ -53,7 +53,7 @@
         "@plurnk/plurnk-modules": "^4.1.1"
     },
     "devDependencies": {
-        "@agentclientprotocol/sdk": "2.4.0",
+        "@agentclientprotocol/sdk": "2.6.0",
         "@eslint/js": "10.0.1",
         "@fullhuman/postcss-purgecss": "8.0.0",
         "@picocss/pico": "2.1.1",
