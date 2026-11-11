@@ -21,6 +21,7 @@ import verifySurfaces from "./surfaces-browser.js";
 import verifyReflow from "./reflow-browser.js";
 import verifyDisclosures from "./disclosure-browser.js";
 import verifySessionCards from "./session-cards-browser.js";
+import verifySessionDrafts from "./session-draft-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -831,3 +832,4 @@ test("{§web-diagram-content} unavailable diagram compilation preserves source a
 test("{§web-session-approval} native review controls project complete SDK gate sets", { timeout: 60_000 }, verifyApproval);
 test("{§web-session-questions} native and JSON answers preserve the full response contract", { timeout: 60_000 }, verifyInteractions);
 test("{§web-session-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifySessionCards);
+test("{§web-session-input} {§web-document} unsent prompt drafts survive reload in tab-ephemeral sessionStorage", { timeout: 60_000 }, verifySessionDrafts);
