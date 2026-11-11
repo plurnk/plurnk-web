@@ -23,12 +23,103 @@ const orderByReply = (a, b) => {
     return aReply !== null && bReply !== null ? bReply.id - aReply.id
         : aReply !== null ? -1 : bReply !== null ? 1 : 0;
 };
+/** @typedef {"title" | "sessionNavigation" | "headerTail" | "main" | "afterMain"} DocumentSlotName */
+/** @typedef {{ readonly literal: string } | { readonly slot: DocumentSlotName }} DocumentToken */
+
+/**
+ * @param {string} source
+ * @param {RegExp} openPattern
+ * @param {RegExp} closePattern
+ * @param {string} message
+ */
+function locatePairedElement(source, openPattern, closePattern, message) {
+    const opens = [...source.matchAll(openPattern)];
+    const closes = [...source.matchAll(closePattern)];
+    if (opens.length !== 1 || closes.length !== 1) throw new Error(message);
+    const [open] = opens;
+    const [close] = closes;
+    const openEnd = open.index + open[0].length;
+    if (openEnd > close.index) throw new Error(message);
+    return {
+        start: open.index,
+        end: close.index + close[0].length,
+        inner: source.slice(openEnd, close.index),
+    };
+}
+
+/** @param {string} document */
+function compileDocumentSlots(document) {
+    const main = locatePairedElement(
+        document,
+        /<main\b[^>]*>/gu,
+        /<\/main>/gu,
+        "The web document must contain exactly one main element.",
+    );
+    const beforeMain = document.slice(0, main.start);
+    const title = locatePairedElement(
+        beforeMain,
+        /<title\b[^>]*>/gu,
+        /<\/title>/gu,
+        "The web document must contain exactly one title element before main.",
+    );
+    const navOpens = [...beforeMain.matchAll(/<template\b[^>]*\bid="session-navigation"[^>]*>/gu)];
+    const navMatches = [...beforeMain.matchAll(/<template\b[^>]*\bid="session-navigation"[^>]*>([\s\S]*?)<\/template>/gu)];
+    if (navOpens.length !== 1 || navMatches.length !== 1 || /<template\b/u.test(navMatches[0][1])) {
+        throw new Error("The web document must contain exactly one session-navigation template before main.");
+    }
+    const [navMatch] = navMatches;
+    const navSpan = {
+        start: navMatch.index,
+        end: navMatch.index + navMatch[0].length,
+        inner: navMatch[1],
+    };
+    const beforeNav = beforeMain.slice(0, navSpan.start);
+    const afterNav = beforeMain.slice(navSpan.end);
+    const headerOpens = [...beforeNav.matchAll(/<header\b[^>]*>/gu)];
+    const earlyHeaderCloses = [...beforeNav.matchAll(/<\/header>/gu)];
+    const headerCloses = [...afterNav.matchAll(/<\/header>/gu)];
+    if (headerOpens.length !== 1 || earlyHeaderCloses.length !== 0 || headerCloses.length !== 1) {
+        throw new Error("The web document must close its header once after session navigation and before main.");
+    }
+    const headerCloseIndex = navSpan.end + headerCloses[0].index;
+
+    /** @type {readonly { readonly name: DocumentSlotName, readonly start: number, readonly end: number }[]} */
+    const spans = [
+        { name: /** @type {const} */ ("title"), start: title.start, end: title.end },
+        { name: /** @type {const} */ ("sessionNavigation"), start: navSpan.start, end: navSpan.end },
+        { name: /** @type {const} */ ("headerTail"), start: headerCloseIndex, end: headerCloseIndex },
+        { name: /** @type {const} */ ("main"), start: main.start, end: main.end },
+        { name: /** @type {const} */ ("afterMain"), start: main.end, end: main.end },
+    ].toSorted((a, b) => a.start - b.start || a.end - b.end);
+
+    /** @type {DocumentToken[]} */
+    const tokens = [];
+    let cursor = 0;
+    for (const span of spans) {
+        if (span.start < cursor) throw new Error(`Document slot ${span.name} overlaps an earlier slot.`);
+        if (span.start > cursor) tokens.push({ literal: document.slice(cursor, span.start) });
+        tokens.push({ slot: span.name });
+        cursor = span.end;
+    }
+    if (cursor < document.length) tokens.push({ literal: document.slice(cursor) });
+
+    return Object.freeze({
+        home: main.inner,
+        sessionNavigation: navSpan.inner,
+        /** @param {Readonly<Record<DocumentSlotName, string>>} values */
+        render(values) {
+            let html = "";
+            for (const token of tokens) {
+                html += "literal" in token ? token.literal : values[token.slot];
+            }
+            return html;
+        },
+    });
+}
+
 /** {§web-document} {§web-directory-documents} One compiled document supplies the complete HTML/OTM substrate. */
 export default class Documents {
-    #beforeTitle;
-    #beforeMain;
-    #afterMain;
-    #home;
+    #template;
     #yolo;
     #reasoningPreviewChars;
     #overviewSessions;
@@ -51,29 +142,23 @@ export default class Documents {
         this.#reasoningPreviewChars = reasoningPreviewChars;
         this.#overviewSessions = overviewSessions;
         this.#overviewExcerptChars = overviewExcerptChars;
-        const parts = document.split(/<main\b[^>]*>|<\/main>/u);
-        if (parts.length !== 3) throw new Error("The web document must contain exactly one main element.");
-        const title = parts[0].split(/<title\b[^>]*>|<\/title>/u);
-        if (title.length !== 3) throw new Error("The web document must contain exactly one title element before main.");
-        this.#beforeTitle = title[0];
-        const navigation = title[2].split(/<template id="session-navigation"[^>]*>|<\/template>/u);
-        if (navigation.length !== 3) throw new Error("The web document must contain exactly one session-navigation template before main.");
-        const header = navigation[2].split("</header>");
-        if (header.length !== 2) throw new Error("The web document must close its header once after session navigation and before main.");
-        this.#beforeMain = [navigation[0], navigation[1], ...header];
-        this.#home = parts[1];
-        this.#afterMain = parts[2];
+        this.#template = compileDocumentSlots(document);
     }
 
     /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "session" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] @param {string} [mainAttributes] */
     #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "", dialogs = "", mainAttributes = "") {
-        const [before, navigation, afterNavigation, afterHeader] = this.#beforeMain;
         const label = kind === "home" ? title : `${title} — Plurnk`;
-        return Buffer.from(`${this.#beforeTitle}<title data-text="page-title">${escapeHtml(label)}</title>${before}${authenticated ? navigation : ""}${afterNavigation}${breadcrumb}</header>${afterHeader}<main id="main" data-page="${kind}"${mainAttributes}>${body}${dialogs}</main>${footer}${this.#afterMain}`);
+        return Buffer.from(this.#template.render({
+            title: `<title data-text="page-title">${escapeHtml(label)}</title>`,
+            sessionNavigation: authenticated ? this.#template.sessionNavigation : "",
+            headerTail: breadcrumb,
+            main: `<main id="main" data-page="${kind}"${mainAttributes}>${body}${dialogs}</main>`,
+            afterMain: footer,
+        }));
     }
     /** @param {boolean} authenticated @param {{ readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview> }} [port] */
     home(authenticated, port) {
-        if (typeof port?.readSessionOverview !== "function") return this.#render("Plurnk", this.#home, "home", authenticated);
+        if (typeof port?.readSessionOverview !== "function") return this.#render("Plurnk", this.#template.home, "home", authenticated);
         if (this.#overviewSessions === null || this.#overviewExcerptChars === null) {
             throw new RequestError(503, "Session overview is unavailable because its configuration is invalid.");
         }
