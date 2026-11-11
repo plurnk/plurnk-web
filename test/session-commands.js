@@ -217,7 +217,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             const envListed = await submit("/env list");
             assert.match(await envListed.locator("pre").textContent(), /(?:^|\n)MY_VAR {2}active(?:\n|$)/u);
             assert.doesNotMatch(await envListed.textContent(), /top-secret-hello/u);
-            await submit("/env delete MY_VAR");
+            await submit("/env unset MY_VAR");
             await submit("/stop");
             assert.equal(model.requests.length, 0);
             assert.equal(await page.locator("[data-messages] > li").count(), 0);
