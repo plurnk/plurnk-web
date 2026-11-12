@@ -359,12 +359,12 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     assert.equal(await note.locator("article > details > summary").count(), 1);
                     assert.equal(await note.locator("details").evaluate((node) => node.open), false);
                     await page.locator("[data-operations] > details > summary").click();
-                    assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-plurnk-field="aside"]')?.textContent ?? "")), ["observation", "hypothesis", ""]);
+                    assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-plurnk-field="aside"]')?.textContent ?? "")), ["fact", "idea", ""]);
                     assert.equal(await note.getByRole("article", { name: "note", exact: true }).count(), 1);
-                    assert.equal(await note.locator("article > details > pre").textContent(), "A **working observation**, not the answer.");
+                    assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
                     const args = /** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "note").rawInput);
-                    assert.equal(args.body, "A **working observation**, not the answer.");
-                    assert.equal(args.aside, "observation");
+                    assert.equal(args.body, "A **working fact**, not the answer.");
+                    assert.equal(args.aside, "fact");
                     const id = await note.getAttribute("data-call-id");
                     const result = page.locator(`[data-message-role="tool"][data-tool-call-id="${id}"]`);
                     assert.equal(await result.count(), 0, "the real immediate receipt completes its call's summary");

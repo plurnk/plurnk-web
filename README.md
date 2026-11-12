@@ -1,6 +1,6 @@
 # @plurnk/plurnk-web
 
-Native OTM browser module for [`@plurnk/plurnk-service`](https://github.com/plurnk/plurnk-service), bundled and mounted at `/` by default (`plurnk web`, `/web`, or `http://127.0.0.1:1066/`; set `PLURNK_WEB_ENABLED=0` to disable). Contract: [`SPEC.md`](SPEC.md). Boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md). Knobs: [`.env.defaults`](.env.defaults).
+Native OTM browser module for [`@plurnk/plurnk-service`](https://github.com/plurnk/plurnk-service), installed via `optionalDependencies` and mounted at `/` by default (`plurnk web`, `/web`, or `http://127.0.0.1:1066/`; omit with `npm install --omit=optional`). Contract: [`SPEC.md`](SPEC.md). Boundaries: [`ARCHITECTURE.md`](ARCHITECTURE.md). Knobs: [`.env.defaults`](.env.defaults).
 
 ## Routes
 

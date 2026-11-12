@@ -35,7 +35,7 @@ export default async function verifySemanticContent(t) {
                     const row = (id) => list.locator(`[data-message-id="${id}"]`);
                     const field = (item, name) => item.locator(`[data-plurnk-field="${name}"]`);
                     const glyph = (item) => field(item, "heading").evaluate((element) => getComputedStyle(element, "::before").content);
-                    const glyphs = { find: "🔎", read: "📖", edit: "📝", copy: "🖨️", move: "📦", kill: "🗑️", wait: "⏳", work: "🐜", fork: "🔱", bare: "☁️", todo: "🚧", warn: "⚠️", fail: "⛔", info: "📌", sh: "⚙️", mcp: "⚙️", schedule: "⚙️", members: "⚙️" };
+                    const glyphs = { find: "🔎", read: "📖", edit: "📝", copy: "🖨️", move: "📦", kill: "🗑️", wait: "⏳", work: "🐜", fork: "🔱", bare: "☁️", warn: "⚠️", fail: "⛔", info: "📌", sh: "⚙️", mcp: "⚙️", schedule: "⚙️", members: "⚙️" };
                     const names = Object.keys(glyphs);
                     const messages = names.flatMap((name) => [
                         call(`glyph-${name}`, name, { ...selection("README.md", [1, -1], "/mudkips/"), aside: `Actual ${name} aside` }),
@@ -120,7 +120,7 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await row("empty").locator("[data-plurnk-operands]").count(), 0, "no empty row or filler text");
                     await present([call("find", "find", {}), result("find", { status: 204, range: { unit: "result", total: 0, requested: [1, -1] } })]);
                     assert.equal(await field(row("find"), "count").textContent(), "{0}");
-                    const rejected = call("invalid", "read", { text: "await plurnk.read(" });
+                    const rejected = call("invalid", "read", { text: "plurnk.read(" });
                     rejected.toolCalls[0]._meta.plurnk.op = "error";
                     await present([rejected, result("invalid", { status: 400, problem: { title: "Invalid operation" } })]);
                     assert.equal(await field(row("invalid"), "path").count(), 0, "rejected syntax is not reparsed into imagined operands");
@@ -132,7 +132,7 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await field(row("invalid"), "outcome").count(), 0, "a cleared outcome leaves no empty paragraph");
 
                     const literal = '**Not emphasis**\n</pre><script>window.contentExecuted=true</script><pre>\n&copy; 分析 🐹';
-                    const note = call("note", "note", { body: literal, aside: "observation" });
+                    const note = call("note", "note", { body: literal, aside: "fact" });
                     await present([note]);
                     await list.locator("[data-operations] > details > summary").click();
                     await row("note").locator("summary").click();
@@ -149,7 +149,7 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await row("note").locator("pre").evaluate((element) => element.firstChild === window.bodyNode), true);
                     assert.equal(await page.evaluate(() => getSelection().toString()), literal, "receipt arrival preserves selection");
                     assert.match(await glyph(row("note")), /🗒/u);
-                    assert.equal(await field(row("note"), "aside").textContent(), "observation");
+                    assert.equal(await field(row("note"), "aside").textContent(), "fact");
                     const attributes = await row("note").evaluate((element) => [element, ...element.querySelectorAll("*")].flatMap((node) => Array.from(node.attributes, ({ value }) => value)));
                     assert.equal(attributes.some((value) => value.includes(literal)), false, "no body mirror in attributes");
                     assert.equal(await page.evaluate(() => window.contentExecuted), undefined);

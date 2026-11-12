@@ -382,7 +382,7 @@ export default class SessionAgent {
         try {
             await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
-                info: { name: "@plurnk/plurnk-web", version: "2.0.0" },
+                info: { name: "@plurnk/plurnk-web", version: "2.1.0" },
                 capabilities: {},
             });
         } catch (error) {
@@ -1368,8 +1368,6 @@ export default class SessionAgent {
             || kind === "agent_thought_chunk"
             || kind === "tool_call"
             || kind === "tool_call_update"
-            || kind === "plan_update"
-            || kind === "plan_removed"
         ) {
             if (kind === "tool_call" || kind === "tool_call_update") {
                 this.#gates.cancelForToolUpdate(update, this.#cancelGateById);

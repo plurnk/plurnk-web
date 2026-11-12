@@ -4,29 +4,18 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promi
 import { createServer, request } from "node:http";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { ConfigurationError } from "@plurnk/plurnk-meta";
 import createModule from "../src/module.js";
 import verifyDirectories from "./directories.js";
 import verifyStaticAssets from "./static-assets.js";
 
-test("{§web-host} {§web-configuration} configuration admits only an enabled root owner", (t) => {
-    const original = process.env.PLURNK_WEB_ENABLED;
-    t.after(() => { process.env.PLURNK_WEB_ENABLED = original; });
-    process.env.PLURNK_WEB_ENABLED = "1";
+test("{§web-host} {§web-configuration} installed module claims root on the assembled floor", () => {
     const enabled = createModule();
     assert.deepEqual(enabled.mounts, ["/"]);
     assert.deepEqual(enabled.contained, []);
-    process.env.PLURNK_WEB_ENABLED = "0";
-    assert.deepEqual(createModule(), {});
-    for (const value of ["", "true", "2"]) {
-        process.env.PLURNK_WEB_ENABLED = value;
-        assert.throws(createModule, (error) => error instanceof ConfigurationError
-            && error.key === "PLURNK_WEB_ENABLED" && error.message.includes("must be 0 or 1"));
-    }
 });
 
-test("{§web-configuration} missing and invalid limits never select code defaults; disabled web ignores them", (t) => {
-    const keys = ["PLURNK_WEB_ENABLED", "PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_REASONING_PREVIEW_CHARS",
+test("{§web-configuration} missing and invalid limits never select code defaults", (t) => {
+    const keys = ["PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_REASONING_PREVIEW_CHARS",
         "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_OVERVIEW_EXCERPT_CHARS",
         "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_CREATE_TOKENS", "PLURNK_WEB_FORM_BYTES",
         "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_DIAGRAM_PENDING", "PLURNK_WEB_DIAGRAM_TIMEOUT_MS",
@@ -38,8 +27,7 @@ test("{§web-configuration} missing and invalid limits never select code default
             else process.env[key] = value;
         }
     });
-    process.env.PLURNK_WEB_ENABLED = "1";
-    for (const key of keys.slice(1)) {
+    for (const key of keys) {
         assert.ok(original[key], "the package test runs on the real environment floor");
         delete process.env[key];
         assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
@@ -51,21 +39,17 @@ test("{§web-configuration} missing and invalid limits never select code default
             assert.equal(mod.contained?.[0]?.key, key);
             assert.match(mod.contained?.[0]?.message ?? "", /safe integer of at least 1/u);
         }
-        process.env.PLURNK_WEB_ENABLED = "0";
-        assert.deepEqual(createModule(), {});
-        process.env.PLURNK_WEB_ENABLED = "1";
         process.env[key] = original[key];
     }
 });
 
 test("{§web-configuration} browser YOLO uses the assembled floor and validates its switch", (t) => {
-    const original = { yolo: process.env.PLURNK_WEB_YOLO, enabled: process.env.PLURNK_WEB_ENABLED };
+    const original = process.env.PLURNK_WEB_YOLO;
     t.after(() => {
-        if (original.yolo === undefined) delete process.env.PLURNK_WEB_YOLO;
-        else process.env.PLURNK_WEB_YOLO = original.yolo;
-        process.env.PLURNK_WEB_ENABLED = original.enabled;
+        if (original === undefined) delete process.env.PLURNK_WEB_YOLO;
+        else process.env.PLURNK_WEB_YOLO = original;
     });
-    assert.equal(original.yolo, "0", "explicit review is the package default, not a browser fallback");
+    assert.equal(original, "0", "explicit review is the package default, not a browser fallback");
     for (const value of ["0", "1"]) {
         process.env.PLURNK_WEB_YOLO = value;
         const mod = createModule();
@@ -82,8 +66,6 @@ test("{§web-configuration} browser YOLO uses the assembled floor and validates 
     }
     delete process.env.PLURNK_WEB_YOLO;
     assert.throws(createModule, { message: "PLURNK_WEB_YOLO is missing from the assembled environment floor." });
-    process.env.PLURNK_WEB_ENABLED = "0";
-    assert.deepEqual(createModule(), {}, "disabled web does not require its unused approval setting");
 });
 
 test("{§web-configuration} diagram deadlines cannot overflow Node's timer range", (t) => {
@@ -173,7 +155,6 @@ test("{§web-authorization-style} the registered browser client uses the package
 });
 
 test("{§web-assets} exact public resources and HTTP method matrix", async (t) => {
-    assert.equal(process.env.PLURNK_WEB_ENABLED, "1");
     let handler;
     await createModule().start(/** @type {any} */ ({ registerHttpRoute(prefix, serve) {
         assert.equal(prefix, "/");

@@ -28,7 +28,6 @@ import Diagrams from "./diagrams.js";
  */
 /** {§web-host} {§web-configuration} {§web-package} @returns {import("@plurnk/plurnk-modules").DaemonModule<SetupPort, Port>} */
 export default function createModule() {
-    if (!Knob.flag("PLURNK_WEB_ENABLED")) return {};
     /** @type {import("@plurnk/plurnk-modules").ContainedConfiguration[]} */
     const contained = [];
     /** @template T @param {() => T} read @returns {T | null} */

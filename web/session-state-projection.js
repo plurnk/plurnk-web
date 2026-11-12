@@ -341,7 +341,6 @@ export function applyTerminalStreamUpdate(state, update, plurnk) {
                 entryId,
                 sessionId: typeof plurnk?.sessionId === "number" ? plurnk.sessionId : 1,
                 target,
-                lifetime: "turn",
                 ...(typeof plurnk?.loop_seq === "number" ? { loop_seq: plurnk.loop_seq } : {}),
                 ...(typeof plurnk?.turn_seq === "number" ? { turn_seq: plurnk.turn_seq } : {}),
                 ...(typeof plurnk?.sequence === "number" ? { sequence: plurnk.sequence } : {}),

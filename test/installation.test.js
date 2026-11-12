@@ -210,17 +210,18 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
     await verifySharedReview({ t, withDaemon, consumer });
     await closeSharedDaemons();
 
-    await t.test("{§web-host} {§web-configuration} disabled and invalid settings do not claim root; contained settings withhold only their part", async () => {
-        for (const value of ["0", "invalid"]) {
-            await withDaemon({ PLURNK_WEB_ENABLED: value }, async (base, daemon) => {
+    await t.test("{§web-host} {§web-configuration} omitted package leaves root unclaimed; contained settings withhold only their part", async () => {
+        const savedWeb = join(directory, "omitted-plurnk-web");
+        await rename(webPackage, savedWeb);
+        try {
+            await withDaemon({ PLURNK_AUTH: "0" }, async (base) => {
                 const res = await fetch(base);
                 assert.equal(res.status, 404);
                 const problem = await res.json();
                 assert.match(problem.type, /route-not-found/u);
-                if (value === "invalid") {
-                    assert.match(daemon.stdout() + daemon.stderr(), /PLURNK_WEB_ENABLED/u);
-                }
             });
+        } finally {
+            await rename(savedWeb, webPackage);
         }
         await withDaemon({ PLURNK_AUTH: "0", PLURNK_WEB_DIAGRAM_THREADS: "0" }, async (base, daemon) => {
             assert.equal((await fetch(base)).status, 200);

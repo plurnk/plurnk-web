@@ -1,5 +1,4 @@
 import { $, the } from "on_the_money";
-import { parseTodoItems } from "@plurnk/plurnk-contracts";
 import markdown from "./markdown.js";
 import bodyReferences from "./body-references.js";
 import reasoningCoordinate from "./reasoning-coordinate.js";
@@ -128,54 +127,6 @@ function tallyBucket(item) {
         heading: showHeading ? `${type} ` : "",
         label: type,
     };
-}
-
-/** @param {PreparedEntry} item */
-function succeededOp(item) {
-    return !item.error
-        && item.call?.status !== "failed"
-        && item.call?.status !== "pending"
-        && !(typeof item.receipt?.status === "number" && item.receipt.status >= 400)
-        && !(typeof item.facts?.status === "number" && item.facts.status >= 400)
-        && item.facts?.state !== "proposed"
-        && item.facts?.state !== "failed"
-        && item.facts?.state !== "cancelled";
-}
-
-/** @param {PreparedEntry[]} loopItems @returns {string[]} */
-function openTasksForLoop(loopItems) {
-    /** @type {Set<string>} */
-    const retiredCoords = new Set();
-    /** @type {PreparedEntry[]} */
-    const todos = [];
-    for (const item of loopItems) {
-        if ((item.op === "todo" || item.operation?.name === "todo") && succeededOp(item)) {
-            if (item.facts?.planRemoved === true) continue;
-            todos.push(item);
-        } else if ((item.op === "kill" || item.operation?.name === "kill") && succeededOp(item)) {
-            const rawTarget = record(item.args?.target)?.raw ?? item.receipt?.path ?? item.facts?.address ?? item.facts?.target;
-            if (typeof rawTarget === "string" && rawTarget.startsWith("log:///")) {
-                const rawCoord = rawTarget.slice("log:///".length).replace(/\/[A-Za-z_][A-Za-z0-9_]*$/u, "");
-                if (rawCoord) retiredCoords.add(rawCoord);
-            }
-        }
-    }
-    const activeTodo = todos.findLast((item) => {
-        const coord = typeof item.facts?.coordinate === "string" ? item.facts.coordinate : (item.call?.toolCallId ?? "");
-        if (!coord) return true;
-        for (const retired of retiredCoords) {
-            if (coord === retired || coord.startsWith(`${retired}/`)) return false;
-        }
-        return true;
-    });
-    if (!activeTodo) return [];
-    const plan = record(activeTodo.facts?.plan);
-    if (Array.isArray(plan?.entries)) {
-        return plan.entries
-            .filter((entry) => record(entry)?.status === "pending" && typeof record(entry)?.content === "string" && Boolean(record(entry)?.content))
-            .map((entry) => String(record(entry)?.content));
-    }
-    return parseTodoItems(bodyOf(activeTodo.args, "todo"));
 }
 
 /** @param {Element} parent @param {Element} child @param {Element | null} previous @param {(node: Element) => boolean} [skip] */
@@ -441,7 +392,6 @@ export default function conversation(root, readBody) {
             if (!loops.has(seq)) loopRow.remove();
         }
 
-        const lastLoopSeq = Array.from(loops.keys()).at(-1) ?? null;
         /** @type {Element | null} */
         let previousLoop = null;
         for (const [seq, loopItems] of loops) {
@@ -524,29 +474,6 @@ export default function conversation(root, readBody) {
             }
             for (const opsRow of existingOps) {
                 if (!usedOps.has(opsRow)) opsRow.remove();
-            }
-
-            const loopConcluded = loopItems.some((item) => !nestedSet.has(item) && (item.op === "done" || item.op === "fail"));
-            const openTasks = seq === lastLoopSeq && !loopConcluded ? openTasksForLoop(loopItems) : [];
-            const existingPlan = $(loopList, ":scope > [data-loop-plan]");
-            if (openTasks.length > 0) {
-                let planRow = existingPlan;
-                if (!planRow) {
-                    const cloned = $.clone(loopList, "#conversation-plan");
-                    if (!(cloned instanceof HTMLElement)) throw new Error("Plan template must contain an HTML element.");
-                    planRow = cloned;
-                }
-                const planList = $(planRow, ":scope > article > ul");
-                if (!(planList instanceof HTMLUListElement)) throw new Error("Plan article has no list.");
-                const planRevision = JSON.stringify(openTasks);
-                if (painted.get(planList) !== planRevision) {
-                    planList.replaceChildren();
-                    $.cloneEach(planList, "#conversation-plan-item", openTasks, (item, task) => the(item, "plan-item", task));
-                    painted.set(planList, planRevision);
-                }
-                placeChild(loopList, planRow, prevBlock);
-            } else if (existingPlan) {
-                existingPlan.remove();
             }
 
             previousLoop = placeChild(list, loopRow, previousLoop, (node) => !node.hasAttribute("data-loop-seq"));
