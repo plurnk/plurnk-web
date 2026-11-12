@@ -2,18 +2,18 @@
 
 ## §web-host Hosting
 
-`@plurnk/plurnk-web/module` exports one native Plurnk module composed by the
-service. It uses the public module lifecycle and HTTP registration seam, never a
-separate listener or process. The daemon owns composition, routing precedence,
-startup readiness and shutdown.
+`@plurnk/plurnk-web` ships as an `optionalDependencies` leaf of
+`@plurnk/plurnk-service`, and `@plurnk/plurnk-web/module` exports one native
+Plurnk module composed by the service when installed. It uses the public module
+lifecycle and HTTP registration seam, never a separate listener or process. The
+daemon owns composition, routing precedence, startup readiness and shutdown.
 
-| Configuration | Behavior |
+| Installation | Behavior |
 |---|---|
-| PLURNK_WEB_ENABLED=1 | Claim and register `/` on the daemon's existing listener. |
-| PLURNK_WEB_ENABLED=0 | Inert module: no route claims or registration. |
-| Invalid value | Existing configuration diagnostic; no web module activation. |
+| `@plurnk/plurnk-web` installed (default) | Claim and register `/` on the daemon's existing listener. |
+| Omitted (`npm install --omit=optional` or `npm uninstall @plurnk/plurnk-web`) | Absent from the daemon's module composition; `/` remains unclaimed. |
 
-The package's `.env.defaults` owns the default. More-specific mounts retain their ownership.
+More-specific mounts retain their ownership.
 
 ## §web-route-settlement Shutdown admission and settlement
 
@@ -28,8 +28,8 @@ The package's `.env.defaults` owns the default. More-specific mounts retain thei
 
 | Boundary | Contract |
 |---|---|
-| Module choices | `.env.defaults` declares enablement, browser approval mode, reasoning-preview retention, overview session and reply-excerpt bounds, the sign-in time limit, workspace creation limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
-| Invalid input | An invalid `PLURNK_WEB_ENABLED` refuses the module. Other invalid web settings are reported in `module.contained` and withhold only the part each configures (503 when requested), leaving the rest of the module operational. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. Disabled web does not inspect unused web settings. |
+| Module choices | `.env.defaults` declares browser approval mode, reasoning-preview retention, overview session and reply-excerpt bounds, the sign-in time limit, workspace creation limits and diagram compilation limits. The daemon assembles that floor beneath operator sources; the shared `Knob` reader validates the effective values without reader-local defaults. |
+| Invalid input | Invalid web settings are reported in `module.contained` and withhold only the part each configures (503 when requested), leaving the rest of the module operational. Missing floor values remain an internal deployment error; neither condition silently selects a replacement value. |
 | Other owners | Consume daemon authentication and credential policy through their existing configuration and public seams, never web-owned substitutes. |
 | Browser | Receives only explicit public document projections, not the environment, credentials or a second set of deployment defaults. Vite compiles assets independently of operator configuration. |
 
@@ -536,7 +536,7 @@ capability, persistence or execution policy. Client commands require no inferenc
 | Boundary | Contract |
 |---|---|
 | Authority | The session ACP client's ordered `messages` collection is the sole live transcript. Read-only daemon history pages join its display under {§web-session-history}, never its collection or request input. No custom-row reconstruction, browser persistence or second event reducer. Observation submits no input and never answers a tool call; authored input follows {§web-session-input}. |
-| Identity | Project message content and each assistant call in supplied chronology, with archival joins under {§web-session-history}, then supplied call order, grouped by loop (`_meta.plurnk.loopSeq` or coordinate prefix, defaulting to `1`) into initially open loop disclosures (`Loop <sequence>`). Within a loop, user prompts, assistant/system/developer prose, and `send`, `done` and `fail` replies are non-folding article entries; a `done` or `fail` whose `repliedTo` resolves a mid-loop prompt (any prompt after the loop's opening prompt) nests inside that prompt's article, while `send` and loop-level completions remain at the loop level. Contiguous runs of working operations (non-reply calls, results and reasoning) between loop-level entries group into an initially closed operations disclosure whose summary tallies each operation kind in appearance order (`[glyph]/op # · ...`). When the latest loop has not concluded with a loop-level `done` or `fail` and its latest unretired `todo` (`plan_update` or `todo` body) has open items, a non-folding `Open tasks` article (`data-loop-plan`) at the tail of the loop lists only those pending items (`☐`), and is removed when no open items remain, `plan_removed` or `kill` retires the plan, or the loop concludes. Content precedes calls within a message; a call-only message has no empty enclosing article. Each entry retains its message ID and, for calls, call ID. Snapshots replace live membership and order; streaming changes update existing entries. Unchanged bodies, selection and native disclosure state survive updates and passive reconnections. Rendered-node lookup comes from the DOM; the renderer's per-outlet last-render cache avoids replacing unchanged content, but holds no separate message collection. A page reload reads fresh authority state, not browser history. |
+| Identity | Project message content and each assistant call in supplied chronology, with archival joins under {§web-session-history}, then supplied call order, grouped by loop (`_meta.plurnk.loopSeq` or coordinate prefix, defaulting to `1`) into initially open loop disclosures (`Loop <sequence>`). Within a loop, user prompts, assistant/system/developer prose, and `send`, `done` and `fail` replies are non-folding article entries; a `done` or `fail` whose `repliedTo` resolves a mid-loop prompt (any prompt after the loop's opening prompt) nests inside that prompt's article, while `send` and loop-level completions remain at the loop level. Contiguous runs of working operations (non-reply calls, results and reasoning) between loop-level entries group into an initially closed operations disclosure whose summary tallies each operation kind in appearance order (`[glyph]/op # · ...`). Content precedes calls within a message; a call-only message has no empty enclosing article. Each entry retains its message ID and, for calls, call ID. Snapshots replace live membership and order; streaming changes update existing entries. Unchanged bodies, selection and native disclosure state survive updates and passive reconnections. Rendered-node lookup comes from the DOM; the renderer's per-outlet last-render cache avoids replacing unchanged content, but holds no separate message collection. A page reload reads fresh authority state, not browser history. |
 | User and assistant | Content-first semantic articles, with accessible names identifying role and supplied author/subagent attribution, without redundant visible headers. Text is rendered as Markdown. Calls retain their containing message's identity and attribution without duplicating its envelope in the DOM. Empty content does not imply a fabricated answer. |
 | Reasoning | Apply {§web-session-reasoning}. Nonempty standard reasoning content is literal preformatted text in a collapsed disclosure; negotiated empty messages have no visible row until their body reference arrives. |
 | Calls and results | Confirmed Plurnk operations use {§web-operation-summary}. Their immediate result (correlated by call ID, without its own Plurnk row metadata) completes the call's existing entry rather than creating another article. Results with their own row metadata remain distinct observations or replies; they never inherit the invocation's operands. Generic calls/results retain supplied chronology and accessible identity without guessing a Plurnk contract; late archival receipts join under {§web-session-history}. Standard tool errors remain visible. |

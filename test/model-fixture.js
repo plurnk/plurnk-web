@@ -24,8 +24,8 @@ export default async function startModel({ approvalCommand: initialApprovalComma
     const visits = new Map();
     let streamStarted = Promise.withResolvers();
     const programs = [
-        { reasoning: "I will read the requested project file.", content: 'await plurnk.read({ path: "witness.txt" });' },
-        { reasoning: "The file confirms the browser connection.", content: 'await plurnk.done({ text: "Browser connection verified: cobalt heron." });' },
+        { reasoning: "I will read the requested project file.", content: 'plurnk.read({ path: "witness.txt" })' },
+        { reasoning: "The file confirms the browser connection.", content: 'plurnk.done({ text: "Browser connection verified: cobalt heron." })' },
     ];
     let turn = 0;
     const server = createServer(async (request, response) => {
@@ -73,24 +73,24 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                 }
                 if (!response.destroyed) {
                     const content = lifecycle === "wait-status" && visit === 1
-                        ? `await plurnk.sh({ command: ${JSON.stringify(`node --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'`)} });\nawait plurnk.wait({ seconds: 60 });`
+                        ? `plurnk.sh({ command: ${JSON.stringify(`node --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'`)} })\nplurnk.wait({ seconds: 60 })`
                         : lifecycle === "activity" && visit === 1 ? outsideText
-                        : lifecycle.startsWith("status-") && visit === 1 ? 'await plurnk.read({ path: "session://user/identity.md" });'
-                        : lifecycle === "approval-batch" && visit === 1 ? 'await plurnk.sh({ command: "printf first" });\nawait plurnk.sh({ command: "printf second" });'
-                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `await plurnk.sh({ command: ${JSON.stringify(approvalCommand)} });`
+                        : lifecycle.startsWith("status-") && visit === 1 ? 'plurnk.read({ path: "session://user/identity.md" })'
+                        : lifecycle === "approval-batch" && visit === 1 ? 'plurnk.sh({ command: "printf first" })\nplurnk.sh({ command: "printf second" })'
+                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `plurnk.sh({ command: ${JSON.stringify(approvalCommand)} })`
                         : lifecycle === "question-batch" && visit === 1 ? `${questionOperation}\n${questionOperation}`
                         : /^(question|held-question)-/u.test(lifecycle) && visit === 1 ? questionOperation
-                        : lifecycle.startsWith("mcp-question-") && visit === 1 ? 'await fixture.batch({});\nawait plurnk.wait();'
+                        : lifecycle.startsWith("mcp-question-") && visit === 1 ? 'fixture.batch({})\nplurnk.wait({})'
                         : lifecycle === "conversation" && visit === 1
-                            ? 'await plurnk.read({ path: "witness.txt", range: "1,1", pattern: "/cobalt/" }); // selected evidence\nawait plurnk.read({ path: "session://user/identity.md", range: "1,2" });'
+                            ? 'plurnk.read({ path: "witness.txt", range: "1,1", pattern: "/cobalt/" }) // selected evidence\nplurnk.read({ path: "session://user/identity.md", range: "1,2" })'
                         : lifecycle.startsWith("execution-") && visit === 1
-                            ? `await plurnk.sh({ command: ${JSON.stringify(`printf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}`)} });\nawait plurnk.wait();`
-                        : lifecycle === "math" ? `await plurnk.done({ text: ${JSON.stringify("A native formula: $\\mathscr{F}=\\frac{a}{b}$.")} });`
-                        : lifecycle === "diagrams" ? `await plurnk.done({ text: ${JSON.stringify(diagramContent)} });`
-                        : lifecycle === "footnotes" ? `await plurnk.note({ text: ${JSON.stringify(footnoteAnswer)} }); // observation\nawait plurnk.done({ text: ${JSON.stringify(footnoteAnswer)} });`
-                        : lifecycle === "notes" ? 'await plurnk.note({ text: "A **working observation**, not the answer." }); // observation\nawait plurnk.note({ text: "A provisional hypothesis." }); // hypothesis\nawait plurnk.note({ text: "Check the hypothesis." });\nawait plurnk.done({ text: "Completed notes." });'
-                        : lifecycle === "content-security" ? `await plurnk.note({ text: ${JSON.stringify(contentAttack)} }); // observation\nawait plurnk.done({ text: ${JSON.stringify(contentAttack)} });`
-                        : `await plurnk.done({ text: ${JSON.stringify(`Completed ${lifecycle}.`)} });`;
+                            ? `plurnk.sh({ command: ${JSON.stringify(`printf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}`)} })\nplurnk.wait({})`
+                        : lifecycle === "math" ? `plurnk.done({ text: ${JSON.stringify("A native formula: $\\mathscr{F}=\\frac{a}{b}$.")} })`
+                        : lifecycle === "diagrams" ? `plurnk.done({ text: ${JSON.stringify(diagramContent)} })`
+                        : lifecycle === "footnotes" ? `plurnk.note({ text: ${JSON.stringify(footnoteAnswer)} }) // fact\nplurnk.done({ text: ${JSON.stringify(footnoteAnswer)} })`
+                        : lifecycle === "notes" ? 'plurnk.note({ text: "A **working fact**, not the answer." }) // fact\nplurnk.note({ text: "A provisional idea." }) // idea\nplurnk.note({ text: "Check the idea." })\nplurnk.done({ text: "Completed notes." })'
+                        : lifecycle === "content-security" ? `plurnk.note({ text: ${JSON.stringify(contentAttack)} }) // fact\nplurnk.done({ text: ${JSON.stringify(contentAttack)} })`
+                        : `plurnk.done({ text: ${JSON.stringify(`Completed ${lifecycle}.`)} })`;
                     frame({ content });
                     const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);
                     frame({}, "stop", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });

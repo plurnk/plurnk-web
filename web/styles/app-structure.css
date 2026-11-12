@@ -152,13 +152,13 @@ table {
     min-inline-size: 0;
 }
 
-#session-conversation :where(details > ul, [data-prompt-replies], [data-loop-plan] > article > ul),
+#session-conversation :where(details > ul, [data-prompt-replies]),
 :is(#session-conversation, #session-diagnostics, #session-command-results) > ul {
     padding: 0;
 }
 
 [data-directory-entry],
-#session-conversation :where(details > ul, [data-prompt-replies], [data-loop-plan] > article > ul) > li,
+#session-conversation :where(details > ul, [data-prompt-replies]) > li,
 :is(#session-conversation, #session-diagnostics, #session-command-results) > ul > li {
     list-style: none;
 }

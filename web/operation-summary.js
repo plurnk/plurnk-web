@@ -4,7 +4,7 @@ import { $, the } from "on_the_money";
 /** @typedef {[string, string]} Field */
 
 export const GLYPH_OPS = new Set([
-    "note", "todo", "find", "read", "edit", "copy", "move", "kill",
+    "note", "find", "read", "edit", "copy", "move", "kill",
     "work", "fork", "bare", "wait", "send", "done", "fail", "warn", "info", "error",
 ]);
 

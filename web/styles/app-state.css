@@ -186,7 +186,6 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 }
 
 :is([data-plurnk-type="note"], [data-operation-tally="note"]) { --plurnk-operation-glyph: "🗒️"; }
-:is([data-plurnk-type="todo"], [data-operation-tally="todo"]) { --plurnk-operation-glyph: "🚧"; }
 :is([data-plurnk-type="find"], [data-operation-tally="find"]) { --plurnk-operation-glyph: "🔎"; }
 :is([data-plurnk-type="read"], [data-operation-tally="read"]) { --plurnk-operation-glyph: "📖"; }
 :is([data-plurnk-type="edit"], [data-operation-tally="edit"]) { --plurnk-operation-glyph: "📝"; }
@@ -209,7 +208,6 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 [data-diagnostic-level="warn"] { --plurnk-operation-glyph: "⚠️"; }
 [data-diagnostic-level="error"] { --plurnk-operation-glyph: "⛔"; }
 [data-operation-tally="reasoning"] { --plurnk-operation-glyph: "💭"; }
-[data-loop-plan] li::before { content: "☐ " / ""; }
 
 /* {§web-page-shell} {§web-session-directory} Directory identity remains accessible without decorative glyphs. */
 [data-directory-entry="workspace"] > article > header::before {
