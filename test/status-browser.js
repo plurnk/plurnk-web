@@ -79,7 +79,11 @@ export default async function verifyStatus(t) {
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "true"));
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
+                    await leave();
+                    assert.equal(await statusLine.isVisible(), true, "active YOLO remains visible on unfocused idle sessions");
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "false"));
+                    assert.equal(await statusLine.isVisible(), false, "returning to Review hides unfocused idle status");
+                    await draft.focus();
                     for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         const appearance = await page.locator("#session-status > [data-status-line]").evaluate((element) => {

@@ -342,8 +342,10 @@ export default function observeSession(element) {
     on(document, "keydown", "body", (event) => {
         if (!(event instanceof KeyboardEvent) || event.key !== "Tab" || !event.shiftKey
             || event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.repeat) return;
-        if (the(element, "connection") !== "interrupted" || cancellation
-            || !agent.pendingGates.some(({ method }) => method === "session/request_permission")) return;
+        const inDraft = event.target === draft;
+        const pendingProposal = the(element, "connection") === "interrupted"
+            && agent.pendingGates.some(({ method }) => method === "session/request_permission");
+        if (cancellation || (!inDraft && !pendingProposal)) return;
         event.preventDefault();
         void toggleYolo().catch((error) => {
             if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
@@ -364,8 +366,13 @@ export default function observeSession(element) {
         availability();
     });
     on(compose, "keydown", "textarea", (event) => {
-        if (!(event instanceof KeyboardEvent) || event.key !== "Enter" || !event.ctrlKey
-            || event.altKey || event.metaKey || event.shiftKey || event.isComposing || event.repeat) return;
+        if (!(event instanceof KeyboardEvent) || event.isComposing || event.repeat) return;
+        if (event.key === "Escape" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+            event.preventDefault();
+            draft.blur();
+            return;
+        }
+        if (event.key !== "Enter" || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
         event.preventDefault();
         compose.requestSubmit();
     });

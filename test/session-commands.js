@@ -61,7 +61,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await page.locator("#session-command-results > ul > li").count(), 0);
             assert.equal(model.requests.length, 0);
             checkBrowser();
-        }, { env: reasoning }));
+        }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
 
     await t.test("{§web-session-settings} live effort selection applies during active work and refused model selection preserves the draft and active work", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
@@ -153,6 +153,17 @@ export default async function verifySessionCommands({ t, withDaemon }) {
 
             await field.focus();
             await approval.click();
+            assert.equal(await approval.getAttribute("aria-pressed"), "false");
+            await field.fill("Idle Shift+Tab draft.");
+            await field.press("Shift+Tab");
+            assert.equal(await approval.getAttribute("aria-pressed"), "true", "Shift+Tab in composer toggles YOLO while idle");
+            assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", "composer retains focus");
+            assert.equal(await field.inputValue(), "Idle Shift+Tab draft.");
+            await field.press("Escape");
+            assert.notEqual(await page.evaluate(() => document.activeElement?.id), "session-message", "Escape leaves composer");
+            assert.equal(await page.locator("#session-status > [data-status-line]").isVisible(), true, "active YOLO remains visible when unfocused");
+            await field.focus();
+            await field.press("Shift+Tab");
             assert.equal(await approval.getAttribute("aria-pressed"), "false");
             await send("Lifecycle fixture: approval-shortcut.");
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
