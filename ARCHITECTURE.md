@@ -108,8 +108,9 @@ violations remain visible with useful evidence; do not replace them with an
 apparently healthy empty view. Never print credentials or credential responses.
 
 The browser owns delivery and its local resources, not admitted work. Navigation,
-disconnection and teardown are not cancellation. Retry and cancellation are
-explicit actions; approval follows the configured client choice under
+disconnection and teardown are not cancellation. Mutating retries and cancellation are
+explicit actions, while idempotent passive observation streams recover automatically under
+{§web-session-observer}; approval follows the configured client choice under
 {§web-session-approval}, never an inferred permission or a replacement for daemon
 authority. Resource cleanup must preserve both the original failure and cleanup
 failures.

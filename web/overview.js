@@ -3,6 +3,7 @@ import { directoryPath } from "../src/directory-addresses.js";
 import accessHeaders from "./access-headers.js";
 import card from "./card.js";
 import markdown from "./markdown.js";
+import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
 import problemFromResponse from "./problem-response.js";
 import readBody from "./read-body.js";
 
@@ -796,9 +797,17 @@ export default function observeOverview(main) {
 
     hydrateFromDom();
 
-    /** @param {AbortSignal} signal */
-    async function subscribe(signal) {
-        the(main, "connection", "connecting");
+    /** @type {AbortController | undefined} */
+    let currentStream;
+    const reconnect = createPassiveReconnect(() => {
+        if (!resources.signal.aborted && the(main, "connection") === "disconnected") {
+            connect(true);
+        }
+    });
+
+    /** @param {AbortSignal} signal @param {boolean} passiveRetry */
+    async function subscribe(signal, passiveRetry) {
+        if (!passiveRetry) the(main, "connection", "connecting");
         const headers = await accessHeaders(auth, signal);
         signal.throwIfAborted();
         const query = new URLSearchParams({ event: NOTIFICATION_EVENTS });
@@ -814,6 +823,7 @@ export default function observeOverview(main) {
                 { status: refusalError?.status ?? response.status },
             );
         }
+        reconnect.reset();
         the(main, "connection", "connected");
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = "";
@@ -834,7 +844,13 @@ export default function observeOverview(main) {
                         }
                     }
                     if (dataLines.length > 0 && !signal.aborted) {
-                        applyNotification(JSON.parse(dataLines.join("\n")));
+                        let parsed;
+                        try {
+                            parsed = JSON.parse(dataLines.join("\n"));
+                        } catch (cause) {
+                            throw Object.assign(new Error("Notifications frame is not valid JSON.", { cause }), { protocolFailure: true });
+                        }
+                        applyNotification(parsed);
                     }
                 }
             }
@@ -846,15 +862,25 @@ export default function observeOverview(main) {
         }
     }
 
-    const connect = () => {
-        void subscribe(resources.signal).catch((error) => {
-            if (resources.signal.aborted) return;
+    /** @param {boolean} [passiveRetry] */
+    function connect(passiveRetry = false) {
+        currentStream?.abort();
+        if (!passiveRetry) reconnect.reset();
+        const attempt = new AbortController();
+        currentStream = attempt;
+        const signal = AbortSignal.any([resources.signal, attempt.signal]);
+        void subscribe(signal, passiveRetry).catch((error) => {
+            if (signal.aborted) return;
             const signedOut = Reflect.get(Object(error), "status") === 401;
             the(main, "connection", signedOut ? "signed-out" : "disconnected");
+            if (!signedOut && isRetryableObservationFailure(error)) reconnect.schedule();
+            else reconnect.stop();
         });
-    };
+    }
 
     window.onpagehide = () => {
+        reconnect.reset();
+        currentStream?.abort();
         resources.abort();
         the(main, "connection", "closed");
     };

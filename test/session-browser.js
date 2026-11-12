@@ -1039,9 +1039,6 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await connection(page, "disconnected");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), true);
                         const afterLoss = requests.length;
-                        await setTimeout(1100);
-                        assert.equal(requests.length, afterLoss, "an available endpoint does not trigger automatic retries after connection loss");
-                        checkBrowser([networkFailure("/acp")]);
                         const card = page.locator('#session-connection');
                         assert.equal(await card.isVisible(), true);
                         for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
@@ -1050,8 +1047,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.ok(parseFloat(style.padding) > 0);
                             assert.notEqual(style.shadow, "none");
                         }
-                        await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+                        checkBrowser([networkFailure("/acp")]);
                         await connected(page);
+                        assert.ok(requests.length > afterLoss, "passive observation automatically recovers after transient network loss");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false);
                         assert.equal(await value(page, "input"), "800");
                         await daemon.stop();
