@@ -12,7 +12,7 @@ Native OTM browser module for [`@plurnk/plurnk-service`](https://github.com/plur
 | `/~/<workspace>@<session>/` | Passive ACP v2 session attachment, live transcript, composer, inline approval/elicitation forms, and `Archive session` action ([directory addresses](SPEC.md#web-directory-addresses-named-directory-addresses)). |
 | `/auth/token` | Same-origin `POST` exchanging the `HttpOnly` browser session cookie for short-lived ACP bearer credentials (refresh grants remain server-side). |
 
-Navigation never creates state or starts inference; closing or reloading a page never cancels running work.
+Navigation never creates state or starts inference; closing or reloading a page never cancels running work. Passive `/notifications` and session observation streams recover automatically across transient network drops and daemon restarts without retrying mutations.
 
 ## Session controls & rendering
 

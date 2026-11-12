@@ -354,10 +354,21 @@ export default async function verifySessionCards(t) {
                 assert.equal(await page.locator('header nav[aria-label="breadcrumb"] [aria-current="page"]').textContent(), "renamed-work");
                 assert.equal(await card("idle").locator("[data-lifecycle]").getAttribute("aria-label"), "running");
 
-                // Ending SSE stream transitions #main[data-connection] to disconnected and reveals header 🔌 indicator
+                // Ending SSE stream transitions #main[data-connection] to disconnected, then passive backoff and online events recover it
                 for (const stream of sseStreams) stream.end();
                 await page.locator('main[data-connection="disconnected"]').waitFor();
                 assert.equal(await page.locator("header [data-connection-indicator]").isVisible(), true);
+                await page.locator('main[data-connection="connected"]').waitFor();
+                assert.equal(notificationRequests.length, 2, "overview SSE stream automatically re-subscribes after transient closure");
+                assert.equal(await page.locator("header [data-connection-indicator]").isVisible(), false);
+
+                for (const stream of sseStreams) stream.end();
+                await page.locator('main[data-connection="disconnected"]').waitFor();
+                await page.evaluate(() => window.dispatchEvent(new Event("online")));
+                await page.locator('main[data-connection="connected"]').waitFor({ timeout: 1000 });
+                assert.equal(notificationRequests.length, 3, "online event triggers immediate SSE recovery without waiting for backoff");
+                emitNotification("loop/terminated", 7, 8, { sessionId: 8, loopId: 1, result: { status: 200 } });
+                await page.waitForFunction(() => document.querySelector('main a[data-session-link][aria-label="idle"]')?.closest("[data-session-identity]")?.querySelector("[data-lifecycle]")?.getAttribute("aria-label") === "completed");
 
                 checkLive([httpFailure("/acp/7/2/entry", 500)]);
             } finally { await liveContext.close(); }

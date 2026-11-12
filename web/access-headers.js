@@ -11,10 +11,10 @@ export default async function accessHeaders(auth, signal) {
         token = await response.json();
     } catch (cause) {
         // A JSON parser's message may contain credential bytes; preserve it only as the cause.
-        throw new Error("Access credential response is not valid JSON.", { cause });
+        throw Object.assign(new Error("Access credential response is not valid JSON.", { cause }), { protocolFailure: true });
     }
     if (!token || token.token_type !== "Bearer" || typeof token.access_token !== "string" || !token.access_token) {
-        throw new Error("Invalid access credential response.");
+        throw Object.assign(new Error("Invalid access credential response."), { protocolFailure: true });
     }
     return { Authorization: `Bearer ${token.access_token}` };
 }

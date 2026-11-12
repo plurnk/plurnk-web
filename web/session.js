@@ -13,6 +13,7 @@ import managementAction from "./management-action.js";
 import sessionCommands, { expandPromptCommand, isCommand } from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
+import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
 
@@ -163,17 +164,25 @@ export default function observeSession(element) {
         availability();
     }
 
-    /** @param {AbortController} controller @param {Submission} [submission] */
-    async function follow(controller, submission) {
+    const reconnect = createPassiveReconnect(() => {
+        if (!resources.signal.aborted && the(element, "connection") === "disconnected" && !pending && !cancellation) {
+            agent.close();
+            connect(undefined, true);
+        }
+    });
+
+    /** @param {AbortController} controller @param {Submission} [submission] @param {boolean} [initialPassiveRetry] */
+    async function follow(controller, submission, initialPassiveRetry = false) {
         const { signal } = controller;
         let holding = false;
+        let passiveRetry = initialPassiveRetry;
         const timer = setInterval(() => {
             if (["connected", "interrupted"].includes(the(element, "connection") ?? "") && status) the(element, clocks(status, Date.now()));
         }, CLOCK_TICK_MS);
         try {
             while (!signal.aborted) {
-                if (!holding) connection("connecting", "Connecting…");
-                if (!submission?.resolutions && !holding) review.present([]);
+                if (!holding && !passiveRetry) connection("connecting", "Connecting…");
+                if (!submission?.resolutions && !holding && !passiveRetry) review.present([]);
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
                 agent.url = "/acp";
@@ -220,6 +229,11 @@ export default function observeSession(element) {
                         if (!next) return;
                         status = next;
                         if (pending && next.inbox.some(({ id }) => id === pending?.message.id)) acknowledged(pending.message.id);
+                        reconnect.reset();
+                        if (passiveRetry) {
+                            passiveRetry = false;
+                            if (agent.pendingGates.length === 0) review.present([]);
+                        }
                         if (!holding) connection("connected", "Connected");
                     },
                     onSettled: ({ stopReason }) => {
@@ -249,11 +263,16 @@ export default function observeSession(element) {
                 }
                 if (intake !== undefined) {
                     agent.close();
-                    throw intake.error;
+                    throw Object.assign(
+                        intake.error instanceof Error ? intake.error : new Error(String(intake.error)),
+                        { protocolFailure: true },
+                    );
                 }
                 signal.throwIfAborted();
                 if (interrupted) {
                     holding = false;
+                    passiveRetry = false;
+                    reconnect.reset();
                     const mode = review.present(agent.pendingGates);
                     arriving = false;
                     if (mode === "automatic") {
@@ -273,17 +292,22 @@ export default function observeSession(element) {
                 if (settled && submission?.resolutions) the(feedback, "command-error", `Response not accepted: ${refusal}`);
                 else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a session outcome."), { status: problem });
                 holding = false;
+                passiveRetry = false;
                 submission = undefined;
             }
         } catch (error) {
             if (signal.aborted) return;
             agent.close();
             const signedOut = Reflect.get(Object(error), "status") === 401;
-            connection(signedOut ? "signed-out" : "disconnected", signedOut ? "Sign-in ended" : "Disconnected");
-            const guidance = signedOut ? "Sign in to connect to this session again." : "Displayed values are no longer live. Reconnect to check the session.";
-            the(connectionNotice, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
+            if (signedOut || !passiveRetry) {
+                connection(signedOut ? "signed-out" : "disconnected", signedOut ? "Sign-in ended" : "Disconnected");
+                const guidance = signedOut ? "Sign in to connect to this session again." : "Displayed values are no longer live. Reconnect to check the session.";
+                the(connectionNotice, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
+            }
             if (pending) the(feedback, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
             if (submission?.resolutions) the(feedback, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            if (!signedOut && !submission && !pending && isRetryableObservationFailure(error)) reconnect.schedule();
+            else reconnect.stop();
         } finally {
             arriving = false;
             availability();
@@ -293,16 +317,19 @@ export default function observeSession(element) {
         }
     }
 
-    /** @param {Submission} [submission] */
-    function connect(submission) {
+    /** @param {Submission} [submission] @param {boolean} [passiveRetry] */
+    function connect(submission, passiveRetry = false) {
         const previous = delivery;
         previous?.controller.abort();
         preview.clear();
+        if (!passiveRetry) {
+            reconnect.reset();
+            connection("connecting", "Connecting…");
+        }
         const controller = new AbortController();
-        connection("connecting", "Connecting…");
         delivery = { controller, done: (async () => {
             await previous?.done;
-            if (!controller.signal.aborted) await follow(controller, submission);
+            if (!controller.signal.aborted) await follow(controller, submission, passiveRetry);
         })() };
     }
 
@@ -425,6 +452,7 @@ export default function observeSession(element) {
     });
 
     window.onpagehide = () => {
+        reconnect.reset();
         transcript.pause();
         preview.clear();
         resources.abort();
