@@ -63,7 +63,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             checkBrowser();
         }, { env: reasoning }));
 
-    await t.test("{§web-session-settings} refused effort selection preserves the draft and active work", () =>
+    await t.test("{§web-session-settings} live effort selection applies during active work and refused model selection preserves the draft and active work", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { send, field } = composer(page);
             await send("Lifecycle fixture: held-settings.");
@@ -72,14 +72,23 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await page.locator("#session-status > [data-status-line]").isVisible(), true, "live work remains observable without composer focus");
             await field.fill("An untouched next message.");
             await page.getByRole("button", { name: "Effort", exact: true }).click();
-            const article = page.locator("#session-effort-settings");
-            const select = article.getByRole("combobox", { name: "Reasoning Effort", exact: true });
+            const effortArticle = page.locator("#session-effort-settings");
+            const select = effortArticle.getByRole("combobox", { name: "Reasoning Effort", exact: true });
             await select.locator('option[value="low"]').waitFor({ state: "attached" });
             await select.selectOption("low");
-            await article.getByRole("button", { name: "Select Effort", exact: true }).click();
-            await article.getByRole("status").filter({ hasText: "unfinished tasks" }).waitFor();
-            assert.match(await article.locator("[data-text=settings-recovery]").textContent(), /Conclude or cancel/u);
-            assert.equal(await select.inputValue(), "low");
+            await effortArticle.getByRole("button", { name: "Select Effort", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "low");
+            await effortArticle.waitFor({ state: "hidden" });
+            assert.equal(await field.inputValue(), "An untouched next message.");
+            assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running");
+            await page.getByRole("button", { name: "Model", exact: true }).click();
+            const modelArticle = page.locator("#session-model-settings");
+            const modelInput = modelArticle.getByRole("combobox", { name: "Search Models", exact: true });
+            await modelInput.fill("nonexistent-web-route");
+            await modelArticle.getByRole("button", { name: "Select Model", exact: true }).click();
+            await modelArticle.getByRole("status").filter({ hasText: "nonexistent-web-route" }).waitFor();
+            assert.match(await modelArticle.locator("[data-text=settings-recovery]").textContent(), /declared alias|provider\/model/u);
+            assert.equal(await modelInput.inputValue(), "nonexistent-web-route");
             assert.equal(await field.inputValue(), "An untouched next message.");
             assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running");
             assert.equal(model.requests.length, 1);
@@ -299,9 +308,11 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "false", "reload restores configured client policy");
             await send("Lifecycle fixture: held-command.");
             await page.getByText("Considering held-command.", { exact: true }).waitFor({ state: "attached" });
-            const failed = await submit("/effort low", "error");
+            const applied = await submit("/effort low");
+            assert.match(await applied.textContent(), /low \(explicit\)/u);
+            const failed = await submit("/effort medium", "error");
             assert.equal(await failed.locator("article").getAttribute("data-command-status"), "409");
-            assert.match(await failed.locator("[data-text=command-message]").textContent(), /unfinished tasks/u);
+            assert.match(await failed.locator("[data-text=command-message]").textContent(), /does not support effort 'medium'/u);
             await submit("/help");
             const delivery = Promise.withResolvers();
             const hold = async (route) => {
