@@ -60,6 +60,7 @@ export default async function verifySessionHistory({ t, withDaemon }) {
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             await page.reload();
             await page.getByText("Completed history-paste-second.", { exact: true }).waitFor();
+            assert.equal(await page.locator("#main").evaluate((main) => main.scrollHeight - main.scrollTop - main.clientHeight <= 24), true, "initial reload lands at main's bottom edge");
             assert.equal(await page.getByText("Completed history-paste.", { exact: true }).count(), 0, "character ceiling drops the oversized earlier loop from initial window");
             await page.getByRole("button", { name: "Load previous loop" }).first().click();
             await page.getByText("Completed history-paste.", { exact: true }).waitFor();

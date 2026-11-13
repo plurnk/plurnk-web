@@ -147,7 +147,7 @@ table {
     overflow-wrap: normal;
 }
 
-/* {§web-session-conversation} The browser owns scrolling; stream updates do not move focus. */
+/* {§web-session-conversation} {§web-session-history} Native main scroller; stream updates do not move focus. */
 #session-conversation li {
     min-inline-size: 0;
 }

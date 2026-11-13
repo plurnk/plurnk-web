@@ -142,6 +142,10 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         const key = `${connId}:${sessionId}`;
         response.writeHead(202, privateHeaders);
         response.end();
+        if (input.method === undefined) {
+            await acpHandler(input, request.headers);
+            return;
+        }
         const outcome = await acpHandler(input, request.headers);
         for (const update of outcome.updates ?? []) {
             writeSse(key, `data: ${JSON.stringify({
@@ -178,6 +182,13 @@ export default async function conversationFixture(entryURL = new URL("./conversa
                         method: "session/update",
                         params: { sessionId, update },
                     })}\n\n`);
+                }
+            }
+        },
+        pushFrame: (frame) => {
+            for (const [key, entry] of sseStreams) {
+                if (!entry.closed) {
+                    writeSse(key, `data: ${JSON.stringify(frame)}\n\n`);
                 }
             }
         },
