@@ -8,8 +8,8 @@ Native OTM browser module for [`@plurnk/plurnk-service`](https://github.com/plur
 | --- | --- |
 | `/` | Live daemon-wide session overview ordered by latest delivered reply (`PLURNK_WEB_OVERVIEW_SESSIONS`, `PLURNK_WEB_OVERVIEW_EXCERPT_CHARS`), client-side filter, and `/notifications` SSE updates. |
 | `/~/` | Workspace directory (`☁️` folderless, `🗂️` folder-backed) with `New workspace` `<dialog>`. |
-| `/~/<workspace>/` | Live workspace session overview, collapsed child trees, `Background work` branch section, and `Rename workspace` / `Archive workspace` / `New session` `<dialog>` actions. |
-| `/~/<workspace>@<session>/` | Passive ACP v2 session attachment, live transcript, composer, inline approval/elicitation forms, and `Archive session` action ([directory addresses](SPEC.md#web-directory-addresses-named-directory-addresses)). |
+| `/~/<workspace>/` | Live workspace session overview, workspace session tab strip (`#workspace-tabs`), collapsed child trees, `Background work` branch section, and `Rename workspace` / `Archive workspace` / `New session` `<dialog>` actions. |
+| `/~/<workspace>@<session>/` | Workspace session tab strip (`#workspace-tabs`), passive ACP v2 session attachment, live transcript, composer, inline approval/elicitation forms, and `Archive session` / `New session` actions ([directory addresses](SPEC.md#web-directory-addresses-named-directory-addresses)). |
 | `/auth/token` | Same-origin `POST` exchanging the `HttpOnly` browser session cookie for short-lived ACP bearer credentials (refresh grants remain server-side). |
 
 Navigation never creates state or starts inference; closing or reloading a page never cancels running work. Passive `/notifications` and session observation streams recover automatically across transient network drops and daemon restarts without retrying mutations.
@@ -18,6 +18,7 @@ Navigation never creates state or starts inference; closing or reloading a page 
 
 | Area | Behavior |
 | --- | --- |
+| Workspace tabs | Daemon-truth `#workspace-tabs` strip (`Overview`, `💬` root, `🔱` fork, and active/gated/failed `🐜` child workers that fold once settled), in-place resident pane switching (up to 3 connected session streams per workspace tab), `< 768px` compact switcher, `⌘/Ctrl+K` quick-switcher `<dialog>`, and `Alt+1…9` / `Alt+[` / `Alt+]` / `Alt+N` chords. |
 | Composer | Multiline input (`Enter` or `⌘/Ctrl+Enter` submits on desktop keyboards while `Enter` stays a newline on touch keyboards; `Shift+Enter` and `Ctrl+J` insert newlines; follow-ups allowed while running; `Stop` or unfocused `Esc` cancels active work while preserving unsent draft; `/` focuses composer, `?` opens `/help`). Unsent prompt text survives same-tab reloads and navigation in `sessionStorage` (`plurnk:draft:<sessionId>`) until emptied or confirmed accepted. |
 | Slash commands | `/help`, `/models [search]`, `/model [selector] [effort]`, `/effort [policy]`, `/capabilities [json]`, `/mcp …`, `/skills …`, `/schedule …`, `/personas …`, `/env …`, `/learn [instructions]`, `/yolo`, `/stop`. |
 | Approval & input | Manual review by default (`PLURNK_WEB_YOLO=0`) with readable target paths/URIs and semantic unified diffs on file-edit proposals. `🔥 YOLO` / `🐹 Review`, `/yolo`, or `Shift+Tab` toggles per-visit auto-approval (plain-HTTP non-localhost and cross-site navigations force manual review). Questions and MCP elicitations render schema-driven native controls or JSON editors. |

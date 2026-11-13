@@ -48,10 +48,10 @@ export const mathExtension = {
 let renderer;
 
 /** {§web-math-content} Enhance only generated outlets; a detached generation cannot update its successor.
- * @param {DocumentFragment} fragment
+ * @param {DocumentFragment | Element} fragment
  */
 export default async function math(fragment) {
-    const outlets = $$(fragment, "[data-math]");
+    const outlets = $$(fragment, "[data-math]:not([data-math-error]):has(> code)");
     if (!outlets.length) return;
     let temml;
     try { ({ default: temml } = await (renderer ??= import("./math-renderer.js"))); }

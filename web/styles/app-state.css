@@ -1,15 +1,28 @@
 /* {§web-page-shell} The session and directory views are product surfaces, not reading columns. */
-body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, main, footer) {
+body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, #workspace-tabs, main, footer) {
     max-inline-size: none;
 }
 
-header nav button:is(:hover, :focus-visible) {
-    text-decoration: underline;
+#workspace-tabs > ul > li > a[aria-current="true"] {
+    border-block-end-color: var(--pico-primary);
+    font-weight: 700;
 }
 
-/* {§web-page-shell} Keep keyboard focus inside the breadcrumb's scroll area. */
-body > header > nav[aria-label="breadcrumb"] a:focus-visible {
+#dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"] {
+    background-color: var(--plurnk-user-surface);
+    font-weight: 700;
+}
+
+/* {§web-page-shell} Keep keyboard focus inside the breadcrumb and workspace tab scroll areas. */
+body > header > nav[aria-label="breadcrumb"] a:focus-visible,
+#workspace-tabs > ul > li > a:focus-visible {
     box-shadow: inset 0 0 0 var(--pico-outline-width) var(--pico-primary-focus);
+}
+
+header nav button:is(:hover, :focus-visible),
+#workspace-tabs > button:is(:hover, :focus-visible),
+#dialog-workspace-switcher [data-switcher-list] > li > a:is(:hover, :focus-visible) {
+    text-decoration: underline;
 }
 
 /* {§web-page-shell} An ordinary input interrupt is still a live connection. */
@@ -173,7 +186,7 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
 
 /* {§web-session-directory} The directory and live statusline share one lifecycle vocabulary. */
 #session-status [data-status-field="lifecycle"]::before,
-[data-session-identity] [data-lifecycle]::before { content: var(--session-lifecycle-glyph, "○") / ""; }
+:is([data-session-identity], #workspace-tabs, #dialog-workspace-switcher) [data-lifecycle]::before { content: var(--session-lifecycle-glyph, "○") / ""; }
 [data-lifecycle="running"] { --session-lifecycle-glyph: "⌛"; }
 [data-lifecycle="queued"] { --session-lifecycle-glyph: "⏳"; }
 [data-lifecycle="parked"] { --session-lifecycle-glyph: "💤"; }
@@ -223,10 +236,11 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
     content: var(--directory-glyph) / "";
     margin-inline-end: 0.5ch;
 }
-[data-session-link]::before { content: var(--session-kind-glyph, "💬") / ""; }
+:is([data-session-link], #workspace-tabs a[data-workspace-route="session"], #dialog-workspace-switcher a[data-workspace-route="session"])::before { content: var(--session-kind-glyph, "💬") / ""; }
 [data-session-kind="work"] { --session-kind-glyph: "🐜"; }
 [data-session-kind="fork"] { --session-kind-glyph: "🔱"; }
 [data-session-gates]::before { content: "🚦 " / ""; }
+[data-switcher-active]::before { content: "⌛ " / ""; }
 [data-session-children]::before { content: "🐜 " / ""; }
 [data-session-workspace] [data-folder]::before { content: var(--directory-glyph) / ""; }
 [data-folder="true"] { --directory-glyph: "🗂️"; }

@@ -49,7 +49,8 @@ export default async function startModel({ approvalCommand: initialApprovalComma
             assert.equal(body.model, "browser-fixture");
             assert.equal(body.stream, true);
             const packet = JSON.stringify(body.messages);
-            const lifecycle = Array.from(packet.matchAll(/Lifecycle fixture: ([a-z-]+)/gu)).at(-1)?.[1];
+            const lifecycle = Array.from(packet.matchAll(/Lifecycle fixture: ([a-z-]+)/gu)).at(-1)?.[1]
+                ?? (packet.includes("Worker fixture: held-worker.") ? "held-worker" : undefined);
             if (lifecycle) {
                 const visit = (visits.get(lifecycle) ?? 0) + 1;
                 visits.set(lifecycle, visit);
@@ -74,6 +75,8 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                 if (!response.destroyed) {
                     const content = lifecycle === "wait-status" && visit === 1
                         ? `plurnk.sh({ command: ${JSON.stringify(`node --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'`)} })\nplurnk.wait({ seconds: 60 })`
+                        : lifecycle === "spawn-worker" && visit === 1
+                        ? 'plurnk.work({ target: "session://worker", text: "Worker fixture: held-worker." })\nplurnk.wait({})'
                         : lifecycle === "activity" && visit === 1 ? outsideText
                         : lifecycle.startsWith("status-") && visit === 1 ? 'plurnk.read({ path: "session://user/identity.md" })'
                         : lifecycle === "approval-batch" && visit === 1 ? 'plurnk.sh({ command: "printf first" })\nplurnk.sh({ command: "printf second" })'

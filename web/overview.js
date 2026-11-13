@@ -1,11 +1,9 @@
 import { $, $$, on, the } from "on_the_money";
 import { directoryPath } from "../src/directory-addresses.js";
-import accessHeaders from "./access-headers.js";
 import card from "./card.js";
 import markdown from "./markdown.js";
-import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
-import problemFromResponse from "./problem-response.js";
 import readBody from "./read-body.js";
+import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
  * @typedef {{
@@ -33,18 +31,6 @@ import readBody from "./read-body.js";
  *   readonly reply: OverviewReply | null,
  * }} OverviewSession
  */
-
-const NOTIFICATION_EVENTS = [
-    "workspace/renamed",
-    "workspace/archived",
-    "session/created",
-    "session/archived",
-    "session/deleted",
-    "loop/terminated",
-    "loop/proposal",
-    "loop/interaction",
-    "log/entry",
-].join(",");
 
 const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -335,28 +321,31 @@ export default function observeOverview(main) {
         ensureControls();
     }
 
-    function reconcileDom() {
-        if (workspaceId !== undefined) {
-            const currentWs = workspacesById.get(workspaceId);
-            if (currentWs) {
-                the("page-title", `${currentWs.name} — Plurnk`);
-                const crumbName = $('header nav[aria-label="breadcrumb"] [aria-current="page"][data-text="name"]');
-                if (crumbName) {
-                    if (crumbName.textContent !== currentWs.name) crumbName.textContent = currentWs.name;
-                    const marker = crumbName.previousElementSibling;
-                    if (marker) {
-                        const separateFolder = currentWs.projectLabel !== null && currentWs.projectLabel !== currentWs.name;
-                        const icon = separateFolder ? "☁️" : currentWs.projectRoot !== null ? "🗂️" : "☁️";
-                        const label = separateFolder ? "Workspace" : currentWs.projectRoot !== null ? "Project workspace" : "Folderless workspace";
-                        if (marker.textContent !== icon) marker.textContent = icon;
-                        if (marker.getAttribute("aria-label") !== label) marker.setAttribute("aria-label", label);
-                    }
-                }
-                for (const input of $$(main, 'dialog form input[name="workspace"]')) {
-                    if (input instanceof HTMLInputElement) input.value = currentWs.name;
-                }
+    function syncWorkspaceHeader() {
+        if (workspaceId === undefined) return;
+        const currentWs = workspacesById.get(workspaceId);
+        if (!currentWs) return;
+        for (const input of $$(main, 'dialog form input[name="workspace"]')) {
+            if (input instanceof HTMLInputElement) input.value = currentWs.name;
+        }
+        if (!main.isConnected) return;
+        the("page-title", `${currentWs.name} — Plurnk`);
+        const crumbName = $('header nav[aria-label="breadcrumb"] [aria-current="page"][data-text="name"]');
+        if (crumbName) {
+            if (crumbName.textContent !== currentWs.name) crumbName.textContent = currentWs.name;
+            const marker = crumbName.previousElementSibling;
+            if (marker) {
+                const separateFolder = currentWs.projectLabel !== null && currentWs.projectLabel !== currentWs.name;
+                const icon = separateFolder ? "☁️" : currentWs.projectRoot !== null ? "🗂️" : "☁️";
+                const label = separateFolder ? "Workspace" : currentWs.projectRoot !== null ? "Project workspace" : "Folderless workspace";
+                if (marker.textContent !== icon) marker.textContent = icon;
+                if (marker.getAttribute("aria-label") !== label) marker.setAttribute("aria-label", label);
             }
         }
+    }
+
+    function reconcileDom() {
+        syncWorkspaceHeader();
         const models = [...sessionsByKey.values()].toSorted(orderSessions);
         /** @type {Map<number, OverviewSession>} */
         const byId = new Map(models.map((session) => [session.id, session]));
@@ -797,98 +786,53 @@ export default function observeOverview(main) {
 
     hydrateFromDom();
 
-    /** @type {AbortController | undefined} */
-    let currentStream;
-    const reconnect = createPassiveReconnect(() => {
-        if (!resources.signal.aborted && the(main, "connection") === "disconnected") {
-            connect(true);
+    let savedScrollTop = main.scrollTop;
+    let disposed = false;
+
+    const notifications = subscribeWorkspaceNotifications({
+        auth,
+        workspaceId,
+        onStateChange: (state) => {
+            if (!disposed) the(main, "connection", state);
+        },
+        onNotification: (payload) => {
+            if (!disposed) applyNotification(payload);
+        },
+    });
+
+    const offPageHide = on.target(window, "pagehide", () => {
+        if (disposed) return;
+        resources.abort();
+    });
+    const offPageShow = on.target(window, "pageshow", (event) => {
+        if (disposed) return;
+        if (event instanceof PageTransitionEvent && event.persisted) {
+            resources = new AbortController();
         }
     });
 
-    /** @param {AbortSignal} signal @param {boolean} passiveRetry */
-    async function subscribe(signal, passiveRetry) {
-        if (!passiveRetry) the(main, "connection", "connecting");
-        const headers = await accessHeaders(auth, signal);
-        signal.throwIfAborted();
-        const query = new URLSearchParams({ event: NOTIFICATION_EVENTS });
-        if (workspaceId !== undefined) query.set("workspace", String(workspaceId));
-        const response = await fetch(`/notifications?${query.toString()}`, {
-            headers: { accept: "text/event-stream", ...headers },
-            signal,
-        });
-        if (!response.ok || !response.body || !response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
-            const refusalError = await problemFromResponse(response.clone());
-            throw Object.assign(
-                new Error(refusalError?.message ?? (response.statusText || `HTTP ${response.status}`)),
-                { status: refusalError?.status ?? response.status },
-            );
-        }
-        reconnect.reset();
-        the(main, "connection", "connected");
-        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-        let buffer = "";
-        try {
-            for (;;) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                buffer += value.replaceAll("\r\n", "\n");
-                for (;;) {
-                    const boundary = buffer.indexOf("\n\n");
-                    if (boundary === -1) break;
-                    const rawFrame = buffer.slice(0, boundary);
-                    buffer = buffer.slice(boundary + 2);
-                    const dataLines = [];
-                    for (const line of rawFrame.split("\n")) {
-                        if (line.startsWith("data:")) {
-                            dataLines.push(line.slice(5).replace(/^ /u, ""));
-                        }
-                    }
-                    if (dataLines.length > 0 && !signal.aborted) {
-                        let parsed;
-                        try {
-                            parsed = JSON.parse(dataLines.join("\n"));
-                        } catch (cause) {
-                            throw Object.assign(new Error("Notifications frame is not valid JSON.", { cause }), { protocolFailure: true });
-                        }
-                        applyNotification(parsed);
-                    }
-                }
-            }
-            if (!signal.aborted) {
-                throw new Error("Notifications stream ended.");
-            }
-        } finally {
-            await reader.cancel().catch(() => undefined);
-        }
-    }
-
-    /** @param {boolean} [passiveRetry] */
-    function connect(passiveRetry = false) {
-        currentStream?.abort();
-        if (!passiveRetry) reconnect.reset();
-        const attempt = new AbortController();
-        currentStream = attempt;
-        const signal = AbortSignal.any([resources.signal, attempt.signal]);
-        void subscribe(signal, passiveRetry).catch((error) => {
-            if (signal.aborted) return;
-            const signedOut = Reflect.get(Object(error), "status") === 401;
-            the(main, "connection", signedOut ? "signed-out" : "disconnected");
-            if (!signedOut && isRetryableObservationFailure(error)) reconnect.schedule();
-            else reconnect.stop();
-        });
-    }
-
-    window.onpagehide = () => {
-        reconnect.reset();
-        currentStream?.abort();
-        resources.abort();
-        the(main, "connection", "closed");
+    return {
+        main,
+        footer: null,
+        deactivate() {
+            if (disposed) return;
+            savedScrollTop = main.scrollTop;
+        },
+        activate() {
+            if (disposed) return;
+            syncWorkspaceHeader();
+            main.scrollTop = savedScrollTop;
+        },
+        canEvict() {
+            return false;
+        },
+        dispose() {
+            if (disposed) return;
+            disposed = true;
+            offPageHide();
+            offPageShow();
+            notifications.unsubscribe();
+            resources.abort();
+        },
     };
-    window.onpageshow = (event) => {
-        if (event.persisted) {
-            resources = new AbortController();
-            connect();
-        }
-    };
-    connect();
 }

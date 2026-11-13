@@ -83,12 +83,13 @@ Resolution uses the exact resource inventory, not a filesystem search or path
 normalization. Query strings do not change the selected bytes. Production GET and
 HEAD have the same status and headers; HEAD has no body. No redirect or history rewrite is
 needed for the two index spellings. Native links, relative children, refresh and
-back/forward work with JavaScript enabled or disabled. OTM does not intercept
-document navigation; the server remains responsible for the document.
+back/forward work with JavaScript enabled or disabled. Outside intra-workspace
+workbench switching under {§web-workspace-tabs}, OTM does not intercept document
+navigation; the server remains responsible for every document.
 
 Production, Vite development and compiled preview share the same index-path
 projection, applied before resource serving. Vite still owns HTML transformation,
-compilation and HMR; no browser router is registered. Its development-only modules and
+compilation and HMR; Vite development registers no client-only route table. Its development-only modules and
 source serving are not production resources. Currently only the root document
 is shipped by Vite. The daemon additionally renders the protected directories
 below; unlisted assets remain unserved.
@@ -227,8 +228,8 @@ client credentials. The daemon owns credential lifetime, grouping and revocation
 |---|---|
 | `/` | Live daemon-wide session overview from `readSessionOverview()` under {§web-session-directory}, and a real link to `/~/`. |
 | `/~/` | `listWorkspaces()`: native list articles for the shown workspaces with exact-name links under {§web-page-shell}, and the workspace creation form under {§web-workspace-creation}. CSS prefixes names with ☁️ when `project_root` is null, otherwise 🗂️; article names identify folderless/project workspaces independently of glyphs. Never infer folder presence from the name. |
-| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder} and one `readSessionOverview(id)` census rendered under {§web-session-directory}. |
-| Session directory | Exact-name model-session lookup; identity, breadcrumbs and actual parent under {§web-session-directory}, plus passive status under {§web-session-observer} and conversation under {§web-session-conversation}. |
+| Workspace directory | Exact-name lookup in `listWorkspaces()`, then folder presentation under {§web-workspace-folder}, workspace tabs under {§web-workspace-tabs}, and one `readSessionOverview(id)` census rendered under {§web-session-directory}. |
+| Session directory | Exact-name model-session lookup; workspace tabs under {§web-workspace-tabs}, identity, breadcrumbs and actual parent under {§web-session-directory}, plus passive status under {§web-session-observer} and conversation under {§web-session-conversation}. |
 | Archived workspace/session | The daemon's `archived_at` mark leaves a workspace out of `/~/` and a session, with the sessions beneath it, out of its workspace's tree; its own page still opens by its exact address. |
 | Missing workspace/session | 404; never create, attach, claim ownership, start a loop or infer a project folder. |
 | Unrepresentable legacy name | Escaped text without a link; no renamed display, ID substitution or broken generated URL. |
@@ -239,8 +240,9 @@ responses are `Cache-Control: no-store`, suppress referrers, prevent framing and
 use same-origin scripts, styles and forms. Names are escaped as text/attribute
 values; never executable HTML or filesystem paths. Ordinary navigation and
 logout use native links/forms with JavaScript enabled or disabled. Rendering
-reuses the compiled root document's head, styles, icons and OTM boot; no browser
-router, client-side list fetch, duplicate English dictionary or extra UI library.
+reuses the compiled root document's head, styles, icons and OTM boot; intra-workspace
+tab switching progressively enhances real directory links under {§web-workspace-tabs},
+with no synthetic route table, duplicate English dictionary or extra UI library.
 
 Vite development/preview continue to serve frontend documents only: dynamic
 directory/auth routes require a daemon. The installation gate accepts explicitly
@@ -295,10 +297,10 @@ flow at the end of `<main>` and submits cleanly.
 
 ## §web-session-creation Session creation
 
-Workspace page (`/~/<workspace>/`) headers carry a native session creation trigger button (`New session`);
-daemon, session, account and error documents never do. Activating the trigger opens a native
-`<dialog>` modal (`#dialog-session-create`). When JavaScript is disabled, the form renders in normal
-flow at the end of `<main>` and submits cleanly.
+Workspace page (`/~/<workspace>/`) headers and the workspace tab bar (`#workspace-tabs`) on workspace
+and session pages carry native session creation trigger buttons (`New session`); daemon, account and
+error documents never do. Activating a trigger opens a native `<dialog>` modal (`#dialog-session-create`).
+When JavaScript is disabled, the form renders in normal flow at the end of `<main>` and submits cleanly.
 
 | Boundary | Contract |
 |---|---|
@@ -353,6 +355,16 @@ read-only entry body on demand; live `GET /notifications` updates reconcile card
 in place while preserving open disclosures, focus and already-rendered reply
 bodies. Opening a session page may observe it under {§web-session-observer},
 never control it.
+
+## §web-workspace-tabs Workspace session workbench
+
+| Boundary | Contract |
+|---|---|
+| Placement | Workspace (`/~/<workspace>/`) and session (`/~/<workspace>@<session>/`) documents render a body-level `<nav id="workspace-tabs" aria-label="Workspace sessions">` between `<header>` and `<main>`; home, daemon index, account and error documents omit it. Every entry is a real `<a>` link to its canonical directory address under {§web-directory-addresses}, with `aria-current="true"` on the active route, plus a native `New session` trigger button under {§web-session-creation}. Navigation and session creation work with JavaScript enabled or disabled. |
+| Membership | Membership projects daemon session truth without browser-persisted pin lists: `Overview` (`/~/<workspace>/`), then unarchived model sessions reachable from unarchived roots (`💬` `root`, `🔱` `fork`, and `🐜` `work`), with child sessions grouped immediately after their parent. Child `work` sessions (`parentSessionId !== null`) appear while active (`queued`, `running`, `parked`), failed (`failed`), awaiting input (`gates > 0`), or currently selected, and fold out of top-level tabs once settled (`completed`, `cancelled`, `idle`) when another route is active; they remain reachable in `Overview` and `#session-descendants`. Viewing an archived session directly includes its current tab without restoring archived trees. |
+| Live updates | When live workspace observation is available, one shared workspace-filtered `GET /notifications` SSE stream (`on_the_money/live` `sse()`) feeds both `#workspace-tabs` and the workspace `Overview`, materializing newly spawned sessions, updating lifecycle and gate badges (`🚦`), refreshing workspace-relative URLs on `workspace/renamed`, and folding settled child workers without polling. |
+| Perspective switching | With JavaScript enabled on live workspace documents, `route()` progressively enhances intra-workspace links (`Overview`, `#workspace-tabs`, `#dialog-workspace-switcher`, `Overview` session/parent cards, session parent/breadcrumb links, and `#session-descendants`) while cross-workspace, daemon-index, account and external links perform ordinary browser navigation. Switching among visited routes in the same workspace swaps detached `<main>` and `<footer id="session-status">` panes in place without tearing down active `SessionAgent` streams, losing unsent composer drafts, or resetting scroll position; first visits fetch and adopt the server-rendered document once. At most 3 connected session panes remain resident per workspace tab (LRU eviction of idle passive panes with no in-flight submission or pending review), respecting browser HTTP/1.1 per-origin connection limits. |
+| Responsive switcher and keyboard | Above `768px`, `#workspace-tabs > ul` renders as a horizontally scrollable single-row strip. Below `768px` with scripting enabled, the tab list collapses into a compact switcher button showing the current route and active/gated counts that opens a native modal `<dialog id="dialog-workspace-switcher">` with instant search filtering; without scripting, the native link list remains directly scrollable. Outside open modal dialogs (or to toggle the switcher), `Cmd+K` / `Ctrl+K` opens `#dialog-workspace-switcher`, and `Alt+1`…`Alt+9` (`Digit1`…`Digit9`), `Alt+[` (`BracketLeft`), `Alt+]` (`BracketRight`), and `Alt+N` (`KeyN`, opening `#dialog-session-create`) switch or create workspace sessions by physical key code without page-wide horizontal overflow at `320px`. |
 
 ## §web-session-observer Read-only session status
 
@@ -718,7 +730,7 @@ limitations do not introduce a second renderer or compatibility polyfill.
 | Directory breadcrumbs | Workspaces icon → whole workspace name → session; only applicable ancestors appear. Non-directory pages retain the root link, including Account/session navigation. The current item is text marked `aria-current="page"`. The workspace-page marker follows {§web-workspace-folder}. Slashes in names do not invent intermediate directories. |
 | Empty lists | “No workspaces.” or “No sessions.”; no empty list masquerading as content. |
 | Page width | Account and error documents retain a centered 65ch reading measure. Home, Workspaces, Workspace and Session share the available viewport width. Gutters, safe-area insets and wrapping preserve narrow-screen and edge-to-edge standalone usability and complete names. |
-| Viewport layout | Home and directory/session documents use a viewport-height CSS grid: stationary header, scrollable main, and (on sessions) stationary status/composer footer. Native viewport resizing and textarea sizing handle changing available space; no measured offsets or JavaScript layout controller. Main retains conversation, settings, reviews, detailed connection/message feedback and command results. Reading/form documents retain ordinary page flow. |
+| Viewport layout | Home and directory/session documents use a viewport-height CSS grid: stationary header, optional workspace tab bar under {§web-workspace-tabs}, scrollable main, and (on sessions) stationary status/composer footer. Native viewport resizing and textarea sizing handle changing available space; no measured offsets or JavaScript layout controller. Main retains conversation, settings, reviews, detailed connection/message feedback and command results. Reading/form documents retain ordinary page flow. |
 | Directory entries | Native lists use `li > article`. Workspace headers retain folder/cloud identity; session cards use the identity/disclosure under {§web-session-directory}. Accessible names do not depend on CSS glyphs. Preserve nested child disclosures and the daemon's membership/order; no second browser directory or custom tree widget. |
 | Expected HTTP failures | A Pico `article` card within the same HTML shell: heading, decorative warning emoji, escaped explanation and native Home link. Preserve status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
 
@@ -726,7 +738,7 @@ The compiled root document owns shared navigation and assets, including an inert
 template for authenticated navigation. OTM's documented indirect-template marker
 identifies its server-owned instantiation. Server rendering selects that template
 and supplies the title, header breadcrumb and main content. Ordinary navigation, focus, lists and forms work without JavaScript;
-there is no browser-owned route or session inventory.
+daemon state supplies every workspace and session inventory, with no browser-owned route table or pinned-tab store.
 
 ## §web-document Document
 
@@ -736,8 +748,9 @@ bright enough for contrast. Native color-scheme selection is preserved; typograp
 uses Pico's system monospace stack and a shared numeric line-height token of 1.25.
 Content and styling
 work without JavaScript.
-There is no theme switcher, client routing, persistent `localStorage`, or external
-asset request; tab-ephemeral `sessionStorage` holds only unsent session prompt
+There is no theme switcher, client-only route table, persistent `localStorage`, or external
+asset request; intra-workspace tab switching progressively enhances real directory links
+under {§web-workspace-tabs}, and tab-ephemeral `sessionStorage` holds only unsent session prompt
 drafts under {§web-session-input}. The root links to the directory index. Protected
 directory documents supply daemon identities as escaped HTML, never credentials.
 

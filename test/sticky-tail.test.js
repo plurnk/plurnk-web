@@ -140,8 +140,8 @@ test("{§web-session-history} stickyTail coalesces DOM mutations and viewport re
     let mutationCallback;
     /** @type {Record<string, unknown> | undefined} */
     let mutationOptions;
-    const fakeVisualViewport = { /** @type {(() => void) | null} */ onresize: null };
-    const fakeWindow = { /** @type {(() => void) | null} */ onresize: null, visualViewport: fakeVisualViewport };
+    const fakeVisualViewport = new EventTarget();
+    const fakeWindow = Object.assign(new EventTarget(), { visualViewport: fakeVisualViewport });
     /** @type {Map<number, () => void>} */
     const frames = new Map();
     let frameId = 0;
@@ -169,13 +169,11 @@ test("{§web-session-history} stickyTail coalesces DOM mutations and viewport re
             attributes: true,
             attributeFilter: ["hidden", "open"],
         });
-        assert.equal(typeof fakeWindow.onresize, "function");
-        assert.equal(typeof fakeVisualViewport.onresize, "function");
 
         main.scrollHeight = 1900;
         mutationCallback?.();
-        fakeWindow.onresize?.();
-        fakeVisualViewport.onresize?.();
+        fakeWindow.dispatchEvent(new Event("resize"));
+        fakeVisualViewport.dispatchEvent(new Event("resize"));
         assert.equal(frames.size, 1, "DOM mutations and viewport resizes coalesce into one animation frame");
         assert.equal(main.scrollTop, 1000, "observer callback never mutates scrollTop synchronously");
         for (const run of [...frames.values()]) run();
@@ -184,7 +182,7 @@ test("{§web-session-history} stickyTail coalesces DOM mutations and viewport re
 
         // Viewport shrink (e.g. mobile virtual keyboard opening) re-anchors pinned scroller on next frame.
         main.clientHeight = 250;
-        fakeVisualViewport.onresize?.();
+        fakeVisualViewport.dispatchEvent(new Event("resize"));
         for (const run of [...frames.values()]) run();
         frames.clear();
         assert.equal(main.scrollTop, 1650, "visualViewport resize settles scrollTop for smaller viewport");
@@ -194,8 +192,9 @@ test("{§web-session-history} stickyTail coalesces DOM mutations and viewport re
         assert.equal(frames.size, 1);
         tail.pause();
         assert.equal(frames.size, 0, "pause cancels pending animation frame");
-        assert.equal(fakeWindow.onresize, null, "pause detaches viewport resize hook when last listener pauses");
-        assert.equal(fakeVisualViewport.onresize, null);
+        fakeWindow.dispatchEvent(new Event("resize"));
+        fakeVisualViewport.dispatchEvent(new Event("resize"));
+        assert.equal(frames.size, 0, "pause removes EventTarget viewport resize listeners");
     } finally {
         globalThis.location = prevLocation;
         globalThis.CSS = prevCss;
