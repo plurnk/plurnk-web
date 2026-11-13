@@ -142,10 +142,11 @@ test("{§web-authorization-style} the registered browser client uses the package
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const stylesheets = inventory.filter(([, , type]) => type === "text/css");
     assert.ok(stylesheets.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "the inventory also contains independently loaded renderer CSS");
+    assert.ok(stylesheets.some(([path]) => /\/code-highlight-renderer-[^/]+\.css$/u.test(path)), "the inventory also contains the highlighter palette");
     const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
     const stylesheet = /<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/u.exec(html)?.[1];
     assert.ok(stylesheet);
-    assert.doesNotMatch(stylesheet, /math-renderer/u);
+    assert.doesNotMatch(stylesheet, /math-renderer|code-highlight-renderer/u);
     const registrations = [];
     await createModule().setup({ credentials: { registerClient(options) {
         registrations.push(options);

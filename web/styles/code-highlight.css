@@ -1,0 +1,33 @@
+/* {§web-code-content} Syntax palette (GitHub Primer), at least 4.5:1 on Pico's code background in both schemes. */
+:root {
+    --plurnk-code-keyword: #cf222e;
+    --plurnk-code-type: #953800;
+    --plurnk-code-number: #0550ae;
+    --plurnk-code-string: #0a3069;
+    --plurnk-code-comment: #59636e;
+    --plurnk-code-title: #6639ba;
+    --plurnk-code-inserted: #116329;
+    --plurnk-code-deleted: #82071e;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --plurnk-code-keyword: #ff7b72;
+        --plurnk-code-type: #ffa657;
+        --plurnk-code-number: #79c0ff;
+        --plurnk-code-string: #a5d6ff;
+        --plurnk-code-comment: #9198a1;
+        --plurnk-code-title: #d2a8ff;
+        --plurnk-code-inserted: #7ee787;
+        --plurnk-code-deleted: #ffa198;
+    }
+}
+
+::highlight(plurnk-code-keyword) { color: var(--plurnk-code-keyword); }
+::highlight(plurnk-code-type), ::highlight(plurnk-code-variable) { color: var(--plurnk-code-type); }
+::highlight(plurnk-code-number), ::highlight(plurnk-code-attribute) { color: var(--plurnk-code-number); }
+::highlight(plurnk-code-string) { color: var(--plurnk-code-string); }
+::highlight(plurnk-code-comment), ::highlight(plurnk-code-meta) { color: var(--plurnk-code-comment); }
+::highlight(plurnk-code-title) { color: var(--plurnk-code-title); }
+::highlight(plurnk-code-inserted) { color: var(--plurnk-code-inserted); }
+::highlight(plurnk-code-deleted) { color: var(--plurnk-code-deleted); }

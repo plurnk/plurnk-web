@@ -296,6 +296,11 @@ details[open]:has(> [data-session-reply]) > summary > [data-session-excerpt] {
     content: " (" attr(data-diagram-error) ")";
 }
 
+/* {§web-code-content} An unavailable highlighter leaves literal code and says so. */
+:is(#session-conversation, [data-session-reply]) [data-code-error]::after {
+    content: "(" attr(data-code-error) ")";
+}
+
 #session-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
     display: none;
 }
