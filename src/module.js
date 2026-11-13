@@ -26,8 +26,64 @@ import Diagrams from "./diagrams.js";
  *   setSessionArchived: (args: { workspaceId: number, sessionId: number, archived: boolean }) => Promise<unknown>,
  * }} Port
  */
-/** {§web-host} {§web-configuration} {§web-package} @returns {import("@plurnk/plurnk-modules").DaemonModule<SetupPort, Port>} */
-export default function createModule() {
+/** @typedef {Awaited<ReturnType<typeof readAsset>>} LoadedAsset */
+/**
+ * @typedef {{
+ *   yolo: boolean | null,
+ *   reasoningPreviewChars: number | null,
+ *   overviewSessions: number | null,
+ *   overviewExcerptChars: number | null,
+ * }} DocumentKnobs
+ */
+/**
+ * @typedef {{
+ *   setupStylesheet: () => Promise<string>,
+ *   start: (knobs: DocumentKnobs) => Promise<void>,
+ *   snapshot: () => Promise<{ documents: Documents, resources: ReadonlyMap<string, LoadedAsset> }>,
+ *   close?: () => Promise<void> | void,
+ * }} ModuleAssetSource
+ */
+
+/** {§web-assets} {§web-authorization-style} @returns {ModuleAssetSource} */
+function productionAssets() {
+    /** @type {{ documents: Documents, resources: ReadonlyMap<string, LoadedAsset> } | null} */
+    let loaded = null;
+    return {
+        async setupStylesheet() {
+            // {§web-authorization-style} The same built stylesheet serves both document owners.
+            /** @type {import("./static-assets.js").AssetEntry[]} */
+            const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
+            const root = inventory.find(([path]) => path === "/index.html");
+            if (!root) throw new Error("The web asset inventory must include index.html.");
+            const stylesheetPath = Documents.stylesheet((await readAsset(root[1], root[2], root[3])).body.toString("utf8"));
+            if (!inventory.some(([path, , type]) => path === stylesheetPath && type === "text/css")) throw new Error("The application stylesheet is absent from the web asset inventory.");
+            return stylesheetPath;
+        },
+        async start({ yolo, reasoningPreviewChars, overviewSessions, overviewExcerptChars }) {
+            // {§web-assets} Requests select entries, never filesystem paths.
+            /** @type {import("./static-assets.js").AssetEntry[]} */
+            const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
+            const resources = new Map(await Promise.all(inventory.map(async ([pathname, file, mediaType, encoded]) => /** @type {const} */ ([
+                pathname,
+                await readAsset(file, mediaType, encoded),
+            ]))));
+            const root = resources.get("/index.html");
+            if (root === undefined) throw new Error("The web asset inventory must include index.html.");
+            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars, overviewSessions, overviewExcerptChars);
+            loaded = { documents, resources };
+        },
+        async snapshot() {
+            if (loaded === null) throw new Error("Web assets must be loaded before serving requests.");
+            return loaded;
+        },
+    };
+}
+
+/** {§web-host} {§web-configuration} {§web-package}
+ * @param {ModuleAssetSource} [assets]
+ * @returns {import("@plurnk/plurnk-modules").DaemonModule<SetupPort, Port>}
+ */
+export default function createModule(assets = productionAssets()) {
     /** @type {import("@plurnk/plurnk-modules").ContainedConfiguration[]} */
     const contained = [];
     /** @template T @param {() => T} read @returns {T | null} */
@@ -63,13 +119,7 @@ export default function createModule() {
         contained: Object.freeze(contained),
         async setup({ credentials }) {
             if (!credentials) return;
-            // {§web-authorization-style} The same built stylesheet serves both document owners.
-            /** @type {import("./static-assets.js").AssetEntry[]} */
-            const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
-            const root = inventory.find(([path]) => path === "/index.html");
-            if (!root) throw new Error("The web asset inventory must include index.html.");
-            const stylesheetPath = Documents.stylesheet((await readAsset(root[1], root[2], root[3])).body.toString("utf8"));
-            if (!inventory.some(([path, , type]) => path === stylesheetPath && type === "text/css")) throw new Error("The application stylesheet is absent from the web asset inventory.");
+            const stylesheetPath = await assets.setupStylesheet();
             registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["acp"], stylesheetPath });
         },
         async start(seam) {
@@ -79,20 +129,11 @@ export default function createModule() {
                 if (registration === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
                 session = new Session(credentials, registration, face, limits);
             }
-            // {§web-assets} Requests select entries, never filesystem paths.
-            /** @type {import("./static-assets.js").AssetEntry[]} */
-            const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
-            const resources = new Map(await Promise.all(inventory.map(async ([pathname, file, mediaType, encoded]) => /** @type {const} */ ([
-                pathname,
-                await readAsset(file, mediaType, encoded),
-            ]))));
-
-            const root = resources.get("/index.html");
-            if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), yolo, reasoningPreviewChars, overviewSessions, overviewExcerptChars);
+            await assets.start({ yolo, reasoningPreviewChars, overviewSessions, overviewExcerptChars });
 
             /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
             const serve = async (req, res) => {
+                const { documents, resources } = await assets.snapshot();
                 const pathname = (req.url ?? "").split("?")[0];
                 const directory = parseDirectory(pathname);
                 const home = indexDocument(pathname) === "/index.html";
@@ -323,6 +364,7 @@ export default function createModule() {
             cleanup.defer(() => session?.close());
             cleanup.defer(async () => { await Promise.allSettled(requests); });
             cleanup.defer(() => diagrams?.close());
+            cleanup.defer(() => assets.close?.());
             await cleanup.disposeAsync();
         },
     };
