@@ -237,16 +237,26 @@ test("{§web-language} source-only build declares and packages no dictionary", a
     assert.ok(!inventory.some(([path]) => path.startsWith("/locales/")));
 });
 
-test("{§web-installation} the modern app declares scalable icons without raster fallbacks", async () => {
+test("{§web-installation} {§web-page-shell} standalone manifest, viewport-fit=cover and safe-area insets survive without raster fallbacks", async () => {
     const manifest = JSON.parse(await readFile(new URL("../dist/manifest.webmanifest", import.meta.url), "utf8"));
+    assert.equal(manifest.display, "standalone");
+    assert.equal(manifest.start_url, "/");
+    assert.equal(manifest.scope, "/");
+    assert.equal(manifest.theme_color, "#148800");
     assert.deepEqual(manifest.icons.map(({ src, type, sizes, purpose }) => ({ src, type, sizes, purpose })), [
         { src: "/icons/plurnk.svg", type: "image/svg+xml", sizes: "any", purpose: "any" },
         { src: "/icons/plurnk-maskable.svg", type: "image/svg+xml", sizes: "any", purpose: "maskable" },
     ]);
     const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
+    assert.match(html, /<meta\b[^>]*name="viewport"[^>]*content="width=device-width,\s*initial-scale=1,\s*viewport-fit=cover"/u);
     assert.doesNotMatch(html, /apple-mobile-web-app|mobile-web-app-capable|apple-touch-icon|\.png/u);
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     assert.ok(!inventory.some(([path]) => path.endsWith(".png")), "no unused raster icon is packed");
+    const [, stylesheetFile] = inventory.find(([path, , mediaType]) => path.startsWith("/assets/") && mediaType === "text/css");
+    const css = await readFile(new URL(`../dist/${stylesheetFile}`, import.meta.url), "utf8");
+    for (const edge of ["top", "right", "bottom", "left"]) {
+        assert.match(css, new RegExp(`env\\(safe-area-inset-${edge}`, "u"), `compiled CSS preserves safe-area-inset-${edge}`);
+    }
 });
 
 test("{§web-build} compilation removes stale output and emits no source maps", async () => {
