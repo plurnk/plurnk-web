@@ -247,6 +247,72 @@ body > header nav[aria-label="breadcrumb"] li button {
     text-decoration: none;
 }
 
+/* {§web-workspace-settings} Responsive modal layout for workspace subsystem management. */
+#dialog-workspace-settings > :where(article) {
+    inline-size: min(100%, 72ch);
+    max-inline-size: 72ch;
+}
+
+#dialog-workspace-settings :where([data-settings-nav]) {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: calc(var(--pico-spacing) * 0.25);
+    margin: 0 0 var(--pico-spacing);
+    padding: 0;
+    border-block-end: var(--pico-border-width) solid var(--pico-muted-border-color);
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#dialog-workspace-settings :where([data-settings-nav] > li) {
+    flex: 0 0 auto;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#dialog-workspace-settings :where([data-settings-nav] button) {
+    --pico-form-element-spacing-vertical: 0;
+    --pico-form-element-spacing-horizontal: 0;
+
+    inline-size: auto;
+    margin: 0;
+    padding: calc(var(--pico-spacing) * 0.3) calc(var(--pico-spacing) * 0.6);
+    border-width: 0;
+    border-radius: 0;
+    border-block-end: calc(var(--pico-border-width) * 2) solid transparent;
+}
+
+#dialog-workspace-settings :where([data-candidate-rows]) {
+    padding: 0;
+}
+
+#dialog-workspace-settings :where([data-candidate-rows] > li) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(var(--pico-spacing) * 0.5);
+    list-style: none;
+    padding-block: calc(var(--pico-spacing) * 0.25);
+}
+
+:is([data-family-row-form], [data-cap-remove-form], [data-candidate-add-form]) > :where(fieldset) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--pico-spacing) * 0.35);
+    margin: 0;
+}
+
+:is([data-family-row-form], [data-cap-remove-form], [data-candidate-add-form]) > :where(fieldset > button) {
+    flex: 0 0 auto;
+    inline-size: auto;
+    margin: 0;
+    padding: calc(var(--pico-form-element-spacing-vertical) * 0.4) calc(var(--pico-form-element-spacing-horizontal) * 0.65);
+}
+
 @media (scripting: enabled) and (width < 768px) {
     #workspace-tabs > :where(ul) {
         display: none;
@@ -315,7 +381,8 @@ table {
     }
 
     button[data-dialog-target],
-    button[data-workspace-switcher] {
+    button[data-workspace-switcher],
+    button[data-workspace-settings] {
         display: none;
     }
 }
@@ -340,12 +407,16 @@ article:where(#session-connection, #session-command-results article) > header {
     gap: var(--pico-spacing);
 }
 
-#session-command-results [data-dismiss-command] {
+#session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
     --pico-form-element-spacing-vertical: 0;
     --pico-form-element-spacing-horizontal: 0;
 
     inline-size: auto;
     margin: 0;
+}
+
+#session-command-results [data-open-workspace-settings] {
+    margin-inline-start: auto;
 }
 
 #session-status [data-status-line],
@@ -526,7 +597,7 @@ article:where(#session-connection, #session-command-results article) > header {
 }
 
 /* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */
-#main fieldset {
+:is(#main, #dialog-workspace-settings) fieldset {
     min-inline-size: 0;
 }
 
@@ -555,6 +626,7 @@ article:where(#session-connection, #session-command-results article) > header {
 [data-session-reply] pre,
 #session-conversation pre,
 #session-command-results pre,
+#dialog-workspace-settings pre,
 #main [aria-label="Review requests"] pre,
 :is(#session-conversation, [data-session-reply]) [data-math],
 :is(#session-conversation, [data-session-reply]) [data-diagram-viewport] {

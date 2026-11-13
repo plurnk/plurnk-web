@@ -23,6 +23,7 @@ import verifySessionApproval from "./session-approval.js";
 import verifySessionQuestions from "./session-questions.js";
 import verifySharedReview from "./shared-review.js";
 import verifyWorkspaceTabs from "./workspace-tabs-browser.js";
+import verifyWorkspaceSettings from "./workspace-settings-browser.js";
 import verifyStaticAssets from "./static-assets.js";
 import verifyRouteSettlement from "./route-settlement.js";
 import { closeSharedBrowsers } from "./engines.js";
@@ -210,6 +211,7 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
     await verifySessionQuestions({ t, withDaemon });
     await verifySharedReview({ t, withDaemon, consumer });
     await verifyWorkspaceTabs({ t, withDaemon });
+    await verifyWorkspaceSettings({ t, withDaemon });
     await closeSharedDaemons();
 
     await t.test("{§web-host} {§web-configuration} omitted package leaves root unclaimed; contained settings withhold only their part", async () => {

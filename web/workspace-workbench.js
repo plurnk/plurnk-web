@@ -721,6 +721,34 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
     });
 
+    /** @type {Promise<{ open(section?: import("./workspace-settings.js").SettingsSection): void }> | null} */
+    let settingsControllerPromise = null;
+
+    /** @param {string} [rawSection] */
+    async function openSettingsModal(rawSection) {
+        settingsControllerPromise ??= import("./workspace-settings.js").then(({ createWorkspaceSettingsController }) =>
+            createWorkspaceSettingsController(() => ({
+                workspaceId,
+                workspaceName: currentWorkspaceName,
+                sessionName: selectedSessionName,
+                auth,
+                signal: pageLifetime.signal,
+            })),
+        );
+        const controller = await settingsControllerPromise;
+        const { isSettingsSection } = await import("./workspace-settings.js");
+        controller.open(isSettingsSection(rawSection) ? rawSection : undefined);
+    }
+
+    on(tabs, "click", "[data-workspace-settings]", () => {
+        void openSettingsModal();
+    });
+
+    on(document.body, "click", "[data-open-workspace-settings]", (_event, btn) => {
+        const targetSection = btn.getAttribute("data-open-workspace-settings") ?? undefined;
+        void openSettingsModal(targetSection);
+    });
+
     const initialSessionCreateDialog = $("#dialog-session-create");
     /** @type {HTMLDialogElement | null} */
     const sessionCreateBlueprint = initialSessionCreateDialog instanceof HTMLDialogElement
