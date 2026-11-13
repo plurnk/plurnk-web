@@ -929,6 +929,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
         await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel.png"]').waitFor();
+        // {§web-result-bodies} Replay lands at main's end; the earlier attachment reads once it is scrolled on screen.
+        await page.locator('[data-message-role="user"] [data-image-reference][aria-label="pixel-only.png"]').scrollIntoViewIfNeeded();
         assert.equal(await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel-only.png"]').evaluate((img) => img.naturalWidth), 1);
         assert.equal(await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel.png"]').evaluate((img) => img.naturalWidth), 1);
         checkBrowser();
