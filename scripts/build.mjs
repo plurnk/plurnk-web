@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { brotliCompress, gzip } from "node:zlib";
 import { build } from "vite";
-import "./assets.mjs";
+import prepareAssets from "./assets.mjs";
 
+await prepareAssets();
 // Keep npm pack --json's stdout machine-readable, including during prepack.
 await build({ logLevel: "warn" });
 

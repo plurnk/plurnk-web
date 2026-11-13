@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { test } from "node:test";
 import { chromium } from "playwright";
 import { build, createServer, preview } from "vite";
+import createDevModule from "../scripts/dev-module.mjs";
 import verifyDirectories from "./directories.js";
 import browserDiagnostics from "./browser-diagnostics.js";
+
+const execFileAsync = promisify(execFile);
 
 async function copySources(directory) {
     const root = join(directory, "web");
@@ -135,6 +141,107 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
         await browser?.close();
         await development?.close();
         if (compiled) await new Promise((resolve, reject) => compiled.httpServer.close((error) => error ? reject(error) : resolve()));
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve live source edits on a mounted daemon without restarting", { timeout: 60_000 }, async () => {
+    const loaderPath = fileURLToPath(new URL("../scripts/dev-loader.mjs", import.meta.url));
+    const expectedModule = new URL("../scripts/dev-module.mjs", import.meta.url).href;
+    const expectedManifest = new URL("../package.json", import.meta.url).href;
+    const { stdout } = await execFileAsync(process.execPath, [
+        "--import", loaderPath,
+        "--input-type=module",
+        "-e",
+        'console.log(JSON.stringify([import.meta.resolve("@plurnk/plurnk-web/module"), import.meta.resolve("@plurnk/plurnk-web/package.json")]))',
+    ]);
+    assert.deepEqual(JSON.parse(stdout.trim()), [expectedModule, expectedManifest]);
+
+    const directory = await mkdtemp(new URL("../.vite-test-", import.meta.url));
+    let mod;
+    let httpServer;
+    let browser;
+    try {
+        const root = await copySources(directory);
+        for (const name of ["documents.js", "http.js"]) {
+            await cp(new URL(`../src/${name}`, import.meta.url), join(directory, "src", name));
+        }
+        const documentsFile = join(directory, "src", "documents.js");
+        mod = createDevModule({
+            webRoot: pathToFileURL(`${root}/`),
+            documentsUrl: pathToFileURL(documentsFile),
+        });
+
+        let registeredStylesheetPath = null;
+        await mod.setup({
+            credentials: {
+                registerClient(spec) {
+                    registeredStylesheetPath = spec.stylesheetPath ?? null;
+                    return { clientId: spec.id, clientSecret: "secret" };
+                },
+            },
+        });
+        assert.ok(typeof registeredStylesheetPath === "string" && registeredStylesheetPath.endsWith(".css"));
+
+        let routeHandler = null;
+        await mod.start({
+            credentials: null,
+            registerHttpRoute(_mount, handler) { routeHandler = handler; },
+            listWorkspaces: async () => [],
+            listSessions: async () => [],
+            readSessionOverview: async () => ({ workspaces: [], sessions: [] }),
+            createWorkspace: async () => "alpha",
+            renameWorkspace: async () => ({ name: "alpha" }),
+            createSession: async () => ({ sessionName: "user" }),
+            setWorkspaceArchived: async () => ({}),
+            setSessionArchived: async () => ({}),
+        });
+        assert.equal(typeof routeHandler, "function");
+
+        httpServer = createHttpServer((req, res) => { routeHandler(req, res); });
+        await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+        const base = `http://127.0.0.1:${httpServer.address().port}`;
+
+        browser = await chromium.launch();
+        const context = await browser.newContext();
+        const checkBrowser = browserDiagnostics(context);
+        const page = await context.newPage();
+
+        await page.goto(`${base}/~/`);
+        assert.match(await page.locator("main").innerText(), /No workspaces\./u);
+        const initialCss = await page.request.get(`${base}${registeredStylesheetPath}`);
+        assert.equal(initialCss.status(), 200);
+
+        const htmlFile = join(root, "index.html");
+        await writeFile(htmlFile, (await readFile(htmlFile, "utf8")).replace('title="Home"', 'title="Live home"'));
+        const stylesFile = join(root, "styles", "app-style.css");
+        await writeFile(
+            stylesFile,
+            (await readFile(stylesFile, "utf8"))
+                + "\n:root { --dev-live-probe: 17px; }\nmain { scroll-padding-top: var(--dev-live-probe); }\n.unused-dev-class { color: red; }\n",
+        );
+        await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replace("No workspaces.", "Zero workspaces yet."));
+
+        await page.reload();
+        assert.equal(await page.locator('header a[title="Live home"]').count(), 1);
+        assert.equal(
+            await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--dev-live-probe").trim()),
+            "17px",
+        );
+        assert.match(await page.locator("main").innerText(), /Zero workspaces yet\./u);
+
+        const updatedAuthCss = await page.request.get(`${base}${registeredStylesheetPath}`);
+        assert.equal(updatedAuthCss.status(), 200);
+        const cssText = await updatedAuthCss.text();
+        assert.match(cssText, /--dev-live-probe:\s*17px/u);
+        assert.doesNotMatch(cssText, /unused-dev-class/u, "live builds preserve production PurgeCSS pruning");
+
+        checkBrowser();
+        await context.close();
+    } finally {
+        await browser?.close();
+        if (httpServer) await new Promise((resolve) => httpServer.close(() => resolve()));
+        await mod?.close();
         await rm(directory, { recursive: true, force: true });
     }
 });

@@ -36,10 +36,16 @@ Navigation never creates state or starts inference; closing or reloading a page 
 
 ```sh
 npm ci --no-audit --no-fund
-npm run dev                                        # Vite frontend dev server (expects daemon on :1066)
+npm run dev                                        # standalone Vite frontend server
 npm run build                                      # compile pruned production assets into dist/
 npm test                                           # spec-check, lint, OTM contracts, Chromium/Firefox/WebKit suites
 npm run test:candidate -- /path/to/packed-packages # clean-clone packed-tarball + PTY/Playwright gate
+```
+
+To serve live `web/` and `src/documents.js` edits directly from a running development daemon without manual builds or daemon restarts, preload `./scripts/dev-loader.mjs`:
+
+```sh
+node --conditions=plurnk-dev --import /path/to/plurnk-web/scripts/dev-loader.mjs src/service.ts start
 ```
 
 ### Stylesheet layers (`web/styles/index.css`)

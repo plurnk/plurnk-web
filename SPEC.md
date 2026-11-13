@@ -802,9 +802,10 @@ checkout. This checks traceability, not whether a cited test proves its contract
 | Command | Contract |
 |---|---|
 | `npm run dev` | Prepare static assets, then serve `web/` through Vite on loopback with HTML reload and CSS hot updates. No daemon or model is started. |
+| `node --import ./scripts/dev-loader.mjs` | Redirect `@plurnk/plurnk-web/module` in a development daemon checkout to `scripts/dev-module.mjs`, recompiling `web/` and reloading `src/documents.js` into a disposable directory when source files change while preserving production CSP, PurgeCSS pruning and registered OAuth stylesheet routing without restarting the daemon. Never packaged in the npm archive. |
 | `npm run build` | Prepare assets, clean and compile into `dist/`, then generate `dist/assets.json` from the complete output. |
 | `npm run preview` | Locally preview the last build through Vite; not a production server. |
-| Daemon startup | Load the inventory and every listed production asset; serve them through the module's existing mount. No Vite runtime or development server. |
+| Daemon startup | Load the inventory and every listed production asset; serve them through the module's existing mount. No Vite runtime or development server in the published module. |
 
 `web/index.html` owns the document, `web/app.js` imports OTM's npm entry,
 and `web/public/` supplies unchanged public assets. The four CSS source
@@ -818,7 +819,6 @@ browser source and server document renderer, preserves browser pseudo-states and
 ARIA/role/data-driven states, and removes unused rules, variables and keyframes.
 Vite then minifies the result. Browser coverage verifies the compiled presentation,
 including error cards, native controls, light/dark mode and narrow viewports.
-The current development page has no backend interaction; no API proxy is installed.
 
 ## §web-installation App identity and installation
 
