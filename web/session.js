@@ -183,8 +183,18 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         }
     }
 
+    /** {§web-inline-images} Attachments queue in the order the person added them, however long each takes to verify. */
+    let intake = Promise.resolve();
+
     /** @param {readonly File[]} files */
-    async function queueAttachmentFiles(files) {
+    function queueAttachmentFiles(files) {
+        const queued = intake.then(() => verifyAttachmentFiles(files));
+        intake = queued.then(() => undefined, () => undefined);
+        return queued;
+    }
+
+    /** @param {readonly File[]} files */
+    async function verifyAttachmentFiles(files) {
         if (!agent.promptImageSupported) {
             the(feedback, { messageStatus: "", commandError: "Image attachments are not supported on this session." });
             tail.follow();
