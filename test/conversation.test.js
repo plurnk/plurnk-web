@@ -23,6 +23,7 @@ import verifyDisclosures from "./disclosure-browser.js";
 import verifySessionCards from "./session-cards-browser.js";
 import verifySessionDrafts from "./session-draft-browser.js";
 import verifySessionReconnect from "./session-reconnect-browser.js";
+import verifySessionObserve from "./session-observe-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -745,3 +746,4 @@ test("{§web-session-questions} native and JSON answers preserve the full respon
 test("{§web-session-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifySessionCards);
 test("{§web-session-input} {§web-document} unsent prompt drafts survive reload in tab-ephemeral sessionStorage", { timeout: 60_000 }, verifySessionDrafts);
 test("{§web-session-observer} {§web-page-shell} passive observation streams auto-recover without retrying mutations or 4xx refusals", { timeout: 90_000 }, verifySessionReconnect);
+test("{§web-session-input} {§web-session-status} composer Shift+Tab toggles YOLO across lifecycles and keeps active YOLO visible", { timeout: 60_000 }, verifySessionObserve);

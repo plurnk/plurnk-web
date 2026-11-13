@@ -170,6 +170,17 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     return {
         onAcp: (handler) => { acpHandler = handler; },
+        push: (update, sessionId = "7#user") => {
+            for (const [key, entry] of sseStreams) {
+                if (!entry.closed) {
+                    writeSse(key, `data: ${JSON.stringify({
+                        jsonrpc: "2.0",
+                        method: "session/update",
+                        params: { sessionId, update },
+                    })}\n\n`);
+                }
+            }
+        },
         server: {
             close: async () => {
                 for (const entry of sseStreams.values()) {

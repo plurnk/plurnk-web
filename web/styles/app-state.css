@@ -136,8 +136,8 @@ body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
     display: none;
 }
 
-/* {§web-session-status} Native interaction retains the row; unfocused live work remains observable. */
-#session-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"])) > [data-status-line] {
+/* {§web-session-status} Native interaction and active YOLO retain the row; unfocused live work remains observable. */
+#session-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"], #session-yolo[aria-pressed="true"])) > [data-status-line] {
     display: none;
 }
 
