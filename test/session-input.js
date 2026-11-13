@@ -919,6 +919,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const readCall = loop2Ops.locator('[data-plurnk-type="read"]');
         assert.equal(await readCall.locator("details").evaluate((el) => el.open), false);
         await readCall.locator("summary").click();
+        // {§web-result-bodies} An opened body reads once it is on screen; opening it at main's end does not scroll it there.
+        await readCall.locator("[data-image-reference]").scrollIntoViewIfNeeded();
         await readCall.locator('figure[data-inline-image] img[alt="pixel.png"]').waitFor();
         assert.equal(await readCall.locator('figure[data-inline-image] img[alt="pixel.png"]').evaluate((img) => img.naturalWidth), 1);
         assert.equal(entryTargets.length, 2, "opening read disclosure fetches image entry once");
