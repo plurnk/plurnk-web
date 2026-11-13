@@ -4,6 +4,7 @@ import { engines } from "./engines.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 import { verifyMath, verifyUnavailableMath } from "./math-browser.js";
+import { verifyCodeHighlight, verifyUnavailableCodeHighlight } from "./code-highlight-browser.js";
 import verifyContentSecurity from "./content-security-browser.js";
 import { verifyMermaid, verifyUnavailableMermaid } from "./mermaid-browser.js";
 import verifyApproval from "./approval-browser.js";
@@ -740,6 +741,8 @@ test("{§web-session-commands} isolated command delivery and literal results", {
 test("{§web-footnote-content} native footnotes through the real conversation outlet", { timeout: 60_000 }, verifyFootnotes);
 test("{§web-math-content} {§web-content-reflow} math through the real conversation outlet", { timeout: 60_000 }, verifyMath);
 test("{§web-math-content} a missing math chunk preserves source, reports failure and leaves ordinary messages usable", verifyUnavailableMath);
+test("{§web-code-content} {§web-conversation-content} syntax highlighting through the real conversation outlet", { timeout: 60_000 }, verifyCodeHighlight);
+test("{§web-code-content} a missing highlighter chunk preserves literal code, reports failure and leaves ordinary messages usable", verifyUnavailableCodeHighlight);
 test("{§web-conversation-content} {§web-browser-security} adversarial content across roles, streaming and replay", { timeout: 60_000 }, verifyContentSecurity);
 test("{§web-diagram-content} {§web-content-reflow} static Mermaid images through the real conversation outlet", { timeout: 60_000 }, verifyMermaid);
 test("{§web-diagram-content} unavailable diagram compilation preserves source and ordinary messages", verifyUnavailableMermaid);

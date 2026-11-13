@@ -178,6 +178,10 @@ test("{§web-build} production HTML references compiled assets, not development 
     assert.ok(inventory.some(([path, , type]) => /\/Temml-[^/]+\.woff2$/u.test(path) && type === "font/woff2"));
     assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.js$/u.test(path)), "math remains a separate lazy chunk");
     assert.ok(inventory.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "renderer styles remain separate from the application stylesheet");
+    // {§web-code-content} The highlighter and its palette are their own lazy chunk.
+    assert.ok(inventory.some(([path]) => /\/code-highlight-renderer-[^/]+\.js$/u.test(path)), "the highlighter is a separate lazy chunk");
+    assert.ok(inventory.some(([path]) => /\/code-highlight-renderer-[^/]+\.css$/u.test(path)), "the palette is separate from the application stylesheet");
+    assert.match(license, /highlight\.js - 11\.\d+\.\d+ \(BSD-3-Clause\)/u);
     assert.ok(!inventory.some(([path]) => /mermaid-renderer|\.wasm$/u.test(path)), "no browser diagram compiler or WASM asset");
 });
 
@@ -252,7 +256,7 @@ test("{§web-installation} {§web-page-shell} standalone manifest, viewport-fit=
     assert.doesNotMatch(html, /apple-mobile-web-app|mobile-web-app-capable|apple-touch-icon|\.png/u);
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     assert.ok(!inventory.some(([path]) => path.endsWith(".png")), "no unused raster icon is packed");
-    const [, stylesheetFile] = inventory.find(([path, , mediaType]) => path.startsWith("/assets/") && mediaType === "text/css");
+    const [, stylesheetFile] = inventory.find(([path]) => path === Documents.stylesheet(html));
     const css = await readFile(new URL(`../dist/${stylesheetFile}`, import.meta.url), "utf8");
     for (const edge of ["top", "right", "bottom", "left"]) {
         assert.match(css, new RegExp(`env\\(safe-area-inset-${edge}`, "u"), `compiled CSS preserves safe-area-inset-${edge}`);

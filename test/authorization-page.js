@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import Documents from "../src/documents.js";
 
 // {§web-authorization-style} Verify the authority's actual document with the packed application CSS.
 export default async function verifyAuthorizationPage(page, response, { warning = false, password = false } = {}) {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
-    const [[stylesheet]] = inventory.filter(([, , type]) => type === "text/css");
+    // Lazy renderer stylesheets share the inventory; the authority links only the document's own.
+    const stylesheet = Documents.stylesheet(await readFile(new URL("../dist/index.html", import.meta.url), "utf8"));
+    assert.ok(inventory.some(([path, , type]) => path === stylesheet && type === "text/css"));
     assert.deepEqual(await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href"))), [stylesheet]);
     assert.equal(await page.locator("style, script, [style], [class]").count(), 0);
     assert.match(response.headers()["content-security-policy"], /style-src 'self'/u);
