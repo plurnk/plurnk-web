@@ -102,27 +102,29 @@ export async function verifyCodeHighlight(t) {
 
 export async function verifyUnavailableCodeHighlight() {
     const { server, url } = await conversationFixture();
-    const browser = await chromium.launch();
     try {
-        const context = await browser.newContext();
-        const checkBrowser = browserDiagnostics(context);
-        const page = await context.newPage();
-        const refused = [];
-        await page.route("**/code-highlight-renderer-*.js", (route) => {
-            refused.push(new URL(route.request().url()).pathname);
-            return route.fulfill({ status: 404, contentType: "text/plain", body: "Not found" });
-        });
-        await page.goto(url);
-        await page.waitForFunction(() => typeof window.present === "function");
-        await page.evaluate((content) => window.present([{ id: "code", role: "assistant", content }]), fence("ts", SAMPLES.ts));
-        await page.locator('[data-code-error="Syntax highlighting unavailable"]').waitFor();
-        assert.equal(await page.locator("[data-messages] pre code").textContent(), SAMPLES.ts);
-        assert.equal(await page.evaluate(() => CSS.highlights.size), 0);
-        await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
-        assert.equal(await page.locator("[data-messages] article strong").textContent(), "Still connected");
-        assert.ok(refused.length > 0, "the renderer's chunk was actually refused");
-        assert.equal(new Set(refused).size, 1, "only the intended chunk was refused");
-        checkBrowser([...refused.map((path) => httpFailure(path, 404)),
-            new RegExp(`^exception: Failed to fetch dynamically imported module: ${RegExp.escape(new URL(refused[0], url).href)}$`, "u")]);
-    } finally { await browser.close(); await server.close(); }
+        const browser = await chromium.launch();
+        try {
+            const context = await browser.newContext();
+            const checkBrowser = browserDiagnostics(context);
+            const page = await context.newPage();
+            const refused = [];
+            await page.route("**/code-highlight-renderer-*.js", (route) => {
+                refused.push(new URL(route.request().url()).pathname);
+                return route.fulfill({ status: 404, contentType: "text/plain", body: "Not found" });
+            });
+            await page.goto(url);
+            await page.waitForFunction(() => typeof window.present === "function");
+            await page.evaluate((content) => window.present([{ id: "code", role: "assistant", content }]), fence("ts", SAMPLES.ts));
+            await page.locator('[data-code-error="Syntax highlighting unavailable"]').waitFor();
+            assert.equal(await page.locator("[data-messages] pre code").textContent(), SAMPLES.ts);
+            assert.equal(await page.evaluate(() => CSS.highlights.size), 0);
+            await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
+            assert.equal(await page.locator("[data-messages] article strong").textContent(), "Still connected");
+            assert.ok(refused.length > 0, "the renderer's chunk was actually refused");
+            assert.equal(new Set(refused).size, 1, "only the intended chunk was refused");
+            checkBrowser([...refused.map((path) => httpFailure(path, 404)),
+                new RegExp(`^exception: Failed to fetch dynamically imported module: ${RegExp.escape(new URL(refused[0], url).href)}$`, "u")]);
+        } finally { await browser.close(); }
+    } finally { await server.close(); }
 }

@@ -161,27 +161,29 @@ export async function verifyMermaid(t) {
 
 export async function verifyUnavailableMermaid() {
     const { server, url } = await conversationFixture();
-    const browser = await chromium.launch();
     try {
-        const context = await browser.newContext();
-        const checkBrowser = browserDiagnostics(context);
-        const page = await context.newPage();
-        const refused = [];
-        await page.route("**/render/mermaid", (route) => {
-            refused.push(new URL(route.request().url()).pathname);
-            return route.fulfill({ status: 503, contentType: "application/problem+json", body: JSON.stringify({ status: 503, detail: "Diagram service unavailable." }) });
-        });
-        await page.goto(url);
-        await page.waitForFunction(() => typeof window.present === "function");
-        await page.evaluate((content) => window.present([{ id: "diagram", role: "assistant", content }]), fenced(diagrams[0]));
-        await page.locator('[data-diagram-error="Diagram failed to render"]').waitFor();
-        assert.equal(await page.locator("[data-diagram-error]").getAttribute("title"), "Error: Diagram service unavailable.");
-        assert.equal(await page.locator("[data-mermaid] code").textContent(), diagrams[0] + "\n");
-        assert.equal(await page.locator("[data-messages] article img").count(), 0);
-        await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
-        assert.equal(await page.locator("[data-messages] article strong").textContent(), "Still connected");
-        assert.ok(refused.length > 0);
-        assert.equal(new Set(refused).size, 1);
-        checkBrowser(refused.map((path) => httpFailure(path, 503)));
-    } finally { await browser.close(); await server.close(); }
+        const browser = await chromium.launch();
+        try {
+            const context = await browser.newContext();
+            const checkBrowser = browserDiagnostics(context);
+            const page = await context.newPage();
+            const refused = [];
+            await page.route("**/render/mermaid", (route) => {
+                refused.push(new URL(route.request().url()).pathname);
+                return route.fulfill({ status: 503, contentType: "application/problem+json", body: JSON.stringify({ status: 503, detail: "Diagram service unavailable." }) });
+            });
+            await page.goto(url);
+            await page.waitForFunction(() => typeof window.present === "function");
+            await page.evaluate((content) => window.present([{ id: "diagram", role: "assistant", content }]), fenced(diagrams[0]));
+            await page.locator('[data-diagram-error="Diagram failed to render"]').waitFor();
+            assert.equal(await page.locator("[data-diagram-error]").getAttribute("title"), "Error: Diagram service unavailable.");
+            assert.equal(await page.locator("[data-mermaid] code").textContent(), diagrams[0] + "\n");
+            assert.equal(await page.locator("[data-messages] article img").count(), 0);
+            await page.evaluate(() => window.present([{ id: "plain", role: "assistant", content: "**Still connected**" }]));
+            assert.equal(await page.locator("[data-messages] article strong").textContent(), "Still connected");
+            assert.ok(refused.length > 0);
+            assert.equal(new Set(refused).size, 1);
+            checkBrowser(refused.map((path) => httpFailure(path, 503)));
+        } finally { await browser.close(); }
+    } finally { await server.close(); }
 }

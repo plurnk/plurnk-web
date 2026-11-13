@@ -328,6 +328,8 @@ export default async function verifyCommands(t) {
                     await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
                     assert.equal(await modelPanel.isVisible(), true, "pointer activation survives moving focus out of the composer");
                     await selectModel.press("Escape");
+                    // Firefox's native <datalist> popup consumes the first Escape in browser chrome before DOM keydown.
+                    if (engine === firefox && await modelPanel.isVisible()) await selectModel.press("Escape");
                     await modelPanel.waitFor({ state: "hidden" });
                     assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true, "Escape closes idle selector and restores focus");
                     catalog.page = { items: [], offset: 0, total: 0 };
