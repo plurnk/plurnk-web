@@ -64,7 +64,7 @@ export default async function verifyCommands(t) {
                     await page.waitForFunction(() => typeof window.command === "function");
                     assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
                     assert.equal(await page.locator('label[for="session-message"]').count(), 0, "the textarea keeps its name without a visible title");
-                    for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"]]) {
+                    for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"], ["Attach image", "📎"]]) {
                         const button = page.getByRole("button", { name, exact: true, includeHidden: true });
                         assert.equal(await button.getAttribute("title"), name === "Send" ? "Send (Enter · Ctrl+Enter)" : name);
                         assert.equal(await button.innerText(), "");
@@ -72,14 +72,20 @@ export default async function verifyCommands(t) {
                     }
                     const send = page.getByRole("button", { name: "Send", exact: true });
                     const stop = page.getByRole("button", { name: "Stop", exact: true, includeHidden: true });
+                    const attach = page.getByRole("button", { name: "Attach image", exact: true, includeHidden: true });
                     assert.equal(await stop.isVisible(), false, "no Stop is presented without known live work");
+                    assert.equal(await attach.isVisible(), false, "no Attach image is presented without prompt.image capability");
                     const actions = page.getByRole("group", { name: "Session actions", exact: true });
-                    assert.equal(await actions.locator("button").count(), 2);
+                    assert.equal(await actions.locator("button").count(), 3);
                     assert.equal(await send.evaluate((button) => button.form.id), "session-compose");
                     assert.equal(await stop.evaluate((button) => button.form.id), "session-stop", "Stop has independent native submission, not reset semantics");
                     assert.equal(await stop.getAttribute("type"), "submit");
-                    await page.locator('[aria-label="Session controls"]').evaluate((element) => element.setAttribute("data-live-work", ""));
+                    await page.locator('[aria-label="Session controls"]').evaluate((element) => {
+                        element.setAttribute("data-live-work", "");
+                        element.setAttribute("data-prompt-image", "true");
+                    });
                     assert.equal(await stop.isVisible(), true, "known live work remains visible even while Stop is unavailable");
+                    assert.equal(await attach.isVisible(), true, "advertised prompt.image capability presents Attach image");
                     assert.equal(await stop.isDisabled(), true);
                     for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
@@ -94,9 +100,10 @@ export default async function verifyCommands(t) {
                         const sendBox = await send.boundingBox();
                         const stopBox = await stop.boundingBox();
                         assert.equal(sendBox.y, stopBox.y, "Pico groups both actions on the same row");
+                        const attachBox = await attach.boundingBox();
                         const draftBox = await page.getByRole("textbox", { name: "Message", exact: true }).boundingBox();
                         const margin = await send.evaluate((button) => parseFloat(getComputedStyle(button).marginInlineStart));
-                        assert.ok(stopBox.x < draftBox.x && draftBox.x < sendBox.x);
+                        assert.ok(stopBox.x < attachBox.x && attachBox.x < draftBox.x && draftBox.x < sendBox.x);
                         assert.equal(Math.round(draftBox.x + draftBox.width + margin), Math.round(sendBox.x),
                             "Send joins the textarea with Pico's native group margin");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -112,11 +119,13 @@ export default async function verifyCommands(t) {
                                 return getComputedStyle(element).boxShadow;
                             });
                             assert.ok(focusShadow.includes("inset"), `${colorScheme}: textarea focus stays within its control`);
-                            const geometry = await actions.evaluate((group) => [...group.children].map((element) => {
-                                const rect = element.getBoundingClientRect();
-                                const style = getComputedStyle(element);
-                                return { top: rect.top, bottom: rect.bottom, lineHeight: parseFloat(style.lineHeight), fontSize: parseFloat(style.fontSize) };
-                            }));
+                            const geometry = await actions.evaluate((group) => [...group.children]
+                                .filter((element) => getComputedStyle(element).display !== "none")
+                                .map((element) => {
+                                    const rect = element.getBoundingClientRect();
+                                    const style = getComputedStyle(element);
+                                    return { top: rect.top, bottom: rect.bottom, lineHeight: parseFloat(style.lineHeight), fontSize: parseFloat(style.fontSize) };
+                                }));
                             assert.ok(geometry.every(({ top, bottom }) => top === geometry[0].top && bottom === geometry[0].bottom),
                                 "focus and multiline growth keep every composer control aligned");
                             assert.ok(geometry.every(({ lineHeight, fontSize }) => lineHeight / fontSize === 1.25),

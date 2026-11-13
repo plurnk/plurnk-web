@@ -1,3 +1,5 @@
+import { SAFE_RASTER_IMAGE_MIMES } from "./inline-images.js";
+
 /**
  * @typedef {{
  *   toolCallId: string,
@@ -22,6 +24,11 @@
  *   uri: string,
  *   name?: string,
  *   mimeType?: string,
+ * } | {
+ *   type: "image",
+ *   mimeType: string,
+ *   data: string,
+ *   name?: string,
  * }} MessagePart
  */
 
@@ -90,10 +97,45 @@ function extractChunkContent(content, defaultMime) {
             mimeType: typeof content.mimeType === "string" ? content.mimeType : defaultMime,
         }];
     }
+    if (
+        content.type === "image"
+        && typeof content.mimeType === "string"
+        && SAFE_RASTER_IMAGE_MIMES.has(content.mimeType.toLowerCase())
+        && typeof content.data === "string"
+        && content.data.length > 0
+    ) {
+        const name = typeof content.uri === "string" && content.uri.length > 0
+            ? content.uri
+            : typeof content.name === "string" && content.name.length > 0
+                ? content.name
+                : undefined;
+        return [{
+            type: "image",
+            mimeType: content.mimeType.toLowerCase(),
+            data: content.data,
+            ...(name ? { name } : {}),
+        }];
+    }
     if (content.type === "text" && typeof content.text === "string") {
         return content.text;
     }
     return "";
+}
+
+/**
+ * @param {string | readonly MessagePart[] | undefined} existing
+ * @param {MessagePart[]} incoming
+ * @returns {MessagePart[]}
+ */
+function mergeChunkParts(existing, incoming) {
+    if (!incoming.some((part) => part.type === "image")) return incoming;
+    if (typeof existing === "string" && existing.length > 0) {
+        return [{ type: "text", text: existing }, ...incoming];
+    }
+    if (Array.isArray(existing)) {
+        return [...existing, ...incoming];
+    }
+    return incoming;
 }
 
 /**
@@ -103,10 +145,18 @@ function extractChunkContent(content, defaultMime) {
  */
 function extractToolResultContent(contentBlocks, rawOutput) {
     if (Array.isArray(contentBlocks)) {
-        const hasResourceLink = contentBlocks.some(
-            (block) => isRecord(block) && block.type === "content" && isRecord(block.content) && block.content.type === "resource_link",
+        const hasStructuredPart = contentBlocks.some(
+            (block) => isRecord(block)
+                && block.type === "content"
+                && isRecord(block.content)
+                && (block.content.type === "resource_link"
+                    || (block.content.type === "image"
+                        && typeof block.content.mimeType === "string"
+                        && SAFE_RASTER_IMAGE_MIMES.has(block.content.mimeType.toLowerCase())
+                        && typeof block.content.data === "string"
+                        && block.content.data.length > 0)),
         );
-        if (hasResourceLink) {
+        if (hasStructuredPart) {
             /** @type {MessagePart[]} */
             const parts = [];
             for (const block of contentBlocks) {
@@ -121,9 +171,27 @@ function extractToolResultContent(contentBlocks, rawOutput) {
                         ...(typeof inner.name === "string" ? { name: inner.name } : {}),
                         mimeType: typeof inner.mimeType === "string" ? inner.mimeType : "text/plain",
                     });
+                } else if (
+                    inner.type === "image"
+                    && typeof inner.mimeType === "string"
+                    && SAFE_RASTER_IMAGE_MIMES.has(inner.mimeType.toLowerCase())
+                    && typeof inner.data === "string"
+                    && inner.data.length > 0
+                ) {
+                    const name = typeof inner.uri === "string" && inner.uri.length > 0
+                        ? inner.uri
+                        : typeof inner.name === "string" && inner.name.length > 0
+                            ? inner.name
+                            : undefined;
+                    parts.push({
+                        type: "image",
+                        mimeType: inner.mimeType.toLowerCase(),
+                        data: inner.data,
+                        ...(name ? { name } : {}),
+                    });
                 }
             }
-            if (!parts.some((p) => p.type === "text") && rawOutput !== undefined) {
+            if (!parts.some((p) => p.type === "text" || p.type === "image") && rawOutput !== undefined) {
                 parts.unshift({
                     type: "text",
                     text: typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput),
@@ -273,6 +341,10 @@ export class SessionTranslator {
                         && plurnk.published !== false
                         && (plurnk.id !== undefined || plurnk.coordinate !== undefined);
                     if (Array.isArray(chunk)) {
+                        found.content = (wasUnobserved && nowPublished)
+                            ? chunk
+                            : mergeChunkParts(found.content, chunk);
+                    } else if (wasUnobserved && nowPublished) {
                         found.content = chunk;
                     } else if (typeof found.content === "string") {
                         if (
@@ -284,6 +356,8 @@ export class SessionTranslator {
                         } else {
                             found.content += chunk;
                         }
+                    } else if (Array.isArray(found.content) && found.content.some((part) => part.type === "image")) {
+                        found.content = chunk ? [...found.content, { type: "text", text: chunk }] : found.content;
                     } else {
                         found.content = chunk;
                     }
@@ -334,13 +408,15 @@ export class SessionTranslator {
                 if (foundIdx !== -1) {
                     const found = cloneAt(foundIdx);
                     if (Array.isArray(chunk)) {
-                        found.content = chunk;
+                        found.content = mergeChunkParts(found.content, chunk);
                     } else if (typeof found.content === "string") {
                         if (plurnk?.id !== undefined && found._meta?.plurnk?.id === plurnk.id) {
                             found.content = chunk;
                         } else {
                             found.content += chunk;
                         }
+                    } else if (Array.isArray(found.content) && found.content.some((part) => part.type === "image")) {
+                        found.content = chunk ? [...found.content, { type: "text", text: chunk }] : found.content;
                     } else {
                         found.content = chunk;
                     }

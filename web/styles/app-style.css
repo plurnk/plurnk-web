@@ -14,6 +14,7 @@ nav[aria-label="breadcrumb"] button,
 #workspace-tabs > button,
 #dialog-workspace-settings [data-settings-nav] button,
 #session-status [data-status-line] button,
+#session-compose [data-remove-attachment],
 #session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
     --pico-primary-background: transparent;
     --pico-primary-border: transparent;
@@ -24,8 +25,9 @@ nav[aria-label="breadcrumb"] button,
     cursor: pointer;
 }
 
-/* {§web-session-input} Cancellation uses Pico's secondary control palette. */
+/* {§web-session-input} Cancellation and attachment controls use Pico's secondary control palette. */
 button[form="session-stop"],
+button[data-attach-image],
 button[data-cancel-settings],
 dialog button[data-dialog-close]:not([rel="prev"]) {
     --pico-primary-background: var(--pico-secondary-background);

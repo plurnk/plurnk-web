@@ -50,7 +50,9 @@ export default async function startModel({ approvalCommand: initialApprovalComma
             assert.equal(body.stream, true);
             const packet = JSON.stringify(body.messages);
             const lifecycle = Array.from(packet.matchAll(/Lifecycle fixture: ([a-z-]+)/gu)).at(-1)?.[1]
-                ?? (packet.includes("Worker fixture: held-worker.") ? "held-worker" : undefined);
+                ?? (packet.includes("Worker fixture: held-worker.") ? "held-worker"
+                    : packet.includes("pixel-only.png>") ? "image-only"
+                    : undefined);
             if (lifecycle) {
                 const visit = (visits.get(lifecycle) ?? 0) + 1;
                 visits.set(lifecycle, visit);
@@ -92,6 +94,8 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                         : lifecycle === "diagrams" ? `plurnk.done({ text: ${JSON.stringify(diagramContent)} })`
                         : lifecycle === "footnotes" ? `plurnk.note({ text: ${JSON.stringify(footnoteAnswer)} }) // fact\nplurnk.done({ text: ${JSON.stringify(footnoteAnswer)} })`
                         : lifecycle === "notes" ? 'plurnk.note({ text: "A **working fact**, not the answer." }) // fact\nplurnk.note({ text: "A provisional idea." }) // idea\nplurnk.note({ text: "Check the idea." })\nplurnk.done({ text: "Completed notes." })'
+                        : lifecycle === "image-upload" && visit === 1
+                            ? `plurnk.read({ path: ${JSON.stringify(Array.from(packet.matchAll(/<(session:\/\/user\/attachments\/[0-9a-f]+\/[^\s>]*pixel\.png)>/gu)).at(-1)?.[1] ?? "session://user/attachments/missing/pixel.png")} })`
                         : lifecycle === "content-security" ? `plurnk.note({ text: ${JSON.stringify(contentAttack)} }) // fact\nplurnk.done({ text: ${JSON.stringify(contentAttack)} })`
                         : `plurnk.done({ text: ${JSON.stringify(`Completed ${lifecycle}.`)} })`;
                     frame({ content });

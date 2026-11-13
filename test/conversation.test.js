@@ -25,6 +25,7 @@ import verifySessionDrafts from "./session-draft-browser.js";
 import verifySessionReconnect from "./session-reconnect-browser.js";
 import verifySessionObserve from "./session-observe-browser.js";
 import verifyWorkspaceSettingsUnit from "./workspace-settings-unit-browser.js";
+import verifyInlineImages from "./inline-images-browser.js";
 
 const messages = [
     { id: "question", role: "user", content: "Please inspect **the evidence**." },
@@ -749,3 +750,4 @@ test("{§web-session-input} {§web-document} unsent prompt drafts survive reload
 test("{§web-session-observer} {§web-page-shell} passive observation streams auto-recover without retrying mutations or 4xx refusals", { timeout: 90_000 }, verifySessionReconnect);
 test("{§web-session-input} {§web-session-status} {§web-session-history} composer YOLO toggle, active YOLO visibility and sticky-tail scroll anchoring", { timeout: 90_000 }, verifySessionObserve);
 test("{§web-workspace-settings} workspace subsystem settings modal manages capabilities, families, OAuth, session personas, and masked env", { timeout: 90_000 }, verifyWorkspaceSettingsUnit);
+test("{§web-inline-images} {§web-session-input} {§web-card-disclosure} {§web-operation-summary} {§web-result-bodies} verified raster images across transcript, lazy operation disclosures, and composer attachments", { timeout: 90_000 }, verifyInlineImages);

@@ -434,6 +434,14 @@
     <template id="conversation-body-reference">
         <pre data-body-reference data-bind="aria-busy:body-pending"></pre>
     </template>
+    <template id="conversation-image-reference">
+        <div data-body-reference data-image-reference data-bind="aria-busy:body-pending"></div>
+    </template>
+    <template id="conversation-inline-image">
+        <figure data-inline-image hidden>
+            <div data-inline-image-viewport><img alt="Attached image"></div>
+        </figure>
+    </template>
     <template id="conversation-body-retry">
         <form><button type="submit" data-i18n="retry-body">Retry</button></form>
     </template>
@@ -450,14 +458,23 @@
     <template id="session-controls">
         <section aria-label="Session controls">
             <form id="session-compose">
+                <ul data-compose-attachments aria-label="Queued attachments"></ul>
+                <input type="file" data-attach-input accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
                 <fieldset role="group" aria-label="Session actions">
                     <button type="submit" form="session-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
+                    <button type="button" data-attach-image disabled data-bind="disabled:send-unavailable" aria-label="Attach image" title="Attach image"></button>
                     <textarea id="session-message" name="message" aria-label="Message" placeholder="Message (/help · Shift+Tab YOLO)" rows="1" required></textarea>
                     <button type="submit" form="session-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Enter Control+Enter Meta+Enter" title="Send (Enter · Ctrl+Enter)"></button>
                 </fieldset>
             </form>
             <form id="session-stop"></form>
         </section>
+    </template>
+    <template id="compose-attachment">
+        <li data-attachment-item>
+            <span data-text="attachment-name"></span> <small data-text="attachment-size"></small>
+            <button type="button" data-remove-attachment data-bind="aria-label:attachment-remove title:attachment-remove" aria-label="Remove attachment" title="Remove attachment"></button>
+        </li>
     </template>
     <template id="session-feedback">
         <section aria-label="Message feedback" data-command-error="" data-message-status="">

@@ -63,6 +63,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         return serve;
     };
     let acpHandler = null;
+    let capabilities = {};
     let connSeq = 0;
     const sseStreams = new Map();
     const getStream = (key) => {
@@ -131,7 +132,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
                 id: input.id,
                 result: {
                     protocolVersion: 2,
-                    capabilities: {},
+                    capabilities,
                     info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
                 },
             }));
@@ -174,6 +175,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     return {
         onAcp: (handler) => { acpHandler = handler; },
+        setCapabilities: (next) => { capabilities = next ?? {}; },
         push: (update, sessionId = "7#user") => {
             for (const [key, entry] of sseStreams) {
                 if (!entry.closed) {
