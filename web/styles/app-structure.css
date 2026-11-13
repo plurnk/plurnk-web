@@ -1,10 +1,15 @@
-/* {§web-page-shell} Native documents retain readable measure and viewport gutters. */
+/* {§web-page-shell} Native documents retain readable measure, viewport gutters and standalone safe-area clearance. */
 body > header,
 body > main,
 body > footer {
     max-inline-size: 65ch;
-    padding-inline: var(--pico-spacing);
+    padding-right: calc(var(--pico-spacing) + env(safe-area-inset-right, 0px));
+    padding-left: calc(var(--pico-spacing) + env(safe-area-inset-left, 0px));
     overflow-wrap: anywhere;
+}
+
+body:not(:has(> footer)) > main {
+    padding-block-end: calc(var(--pico-block-spacing-vertical) + env(safe-area-inset-bottom, 0px));
 }
 
 /* {§web-page-shell} Intrinsic header/footer tracks need no measured offsets. */
@@ -24,7 +29,7 @@ body > main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"]
 #session-status {
     min-block-size: 0;
     overflow: auto;
-    padding-block: var(--pico-spacing);
+    padding-block: var(--pico-spacing) calc(var(--pico-spacing) + env(safe-area-inset-bottom, 0px));
 }
 
 nav,
@@ -49,7 +54,7 @@ body > header {
     grid-template-areas: "brand breadcrumb menu";
     align-items: center;
     gap: var(--pico-spacing);
-    padding-block: 0;
+    padding-block: env(safe-area-inset-top, 0) 0;
 }
 
 body > header > a {
