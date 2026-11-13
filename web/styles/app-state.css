@@ -3,7 +3,12 @@ body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspa
     max-inline-size: none;
 }
 
-#workspace-tabs > ul > li > a[aria-current="true"] {
+#workspace-tabs:not([data-live="true"]) > [data-workspace-settings] {
+    display: none;
+}
+
+#workspace-tabs > ul > li > a[aria-current="true"],
+#dialog-workspace-settings [data-settings-nav] button[aria-pressed="true"] {
     border-block-end-color: var(--pico-primary);
     font-weight: 700;
 }
@@ -21,6 +26,8 @@ body > header > nav[aria-label="breadcrumb"] a:focus-visible,
 
 header nav button:is(:hover, :focus-visible),
 #workspace-tabs > button:is(:hover, :focus-visible),
+#dialog-workspace-settings [data-settings-nav] button:is(:hover, :focus-visible),
+#session-command-results [data-open-workspace-settings]:is(:hover, :focus-visible),
 #dialog-workspace-switcher [data-switcher-list] > li > a:is(:hover, :focus-visible) {
     text-decoration: underline;
 }
@@ -107,21 +114,36 @@ button[form="session-stop"]::before { content: "⏹️" / ""; }
     color: var(--plurnk-diff-meta-color);
 }
 
-/* {§web-session-commands} Results have their own literal, non-conversation outlet. */
+/* {§web-session-commands} {§web-workspace-settings} Results and settings controls reflect explicit state. */
 #session-command-results:not(:has(ul > li)),
-#session-command-results article[aria-busy="true"] [data-dismiss-command],
+#session-command-results article[aria-busy="true"] :is([data-dismiss-command], [data-open-workspace-settings]),
 #session-command-results section:not([data-alias-count="0"]) > [data-no-aliases],
-#session-command-results [data-env-panel][data-env-count="0"] > figure,
-#session-command-results [data-env-enabled="true"] [data-env-enable],
-#session-command-results [data-env-enabled="false"] [data-env-disable],
-#session-command-results [data-env-removable="false"] [data-env-unset] {
+:is(#session-command-results, #dialog-workspace-settings) [data-env-panel][data-env-count="0"] > figure,
+:is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="true"] [data-env-enable],
+:is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="false"] [data-env-disable],
+:is(#session-command-results, #dialog-workspace-settings) [data-env-removable="false"] [data-env-unset],
+#dialog-workspace-settings [data-cap-count="0"] > [data-cap-table-wrap],
+#dialog-workspace-settings [data-settings-panel="capabilities"]:not([data-cap-count="0"]) > [data-cap-empty],
+#dialog-workspace-settings [data-family-count="0"] > [data-family-table-wrap],
+#dialog-workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
+#dialog-workspace-settings [data-candidate-count="0"] > [data-candidate-rows],
+#dialog-workspace-settings [data-family-enabled="true"] [data-family-enable],
+#dialog-workspace-settings [data-family-enabled="false"] [data-family-disable],
+#dialog-workspace-settings [data-family-removable="false"] [data-family-remove],
+#dialog-workspace-settings [data-family-auth="false"] [data-family-authorize],
+#dialog-workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
+#dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
+#dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
+#dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],
+#dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="inline"]) [data-persona-inline-fields],
+#dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields] {
     display: none;
 }
 
 #session-command-results [data-dismiss-command]::before { content: "✕" / ""; }
 
-/* {§web-session-settings} Empty feedback occupies no page space. */
-:is(#session-model-settings, #session-effort-settings, #session-command-results article) > p:empty,
+/* {§web-session-settings} {§web-workspace-settings} Empty feedback occupies no page space. */
+:is(#session-model-settings, #session-effort-settings, #session-command-results article, #dialog-workspace-settings > article) > p:empty,
 #session-command-results [data-command-output]:empty {
     display: none;
 }

@@ -1,6 +1,7 @@
 import { $, $$, on, the } from "on_the_money";
 import { isRecord, parseFamilyCommand, Validator } from "@plurnk/plurnk-contracts";
 import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
+import { populateEnvPanel } from "./env-panel.js";
 import describeFailure from "./failure.js";
 
 /** @returns {"⌘" | "Ctrl"} */
@@ -125,52 +126,6 @@ function formatFamilyResult(family, parsed, res) {
     return { message: `Executed /${family}.` };
 }
 
-/**
- * @param {unknown} res
- * @param {"session" | "workspace"} fallbackOrigin
- */
-function extractEnvEntries(res, fallbackOrigin) {
-    if (!isRecord(res)) return [];
-    const list = Array.isArray(res.definitions) ? res.definitions
-        : Array.isArray(res.items) ? res.items : [];
-    return list.flatMap((item) => {
-        if (!isRecord(item)) return [];
-        const alias = typeof item.alias === "string" ? item.alias
-            : typeof item.name === "string" ? item.name : "";
-        if (!alias) return [];
-        const origin = item.origin === "session" || item.origin === "workspace" || item.origin === "service"
-            ? item.origin
-            : fallbackOrigin;
-        const state = typeof item.state === "string" ? item.state : "active";
-        const source = isRecord(item.provenance) && typeof item.provenance.source === "string" && item.provenance.source.length > 0
-            ? item.provenance.source
-            : "";
-        return [{ alias, origin, state, source }];
-    });
-}
-
-/**
- * @param {Element} panel
- * @param {unknown} res
- * @param {"session" | "workspace"} listScope
- */
-function populateEnvPanel(panel, res, listScope) {
-    const tbody = $(panel, "tbody");
-    if (!tbody) throw new Error("Environment panel template is incomplete.");
-    const entries = extractEnvEntries(res, listScope);
-    $.cloneEach(tbody, "#command-env-row", entries, (tr, entry) => {
-        the(tr, {
-            envAlias: entry.alias,
-            envOrigin: entry.origin,
-            envStatus: entry.source ? `${entry.state} (${entry.source})` : entry.state,
-            envRemovable: entry.origin === "session" || entry.origin === "workspace" ? "true" : "false",
-            envEnabled: entry.state !== "disabled" ? "true" : "false",
-        });
-    });
-    the(panel, { envCount: entries.length, envBusy: null });
-    return entries.length;
-}
-
 /** @typedef {import("./session-models.js").Action} Action */
 
 /** {§web-session-commands} Native, literal results stay outside the observer's messages and state.
@@ -279,6 +234,15 @@ export default function sessionCommands(controls, actions) {
         try {
             signal.throwIfAborted();
             const { name, rest, args, policy } = parseCommand(text);
+            if ((name === "capabilities" || familyCommands.has(name)) && $('#workspace-tabs[data-live="true"]')) {
+                const header = $(row, "header");
+                const dismiss = header ? $(header, "[data-dismiss-command]") : null;
+                if (header && dismiss) {
+                    const openBtn = $.clone(header, "#workspace-open-settings");
+                    openBtn.setAttribute("data-open-workspace-settings", name);
+                    header.insertBefore(openBtn, dismiss);
+                }
+            }
             /** @type {string} */
             let message = "";
             if (name === "help") {

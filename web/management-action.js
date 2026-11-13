@@ -6,13 +6,14 @@ import problemFromResponse from "./problem-response.js";
 // Firefox delays resolving fetch() on chunked text/event-stream responses until the first body byte arrives.
 const SSE_HEADERS_FLUSH_MS = 25;
 
-/** {§web-session-commands} Isolated action delivery never owns observation, conversation or work lifetime. A refusal, before the
+/** {§web-session-commands} {§web-workspace-settings} Isolated action delivery never owns observation, conversation or work lifetime. A refusal, before the
  * stream opens or as an ACP error, is the daemon's Problem: the thrown Error carries it as its cause.
  * @param {string} kind @param {Record<string, unknown>} params @param {string} sessionId
  * @param {"session" | "none"} auth @param {AbortSignal} signal
+ * @param {{ workspaceId?: number }} [options]
  * @returns {Promise<unknown>}
  */
-export default async function managementAction(kind, params, sessionId, auth, signal) {
+export default async function managementAction(kind, params, sessionId, auth, signal, options = {}) {
     /** @param {unknown} value */
     const refused = (value) => {
         const problem = Validator.assertProblemDetails(value);
@@ -23,7 +24,7 @@ export default async function managementAction(kind, params, sessionId, auth, si
     /** @type {Error | undefined} */
     let httpFailure;
     let connected = false;
-    const needsConnSse = kind === "providers/list";
+    const needsConnSse = kind === "providers/list" || !sessionId;
     /** @type {typeof fetch} */
     const acpFetch = async (input, init) => {
         if (init?.method === "DELETE") {
@@ -140,9 +141,9 @@ export default async function managementAction(kind, params, sessionId, auth, si
         } else if (kind === "session/set_config_option") {
             outcome = await conn.agent.request(methods.agent.session.setConfigOption, {
                 sessionId,
-                type: "id",
-                configId: String(params.configId ?? ""),
-                value: String(params.value ?? ""),
+                ...(typeof params.value === "boolean"
+                    ? { type: "boolean", configId: String(params.configId ?? ""), value: params.value }
+                    : { type: "id", configId: String(params.configId ?? ""), value: String(params.value ?? "") }),
             });
         } else if (kind === "session/cancel") {
             await conn.agent.notify(methods.agent.session.cancel, { sessionId });
@@ -152,6 +153,7 @@ export default async function managementAction(kind, params, sessionId, auth, si
                 kind,
                 params,
                 ...(sessionId ? { sessionId } : {}),
+                ...(typeof options.workspaceId === "number" ? { workspaceId: options.workspaceId } : {}),
             });
         }
         signal.throwIfAborted();

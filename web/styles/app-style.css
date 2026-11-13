@@ -12,8 +12,9 @@
 header nav button,
 nav[aria-label="breadcrumb"] button,
 #workspace-tabs > button,
+#dialog-workspace-settings [data-settings-nav] button,
 #session-status [data-status-line] button,
-#session-command-results [data-dismiss-command] {
+#session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
     --pico-primary-background: transparent;
     --pico-primary-border: transparent;
     --pico-primary-hover-background: transparent;

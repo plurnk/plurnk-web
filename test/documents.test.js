@@ -510,7 +510,7 @@ test("{§web-session-directory} {§web-directory-documents} home and workspace o
     assert.match(emptyHome, /<main id="main" data-page="home" data-auth="none" data-connection="initial"><p data-i18n="no-sessions">No sessions\.<\/p><\/main>/u);
 });
 
-test("{§web-workspace-tabs} workspace and session documents render daemon-truth session tabs, fold settled child workers unless selected, and omit tabs outside workspaces", async () => {
+test("{§web-workspace-tabs} {§web-workspace-settings} workspace and session documents render daemon-truth session tabs, fold settled child workers unless selected, and omit tabs outside workspaces", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
     assert.doesNotMatch((await document.home(false)).toString(), /id="workspace-tabs"/u);
     assert.doesNotMatch(document.account().toString(), /id="workspace-tabs"/u);
@@ -564,6 +564,7 @@ test("{§web-workspace-tabs} workspace and session documents render daemon-truth
     assert.match(overviewNav, /data-switcher-current>Overview<\/span>/u);
     assert.match(overviewNav, /data-session-gates="2" aria-label="2 awaiting input">2<\/small>/u);
     assert.match(overviewNav, /data-switcher-active="3" aria-label="3 active">3<\/small>/u);
+    assert.match(overviewNav, /data-workspace-settings aria-label="Workspace settings" title="Workspace settings"/u);
     assert.match(overviewNav, /data-dialog-target="dialog-session-create" aria-label="New session"/u);
 
     const settledWorkerHtml = (await document.read({ kind: "session", workspace: "alpha", session: "settled-worker" }, port, true)).toString();

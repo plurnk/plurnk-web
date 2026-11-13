@@ -10,6 +10,7 @@ const PLUS_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" strok
 const RENAME_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a1.4 1.4 0 0 1 2 2L5.5 12.5 2.5 13.5l1-3 8-8Z"/></svg>';
 const ARCHIVE_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="0.75"/><path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M6.5 9h3"/></svg>';
 const SWITCHER_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h10M3 8h10M3 11h6"/></svg>';
+const SETTINGS_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.25"/><path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.75 3.75l1.1 1.1M11.15 11.15l1.1 1.1M12.25 3.75l-1.1 1.1M4.85 11.15l-1.1 1.1"/></svg>';
 /** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
 /** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499, readonly at?: number, readonly excerpt?: string, readonly continued?: boolean }} DirectoryReply */
 /** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
@@ -538,7 +539,7 @@ export default class Documents {
             + '<ul data-messages></ul></section>';
         return { content, footer };
     }
-    /** {§web-workspace-tabs} Daemon-truth workspace tab strip and compact switcher trigger.
+    /** {§web-workspace-tabs} {§web-workspace-settings} Daemon-truth workspace tab strip, settings trigger and compact switcher trigger.
      * @param {DirectoryWorkspace} workspace
      * @param {readonly DirectorySession[]} sessions
      * @param {ReadonlyMap<number, DirectorySession>} byId
@@ -634,6 +635,7 @@ export default class Documents {
         return `<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-id="${workspace.id}" data-workspace-name="${escapeHtml(workspace.name)}" data-auth="${authenticated ? "session" : "none"}"${live ? ' data-live="true"' : ""}>`
             + `<button type="button" data-workspace-switcher aria-label="Switch session" title="Switch session">${SWITCHER_ICON}<span data-switcher-current>${escapeHtml(currentLabel)}</span>${switcherBadges}</button>`
             + `<ul>${items.join("")}</ul>`
+            + `<button type="button" data-workspace-settings aria-label="Workspace settings" title="Workspace settings">${SETTINGS_ICON}</button>`
             + `<button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">${PLUS_ICON}</button>`
             + "</nav>";
     }
