@@ -38,7 +38,7 @@ export default async function verifyWebApp(browser, base) {
         assert.deepEqual((await cdp.send("Page.getInstallabilityErrors")).installabilityErrors, []);
 
         for (const [name, content] of Object.entries({
-            "viewport": "width=device-width, initial-scale=1",
+            "viewport": "width=device-width, initial-scale=1, viewport-fit=cover",
             "color-scheme": "light dark",
             "theme-color": manifest.theme_color,
             "application-name": manifest.name,
