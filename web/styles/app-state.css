@@ -97,14 +97,19 @@ button[form="session-stop"]::before { content: "⏹️" / ""; }
 /* {§web-session-commands} Results have their own literal, non-conversation outlet. */
 #session-command-results:not(:has(ul > li)),
 #session-command-results article[aria-busy="true"] [data-dismiss-command],
-#session-command-results section:not([data-alias-count="0"]) > [data-no-aliases] {
+#session-command-results section:not([data-alias-count="0"]) > [data-no-aliases],
+#session-command-results [data-env-panel][data-env-count="0"] > figure,
+#session-command-results [data-env-enabled="true"] [data-env-enable],
+#session-command-results [data-env-enabled="false"] [data-env-disable],
+#session-command-results [data-env-removable="false"] [data-env-unset] {
     display: none;
 }
 
 #session-command-results [data-dismiss-command]::before { content: "✕" / ""; }
 
 /* {§web-session-settings} Empty feedback occupies no page space. */
-:is(#session-model-settings, #session-effort-settings) > p:empty {
+:is(#session-model-settings, #session-effort-settings, #session-command-results article) > p:empty,
+#session-command-results [data-command-output]:empty {
     display: none;
 }
 

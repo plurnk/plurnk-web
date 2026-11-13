@@ -159,10 +159,10 @@ export default async function verifyCommands(t) {
                     assert.equal(await command("/model"), true);
                     assert.match(await rows.last().textContent(), /<script>/u);
                     assert.equal(await rows.locator("script").count(), 0, "daemon strings remain literal text");
-                    result = { definitions: [{ alias: `mcp-${source}`, state: "active" }] };
+                    result = { definitions: [{ alias: `mcp-${source}`, state: "active", provenance: { source: ".mcp.json" } }] };
                     assert.equal(await command("/mcp list"), true);
                     assert.equal(requests.at(-1).params.kind, "workspace.mcp.list");
-                    assert.match(await rows.last().locator("pre").textContent(), /mcp-<script>/u);
+                    assert.match(await rows.last().locator("pre").textContent(), /mcp-<script>[\s\S]* {2}active {2}source=\.mcp\.json/u);
                     assert.equal(await rows.locator("script").count(), 0);
                     result = { definitions: [] };
                     assert.equal(await command("/skills list"), true);
@@ -176,11 +176,59 @@ export default async function verifyCommands(t) {
                     assert.equal(await command("/personas list"), true);
                     assert.equal(requests.at(-1).params.kind, "workspace.personas.list");
                     assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "personas: none");
-                    result = { definitions: [{ alias: "API_TOKEN", state: "active", definition: { value: "top-secret-value" } }] };
+                    result = {
+                        definitions: [
+                            { alias: "API_TOKEN", origin: "session", state: "active", definition: { value: "top-secret-value" } },
+                            { alias: "WS_TOKEN", origin: "workspace", state: "disabled", provenance: { source: ".env" }, definition: { value: "ws-secret" } },
+                            { alias: "SVC_TOKEN", origin: "service", state: "active", definition: { value: "svc-secret" } },
+                        ],
+                    };
                     assert.equal(await command("/env list"), true);
                     assert.equal(requests.at(-1).params.kind, "session.env.list");
-                    assert.equal(await rows.last().locator("pre").textContent(), "API_TOKEN  active");
-                    assert.doesNotMatch(await rows.last().textContent(), /top-secret-value/u);
+                    const envCard = rows.last();
+                    const envRows = envCard.locator("[data-env-panel] tbody tr");
+                    assert.equal(await envRows.count(), 3);
+                    assert.equal(await envRows.nth(0).locator('[data-text="env-alias"]').textContent(), "API_TOKEN");
+                    assert.equal(await envRows.nth(0).locator('[data-text="env-origin"]').textContent(), "session");
+                    assert.equal(await envRows.nth(0).locator('[data-text="env-status"]').textContent(), "active");
+                    assert.equal(await envRows.nth(0).getByRole("button", { name: "Disable", exact: true }).isVisible(), true);
+                    assert.equal(await envRows.nth(0).getByRole("button", { name: "Enable", exact: true, includeHidden: true }).isVisible(), false);
+                    assert.equal(await envRows.nth(0).getByRole("button", { name: "Unset", exact: true }).isVisible(), true);
+                    assert.equal(await envRows.nth(1).locator('[data-text="env-status"]').textContent(), "disabled (.env)");
+                    assert.equal(await envRows.nth(1).getByRole("button", { name: "Enable", exact: true }).isVisible(), true);
+                    assert.equal(await envRows.nth(2).getByRole("button", { name: "Unset", exact: true, includeHidden: true }).isVisible(), false, "service variables cannot be unset");
+                    assert.doesNotMatch(await envCard.textContent(), /top-secret-value|ws-secret|svc-secret/u);
+                    await envCard.getByRole("combobox", { name: "Variable scope", exact: true }).selectOption("workspace");
+                    await envCard.getByRole("textbox", { name: "Variable name", exact: true }).fill("NEW_FLAG");
+                    await envCard.getByLabel("Variable value", { exact: true }).fill("inline-secret-value");
+                    result = { definitions: [{ alias: "NEW_FLAG", origin: "workspace", state: "active", definition: { value: "inline-secret-value" } }] };
+                    await envCard.getByRole("button", { name: "Set", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector("#session-command-results > ul > li:last-child article")?.getAttribute("data-command-state") === "done"
+                        && document.querySelector("#session-command-results > ul > li:last-child [data-text='command-message']")?.textContent === "NEW_FLAG  active");
+                    assert.deepEqual(requests.slice(-2).map((r) => [r.params.kind, r.params.params]), [
+                        ["workspace.env.replace", { alias: "NEW_FLAG", value: "inline-secret-value" }],
+                        ["session.env.list", {}],
+                    ]);
+                    assert.equal(await envCard.getByRole("textbox", { name: "Variable name", exact: true }).inputValue(), "");
+                    assert.equal(await envCard.getByLabel("Variable value", { exact: true }).inputValue(), "");
+                    assert.doesNotMatch(await envCard.textContent(), /inline-secret-value/u);
+                    result = { problem: { type: "https://problems.plurnk.xyz/env/alias-invalid", title: "Bad Request", status: 400, detail: "Alias '123' is invalid.", recovery: "Start with an uppercase letter." } };
+                    await envCard.getByRole("textbox", { name: "Variable name", exact: true }).fill("123");
+                    await envCard.getByLabel("Variable value", { exact: true }).fill("kept-on-error");
+                    await envCard.getByRole("button", { name: "Set", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector("#session-command-results > ul > li:last-child article")?.getAttribute("data-command-state") === "error");
+                    assert.equal(await envCard.locator("[data-text=command-message]").textContent(), "Alias '123' is invalid.");
+                    assert.equal(await envCard.locator("[data-text=command-recovery]").textContent(), "Start with an uppercase letter.");
+                    assert.equal(await envCard.getByRole("textbox", { name: "Variable name", exact: true }).inputValue(), "123", "refusal preserves unsent variable input");
+                    assert.equal(await envCard.getByLabel("Variable value", { exact: true }).inputValue(), "kept-on-error");
+                    await envCard.getByLabel("Variable value", { exact: true }).fill("");
+                    result = { definitions: [] };
+                    await envRows.nth(0).getByRole("button", { name: "Unset", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector("#session-command-results > ul > li:last-child article")?.getAttribute("data-command-state") === "done");
+                    assert.deepEqual(requests.slice(-2).map((r) => [r.params.kind, r.params.params]), [
+                        ["workspace.env.remove", { alias: "NEW_FLAG" }],
+                        ["session.env.list", {}],
+                    ]);
                     catalog = {
                         aliases: [{ alias: "local", provider: "fixture", model: "small", active: true }],
                         page: { items: [{ selector: "fixture/small", provider: "fixture", providerName: "Fixture",

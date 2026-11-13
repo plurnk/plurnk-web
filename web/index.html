@@ -255,6 +255,50 @@
             <dt data-i18n="capability-effective">Effective</dt><dd><pre><code data-capability="effective"></code></pre></dd>
         </dl>
     </template>
+    <template id="command-env">
+        <section aria-label="Environment variables" data-env-panel data-env-count="0">
+            <figure>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="env-variable">Variable</th>
+                        <th scope="col" data-i18n="env-scope">Scope</th>
+                        <th scope="col" data-i18n="env-state">State</th>
+                        <th scope="col" data-i18n="env-actions">Actions</th>
+                    </tr></thead>
+                    <tbody></tbody>
+                </table>
+            </figure>
+            <form data-env-set-form>
+                <fieldset data-bind="disabled:env-busy">
+                    <select name="scope" aria-label="Variable scope">
+                        <option value="session" data-i18n="env-scope-session">Session</option>
+                        <option value="workspace" data-i18n="env-scope-workspace">Workspace</option>
+                    </select>
+                    <input type="text" name="alias" placeholder="NAME" aria-label="Variable name" autocomplete="off" spellcheck="false" required>
+                    <input type="password" name="value" placeholder="Value" aria-label="Variable value" autocomplete="off">
+                    <button type="submit" data-i18n="env-set">Set</button>
+                </fieldset>
+            </form>
+        </section>
+    </template>
+    <template id="command-env-row">
+        <tr data-env-removable="true" data-env-enabled="true">
+            <th scope="row"><code data-text="env-alias">VARIABLE</code></th>
+            <td data-text="env-origin">session</td>
+            <td data-text="env-status">active</td>
+            <td>
+                <form data-env-row-form>
+                    <fieldset data-bind="disabled:env-busy">
+                        <input type="hidden" name="alias" data-bind="value:env-alias">
+                        <input type="hidden" name="origin" data-bind="value:env-origin">
+                        <button type="submit" name="operation" value="enable" data-env-enable data-i18n="env-enable">Enable</button>
+                        <button type="submit" name="operation" value="disable" data-env-disable data-i18n="env-disable">Disable</button>
+                        <button type="submit" name="operation" value="remove" data-env-unset data-i18n="env-unset">Unset</button>
+                    </fieldset>
+                </form>
+            </td>
+        </tr>
+    </template>
     <!-- {§web-session-approval} One explicit decision per operation, one complete resume. -->
     <template id="session-review">
         <form aria-label="Review requests" data-request-count="0">
