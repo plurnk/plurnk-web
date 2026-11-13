@@ -11,7 +11,8 @@
 
 header nav button,
 nav[aria-label="breadcrumb"] button,
-#session-status [data-status-line] button {
+#session-status [data-status-line] button,
+#session-command-results [data-dismiss-command] {
     --pico-primary-background: transparent;
     --pico-primary-border: transparent;
     --pico-primary-hover-background: transparent;

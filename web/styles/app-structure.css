@@ -213,12 +213,20 @@ table {
     margin: 0;
 }
 
-article:where(#session-connection) > header {
+article:where(#session-connection, #session-command-results article) > header {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--pico-spacing);
+}
+
+#session-command-results [data-dismiss-command] {
+    --pico-form-element-spacing-vertical: 0;
+    --pico-form-element-spacing-horizontal: 0;
+
+    inline-size: auto;
+    margin: 0;
 }
 
 #session-status [data-status-line],

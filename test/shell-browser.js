@@ -42,9 +42,9 @@ export default async function verifyShell(t) {
                     assert.ok(Math.abs(stop.y + stop.height - before.y - before.height) < 1 && Math.abs(send.y + send.height - before.y - before.height) < 1);
                     await sameHeight();
                     await draft.press("End");
-                    await draft.press("Enter");
+                    await draft.press("Shift+Enter");
                     await draft.pressSequentially("Second line");
-                    assert.equal(await draft.inputValue(), "One line\nSecond line", "Enter is native multiline editing, not Send");
+                    assert.equal(await draft.inputValue(), "One line\nSecond line", "Shift+Enter grows the multiline draft");
                     const grown = await draft.boundingBox();
                     assert.ok(grown.height > before.height, `${engine.name()}: native textarea grows with content`);
                     await sameHeight();

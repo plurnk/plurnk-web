@@ -116,7 +116,7 @@
                 <fieldset role="group" aria-label="Session actions">
                     <button type="submit" form="session-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
                     <textarea id="session-message" name="message" aria-label="Message" placeholder="Message (/help · Shift+Tab YOLO)" rows="1" required></textarea>
-                    <button type="submit" form="session-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Control+Enter" title="Send (Ctrl+Enter)"></button>
+                    <button type="submit" form="session-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Enter Control+Enter Meta+Enter" title="Send (Enter · Ctrl+Enter)"></button>
                 </fieldset>
             </form>
             <form id="session-stop"></form>
@@ -171,7 +171,7 @@
     <template id="session-command-result">
         <li>
             <article data-command-state="pending" data-bind="aria-busy:command-busy">
-                <header><code></code></header>
+                <header><code></code><button type="button" data-dismiss-command aria-label="Dismiss" title="Dismiss"></button></header>
                 <p role="status" data-text="command-message">Running…</p>
                 <div data-command-output></div>
                 <p data-text="command-recovery"></p>
@@ -194,6 +194,16 @@
             <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle automatic approval on this page.</span></li>
             <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this session's active work.</span></li>
         </ul>
+    </template>
+    <template id="command-shortcuts">
+        <dl aria-label="Keyboard shortcuts">
+            <dt><kbd>Enter</kbd> · <kbd><span data-text="shortcut-mod">Ctrl</span>+Enter</kbd></dt><dd data-i18n="shortcut-send">Send message (touch keyboards keep Enter as a newline).</dd>
+            <dt><kbd>Shift+Enter</kbd> · <kbd>Ctrl+J</kbd></dt><dd data-i18n="shortcut-newline">Insert a newline in the message field.</dd>
+            <dt><kbd>Shift+Tab</kbd></dt><dd data-i18n="shortcut-yolo">Toggle automatic approval (YOLO) on this page.</dd>
+            <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open selector or command results, or request Stop.</dd>
+            <dt><kbd>/</kbd> · <kbd>?</kbd></dt><dd data-i18n="shortcut-focus-help">Focus the message field or open this command and shortcut reference.</dd>
+            <dt><kbd>Y</kbd> / <kbd>N</kbd> (<kbd>A</kbd> / <kbd>R</kbd>)</dt><dd data-i18n="shortcut-review">Select Accept or Reject on a pending proposal; confirm with Enter.</dd>
+        </dl>
     </template>
     <template id="command-models">
         <section aria-label="Available models">

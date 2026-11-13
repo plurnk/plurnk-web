@@ -81,7 +81,7 @@ export async function closeSharedDaemons() {
 
 after(closeSharedDaemons);
 
-export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser" } = {}) {
+export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser", contextOptions = {} } = {}) {
     const shared = await acquireSharedDaemon(withDaemon, authenticated, env);
     const { model, secret, base } = shared;
     for (const engine of [chromium]) {
@@ -99,7 +99,10 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
         const hostProxy = hostname === "127.0.0.1" ? null : await disconnectProxy(base);
         const browser = await launchBrowser(engine);
         try {
-            const context = await browser.newContext(hostProxy ? { proxy: { server: hostProxy.url } } : undefined);
+            const context = await browser.newContext({
+                ...contextOptions,
+                ...(hostProxy ? { proxy: { server: hostProxy.url } } : {}),
+            });
             const checkBrowser = browserDiagnostics(context);
             const page = await context.newPage();
             const address = new URL(`/~/${workspace}@user/`, base);
@@ -135,9 +138,11 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
 
 // {§web-session-input} Exercise the shipped controls against the real daemon, not an injected SDK.
 export default async function verifySessionInput({ t, withDaemon }) {
-    await t.test("{§web-session-input} Ctrl+Enter uses native submission without bypassing editing or availability", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-input} Enter, Ctrl+Enter, and Meta+Enter use native submission while Shift+Enter and Ctrl+J edit multiline drafts", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const field = page.getByRole("textbox", { name: "Message", exact: true });
-        assert.equal(await page.getByRole("button", { name: "Send", exact: true }).getAttribute("aria-keyshortcuts"), "Control+Enter");
+        const send = page.getByRole("button", { name: "Send", exact: true });
+        assert.equal(await send.getAttribute("aria-keyshortcuts"), "Enter Control+Enter Meta+Enter");
+        assert.equal(await send.getAttribute("title"), "Send (Enter · Ctrl+Enter)");
         const inputs = [];
         page.on("request", (request) => {
             const body = request.postDataJSON();
@@ -145,7 +150,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
                 inputs.push(body);
             }
         });
-        await field.press("Control+Enter");
+        await field.press("Enter");
         assert.equal(await field.evaluate((element) => element.validity.valueMissing), true);
         await field.fill(" \n ");
         await field.press("Control+Enter");
@@ -154,32 +159,36 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(inputs.length, 0);
         await field.fill("Lifecycle fixture: keyboard-input.");
         await field.press("End");
-        await field.press("Enter");
+        await field.press("Shift+Enter");
         await field.pressSequentially("Keep this second line.");
+        await field.press("Control+j");
+        await field.pressSequentially("And Ctrl+J third line.");
         const body = await field.inputValue();
-        assert.equal(body, "Lifecycle fixture: keyboard-input.\nKeep this second line.");
-        for (const flags of [{ isComposing: true }, { repeat: true }, { altKey: true }]) {
-            await field.dispatchEvent("keydown", { key: "Enter", ctrlKey: true, ...flags });
+        assert.equal(body, "Lifecycle fixture: keyboard-input.\nKeep this second line.\nAnd Ctrl+J third line.");
+        for (const flags of [{ isComposing: true }, { repeat: true }, { altKey: true }, { ctrlKey: true, metaKey: true }]) {
+            await field.dispatchEvent("keydown", { key: "Enter", ...flags });
         }
         assert.equal(await field.inputValue(), body);
         assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
         assert.equal(inputs.length, 0, "editing and composition do not submit");
-        await field.press("Control+Enter");
+        await field.press("Enter");
         await page.getByText("Completed keyboard-input.", { exact: true }).waitFor({ timeout: 5000 });
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
         assert.equal(inputs.length, 1);
         assert.equal(inputs[0].params.prompt[0].text, body);
         assert.equal(await field.inputValue(), "", "daemon admission clears the shortcut-submitted draft");
         await field.fill("/help");
-        await field.press("Control+Enter");
+        await field.press("Meta+Enter");
         await page.locator('#session-command-results > ul > li header code').filter({ hasText: "/help" }).waitFor();
-        assert.equal(inputs.length, 1, "commands keep the same non-model path");
+        assert.equal(inputs.length, 1, "Meta+Enter routes commands through the same non-model path");
         await page.route("**/acp", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
         await field.fill("Retain this draft while disconnected.");
-        assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isDisabled(), true);
-        await field.press("Control+Enter");
+        assert.equal(await send.isDisabled(), true);
+        for (const chord of ["Enter", "Control+Enter", "Meta+Enter"]) {
+            await field.press(chord);
+        }
         assert.equal(await field.inputValue(), "Retain this draft while disconnected.");
         assert.equal(await page.locator('[aria-label="Message feedback"] [role="status"]').isVisible(), false);
         assert.equal(inputs.length, 1, "keyboard submission cannot bypass unavailable delivery");
@@ -187,6 +196,35 @@ export default async function verifySessionInput({ t, withDaemon }) {
         checkBrowser([
             httpFailure("/acp", 503),
         ]);
+    }));
+    await t.test("{§web-session-input} Apple keycap hints and coarse-pointer virtual keyboards preserve Enter newline while keeping Cmd/Ctrl+Enter submission", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        const field = page.getByRole("textbox", { name: "Message", exact: true });
+        const send = page.getByRole("button", { name: "Send", exact: true });
+        assert.equal(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), true);
+        assert.equal(await send.getAttribute("aria-keyshortcuts"), "Control+Enter Meta+Enter");
+        assert.equal(await send.getAttribute("title"), "Send (⌘+Enter)");
+        await field.fill("Lifecycle fixture: coarse-input.");
+        await field.press("End");
+        await field.press("Enter");
+        await field.pressSequentially("Touch second line.");
+        assert.equal(await field.inputValue(), "Lifecycle fixture: coarse-input.\nTouch second line.", "coarse-pointer Enter inserts a newline");
+        assert.equal(model.requests.length, 0);
+        await field.press("Meta+Enter");
+        await page.getByText("Completed coarse-input.", { exact: true }).waitFor({ timeout: 5000 });
+        assert.equal(model.requests.length, 1);
+        await page.locator("body > header > a").focus();
+        await page.keyboard.press("?");
+        const helpShortcut = page.locator('#session-command-results dl[aria-label="Keyboard shortcuts"]');
+        await helpShortcut.waitFor();
+        assert.match(await helpShortcut.textContent(), /⌘\+Enter/u);
+        checkBrowser();
+    }, {
+        contextOptions: {
+            isMobile: true,
+            hasTouch: true,
+            viewport: { width: 390, height: 844 },
+            userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1",
+        },
     }));
     for (const hostname of ["127.0.0.1", "plurnk-browser.test"]) {
         await t.test(`{§web-session-input} native Send retains distinct message identities on HTTP ${hostname}`, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
