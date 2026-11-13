@@ -8,6 +8,7 @@ import disconnectProxy from "./disconnect-proxy.js";
 import { launchBrowser } from "./engines.js";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
+import { PNG_1X1_BASE64 } from "./inline-images-browser.js";
 
 /**
  * @typedef {object} SharedDaemonEntry
@@ -869,4 +870,65 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
         checkBrowser();
     }));
+
+    await t.test("{§web-inline-images} {§web-session-input} composer image attachments publish through the authenticated daemon and render inline in user prompts and read disclosures", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
+        const attachButton = page.getByRole("button", { name: "Attach image", exact: true });
+        const field = page.getByRole("textbox", { name: "Message", exact: true });
+        const send = page.getByRole("button", { name: "Send", exact: true });
+        assert.equal(await attachButton.isVisible(), true, "live plurnk-acp initialize advertises prompt.image");
+
+        const entryTargets = [];
+        page.on("request", (req) => {
+            const url = new URL(req.url());
+            if (/^\/acp\/\d+\/\d+\/entry$/u.test(url.pathname)) {
+                entryTargets.push({
+                    target: url.searchParams.get("target"),
+                    hasBearer: /^Bearer \S+$/u.test(req.headers().authorization ?? ""),
+                });
+            }
+        });
+
+        // 1. Image-only prompt submission through real authenticated daemon.
+        await page.locator("input[data-attach-input]").setInputFiles([
+            { name: "pixel-only.png", mimeType: "image/png", buffer: Buffer.from(PNG_1X1_BASE64, "base64") },
+        ]);
+        await page.waitForFunction(() => document.querySelectorAll("[data-compose-attachments] > li").length === 1);
+        await send.click();
+        await page.getByText("Completed image-only.", { exact: true }).waitFor({ timeout: 5000 });
+        assert.equal(await page.locator("[data-compose-attachments] > li").count(), 0);
+        await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel-only.png"]').waitFor();
+        assert.equal(await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel-only.png"]').evaluate((img) => img.naturalWidth), 1);
+
+        // 2. Text + image prompt where model also executes plurnk.read on the published session:// attachment.
+        entryTargets.length = 0;
+        await page.locator("input[data-attach-input]").setInputFiles([
+            { name: "pixel.png", mimeType: "image/png", buffer: Buffer.from(PNG_1X1_BASE64, "base64") },
+        ]);
+        await page.waitForFunction(() => document.querySelectorAll("[data-compose-attachments] > li").length === 1);
+        await field.fill("Lifecycle fixture: image-upload.");
+        await send.click();
+        await page.getByText("Completed image-upload.", { exact: true }).waitFor({ timeout: 5000 });
+        await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel.png"]').waitFor();
+        assert.equal(entryTargets.length, 1, "collapsed read operation does not duplicate user attachment fetch before disclosure");
+        assert.equal(entryTargets[0].hasBearer, true);
+        assert.match(entryTargets[0].target ?? "", /^session:\/\/user\/attachments\/[0-9a-f]+\/\S*pixel\.png$/u);
+
+        const loop2Ops = page.locator('[data-loop-seq="2"] [data-operations] > details');
+        assert.equal(await loop2Ops.evaluate((el) => el.open), false);
+        await loop2Ops.locator(":scope > summary").click();
+        const readCall = loop2Ops.locator('[data-plurnk-type="read"]');
+        assert.equal(await readCall.locator("details").evaluate((el) => el.open), false);
+        await readCall.locator("summary").click();
+        await readCall.locator('figure[data-inline-image] img[alt="pixel.png"]').waitFor();
+        assert.equal(await readCall.locator('figure[data-inline-image] img[alt="pixel.png"]').evaluate((img) => img.naturalWidth), 1);
+        assert.equal(entryTargets.length, 2, "opening read disclosure fetches image entry once");
+
+        // 3. Reload replays both published user attachment images and collapsed read disclosure from the daemon.
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+        await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel.png"]').waitFor();
+        assert.equal(await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel-only.png"]').evaluate((img) => img.naturalWidth), 1);
+        assert.equal(await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel.png"]').evaluate((img) => img.naturalWidth), 1);
+        checkBrowser();
+    }, { authenticated: true }));
 }

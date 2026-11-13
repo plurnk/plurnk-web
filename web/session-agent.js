@@ -66,8 +66,16 @@ export { PROTOCOL_VERSION, SessionTranslator, Validator, client, createHttpStrea
 
 /**
  * @typedef {{
+ *   name: string,
+ *   mimeType: string,
+ *   data: string,
+ * }} PromptImageAttachment
+ */
+
+/**
+ * @typedef {{
  *   abortController?: AbortController,
- *   message?: { id: string, role: "user", content: string },
+ *   message?: { id: string, role: "user", content: string, attachments?: readonly PromptImageAttachment[] },
  *   resolutions?: readonly GateResolution[],
  *   action?: Record<string, unknown>,
  *   workspace?: string,
@@ -112,7 +120,7 @@ export default class SessionAgent {
     #streamProblem = undefined;
     /** @type {{ messageId: string, body: Record<string, unknown> } | undefined} */
     #pendingLiveThought = undefined;
-    /** @type {{ id: string, content: string } | undefined} */
+    /** @type {{ id: string, content: string, attachments?: readonly PromptImageAttachment[] } | undefined} */
     #submittedPrompt = undefined;
     /** @type {boolean} */
     #needsConnectionSse = false;
@@ -141,6 +149,8 @@ export default class SessionAgent {
         this.abortController = undefined;
         /** @type {boolean} */
         this.isRunning = false;
+        /** @type {boolean} */
+        this.promptImageSupported = false;
         this.#fetch = config.fetch ?? ((url, init) => globalThis.fetch(url, init));
     }
 
@@ -380,11 +390,16 @@ export default class SessionAgent {
         const conn = app.connect(stream);
         this.#conn = conn;
         try {
-            await conn.agent.request(methods.agent.initialize, {
+            const initRes = /** @type {unknown} */ (await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
                 info: { name: "@plurnk/plurnk-web", version: "2.1.0" },
                 capabilities: {},
-            });
+            }));
+            const initRecord = isRecord(initRes) ? initRes : {};
+            const capabilities = isRecord(initRecord.capabilities) ? initRecord.capabilities : {};
+            const sessionCaps = isRecord(capabilities.session) ? capabilities.session : {};
+            const promptCaps = isRecord(sessionCaps.prompt) ? sessionCaps.prompt : {};
+            this.promptImageSupported = isRecord(promptCaps.image) || promptCaps.image === true;
         } catch (error) {
             const streamProblem = /** @type {SessionErrorPayload | undefined} */ (this.#streamProblem);
             this.close();
@@ -682,7 +697,7 @@ export default class SessionAgent {
     }
 
     /**
-     * @param {{ id: string, role: "user", content: string }} message
+     * @param {{ id: string, role: "user", content: string, attachments?: readonly PromptImageAttachment[] }} message
      * @param {SessionRunOptions} options
      * @param {SessionSubscriber} subscriber
      */
@@ -694,7 +709,11 @@ export default class SessionAgent {
         this.#bufferingReplay = false;
         this.#replayUpdates = [];
         this.#pendingLiveThought = undefined;
-        this.#submittedPrompt = { id: message.id, content: message.content };
+        this.#submittedPrompt = {
+            id: message.id,
+            content: message.content,
+            ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+        };
         this.#queuedLiveOutcome = undefined;
         this.#gates.heldIds = undefined;
         this.#gates.retainActive();
@@ -704,10 +723,23 @@ export default class SessionAgent {
         try {
             this.#needsConnectionSse = false;
             const conn = await this.#ensureConnection(signal);
+            /** @type {import("@agentclientprotocol/sdk/experimental/v2/unstable").ContentBlock[]} */
+            const promptBlocks = [];
+            if (message.content.length > 0 || !message.attachments?.length) {
+                promptBlocks.push({ type: /** @type {const} */ ("text"), text: message.content });
+            }
+            for (const attachment of message.attachments ?? []) {
+                promptBlocks.push({
+                    type: /** @type {const} */ ("image"),
+                    mimeType: attachment.mimeType,
+                    data: attachment.data,
+                    uri: `file:///${encodeURIComponent(attachment.name)}`,
+                });
+            }
             const params = {
                 sessionId: this.sessionId ?? "user",
                 messageId: message.id,
-                prompt: [{ type: /** @type {const} */ ("text"), text: message.content }],
+                prompt: promptBlocks,
                 _meta: {
                     plurnk: {
                         messageId: message.id,
@@ -1302,19 +1334,36 @@ export default class SessionAgent {
                     const submitted = this.#submittedPrompt;
                     const inboxItem = plurnk.status.inbox.find((item) => isRecord(item) && item.id === submitted.id);
                     if (isRecord(inboxItem) && !this.messages.some((m) => m.id === submitted.id && m.role === "user")) {
-                        this.messages = SessionTranslator.projectMessages([{
-                            sessionUpdate: "user_message_chunk",
-                            messageId: submitted.id,
-                            content: { type: "text", text: submitted.content },
-                            _meta: {
-                                plurnk: {
-                                    loopId: inboxItem.loopId,
-                                    lifecycle: inboxItem.lifecycle,
-                                    published: false,
-                                    ...(isRecord(inboxItem.body) ? { body: structuredClone(inboxItem.body) } : {}),
+                        const unobservedPlurnk = {
+                            loopId: inboxItem.loopId,
+                            lifecycle: inboxItem.lifecycle,
+                            published: false,
+                            ...(isRecord(inboxItem.body) ? { body: structuredClone(inboxItem.body) } : {}),
+                        };
+                        /** @type {AcpSessionUpdatePayload[]} */
+                        const unobservedUpdates = [];
+                        if (submitted.content.length > 0 || !submitted.attachments?.length) {
+                            unobservedUpdates.push({
+                                sessionUpdate: "user_message_chunk",
+                                messageId: submitted.id,
+                                content: { type: "text", text: submitted.content },
+                                _meta: { plurnk: unobservedPlurnk },
+                            });
+                        }
+                        for (const attachment of submitted.attachments ?? []) {
+                            unobservedUpdates.push({
+                                sessionUpdate: "user_message_chunk",
+                                messageId: submitted.id,
+                                content: {
+                                    type: "image",
+                                    mimeType: attachment.mimeType,
+                                    data: attachment.data,
+                                    uri: `file:///${encodeURIComponent(attachment.name)}`,
                                 },
-                            },
-                        }], this.messages, this.#ambientCallIds);
+                                _meta: { plurnk: unobservedPlurnk },
+                            });
+                        }
+                        this.messages = SessionTranslator.projectMessages(unobservedUpdates, this.messages, this.#ambientCallIds);
                         if (!this.#bufferingReplay) {
                             await subscriber.onMessagesChanged?.({ messages: this.messages });
                         }

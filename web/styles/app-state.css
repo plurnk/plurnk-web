@@ -63,9 +63,24 @@ body:not(:has(:is(#session-status, #main):is([data-connection="disconnected"], [
 
 button[form="session-compose"]::before { content: "▶️" / ""; }
 button[form="session-stop"]::before { content: "⏹️" / ""; }
+button[data-attach-image]::before { content: "📎" / ""; }
+#session-compose [data-remove-attachment]::before { content: "✕" / ""; }
 
-[aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"] {
+[aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"],
+[aria-label="Session controls"]:not([data-prompt-image="true"]) button[data-attach-image],
+[data-compose-attachments]:empty {
     display: none;
+}
+
+[aria-label="Session controls"]:not([data-live-work])[data-prompt-image="true"] button[data-attach-image] {
+    margin-inline-start: 0;
+    border-start-start-radius: var(--pico-border-radius);
+    border-end-start-radius: var(--pico-border-radius);
+}
+
+[aria-label="Session controls"]:not([data-live-work], [data-prompt-image="true"]) #session-message {
+    border-start-start-radius: var(--pico-border-radius);
+    border-end-start-radius: var(--pico-border-radius);
 }
 
 [aria-label="Message feedback"][data-command-error=""] > article,

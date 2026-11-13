@@ -393,6 +393,39 @@ table {
     padding-inline: var(--pico-form-element-spacing-vertical);
 }
 
+#session-compose [data-compose-attachments] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--pico-spacing) * 0.4);
+    margin: 0 0 calc(var(--pico-spacing) * 0.4);
+    padding: 0;
+}
+
+#session-compose [data-attachment-item] {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4ch;
+    list-style: none;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    margin: 0;
+    padding: calc(var(--pico-spacing) * 0.2) calc(var(--pico-spacing) * 0.5);
+    border: var(--pico-border-width) solid var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+}
+
+#session-compose [data-remove-attachment] {
+    --pico-form-element-spacing-vertical: 0;
+    --pico-form-element-spacing-horizontal: 0;
+
+    inline-size: auto;
+    margin: 0;
+    padding: 0 0.2ch;
+    border-width: 0;
+    line-height: inherit;
+}
+
 #session-reconnect,
 #session-reconnect > button {
     inline-size: auto;
@@ -495,6 +528,8 @@ article:where(#session-connection, #session-command-results article) > header {
 #main li > article > :last-child:not(header),
 #main li > article > details,
 #main li > article > details > :last-child,
+#main li > article > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
+#main li > article > details > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
 #session-conversation :is([data-loop-seq], [data-operations]) > details > ul,
 #session-conversation [data-prompt-replies] > li:last-child > article,
 [data-session-reply] > :last-child {
@@ -637,6 +672,19 @@ article:where(#session-connection, #session-command-results article) > header {
 /* {§web-diagram-content} Preserve readable intrinsic labels; wide images scroll locally. */
 :is(#session-conversation, [data-session-reply]) [data-diagram-viewport] > img {
     max-inline-size: none;
+}
+
+/* {§web-inline-images} Verified raster attachments scale within the card width and bounded height. */
+:is(#session-conversation, [data-session-reply]) [data-inline-image] {
+    margin-block: 0 var(--pico-spacing);
+}
+
+:is(#session-conversation, [data-session-reply]) [data-inline-image-viewport] > img {
+    display: block;
+    max-inline-size: 100%;
+    max-block-size: 60dvh;
+    block-size: auto;
+    border-radius: var(--pico-border-radius);
 }
 
 /* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */

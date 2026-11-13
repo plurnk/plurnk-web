@@ -1,6 +1,13 @@
 import { $, the } from "on_the_money";
 import markdown from "./markdown.js";
 import bodyReferences from "./body-references.js";
+import {
+    SAFE_RASTER_IMAGE_MIMES,
+    entryUrlForTarget,
+    labelFromUri,
+    mountRasterImage,
+    rasterMimeForFilename,
+} from "./inline-images.js";
 import reasoningCoordinate from "./reasoning-coordinate.js";
 import card, { nameCard } from "./card.js";
 import operationSummary, { GLYPH_OPS, argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
@@ -129,6 +136,172 @@ function tallyBucket(item) {
     };
 }
 
+const USER_ATTACHMENT_LINE = /^<(session:\/\/[^>\s]+\/attachments\/[0-9a-f]+\/([^>/\s]+))>$/iu;
+const TOOL_CHANNEL_IMAGE_LINE = /^<((?:session|mcp|file):\/\/[^>\s]+)>\s+—\s+(image\/(?:png|jpeg|gif|webp))$/iu;
+
+/**
+ * Expand daemon-published raster attachment `<session://.../attachments/...>` lines on user messages into inline image references.
+ * @param {string | readonly import("./session-agent.js").MessagePart[] | undefined} content
+ * @param {unknown} baseEntryUrl
+ * @returns {string | readonly import("./session-agent.js").MessagePart[] | undefined}
+ */
+function expandUserAttachments(content, baseEntryUrl) {
+    if (typeof content !== "string" || typeof baseEntryUrl !== "string") return content;
+    const lines = content.split("\n");
+    /** @type {import("./session-agent.js").MessagePart[]} */
+    const parts = [];
+    /** @type {string[]} */
+    let textBuffer = [];
+    let matchedAny = false;
+    const flushText = () => {
+        const joined = textBuffer.join("\n").trim();
+        if (joined) parts.push({ type: "text", text: joined });
+        textBuffer = [];
+    };
+    for (const line of lines) {
+        const match = USER_ATTACHMENT_LINE.exec(line.trim());
+        if (match) {
+            const sessionUri = match[1];
+            const label = labelFromUri(sessionUri);
+            const mimeType = rasterMimeForFilename(label);
+            const entryUrl = mimeType ? entryUrlForTarget(baseEntryUrl, sessionUri) : null;
+            if (mimeType && entryUrl) {
+                matchedAny = true;
+                flushText();
+                parts.push({
+                    type: "resource_link",
+                    uri: entryUrl,
+                    mimeType,
+                    name: label,
+                });
+                continue;
+            }
+        }
+        textBuffer.push(line);
+    }
+    if (!matchedAny) return content;
+    flushText();
+    return parts;
+}
+
+/**
+ * Extract verified raster image parts from tool receipts, MCP image channel lines, or successful raster `read` receipts.
+ * @param {{
+ *   rawContent: unknown,
+ *   callContent: readonly Record<string, unknown>[] | undefined,
+ *   op: unknown,
+ *   receipt: Record<string, unknown> | null,
+ *   facts: Record<string, unknown> | null,
+ *   answeredFacts: Record<string, unknown> | null,
+ *   call: ToolCall | undefined,
+ *   args: Record<string, unknown> | null,
+ *   error: string,
+ * }} input
+ * @returns {import("./session-agent.js").MessagePart[]}
+ */
+function extractToolImageParts({ rawContent, callContent, op, receipt, facts, answeredFacts, call, args, error }) {
+    const baseEntryUrl = record(facts?.body)?.url ?? record(answeredFacts?.body)?.url;
+    /** @type {import("./session-agent.js").MessagePart[]} */
+    const parts = [];
+    const seen = new Set();
+    const pushImage = (/** @type {string} */ mimeType, /** @type {string} */ data, /** @type {string | undefined} */ name) => {
+        const key = `img:${mimeType}:${data.slice(0, 64)}:${data.length}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        parts.push({ type: "image", mimeType, data, ...(name ? { name } : {}) });
+    };
+    const pushLink = (/** @type {string} */ uri, /** @type {string} */ mimeType, /** @type {string | undefined} */ name) => {
+        const key = `link:${uri}:${mimeType}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        parts.push({ type: "resource_link", uri, mimeType, ...(name ? { name } : {}) });
+    };
+
+    const scanChannelLines = (/** @type {string} */ sourceText) => {
+        if (typeof baseEntryUrl !== "string") return;
+        for (const line of sourceText.split("\n")) {
+            const match = TOOL_CHANNEL_IMAGE_LINE.exec(line.trim());
+            if (!match) continue;
+            const targetUri = match[1];
+            const mimeType = match[2].toLowerCase();
+            const entryUrl = entryUrlForTarget(baseEntryUrl, targetUri);
+            if (entryUrl) pushLink(entryUrl, mimeType, labelFromUri(targetUri));
+        }
+    };
+
+    if (Array.isArray(callContent)) {
+        for (const block of callContent) {
+            const inner = record(block)?.type === "content" ? record(block.content) : null;
+            if (
+                inner?.type === "image"
+                && typeof inner.mimeType === "string"
+                && SAFE_RASTER_IMAGE_MIMES.has(inner.mimeType.toLowerCase())
+                && typeof inner.data === "string"
+                && inner.data.length > 0
+            ) {
+                const name = typeof inner.uri === "string" && inner.uri.length > 0
+                    ? inner.uri
+                    : typeof inner.name === "string" && inner.name.length > 0
+                        ? inner.name
+                        : undefined;
+                pushImage(inner.mimeType.toLowerCase(), inner.data, name);
+            } else if (inner?.type === "text" && typeof inner.text === "string") {
+                scanChannelLines(inner.text);
+            }
+        }
+    }
+
+    if (typeof receipt?.content === "string") {
+        scanChannelLines(receipt.content);
+    }
+
+    if (Array.isArray(rawContent)) {
+        for (const part of rawContent) {
+            const rec = record(part);
+            if (
+                rec?.type === "image"
+                && typeof rec.mimeType === "string"
+                && SAFE_RASTER_IMAGE_MIMES.has(rec.mimeType.toLowerCase())
+                && typeof rec.data === "string"
+                && rec.data.length > 0
+            ) {
+                pushImage(rec.mimeType.toLowerCase(), rec.data, typeof rec.name === "string" ? rec.name : undefined);
+            }
+        }
+    } else if (typeof rawContent === "string") {
+        scanChannelLines(rawContent);
+    }
+
+    if (op === "read" && !error && typeof baseEntryUrl === "string") {
+        const statusCode = typeof receipt?.status === "number"
+            ? receipt.status
+            : typeof facts?.status === "number"
+                ? facts.status
+                : 200;
+        const imageMeta = record(receipt?.image);
+        const imageMime = typeof imageMeta?.mimetype === "string" ? imageMeta.mimetype.toLowerCase() : "";
+        if (statusCode < 400 && SAFE_RASTER_IMAGE_MIMES.has(imageMime)) {
+            const candidates = [
+                receipt?.target,
+                call?.locations?.[0]?.path,
+                facts?.target,
+                facts?.address,
+                args?.path,
+                record(args?.target)?.raw,
+            ];
+            const targetUri = candidates.find(
+                (/** @type {unknown} */ value) => typeof value === "string" && value.trim().length > 0 && !/^log:\/\//iu.test(value.trim()),
+            );
+            if (typeof targetUri === "string") {
+                const entryUrl = entryUrlForTarget(baseEntryUrl, targetUri.trim());
+                if (entryUrl) pushLink(entryUrl, imageMime, labelFromUri(targetUri.trim()));
+            }
+        }
+    }
+
+    return parts;
+}
+
 /** @param {Element} parent @param {Element} child @param {Element | null} previous @param {(node: Element) => boolean} [skip] */
 function placeChild(parent, child, previous, skip) {
     /** @type {Element | null} */
@@ -138,7 +311,7 @@ function placeChild(parent, child, previous, skip) {
     return child;
 }
 
-/** {§web-session-conversation} DOM identities are presentation state, never a second conversation.
+/** {§web-session-conversation} {§web-inline-images} DOM identities are presentation state, never a second conversation.
  * @param {HTMLElement} root @param {(address: string) => Promise<string>} readBody
  */
 export default function conversation(root, readBody) {
@@ -155,6 +328,24 @@ export default function conversation(root, readBody) {
         else if (source) {
             $.clone(outlet, "#conversation-literal").textContent = source;
         }
+    }
+
+    /** @param {Element} outlet @param {string} encoded @param {string | undefined} label */
+    function directImage(outlet, encoded, label) {
+        const holder = $.clone(outlet, "#conversation-image-reference");
+        if (label) holder.setAttribute("aria-label", label);
+        the(holder, { bodyState: "loading", bodyPending: "true" });
+        void mountRasterImage(holder, encoded, label).then(
+            () => {
+                if (holder.isConnected) the(holder, { bodyState: "loaded", bodyPending: null });
+            },
+            (error) => {
+                if (!holder.isConnected) return;
+                holder.textContent = error instanceof Error ? error.message : String(error);
+                holder.setAttribute("role", "alert");
+                the(holder, { bodyState: "error", bodyPending: null });
+            },
+        );
     }
 
     /** @param {Element | null} outlet @param {unknown} content @param {boolean} rich @param {string} scope */
@@ -174,6 +365,15 @@ export default function conversation(root, readBody) {
             for (const [index, part] of content.entries()) {
                 if (part?.type === "text" && typeof part.text === "string") text(outlet, part.text, rich, `${scope}-part-${index}`);
                 else if (part?.type === "resource_link" && typeof part.uri === "string") reference.append(outlet, part);
+                else if (
+                    part?.type === "image"
+                    && typeof part.mimeType === "string"
+                    && SAFE_RASTER_IMAGE_MIMES.has(part.mimeType.toLowerCase())
+                    && typeof part.data === "string"
+                    && part.data.length > 0
+                ) {
+                    directImage(outlet, part.data, typeof part.name === "string" ? part.name : undefined);
+                }
             }
         } else if (typeof content === "string") {
             text(outlet, content, rich, scope);
@@ -186,7 +386,7 @@ export default function conversation(root, readBody) {
     function renderEntry(item, rows) {
         const {
             key, message, call, answered, operation, args,
-            facts, op, receipt, operationName, summarized, error, conversational,
+            facts, answeredFacts, op, ownResult, receipt, operationName, summarized, error, conversational,
         } = item;
         let row = rows.get(key);
         if (row && row.dataset.messageRole !== message.role) {
@@ -224,14 +424,32 @@ export default function conversation(root, readBody) {
             throw new TypeError("Reasoning body reference must supply its URL and MIME type.");
         }
         /** @type {string | readonly import("./session-agent.js").MessagePart[] | undefined} */
-        const content = call ? bodyOf(args, op) : summarized && message.role === "tool" && !isReplyOp(op) ? ""
-            : linked ? [{ type: /** @type {const} */ ("resource_link"), uri: linked.url, mimeType: linked.mimeType }] : message.content;
+        let content;
+        if (call) {
+            const authored = bodyOf(args, op);
+            const toolImages = !isReplyOp(op)
+                ? extractToolImageParts({ rawContent: ownResult?.content, callContent: call.content, op, receipt, facts, answeredFacts, call, args, error })
+                : [];
+            content = toolImages.length > 0
+                ? [...(authored ? [{ type: /** @type {const} */ ("text"), text: authored }] : []), ...toolImages]
+                : authored;
+        } else if (summarized && message.role === "tool" && !isReplyOp(op)) {
+            const toolImages = extractToolImageParts({ rawContent: message.content, callContent: undefined, op, receipt, facts, answeredFacts, call: undefined, args, error });
+            content = toolImages.length > 0 ? toolImages : "";
+        } else if (linked) {
+            content = [{ type: /** @type {const} */ ("resource_link"), uri: linked.url, mimeType: linked.mimeType }];
+        } else if (message.role === "user") {
+            content = expandUserAttachments(message.content, record(facts?.body)?.url);
+        } else {
+            content = message.content;
+        }
         const rich = call ? isReplyOp(operation?.name)
             : message.role === "tool" ? isReplyOp(facts?.op)
             : message.role !== "reasoning" && message.role !== "activity";
         const hasBody = typeof content === "string" ? Boolean(content) : Array.isArray(content) && content.some((part) =>
             part?.type === "text" && typeof part.text === "string" && Boolean(part.text)
-            || part?.type === "resource_link" && typeof part.uri === "string" && Boolean(part.uri));
+            || part?.type === "resource_link" && typeof part.uri === "string" && Boolean(part.uri)
+            || part?.type === "image" && typeof part.mimeType === "string" && SAFE_RASTER_IMAGE_MIMES.has(part.mimeType.toLowerCase()) && typeof part.data === "string" && Boolean(part.data));
         const frame = card(row, hasBody, !conversational);
         if (frame.removedDisclosure && frame.body) painted.delete(frame.body);
         body(frame.body, content, rich, call ? `call-${call.toolCallId}` : `message-${message.id}`);

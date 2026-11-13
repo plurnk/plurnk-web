@@ -17,17 +17,18 @@ import { createPassiveReconnect, isRetryableObservationFailure } from "./passive
 import stickyTail from "./sticky-tail.js";
 import math from "./math.js";
 import mermaid from "./mermaid.js";
+import { readRasterFileAttachment } from "./inline-images.js";
 
 /** @param {EventTarget | null} target */
 function isTextEntry(target) {
     if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
     if (target instanceof HTMLInputElement) {
-        return !["radio", "checkbox", "button", "submit", "reset"].includes(target.type);
+        return !["radio", "checkbox", "button", "submit", "reset", "file"].includes(target.type);
     }
     return target instanceof HTMLElement && target.isContentEditable;
 }
 
-/** @typedef {{message?: {id: string, role: "user", content: string}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
+/** @typedef {{message?: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[]}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
 
 // {§web-session-status} Repaint elapsed and wait at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
@@ -74,13 +75,20 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const review = reviewRequests(main, approval.getAttribute("aria-pressed") === "true");
     const compose = $(controls, "#session-compose");
     const stop = $(controls, "#session-stop");
+    const attachInput = $(controls, "[data-attach-input]");
+    const attachmentList = $(controls, "[data-compose-attachments]");
     const field = $(controls, "#session-message");
     const sendButton = $(controls, 'button[form="session-compose"]');
     if (!(compose instanceof HTMLFormElement) || !(stop instanceof HTMLFormElement)
+        || !($(controls, "[data-attach-image]") instanceof HTMLButtonElement)
+        || !(attachInput instanceof HTMLInputElement)
+        || !(attachmentList instanceof HTMLUListElement)
         || !(field instanceof HTMLTextAreaElement) || !(sendButton instanceof HTMLButtonElement)) {
         throw new Error("Session controls are incomplete.");
     }
     const draft = field;
+    const fileInput = attachInput;
+    const attachmentOutlet = attachmentList;
     const coarseMedia = window.matchMedia("(pointer: coarse)");
     const syncSendShortcuts = () => {
         const mod = primaryModifierLabel();
@@ -125,14 +133,17 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const agent = new SessionAgent({ url: "/acp", sessionId });
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
-    /** @type {{message: {id: string, role: "user", content: string}, source: string, retryable: boolean} | undefined} */
+    /** @type {{message: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[]}, source: string, sourceKey: string, attachmentIds: ReadonlySet<string>, retryable: boolean} | undefined} */
     let pending;
+    /** @type {{ id: string, name: string, mimeType: string, data: string, sizeLabel: string }[]} */
+    let attachments = [];
     /** @type {{controller: AbortController, done: Promise<void>} | undefined} */
     let delivery;
     /** @type {AbortController | undefined} */
     let cancellation;
     // {§web-session-input} An interrupt that has arrived and is not yet presented holds Send until its review appears.
     let arriving = false;
+    let disposed = false;
     const availableCommands = () => {
         const plurnk = /** @type {Record<string, unknown> | undefined} */ (agent.state.plurnk);
         return Array.isArray(plurnk?.availableCommands)
@@ -158,12 +169,55 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const dismissSettings = sessionSettings(main, element, action, () => resources.signal);
     const tail = stickyTail(main);
 
+    function syncAttachments() {
+        draft.required = attachments.length === 0;
+        attachmentOutlet.replaceChildren();
+        for (const item of attachments) {
+            const row = $.clone(attachmentOutlet, "#compose-attachment");
+            if (row instanceof HTMLElement) row.dataset.removeId = item.id;
+            the(row, {
+                attachmentName: item.name,
+                attachmentSize: item.sizeLabel,
+                attachmentRemove: `Remove ${item.name}`,
+            });
+        }
+    }
+
+    /** @param {readonly File[]} files */
+    async function queueAttachmentFiles(files) {
+        if (!agent.promptImageSupported) {
+            the(feedback, { messageStatus: "", commandError: "Image attachments are not supported on this session." });
+            tail.follow();
+            return;
+        }
+        /** @type {string[]} */
+        const errors = [];
+        for (const file of files) {
+            try {
+                const item = await readRasterFileAttachment(file, randomUUID);
+                if (disposed) return;
+                attachments.push(item);
+            } catch (error) {
+                errors.push(error instanceof Error ? error.message : String(error));
+            }
+        }
+        if (attachments.length > 0) draft.setCustomValidity("");
+        syncAttachments();
+        the(feedback, {
+            messageStatus: pending ? (the(feedback, "message-status") ?? "") : "",
+            commandError: errors.join(" "),
+        });
+        availability();
+        tail.follow();
+    }
+
     function availability() {
         const current = the(element, "connection");
         const live = status && ["queued", "running", "parked"].includes(status.lifecycle);
         const commandPending = the(controls, "command-pending") !== null;
         the(controls, {
             liveWork: live ? "" : null,
+            promptImage: agent.promptImageSupported ? "true" : null,
             sendUnavailable: (isCommand(draft.value, availableCommands()) ? !commandPending
                 : current === "connected" && !arriving && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
@@ -188,6 +242,10 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         if (draft.value === pending.source) {
             draft.value = "";
             writeStoredDraft("");
+        }
+        if (pending.attachmentIds.size > 0) {
+            attachments = attachments.filter((item) => !pending?.attachmentIds.has(item.id));
+            syncAttachments();
         }
         pending = undefined;
         the(feedback, { messageStatus: "", commandError: "" });
@@ -488,10 +546,68 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         event.preventDefault();
         compose.requestSubmit();
     });
+    on(compose, "click", "[data-attach-image]", () => {
+        if (the(controls, "send-unavailable") === null && agent.promptImageSupported) {
+            fileInput.click();
+        }
+    });
+    on(compose, "change", "[data-attach-input]", () => {
+        const files = Array.from(fileInput.files ?? []);
+        fileInput.value = "";
+        if (files.length > 0) void queueAttachmentFiles(files);
+    });
+    on(compose, "click", "[data-remove-attachment]", (_event, button) => {
+        const item = button.closest("[data-attachment-item]");
+        const id = item instanceof HTMLElement ? item.dataset.removeId : null;
+        if (!id) return;
+        attachments = attachments.filter((entry) => entry.id !== id);
+        syncAttachments();
+        availability();
+    });
+    on(compose, "paste", "textarea", (event) => {
+        const clipboardData = "clipboardData" in event ? /** @type {DataTransfer | null} */ (event.clipboardData) : null;
+        if (!clipboardData) return;
+        /** @type {File[]} */
+        const files = [];
+        for (const item of clipboardData.items ?? []) {
+            if (item.kind === "file" && item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file) files.push(file);
+            }
+        }
+        if (files.length === 0) {
+            for (const file of clipboardData.files ?? []) {
+                if (file.type.startsWith("image/")) files.push(file);
+            }
+        }
+        if (files.length === 0) return;
+        event.preventDefault();
+        void queueAttachmentFiles(files);
+    });
+    on(compose, "dragover", "form", (event) => {
+        const dataTransfer = "dataTransfer" in event ? /** @type {DataTransfer | null} */ (event.dataTransfer) : null;
+        if (!dataTransfer?.types?.includes("Files")) return;
+        event.preventDefault();
+        dataTransfer.dropEffect = "copy";
+    });
+    on(compose, "drop", "form", (event) => {
+        const dataTransfer = "dataTransfer" in event ? /** @type {DataTransfer | null} */ (event.dataTransfer) : null;
+        if (!dataTransfer || dataTransfer.files.length === 0) return;
+        event.preventDefault();
+        void queueAttachmentFiles(Array.from(dataTransfer.files));
+    });
     on(compose, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(controls, "send-unavailable") !== null) return;
         if (isCommand(draft.value, availableCommands())) {
+            if (attachments.length > 0) {
+                the(feedback, {
+                    messageStatus: "",
+                    commandError: "Remove queued image attachments before running a client slash command.",
+                });
+                tail.follow();
+                return;
+            }
             const text = draft.value;
             the(controls, "command-pending", "");
             availability();
@@ -508,16 +624,30 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             }
             return;
         }
-        if (!draft.value.trim()) {
+        if (!draft.value.trim() && attachments.length === 0) {
             draft.setCustomValidity("Enter a message.");
             draft.reportValidity();
             return;
         }
         const source = draft.value;
-        const expanded = expandPromptCommand(source);
-        const message = pending?.source === source ? pending.message
-            : { id: randomUUID(), role: /** @type {const} */ ("user"), content: expanded };
-        pending = { message, source, retryable: false };
+        const expanded = source.trim() ? expandPromptCommand(source) : "";
+        const sourceKey = `${source}\0${attachments.map(({ id }) => id).join(",")}`;
+        const queuedAttachments = attachments.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
+        const message = pending?.sourceKey === sourceKey
+            ? pending.message
+            : {
+                id: randomUUID(),
+                role: /** @type {const} */ ("user"),
+                content: expanded,
+                ...(queuedAttachments.length > 0 ? { attachments: queuedAttachments } : {}),
+            };
+        pending = {
+            message,
+            source,
+            sourceKey,
+            attachmentIds: new Set(attachments.map(({ id }) => id)),
+            retryable: false,
+        };
         the(feedback, { messageStatus: "Sending…", commandError: "" });
         tail.pin();
         connect({ message });
@@ -575,7 +705,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
 
     let savedScrollTop = main.scrollTop;
     let wasPinned = true;
-    let disposed = false;
 
     const offPageHide = on.target(window, "pagehide", () => {
         if (disposed) return;
@@ -625,6 +754,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         canEvict() {
             return !main.isConnected
                 && !pending
+                && attachments.length === 0
                 && !cancellation
                 && the(controls, "command-pending") === null
                 && the(element, "connection") !== "interrupted"
