@@ -9,9 +9,14 @@ await the.boot({
 
 initDialogs();
 
-const session = $("#session-status");
-if (session instanceof HTMLElement) (await import("./session.js")).default(session);
-else {
-    const overview = $("#main[data-auth]");
-    if (overview instanceof HTMLElement) (await import("./overview.js")).default(overview);
+const tabs = $("#workspace-tabs");
+if (tabs instanceof HTMLElement) {
+    await (await import("./workspace-workbench.js")).default(tabs);
+} else {
+    const session = $("#session-status");
+    if (session instanceof HTMLElement) (await import("./session.js")).default(session);
+    else {
+        const overview = $("#main[data-auth]");
+        if (overview instanceof HTMLElement) (await import("./overview.js")).default(overview);
+    }
 }

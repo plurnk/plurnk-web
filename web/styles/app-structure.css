@@ -1,5 +1,6 @@
 /* {§web-page-shell} Native documents retain readable measure, viewport gutters and standalone safe-area clearance. */
 body > header,
+body > :where(#workspace-tabs),
 body > main,
 body > footer {
     max-inline-size: 65ch;
@@ -19,6 +20,10 @@ body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspa
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
+}
+
+body:has(> #workspace-tabs):has(> main:is([data-page="workspace"], [data-page="session"])) {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 body > main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"]) {
@@ -144,6 +149,114 @@ body > header nav[aria-label="breadcrumb"] li button {
     vertical-align: baseline;
 }
 
+/* {§web-workspace-tabs} Stationary intra-workspace tab strip above the scroller; compact switcher below 768px. */
+#workspace-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: calc(var(--pico-spacing) * 0.5);
+    min-inline-size: 0;
+    padding-block: calc(var(--pico-spacing) * 0.25);
+    border-block-end: var(--pico-border-width) solid var(--pico-muted-border-color);
+}
+
+#workspace-tabs :where(svg) {
+    display: inline-block;
+    inline-size: 2ch;
+    block-size: 2ch;
+    vertical-align: middle;
+}
+
+#workspace-tabs > :where(button) {
+    --pico-form-element-spacing-vertical: 0;
+    --pico-form-element-spacing-horizontal: 0;
+
+    flex: 0 0 auto;
+    inline-size: auto;
+    height: auto;
+    margin: 0;
+    padding: calc(var(--pico-spacing) * 0.25);
+    border-width: 0;
+}
+
+#workspace-tabs > [data-workspace-switcher] {
+    display: none;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5ch;
+    min-inline-size: 0;
+    overflow: hidden;
+}
+
+[data-switcher-current] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#workspace-tabs > :where(ul) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: calc(var(--pico-spacing) * 0.25);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#workspace-tabs :where(ul > li) {
+    flex: 0 0 auto;
+    max-inline-size: none;
+    margin: 0;
+    padding: 0;
+}
+
+#workspace-tabs :where(ul > li > a) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35ch;
+    margin: 0;
+    padding: calc(var(--pico-spacing) * 0.25) calc(var(--pico-spacing) * 0.6);
+    border-block-end: calc(var(--pico-border-width) * 2) solid transparent;
+}
+
+#dialog-workspace-switcher :where([data-switcher-list]) {
+    max-block-size: 50dvh;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+}
+
+#dialog-workspace-switcher :where([data-switcher-list] > li) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#dialog-workspace-switcher :where([data-switcher-list] > li > a) {
+    display: flex;
+    align-items: center;
+    gap: 0.5ch;
+    padding: calc(var(--pico-spacing) * 0.4) calc(var(--pico-spacing) * 0.6);
+    border-radius: var(--pico-border-radius);
+    text-decoration: none;
+}
+
+@media (scripting: enabled) and (width < 768px) {
+    #workspace-tabs > :where(ul) {
+        display: none;
+    }
+
+    #workspace-tabs > [data-workspace-switcher] {
+        display: inline-flex;
+    }
+}
+
 figure:has(> table) {
     overflow-x: auto;
 }
@@ -201,7 +314,8 @@ table {
         margin: 0;
     }
 
-    button[data-dialog-target] {
+    button[data-dialog-target],
+    button[data-workspace-switcher] {
         display: none;
     }
 }

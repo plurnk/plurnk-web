@@ -11,6 +11,7 @@
 
 header nav button,
 nav[aria-label="breadcrumb"] button,
+#workspace-tabs > button,
 #session-status [data-status-line] button,
 #session-command-results [data-dismiss-command] {
     --pico-primary-background: transparent;

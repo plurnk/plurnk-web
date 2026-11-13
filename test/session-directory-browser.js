@@ -112,16 +112,17 @@ export default async function verifySessionDirectory(page, workspace) {
     assert.equal(await page.locator('[aria-current="page"]').textContent(), evidence.name);
     await parentLink.getByRole("link", { name: "review", exact: true }).click();
     assert.equal(new URL(page.url()).pathname, path(review));
-    await page.locator(`nav a[href=${JSON.stringify(new URL(directory).pathname)}]`).click();
+    await page.locator(`header nav[aria-label="breadcrumb"] a[href=${JSON.stringify(new URL(directory).pathname)}]`).click();
     assert.equal(page.url(), directory, "the workspace breadcrumb returns to the complete session tree");
+    const openBranchesBefore = await page.locator("main > ul > li > article > details[open]").count();
     await backgroundSection.locator(":scope > summary").click();
     const incoming = models.find(({ name }) => name === "incoming");
     assert.equal(await link(incoming).isVisible(), true);
-    assert.equal(await page.locator("main > ul > li > article > details[open]").count(), 0, "background expansion does not open ordinary branches");
+    assert.equal(await page.locator("main > ul > li > article > details[open]").count(), openBranchesBefore, "background expansion does not open ordinary branches");
     await link(incoming).click();
     assert.equal(await parentLink.innerText(), "Parent: _plurnk");
     assert.equal(await parentLink.locator("a").count(), 0);
     assert.equal(await page.locator("#session-directory").count(), 0);
     assert.equal(await page.locator('[aria-current="page"]').textContent(), incoming.name);
-    await page.locator(`nav a[href=${JSON.stringify(new URL(directory).pathname)}]`).click();
+    await page.locator(`header nav[aria-label="breadcrumb"] a[href=${JSON.stringify(new URL(directory).pathname)}]`).click();
 }

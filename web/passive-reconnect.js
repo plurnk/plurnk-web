@@ -1,3 +1,5 @@
+import { on } from "on_the_money";
+
 // {§web-session-observer} {§web-session-directory} Bounded retry pacing for idempotent passive streams.
 // Per ARCHITECTURE.md configuration authority, backoff timing is transport mechanism, not an operator panel knob:
 // 1.5s base lets whole-second status clocks freeze visibly on disconnect and avoids hammering a restarting daemon,
@@ -47,13 +49,20 @@ export function createPassiveReconnect(retry) {
         retry();
     };
 
-    window.ononline = () => {
-        triggerImmediate();
-    };
-    document.onvisibilitychange = () => {
-        if (document.visibilityState === "visible") {
-            triggerImmediate();
-        }
+    const offOnline = typeof window === "object" && typeof window?.addEventListener === "function"
+        ? on.target(window, "online", triggerImmediate)
+        : () => {};
+    const offVisibility = typeof document === "object" && typeof document?.addEventListener === "function"
+        ? on.target(document, "visibilitychange", () => {
+            if (document.visibilityState === "visible") {
+                triggerImmediate();
+            }
+        })
+        : () => {};
+
+    const stop = () => {
+        active = false;
+        clearTimer();
     };
 
     return {
@@ -73,9 +82,11 @@ export function createPassiveReconnect(retry) {
             attempts = 0;
             clearTimer();
         },
-        stop() {
-            active = false;
-            clearTimer();
+        stop,
+        dispose() {
+            stop();
+            offOnline();
+            offVisibility();
         },
     };
 }

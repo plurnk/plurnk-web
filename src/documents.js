@@ -9,6 +9,7 @@ const WORKSPACES_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none"
 const PLUS_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg>';
 const RENAME_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a1.4 1.4 0 0 1 2 2L5.5 12.5 2.5 13.5l1-3 8-8Z"/></svg>';
 const ARCHIVE_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="0.75"/><path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M6.5 9h3"/></svg>';
+const SWITCHER_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h10M3 8h10M3 11h6"/></svg>';
 /** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
 /** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499, readonly at?: number, readonly excerpt?: string, readonly continued?: boolean }} DirectoryReply */
 /** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
@@ -23,7 +24,7 @@ const orderByReply = (a, b) => {
     return aReply !== null && bReply !== null ? bReply.id - aReply.id
         : aReply !== null ? -1 : bReply !== null ? 1 : 0;
 };
-/** @typedef {"title" | "sessionNavigation" | "headerTail" | "main" | "afterMain"} DocumentSlotName */
+/** @typedef {"title" | "sessionNavigation" | "headerTail" | "beforeMain" | "main" | "afterMain"} DocumentSlotName */
 /** @typedef {{ readonly literal: string } | { readonly slot: DocumentSlotName }} DocumentToken */
 
 /**
@@ -49,21 +50,24 @@ function locatePairedElement(source, openPattern, closePattern, message) {
 
 /** @param {string} document */
 function compileDocumentSlots(document) {
+    const outsideTemplates = document.replace(/<template\b[^>]*>[\s\S]*?<\/template>/gu, (match) => " ".repeat(match.length));
     const main = locatePairedElement(
-        document,
+        outsideTemplates,
         /<main\b[^>]*>/gu,
         /<\/main>/gu,
         "The web document must contain exactly one main element.",
     );
-    const beforeMain = document.slice(0, main.start);
+    const mainInner = document.slice(main.start + (/<main\b[^>]*>/u.exec(document.slice(main.start))?.[0].length ?? 0), main.end - "</main>".length);
+    const beforeMain = outsideTemplates.slice(0, main.start);
+    const rawBeforeMain = document.slice(0, main.start);
     const title = locatePairedElement(
         beforeMain,
         /<title\b[^>]*>/gu,
         /<\/title>/gu,
         "The web document must contain exactly one title element before main.",
     );
-    const navOpens = [...beforeMain.matchAll(/<template\b[^>]*\bid="session-navigation"[^>]*>/gu)];
-    const navMatches = [...beforeMain.matchAll(/<template\b[^>]*\bid="session-navigation"[^>]*>([\s\S]*?)<\/template>/gu)];
+    const navOpens = [...rawBeforeMain.matchAll(/<template\b[^>]*\bid="session-navigation"[^>]*>/gu)];
+    const navMatches = [...rawBeforeMain.matchAll(/<template\b[^>]*\bid="session-navigation"[^>]*>([\s\S]*?)<\/template>/gu)];
     if (navOpens.length !== 1 || navMatches.length !== 1 || /<template\b/u.test(navMatches[0][1])) {
         throw new Error("The web document must contain exactly one session-navigation template before main.");
     }
@@ -88,6 +92,7 @@ function compileDocumentSlots(document) {
         { name: /** @type {const} */ ("title"), start: title.start, end: title.end },
         { name: /** @type {const} */ ("sessionNavigation"), start: navSpan.start, end: navSpan.end },
         { name: /** @type {const} */ ("headerTail"), start: headerCloseIndex, end: headerCloseIndex },
+        { name: /** @type {const} */ ("beforeMain"), start: main.start, end: main.start },
         { name: /** @type {const} */ ("main"), start: main.start, end: main.end },
         { name: /** @type {const} */ ("afterMain"), start: main.end, end: main.end },
     ].toSorted((a, b) => a.start - b.start || a.end - b.end);
@@ -104,7 +109,7 @@ function compileDocumentSlots(document) {
     if (cursor < document.length) tokens.push({ literal: document.slice(cursor) });
 
     return Object.freeze({
-        home: main.inner,
+        home: mainInner,
         sessionNavigation: navSpan.inner,
         /** @param {Readonly<Record<DocumentSlotName, string>>} values */
         render(values) {
@@ -145,13 +150,14 @@ export default class Documents {
         this.#template = compileDocumentSlots(document);
     }
 
-    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "session" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] @param {string} [mainAttributes] */
-    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "", dialogs = "", mainAttributes = "") {
+    /** @param {string} title @param {string} body @param {"home" | "daemon" | "workspace" | "session" | "error" | "account"} kind @param {boolean} [authenticated] @param {string} [breadcrumb] @param {string} [footer] @param {string} [dialogs] @param {string} [mainAttributes] @param {string} [beforeMain] */
+    #render(title, body, kind, authenticated = false, breadcrumb = this.#breadcrumb(), footer = "", dialogs = "", mainAttributes = "", beforeMain = "") {
         const label = kind === "home" ? title : `${title} — Plurnk`;
         return Buffer.from(this.#template.render({
             title: `<title data-text="page-title">${escapeHtml(label)}</title>`,
             sessionNavigation: authenticated ? this.#template.sessionNavigation : "",
             headerTail: breadcrumb,
+            beforeMain,
             main: `<main id="main" data-page="${kind}"${mainAttributes}>${body}${dialogs}</main>`,
             afterMain: footer,
         }));
@@ -532,6 +538,106 @@ export default class Documents {
             + '<ul data-messages></ul></section>';
         return { content, footer };
     }
+    /** {§web-workspace-tabs} Daemon-truth workspace tab strip and compact switcher trigger.
+     * @param {DirectoryWorkspace} workspace
+     * @param {readonly DirectorySession[]} sessions
+     * @param {ReadonlyMap<number, DirectorySession>} byId
+     * @param {ReadonlyMap<number, DirectoryOverviewSession>} overviewById
+     * @param {string | null} selectedSession
+     * @param {boolean} authenticated
+     * @param {boolean} live
+     */
+    #workspaceTabs(workspace, sessions, byId, overviewById, selectedSession, authenticated, live) {
+        const workspacePath = directoryPath({ kind: "workspace", workspace: workspace.name });
+        if (workspacePath === null) return "";
+        const enriched = sessions
+            .filter(({ origin }) => origin === "model")
+            .map((entry) => {
+                const info = overviewById.get(entry.id);
+                return {
+                    ...entry,
+                    kind: info?.kind ?? entry.kind ?? (entry.parentSessionId === null ? "root" : "work"),
+                    gates: info?.gates ?? entry.gates ?? 0,
+                    reply: info?.reply ?? entry.reply ?? null,
+                };
+            });
+        const unarchived = enriched.filter((entry) => {
+            if (entry.archived_at !== null) return false;
+            const visited = new Set([entry.id]);
+            /** @type {DirectorySession} */
+            let cursor = entry;
+            while (cursor.parentSessionId !== null) {
+                if (visited.has(cursor.parentSessionId)) return false;
+                visited.add(cursor.parentSessionId);
+                const parent = byId.get(cursor.parentSessionId);
+                if (!parent || parent.archived_at !== null) return false;
+                cursor = parent;
+            }
+            return true;
+        }).toSorted(orderByReply);
+        const unarchivedIds = new Set(unarchived.map(({ id }) => id));
+        const childrenByParent = Map.groupBy(
+            unarchived,
+            (entry) => entry.parentSessionId !== null && unarchivedIds.has(entry.parentSessionId) ? entry.parentSessionId : null,
+        );
+        /** @type {typeof enriched} */
+        const ordered = [];
+        /** @param {number | null} parentId */
+        const visit = (parentId) => {
+            for (const entry of childrenByParent.get(parentId) ?? []) {
+                ordered.push(entry);
+                visit(entry.id);
+            }
+        };
+        visit(null);
+        const visible = ordered.filter((entry) => {
+            if (entry.name === selectedSession) return true;
+            if (entry.parentSessionId === null || entry.kind === "root" || entry.kind === "fork") return true;
+            return ["queued", "running", "parked", "failed"].includes(entry.lifecycle) || (entry.gates ?? 0) > 0;
+        });
+        if (selectedSession !== null && !visible.some(({ name }) => name === selectedSession)) {
+            const direct = enriched.find(({ name }) => name === selectedSession);
+            if (direct) visible.push(direct);
+        }
+        let activeCount = 0;
+        let gatedCount = 0;
+        for (const entry of unarchived) {
+            if (["queued", "running", "parked"].includes(entry.lifecycle)) activeCount++;
+            if ((entry.gates ?? 0) > 0) gatedCount += entry.gates ?? 0;
+        }
+        const overviewCurrent = selectedSession === null ? ' aria-current="true"' : "";
+        const items = [
+            `<li><a href="${escapeHtml(workspacePath)}" data-workspace-route="overview"${overviewCurrent} data-i18n="overview">Overview</a></li>`,
+            ...visible.flatMap((entry) => {
+                const sessionPath = directoryPath({ kind: "session", workspace: workspace.name, session: entry.name });
+                if (sessionPath === null) return [];
+                const name = escapeHtml(entry.name);
+                const kind = escapeHtml(entry.kind);
+                const lifecycle = escapeHtml(entry.lifecycle);
+                const current = entry.name === selectedSession ? ' aria-current="true"' : "";
+                const gates = entry.gates ?? 0;
+                const gatesBadge = gates > 0
+                    ? `<small data-session-gates="${gates}" aria-label="${gates} awaiting input" title="${gates} awaiting input">${gates}</small>`
+                    : "";
+                const parentAttr = entry.parentSessionId !== null ? ` data-parent-id="${entry.parentSessionId}"` : "";
+                const replyAttr = entry.reply !== null ? ` data-reply-id="${entry.reply.id}"` : "";
+                const archivedAttr = entry.archived_at !== null ? ' data-archived="true"' : "";
+                return [`<li data-tab-id="${workspace.id}:${entry.id}" data-session-kind="${kind}"${parentAttr}${replyAttr}${archivedAttr}>`
+                    + `<a href="${escapeHtml(sessionPath)}" data-workspace-route="session" data-tab-session="${name}" title="@${name} (${lifecycle})"${current}>`
+                    + `<span data-lifecycle="${lifecycle}" aria-hidden="true"></span>`
+                    + `<span data-tab-label>@${name}</span>${gatesBadge}</a></li>`];
+            }),
+        ];
+        const currentLabel = selectedSession === null ? "Overview" : `@${selectedSession}`;
+        const switcherBadges = (gatedCount > 0 ? `<small data-session-gates="${gatedCount}" aria-label="${gatedCount} awaiting input">${gatedCount}</small>` : "")
+            + (activeCount > 0 ? `<small data-switcher-active="${activeCount}" aria-label="${activeCount} active">${activeCount}</small>` : "");
+        return `<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-id="${workspace.id}" data-workspace-name="${escapeHtml(workspace.name)}" data-auth="${authenticated ? "session" : "none"}"${live ? ' data-live="true"' : ""}>`
+            + `<button type="button" data-workspace-switcher aria-label="Switch session" title="Switch session">${SWITCHER_ICON}<span data-switcher-current>${escapeHtml(currentLabel)}</span>${switcherBadges}</button>`
+            + `<ul>${items.join("")}</ul>`
+            + `<button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session">${PLUS_ICON}</button>`
+            + "</nav>";
+    }
+
     /**
      * @param {import("./directory-addresses.js").Directory} directory
      * @param {{ listWorkspaces(): Promise<readonly DirectoryWorkspace[]>, listSessions(workspaceId: number): Promise<readonly DirectorySession[]>, readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview> }} port
@@ -540,8 +646,8 @@ export default class Documents {
      * does a session page start with the configured automatic approval
      */
     async read(directory, port, authenticated, own = false) {
-        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "", dialogs = "", mainAttributes = "") =>
-            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs, mainAttributes);
+        const render = (/** @type {string} */ title, /** @type {string} */ body, marker = "", footer = "", dialogs = "", mainAttributes = "", beforeMain = "") =>
+            this.#render(title, body, directory.kind, authenticated, this.#breadcrumbs(directory, marker), footer, dialogs, mainAttributes, beforeMain);
         const workspaces = await port.listWorkspaces();
         if (directory.kind === "daemon") {
             // {§web-directory-documents} An archived workspace leaves the list; its page still opens by its address.
@@ -555,6 +661,7 @@ export default class Documents {
         const sessions = await port.listSessions(workspace.id);
         const byId = new Map(sessions.map((session) => [session.id, session]));
         if (byId.size !== sessions.length) throw new Error("Session directory contains duplicate identities.");
+        const live = typeof port.readSessionOverview === "function";
         if (directory.kind === "workspace") {
             // {§web-workspace-folder}
             const separateFolder = workspace.project_label !== null && workspace.project_label !== workspace.name;
@@ -562,7 +669,6 @@ export default class Documents {
                 + `<span data-text="project-label">${escapeHtml(workspace.project_label)}</span></p>` : "";
             const marker = separateFolder ? '<span role="img" aria-label="Workspace">☁️</span>' : this.#workspaceMarker(workspace.project_root);
             const dialogs = this.#renameForm(workspace) + this.#workspaceArchiveForm(workspace) + this.#sessionCreationForm(workspace);
-            const live = typeof port.readSessionOverview === "function";
             if (live && (this.#overviewSessions === null || this.#overviewExcerptChars === null)) {
                 throw new RequestError(503, "Session overview is unavailable because its configuration is invalid.");
             }
@@ -582,14 +688,20 @@ export default class Documents {
                     reply: info?.reply ?? entry.reply ?? null,
                 }];
             }));
+            const body = folder + this.#sessionTree(new Map([[workspace.id, workspace]]), treeSessions);
+            const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, null, authenticated, live);
             const mainAttributes = live ? ` data-workspace-id="${workspace.id}" data-auth="${authenticated ? "session" : "none"}" data-connection="initial"` : "";
-            return render(workspace.name, folder + this.#sessionTree(new Map([[workspace.id, workspace]]), treeSessions), marker, "", dialogs, mainAttributes);
+            return render(workspace.name, body, marker, "", dialogs, mainAttributes, tabs);
         }
         const session = sessions.find(({ name, origin }) => name === directory.session && origin === "model");
         if (session === undefined) return null;
         if (this.#yolo === null || this.#reasoningPreviewChars === null) {
             throw new RequestError(503, "Session pages are unavailable because their configuration is invalid.");
         }
+        const overview = typeof port.readSessionOverview === "function" && this.#overviewExcerptChars !== null
+            ? await port.readSessionOverview({ workspaceId: workspace.id, limit: Number.MAX_SAFE_INTEGER, excerptChars: this.#overviewExcerptChars })
+            : null;
+        const overviewById = new Map(overview?.sessions.map((entry) => [entry.id, entry]) ?? []);
         const parent = this.#parent(session, byId);
         const label = parent === null ? "" : parent.origin === "model"
             ? this.#link(parent.name, { kind: "session", workspace: workspace.name, session: parent.name })
@@ -599,9 +711,10 @@ export default class Documents {
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
         const status = this.#sessionStatus(directory, workspace.id, authenticated, this.#yolo && own);
-        const dialogs = this.#sessionArchiveForm(workspace, session);
+        const dialogs = this.#sessionArchiveForm(workspace, session) + this.#sessionCreationForm(workspace);
+        const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, session.name, authenticated, live);
         return render(title, `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + (parent === null ? "" : `<p><span data-i18n="parent-session">Parent:</span> ${label}</p>`)
-            + status.content, marker, status.footer, dialogs);
+            + status.content, marker, status.footer, dialogs, "", tabs);
     }
 }

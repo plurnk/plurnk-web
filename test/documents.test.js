@@ -509,3 +509,73 @@ test("{§web-session-directory} {§web-directory-documents} home and workspace o
     })).toString();
     assert.match(emptyHome, /<main id="main" data-page="home" data-auth="none" data-connection="initial"><p data-i18n="no-sessions">No sessions\.<\/p><\/main>/u);
 });
+
+test("{§web-workspace-tabs} workspace and session documents render daemon-truth session tabs, fold settled child workers unless selected, and omit tabs outside workspaces", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
+    assert.doesNotMatch((await document.home(false)).toString(), /id="workspace-tabs"/u);
+    assert.doesNotMatch(document.account().toString(), /id="workspace-tabs"/u);
+    assert.doesNotMatch(document.error(404, "Missing.").toString(), /id="workspace-tabs"/u);
+
+    const archived = "2026-04-06T00:00:00.000Z";
+    const workspaces = [{ id: 7, name: "alpha", project_root: null, project_label: null, projectRoot: null, projectLabel: null, archived_at: null }];
+    /** @type {(id: number, coordinate: string, completion?: 200 | 499) => { id: number, coordinate: string, completion: 200 | 499 }} */
+    const reply = (id, coordinate, completion = 200) => ({ id, coordinate, completion });
+    const sessions = [
+        { ...session(1, "_plurnk", null, "_plurnk"), workspaceId: 7, reply: null },
+        { ...session(2, "older-root"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "completed", reply: reply(20, "1/1/1/done:20") },
+        { ...session(3, "newer-root"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "running", reply: reply(90, "1/2/1/send:90") },
+        { ...session(4, "fork-branch", 3), workspaceId: 7, kind: /** @type {const} */ ("fork"), lifecycle: "completed", reply: reply(50, "1/1/1/done:50") },
+        { ...session(5, "active-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "running", reply: null },
+        { ...session(6, "gated-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "parked", gates: 2, reply: reply(70, "1/1/1/send:70") },
+        { ...session(8, "failed-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "failed", reply: reply(60, "1/1/1/fail:60", 499) },
+        { ...session(9, "settled-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "completed", reply: reply(95, "1/1/1/done:95") },
+        { ...session(10, "archived-root"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "completed", archived_at: archived, reply: reply(99, "1/1/1/done:99") },
+    ];
+    const modelSessions = sessions.filter(({ origin, archived_at }) => origin === "model" && archived_at === null);
+    const port = {
+        listWorkspaces: async () => workspaces,
+        listSessions: async () => sessions,
+        readSessionOverview: async () => ({ workspaces, sessions: modelSessions }),
+    };
+
+    assert.doesNotMatch((await document.read({ kind: "daemon" }, port, false)).toString(), /id="workspace-tabs"/u);
+
+    const extractTabs = (/** @type {string} */ html) => {
+        const match = html.match(/<\/header>(<nav id="workspace-tabs"[\s\S]*?<\/nav>)<main/u);
+        assert.ok(match, "workspace-tabs sits directly between </header> and <main>");
+        return match[1];
+    };
+    const extractTabRoutes = (/** @type {string} */ navHtml) =>
+        [...navHtml.matchAll(/<a href="([^"]+)" data-workspace-route="[^"]+"/gu)].map((match) => match[1]);
+
+    const overviewHtml = (await document.read({ kind: "workspace", workspace: "alpha" }, port, false)).toString();
+    const overviewNav = extractTabs(overviewHtml);
+    assert.match(overviewNav, /data-workspace-id="7" data-workspace-name="alpha" data-auth="none" data-live="true"/u);
+    assert.match(overviewNav, /data-workspace-route="overview" aria-current="true"/u);
+    assert.deepEqual(extractTabRoutes(overviewNav), [
+        "/~/alpha/",
+        "/~/alpha@newer-root/",
+        "/~/alpha@gated-worker/",
+        "/~/alpha@failed-worker/",
+        "/~/alpha@fork-branch/",
+        "/~/alpha@active-worker/",
+        "/~/alpha@older-root/",
+    ], "roots order by reply.id descending, active/gated/failed children group beneath parent by reply.id, settled worker and archived root omit");
+    assert.match(overviewNav, /data-switcher-current>Overview<\/span>/u);
+    assert.match(overviewNav, /data-session-gates="2" aria-label="2 awaiting input">2<\/small>/u);
+    assert.match(overviewNav, /data-switcher-active="3" aria-label="3 active">3<\/small>/u);
+    assert.match(overviewNav, /data-dialog-target="dialog-session-create" aria-label="New session"/u);
+
+    const settledWorkerHtml = (await document.read({ kind: "session", workspace: "alpha", session: "settled-worker" }, port, true)).toString();
+    const settledNav = extractTabs(settledWorkerHtml);
+    assert.match(settledNav, /data-auth="session" data-live="true"/u);
+    assert.match(settledNav, /href="\/~\/alpha@settled-worker\/"[^>]*aria-current="true"/u, "selected settled child worker stays in the strip while viewed");
+    assert.doesNotMatch(settledNav, /data-workspace-route="overview" aria-current="true"/u);
+    assert.match(settledNav, /data-switcher-current>@settled-worker<\/span>/u);
+    assert.match(settledWorkerHtml, /id="dialog-session-create"/u, "session documents carry the native session creation modal for tab triggers");
+    assert.match(settledWorkerHtml, /id="dialog-session-archive"/u);
+
+    const archivedHtml = (await document.read({ kind: "session", workspace: "alpha", session: "archived-root" }, port, false)).toString();
+    const archivedNav = extractTabs(archivedHtml);
+    assert.match(archivedNav, /data-archived="true"><a href="\/~\/alpha@archived-root\/"[^>]*aria-current="true"/u, "viewing an archived session directly includes its tab");
+});

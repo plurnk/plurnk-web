@@ -15,6 +15,8 @@ import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
 import stickyTail from "./sticky-tail.js";
+import math from "./math.js";
+import mermaid from "./mermaid.js";
 
 /** @param {EventTarget | null} target */
 function isTextEntry(target) {
@@ -50,22 +52,23 @@ function failing(subscriber, fail) {
 
 /** {§web-session-observer} {§web-session-input} Delivery changes never own the session's lifetime.
  * @param {HTMLElement} element
+ * @param {{ main?: Element | null }} [options]
  */
-export default function observeSession(element) {
+export default function observeSession(element, { main: suppliedMain = $("#main") } = {}) {
     const { sessionId, auth } = element.dataset;
     if (!sessionId || (auth !== "session" && auth !== "none")) throw new Error("Session document metadata is incomplete.");
     const approval = $(element, "#session-yolo");
     if (!(approval instanceof HTMLButtonElement) || !["true", "false"].includes(approval.getAttribute("aria-pressed") ?? "")) {
         throw new Error("Session document has no approval mode.");
     }
-    const history = $("#session-conversation");
+    if (!(suppliedMain instanceof HTMLElement)) throw new Error("Session document has no main region.");
+    const main = suppliedMain;
+    const history = $(main, "#session-conversation");
     if (!(history instanceof HTMLElement)) throw new Error("Session document has no conversation outlet.");
-    const main = $("#main");
-    if (!(main instanceof HTMLElement)) throw new Error("Session document has no main region.");
     const controls = $.clone(element, "#session-controls");
     // {§web-session-history} What needs the person follows the conversation, where its pinned end is.
     const feedback = $.clone(main, "#session-feedback");
-    const notice = $("#session-connection");
+    const notice = $(main, "#session-connection");
     if (!notice) throw new Error("Session document has no connection notice.");
     const connectionNotice = notice;
     const review = reviewRequests(main, approval.getAttribute("aria-pressed") === "true");
@@ -90,7 +93,7 @@ export default function observeSession(element) {
         }
     };
     syncSendShortcuts();
-    coarseMedia.onchange = syncSendShortcuts;
+    const offCoarseMedia = on.target(coarseMedia, "change", syncSendShortcuts);
     const draftKey = `plurnk:draft:${sessionId}`;
     /** @returns {string | null} */
     function readStoredDraft() {
@@ -115,10 +118,10 @@ export default function observeSession(element) {
     const transcript = sessionHistory(history, (address) => readBody(address, auth, resources.signal),
         (address, signal) => readHistory(address, auth, AbortSignal.any([signal, resources.signal])));
     const preview = reasoningPreview(history, Number(element.dataset.reasoningPreviewChars));
-    const diagnosticList = $("#session-diagnostics");
+    const diagnosticList = $(main, "#session-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Session document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
-    const presentState = sessionState(element);
+    const presentState = sessionState(element, main);
     const agent = new SessionAgent({ url: "/acp", sessionId });
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
@@ -375,7 +378,8 @@ export default function observeSession(element) {
             if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
         }
     });
-    on(document, "keydown", "body", (event) => {
+    const offKeydown = on(document, "keydown", "body", (event) => {
+        if (!main.isConnected || element.hidden) return;
         if (!(event instanceof KeyboardEvent) || event.defaultPrevented || event.isComposing || event.repeat) return;
         if ($("dialog[open]")) return;
         if (event.key === "Tab" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -569,7 +573,12 @@ export default function observeSession(element) {
         }
     });
 
-    window.onpagehide = () => {
+    let savedScrollTop = main.scrollTop;
+    let wasPinned = true;
+    let disposed = false;
+
+    const offPageHide = on.target(window, "pagehide", () => {
+        if (disposed) return;
         reconnect.reset();
         tail.pause();
         transcript.pause();
@@ -579,18 +588,63 @@ export default function observeSession(element) {
         cancellation?.abort();
         agent.close();
         connection("closed", "Not connected.");
-    };
-    window.onpageshow = (event) => {
-        if (event.persisted) {
+    });
+    const offPageShow = on.target(window, "pageshow", (event) => {
+        if (disposed) return;
+        if (event instanceof PageTransitionEvent && event.persisted) {
             resources = new AbortController();
             if (!pending) {
                 const savedDraft = readStoredDraft() ?? "";
                 if (draft.value !== savedDraft) draft.value = savedDraft;
             }
             transcript.resume();
-            tail.resume();
+            if (main.isConnected) tail.resume();
             connect();
         }
-    };
+    });
     connect();
+
+    return {
+        main,
+        footer: element,
+        deactivate() {
+            if (disposed) return;
+            wasPinned = tail.isPinned();
+            savedScrollTop = main.scrollTop;
+            tail.pause();
+        },
+        activate() {
+            if (disposed) return;
+            presentState.syncHeader();
+            tail.resume();
+            if (wasPinned) tail.pin();
+            else main.scrollTop = savedScrollTop;
+            void math(main).catch(reportError);
+            void mermaid(main).catch(reportError);
+        },
+        canEvict() {
+            return !main.isConnected
+                && !pending
+                && !cancellation
+                && the(controls, "command-pending") === null
+                && the(element, "connection") !== "interrupted"
+                && agent.pendingGates.length === 0;
+        },
+        dispose() {
+            if (disposed) return;
+            disposed = true;
+            offKeydown();
+            offCoarseMedia();
+            offPageHide();
+            offPageShow();
+            reconnect.dispose();
+            tail.pause();
+            transcript.pause();
+            preview.clear();
+            resources.abort();
+            delivery?.controller.abort();
+            cancellation?.abort();
+            agent.close();
+        },
+    };
 }

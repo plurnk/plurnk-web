@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,8 +30,14 @@ await git(["clone", "--quiet", "--shared", "--no-checkout", checkout, clone], ch
 await git(["checkout", "--quiet", "--detach", head], clone);
 try {
     await npm(["ci", "--no-audit", "--no-fund"], clone);
-    // Candidate public declarations and authorization specimens beside the locked registry graph.
-    const peerArchives = archives.filter((path) => /\/plurnk-plurnk-(?:acp|auth|contracts|meta|modules|parser|spec-check)-/u.test(path));
+    // Candidate public declarations, authorization specimens and substrate archives beside the locked registry graph.
+    const substrateArchives = (await readdir(resolve(directory)))
+        .filter((name) => /^on_the_money-[^/]*\.tgz$/u.test(name))
+        .map((name) => join(resolve(directory), name));
+    const peerArchives = [
+        ...archives.filter((path) => /\/plurnk-plurnk-(?:acp|auth|contracts|meta|modules|parser|spec-check)-/u.test(path)),
+        ...substrateArchives,
+    ];
     await npm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", ...peerArchives], clone);
     await npm(["test"], clone);
     await npm(["run", "test:installation"], clone);

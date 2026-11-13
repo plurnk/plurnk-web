@@ -77,10 +77,10 @@ on(document, "click", "[data-diagram-retry]", (event) => {
 });
 
 /** {§web-diagram-content} Generated SVG is an image, never application markup.
- * @param {DocumentFragment} fragment
+ * @param {DocumentFragment | Element} fragment
  */
 export default async function mermaid(fragment) {
-    const outlets = $$(fragment, "[data-mermaid]");
+    const outlets = $$(fragment, "[data-mermaid]:not([data-diagram-error])");
     if (!outlets.length) return;
     // Markdown inserts the fragment synchronously after starting enhancements.
     await Promise.resolve();

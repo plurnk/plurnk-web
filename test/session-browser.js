@@ -168,7 +168,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 await setTimeout(1100);
                 assert.deepEqual({ elapsed: await value(page, "elapsed"), wait: await value(page, "wait") }, frozen);
                 assert.equal(model.requests.length, 1, "delivery loss does not wake or cancel work");
-                checkBrowser([networkFailure("/acp")]);
+                checkBrowser([networkFailure("/acp"), networkFailure("/notifications")]);
                 await page.getByRole("button", { name: "Reconnect", exact: true }).click();
                 await connected(page);
                 assert.equal(await value(page, "lifecycle"), "parked");
@@ -1047,7 +1047,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.ok(parseFloat(style.padding) > 0);
                             assert.notEqual(style.shadow, "none");
                         }
-                        checkBrowser([networkFailure("/acp")]);
+                        checkBrowser([networkFailure("/acp"), networkFailure("/notifications")]);
                         await connected(page);
                         assert.ok(requests.length > afterLoss, "passive observation automatically recovers after transient network loss");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false);

@@ -83,6 +83,37 @@
     <template id="session-reply">
         <div data-session-reply=""></div>
     </template>
+    <!-- {§web-workspace-tabs} Inert tab, breadcrumb and quick-switcher templates reconciled by workspace-workbench. -->
+    <template id="workspace-tab-item">
+        <li data-tab-id="" data-session-kind="root"><a data-workspace-route="session" data-tab-session=""><span data-lifecycle="idle" aria-hidden="true"></span><span data-tab-label></span></a></li>
+    </template>
+    <template id="workspace-switcher-active-badge">
+        <small data-switcher-active=""></small>
+    </template>
+    <template id="workspace-breadcrumb-overview">
+        <nav aria-label="breadcrumb"><ul><li><a href="/~/" aria-label="Workspaces" title="Workspaces"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg></a></li><li><span role="img" aria-label="Folderless workspace" data-workspace-marker>☁️</span> <span aria-current="page" data-text="name"></span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a1.4 1.4 0 0 1 2 2L5.5 12.5 2.5 13.5l1-3 8-8Z"/></svg></button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="0.75"/><path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M6.5 9h3"/></svg></button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg></button></li></ul></nav>
+    </template>
+    <template id="workspace-breadcrumb-session">
+        <nav aria-label="breadcrumb"><ul><li><a href="/~/" aria-label="Workspaces" title="Workspaces"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg></a></li><li><span id="session-workspace"><span role="img" aria-label="Folderless workspace" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">☁️</span> <a data-bind="href:workspace-path" data-text="workspace-name"></a></span></li><li><span aria-current="page" data-text="name"></span> <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="0.75"/><path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M6.5 9h3"/></svg></button></li></ul></nav>
+    </template>
+    <template id="workspace-transitional-main">
+        <main id="main" data-page="session" aria-busy="true"></main>
+    </template>
+    <template id="workspace-switcher-dialog">
+        <dialog id="dialog-workspace-switcher" aria-label="Switch session">
+            <article>
+                <header>
+                    <p><strong data-i18n="switch-session">Switch session</strong></p>
+                    <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
+                </header>
+                <input type="search" data-switcher-search placeholder="Jump to session…" aria-label="Jump to session" autocomplete="off" spellcheck="false">
+                <ul data-switcher-list></ul>
+            </article>
+        </dialog>
+    </template>
+    <template id="workspace-switcher-item">
+        <li data-switcher-entry=""><a data-workspace-route="session"><span data-lifecycle="idle" aria-hidden="true"></span><span data-switcher-label></span></a></li>
+    </template>
     <!-- {§web-session-status} Public state supplies literal list values, not document markup. -->
     <template id="session-descendant">
       <li>
@@ -203,6 +234,7 @@
             <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open selector or command results, or request Stop.</dd>
             <dt><kbd>/</kbd> · <kbd>?</kbd></dt><dd data-i18n="shortcut-focus-help">Focus the message field or open this command and shortcut reference.</dd>
             <dt><kbd>Y</kbd> / <kbd>N</kbd> (<kbd>A</kbd> / <kbd>R</kbd>)</dt><dd data-i18n="shortcut-review">Select Accept or Reject on a pending proposal; confirm with Enter.</dd>
+            <dt><kbd><span data-text="shortcut-mod">Ctrl</span>+K</kbd> · <kbd>Alt+1…9</kbd> · <kbd>Alt+[</kbd> / <kbd>]</kbd> · <kbd>Alt+N</kbd></dt><dd data-i18n="shortcut-tabs">Switch workspace tabs or create a session.</dd>
         </dl>
     </template>
     <template id="command-models">
