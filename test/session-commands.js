@@ -389,4 +389,58 @@ export default async function verifySessionCommands({ t, withDaemon }) {
                 checkBrowser(refusal === "before the stream opens" ? Array.from({ length: 3 }, () => httpFailure("/acp", 409)) : []);
             }
         }));
+
+    await t.test("{§web-session-input} {§web-session-settings} {§web-session-commands} Escape escalation, / focus, ? help, and proposal choice keys preserve drafts and typing", () =>
+        inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+            const { field, rows, send } = composer(page);
+            await send("Lifecycle fixture: held-escape.");
+            await page.getByText("Considering held-escape.", { exact: true }).waitFor({ state: "attached" });
+            await field.fill("Draft preserved across Escape escalation.");
+            await field.press("Escape");
+            assert.notEqual(await page.evaluate(() => document.activeElement?.id), "session-message", "first Escape leaves composer");
+            assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running", "leaving composer does not cancel work");
+            await page.keyboard.press("/");
+            assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", "/ focuses composer");
+            assert.equal(await field.inputValue(), "Draft preserved across Escape escalation.");
+            await field.press("Escape");
+            await page.keyboard.press("?");
+            await rows.first().locator("[data-command-state=done]").waitFor();
+            assert.equal(await rows.count(), 1);
+            await page.keyboard.press("?");
+            await rows.first().locator("[data-command-state=done]").waitFor();
+            assert.equal(await rows.count(), 1, "repeated ? replaces existing help card");
+            await page.getByRole("button", { name: "Effort", exact: true }).click();
+            const effortArticle = page.locator("#session-effort-settings");
+            await effortArticle.locator('option[value="low"]').waitFor({ state: "attached" });
+            await page.locator("body > header > a").focus();
+            await page.keyboard.press("Escape");
+            await effortArticle.waitFor({ state: "hidden" });
+            assert.equal(await rows.count(), 1, "Escape closes open inline selector before dismissing command cards");
+            assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running");
+            await page.locator("body > header > a").focus();
+            await page.keyboard.press("Escape");
+            assert.equal(await rows.count(), 0, "next Escape dismisses settled command cards before cancelling work");
+            assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running");
+            await page.keyboard.press("Escape");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.lifecycle === "cancelled");
+            assert.equal(await field.inputValue(), "Draft preserved across Escape escalation.");
+
+            await field.fill("Lifecycle fixture: approval-keys.");
+            await field.press("Enter");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
+            await field.fill("typing y and n inside composer stays literal");
+            await field.pressSequentially("!");
+            const form = page.getByRole("form", { name: "Review requests", exact: true });
+            assert.equal(await form.locator('input[type="radio"]:checked').count(), 0, "typing inside composer never selects a proposal radio");
+            await field.press("Escape");
+            await page.keyboard.press("n");
+            assert.equal(await form.locator('input[type="radio"][value="reject"]').isChecked(), true, "n selects Reject");
+            await page.keyboard.press("y");
+            assert.equal(await form.locator('input[type="radio"][value="accept"]').isChecked(), true, "y switches selection to Accept");
+            await page.keyboard.press("Enter");
+            await page.getByText("Completed approval-keys.", { exact: true }).waitFor();
+            assert.equal(await field.inputValue(), "typing y and n inside composer stays literal!");
+            assert.equal(model.requests.length, 3);
+            checkBrowser();
+        }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
 }

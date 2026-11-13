@@ -78,6 +78,14 @@ export default function sessionSettings(main, status, call, lifetime) {
             await load();
         });
         on(article, "click", "[data-cancel-settings]", () => { button.focus(); panel.close(); });
+        on(article, "keydown", "article", (event) => {
+            if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || event.isComposing || event.repeat
+                || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+            if (the(article, "settings-pending") !== null) return;
+            event.preventDefault();
+            button.focus();
+            panel.close();
+        });
         if (field instanceof HTMLInputElement) on(article, "input", 'input[name="selection"]', load);
         on(article, "submit", "form", async (event) => {
             event.preventDefault();
@@ -97,4 +105,11 @@ export default function sessionSettings(main, status, call, lifetime) {
             finally { the(article, { settingsPending: null, selectionUnavailable: available() ? null : "" }); }
         });
     }
+    return () => {
+        const openPanel = panels.find(({ article }) => !article.hidden && the(article, "settings-pending") === null);
+        if (!openPanel) return false;
+        openPanel.button.focus();
+        openPanel.close();
+        return true;
+    };
 }

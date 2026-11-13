@@ -1,7 +1,11 @@
-import { $, $$, the } from "on_the_money";
+import { $, $$, on, the } from "on_the_money";
 import { isRecord, parseFamilyCommand, Validator } from "@plurnk/plurnk-contracts";
 import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
 import describeFailure from "./failure.js";
+
+/** @returns {"⌘" | "Ctrl"} */
+export const primaryModifierLabel = () =>
+    /\b(?:Macintosh|Mac OS|iPhone|iPad|iPod)\b/iu.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
 /** {§web-session-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
 const familyCommands = new Set(["mcp", "skills", "schedule", "personas", "env"]);
@@ -128,8 +132,14 @@ export default function sessionCommands(controls, actions) {
     const outlet = $.clone(controls, "#command-results");
     const list = $(outlet, "ul");
     if (!list) throw new Error("Command results template is incomplete.");
+    on(outlet, "click", "[data-dismiss-command]", (_event, target) => {
+        const row = target.closest("li");
+        const article = row ? $(row, "article") : null;
+        if (!row || !article || article.getAttribute("aria-busy") === "true") return;
+        row.remove();
+    });
     /** @param {string} text @param {AbortSignal} signal */
-    return async (text, signal) => {
+    const execute = async (text, signal) => {
         /** @type {Action} */
         const call = (kind, params) => actions.call(kind, params, signal);
         const row = $.clone(list, "#session-command-result");
@@ -150,6 +160,10 @@ export default function sessionCommands(controls, actions) {
                 const help = $.clone(body, "#command-help");
                 for (const item of $$(help, "[data-command-name]")) {
                     if (selected && the(item, "command-name") !== selected) item.remove();
+                }
+                if (!selected) {
+                    const shortcuts = $.clone(body, "#command-shortcuts");
+                    the(shortcuts, "shortcut-mod", primaryModifierLabel());
                 }
             } else if (name === "yolo") {
                 message = `Approvals: ${await actions.toggleYolo() ? "Automatic" : "Manual"}.`;
@@ -228,4 +242,21 @@ export default function sessionCommands(controls, actions) {
             return false;
         }
     };
+    const dismissAll = () => {
+        const settled = $$(list, ":scope > li").filter((item) => $(item, "article")?.getAttribute("aria-busy") !== "true");
+        if (settled.length === 0) return false;
+        for (const item of settled) item.remove();
+        return true;
+    };
+    /** @param {AbortSignal} signal */
+    const showHelp = async (signal) => {
+        for (const item of $$(list, ":scope > li")) {
+            const code = $(item, "header code")?.textContent?.trim();
+            if ((code === "/help" || code === "/") && $(item, "article")?.getAttribute("aria-busy") !== "true") {
+                item.remove();
+            }
+        }
+        return execute("/help", signal);
+    };
+    return Object.assign(execute, { dismissAll, showHelp });
 }

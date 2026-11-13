@@ -66,7 +66,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await page.locator('label[for="session-message"]').count(), 0, "the textarea keeps its name without a visible title");
                     for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"]]) {
                         const button = page.getByRole("button", { name, exact: true, includeHidden: true });
-                        assert.equal(await button.getAttribute("title"), name === "Send" ? "Send (Ctrl+Enter)" : name);
+                        assert.equal(await button.getAttribute("title"), name === "Send" ? "Send (Enter · Ctrl+Enter)" : name);
                         assert.equal(await button.innerText(), "");
                         assert.ok((await button.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
                     }
@@ -135,7 +135,16 @@ export default async function verifyCommands(t) {
                     assert.equal(await isCommand("/model", [{ name: "skill" }]), true, "local slash commands remain intercepted");
                     assert.equal(await isCommand("/quit", [{ name: "skill" }]), true, "unadvertised unknown slash commands remain intercepted locally");
                     const rows = page.locator("#session-command-results > ul > li");
-                    for (const text of ["/", "  /help /model \n", "/help learn", "/yolo"]) assert.equal(await command(text), true);
+                    assert.equal(await page.locator("#session-command-results").isVisible(), false, "empty command results occupy no space");
+                    assert.equal(await command("/"), true);
+                    assert.equal(await rows.last().locator('dl[aria-label="Keyboard shortcuts"]').count(), 1, "bare help includes keyboard shortcuts");
+                    const applePlatform = await page.evaluate(() => /\b(?:Macintosh|Mac OS|iPhone|iPad|iPod)\b/iu.test(navigator.userAgent));
+                    assert.match(await rows.last().locator('dl[aria-label="Keyboard shortcuts"]').textContent(), applePlatform ? /⌘\+Enter/u : /Ctrl\+Enter/u);
+                    await rows.last().getByRole("button", { name: "Dismiss", exact: true }).click();
+                    assert.equal(await rows.count(), 0, "Dismiss removes a settled command card");
+                    assert.equal(await page.locator("#session-command-results").isVisible(), false);
+                    for (const text of ["  /help /model \n", "/help learn", "/yolo"]) assert.equal(await command(text), true);
+                    assert.equal(await rows.nth(1).locator('dl[aria-label="Keyboard shortcuts"]').count(), 0, "named command help omits full shortcut index");
                     for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b", "/capabilities {"]) {
                         assert.equal(await command(text), false);
                     }
@@ -261,8 +270,9 @@ export default async function verifyCommands(t) {
                     await modelButton.click();
                     await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
                     assert.equal(await modelPanel.isVisible(), true, "pointer activation survives moving focus out of the composer");
-                    await modelPanel.getByRole("button", { name: "Cancel", exact: true }).click();
-                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true);
+                    await selectModel.press("Escape");
+                    await modelPanel.waitFor({ state: "hidden" });
+                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true, "Escape closes idle selector and restores focus");
                     catalog.page = { items: [], offset: 0, total: 0 };
                     assert.equal(await command("/models absent"), true);
                     assert.equal(await rows.last().locator("[data-no-aliases]").isVisible(), true);

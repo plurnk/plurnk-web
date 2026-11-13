@@ -1,4 +1,4 @@
-import { $, on, the } from "on_the_money";
+import { $, $$, on, the } from "on_the_money";
 import SessionAgent, { randomUUID } from "./session-agent.js";
 import { clocks } from "./session-status.js";
 import sessionState from "./session-state.js";
@@ -10,11 +10,20 @@ import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import reasoningPreview from "./reasoning-preview.js";
 import managementAction from "./management-action.js";
-import sessionCommands, { expandPromptCommand, isCommand } from "./session-commands.js";
+import sessionCommands, { expandPromptCommand, isCommand, primaryModifierLabel } from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
 import stickyTail from "./sticky-tail.js";
+
+/** @param {EventTarget | null} target */
+function isTextEntry(target) {
+    if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+    if (target instanceof HTMLInputElement) {
+        return !["radio", "checkbox", "button", "submit", "reset"].includes(target.type);
+    }
+    return target instanceof HTMLElement && target.isContentEditable;
+}
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
 
@@ -63,10 +72,25 @@ export default function observeSession(element) {
     const compose = $(controls, "#session-compose");
     const stop = $(controls, "#session-stop");
     const field = $(controls, "#session-message");
-    if (!(compose instanceof HTMLFormElement) || !(stop instanceof HTMLFormElement) || !(field instanceof HTMLTextAreaElement)) {
+    const sendButton = $(controls, 'button[form="session-compose"]');
+    if (!(compose instanceof HTMLFormElement) || !(stop instanceof HTMLFormElement)
+        || !(field instanceof HTMLTextAreaElement) || !(sendButton instanceof HTMLButtonElement)) {
         throw new Error("Session controls are incomplete.");
     }
     const draft = field;
+    const coarseMedia = window.matchMedia("(pointer: coarse)");
+    const syncSendShortcuts = () => {
+        const mod = primaryModifierLabel();
+        if (coarseMedia.matches) {
+            sendButton.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+            sendButton.title = `Send (${mod}+Enter)`;
+        } else {
+            sendButton.setAttribute("aria-keyshortcuts", "Enter Control+Enter Meta+Enter");
+            sendButton.title = `Send (Enter · ${mod}+Enter)`;
+        }
+    };
+    syncSendShortcuts();
+    coarseMedia.onchange = syncSendShortcuts;
     const draftKey = `plurnk:draft:${sessionId}`;
     /** @returns {string | null} */
     function readStoredDraft() {
@@ -128,7 +152,7 @@ export default function observeSession(element) {
         return enabled;
     };
     const runCommand = sessionCommands(main, { call: action, stop: cancelWork, toggleYolo });
-    sessionSettings(main, element, action, () => resources.signal);
+    const dismissSettings = sessionSettings(main, element, action, () => resources.signal);
     const tail = stickyTail(main);
 
     function availability() {
@@ -351,16 +375,71 @@ export default function observeSession(element) {
         }
     });
     on(document, "keydown", "body", (event) => {
-        if (!(event instanceof KeyboardEvent) || event.key !== "Tab" || !event.shiftKey
-            || event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.repeat) return;
-        const inDraft = event.target === draft;
-        const pendingProposal = the(element, "connection") === "interrupted"
-            && agent.pendingGates.some(({ method }) => method === "session/request_permission");
-        if (cancellation || (!inDraft && !pendingProposal)) return;
-        event.preventDefault();
-        void toggleYolo().catch((error) => {
-            if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
-        });
+        if (!(event instanceof KeyboardEvent) || event.defaultPrevented || event.isComposing || event.repeat) return;
+        if ($("dialog[open]")) return;
+        if (event.key === "Tab" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            const inDraft = event.target === draft;
+            const pendingProposal = the(element, "connection") === "interrupted"
+                && agent.pendingGates.some(({ method }) => method === "session/request_permission");
+            if (cancellation || (!inDraft && !pendingProposal)) return;
+            event.preventDefault();
+            void toggleYolo().catch((error) => {
+                if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
+            });
+            return;
+        }
+        if (isTextEntry(event.target) || event.ctrlKey || event.altKey || event.metaKey) return;
+        if (event.key === "Escape" && !event.shiftKey) {
+            if (dismissSettings() || runCommand.dismissAll()) {
+                event.preventDefault();
+                return;
+            }
+            if (the(controls, "stop-unavailable") === null) {
+                event.preventDefault();
+                stop.requestSubmit();
+            }
+            return;
+        }
+        if (event.key === "/" && !event.shiftKey) {
+            event.preventDefault();
+            draft.focus();
+            return;
+        }
+        if (event.key === "?") {
+            if (the(controls, "command-pending") !== null) return;
+            event.preventDefault();
+            the(controls, "command-pending", "");
+            availability();
+            tail.pin();
+            void runCommand.showHelp(resources.signal).then(() => {
+                tail.follow();
+            }).finally(() => {
+                the(controls, "command-pending", null);
+                availability();
+            });
+            return;
+        }
+        const lower = event.key.toLowerCase();
+        if ((lower === "y" || lower === "a" || lower === "n" || lower === "r")
+            && the(element, "connection") === "interrupted"
+            && the(review.form, "review-unavailable") === null) {
+            const proposals = $$(review.form, 'fieldset:has(input[type="radio"][value="accept"])');
+            if (proposals.length === 0) return;
+            const focusedProposal = event.target instanceof Element
+                ? event.target.closest('fieldset:has(input[type="radio"][value="accept"])')
+                : null;
+            const targetProposal = focusedProposal
+                ?? proposals.find((fieldset) => !$(fieldset, 'input[type="radio"]:checked'))
+                ?? proposals[0];
+            const choice = lower === "y" || lower === "a" ? "accept" : "reject";
+            const radio = targetProposal ? $(targetProposal, `input[type="radio"][value="${choice}"]`) : null;
+            if (radio instanceof HTMLInputElement && !radio.disabled) {
+                event.preventDefault();
+                radio.checked = true;
+                radio.focus();
+                radio.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        }
     });
     on(main, "click", ':is(#session-conversation, #session-diagnostics) summary, a[href^="#"]', () => {
         tail.release();
@@ -389,7 +468,17 @@ export default function observeSession(element) {
             draft.blur();
             return;
         }
-        if (event.key !== "Enter" || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+        if (event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+            && (event.code === "KeyJ" || event.key === "j" || event.key === "J")) {
+            event.preventDefault();
+            if (!draft.disabled && !draft.readOnly) {
+                draft.setRangeText("\n", draft.selectionStart, draft.selectionEnd, "end");
+                draft.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            return;
+        }
+        if (event.key !== "Enter" || event.altKey || event.shiftKey || (event.ctrlKey && event.metaKey)) return;
+        if (!event.ctrlKey && !event.metaKey && coarseMedia.matches) return;
         event.preventDefault();
         compose.requestSubmit();
     });
