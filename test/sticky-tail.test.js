@@ -93,6 +93,7 @@ test("{§web-session-history} stickyTail pins initial arrival, releases on upwar
         tail.resume();
         tail.follow();
         assert.equal(main.scrollTop, 2600);
+        tail.pause();
     } finally {
         globalThis.location = prevLocation;
         globalThis.CSS = prevCss;
@@ -121,30 +122,37 @@ test("{§web-session-history} stickyTail suppresses initial bottom jump when URL
         main.scrollHeight = 1600;
         tail.follow();
         assert.equal(main.scrollTop, 1200);
+        tail.pause();
     } finally {
         globalThis.location = prevLocation;
         globalThis.CSS = prevCss;
     }
 });
 
-test("{§web-session-history} stickyTail defers ResizeObserver adjustments to requestAnimationFrame", () => {
+test("{§web-session-history} stickyTail coalesces DOM mutations and viewport resizes into requestAnimationFrame", () => {
     const prevLocation = globalThis.location;
     const prevCss = globalThis.CSS;
-    const prevRo = globalThis.ResizeObserver;
+    const prevMo = globalThis.MutationObserver;
+    const prevWindow = globalThis.window;
     const prevRaf = globalThis.requestAnimationFrame;
     const prevCaf = globalThis.cancelAnimationFrame;
     /** @type {(() => void) | undefined} */
-    let resizeCallback;
+    let mutationCallback;
+    /** @type {Record<string, unknown> | undefined} */
+    let mutationOptions;
+    const fakeVisualViewport = { /** @type {(() => void) | null} */ onresize: null };
+    const fakeWindow = { /** @type {(() => void) | null} */ onresize: null, visualViewport: fakeVisualViewport };
     /** @type {Map<number, () => void>} */
     const frames = new Map();
     let frameId = 0;
     globalThis.location = /** @type {any} */ ({ hash: "" });
     globalThis.CSS = /** @type {any} */ ({ escape: (value) => String(value) });
-    globalThis.ResizeObserver = /** @type {any} */ (class {
-        constructor(cb) { resizeCallback = cb; }
-        observe() {}
+    globalThis.MutationObserver = /** @type {any} */ (class {
+        constructor(cb) { mutationCallback = cb; }
+        observe(_target, options) { mutationOptions = options; }
         disconnect() {}
     });
+    globalThis.window = /** @type {any} */ (fakeWindow);
     globalThis.requestAnimationFrame = (cb) => {
         const id = ++frameId;
         frames.set(id, () => cb(0));
@@ -154,24 +162,45 @@ test("{§web-session-history} stickyTail defers ResizeObserver adjustments to re
     try {
         const main = fakeScroller({ scrollHeight: 1400, clientHeight: 400, scrollTop: 1000 });
         const tail = stickyTail(main);
+        assert.deepEqual(mutationOptions, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ["hidden", "open"],
+        });
+        assert.equal(typeof fakeWindow.onresize, "function");
+        assert.equal(typeof fakeVisualViewport.onresize, "function");
+
         main.scrollHeight = 1900;
-        resizeCallback?.();
-        resizeCallback?.();
-        assert.equal(frames.size, 1, "multiple ResizeObserver callbacks coalesce into one animation frame");
-        assert.equal(main.scrollTop, 1000, "ResizeObserver callback never mutates scrollTop synchronously during layout delivery");
+        mutationCallback?.();
+        fakeWindow.onresize?.();
+        fakeVisualViewport.onresize?.();
+        assert.equal(frames.size, 1, "DOM mutations and viewport resizes coalesce into one animation frame");
+        assert.equal(main.scrollTop, 1000, "observer callback never mutates scrollTop synchronously");
         for (const run of [...frames.values()]) run();
         frames.clear();
         assert.equal(main.scrollTop, 1500, "queued animation frame settles scrollTop at bottom");
 
+        // Viewport shrink (e.g. mobile virtual keyboard opening) re-anchors pinned scroller on next frame.
+        main.clientHeight = 250;
+        fakeVisualViewport.onresize?.();
+        for (const run of [...frames.values()]) run();
+        frames.clear();
+        assert.equal(main.scrollTop, 1650, "visualViewport resize settles scrollTop for smaller viewport");
+
         main.scrollHeight = 2200;
-        resizeCallback?.();
+        mutationCallback?.();
         assert.equal(frames.size, 1);
         tail.pause();
         assert.equal(frames.size, 0, "pause cancels pending animation frame");
+        assert.equal(fakeWindow.onresize, null, "pause detaches viewport resize hook when last listener pauses");
+        assert.equal(fakeVisualViewport.onresize, null);
     } finally {
         globalThis.location = prevLocation;
         globalThis.CSS = prevCss;
-        globalThis.ResizeObserver = prevRo;
+        globalThis.MutationObserver = prevMo;
+        globalThis.window = prevWindow;
         globalThis.requestAnimationFrame = prevRaf;
         globalThis.cancelAnimationFrame = prevCaf;
     }

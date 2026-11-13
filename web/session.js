@@ -259,6 +259,7 @@ export default function observeSession(element) {
                         if (signal.aborted) return;
                         const snapshot = /** @type {Parameters<typeof presentState>[0]} */ (state);
                         presentState(snapshot, Date.now());
+                        tail.follow();
                         const next = snapshot.plurnk?.status;
                         if (!next) return;
                         status = next;
@@ -460,6 +461,7 @@ export default function observeSession(element) {
         const value = draft.value;
         writeStoredDraft(value.trim() !== "" && !isCommand(value, availableCommands()) ? value : "");
         availability();
+        tail.follow();
     });
     on(compose, "keydown", "textarea", (event) => {
         if (!(event instanceof KeyboardEvent) || event.isComposing || event.repeat) return;

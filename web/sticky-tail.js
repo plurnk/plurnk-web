@@ -3,6 +3,21 @@ import { $ } from "on_the_money";
 // {§web-session-history} One line-height slack absorbs subpixel rounding across zoom levels and DPIs without capturing deliberate upward scrolls.
 const TAIL_SLACK_PX = 24;
 
+/** @type {Set<() => void>} */
+const viewportListeners = new Set();
+
+function notifyViewportResize() {
+    for (const listener of viewportListeners) listener();
+}
+
+function syncViewportHooks() {
+    const active = viewportListeners.size > 0 ? notifyViewportResize : null;
+    if (typeof window === "object") {
+        window.onresize = active;
+        if (window.visualViewport) window.visualViewport.onresize = active;
+    }
+}
+
 /** @param {HTMLElement} scroller */
 function hasHashTarget(scroller) {
     const raw = location.hash.slice(1);
@@ -29,6 +44,7 @@ export default function stickyTail(scroller) {
     const atBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= TAIL_SLACK_PX;
 
     function syncScrollState() {
+        if (scroller.hidden) return;
         if (atBottom()) {
             pinned = true;
             checkInitialHash = false;
@@ -39,7 +55,7 @@ export default function stickyTail(scroller) {
     }
 
     function follow() {
-        if (paused || !pinned) return;
+        if (paused || !pinned || scroller.hidden) return;
         if (checkInitialHash && hasHashTarget(scroller)) {
             pinned = false;
             checkInitialHash = false;
@@ -57,6 +73,7 @@ export default function stickyTail(scroller) {
         if (paused) return;
         pinned = true;
         checkInitialHash = false;
+        if (scroller.hidden) return;
         const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
         if (scroller.scrollTop !== maxScrollTop) {
             scroller.scrollTop = scroller.scrollHeight;
@@ -69,14 +86,14 @@ export default function stickyTail(scroller) {
         lastScrollTop = scroller.scrollTop;
     }
 
-    /** @type {ResizeObserver | undefined} */
-    let resizeObserver;
-    let resizeFrame = 0;
+    /** @type {MutationObserver | undefined} */
+    let mutationObserver;
+    let followFrame = 0;
     function scheduleFollow() {
-        if (paused || !pinned || resizeFrame !== 0) return;
+        if (paused || !pinned || followFrame !== 0) return;
         if (typeof requestAnimationFrame === "function") {
-            resizeFrame = requestAnimationFrame(() => {
-                resizeFrame = 0;
+            followFrame = requestAnimationFrame(() => {
+                followFrame = 0;
                 follow();
             });
         } else {
@@ -85,11 +102,18 @@ export default function stickyTail(scroller) {
     }
     function connect() {
         scroller.onscroll = syncScrollState;
-        if (typeof ResizeObserver === "function" && !resizeObserver) {
-            resizeObserver = new ResizeObserver(scheduleFollow);
-            resizeObserver.observe(scroller);
-            for (const child of scroller.children) resizeObserver.observe(child);
+        if (typeof MutationObserver === "function" && !mutationObserver) {
+            mutationObserver = new MutationObserver(scheduleFollow);
+            mutationObserver.observe(scroller, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeFilter: ["hidden", "open"],
+            });
         }
+        viewportListeners.add(scheduleFollow);
+        syncViewportHooks();
     }
 
     connect();
@@ -102,12 +126,14 @@ export default function stickyTail(scroller) {
         pause() {
             paused = true;
             scroller.onscroll = null;
-            if (resizeFrame !== 0 && typeof cancelAnimationFrame === "function") {
-                cancelAnimationFrame(resizeFrame);
+            if (followFrame !== 0 && typeof cancelAnimationFrame === "function") {
+                cancelAnimationFrame(followFrame);
             }
-            resizeFrame = 0;
-            resizeObserver?.disconnect();
-            resizeObserver = undefined;
+            followFrame = 0;
+            mutationObserver?.disconnect();
+            mutationObserver = undefined;
+            viewportListeners.delete(scheduleFollow);
+            syncViewportHooks();
         },
         resume() {
             paused = false;
