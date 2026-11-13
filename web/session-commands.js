@@ -114,12 +114,61 @@ function formatFamilyResult(family, parsed, res) {
                 const name = typeof item.alias === "string" ? item.alias
                     : typeof item.name === "string" ? item.name : "";
                 const state = typeof item.state === "string" ? item.state : "active";
-                return `${name}  ${state}`;
+                const provenance = isRecord(item.provenance) && typeof item.provenance.source === "string" && item.provenance.source.length > 0
+                    ? `  source=${item.provenance.source}`
+                    : "";
+                return `${name}  ${state}${provenance}`;
             });
             return { message: "", literal: lines.join("\n") };
         }
     }
     return { message: `Executed /${family}.` };
+}
+
+/**
+ * @param {unknown} res
+ * @param {"session" | "workspace"} fallbackOrigin
+ */
+function extractEnvEntries(res, fallbackOrigin) {
+    if (!isRecord(res)) return [];
+    const list = Array.isArray(res.definitions) ? res.definitions
+        : Array.isArray(res.items) ? res.items : [];
+    return list.flatMap((item) => {
+        if (!isRecord(item)) return [];
+        const alias = typeof item.alias === "string" ? item.alias
+            : typeof item.name === "string" ? item.name : "";
+        if (!alias) return [];
+        const origin = item.origin === "session" || item.origin === "workspace" || item.origin === "service"
+            ? item.origin
+            : fallbackOrigin;
+        const state = typeof item.state === "string" ? item.state : "active";
+        const source = isRecord(item.provenance) && typeof item.provenance.source === "string" && item.provenance.source.length > 0
+            ? item.provenance.source
+            : "";
+        return [{ alias, origin, state, source }];
+    });
+}
+
+/**
+ * @param {Element} panel
+ * @param {unknown} res
+ * @param {"session" | "workspace"} listScope
+ */
+function populateEnvPanel(panel, res, listScope) {
+    const tbody = $(panel, "tbody");
+    if (!tbody) throw new Error("Environment panel template is incomplete.");
+    const entries = extractEnvEntries(res, listScope);
+    $.cloneEach(tbody, "#command-env-row", entries, (tr, entry) => {
+        the(tr, {
+            envAlias: entry.alias,
+            envOrigin: entry.origin,
+            envStatus: entry.source ? `${entry.state} (${entry.source})` : entry.state,
+            envRemovable: entry.origin === "session" || entry.origin === "workspace" ? "true" : "false",
+            envEnabled: entry.state !== "disabled" ? "true" : "false",
+        });
+    });
+    the(panel, { envCount: entries.length, envBusy: null });
+    return entries.length;
 }
 
 /** @typedef {import("./session-models.js").Action} Action */
@@ -132,11 +181,89 @@ export default function sessionCommands(controls, actions) {
     const outlet = $.clone(controls, "#command-results");
     const list = $(outlet, "ul");
     if (!list) throw new Error("Command results template is incomplete.");
+    /** @type {WeakMap<Element, { listScope: "session" | "workspace", signal: AbortSignal }>} */
+    const envPanels = new WeakMap();
     on(outlet, "click", "[data-dismiss-command]", (_event, target) => {
         const row = target.closest("li");
         const article = row ? $(row, "article") : null;
         if (!row || !article || article.getAttribute("aria-busy") === "true") return;
         row.remove();
+    });
+    on(outlet, "input", '[data-env-set-form] input[name="alias"]', (_event, target) => {
+        if (target instanceof HTMLInputElement) target.setCustomValidity("");
+    });
+    on(outlet, "submit", "[data-env-row-form]", async (event, target) => {
+        event.preventDefault();
+        if (!(target instanceof HTMLFormElement)) return;
+        const panel = target.closest("[data-env-panel]");
+        const article = target.closest("article");
+        const ctx = panel ? envPanels.get(panel) : undefined;
+        if (!panel || !article || !ctx || article.getAttribute("aria-busy") === "true") return;
+        const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+        const operation = submitter?.value ?? "";
+        if (operation !== "enable" && operation !== "disable" && operation !== "remove") return;
+        const data = new FormData(target);
+        const alias = typeof data.get("alias") === "string" ? /** @type {string} */ (data.get("alias")).trim() : "";
+        const origin = data.get("origin");
+        if (!alias) return;
+        const targetScope = operation === "remove"
+            ? (origin === "workspace" ? "workspace" : "session")
+            : ctx.listScope;
+        the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandRecovery: "" });
+        the(panel, "env-busy", "");
+        try {
+            ctx.signal.throwIfAborted();
+            await actions.call(`${targetScope}.env.${operation}`, { alias }, ctx.signal);
+            const fresh = await actions.call(`${ctx.listScope}.env.list`, {}, ctx.signal);
+            ctx.signal.throwIfAborted();
+            populateEnvPanel(panel, fresh, ctx.listScope);
+            const verbLabel = operation === "remove" ? "unset" : `${operation}d`;
+            the(article, { commandState: "done", commandBusy: "false", commandMessage: `${alias}  ${verbLabel}`, commandRecovery: "" });
+        } catch (error) {
+            const { message, recovery, status } = await describeFailure(error);
+            the(panel, "env-busy", null);
+            the(article, { commandState: "error", commandBusy: "false",
+                commandMessage: ctx.signal.aborted ? "Response not confirmed." : message, commandRecovery: recovery, commandStatus: status });
+        }
+    });
+    on(outlet, "submit", "[data-env-set-form]", async (event, target) => {
+        event.preventDefault();
+        if (!(target instanceof HTMLFormElement)) return;
+        const panel = target.closest("[data-env-panel]");
+        const article = target.closest("article");
+        const ctx = panel ? envPanels.get(panel) : undefined;
+        if (!panel || !article || !ctx || article.getAttribute("aria-busy") === "true") return;
+        const aliasInput = $(target, 'input[name="alias"]');
+        const valueInput = $(target, 'input[name="value"]');
+        const scopeSelect = $(target, 'select[name="scope"]');
+        if (!(aliasInput instanceof HTMLInputElement) || !(valueInput instanceof HTMLInputElement)) return;
+        const alias = aliasInput.value.trim();
+        if (!alias) {
+            aliasInput.setCustomValidity("Enter a variable name.");
+            aliasInput.reportValidity();
+            return;
+        }
+        const value = valueInput.value;
+        const targetScope = scopeSelect instanceof HTMLSelectElement && scopeSelect.value === "workspace"
+            ? "workspace"
+            : "session";
+        the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandRecovery: "" });
+        the(panel, "env-busy", "");
+        try {
+            ctx.signal.throwIfAborted();
+            await actions.call(`${targetScope}.env.replace`, { alias, value }, ctx.signal);
+            const fresh = await actions.call(`${ctx.listScope}.env.list`, {}, ctx.signal);
+            ctx.signal.throwIfAborted();
+            populateEnvPanel(panel, fresh, ctx.listScope);
+            aliasInput.value = "";
+            valueInput.value = "";
+            the(article, { commandState: "done", commandBusy: "false", commandMessage: `${alias}  active`, commandRecovery: "" });
+        } catch (error) {
+            const { message, recovery, status } = await describeFailure(error);
+            the(panel, "env-busy", null);
+            the(article, { commandState: "error", commandBusy: "false",
+                commandMessage: ctx.signal.aborted ? "Response not confirmed." : message, commandRecovery: recovery, commandStatus: status });
+        }
     });
     /** @param {string} text @param {AbortSignal} signal */
     const execute = async (text, signal) => {
@@ -188,11 +315,20 @@ export default function sessionCommands(controls, actions) {
                 }
                 const res = await call(parsed.actionName, params);
                 signal.throwIfAborted();
-                const formatted = formatFamilyResult(name, parsed, res);
-                message = formatted.message;
-                if (formatted.literal) {
-                    const literal = $.clone(body, "#conversation-literal");
-                    literal.textContent = formatted.literal;
+                if (name === "env" && parsed.sub === "list") {
+                    const panel = $.clone(body, "#command-env");
+                    const scopeSelect = $(panel, 'select[name="scope"]');
+                    if (scopeSelect instanceof HTMLSelectElement) scopeSelect.value = parsed.scopePrefix;
+                    envPanels.set(panel, { listScope: parsed.scopePrefix, signal });
+                    const count = populateEnvPanel(panel, res, parsed.scopePrefix);
+                    message = count === 0 ? "env: none" : "";
+                } else {
+                    const formatted = formatFamilyResult(name, parsed, res);
+                    message = formatted.message;
+                    if (formatted.literal) {
+                        const literal = $.clone(body, "#conversation-literal");
+                        literal.textContent = formatted.literal;
+                    }
                 }
             } else {
                 if (name === "models") {
