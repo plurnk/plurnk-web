@@ -89,7 +89,7 @@
         "build": "node scripts/build.mjs",
         "preview": "vite preview",
         "test:lint": "plurnk-spec-check && tsc && tsc -p tsconfig.browser.json && tsc -p tsconfig.test.json && eslint . && otm-lint --check web && stylelint 'web/styles/*.css'",
-        "test:unit": "node --env-file=.env.defaults --test test/module.test.js test/creations.test.js test/workspace-creation.test.js test/route-settlement.test.js test/diagrams.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js test/session.test.js test/token.test.js test/documents.test.js test/session-status.test.js test/history-pages.test.js test/conversation.test.js test/package.test.js",
+        "test:unit": "node --env-file=.env.defaults --test test/module.test.js test/creations.test.js test/workspace-creation.test.js test/route-settlement.test.js test/diagrams.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js test/session.test.js test/token.test.js test/documents.test.js test/session-status.test.js test/sticky-tail.test.js test/history-pages.test.js test/conversation.test.js test/package.test.js",
         "test:installation": "node --test test/installation.test.js",
         "test:candidate": "node scripts/test-candidate.mjs",
         "test": "npm run build && npm run test:lint && npm run test:unit",

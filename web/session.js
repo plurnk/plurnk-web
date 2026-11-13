@@ -14,6 +14,7 @@ import sessionCommands, { expandPromptCommand, isCommand } from "./session-comma
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
+import stickyTail from "./sticky-tail.js";
 
 /** @typedef {{message?: {id: string, role: "user", content: string}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
 
@@ -128,6 +129,7 @@ export default function observeSession(element) {
     };
     const runCommand = sessionCommands(main, { call: action, stop: cancelWork, toggleYolo });
     sessionSettings(main, element, action, () => resources.signal);
+    const tail = stickyTail(main);
 
     function availability() {
         const current = the(element, "connection");
@@ -147,6 +149,7 @@ export default function observeSession(element) {
         the(element, { connection: current, connectionLabel: label });
         the(connectionNotice, "connection-label", label);
         availability();
+        tail.follow();
     }
 
     /** @param {AbortSignal} signal @returns {Promise<Record<string, string>>} */
@@ -205,14 +208,21 @@ export default function observeSession(element) {
                         if (signal.aborted) return;
                         preview.consume(update);
                         await diagnose(update);
+                        tail.follow();
                     },
-                    onMessagesChanged: ({ messages }) => { if (!signal.aborted) transcript.present(messages); },
+                    onMessagesChanged: ({ messages }) => {
+                        if (!signal.aborted) {
+                            transcript.present(messages);
+                            tail.follow();
+                        }
+                    },
                     onUserMessage: ({ messageId }) => {
                         if (!signal.aborted) acknowledged(messageId);
                     },
                     onMessagesSnapshot: ({ snapshot }) => {
                         if (signal.aborted) return;
                         transcript.snapshot(snapshot);
+                        tail.follow();
                         if (!pending) return;
                         if (snapshot.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
                         else if (!submission) {
@@ -285,6 +295,7 @@ export default function observeSession(element) {
                     the(connectionNotice, "connection-detail", mode === "manual" ? "Review the pending requests."
                         : mode === "expired" ? "The decision deadline has passed; the daemon cancels these requests."
                             : "This page cannot answer this interaction. Work remains pending.");
+                    tail.follow();
                     holding = true;
                     submission = undefined;
                     continue;
@@ -351,6 +362,12 @@ export default function observeSession(element) {
             if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
         });
     });
+    on(main, "click", ':is(#session-conversation, #session-diagnostics) summary, a[href^="#"]', () => {
+        tail.release();
+    });
+    on(main, "submit", "[data-history-boundary] form", () => {
+        tail.release();
+    });
     on(main, "submit", "#session-reconnect", (event) => {
         event.preventDefault();
         if (["disconnected", "interrupted"].includes(the(element, "connection") ?? "")) {
@@ -383,11 +400,13 @@ export default function observeSession(element) {
             const text = draft.value;
             the(controls, "command-pending", "");
             availability();
+            tail.pin();
             try {
                 if (await runCommand(text, resources.signal) && draft.value === text) {
                     draft.value = "";
                     writeStoredDraft("");
                 }
+                tail.follow();
             } finally {
                 the(controls, "command-pending", null);
                 availability();
@@ -405,6 +424,7 @@ export default function observeSession(element) {
             : { id: randomUUID(), role: /** @type {const} */ ("user"), content: expanded };
         pending = { message, source, retryable: false };
         the(feedback, { messageStatus: "Sending…", commandError: "" });
+        tail.pin();
         connect({ message });
     });
 
@@ -460,6 +480,7 @@ export default function observeSession(element) {
 
     window.onpagehide = () => {
         reconnect.reset();
+        tail.pause();
         transcript.pause();
         preview.clear();
         resources.abort();
@@ -476,6 +497,7 @@ export default function observeSession(element) {
                 if (draft.value !== savedDraft) draft.value = savedDraft;
             }
             transcript.resume();
+            tail.resume();
             connect();
         }
     };
