@@ -40,3 +40,16 @@ test("{§web-package} the package exports its native module and ships root defau
     assert.ok(manifest.files.includes("dist/"));
     assert.match(await readFile(new URL("../.env.defaults", import.meta.url), "utf8"), /^PLURNK_WEB_YOLO=0$/mu);
 });
+
+test("{§web-package} browser ACP client info versions stay in lockstep with package.json and ondine stays zero-dependency", async () => {
+    const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    const ondineManifest = JSON.parse(await readFile(new URL("../node_modules/ondine/package.json", import.meta.url), "utf8"));
+    assert.equal(manifest.dependencies.ondine, "0.0.2");
+    assert.deepEqual(Object.keys(ondineManifest.dependencies ?? {}), [], "ondine runtime package must carry zero dependencies");
+    for (const relativePath of ["../web/session-agent.js", "../web/management-action.js"]) {
+        const source = await readFile(new URL(relativePath, import.meta.url), "utf8");
+        const match = /info:\s*\{\s*name:\s*"@plurnk\/plurnk-web",\s*version:\s*"([^"]+)"\s*\}/u.exec(source);
+        assert.ok(match, `${relativePath} declares ACP client info`);
+        assert.equal(match[1], manifest.version, `${relativePath} info.version matches package.json#version`);
+    }
+});

@@ -13,6 +13,8 @@ const HOST_ONLY = "__Host-";
 const SECURE_ONLY = "__Secure-";
 export const CALLBACK = "/auth/callback";
 export const CLIENT = "plurnk-web";
+// {§web-access-token} Refresh within sub-second loopback transit so a handed-out Bearer token does not expire in flight.
+const ACCESS_EXPIRY_MARGIN_MS = 100;
 
 /** @typedef {{ access: string, refresh: string, claims: import("@plurnk/plurnk-contracts").CredentialClaims, refreshing: Promise<void> | null }} Grant */
 /** @typedef {{ verifier: string, target: string, redirectUri: string, expires: number }} Transaction */
@@ -292,7 +294,8 @@ export default class Session {
         this.#prune();
         const grant = this.#grants.get(claims.family);
         if (grant === undefined) throw new RequestError(401, "Sign in again to connect.");
-        if (this.#credentials.verify(grant.access) === null) {
+        const current = this.#credentials.verify(grant.access);
+        if (current === null || current.expiresAt - Date.now() <= ACCESS_EXPIRY_MARGIN_MS) {
             grant.refreshing ??= this.#refresh(grant).finally(() => { grant.refreshing = null; });
             await grant.refreshing;
         }

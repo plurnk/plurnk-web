@@ -269,7 +269,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await page.getByText("Completed learn-focus.", { exact: true }).waitFor();
             await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "");
             assert.equal(model.requests.length, 2);
-            assert.match(sent.at(-1).params.prompt[0].text, /SKILL\.md[\s\S]*Focus: Lifecycle fixture: learn-focus\./u);
+            assert.match(sent.at(-1).params.prompt[0].text, /SKILL\.md[\s\S]*mcp:\/\/\/plurnk\/skills\.json[\s\S]*Focus: Lifecycle fixture: learn-focus\./u);
             checkBrowser();
         }, { authenticated: true, env: reasoning }));
 

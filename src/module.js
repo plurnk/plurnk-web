@@ -362,9 +362,9 @@ export default function createModule(assets = productionAssets()) {
             stop();
             const cleanup = new AsyncDisposableStack();
             cleanup.defer(() => session?.close());
+            cleanup.defer(() => assets.close?.());
             cleanup.defer(async () => { await Promise.allSettled(requests); });
             cleanup.defer(() => diagrams?.close());
-            cleanup.defer(() => assets.close?.());
             await cleanup.disposeAsync();
         },
     };

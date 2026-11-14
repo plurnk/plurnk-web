@@ -13,7 +13,7 @@ const familyCommands = new Set(["mcp", "skills", "schedule", "personas", "env"])
 const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop", ...familyCommands]);
 const helpCommands = new Set([...commands, "learn"]);
 
-const LEARN_PROMPT = "Review this session's work and author or update a reusable workspace skill (`SKILL.md` under `.agents/skills/<name>/SKILL.md`), reading `skill://plurnk/recipes.md` for conventions if needed, then verify it via `plurnk.skills`.";
+const LEARN_PROMPT = "Review this session's work and author or update a reusable workspace skill (`SKILL.md` under `.agents/skills/<name>/SKILL.md`), reading `mcp:///plurnk/skills.json` for conventions if needed, then verify it via `plurnk.skills`.";
 
 /** @param {string} text */
 export function expandPromptCommand(text) {
@@ -25,7 +25,7 @@ export function expandPromptCommand(text) {
 
 /**
  * @param {string} text
- * @param {readonly { name: string }[]} [availableCommands]
+ * @param {readonly { readonly name: string, readonly type?: string }[]} [availableCommands]
  */
 export function isCommand(text, availableCommands = []) {
     const trimmed = text.trimStart();
@@ -34,7 +34,7 @@ export function isCommand(text, availableCommands = []) {
     const name = match?.[1] ?? "";
     if (name === "learn") return false;
     if (!name || commands.has(name)) return true;
-    return !availableCommands.some((entry) => entry?.name === name);
+    return !availableCommands.some((entry) => entry?.type !== "skill" && entry?.name === name);
 }
 
 /** @param {string} text */

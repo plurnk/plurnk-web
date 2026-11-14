@@ -153,3 +153,22 @@ test("{§web-access-token} close releases the observer and in-flight refresh can
     await rejected;
     await assert.rejects(f.session.token(f.request, response()), { status: 401 });
 });
+
+test("{§web-access-token} sub-second transit margin refreshes within 100ms of expiry without refreshing fresh 1s tokens", async (t) => {
+    const f = await fixture(t);
+    f.records.get(f.initial.access_token).expiresAt = Date.now() + 500;
+    const reused = response();
+    await f.session.token(f.request, reused);
+    assert.equal(JSON.parse(reused.body).access_token, f.initial.access_token);
+    assert.deepEqual(f.refreshes, [], "access token valid well beyond 100ms is reused without refresh");
+
+    f.records.get(f.initial.access_token).expiresAt = Date.now() + 80;
+    const rotatedRes = response();
+    const pending = f.session.token(f.request, rotatedRes);
+    await f.entered.promise;
+    assert.deepEqual(f.refreshes, [f.initial.refresh_token], "access token within 100ms of expiry refreshes proactively");
+    const next = f.pair();
+    f.released.resolve(Response.json(next));
+    await pending;
+    assert.equal(JSON.parse(rotatedRes.body).access_token, next.access_token);
+});

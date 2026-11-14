@@ -147,7 +147,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const availableCommands = () => {
         const plurnk = /** @type {Record<string, unknown> | undefined} */ (agent.state.plurnk);
         return Array.isArray(plurnk?.availableCommands)
-            ? /** @type {readonly { name: string }[]} */ (plurnk.availableCommands)
+            ? /** @type {readonly { readonly name: string, readonly type?: string }[]} */ (plurnk.availableCommands)
             : [];
     };
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */

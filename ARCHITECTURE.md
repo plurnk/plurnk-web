@@ -80,12 +80,11 @@ not justify weakening CSP or adding a compatibility system.
 
 ### Accepted development dependency exposure
 
-The build-only Stylelint → micromatch → braces chain, which the PurgeCSS build step
-also reaches through fast-glob → micromatch, retains
+The build-only PurgeCSS → fast-glob → micromatch → braces chain (Stylelint 18 dropped
+its own micromatch path) retains
 [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), a
-stack-exhaustion risk from deeply nested glob patterns. The lint command supplies
-the repository-owned `web/styles/*.css` pattern and the build its own content
-globs; these packages are absent from
+stack-exhaustion risk from deeply nested glob patterns. The build supplies only
+its own repository-owned content globs; these packages are absent from
 the production dependency graph and browser bundle. Keep normal audit reporting
 without a fork, override or suppression. Reassess when the upstream chain changes
 or a consumer begins accepting untrusted patterns. This accepts the bounded
@@ -96,8 +95,8 @@ retains the investigation and dependency evidence.
 
 | Dependency | Why it stands as it does |
 |---|---|
-| `zod` 3.25.76, an exact direct dependency | The SDK and the page share one copy: `web/schema-validation.js` configures it `jitless` before the SDK loads, as the page's CSP requires, and a second copy would not receive that. It moves only with the SDK's own range. |
-| `ondine` 0.0.1, the server-side diagram compiler | Reviewed 2026-10-23: one maintainer, published 2026-10-19 with SLSA v1 provenance, no dependencies, its compilers WASM. Review it again at every version change. |
+| `zod` 4.6.7, an exact direct dependency | The SDK and the page share one copy: `web/schema-validation.js` configures it `jitless` before the SDK loads, as the page's CSP requires, and a second copy would not receive that. It moves only with the SDK's own range. |
+| `ondine` 0.0.2, the server-side diagram compiler | Reviewed 2026-11-14: one maintainer, published 2026-10-20 with SLSA v1 provenance, no dependencies, its compilers WASM. Review it again at every version change. |
 | `highlight.js` 11, the browser syntax tokenizer | Reviewed 2026-11-13: BSD-3-Clause, no dependencies, no `eval` or inline styles, the most widely deployed highlighter with a stable class-scope output. Web reads that output as tokens and projects them as CSS Custom Highlight ranges, so the content keeps one text node and the stylesheet needs no class selectors; Shiki's inline styles would breach the CSP and a hand-written lexer would be a second grammar authority. |
 | `@types/negotiator` 0.6 for `negotiator` 1.1 | No 1.x declarations exist; `src/static-assets.js` declares the one 1.x call it relies on, `encoding(available, { preferred })`. |
 
