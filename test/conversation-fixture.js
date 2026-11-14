@@ -34,10 +34,11 @@ async function compileEntry(entryURL) {
                 type: entry.type === "chunk" ? "text/javascript" : entry.fileName.endsWith(".css") ? "text/css" : entry.fileName.endsWith(".woff2") ? "font/woff2" : "text/plain",
             });
             const entry = output.find((entry) => entry.type === "chunk" && entry.isEntry);
+            const preloads = (entry.imports ?? []).map((imp) => `<link rel="modulepreload" crossorigin href="/${imp}">`).join("");
             const template = baseAssets.get("/index.html").body.toString()
                 // The component entry has its own module graph, not the production entry's preloads.
                 .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
-                .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" src="/${entry.fileName}"></script>`);
+                .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" crossorigin src="/${entry.fileName}"></script>${preloads}`);
             const documents = new Documents(template, false, 64);
             const document = await documents.read({ kind: "session", workspace: "conversation", session: "user" }, {
                 listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null, archived_at: null }],

@@ -84,6 +84,50 @@ export { PROTOCOL_VERSION, SessionTranslator, Validator, client, createHttpStrea
  * }} SessionRunOptions
  */
 
+/**
+ * {§web-session-input} Split inline `$<name>` references matching advertised `type: "skill"` commands into ACP `skill` content blocks.
+ * @param {string} promptText
+ * @param {readonly unknown[]} [availableCommands]
+ * @returns {import("@agentclientprotocol/sdk/experimental/v2/unstable").ContentBlock[]}
+ */
+export function buildPromptBlocks(promptText, availableCommands = []) {
+    const skillNames = new Set(
+        availableCommands
+            .filter((cmd) => isRecord(cmd) && cmd.type === "skill" && typeof cmd.name === "string" && cmd.name.length > 0)
+            .map((cmd) => /** @type {string} */ (Reflect.get(Object(cmd), "name"))),
+    );
+    if (skillNames.size === 0 || !promptText.includes("$")) {
+        return [{ type: "text", text: promptText }];
+    }
+    /** @type {import("@agentclientprotocol/sdk/experimental/v2/unstable").ContentBlock[]} */
+    const blocks = [];
+    let cursor = 0;
+    const tokenPattern = /(?<=^|[\s([{,])\$([^\s,;:!?)\]}]+)/gu;
+    for (const match of promptText.matchAll(tokenPattern)) {
+        const rawBody = match[1] ?? "";
+        const dollarIndex = match.index ?? 0;
+        let candidate = rawBody;
+        while (candidate.length > 0 && !skillNames.has(candidate) && candidate.endsWith(".")) {
+            candidate = candidate.slice(0, -1);
+        }
+        if (!skillNames.has(candidate)) {
+            continue;
+        }
+        if (dollarIndex > cursor) {
+            blocks.push({ type: "text", text: promptText.slice(cursor, dollarIndex) });
+        }
+        blocks.push({ type: "skill", name: candidate });
+        cursor = dollarIndex + 1 + candidate.length;
+    }
+    if (blocks.length === 0) {
+        return [{ type: "text", text: promptText }];
+    }
+    if (cursor < promptText.length) {
+        blocks.push({ type: "text", text: promptText.slice(cursor) });
+    }
+    return blocks;
+}
+
 /** {§web-session-observer} {§web-session-reasoning} Official ACP v2 client over `/acp`. */
 export default class SessionAgent {
     /** @type {typeof globalThis.fetch} */
@@ -97,9 +141,13 @@ export default class SessionAgent {
     /** @type {SessionSubscriber} */
     #subscriber = {};
     /** @type {boolean} */
-    #bufferingReplay = false;
+    #replaying = false;
+    /** @type {boolean} */
+    #resuming = false;
     /** @type {AcpSessionUpdatePayload[]} */
     #replayUpdates = [];
+    /** @type {AcpSessionUpdatePayload[]} */
+    #postReplayUpdates = [];
     /** @type {Set<string>} */
     #ambientCallIds = new Set();
     /** @type {AbortController | undefined} */
@@ -151,6 +199,8 @@ export default class SessionAgent {
         this.isRunning = false;
         /** @type {boolean} */
         this.promptImageSupported = false;
+        /** @type {boolean} */
+        this.promptSkillSupported = false;
         this.#fetch = config.fetch ?? ((url, init) => globalThis.fetch(url, init));
     }
 
@@ -162,6 +212,10 @@ export default class SessionAgent {
     close() {
         this.#gates.reset();
         this.pendingGates = [];
+        this.#replaying = false;
+        this.#resuming = false;
+        this.#replayUpdates = [];
+        this.#postReplayUpdates = [];
         this.#ambientCallIds.clear();
         this.#onLiveOutcome = undefined;
         this.#queuedLiveOutcome = undefined;
@@ -212,7 +266,7 @@ export default class SessionAgent {
             void this.#notificationChain.then(async () => {
                 if (this.#connController?.signal.aborted) return;
                 this.#syncPendingGates();
-                if (!this.#bufferingReplay) {
+                if (!this.#resuming) {
                     await this.#subscriber.onStateChanged?.({ state: this.state });
                 }
                 this.#gates.onSettled?.();
@@ -245,7 +299,7 @@ export default class SessionAgent {
         setTimeout(() => {
             void this.#notificationChain.then(async () => {
                 if (this.#connController?.signal.aborted) return;
-                if (changed && !this.#bufferingReplay) {
+                if (changed && !this.#resuming) {
                     await this.#subscriber.onStateChanged?.({ state: this.state });
                 }
                 if (this.pendingGates.length > 0) {
@@ -393,13 +447,21 @@ export default class SessionAgent {
             const initRes = /** @type {unknown} */ (await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
                 info: { name: "@plurnk/plurnk-web", version: "2.1.0" },
-                capabilities: {},
+                capabilities: {
+                    session: {
+                        commands: {
+                            skill: {},
+                        },
+                    },
+                },
             }));
             const initRecord = isRecord(initRes) ? initRes : {};
             const capabilities = isRecord(initRecord.capabilities) ? initRecord.capabilities : {};
             const sessionCaps = isRecord(capabilities.session) ? capabilities.session : {};
             const promptCaps = isRecord(sessionCaps.prompt) ? sessionCaps.prompt : {};
+            const skillCaps = isRecord(promptCaps.skill) ? promptCaps.skill : {};
             this.promptImageSupported = isRecord(promptCaps.image) || promptCaps.image === true;
+            this.promptSkillSupported = isRecord(skillCaps.inline) || skillCaps.inline === true;
         } catch (error) {
             const streamProblem = /** @type {SessionErrorPayload | undefined} */ (this.#streamProblem);
             this.close();
@@ -444,6 +506,13 @@ export default class SessionAgent {
                     return { result: undefined, stopReason: "error" };
                 }
                 if (outcome.stopReason === "eof") {
+                    await this.#drainNotifications();
+                    if (this.#streamProblem !== undefined) {
+                        const sp = this.#streamProblem;
+                        this.close();
+                        await subscriber.onError?.(sp);
+                        return { result: undefined, stopReason: "error", meta: outcome.meta };
+                    }
                     this.close();
                     return { result: {}, stopReason: "end_turn" };
                 }
@@ -455,11 +524,13 @@ export default class SessionAgent {
             this.#syncPendingGates();
             this.#queuedLiveOutcome = undefined;
             this.#pendingLiveThought = undefined;
-            this.#bufferingReplay = true;
-            this.#replayUpdates = [];
-            this.#ambientCallIds.clear();
             this.#needsConnectionSse = false;
             const conn = await this.#ensureConnection(signal);
+            this.#replaying = true;
+            this.#resuming = true;
+            this.#replayUpdates = [];
+            this.#postReplayUpdates = [];
+            this.#ambientCallIds.clear();
 
             const params = {
                 sessionId: this.sessionId ?? "",
@@ -490,9 +561,11 @@ export default class SessionAgent {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
 
-            if (this.#bufferingReplay) {
-                this.#bufferingReplay = false;
+            if (this.#resuming) {
+                this.#replaying = false;
+                this.#resuming = false;
                 const replayed = this.#replayUpdates.splice(0);
+                const postReplay = this.#postReplayUpdates.splice(0);
                 const history = isRecord(metaPlurnk?.history) ? metaPlurnk.history : undefined;
                 if (history !== undefined) {
                     this.messages = SessionTranslator.projectMessages(replayed, [], this.#ambientCallIds);
@@ -511,6 +584,13 @@ export default class SessionAgent {
                         await this.#applyLiveMessageUpdate(u, subscriber);
                     }
                 }
+                for (const u of postReplay) {
+                    const uPlurnk = isRecord(u._meta) && isRecord(u._meta.plurnk) ? u._meta.plurnk : undefined;
+                    if (u.sessionUpdate === "tool_call_update" && (uPlurnk?.proposal !== undefined || uPlurnk?.interaction !== undefined)) {
+                        await subscriber.onSettled?.({ stopReason: "interrupt", meta: uPlurnk, result: {} });
+                    }
+                    await this.#applyLiveMessageUpdate(u, subscriber);
+                }
             }
 
             await this.#awaitGateCoalesce();
@@ -528,6 +608,13 @@ export default class SessionAgent {
                 return { result: undefined, stopReason: "error", meta: outcome.meta };
             }
             if (outcome.stopReason === "eof") {
+                await this.#drainNotifications();
+                if (this.#streamProblem !== undefined) {
+                    const sp = this.#streamProblem;
+                    this.close();
+                    await subscriber.onError?.(sp);
+                    return { result: undefined, stopReason: "error", meta: outcome.meta };
+                }
                 this.close();
                 return { result: rawResult, stopReason: "end_turn", meta: metaPlurnk };
             }
@@ -537,6 +624,8 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
+            this.#replaying = false;
+            this.#resuming = false;
             this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
@@ -685,6 +774,8 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber, actionKind);
         } finally {
+            this.#replaying = false;
+            this.#resuming = false;
             this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
@@ -706,8 +797,10 @@ export default class SessionAgent {
         this.#activeController = controller;
         this.isRunning = true;
         this.#subscriber = subscriber;
-        this.#bufferingReplay = false;
+        this.#replaying = false;
+        this.#resuming = false;
         this.#replayUpdates = [];
+        this.#postReplayUpdates = [];
         this.#pendingLiveThought = undefined;
         this.#submittedPrompt = {
             id: message.id,
@@ -725,8 +818,15 @@ export default class SessionAgent {
             const conn = await this.#ensureConnection(signal);
             /** @type {import("@agentclientprotocol/sdk/experimental/v2/unstable").ContentBlock[]} */
             const promptBlocks = [];
+            const availableCommands = isRecord(this.state.plurnk) && Array.isArray(this.state.plurnk.availableCommands)
+                ? this.state.plurnk.availableCommands
+                : [];
             if (message.content.length > 0 || !message.attachments?.length) {
-                promptBlocks.push({ type: /** @type {const} */ ("text"), text: message.content });
+                if (this.promptSkillSupported) {
+                    promptBlocks.push(...buildPromptBlocks(message.content, availableCommands));
+                } else {
+                    promptBlocks.push({ type: /** @type {const} */ ("text"), text: message.content });
+                }
             }
             for (const attachment of message.attachments ?? []) {
                 promptBlocks.push({
@@ -775,6 +875,8 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
+            this.#replaying = false;
+            this.#resuming = false;
             this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
@@ -793,8 +895,10 @@ export default class SessionAgent {
         this.#activeController = controller;
         this.isRunning = true;
         this.#subscriber = subscriber;
-        this.#bufferingReplay = false;
+        this.#replaying = false;
+        this.#resuming = false;
         this.#replayUpdates = [];
+        this.#postReplayUpdates = [];
         this.#gates.submittedIds.clear();
         this.#gates.cancelledSubmitted.clear();
         this.#queuedLiveOutcome = undefined;
@@ -856,7 +960,7 @@ export default class SessionAgent {
                 await new Promise((r) => setTimeout(r));
                 await this.#outboundPostChain;
                 await this.#drainNotifications();
-                if (gatesChanged && !this.#bufferingReplay) {
+                if (gatesChanged && !this.#resuming) {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
                 if (this.#gates.cancelledSubmitted.size > 0 && !missingGate) {
@@ -902,6 +1006,8 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
+            this.#replaying = false;
+            this.#resuming = false;
             this.#submittedPrompt = undefined;
             this.isRunning = false;
             if (this.#activeController === controller) {
@@ -1220,8 +1326,12 @@ export default class SessionAgent {
      */
     async #handleSessionUpdate(sessionId, update, subscriber) {
         const kind = update.sessionUpdate;
-        if (!(this.#bufferingReplay && kind === "agent_thought_chunk")) {
+        if (!(this.#replaying && kind === "agent_thought_chunk")) {
             await subscriber.onSessionUpdate?.({ update, sessionId });
+        }
+        if (kind === "replay_complete") {
+            this.#replaying = false;
+            return;
         }
         const plurnk = isRecord(update._meta) && isRecord(update._meta.plurnk)
             ? update._meta.plurnk
@@ -1229,7 +1339,7 @@ export default class SessionAgent {
 
         if (kind === "config_option_update") {
             this.state = applyConfigOptionUpdate(this.state, update, plurnk);
-            if (!this.#bufferingReplay) {
+            if (!this.#resuming) {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
             return;
@@ -1237,7 +1347,7 @@ export default class SessionAgent {
 
         if (kind === "available_commands_update" && Array.isArray(update.availableCommands)) {
             this.state = applyAvailableCommandsUpdate(this.state, update.availableCommands);
-            if (!this.#bufferingReplay) {
+            if (!this.#resuming) {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
             return;
@@ -1245,7 +1355,7 @@ export default class SessionAgent {
 
         if (kind === "usage_update") {
             this.state = applyUsageUpdate(this.state, update, plurnk);
-            if (!this.#bufferingReplay) {
+            if (!this.#resuming) {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
             return;
@@ -1278,7 +1388,7 @@ export default class SessionAgent {
             }
             this.state = applySubagentState(this.state, childId, childName, rawLifecycle, plurnk);
             this.#syncDescendantGates();
-            if (!this.#bufferingReplay) {
+            if (!this.#resuming) {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
             return;
@@ -1289,7 +1399,7 @@ export default class SessionAgent {
                 this.#gates.cancelForBoundSession(
                     this.state,
                     this.sessionId,
-                    this.#bufferingReplay,
+                    this.#resuming,
                     this.#inFlightPostCount,
                     this.#cancelGateById,
                 );
@@ -1298,7 +1408,7 @@ export default class SessionAgent {
             const projected = applyLifecycleStateUpdate(this.state, update, plurnk);
             if (projected.changed) {
                 this.state = projected.state;
-                if (!this.#bufferingReplay) {
+                if (!this.#resuming) {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
             }
@@ -1364,7 +1474,7 @@ export default class SessionAgent {
                             });
                         }
                         this.messages = SessionTranslator.projectMessages(unobservedUpdates, this.messages, this.#ambientCallIds);
-                        if (!this.#bufferingReplay) {
+                        if (!this.#resuming) {
                             await subscriber.onMessagesChanged?.({ messages: this.messages });
                         }
                     }
@@ -1374,7 +1484,7 @@ export default class SessionAgent {
             if (projected.changed) {
                 this.state = projected.state;
                 this.#syncDescendantGates();
-                if (!this.#bufferingReplay) {
+                if (!this.#resuming) {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
             }
@@ -1386,7 +1496,7 @@ export default class SessionAgent {
                     : typeof problem.title === "string"
                         ? problem.title
                         : "Stream error.";
-                if (!this.#bufferingReplay) {
+                if (!this.#replaying) {
                     this.#streamProblem = { message, status, problem };
                 }
                 if (status === 401 || this.#gates.submittedIds.size > 0) {
@@ -1404,7 +1514,7 @@ export default class SessionAgent {
             const projected = applyTerminalStreamUpdate(this.state, update, plurnk);
             if (projected.changed) {
                 this.state = projected.state;
-                if (!this.#bufferingReplay) {
+                if (!this.#resuming) {
                     await subscriber.onStateChanged?.({ state: this.state });
                 }
             }
@@ -1421,8 +1531,12 @@ export default class SessionAgent {
             if (kind === "tool_call" || kind === "tool_call_update") {
                 this.#gates.cancelForToolUpdate(update, this.#cancelGateById);
             }
-            if (this.#bufferingReplay) {
+            if (this.#replaying) {
                 this.#replayUpdates.push(update);
+                return;
+            }
+            if (this.#resuming) {
+                this.#postReplayUpdates.push(update);
                 return;
             }
             if (kind === "tool_call_update" && (plurnk?.proposal !== undefined || plurnk?.interaction !== undefined)) {

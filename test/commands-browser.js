@@ -138,9 +138,13 @@ export default async function verifyCommands(t) {
                     await page.setViewportSize({ width: 320, height: 700 });
                     const command = (text) => page.evaluate((text) => window.command(text), text);
                     const isCommand = (text, available = []) => page.evaluate(({ text, available }) => window.isCommand(text, available), { text, available });
-                    assert.equal(await isCommand("/skill run", [{ name: "skill" }]), false, "advertised availableCommands pass through to session/prompt");
+                    assert.equal(await isCommand("/skill run", [{ name: "skill" }]), false, "advertised non-skill availableCommands pass through to session/prompt");
+                    assert.equal(await isCommand("/review pr", [{ type: "command", name: "review" }]), false, "advertised command entries pass through to session/prompt");
+                    assert.equal(await isCommand("/triage", [{ type: "skill", name: "triage" }]), true, "advertised skill entries do not match as slash commands");
                     assert.equal(await isCommand("/learn distill this", []), false, "/learn expands into a session prompt instead of running locally");
-                    assert.match(await page.evaluate(() => window.expandPromptCommand("/learn focus on tests")), /SKILL\.md[\s\S]*Focus: focus on tests/u);
+                    const expandedLearn = await page.evaluate(() => window.expandPromptCommand("/learn focus on tests"));
+                    assert.match(expandedLearn, /SKILL\.md[\s\S]*mcp:\/\/\/plurnk\/skills\.json[\s\S]*Focus: focus on tests/u);
+                    assert.doesNotMatch(expandedLearn, /recipes\.md/u);
                     assert.equal(await isCommand("/model", [{ name: "skill" }]), true, "local slash commands remain intercepted");
                     assert.equal(await isCommand("/quit", [{ name: "skill" }]), true, "unadvertised unknown slash commands remain intercepted locally");
                     const rows = page.locator("#session-command-results > ul > li");

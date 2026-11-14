@@ -116,6 +116,9 @@ function extractChunkContent(content, defaultMime) {
             ...(name ? { name } : {}),
         }];
     }
+    if (content.type === "skill" && typeof content.name === "string" && content.name.length > 0) {
+        return `$${content.name}`;
+    }
     if (content.type === "text" && typeof content.text === "string") {
         return content.text;
     }
@@ -350,7 +353,7 @@ export class SessionTranslator {
                         if (
                             (plurnk?.id !== undefined && found._meta?.plurnk?.id === plurnk.id)
                             || found.content === chunk
-                            || found._meta?.plurnk === undefined
+                            || (found._meta?.plurnk === undefined && plurnk !== undefined)
                         ) {
                             found.content = chunk;
                         } else {
