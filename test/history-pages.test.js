@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import HistoryPages from "../web/history-pages.js";
 import SessionAgent, { buildPromptBlocks } from "../web/session-agent.js";
@@ -500,10 +501,11 @@ test("{§web-session-observer} {§web-session-input} {§web-session-conversation
             message: { id: "prompt-1", role: "user", content: "Apply $triage please" },
         });
         assert.equal(agent.promptSkillSupported, inlineSupported);
+        const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
         const initReq = transport.requests.find((r) => r.method === "initialize");
         assert.deepEqual(initReq?.params, {
             protocolVersion: 2,
-            info: { name: "@plurnk/plurnk-web", version: "2.1.0" },
+            info: { name: "@plurnk/plurnk-web", version: manifest.version },
             capabilities: { session: { commands: { skill: {} } } },
         });
         const promptReq = transport.requests.find((r) => r.method === "session/prompt");
