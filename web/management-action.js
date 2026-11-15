@@ -117,7 +117,7 @@ export default async function managementAction(kind, params, sessionId, auth, si
     try {
         await conn.agent.request(methods.agent.initialize, {
             protocolVersion: PROTOCOL_VERSION,
-            info: { name: "@plurnk/plurnk-web", version: "2.1.0" },
+            info: { name: "@plurnk/plurnk-web", version: "2.2.0" },
         });
         connected = true;
         signal.throwIfAborted();

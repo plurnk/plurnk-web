@@ -1,5 +1,15 @@
 # @plurnk/plurnk-web
 
+## 2.2.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
+
+### Minor Changes
+
+- Add the tabbed workspace session workbench and tab bar, lazy workspace subsystem management modal, and interactive native `/env` configuration panel with family provenance (#121, #124).
+- Support verified raster inline images and ordered composer image attachments, and render lazy syntax highlighting through CSS Custom Highlight ranges (#126, #131).
+- Adopt `@agentclientprotocol/sdk` `2.7.0` `replay_complete` session replay boundaries and skill command entries, add the live source development daemon module (`scripts/dev-module.mjs`), enable standalone PWA `viewport-fit=cover` safe-area clearance, replace sticky-tail `ResizeObserver` anchoring with `MutationObserver` and viewport resize tracking, and align composer `Shift+Tab` YOLO toggling, `Escape`, and review keyboard shortcuts (#132, #133, #135, #136, #137).
+
 ## 2.1.0
 
 > Bare `#N` issue citations reference our private development forge rather than public GitHub issues — our apologies for the opaque provenance; open public bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).

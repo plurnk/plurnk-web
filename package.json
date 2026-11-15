@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk-web",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "Plurnk daemon module serving an OTM document.",
     "type": "module",
     "license": "MIT",
@@ -51,17 +51,17 @@
         "piscina": "5.3.2"
     },
     "peerDependencies": {
-        "@plurnk/plurnk-acp": "^1.4.0",
-        "@plurnk/plurnk-auth": "^1.0.1",
-        "@plurnk/plurnk-contracts": "^7.3.0",
-        "@plurnk/plurnk-modules": "^4.1.1"
+        "@plurnk/plurnk-acp": "^1.5.0",
+        "@plurnk/plurnk-auth": "^1.1.0",
+        "@plurnk/plurnk-contracts": "^7.4.0",
+        "@plurnk/plurnk-modules": "^4.2.0"
     },
     "devDependencies": {
         "@agentclientprotocol/sdk": "2.7.0",
         "@eslint/js": "10.0.1",
         "@fullhuman/postcss-purgecss": "9.1.0",
         "@picocss/pico": "2.1.1",
-        "@plurnk/plurnk-spec-check": "0.2.0",
+        "@plurnk/plurnk-spec-check": "^0.2.0",
         "@types/negotiator": "0.6.5",
         "@types/node": "^26.6.6",
         "@xterm/headless": "6.0.0",
