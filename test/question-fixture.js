@@ -13,6 +13,11 @@ export const answerSchema = {
 
 export const exactAnswer = { action: "inspect", content: "  cobalt heron\n  ", count: 0, confirm: false };
 
-export const questionOperation = `plurnk.question(${JSON.stringify({
-    message: "Which action should the session take?", requestedSchema: answerSchema,
-})})`;
+export const questionOperation = {
+    server: "plurnk",
+    tool: "question",
+    arguments: {
+        text: "Which action should the session take?",
+        schema: answerSchema,
+    },
+};

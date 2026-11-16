@@ -13,7 +13,7 @@ const familyCommands = new Set(["mcp", "skills", "schedule", "personas", "env"])
 const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop", ...familyCommands]);
 const helpCommands = new Set([...commands, "learn"]);
 
-const LEARN_PROMPT = "Review this session's work and author or update a reusable workspace skill (`SKILL.md` under `.agents/skills/<name>/SKILL.md`), reading `mcp:///plurnk/skills.json` for conventions if needed, then verify it via `plurnk.skills`.";
+const LEARN_PROMPT = "Review this session's work and author or update a reusable workspace skill (`SKILL.md` under `.agents/skills/<name>/SKILL.md`), reading `mcp:///plurnk/skills.json` for conventions if needed, then verify it via the `skills` tool.";
 
 /** @param {string} text */
 export function expandPromptCommand(text) {

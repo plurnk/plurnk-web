@@ -14,7 +14,15 @@ export const contentAttack = [
 
 export const diagramContent = "```mermaid\nflowchart LR\n Client --> Daemon\n```";
 export const footnoteAnswer = "**Footnote witness**[^a], repeated[^a], distinct[^a-2].\n\n[^a]: First definition.\n\n[^a-2]: Second definition.";
-export const outsideText = "Outside evidence, not the final answer.";
+const proseNoteText = "Prose note evidence, not the final answer.";
+
+/** @param {readonly Record<string, unknown>[]} calls */
+const toWireToolCalls = (calls) => calls.map((call, index) => ({
+    index,
+    id: `call_${index}`,
+    type: "function",
+    function: { name: "mcp", arguments: JSON.stringify(call) },
+}));
 
 export default async function startModel({ approvalCommand: initialApprovalCommand = "printf approved" } = {}) {
     let approvalCommand = initialApprovalCommand;
@@ -24,8 +32,8 @@ export default async function startModel({ approvalCommand: initialApprovalComma
     const visits = new Map();
     let streamStarted = Promise.withResolvers();
     const programs = [
-        { reasoning: "I will read the requested project file.", content: 'plurnk.read({ path: "witness.txt" })' },
-        { reasoning: "The file confirms the browser connection.", content: 'plurnk.done({ text: "Browser connection verified: cobalt heron." })' },
+        { reasoning: "I will read the requested project file.", toolCalls: [{ server: "plurnk", tool: "read", arguments: { path: "witness.txt" } }] },
+        { reasoning: "The file confirms the browser connection.", toolCalls: [{ server: "plurnk", tool: "done", arguments: { text: "Browser connection verified: cobalt heron." } }] },
     ];
     let turn = 0;
     const server = createServer(async (request, response) => {
@@ -75,32 +83,79 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                     pending.delete(lifecycle);
                 }
                 if (!response.destroyed) {
-                    const content = lifecycle === "wait-status" && visit === 1
-                        ? `plurnk.sh({ command: ${JSON.stringify(`node --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'`)} })\nplurnk.wait({ seconds: 60 })`
+                    if (lifecycle === "activity" && visit === 1) {
+                        frame({ content: proseNoteText });
+                        const completion_tokens = Math.ceil((reasoning.length + proseNoteText.length) / 4);
+                        frame({}, "stop", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });
+                        response.end("data: [DONE]\n\n");
+                        return;
+                    }
+                    const toolCalls = lifecycle === "wait-status" && visit === 1
+                        ? [
+                            { server: "plurnk", tool: "sh", arguments: { text: `node --input-type=module -e 'console.log(await (await fetch("http://127.0.0.1:${server.address().port}/status-stream")).text())'` } },
+                            { server: "plurnk", tool: "wait", arguments: { seconds: 60 } },
+                        ]
                         : lifecycle === "spawn-worker" && visit === 1
-                        ? 'plurnk.work({ target: "session://worker", text: "Worker fixture: held-worker." })\nplurnk.wait({})'
-                        : lifecycle === "activity" && visit === 1 ? outsideText
-                        : lifecycle.startsWith("status-") && visit === 1 ? 'plurnk.read({ path: "session://user/identity.md" })'
-                        : lifecycle === "approval-batch" && visit === 1 ? 'plurnk.sh({ command: "printf first" })\nplurnk.sh({ command: "printf second" })'
-                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1 ? `plurnk.sh({ command: ${JSON.stringify(approvalCommand)} })`
-                        : lifecycle === "question-batch" && visit === 1 ? `${questionOperation}\n${questionOperation}`
-                        : /^(question|held-question)-/u.test(lifecycle) && visit === 1 ? questionOperation
-                        : lifecycle.startsWith("mcp-question-") && visit === 1 ? 'fixture.batch({})\nplurnk.wait({})'
+                        ? [
+                            { server: "plurnk", tool: "work", arguments: { target: "session://worker", text: "Worker fixture: held-worker." } },
+                            { server: "plurnk", tool: "wait", arguments: {} },
+                        ]
+                        : lifecycle.startsWith("status-") && visit === 1
+                        ? [{ server: "plurnk", tool: "read", arguments: { path: "session://user/identity.md" } }]
+                        : lifecycle === "approval-batch" && visit === 1
+                        ? [
+                            { server: "plurnk", tool: "sh", arguments: { text: "printf first" } },
+                            { server: "plurnk", tool: "sh", arguments: { text: "printf second" } },
+                        ]
+                        : (lifecycle.startsWith("approval") || lifecycle.startsWith("held-approval-")) && visit === 1
+                        ? [{ server: "plurnk", tool: "sh", arguments: { text: approvalCommand } }]
+                        : lifecycle === "question-batch" && visit === 1
+                        ? [questionOperation, questionOperation]
+                        : /^(question|held-question)-/u.test(lifecycle) && visit === 1
+                        ? [questionOperation]
+                        : lifecycle.startsWith("mcp-question-") && visit === 1
+                        ? [
+                            { server: "fixture", tool: "batch", arguments: {} },
+                            { server: "plurnk", tool: "wait", arguments: {} },
+                        ]
                         : lifecycle === "conversation" && visit === 1
-                            ? 'plurnk.read({ path: "witness.txt", range: "1,1", pattern: "/cobalt/" }) // selected evidence\nplurnk.read({ path: "session://user/identity.md", range: "1,2" })'
+                        ? [
+                            { server: "plurnk", tool: "read", arguments: { path: "witness.txt", range: "1,1", pattern: "/cobalt/" }, aside: "selected evidence" },
+                            { server: "plurnk", tool: "read", arguments: { path: "session://user/identity.md", range: "1,2" } },
+                        ]
                         : lifecycle.startsWith("execution-") && visit === 1
-                            ? `plurnk.sh({ command: ${JSON.stringify(`printf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}`)} })\nplurnk.wait({})`
-                        : lifecycle === "math" ? `plurnk.done({ text: ${JSON.stringify("A native formula: $\\mathscr{F}=\\frac{a}{b}$.")} })`
-                        : lifecycle === "diagrams" ? `plurnk.done({ text: ${JSON.stringify(diagramContent)} })`
-                        : lifecycle === "footnotes" ? `plurnk.note({ text: ${JSON.stringify(footnoteAnswer)} }) // fact\nplurnk.done({ text: ${JSON.stringify(footnoteAnswer)} })`
-                        : lifecycle === "notes" ? 'plurnk.note({ text: "A **working fact**, not the answer." }) // fact\nplurnk.note({ text: "A provisional idea." }) // idea\nplurnk.note({ text: "Check the idea." })\nplurnk.done({ text: "Completed notes." })'
+                        ? [
+                            { server: "plurnk", tool: "sh", arguments: { text: `printf '${lifecycle} stdout\\n'; printf '${lifecycle} stderr\\n' >&2; exit ${lifecycle === "execution-failure" ? 7 : 0}` } },
+                            { server: "plurnk", tool: "wait", arguments: {} },
+                        ]
+                        : lifecycle === "math"
+                        ? [{ server: "plurnk", tool: "done", arguments: { text: "A native formula: $\\mathscr{F}=\\frac{a}{b}$." } }]
+                        : lifecycle === "diagrams"
+                        ? [{ server: "plurnk", tool: "done", arguments: { text: diagramContent } }]
+                        : lifecycle === "footnotes"
+                        ? [
+                            { server: "plurnk", tool: "note", arguments: { text: footnoteAnswer }, aside: "fact" },
+                            { server: "plurnk", tool: "done", arguments: { text: footnoteAnswer } },
+                        ]
+                        : lifecycle === "notes"
+                        ? [
+                            { server: "plurnk", tool: "note", arguments: { text: "A **working fact**, not the answer." }, aside: "fact" },
+                            { server: "plurnk", tool: "note", arguments: { text: "A provisional idea." }, aside: "idea" },
+                            { server: "plurnk", tool: "note", arguments: { text: "Check the idea." } },
+                            { server: "plurnk", tool: "done", arguments: { text: "Completed notes." } },
+                        ]
                         : lifecycle === "image-upload" && visit === 1
-                            ? `plurnk.read({ path: ${JSON.stringify(Array.from(packet.matchAll(/<(session:\/\/user\/attachments\/[0-9a-f]+\/[^\s>]*pixel\.png)>/gu)).at(-1)?.[1] ?? "session://user/attachments/missing/pixel.png")} })`
-                        : lifecycle === "content-security" ? `plurnk.note({ text: ${JSON.stringify(contentAttack)} }) // fact\nplurnk.done({ text: ${JSON.stringify(contentAttack)} })`
-                        : `plurnk.done({ text: ${JSON.stringify(`Completed ${lifecycle}.`)} })`;
-                    frame({ content });
-                    const completion_tokens = Math.ceil((reasoning.length + content.length) / 4);
-                    frame({}, "stop", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });
+                        ? [{ server: "plurnk", tool: "read", arguments: { path: Array.from(packet.matchAll(/<(session:\/\/user\/attachments\/[0-9a-f]+\/[^\s>]*pixel\.png)>/gu)).at(-1)?.[1] ?? "session://user/attachments/missing/pixel.png" } }]
+                        : lifecycle === "content-security"
+                        ? [
+                            { server: "plurnk", tool: "note", arguments: { text: contentAttack }, aside: "fact" },
+                            { server: "plurnk", tool: "done", arguments: { text: contentAttack } },
+                        ]
+                        : [{ server: "plurnk", tool: "done", arguments: { text: `Completed ${lifecycle}.` } }];
+                    const wireCalls = toWireToolCalls(toolCalls);
+                    frame({ role: "assistant", tool_calls: wireCalls });
+                    const completion_tokens = Math.ceil((reasoning.length + JSON.stringify(wireCalls).length) / 4);
+                    frame({}, "tool_calls", { prompt_tokens: 400, completion_tokens, total_tokens: 400 + completion_tokens });
                     response.end("data: [DONE]\n\n");
                 }
                 return;
@@ -120,8 +175,8 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                 choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}),
             })}\n\n`);
             frame({ reasoning_content: program.reasoning });
-            frame({ content: program.content });
-            frame({}, "stop", { prompt_tokens: 400, completion_tokens: 80, total_tokens: 480 });
+            frame({ role: "assistant", tool_calls: toWireToolCalls(program.toolCalls) });
+            frame({}, "tool_calls", { prompt_tokens: 400, completion_tokens: 80, total_tokens: 480 });
             response.end("data: [DONE]\n\n");
         } catch (error) {
             errors.push(error);
