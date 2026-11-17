@@ -14,7 +14,7 @@ export default async function verifySessionCards(t) {
     const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
     let html;
     const requests = [];
-    /** @type {{ search: string, authorization: string | null }[]} */
+    /** @type {{ path: string, search: string, authorization: string | null }[]} */
     const notificationRequests = [];
     /** @type {Set<import("node:http").ServerResponse>} */
     const sseStreams = new Set();
@@ -29,8 +29,9 @@ export default async function verifySessionCards(t) {
             response.end(JSON.stringify({ access_token: "overview-token", token_type: "Bearer", expires_in: 300 }));
             return;
         }
-        if (path === "/notifications" && request.method === "GET") {
+        if ((path === "/notifications" || path.startsWith("/notifications/")) && request.method === "GET") {
             notificationRequests.push({
+                path,
                 search: url.search,
                 authorization: request.headers.authorization ?? null,
             });
@@ -214,7 +215,8 @@ export default async function verifySessionCards(t) {
                 await page.locator('main[data-connection="connected"]').waitFor();
                 assert.equal(notificationRequests.length, 1);
                 assert.equal(notificationRequests[0].authorization, "Bearer overview-token");
-                assert.equal(new URLSearchParams(notificationRequests[0].search).get("workspace"), "7");
+                assert.equal(notificationRequests[0].path, "/notifications/7");
+                assert.equal(new URLSearchParams(notificationRequests[0].search).size, 1);
                 assert.equal(await page.locator("header [data-connection-indicator]").isVisible(), false);
 
                 const rootNames = () => page.locator("main > ul > li > article > header [data-session-link], main > ul > li > article > details > summary [data-session-link]")
