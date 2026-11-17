@@ -9,18 +9,75 @@ export const primaryModifierLabel = () =>
     /\b(?:Macintosh|Mac OS|iPhone|iPad|iPod)\b/iu.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
 /** {§web-session-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
-const familyCommands = new Set(["mcp", "skills", "schedule", "personas", "env"]);
+const familyCommands = new Set(["mcp", "skills", "schedule", "personas", "members", "env"]);
 const commands = new Set(["help", "models", "model", "effort", "yolo", "stop", ...familyCommands]);
 const helpCommands = new Set([...commands, "learn"]);
 
-const LEARN_PROMPT = "Review this session's work and author or update a reusable workspace skill (`SKILL.md` under `.agents/skills/<name>/SKILL.md`), reading `mcp:///plurnk/skills.json` for conventions if needed, then verify it via the `skills` tool.";
+/**
+ * @param {string} text
+ * @param {{ readonly projectRoot?: string | null }} [options]
+ * @returns {{ readonly ok: true, readonly scope: "project" | "plurnk", readonly prompt: string } | { readonly ok: false, readonly error: string } | null}
+ */
+export function resolvePromptCommand(text, options) {
+    const trimmed = text.trim();
+    if (trimmed !== "/learn" && !trimmed.startsWith("/learn ")) return null;
+    const restText = trimmed.slice("/learn".length).trim();
+    const tokens = restText.length > 0 ? restText.split(/\s+/u) : [];
+    /** @type {string | undefined} */
+    let explicitScope;
+    /** @type {string[]} */
+    const instructionTokens = [];
+    for (let i = 0; i < tokens.length; i += 1) {
+        const tok = tokens[i] ?? "";
+        if (tok === "--scope") {
+            const next = tokens[i + 1];
+            if (next === undefined || next.startsWith("--")) {
+                return { ok: false, error: "Missing /learn --scope value: expected 'project' or 'plurnk'." };
+            }
+            explicitScope = next;
+            i += 1;
+        } else if (tok.startsWith("--scope=")) {
+            explicitScope = tok.slice("--scope=".length);
+        } else {
+            instructionTokens.push(tok);
+        }
+    }
+    if (explicitScope !== undefined && explicitScope !== "project" && explicitScope !== "plurnk") {
+        return { ok: false, error: `Invalid /learn scope '${explicitScope}': expected 'project' or 'plurnk'.` };
+    }
+    if (explicitScope === "project" && options?.projectRoot === null) {
+        return {
+            ok: false,
+            error: "This workspace has no project folder; use /learn --scope plurnk to save under $XDG_CONFIG_HOME/plurnk/skills.",
+        };
+    }
+    /** @type {"project" | "plurnk"} */
+    const scope = explicitScope === "plurnk"
+        ? "plurnk"
+        : explicitScope === "project"
+          ? "project"
+          : options?.projectRoot === null
+            ? "plurnk"
+            : "project";
+    const targetPath = scope === "plurnk"
+        ? "${XDG_CONFIG_HOME:-~/.config}/plurnk/skills/<name>/SKILL.md"
+        : ".agents/skills/<name>/SKILL.md";
+    const focus = instructionTokens.join(" ");
+    const basePrompt = `Distill reusable workflow, setup, or domain knowledge from this session into an Agent Skill at \`${targetPath}\` (read \`mcp:///plurnk/skills.json\` first, write a concise \`SKILL.md\` with YAML frontmatter \`name\` and \`description\`, and verify discovery with the \`skills\` tool).`;
+    return {
+        ok: true,
+        scope,
+        prompt: focus ? `${basePrompt}\n\nFocus: ${focus}` : basePrompt,
+    };
+}
 
-/** @param {string} text */
-export function expandPromptCommand(text) {
-    const match = /^\/learn(?:\s+([\s\S]*))?$/u.exec(text.trim());
-    if (!match) return text;
-    const focus = match[1]?.trim() ?? "";
-    return focus ? `${LEARN_PROMPT}\n\nFocus: ${focus}` : LEARN_PROMPT;
+/**
+ * @param {string} text
+ * @param {{ readonly projectRoot?: string | null }} [options]
+ */
+export function expandPromptCommand(text, options) {
+    const resolved = resolvePromptCommand(text, options);
+    return resolved?.ok === true ? resolved.prompt : text;
 }
 
 /**
@@ -96,6 +153,9 @@ function formatFamilyResult(family, parsed, res) {
                 return alias && summary ? `${alias}  ${summary}` : alias || summary;
             });
             return { message: "", literal: lines.join("\n") };
+        }
+        if (res.removed === true && typeof res.alias === "string") {
+            return { message: `${res.alias}  removed` };
         }
         if (isRecord(res.definition) && typeof res.definition.alias === "string") {
             const state = typeof res.definition.state === "string" ? res.definition.state : "active";

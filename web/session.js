@@ -10,7 +10,7 @@ import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import reasoningPreview from "./reasoning-preview.js";
 import managementAction from "./management-action.js";
-import sessionCommands, { expandPromptCommand, isCommand, primaryModifierLabel } from "./session-commands.js";
+import sessionCommands, { expandPromptCommand, isCommand, primaryModifierLabel, resolvePromptCommand } from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
@@ -131,6 +131,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const diagnose = diagnostics(diagnosticList);
     const presentState = sessionState(element, main);
     const agent = new SessionAgent({ url: "/acp", sessionId });
+    /** @type {string | null | undefined} */
+    let workspaceProjectRoot = $(main.ownerDocument.body, '#session-workspace [aria-label="Folderless workspace"]') ? null : undefined;
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
     /** @type {{message: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[]}, source: string, sourceKey: string, attachmentIds: ReadonlySet<string>, retryable: boolean} | undefined} */
@@ -329,6 +331,9 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     onStateChanged: ({ state }) => {
                         if (signal.aborted) return;
                         const snapshot = /** @type {Parameters<typeof presentState>[0]} */ (state);
+                        if (snapshot.plurnk?.workspace && ("projectRoot" in snapshot.plurnk.workspace)) {
+                            workspaceProjectRoot = snapshot.plurnk.workspace.projectRoot;
+                        }
                         presentState(snapshot, Date.now());
                         tail.follow();
                         const next = snapshot.plurnk?.status;
@@ -640,7 +645,16 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             return;
         }
         const source = draft.value;
-        const expanded = source.trim() ? expandPromptCommand(source) : "";
+        const learnResolution = source.trim()
+            ? resolvePromptCommand(source, workspaceProjectRoot === undefined ? undefined : { projectRoot: workspaceProjectRoot })
+            : null;
+        if (learnResolution !== null && !learnResolution.ok) {
+            the(feedback, { messageStatus: "", commandError: learnResolution.error });
+            return;
+        }
+        const expanded = source.trim()
+            ? expandPromptCommand(source, workspaceProjectRoot === undefined ? undefined : { projectRoot: workspaceProjectRoot })
+            : "";
         const sourceKey = `${source}\0${attachments.map(({ id }) => id).join(",")}`;
         const queuedAttachments = attachments.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
         const message = pending?.sourceKey === sourceKey
