@@ -1,5 +1,14 @@
 # @plurnk/plurnk-web
 
+## 2.3.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
+
+### Minor Changes
+
+- Align `/learn` prompt expansion, Markdown fence documentation, and model fixtures with Plurnk `7.0` universal `mcp` tool calls and MCP expressions.
+- Widen `@plurnk/plurnk-acp` (`^1.6.0 || ^2.0.0`), `@plurnk/plurnk-contracts` (`^7.5.0 || ^8.0.0`), and `@plurnk/plurnk-meta` (`^2.2.2 || ^2.3.0`) peer and runtime dependency ranges for `7.0.0`, and upgrade `marked` (`18.2.1`) and lockfile dependencies.
+
 ## 2.2.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).

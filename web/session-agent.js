@@ -446,7 +446,7 @@ export default class SessionAgent {
         try {
             const initRes = /** @type {unknown} */ (await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
-                info: { name: "@plurnk/plurnk-web", version: "2.2.0" },
+                info: { name: "@plurnk/plurnk-web", version: "2.3.0" },
                 capabilities: {
                     session: {
                         commands: {
