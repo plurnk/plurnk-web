@@ -5,7 +5,7 @@ import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
 
 /**
- * @typedef {"mcp" | "skills" | "schedule" | "personas" | "env"} SettingsSection
+ * @typedef {"mcp" | "skills" | "schedule" | "personas" | "members" | "env"} SettingsSection
  */
 
 /**
@@ -18,15 +18,15 @@ import managementAction from "./management-action.js";
  * }} WorkspaceSettingsContext
  */
 
-const SECTIONS = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "env"]);
-const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas"]);
+const SECTIONS = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members", "env"]);
+const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members"]);
 
 /** @param {unknown} value @returns {value is SettingsSection} */
 export const isSettingsSection = (value) =>
     typeof value === "string" && /** @type {readonly string[]} */ (SECTIONS).includes(value);
 
 /**
- * @param {"mcp" | "skills" | "schedule" | "personas"} family
+ * @param {"mcp" | "skills" | "schedule" | "personas" | "members"} family
  * @param {Record<string, unknown>} item
  * @returns {string}
  */
@@ -61,11 +61,18 @@ function formatFamilyDetails(family, item) {
     if (family === "schedule") {
         if (def) {
             const target = typeof def.target === "string" ? def.target : "";
-            const rule = typeof def.rule === "string" ? def.rule : "";
-            const prompt = typeof def.prompt === "string" ? def.prompt : "";
+            const rule = typeof def.rule === "string" ? def.rule : def.rule === null ? "unscheduled" : "";
+            const prompt = typeof def.prompt === "string" ? def.prompt : typeof def.run === "string" ? def.run : "";
             return [target, rule, prompt].filter((part) => part.length > 0).join(" · ");
         }
         return provSource;
+    }
+    if (family === "members") {
+        const detail = isRecord(item.detail) ? item.detail : null;
+        const effect = detail && typeof detail.effect === "string" ? detail.effect : "";
+        const matched = detail && typeof detail.matched === "number" ? `${detail.matched} ${detail.matched === 1 ? "file" : "files"}` : "";
+        const ignored = detail && typeof detail.ignored === "number" && detail.ignored > 0 ? `${detail.ignored} ignored` : "";
+        return [effect, matched, ignored, provSource].filter((part) => part.length > 0).join(" · ");
     }
     if (def) {
         const desc = typeof def.description === "string" ? def.description
@@ -95,7 +102,7 @@ export function createWorkspaceSettingsController(getContext) {
     /** @type {"workspace" | "session"} */
     let envListScope = "workspace";
     let busy = false;
-    /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas", alias: string, definition: Record<string, unknown> }>} */
+    /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas" | "members", alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
 
     /** @param {boolean} nextBusy @param {string} [message] @param {string} [recovery] */
@@ -148,7 +155,7 @@ export function createWorkspaceSettingsController(getContext) {
     }
 
     /**
-     * @param {"mcp" | "skills" | "schedule" | "personas"} family
+     * @param {"mcp" | "skills" | "schedule" | "personas" | "members"} family
      * @param {unknown} res
      */
     function renderFamilyList(family, res) {
@@ -187,7 +194,7 @@ export function createWorkspaceSettingsController(getContext) {
     }
 
     /**
-     * @param {"mcp" | "skills" | "schedule" | "personas"} family
+     * @param {"mcp" | "skills" | "schedule" | "personas" | "members"} family
      * @param {unknown} res
      */
     function renderCandidates(family, res) {
@@ -201,7 +208,10 @@ export function createWorkspaceSettingsController(getContext) {
             const alias = typeof item.alias === "string" ? item.alias : "";
             const summary = typeof item.summary === "string" ? item.summary : "";
             const def = isRecord(item.definition) ? item.definition : null;
-            const addable = family !== "schedule" && alias.length > 0 && def !== null;
+            const provKind = isRecord(item.provenance) && typeof item.provenance.kind === "string" ? item.provenance.kind : "";
+            const addable = family === "members"
+                ? alias.length > 0 && def !== null && ["preview", "candidate", "ignored"].includes(provKind)
+                : family !== "schedule" && alias.length > 0 && def !== null;
             the(li, {
                 candidateAlias: alias || family,
                 candidateSummary: summary,
@@ -210,7 +220,7 @@ export function createWorkspaceSettingsController(getContext) {
             const form = $(li, "form[data-candidate-add-form]");
             if (addable && form && def) {
                 candidateData.set(form, {
-                    family: /** @type {"mcp" | "skills" | "personas"} */ (family),
+                    family: /** @type {"mcp" | "skills" | "personas" | "members"} */ (family),
                     alias,
                     definition: def,
                 });
@@ -397,7 +407,7 @@ export function createWorkspaceSettingsController(getContext) {
             const panel = form.closest("[data-settings-panel]");
             const rawFamily = panel instanceof HTMLElement ? panel.dataset.settingsPanel : "";
             if (!rawFamily || !/** @type {readonly string[]} */ (FAMILIES).includes(rawFamily)) return;
-            const family = /** @type {"mcp" | "skills" | "schedule" | "personas"} */ (rawFamily);
+            const family = /** @type {"mcp" | "skills" | "schedule" | "personas" | "members"} */ (rawFamily);
             const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
             const operation = submitter?.value ?? "";
             const alias = String(new FormData(form).get("alias") ?? "").trim();
@@ -428,7 +438,7 @@ export function createWorkspaceSettingsController(getContext) {
                     renderFamilyList("mcp", fresh);
                     return `${alias}  active`;
                 }
-                await invoke(`workspace.${family}.${operation}`, { alias });
+                await invoke(`workspace.${family}.${operation}`, family === "members" ? { file: alias } : { alias });
                 const fresh = await invoke(`workspace.${family}.list`, {});
                 renderFamilyList(family, fresh);
                 if (family === "personas" && getContext().sessionName !== null) {
@@ -464,11 +474,11 @@ export function createWorkspaceSettingsController(getContext) {
             if (!(form instanceof HTMLFormElement)) return;
             const rawFamily = form.dataset.family ?? "";
             if (!/** @type {readonly string[]} */ (FAMILIES).includes(rawFamily)) return;
-            const family = /** @type {"mcp" | "skills" | "schedule" | "personas"} */ (rawFamily);
+            const family = /** @type {"mcp" | "skills" | "schedule" | "personas" | "members"} */ (rawFamily);
             const data = new FormData(form);
             /** @type {Record<string, unknown>} */
             const params = {};
-            if (family === "mcp") {
+            if (family === "mcp" || family === "members") {
                 const query = String(data.get("query") ?? "").trim();
                 if (query) params.query = query;
             } else if (family === "skills") {
@@ -495,10 +505,14 @@ export function createWorkspaceSettingsController(getContext) {
             const meta = candidateData.get(form);
             if (!meta) return;
             void runMutation(async () => {
-                /** @type {Record<string, unknown>} */
-                const payload = { alias: meta.alias, ...meta.definition };
-                if (meta.family === "skills") delete payload.commit;
-                await invoke(`workspace.${meta.family}.replace`, payload);
+                if (meta.family === "members") {
+                    await invoke("workspace.members.add", { files: [meta.alias] });
+                } else {
+                    /** @type {Record<string, unknown>} */
+                    const payload = { alias: meta.alias, ...meta.definition };
+                    if (meta.family === "skills") delete payload.commit;
+                    await invoke(`workspace.${meta.family}.replace`, payload);
+                }
                 const fresh = await invoke(`workspace.${meta.family}.list`, {});
                 renderFamilyList(meta.family, fresh);
                 if (meta.family === "personas" && getContext().sessionName !== null) {
@@ -668,6 +682,23 @@ export function createWorkspaceSettingsController(getContext) {
                 const effortField = $(form, 'select[name="effort"]');
                 if (effortField instanceof HTMLSelectElement) effortField.value = "";
                 return `${alias}  saved`;
+            });
+        });
+
+        on(dialog, "submit", "[data-members-save-form]", (event, form) => {
+            event.preventDefault();
+            if (!(form instanceof HTMLFormElement)) return;
+            const rawFiles = String(new FormData(form).get("files") ?? "").trim();
+            const files = rawFiles.split(/\s+/u).filter((p) => p.length > 0);
+            void runMutation(async () => {
+                if (files.length === 0) throw new Error("Enter at least one file path or glob pattern.");
+                await invoke("workspace.members.add", { files });
+                const fresh = await invoke("workspace.members.list", {});
+                renderFamilyList("members", fresh);
+                for (const input of $$(form, "input")) {
+                    if (input instanceof HTMLInputElement) input.value = "";
+                }
+                return `${files.join(", ")}  saved`;
             });
         });
 

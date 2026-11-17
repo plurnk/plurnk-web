@@ -197,7 +197,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             const { field, submit } = composer(page);
             const help = await submit("/help");
             const names = await help.locator("[data-command-name]").evaluateAll((items) => items.map((item) => item.dataset.commandName));
-            assert.deepEqual(names, ["help", "models", "model", "effort", "mcp", "skills", "schedule", "personas", "env", "learn", "yolo", "stop"]);
+            assert.deepEqual(names, ["help", "models", "model", "effort", "mcp", "skills", "schedule", "personas", "members", "env", "learn", "yolo", "stop"]);
             assert.equal(sent.length, 0);
             for (const text of ["/quit", "/import anything", "/model a b c", "/effort low high", "/yolo yes"]) {
                 await submit(text, "error");

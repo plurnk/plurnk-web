@@ -51,6 +51,8 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     ];
                     let activeSessionPersona = "none";
                     /** @type {any[]} */
+                    let memberDefs = [];
+                    /** @type {any[]} */
                     let workspaceEnv = [
                         { alias: "WS_TOKEN", origin: "workspace", state: "active", provenance: { source: ".env" }, definition: { value: "ws-secret-value" } },
                     ];
@@ -211,6 +213,33 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 personaDefs = [...personaDefs.filter((d) => d.alias !== alias), { alias, origin: "workspace", state: "active", definition: def }];
                                 return { result: { status: 201 } };
                             }
+                            case "workspace.members.list":
+                                return { result: { family: "members", definitions: memberDefs } };
+                            case "workspace.members.discover":
+                                return {
+                                    result: {
+                                        family: "members",
+                                        candidates: [{
+                                            alias: params.query,
+                                            summary: `Matches 2 files (${params.query})`,
+                                            definition: { glob: params.query },
+                                            provenance: { kind: "preview", source: params.query },
+                                        }],
+                                    },
+                                };
+                            case "workspace.members.add": {
+                                const files = Array.isArray(params.files) ? params.files : [];
+                                for (const glob of files) {
+                                    memberDefs = [
+                                        ...memberDefs.filter((d) => d.alias !== glob),
+                                        { alias: glob, origin: "workspace", state: "active", definition: { glob }, detail: { effect: glob.startsWith("!") ? "exclude" : "include", matched: 2 } },
+                                    ];
+                                }
+                                return { result: { status: 201, family: "members", definitions: memberDefs } };
+                            }
+                            case "workspace.members.remove":
+                                memberDefs = memberDefs.filter((d) => d.alias !== params.file);
+                                return { result: { status: 200, family: "members", alias: params.file, removed: true } };
                             case "workspace.env.list":
                                 return { result: { family: "env", definitions: workspaceEnv } };
                             case "session.env.list":
@@ -317,6 +346,20 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await schedulePanel.getByRole("button", { name: "Save schedule", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
                     assert.equal(requests.find((r) => r.params?.kind === "workspace.schedule.replace").params.params.target, "session://user");
+
+                    // Members: preview + candidate Add + batch add + row Remove ({ file })
+                    await dialog.getByRole("button", { name: "Members", exact: true }).click();
+                    const membersPanel = dialog.locator('[data-settings-panel="members"]');
+                    await membersPanel.getByRole("textbox", { name: "Inspect file or glob", exact: true }).fill("docs/**");
+                    await membersPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
+                    await membersPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
+                    await membersPanel.getByRole("textbox", { name: "Member globs", exact: true }).fill("!docs/drafts/**");
+                    await membersPanel.getByRole("button", { name: "Add rules", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 2);
+                    await membersPanel.locator("[data-family-rows] tr").first().getByRole("button", { name: "Remove", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
+                    assert.deepEqual(requests.find((r) => r.params?.kind === "workspace.members.remove").params.params, { file: "docs/**" });
 
                     // Overview Environment: locked to workspace scope, hides session scope selector, never leaks secret values
                     await dialog.getByRole("button", { name: "Environment", exact: true }).click();
