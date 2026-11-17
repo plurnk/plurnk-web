@@ -66,8 +66,10 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
             for (const listener of listeners) listener.onStateChange?.(next);
         };
         const query = new URLSearchParams({ event: NOTIFICATION_EVENTS });
-        if (workspaceId !== undefined) query.set("workspace", String(workspaceId));
-        const path = `/notifications?${query.toString()}`;
+        const scopePath = workspaceId === undefined
+            ? "/notifications"
+            : `/notifications/${encodeURIComponent(String(workspaceId))}`;
+        const path = `${scopePath}?${query.toString()}`;
         /** @type {{ close: () => void } | null} */
         let stream = null;
         let disposed = false;

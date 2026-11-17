@@ -36,6 +36,11 @@ export const httpFailure = (path, status) => new RegExp(
     `^error ${RegExp.escape(path)}: Failed to load resource: the server responded with a status of ${status} \\([^)]+\\)$`, "u",
 );
 
-export const networkFailure = (path) => Object.assign(new RegExp(
-    `^error (${RegExp.escape(path)}|): (Failed to load resource:.*|Fetch API cannot load .*${RegExp.escape(path)} due to access control checks\\.)$`, "u",
-), { webkitOptional: true });
+export const networkFailure = (path) => {
+    const pattern = path === "/notifications"
+        ? `${RegExp.escape(path)}(?:/[^:\\s]*)?`
+        : RegExp.escape(path);
+    return Object.assign(new RegExp(
+        `^error (${pattern}|): (Failed to load resource:.*|Fetch API cannot load .*${pattern} due to access control checks\\.)$`, "u",
+    ), { webkitOptional: true });
+};
