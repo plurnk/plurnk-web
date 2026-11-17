@@ -1,11 +1,11 @@
 import { $, $$, on, the } from "on_the_money";
-import { EFFORTS, isRecord, Validator } from "@plurnk/plurnk-contracts";
+import { EFFORTS, isRecord } from "@plurnk/plurnk-contracts";
 import describeFailure from "./failure.js";
 import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
 
 /**
- * @typedef {"capabilities" | "mcp" | "skills" | "schedule" | "personas" | "env"} SettingsSection
+ * @typedef {"mcp" | "skills" | "schedule" | "personas" | "env"} SettingsSection
  */
 
 /**
@@ -18,23 +18,12 @@ import managementAction from "./management-action.js";
  * }} WorkspaceSettingsContext
  */
 
-const SECTIONS = /** @type {const} */ (["capabilities", "mcp", "skills", "schedule", "personas", "env"]);
+const SECTIONS = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "env"]);
 const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas"]);
-const CAPABILITY_BUCKETS = /** @type {const} */ (["allow", "only", "deny"]);
 
 /** @param {unknown} value @returns {value is SettingsSection} */
 export const isSettingsSection = (value) =>
     typeof value === "string" && /** @type {readonly string[]} */ (SECTIONS).includes(value);
-
-/**
- * @param {Record<string, unknown>} selector
- * @returns {string}
- */
-function formatSelectorSummary(selector) {
-    return Object.entries(selector)
-        .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(",") : String(value)}`)
-        .join(" · ");
-}
 
 /**
  * @param {"mcp" | "skills" | "schedule" | "personas"} family
@@ -102,12 +91,10 @@ export function createWorkspaceSettingsController(getContext) {
     /** @type {Element | null} */
     let envPanel = null;
     /** @type {SettingsSection} */
-    let activeSection = "capabilities";
+    let activeSection = "mcp";
     /** @type {"workspace" | "session"} */
     let envListScope = "workspace";
     let busy = false;
-    /** @type {import("@plurnk/plurnk-contracts").CapabilityPolicy} */
-    let currentWorkspacePolicy = {};
     /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas", alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
 
@@ -158,46 +145,6 @@ export function createWorkspaceSettingsController(getContext) {
             const { message, recovery } = await describeFailure(error);
             setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery);
         }
-    }
-
-    /** @param {import("@plurnk/plurnk-contracts").CapabilityProjection} result */
-    function renderCapabilities(result) {
-        if (!dialog) return;
-        const panel = $(dialog, '[data-settings-panel="capabilities"]');
-        const tbody = panel ? $(panel, "[data-cap-rows]") : null;
-        if (!panel || !tbody) return;
-        for (const layer of /** @type {const} */ (["service", "workspace", "effective"])) {
-            Validator.assertCapabilityPolicy(Reflect.get(Object(result), layer));
-            const code = $(panel, `[data-ws-capability="${layer}"]`);
-            if (code) code.textContent = JSON.stringify(result[layer], null, 2);
-        }
-        currentWorkspacePolicy = result.workspace;
-        const presetSelect = $(panel, '[data-cap-preset-form] select[name="preset"]');
-        if (presetSelect instanceof HTMLSelectElement) {
-            presetSelect.value = Array.isArray(currentWorkspacePolicy.deny) && currentWorkspacePolicy.deny.length > 0
-                ? "deny"
-                : Array.isArray(currentWorkspacePolicy.allow) && currentWorkspacePolicy.allow.length > 0
-                    ? "allow"
-                    : "propose";
-        }
-        /** @type {{ bucket: "allow" | "only" | "deny", index: number, summary: string }[]} */
-        const rows = [];
-        for (const bucket of CAPABILITY_BUCKETS) {
-            const list = currentWorkspacePolicy[bucket];
-            if (!Array.isArray(list)) continue;
-            for (const [index, selector] of list.entries()) {
-                if (!isRecord(selector)) continue;
-                rows.push({ bucket, index, summary: formatSelectorSummary(selector) });
-            }
-        }
-        $.cloneEach(tbody, "#workspace-cap-rule-row", rows, (tr, row) => {
-            the(tr, {
-                capBucket: row.bucket,
-                capIndex: String(row.index),
-                capSummary: row.summary,
-            });
-        });
-        the(panel, { capCount: rows.length });
     }
 
     /**
@@ -329,15 +276,6 @@ export function createWorkspaceSettingsController(getContext) {
         const ctx = getContext();
         setFeedback(true, "", "");
         try {
-            if (section === "capabilities") {
-                const res = /** @type {import("@plurnk/plurnk-contracts").CapabilityProjection} */ (
-                    await invoke("workspace.capabilities.get", {})
-                );
-                ctx.signal.throwIfAborted();
-                renderCapabilities(res);
-                setFeedback(false, "", "");
-                return;
-            }
             if (section === "env") {
                 syncEnvScopeControls();
                 const res = await invoke(`${envListScope}.env.list`, {}, {
@@ -451,96 +389,6 @@ export function createWorkspaceSettingsController(getContext) {
             envListScope = select.value === "session" ? "session" : "workspace";
             syncEnvScopeControls();
             void refreshSection("env");
-        });
-
-        on(dialog, "submit", "[data-cap-preset-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const preset = String(new FormData(form).get("preset") ?? "propose");
-            /** @type {import("@plurnk/plurnk-contracts").CapabilityPolicy} */
-            const policy = preset === "allow"
-                ? {
-                    allow: [
-                        { access: "observe" },
-                        { access: "mutate" },
-                        { access: "execute" },
-                        { access: "interact" },
-                        { access: "control" },
-                    ],
-                }
-                : preset === "deny"
-                    ? { deny: [{ access: "mutate" }, { access: "execute" }, { access: "control" }] }
-                    : {};
-            void runMutation(async () => {
-                const res = /** @type {import("@plurnk/plurnk-contracts").CapabilityProjection} */ (
-                    await invoke("workspace.capabilities.set", { policy })
-                );
-                renderCapabilities(res);
-                return "Workspace capability posture updated.";
-            });
-        });
-
-        on(dialog, "submit", "[data-cap-remove-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const data = new FormData(form);
-            const bucket = String(data.get("bucket") ?? "");
-            const targetIndex = Number(data.get("index"));
-            if (!["allow", "only", "deny"].includes(bucket) || !Number.isInteger(targetIndex)) return;
-            const bucketKey = /** @type {"allow" | "only" | "deny"} */ (bucket);
-            const existing = currentWorkspacePolicy[bucketKey] ?? [];
-            const updatedList = existing.filter((_, idx) => idx !== targetIndex);
-            /** @type {Record<string, unknown>} */
-            const nextPolicy = { ...currentWorkspacePolicy };
-            if (updatedList.length > 0) nextPolicy[bucketKey] = updatedList;
-            else delete nextPolicy[bucketKey];
-            void runMutation(async () => {
-                Validator.assertCapabilityPolicy(nextPolicy);
-                const res = /** @type {import("@plurnk/plurnk-contracts").CapabilityProjection} */ (
-                    await invoke("workspace.capabilities.set", { policy: nextPolicy })
-                );
-                renderCapabilities(res);
-                return "Removed workspace capability rule.";
-            });
-        });
-
-        on(dialog, "submit", "[data-cap-rule-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const data = new FormData(form);
-            const rawBucket = String(data.get("bucket") ?? "allow");
-            const bucketKey = rawBucket === "only" || rawBucket === "deny" ? rawBucket : "allow";
-            /** @type {Record<string, unknown>} */
-            const selector = {};
-            for (const field of ["access", "operation", "runtime", "scheme", "tool"]) {
-                const val = String(data.get(field) ?? "").trim();
-                if (val.length > 0) selector[field] = val;
-            }
-            const rawTraits = String(data.get("traits") ?? "")
-                .split(",")
-                .map((part) => part.trim())
-                .filter((part) => part.length > 0);
-            if (rawTraits.length > 0) selector.traits = rawTraits;
-            void runMutation(async () => {
-                if (Object.keys(selector).length === 0) {
-                    throw new Error("Specify at least one capability selector field.");
-                }
-                const nextPolicy = {
-                    ...currentWorkspacePolicy,
-                    [bucketKey]: [...(currentWorkspacePolicy[bucketKey] ?? []), selector],
-                };
-                Validator.assertCapabilityPolicy(nextPolicy);
-                const res = /** @type {import("@plurnk/plurnk-contracts").CapabilityProjection} */ (
-                    await invoke("workspace.capabilities.set", { policy: nextPolicy })
-                );
-                renderCapabilities(res);
-                for (const input of $$(form, "input")) {
-                    if (input instanceof HTMLInputElement) input.value = "";
-                }
-                const accessSelect = $(form, 'select[name="access"]');
-                if (accessSelect instanceof HTMLSelectElement) accessSelect.value = "";
-                return `Added ${bucketKey} rule (${formatSelectorSummary(selector)}).`;
-            });
         });
 
         on(dialog, "submit", "[data-family-row-form]", (event, form) => {
@@ -891,7 +739,7 @@ export function createWorkspaceSettingsController(getContext) {
         /** @param {SettingsSection} [initialSection] */
         open(initialSection = activeSection) {
             const modal = ensureDialog();
-            const targetSection = isSettingsSection(initialSection) ? initialSection : "capabilities";
+            const targetSection = isSettingsSection(initialSection) ? initialSection : "mcp";
             selectSection(targetSection);
             if (!modal.open) modal.showModal();
             const activeTab = $(modal, `[data-settings-section="${targetSection}"]`);

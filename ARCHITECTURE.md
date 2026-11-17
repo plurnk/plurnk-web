@@ -31,8 +31,8 @@ deployment choices belong in the owning package's cascading environment.
 
 - This module declares choices in `.env.defaults`, consumed through
   the shared `Knob` reader after the host assembles the floor. Reads supply no
-  replacement default. Invalid configuration goes to the existing capability
-  diagnostic; unrelated daemon work remains usable.
+  replacement default. Invalid configuration goes to `module.contained`;
+  unrelated daemon work remains usable.
 - A limit, lifetime or posture that an operator could sensibly change needs an
   owner and a panel entry. Defaults favor least surprise, then least regret.
   Web does not redeclare the daemon's authentication or permission choices.

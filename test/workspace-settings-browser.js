@@ -16,7 +16,7 @@ function createAgent(base, sessionId) {
 
 // {§web-workspace-settings} End-to-end verification of workspace settings against a real packed daemon on zero-session Overview and live Session pages.
 export default async function verifyWorkspaceSettings({ t, withDaemon }) {
-    await t.test("{§web-workspace-settings} zero-session Overview and live Session tabs manage capabilities, MCP, schedules, personas, and masked env with inline Problem recovery", { timeout: 60_000 }, async () => {
+    await t.test("{§web-workspace-settings} zero-session Overview and live Session tabs manage MCP, schedules, personas, and masked env with inline Problem recovery", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         model.reset();
         const workspace = `ws-settings-${crypto.randomUUID()}`;
@@ -53,25 +53,17 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await dialog.waitFor({ state: "visible" });
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
 
-            // 1. Capabilities on 0-session Overview
-            const capPanel = dialog.locator('[data-settings-panel="capabilities"]');
-            await capPanel.getByRole("combobox", { name: "Rule list", exact: true }).selectOption("deny");
-            await capPanel.getByRole("combobox", { name: "Operation" }).or(capPanel.getByRole("textbox", { name: "Operation", exact: true })).fill("kill");
-            await capPanel.getByRole("button", { name: "Add rule", exact: true }).click();
-            await page.waitForFunction(() => document.querySelectorAll("#dialog-workspace-settings [data-cap-rows] tr").length === 1);
-            assert.match(await capPanel.locator('[data-ws-capability="workspace"]').textContent(), /"operation": "kill"/u);
-
-            // 2. MCP: invalid alias triggers real daemon Problem and preserves form inputs, then valid save succeeds
-            await dialog.getByRole("button", { name: "MCP", exact: true }).click();
+            // 1. MCP (initial active tab): invalid alias triggers real daemon Problem and preserves form inputs
+            assert.equal(await dialog.getByRole("button", { name: "MCP", exact: true }).getAttribute("aria-pressed"), "true");
             const mcpPanel = dialog.locator('[data-settings-panel="mcp"]');
-            await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
+            assert.equal(await mcpPanel.isVisible(), true);
             await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).fill("123-invalid");
             await mcpPanel.getByRole("textbox", { name: "Server command", exact: true }).fill("echo");
             await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
             await page.waitForFunction(() => (document.querySelector("#dialog-workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("123-invalid"));
             assert.equal(await mcpPanel.getByRole("textbox", { name: "Server command", exact: true }).inputValue(), "echo", "daemon Problem preserves MCP form draft");
 
-            // 3. Personas: add an inline persona on 0-session Overview
+            // 2. Personas: add an inline persona on 0-session Overview
             await dialog.getByRole("button", { name: "Personas", exact: true }).click();
             const personasPanel = dialog.locator('[data-settings-panel="personas"]');
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
@@ -84,7 +76,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="personas"] [data-family-rows] tr').length === 1);
             assert.match(await personasPanel.locator("[data-family-rows] tr").first().textContent(), /reviewer[\s\S]*Strict code reviewer \[high\]/u);
 
-            // 4. Environment: set a masked workspace variable on 0-session Overview
+            // 3. Environment: set a masked workspace variable on 0-session Overview
             await dialog.getByRole("button", { name: "Environment", exact: true }).click();
             const envPanel = dialog.locator('[data-settings-panel="env"]');
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
@@ -102,7 +94,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await dialog.getByRole("button", { name: "Close", exact: true }).click();
             await dialog.waitFor({ state: "hidden" });
 
-            // 5. Create session "user", jump to Settings from `/personas list`, and apply `reviewer` persona to session!
+            // 4. Create session "user", jump to Settings from `/personas list`, and apply `reviewer` persona to session!
             const setup = createAgent(base, "user");
             const { result: modelRes } = await setup.send({
                 workspace,

@@ -158,7 +158,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await page.locator("#session-command-results").isVisible(), false);
                     for (const text of ["  /help /model \n", "/help learn", "/yolo"]) assert.equal(await command(text), true);
                     assert.equal(await rows.nth(1).locator('dl[aria-label="Keyboard shortcuts"]').count(), 0, "named command help omits full shortcut index");
-                    for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b", "/capabilities {"]) {
+                    for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b"]) {
                         assert.equal(await command(text), false);
                     }
                     assert.equal(requests.length, 0);

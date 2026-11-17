@@ -18,10 +18,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
 
                     /** @type {any[]} */
                     const requests = [];
-                    /** @type {any} */
-                    let nextProblem = null;
-                    /** @type {any} */
-                    let wsPolicy = {};
+                    let activeWork = false;
                     /** @type {any[]} */
                     let mcpDefs = [
                         {
@@ -69,10 +66,20 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     fixture.onAcp(async (input, headers) => {
                         assert.equal(headers.authorization, "Bearer ws-settings-token");
                         requests.push(input);
-                        if (nextProblem) {
-                            const err = nextProblem;
-                            nextProblem = null;
-                            return { error: { code: -32000, message: err.detail, data: err } };
+                        if (activeWork && input.method === "_plurnk/action" && !input.params.kind.endsWith(".list")) {
+                            return {
+                                error: {
+                                    code: -32000,
+                                    message: "Workspace has active loop work.",
+                                    data: {
+                                        type: "https://problems.plurnk.xyz/workspace/active-work",
+                                        title: "Conflict",
+                                        status: 409,
+                                        detail: "Workspace has active loop work.",
+                                        recovery: "Wait for active loops to settle or stop them first.",
+                                    },
+                                },
+                            };
                         }
                         if (input.method === "session/resume") {
                             return {
@@ -119,11 +126,6 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         assert.equal(input.method, "_plurnk/action");
                         const { kind, params } = input.params;
                         switch (kind) {
-                            case "workspace.capabilities.get":
-                                return { result: { service: {}, workspace: wsPolicy, effective: wsPolicy } };
-                            case "workspace.capabilities.set":
-                                wsPolicy = params.policy;
-                                return { result: { service: {}, workspace: wsPolicy, effective: wsPolicy } };
                             case "workspace.mcp.list":
                                 return { result: { family: "mcp", definitions: mcpDefs } };
                             case "workspace.mcp.enable":
@@ -233,8 +235,10 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await dialog.waitFor({ state: "visible" });
                     await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
 
+                    assert.equal(requests.at(-1).params.kind, "workspace.mcp.list");
                     assert.equal(requests.at(-1).params.workspaceId, 7);
                     assert.equal("sessionId" in requests.at(-1).params, false, "Overview mode sends workspaceId without session attachment");
+                    assert.equal(await dialog.getByRole("button", { name: "MCP", exact: true }).getAttribute("aria-pressed"), "true");
 
                     for (const width of [320, 1280]) {
                         await page.setViewportSize({ width, height: 740 });
@@ -242,33 +246,9 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     }
                     await page.setViewportSize({ width: 320, height: 740 });
 
-                    // Capabilities: structured rule builder + 409 active-work refusal preserving draft
-                    const capPanel = dialog.locator('[data-settings-panel="capabilities"]');
-                    await capPanel.getByRole("combobox", { name: "Rule list", exact: true }).selectOption("deny");
-                    await capPanel.getByRole("textbox", { name: "Runtime", exact: true }).fill("sh");
-                    await capPanel.getByRole("textbox", { name: "Traits", exact: true }).fill("network");
-                    nextProblem = {
-                        type: "https://problems.plurnk.xyz/workspace/active-work",
-                        title: "Conflict",
-                        status: 409,
-                        detail: "Workspace has active loop work.",
-                        recovery: "Wait for active loops to settle or stop them first.",
-                    };
-                    await capPanel.getByRole("button", { name: "Add rule", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings [data-text='ws-settings-message']")?.textContent === "Workspace has active loop work.");
-                    assert.equal(await dialog.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
-                    assert.equal(await capPanel.getByRole("textbox", { name: "Runtime", exact: true }).inputValue(), "sh", "409 refusal preserves unsaved rule input");
-
-                    await capPanel.getByRole("button", { name: "Add rule", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll("#dialog-workspace-settings [data-cap-rows] tr").length === 1);
-                    assert.match(await capPanel.locator("[data-cap-rows] tr").first().textContent(), /deny[\s\S]*runtime=sh · traits=network/u);
-                    assert.equal(await capPanel.getByRole("textbox", { name: "Runtime", exact: true }).inputValue(), "");
-                    await capPanel.locator("[data-cap-rows] tr").first().getByRole("button", { name: "Remove", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll("#dialog-workspace-settings [data-cap-rows] tr").length === 0);
-
-                    // MCP: list, service-vs-workspace buttons, OAuth begin+complete, discover+Add, streamable-http save
-                    await dialog.getByRole("button", { name: "MCP", exact: true }).click();
+                    // MCP (initial tab): list, service-vs-workspace buttons, OAuth begin+complete, discover+Add, 409 active-work refusal preserving draft, streamable-http save + remove
                     const mcpPanel = dialog.locator('[data-settings-panel="mcp"]');
+                    assert.equal(await mcpPanel.isVisible(), true);
                     await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 2);
                     const svcRow = mcpPanel.locator("[data-family-rows] tr").nth(0);
                     const oauthRow = mcpPanel.locator("[data-family-rows] tr").nth(1);
@@ -288,6 +268,28 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await mcpPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
                     await mcpPanel.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
                     await mcpPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
+
+                    await mcpPanel.getByRole("combobox", { name: "MCP transport", exact: true }).selectOption("streamable-http");
+                    await mcpPanel.getByRole("combobox", { name: "Endpoint authentication", exact: true }).selectOption("bearer");
+                    await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).fill("edge-api");
+                    await mcpPanel.getByLabel("Endpoint URL", { exact: true }).fill("https://edge.example/mcp");
+                    await mcpPanel.getByRole("textbox", { name: "Bearer token reference", exact: true }).fill("${EDGE_TOKEN}");
+                    activeWork = true;
+                    await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings [data-text='ws-settings-message']")?.textContent === "Workspace has active loop work.");
+                    assert.equal(await dialog.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
+                    assert.equal(await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "edge-api", "409 refusal preserves unsaved MCP server input");
+                    assert.equal(await mcpPanel.getByLabel("Endpoint URL", { exact: true }).inputValue(), "https://edge.example/mcp");
+                    assert.equal(await mcpPanel.getByRole("textbox", { name: "Bearer token reference", exact: true }).inputValue(), "${EDGE_TOKEN}");
+
+                    activeWork = false;
+                    await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 4);
+                    assert.match(await mcpPanel.locator("[data-family-rows] tr").last().textContent(), /edge-api[\s\S]*https:\/\/edge\.example\/mcp \(bearer\)/u);
+                    assert.equal(await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "");
+                    assert.equal(await mcpPanel.getByLabel("Endpoint URL", { exact: true }).inputValue(), "");
+                    await mcpPanel.locator("[data-family-rows] tr").last().getByRole("button", { name: "Remove", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
 
                     // Skills: discover + candidate Add (stripping commit)
