@@ -298,7 +298,7 @@ body > header nav[aria-label="breadcrumb"] li button {
     padding-block: calc(var(--pico-spacing) * 0.25);
 }
 
-:is([data-family-row-form], [data-cap-remove-form], [data-candidate-add-form]) > :where(fieldset) {
+:is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset) {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -306,7 +306,7 @@ body > header nav[aria-label="breadcrumb"] li button {
     margin: 0;
 }
 
-:is([data-family-row-form], [data-cap-remove-form], [data-candidate-add-form]) > :where(fieldset > button) {
+:is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset > button) {
     flex: 0 0 auto;
     inline-size: auto;
     margin: 0;

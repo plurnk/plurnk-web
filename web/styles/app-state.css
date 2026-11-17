@@ -137,8 +137,6 @@ button[data-attach-image]::before { content: "📎" / ""; }
 :is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="true"] [data-env-enable],
 :is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="false"] [data-env-disable],
 :is(#session-command-results, #dialog-workspace-settings) [data-env-removable="false"] [data-env-unset],
-#dialog-workspace-settings [data-cap-count="0"] > [data-cap-table-wrap],
-#dialog-workspace-settings [data-settings-panel="capabilities"]:not([data-cap-count="0"]) > [data-cap-empty],
 #dialog-workspace-settings [data-family-count="0"] > [data-family-table-wrap],
 #dialog-workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
 #dialog-workspace-settings [data-candidate-count="0"] > [data-candidate-rows],

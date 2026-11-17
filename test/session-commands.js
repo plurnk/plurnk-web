@@ -181,7 +181,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
         }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
     await t.test("{§web-session-commands} slash commands remain outside model messages and preserve daemon truth", () =>
-        inputPage(withDaemon, async ({ page, model, checkBrowser, setup, workspace }) => {
+        inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const sent = [];
             page.on("request", (request) => {
                 const body = request.postDataJSON();
@@ -197,9 +197,9 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             const { field, submit } = composer(page);
             const help = await submit("/help");
             const names = await help.locator("[data-command-name]").evaluateAll((items) => items.map((item) => item.dataset.commandName));
-            assert.deepEqual(names, ["help", "models", "model", "effort", "capabilities", "mcp", "skills", "schedule", "personas", "env", "learn", "yolo", "stop"]);
+            assert.deepEqual(names, ["help", "models", "model", "effort", "mcp", "skills", "schedule", "personas", "env", "learn", "yolo", "stop"]);
             assert.equal(sent.length, 0);
-            for (const text of ["/quit", "/import anything", "/model a b c", "/effort low high", "/yolo yes", "/capabilities {"]) {
+            for (const text of ["/quit", "/import anything", "/model a b c", "/effort low high", "/yolo yes"]) {
                 await submit(text, "error");
                 assert.equal(await field.inputValue(), text);
             }
@@ -223,14 +223,6 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "high");
             assert.equal(await page.locator("#session-command-results > ul > li").count(), 0, "command history is page-local");
-            const capabilities = await submit("/capabilities");
-            assert.deepEqual(await capabilities.locator("dt").allTextContents(), ["Service", "Workspace", "Effective"]);
-            const policy = { deny: [{ runtime: "sh" }] };
-            await submit(`/capabilities ${JSON.stringify(policy)}`);
-            const { result } = await setup.send({ workspace, action: { kind: "workspace.capabilities.get" } });
-            assert.equal(result.ok, true, JSON.stringify(result));
-            assert.deepEqual(result.result.workspace, policy);
-            await submit("/capabilities {}");
             const mcpNone = await submit("/mcp list");
             assert.match(await mcpNone.textContent(), /mcp: none/u);
             await submit("/env set MY_VAR top-secret-hello");
@@ -263,7 +255,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await page.getByRole("button", { name: "Send", exact: true }).click();
             await page.getByText("Completed command-followup.", { exact: true }).waitFor();
             assert.equal(model.requests.length, 1);
-            assert.doesNotMatch(JSON.stringify(sent.at(-1).params.prompt), /nonexistent-web-route|\/capabilities|\/models/u);
+            assert.doesNotMatch(JSON.stringify(sent.at(-1).params.prompt), /nonexistent-web-route|\/mcp|\/models/u);
             await field.fill("/learn Lifecycle fixture: learn-focus.");
             await page.getByRole("button", { name: "Send", exact: true }).click();
             await page.getByText("Completed learn-focus.", { exact: true }).waitFor();

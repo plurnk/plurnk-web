@@ -1,5 +1,5 @@
 import { $, $$, on, the } from "on_the_money";
-import { isRecord, parseFamilyCommand, Validator } from "@plurnk/plurnk-contracts";
+import { isRecord, parseFamilyCommand } from "@plurnk/plurnk-contracts";
 import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
 import { populateEnvPanel } from "./env-panel.js";
 import describeFailure from "./failure.js";
@@ -10,7 +10,7 @@ export const primaryModifierLabel = () =>
 
 /** {§web-session-commands} A presentation vocabulary, not daemon policy or a terminal dispatcher. */
 const familyCommands = new Set(["mcp", "skills", "schedule", "personas", "env"]);
-const commands = new Set(["help", "models", "model", "effort", "capabilities", "yolo", "stop", ...familyCommands]);
+const commands = new Set(["help", "models", "model", "effort", "yolo", "stop", ...familyCommands]);
 const helpCommands = new Set([...commands, "learn"]);
 
 const LEARN_PROMPT = "Review this session's work and author or update a reusable workspace skill (`SKILL.md` under `.agents/skills/<name>/SKILL.md`), reading `mcp:///plurnk/skills.json` for conventions if needed, then verify it via the `skills` tool.";
@@ -48,12 +48,7 @@ export function parseCommand(text) {
     if ((["yolo", "stop"].includes(name) && args.length)
         || (["help", "effort"].includes(name) && args.length > 1)
         || (name === "model" && args.length > 2)) throw new Error(`Too many arguments for /${name}. Use /help ${name}.`);
-    let policy;
-    if (name === "capabilities" && rest) {
-        try { policy = JSON.parse(rest); }
-        catch (cause) { throw new Error("Capability policy must be valid JSON.", { cause }); }
-    }
-    return { name, rest, args, policy };
+    return { name, rest, args };
 }
 
 /**
@@ -233,8 +228,8 @@ export default function sessionCommands(controls, actions) {
         the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandRecovery: "" });
         try {
             signal.throwIfAborted();
-            const { name, rest, args, policy } = parseCommand(text);
-            if ((name === "capabilities" || familyCommands.has(name)) && $('#workspace-tabs[data-live="true"]')) {
+            const { name, rest, args } = parseCommand(text);
+            if (familyCommands.has(name) && $('#workspace-tabs[data-live="true"]')) {
                 const header = $(row, "header");
                 const dismiss = header ? $(header, "[data-dismiss-command]") : null;
                 if (header && dismiss) {
@@ -318,18 +313,6 @@ export default function sessionCommands(controls, actions) {
                 } else if (name === "effort") {
                     const { effort, source, supported } = await sessionEffort(call, args[0]);
                     message = `Effort: ${effort ?? "Unavailable"} (${source}). Supported: ${supported.join(", ") || "None"}.`;
-                } else if (name === "capabilities") {
-                    if (rest) Validator.assertCapabilityPolicy(policy);
-                    const result = /** @type {import("@plurnk/plurnk-contracts").CapabilityProjection} */ (
-                        await call(rest ? "workspace.capabilities.set" : "workspace.capabilities.get", rest ? { policy } : {}));
-                    for (const layer of ["service", "workspace", "effective"]) Validator.assertCapabilityPolicy(Reflect.get(Object(result), layer));
-                    signal.throwIfAborted();
-                    const projection = $.clone(body, "#command-capabilities");
-                    for (const layer of /** @type {const} */ (["service", "workspace", "effective"])) {
-                        const content = $(projection, `[data-capability="${layer}"]`);
-                        if (!content) throw new Error("Capability template has no policy outlet.");
-                        content.textContent = JSON.stringify(result[layer], null, 2);
-                    }
                 }
             }
             signal.throwIfAborted();
