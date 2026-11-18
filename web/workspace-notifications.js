@@ -4,18 +4,24 @@ import accessHeaders from "./access-headers.js";
 import { isRetryableObservationFailure } from "./passive-reconnect.js";
 
 export const NOTIFICATION_EVENT_LIST = [
+    "workspace/created",
     "workspace/renamed",
     "workspace/archived",
+    "functionality/changed",
     "session/created",
     "session/archived",
     "session/deleted",
-    "loop/terminated",
+    "session/titled",
+    "session/policy",
     "loop/proposal",
     "loop/interaction",
+    "loop/gate-settled",
+    "loop/terminated",
     "log/entry",
+    "stream/concluded",
+    "notice/event",
+    "notifications/resync",
 ];
-
-const NOTIFICATION_EVENTS = NOTIFICATION_EVENT_LIST.join(",");
 
 /** @typedef {"connecting" | "connected" | "disconnected" | "signed-out" | "closed"} NotificationState */
 
@@ -65,11 +71,9 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
             if (entry) entry.state = next;
             for (const listener of listeners) listener.onStateChange?.(next);
         };
-        const query = new URLSearchParams({ event: NOTIFICATION_EVENTS });
-        const scopePath = workspaceId === undefined
+        const path = workspaceId === undefined
             ? "/notifications"
             : `/notifications/${encodeURIComponent(String(workspaceId))}`;
-        const path = `${scopePath}?${query.toString()}`;
         /** @type {{ close: () => void } | null} */
         let stream = null;
         let disposed = false;
@@ -93,14 +97,22 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
                 onUp: () => {
                     if (!disposed) setState("connected");
                 },
-                onMessage: (_type, payload) => {
+                onMessage: (type, payload) => {
                     if (disposed) return;
                     if (!isRecord(payload)) {
                         instance.close();
                         setState("disconnected");
                         return;
                     }
-                    for (const listener of listeners) listener.onNotification?.(payload);
+                    const envelope = type === "notifications/resync"
+                        ? {
+                            event: "notifications/resync",
+                            workspaceId: workspaceId ?? null,
+                            sessionId: null,
+                            data: payload,
+                        }
+                        : payload;
+                    for (const listener of listeners) listener.onNotification?.(envelope);
                 },
                 onError: (error) => {
                     if (disposed) return;

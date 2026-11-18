@@ -216,7 +216,7 @@ export default async function verifySessionCards(t) {
                 assert.equal(notificationRequests.length, 1);
                 assert.equal(notificationRequests[0].authorization, "Bearer overview-token");
                 assert.equal(notificationRequests[0].path, "/notifications/7");
-                assert.equal(new URLSearchParams(notificationRequests[0].search).size, 1);
+                assert.equal(notificationRequests[0].search, "");
                 assert.equal(await page.locator("header [data-connection-indicator]").isVisible(), false);
 
                 const rootNames = () => page.locator("main > ul > li > article > header [data-session-link], main > ul > li > article > details > summary [data-session-link]")
@@ -355,6 +355,29 @@ export default async function verifySessionCards(t) {
                 assert.equal(await page.title(), "renamed-work — Plurnk");
                 assert.equal(await page.locator('header nav[aria-label="breadcrumb"] [aria-current="page"]').textContent(), "renamed-work");
                 assert.equal(await card("idle").locator("[data-lifecycle]").getAttribute("aria-label"), "running");
+
+                // Live gate open + loop/gate-settled + session/titled updates on the default discrete stream
+                emitNotification("loop/proposal", 7, 8, {
+                    logEntryId: 91,
+                    sessionId: 8,
+                    loopId: 1,
+                    disposition: { decision: "review" },
+                });
+                await card("idle").locator('[data-session-gates="1"]').waitFor();
+                emitNotification("loop/gate-settled", 7, 8, {
+                    kind: "proposal",
+                    sessionId: 8,
+                    loopId: 1,
+                    logEntryId: 91,
+                    decision: "reject",
+                    outcome: "rejected",
+                });
+                emitNotification("session/titled", 7, 8, {
+                    id: 8,
+                    title: "Live titled idle",
+                });
+                await card("idle").locator("[data-session-title]", { hasText: "Live titled idle" }).waitFor();
+                assert.equal(await card("idle").locator("[data-session-gates]").count(), 0, "loop/gate-settled clears the gate badge without waiting for a resolved log/entry");
 
                 // Ending SSE stream transitions #main[data-connection] to disconnected, then passive backoff and online events recover it
                 for (const stream of sseStreams) stream.end();
