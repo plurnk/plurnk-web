@@ -224,26 +224,30 @@ export default function observeOverview(main) {
         });
     }
 
-    function hydrateFromDom() {
+    /**
+     * @param {ParentNode} [sourceRoot]
+     * @param {boolean} [bindLiveRows]
+     */
+    function hydrateFromDom(sourceRoot = main, bindLiveRows = true) {
         if (workspaceId !== undefined) {
             const crumbName = $('header nav[aria-label="breadcrumb"] [aria-current="page"][data-text="name"]');
             const marker = crumbName?.previousElementSibling;
-            const labelEl = $(main, '[data-text="project-label"]');
+            const labelEl = $(sourceRoot, '[data-text="project-label"]');
             const name = crumbName?.textContent ?? String(workspaceId);
             const projectLabel = labelEl?.textContent ?? (marker?.getAttribute("aria-label") === "Project workspace" ? name : null);
             workspacesById.set(workspaceId, { name, projectRoot: projectLabel, projectLabel });
         }
-        for (const row of $$(main, 'li[data-directory-entry="session"]')) {
+        for (const row of $$(sourceRoot, 'li[data-directory-entry="session"]')) {
             if (!(row instanceof HTMLLIElement)) continue;
             const details = $(row, ":scope > article > details");
-            if (details instanceof HTMLDetailsElement) bindDisclosure(details);
+            if (bindLiveRows && details instanceof HTMLDetailsElement) bindDisclosure(details);
             const rawKey = row.dataset.sessionKey ?? "";
             const keyMatch = /^(\d+):(\d+)$/u.exec(rawKey);
             if (!keyMatch) continue;
             const wsId = Number(keyMatch[1]);
             const id = Number(keyMatch[2]);
             const key = `${wsId}:${id}`;
-            rowsByKey.set(key, row);
+            if (bindLiveRows) rowsByKey.set(key, row);
 
             const parentRow = row.parentElement?.closest('li[data-directory-entry="session"]');
             const parentKeyMatch = parentRow instanceof HTMLLIElement && parentRow.dataset.sessionKey
@@ -701,6 +705,22 @@ export default function observeOverview(main) {
                 if (removed) reconcileDom();
                 return;
             }
+            case "session/titled": {
+                const wsId = notifWorkspaceId;
+                const sid = typeof data.id === "number" ? data.id : notifSessionId;
+                if (wsId === null || sid === null) return;
+                const key = `${wsId}:${sid}`;
+                const cur = sessionsByKey.get(key);
+                if (!cur) return;
+                const nextTitle = typeof data.title === "string" && data.title.trim().length > 0 ? data.title : undefined;
+                if (cur.title === nextTitle) return;
+                const next = { ...cur };
+                if (nextTitle !== undefined) next.title = nextTitle;
+                else delete next.title;
+                sessionsByKey.set(key, next);
+                reconcileDom();
+                return;
+            }
             case "loop/proposal":
             case "loop/interaction": {
                 if (notifWorkspaceId === null || notifSessionId === null) return;
@@ -709,6 +729,17 @@ export default function observeOverview(main) {
                 const cur = sessionsByKey.get(key);
                 if (!cur) return;
                 sessionsByKey.set(key, { ...cur, lifecycle: "running", gates: cur.gates + 1 });
+                reconcileDom();
+                return;
+            }
+            case "loop/gate-settled": {
+                const wsId = notifWorkspaceId;
+                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+                if (wsId === null || sid === null) return;
+                const key = `${wsId}:${sid}`;
+                const cur = sessionsByKey.get(key);
+                if (!cur || cur.gates <= 0) return;
+                sessionsByKey.set(key, { ...cur, gates: Math.max(0, cur.gates - 1) });
                 reconcileDom();
                 return;
             }
@@ -723,7 +754,6 @@ export default function observeOverview(main) {
                 if (!cur) return;
                 let nextReply = cur.reply;
                 let nextLifecycle = cur.lifecycle;
-                let nextGates = cur.gates;
                 if (
                     entry.origin === "model"
                     && entry.state === "resolved"
@@ -753,10 +783,9 @@ export default function observeOverview(main) {
                 }
                 if (entry.state !== "proposed" && entry.op !== "done" && entry.op !== "fail" && entry.op !== "wait") {
                     nextLifecycle = "running";
-                    if (entry.state === "resolved" && nextGates > 0) nextGates = 0;
                 }
-                if (nextReply !== cur.reply || nextLifecycle !== cur.lifecycle || nextGates !== cur.gates) {
-                    sessionsByKey.set(key, { ...cur, reply: nextReply, lifecycle: nextLifecycle, gates: nextGates });
+                if (nextReply !== cur.reply || nextLifecycle !== cur.lifecycle) {
+                    sessionsByKey.set(key, { ...cur, reply: nextReply, lifecycle: nextLifecycle });
                     reconcileDom();
                 }
                 return;
@@ -777,6 +806,29 @@ export default function observeOverview(main) {
                     sessionsByKey.set(key, { ...cur, lifecycle, gates: 0 });
                     reconcileDom();
                 }
+                return;
+            }
+            case "notifications/resync": {
+                void (async () => {
+                    try {
+                        const targetPath = workspaceId === undefined
+                            ? "/"
+                            : `/~/${encodeURIComponent(workspacesById.get(workspaceId)?.name ?? String(workspaceId))}/`;
+                        const res = await fetch(targetPath, {
+                            headers: { accept: "text/html" },
+                            cache: "no-store",
+                        });
+                        if (!res.ok || disposed) return;
+                        const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+                        const parsedMain = $(doc, "main#main");
+                        if (!parsedMain) return;
+                        sessionsByKey.clear();
+                        hydrateFromDom(parsedMain, false);
+                        reconcileDom();
+                    } catch {
+                        // Ignore transient resync fetch errors; passive reconnect will retry.
+                    }
+                })();
                 return;
             }
             default:

@@ -647,6 +647,55 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 reconcileTabs();
                 return;
             }
+            case "loop/gate-settled": {
+                if (notifWorkspaceId !== workspaceId) return;
+                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+                if (sid === null) return;
+                const cur = sessionsById.get(sid);
+                if (!cur || cur.gates <= 0) return;
+                sessionsById.set(sid, { ...cur, gates: Math.max(0, cur.gates - 1) });
+                reconcileTabs();
+                return;
+            }
+            case "functionality/changed": {
+                if (notifWorkspaceId !== workspaceId) return;
+                const family = typeof data.family === "string" ? data.family : null;
+                if (family && settingsControllerPromise) {
+                    void settingsControllerPromise.then((ctrl) => ctrl.notifyChanged(family));
+                }
+                return;
+            }
+            case "session/policy": {
+                if (notifWorkspaceId !== workspaceId) return;
+                if (settingsControllerPromise) {
+                    void settingsControllerPromise.then((ctrl) => ctrl.notifyChanged("policy"));
+                }
+                return;
+            }
+            case "notifications/resync": {
+                void (async () => {
+                    try {
+                        const res = await fetch(`/~/${encodeURIComponent(currentWorkspaceName)}/`, {
+                            headers: { accept: "text/html" },
+                            cache: "no-store",
+                        });
+                        if (!res.ok) return;
+                        const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+                        const parsedMain = $(doc, "main#main");
+                        if (parsedMain) {
+                            sessionsById.clear();
+                            hydrateSessionsFromOverview(parsedMain);
+                            reconcileTabs();
+                        }
+                        if (settingsControllerPromise) {
+                            void settingsControllerPromise.then((ctrl) => ctrl.notifyChanged("resync"));
+                        }
+                    } catch {
+                        // Ignore transient resync fetch errors; passive reconnect will retry.
+                    }
+                })();
+                return;
+            }
             case "log/entry": {
                 const entry = isRecord(data.entry) ? data.entry : null;
                 if (!entry || notifWorkspaceId !== workspaceId) return;
@@ -656,7 +705,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 if (!cur) return;
                 let nextReplyId = cur.replyId;
                 let nextLifecycle = cur.lifecycle;
-                let nextGates = cur.gates;
                 if (
                     entry.origin === "model"
                     && entry.state === "resolved"
@@ -671,10 +719,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
                 if (entry.state !== "proposed" && entry.op !== "done" && entry.op !== "fail" && entry.op !== "wait") {
                     nextLifecycle = "running";
-                    if (entry.state === "resolved" && nextGates > 0) nextGates = 0;
                 }
-                if (nextReplyId !== cur.replyId || nextLifecycle !== cur.lifecycle || nextGates !== cur.gates) {
-                    sessionsById.set(sid, { ...cur, replyId: nextReplyId, lifecycle: nextLifecycle, gates: nextGates });
+                if (nextReplyId !== cur.replyId || nextLifecycle !== cur.lifecycle) {
+                    sessionsById.set(sid, { ...cur, replyId: nextReplyId, lifecycle: nextLifecycle });
                     reconcileTabs();
                 }
                 return;
@@ -721,7 +768,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
     });
 
-    /** @type {Promise<{ open(section?: import("./workspace-settings.js").SettingsSection): void }> | null} */
+    /** @type {Promise<{ open(section?: import("./workspace-settings.js").SettingsSection): void, notifyChanged(familyOrTopic: string): void }> | null} */
     let settingsControllerPromise = null;
 
     /** @param {string} [rawSection] */

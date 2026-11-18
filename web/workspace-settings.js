@@ -776,5 +776,16 @@ export function createWorkspaceSettingsController(getContext) {
             const activeTab = $(modal, `[data-settings-section="${targetSection}"]`);
             if (activeTab instanceof HTMLElement) activeTab.focus();
         },
+        /** @param {string} familyOrTopic */
+        notifyChanged(familyOrTopic) {
+            if (!dialog?.open || busy) return;
+            if (
+                familyOrTopic === "resync"
+                || familyOrTopic === activeSection
+                || (familyOrTopic === "policy" && activeSection === "personas")
+            ) {
+                void refreshSection(activeSection);
+            }
+        },
     };
 }
