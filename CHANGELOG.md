@@ -1,5 +1,15 @@
 # @plurnk/plurnk-web
 
+## 3.0.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
+
+### Major Changes
+
+- Erase the retired `Capabilities` workspace modal tab and `/capabilities` slash command (#138, https://repo.possumtech.com/plurnk/plurnk-service/issues/1517).
+- Subscribe workspace notification streams via `/notifications/<workspace>`, adopt the discrete notification stream and gate settlement protocol, expose workspace members management, and scope `/learn` target coordinates (#139, #140, https://repo.possumtech.com/plurnk/plurnk-service/issues/1518, https://repo.possumtech.com/plurnk/plurnk-service/issues/1523).
+- Widen `@plurnk/plurnk-acp` (`^2.0.0 || ^3.0.0`), `@plurnk/plurnk-contracts` (`^8.0.0 || ^9.0.0`), and `@plurnk/plurnk-meta` (`^2.3.0 || ^3.0.0`) peer and runtime dependency ranges for `8.0.0`, and upgrade `@agentclientprotocol/sdk` (`2.8.0`).
+
 ## 2.3.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
