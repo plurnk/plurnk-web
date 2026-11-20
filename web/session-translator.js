@@ -336,13 +336,25 @@ export class SessionTranslator {
                             ? plurnk.coordinate
                             : `user-${messages.length + 1}`;
                 const chunk = extractChunkContent(update.content, "text/plain");
-                const foundIdx = messages.findIndex((m) => m.id === id && m.role === "user");
+                const source = typeof plurnk?.source === "string" && plurnk.source.length > 0 ? plurnk.source : undefined;
+                const foundIdx = messages.findIndex((m) =>
+                    m.role === "user" && (
+                        m.id === id || (
+                            source !== undefined
+                            && m._meta?.plurnk?.published === false
+                            && m._meta?.plurnk?.source === source
+                        )
+                    ),
+                );
                 if (foundIdx !== -1) {
                     const found = cloneAt(foundIdx);
                     const wasUnobserved = found._meta?.plurnk?.published === false;
                     const nowPublished = plurnk !== undefined
                         && plurnk.published !== false
                         && (plurnk.id !== undefined || plurnk.coordinate !== undefined);
+                    if (wasUnobserved && nowPublished) {
+                        found.id = id;
+                    }
                     if (Array.isArray(chunk)) {
                         found.content = (wasUnobserved && nowPublished)
                             ? chunk
