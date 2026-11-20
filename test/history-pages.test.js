@@ -523,3 +523,46 @@ test("{§web-session-observer} {§web-session-input} {§web-session-conversation
         agent.close();
     }
 });
+
+test("{§web-session-conversation} unpublished inter-session inbox user_message_chunk reconciles by source when published", () => {
+    const queued = SessionTranslator.projectMessages([
+        {
+            sessionUpdate: "user_message_chunk",
+            messageId: "message://worker/1",
+            content: { type: "text", text: "Worker fixture: held-worker." },
+            _meta: {
+                plurnk: {
+                    loopId: 1,
+                    lifecycle: "queued",
+                    published: false,
+                    source: "log:///1/1/1/work",
+                },
+            },
+        },
+    ], []);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0]?.id, "message://worker/1");
+
+    const published = SessionTranslator.projectMessages([
+        {
+            sessionUpdate: "user_message_chunk",
+            messageId: "1/1/1",
+            content: { type: "text", text: "Worker fixture: held-worker." },
+            _meta: {
+                plurnk: {
+                    id: 42,
+                    coordinate: "1/1/1",
+                    op: "send",
+                    origin: "_plurnk",
+                    loopId: 1,
+                    loopSeq: 1,
+                    source: "log:///1/1/1/work",
+                },
+            },
+        },
+    ], queued);
+    assert.equal(published.length, 1, "published Turn 1 entry upgrades the queued inbox entry instead of duplicating it");
+    assert.equal(published[0]?.id, "1/1/1");
+    assert.equal(published[0]?._meta?.plurnk?.op, "send");
+    assert.equal(published[0]?._meta?.plurnk?.published, undefined);
+});
