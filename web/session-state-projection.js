@@ -104,6 +104,17 @@ export function applyConfigOptionUpdate(state, update, plurnk) {
     };
 }
 
+/** @param {unknown} rawBlocks @returns {string} */
+function extractSuggestionText(rawBlocks) {
+    if (!Array.isArray(rawBlocks)) return "";
+    return rawBlocks.map((block) => {
+        if (!isRecord(block)) return "";
+        if (block.type === "text" && typeof block.text === "string") return block.text;
+        if (block.type === "skill" && typeof block.name === "string") return `$${block.name}`;
+        return "";
+    }).join("").trim();
+}
+
 /**
  * @param {Record<string, unknown>} state
  * @param {readonly unknown[]} availableCommands
@@ -112,6 +123,22 @@ export function applyConfigOptionUpdate(state, update, plurnk) {
 export function applyAvailableCommandsUpdate(state, availableCommands) {
     const prevPlurnk = isRecord(state.plurnk) ? { ...state.plurnk } : {};
     prevPlurnk.availableCommands = structuredClone(availableCommands);
+    return {
+        ...state,
+        plurnk: prevPlurnk,
+    };
+}
+
+/**
+ * @param {Record<string, unknown>} state
+ * @param {readonly unknown[]} suggestions
+ * @returns {Record<string, unknown>}
+ */
+export function applyPromptSuggestionsUpdate(state, suggestions) {
+    const prevPlurnk = isRecord(state.plurnk) ? { ...state.plurnk } : {};
+    prevPlurnk.promptSuggestions = suggestions
+        .map((entry) => isRecord(entry) ? extractSuggestionText(entry.prompt) : "")
+        .filter((text) => text.length > 0);
     return {
         ...state,
         plurnk: prevPlurnk,
@@ -204,6 +231,11 @@ export function applySubagentState(state, childId, childName, rawLifecycle, plur
 export function applyLifecycleStateUpdate(state, update, plurnk) {
     const prevPlurnk = isRecord(state.plurnk) ? { ...state.plurnk } : {};
     const prevStatus = isRecord(prevPlurnk.status) ? { ...prevPlurnk.status } : {};
+    let suggestionsCleared = false;
+    if (update.state === "running" && Array.isArray(prevPlurnk.promptSuggestions) && prevPlurnk.promptSuggestions.length > 0) {
+        prevPlurnk.promptSuggestions = [];
+        suggestionsCleared = true;
+    }
     if (isRecord(plurnk?.status)) {
         Object.assign(prevStatus, structuredClone(plurnk.status));
     }
@@ -227,10 +259,12 @@ export function applyLifecycleStateUpdate(state, update, plurnk) {
         prevStatus.lifecycle = termStatus === 499 ? "cancelled" : termStatus >= 400 ? "failed" : "completed";
         prevStatus.waitUntil = null;
     }
-    if (Object.keys(prevStatus).length === 0) {
+    if (Object.keys(prevStatus).length === 0 && !suggestionsCleared) {
         return { changed: false, state };
     }
-    prevPlurnk.status = prevStatus;
+    if (Object.keys(prevStatus).length > 0) {
+        prevPlurnk.status = prevStatus;
+    }
     return {
         changed: true,
         state: {

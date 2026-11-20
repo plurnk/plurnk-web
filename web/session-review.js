@@ -89,7 +89,7 @@ function presentUnifiedDiff(codeOutlet, patch) {
 }
 
 /** @param {SessionGate} gate @returns {string} */
-const allowOptionId = (gate) => {
+export const allowOptionId = (gate) => {
     const id = gate.method === "session/request_permission"
         ? gate.options?.find((opt) => typeof opt.kind === "string" && opt.kind.startsWith("allow"))?.optionId
         : undefined;
@@ -97,7 +97,7 @@ const allowOptionId = (gate) => {
 };
 
 /** @param {SessionGate} gate @returns {string} */
-const rejectOptionId = (gate) => {
+export const rejectOptionId = (gate) => {
     const id = gate.method === "session/request_permission"
         ? gate.options?.find((opt) => typeof opt.kind === "string" && opt.kind.startsWith("reject"))?.optionId
         : undefined;
@@ -173,11 +173,14 @@ export default function reviewRequests(controls, yolo) {
     /** @type {readonly SessionGate[]} */
     let current = [];
     let supported = false;
+    let forceManual = false;
     /** @type {Map<string, Element>} */
     const rows = new Map();
+    const effectiveYolo = () => yolo && !forceManual;
     function mode() {
         const late = supported && current.some(expired);
-        const manual = !supported ? 0 : late ? current.length : current.filter((gate) => !yolo || proposal(gate) === undefined).length;
+        const auto = effectiveYolo();
+        const manual = !supported ? 0 : late ? current.length : current.filter((gate) => !auto || proposal(gate) === undefined).length;
         the(form, { requestCount: manual, deadlinePassed: late ? "" : null });
         return !supported ? "unsupported" : late ? "expired" : manual > 0 ? "manual" : "automatic";
     }
@@ -191,23 +194,29 @@ export default function reviewRequests(controls, yolo) {
         const patchText = facts.subject?.type === "tool_call" && typeof facts.subject.diff?.patch === "string" && facts.subject.diff.patch.length > 0
             ? facts.subject.diff.patch
             : "";
+        const editable = typeof facts.body === "string";
         the(row, {
-            interruptId: gate.id, proposalChoice: `decision-${index}`, proposalSession: facts.session,
+            interruptId: gate.id, proposalChoice: `decision-${index}`, proposalEditName: `body-${index}`, proposalSession: facts.session,
             proposalOp: facts.op, proposalDeadline: gate.expiresAt ?? "",
             proposalDeadlineLabel: gate.expiresAt === undefined ? "" : new Date(gate.expiresAt).toLocaleString(),
             proposalTargetEmpty: targetText ? "false" : "true",
             proposalHasDiff: patchText ? "true" : "false",
             proposalBodyEmpty: facts.body ? "false" : "true",
+            proposalEditable: editable ? "true" : "false",
         });
         const target = $(row, "[data-proposal-target]");
         const diff = $(row, "[data-proposal-diff] > code");
         const body = $(row, "[data-proposal-body]");
-        if (!target || !diff || !body) throw new Error("Proposal template has no content outlets.");
+        const editField = $(row, "[data-proposal-edit-body]");
+        if (!target || !diff || !body || !(editField instanceof HTMLTextAreaElement)) {
+            throw new Error("Proposal template has no content outlets.");
+        }
         target.textContent = targetText;
         if (patchText) {
             presentUnifiedDiff(diff, patchText);
         }
         body.textContent = facts.body;
+        editField.value = facts.body;
     }
     the(form, { requestCount: 0, reviewUnavailable: "" });
     return {
@@ -217,11 +226,13 @@ export default function reviewRequests(controls, yolo) {
           */
         automatic(value) {
             yolo = value;
+            if (value) forceManual = false;
+            const auto = effectiveYolo();
             if (supported) {
                 for (let index = current.length - 1; index >= 0; index--) {
                     const gate = current[index];
                     if (!proposal(gate)) continue;
-                    if (yolo) {
+                    if (auto) {
                         rows.get(gate.id)?.remove();
                         rows.delete(gate.id);
                     } else if (!rows.has(gate.id)) {
@@ -232,9 +243,10 @@ export default function reviewRequests(controls, yolo) {
             }
             return mode();
         },
-        /** @param {readonly SessionGate[]} gates */
-        present(gates) {
+        /** @param {readonly SessionGate[]} gates @param {{ forceManual?: boolean }} [options] */
+        present(gates, options = {}) {
             current = gates;
+            forceManual = Boolean(options.forceManual);
             supported = gates.length > 0 && gates.every((gate) => {
                 if (gate.method === "session/request_permission") {
                     const facts = proposal(gate);
@@ -321,9 +333,10 @@ export default function reviewRequests(controls, yolo) {
                         };
                     };
                 }
-                if (!yolo || gates.some(expired)) presentProposal(gate, index);
+                const facts = proposal(gate);
+                if (!effectiveYolo() || gates.some(expired)) presentProposal(gate, index);
                 return async () => {
-                    if (yolo) return {
+                    if (effectiveYolo()) return {
                         id: gate.id,
                         method: /** @type {const} */ ("session/request_permission"),
                         response: {
@@ -333,7 +346,24 @@ export default function reviewRequests(controls, yolo) {
                     };
                     const values = new FormData(form);
                     const decision = values.get(`decision-${index}`);
-                    if (decision !== "accept" && decision !== "reject") throw new Error("Approval form has no decision.");
+                    if (decision !== "accept" && decision !== "edit" && decision !== "reject") {
+                        throw new Error("Approval form has no decision.");
+                    }
+                    if (decision === "edit") {
+                        const rawEdited = values.get(`body-${index}`);
+                        const editedBody = typeof rawEdited === "string" ? rawEdited : (facts?.body ?? "");
+                        return {
+                            id: gate.id,
+                            method: /** @type {const} */ ("session/request_permission"),
+                            response: {
+                                outcome: {
+                                    outcome: /** @type {const} */ ("selected"),
+                                    optionId: allowOptionId(gate),
+                                },
+                                _meta: { plurnk: { body: editedBody } },
+                            },
+                        };
+                    }
                     return {
                         id: gate.id,
                         method: /** @type {const} */ ("session/request_permission"),

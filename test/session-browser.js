@@ -1049,6 +1049,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         }
                         checkBrowser([networkFailure("/acp"), networkFailure("/notifications")]);
                         await connected(page);
+                        await page.waitForFunction(() => document.querySelector("#workspace-tabs")?.dataset.notifications === "connected");
                         assert.ok(requests.length > afterLoss, "passive observation automatically recovers after transient network loss");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false);
                         assert.equal(await value(page, "input"), "800");

@@ -157,6 +157,30 @@ export default async function verifyApproval(t) {
                     await form.evaluate((element) => element.requestSubmit());
                     assert.equal(await page.evaluate(() => window.responses.length), answered, "nothing answers an expired request");
 
+                    // {§web-session-approval} Selecting Edit reveals the pre-populated body editor and submits _meta.plurnk.body.
+                    const editGate = gate("edit-body-gate", "sh");
+                    editGate._meta.plurnk.proposal.body = "npm run test:unit\n";
+                    assert.equal(await page.evaluate((values) => window.review(values), [editGate]), true);
+                    const editGroup = groups.nth(0);
+                    const editBodyField = editGroup.locator("[data-proposal-edit-body]");
+                    assert.equal(await editBodyField.isVisible(), false, "edited body textarea stays hidden until Edit is selected");
+                    await editGroup.getByRole("radio", { name: "Edit", exact: true }).check();
+                    assert.equal(await editBodyField.isVisible(), true);
+                    assert.equal(await editBodyField.inputValue(), "npm run test:unit\n");
+                    await editBodyField.fill("npm run test:lint\n");
+                    await form.getByRole("button", { name: "Submit responses", exact: true }).click();
+                    await page.waitForFunction((prev) => window.responses.length === prev + 1, answered);
+                    assert.deepEqual(await page.evaluate(() => window.responses.at(-1)), [
+                        {
+                            id: "edit-body-gate",
+                            method: "session/request_permission",
+                            response: {
+                                outcome: { outcome: "selected", optionId: "allow_once" },
+                                _meta: { plurnk: { body: "npm run test:lint\n" } },
+                            },
+                        },
+                    ]);
+
                     await page.goto(`${fixture.url}?yolo=1`);
                     await page.waitForFunction(() => typeof window.review === "function");
                     await page.evaluate((values) => window.review(values), gates);
@@ -177,11 +201,11 @@ export default async function verifyApproval(t) {
                     assert.equal(await groups.count(), 1, "only the question needs a manual answer in YOLO mode");
                     assert.equal(await page.evaluate(() => window.responses.length), 1, "YOLO cannot answer questions or submit partial sets");
                     await form.getByRole("textbox", { name: "answer", exact: true }).fill("operator answer");
-                    await page.evaluate(() => { window.answerNode = document.querySelector("[data-requests] textarea"); });
+                    await page.evaluate(() => { window.answerNode = document.querySelector('[data-interrupt-id="question"] textarea'); });
                     assert.equal(await page.evaluate(() => window.automatic(false)), "manual");
                     assert.deepEqual(await groups.evaluateAll((nodes) => nodes.map((node) => node.dataset.interruptId)), mixed.map(({ id }) => id));
                     assert.equal(await form.getByRole("textbox", { name: "answer", exact: true }).inputValue(), "operator answer");
-                    assert.equal(await page.evaluate(() => window.answerNode === document.querySelector("[data-requests] textarea")), true);
+                    assert.equal(await page.evaluate(() => window.answerNode === document.querySelector('[data-interrupt-id="question"] textarea')), true);
                     assert.equal(await form.locator('input[type="radio"]:checked').count(), 0);
                     assert.equal(await page.evaluate(() => window.automatic(true)), "manual");
                     assert.equal(await groups.count(), 1);

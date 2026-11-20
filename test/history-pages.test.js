@@ -506,7 +506,7 @@ test("{§web-session-observer} {§web-session-input} {§web-session-conversation
         assert.deepEqual(initReq?.params, {
             protocolVersion: 2,
             info: { name: "@plurnk/plurnk-web", version: manifest.version },
-            capabilities: { session: { commands: { skill: {} } } },
+            capabilities: { session: { commands: { skill: {} }, promptSuggestions: {} } },
         });
         const promptReq = transport.requests.find((r) => r.method === "session/prompt");
         const promptParams = /** @type {{ prompt: unknown[] }} */ (promptReq?.params);

@@ -1,4 +1,5 @@
-import { $, $$, on, the } from "on_the_money";
+import { $, $$, on, route, the } from "on_the_money";
+import { parseDirectory } from "../src/directory-addresses.js";
 import SessionAgent, { randomUUID } from "./session-agent.js";
 import { clocks } from "./session-status.js";
 import sessionState from "./session-state.js";
@@ -10,7 +11,7 @@ import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import reasoningPreview from "./reasoning-preview.js";
 import managementAction from "./management-action.js";
-import sessionCommands, { expandPromptCommand, isCommand, primaryModifierLabel, resolvePromptCommand } from "./session-commands.js";
+import sessionCommands, { isCommand, isLocalExec, prepareComposerPrompt, primaryModifierLabel } from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
@@ -28,7 +29,7 @@ function isTextEntry(target) {
     return target instanceof HTMLElement && target.isContentEditable;
 }
 
-/** @typedef {{message?: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[]}, resolutions?: readonly import("./session-agent.js").GateResolution[]}} Submission */
+/** @typedef {{message?: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[], openPaths?: readonly string[]}, resolutions?: readonly import("./session-agent.js").GateResolution[], forceReview?: boolean}} Submission */
 
 // {§web-session-status} Repaint elapsed and wait at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
@@ -76,19 +77,26 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const compose = $(controls, "#session-compose");
     const stop = $(controls, "#session-stop");
     const attachInput = $(controls, "[data-attach-input]");
+    const suggestionList = $(controls, "[data-compose-suggestions]");
     const attachmentList = $(controls, "[data-compose-attachments]");
     const field = $(controls, "#session-message");
     const sendButton = $(controls, 'button[form="session-compose"]');
     if (!(compose instanceof HTMLFormElement) || !(stop instanceof HTMLFormElement)
         || !($(controls, "[data-attach-image]") instanceof HTMLButtonElement)
         || !(attachInput instanceof HTMLInputElement)
+        || !(suggestionList instanceof HTMLUListElement)
         || !(attachmentList instanceof HTMLUListElement)
         || !(field instanceof HTMLTextAreaElement) || !(sendButton instanceof HTMLButtonElement)) {
         throw new Error("Session controls are incomplete.");
     }
     const draft = field;
+    const defaultPlaceholder = draft.getAttribute("placeholder") || "Message (/help · Shift+Tab YOLO)";
     const fileInput = attachInput;
+    const suggestionOutlet = suggestionList;
     const attachmentOutlet = attachmentList;
+    if (element.dataset.needsOnboarding === "true" && !$(main, "#session-onboarding-banner")) {
+        $.clone(history, "#session-onboarding-banner", { position: "beforebegin" });
+    }
     const coarseMedia = window.matchMedia("(pointer: coarse)");
     const syncSendShortcuts = () => {
         const mod = primaryModifierLabel();
@@ -133,9 +141,10 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const agent = new SessionAgent({ url: "/acp", sessionId });
     /** @type {string | null | undefined} */
     let workspaceProjectRoot = $(main.ownerDocument.body, '#session-workspace [aria-label="Folderless workspace"]') ? null : undefined;
+    let latestWorkspaceName = $("#session-workspace a")?.textContent?.trim() || "";
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
-    /** @type {{message: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[]}, source: string, sourceKey: string, attachmentIds: ReadonlySet<string>, retryable: boolean} | undefined} */
+    /** @type {{message: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[], openPaths?: readonly string[]}, source: string, sourceKey: string, attachmentIds: ReadonlySet<string>, retryable: boolean} | undefined} */
     let pending;
     /** @type {{ id: string, name: string, mimeType: string, data: string, sizeLabel: string }[]} */
     let attachments = [];
@@ -152,8 +161,32 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             ? /** @type {readonly { readonly name: string, readonly type?: string }[]} */ (plurnk.availableCommands)
             : [];
     };
+    const promptSuggestions = () => {
+        const plurnk = /** @type {Record<string, unknown> | undefined} */ (agent.state.plurnk);
+        return Array.isArray(plurnk?.promptSuggestions)
+            ? /** @type {readonly string[]} */ (plurnk.promptSuggestions.filter((item) => typeof item === "string" && item.length > 0))
+            : [];
+    };
+    const isClientDispatch = (/** @type {string} */ value) => isCommand(value, availableCommands()) || isLocalExec(value);
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
     const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, sessionId, auth, signal);
+    /** @type {Promise<{ open: () => Promise<void> }> | null} */
+    let onboardingPromise = null;
+    const openOnboarding = async () => {
+        onboardingPromise ??= import("./onboarding.js").then(({ createOnboardingController }) =>
+            createOnboardingController(() => ({
+                auth,
+                signal: resources.signal,
+                onConfigured: async (alias) => {
+                    delete element.dataset.needsOnboarding;
+                    $(main, "#session-onboarding-banner")?.remove();
+                    await action("session/set_config_option", { configId: "model", value: alias }, resources.signal);
+                },
+            })),
+        );
+        const controller = await onboardingPromise;
+        await controller.open();
+    };
     const toggleYolo = async () => {
         const enabled = approval.getAttribute("aria-pressed") !== "true";
         approval.setAttribute("aria-pressed", String(enabled));
@@ -167,7 +200,34 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         availability();
         return enabled;
     };
-    const runCommand = sessionCommands(main, { call: action, stop: cancelWork, toggleYolo });
+    const runCommand = sessionCommands(main, {
+        call: action,
+        stop: cancelWork,
+        toggleYolo,
+        getContext: () => ({
+            workspaceName: latestWorkspaceName || $("#session-workspace a")?.textContent?.trim() || "default",
+            sessionName: element.dataset.sessionName || "user",
+        }),
+        getPendingGates: () => agent.pendingGates,
+        resolveGate: async (resolution) => {
+            if (the(element, "connection") !== "interrupted" || cancellation) {
+                throw new Error("No interrupt is awaiting resolution.");
+            }
+            the(feedback, { messageStatus: "", commandError: "" });
+            connect({ resolutions: [resolution] });
+        },
+        navigate: (targetPath) => {
+            const tabs = $('#workspace-tabs[data-live="true"]');
+            const curWs = tabs instanceof HTMLElement ? tabs.dataset.workspaceName : null;
+            const dir = parseDirectory(targetPath);
+            if (tabs && curWs && dir && dir.kind !== "daemon" && dir.workspace === curWs) {
+                route.go(targetPath);
+            } else {
+                location.assign(targetPath);
+            }
+        },
+        openOnboarding,
+    });
     const dismissSettings = sessionSettings(main, element, action, () => resources.signal);
     const tail = stickyTail(main);
 
@@ -223,6 +283,21 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         tail.follow();
     }
 
+    function syncSuggestions() {
+        const live = Boolean(status && ["queued", "running", "parked"].includes(status.lifecycle));
+        const suggestions = live || the(element, "connection") === "interrupted" ? [] : promptSuggestions();
+        if (suggestions.length > 0) {
+            $.cloneEach(suggestionOutlet, "#compose-suggestion", suggestions, (item, text) => {
+                the(item, { suggestionText: text });
+            });
+            const lead = suggestions[0]?.replaceAll(/\s+/gu, " ").trim() ?? "";
+            draft.placeholder = lead ? `→ ${lead} (Tab)` : defaultPlaceholder;
+        } else {
+            suggestionOutlet.replaceChildren();
+            draft.placeholder = defaultPlaceholder;
+        }
+    }
+
     function availability() {
         const current = the(element, "connection");
         const live = status && ["queued", "running", "parked"].includes(status.lifecycle);
@@ -230,11 +305,12 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         the(controls, {
             liveWork: live ? "" : null,
             promptImage: agent.promptImageSupported ? "true" : null,
-            sendUnavailable: (isCommand(draft.value, availableCommands()) ? !commandPending
+            sendUnavailable: (isClientDispatch(draft.value) ? !commandPending
                 : current === "connected" && !arriving && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
             stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
         });
         the(review.form, "review-unavailable", current === "interrupted" && !cancellation && the(review.form, "deadline-passed") === null ? null : "");
+        syncSuggestions();
     }
 
     /** @param {string} current @param {string} label */
@@ -276,6 +352,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const { signal } = controller;
         let holding = false;
         let passiveRetry = initialPassiveRetry;
+        let forceReview = Boolean(submission?.forceReview);
         const timer = setInterval(() => {
             if (["connected", "interrupted"].includes(the(element, "connection") ?? "") && status) the(element, clocks(status, Date.now()));
         }, CLOCK_TICK_MS);
@@ -331,10 +408,20 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     onStateChanged: ({ state }) => {
                         if (signal.aborted) return;
                         const snapshot = /** @type {Parameters<typeof presentState>[0]} */ (state);
-                        if (snapshot.plurnk?.workspace && ("projectRoot" in snapshot.plurnk.workspace)) {
-                            workspaceProjectRoot = snapshot.plurnk.workspace.projectRoot;
+                        if (snapshot.plurnk?.workspace) {
+                            if ("projectRoot" in snapshot.plurnk.workspace) {
+                                workspaceProjectRoot = snapshot.plurnk.workspace.projectRoot;
+                            }
+                            if (typeof snapshot.plurnk.workspace.name === "string" && snapshot.plurnk.workspace.name) {
+                                latestWorkspaceName = snapshot.plurnk.workspace.name;
+                            }
+                        }
+                        if (snapshot.plurnk?.status?.model) {
+                            delete element.dataset.needsOnboarding;
+                            $(main, "#session-onboarding-banner")?.remove();
                         }
                         presentState(snapshot, Date.now());
+                        syncSuggestions();
                         tail.follow();
                         const next = snapshot.plurnk?.status;
                         if (!next) return;
@@ -384,7 +471,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     holding = false;
                     passiveRetry = false;
                     reconnect.reset();
-                    const mode = review.present(agent.pendingGates);
+                    const mode = review.present(agent.pendingGates, { forceManual: forceReview });
                     arriving = false;
                     if (mode === "automatic") {
                         const resolutions = await review.decisions(agent.pendingGates);
@@ -405,6 +492,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a session outcome."), { status: problem });
                 holding = false;
                 passiveRetry = false;
+                forceReview = false;
                 submission = undefined;
             }
         } catch (error) {
@@ -498,7 +586,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             return;
         }
         const lower = event.key.toLowerCase();
-        if ((lower === "y" || lower === "a" || lower === "n" || lower === "r")
+        if ((lower === "y" || lower === "a" || lower === "n" || lower === "r" || lower === "e")
             && the(element, "connection") === "interrupted"
             && the(review.form, "review-unavailable") === null) {
             const proposals = $$(review.form, 'fieldset:has(input[type="radio"][value="accept"])');
@@ -509,14 +597,35 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             const targetProposal = focusedProposal
                 ?? proposals.find((fieldset) => !$(fieldset, 'input[type="radio"]:checked'))
                 ?? proposals[0];
-            const choice = lower === "y" || lower === "a" ? "accept" : "reject";
+            const choice = lower === "y" || lower === "a" ? "accept" : lower === "e" ? "edit" : "reject";
+            if (choice === "edit" && targetProposal?.getAttribute("data-proposal-editable") === "false") return;
             const radio = targetProposal ? $(targetProposal, `input[type="radio"][value="${choice}"]`) : null;
             if (radio instanceof HTMLInputElement && !radio.disabled) {
                 event.preventDefault();
                 radio.checked = true;
-                radio.focus();
                 radio.dispatchEvent(new Event("change", { bubbles: true }));
+                if (choice === "edit") {
+                    const editBody = targetProposal ? $(targetProposal, "[data-proposal-edit-body]") : null;
+                    if (editBody instanceof HTMLTextAreaElement) editBody.focus();
+                    else radio.focus();
+                } else {
+                    radio.focus();
+                }
             }
+        }
+    });
+    on(main, "click", "[data-open-onboarding]", () => {
+        void openOnboarding();
+    });
+    on(main, "click", "[data-dismiss-onboarding]", (_event, button) => {
+        delete element.dataset.needsOnboarding;
+        button.closest("#session-onboarding-banner")?.remove();
+    });
+    on(review.form, "keydown", "[data-proposal-edit-body]", (event) => {
+        if (!(event instanceof KeyboardEvent) || event.isComposing || event.repeat) return;
+        if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+            event.preventDefault();
+            review.form.requestSubmit();
         }
     });
     on(main, "click", ':is(#session-conversation, #session-diagnostics) summary, a[href^="#"]', () => {
@@ -536,12 +645,29 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     on(compose, "input", "textarea", () => {
         draft.setCustomValidity("");
         const value = draft.value;
-        writeStoredDraft(value.trim() !== "" && !isCommand(value, availableCommands()) ? value : "");
+        writeStoredDraft(value.trim() !== "" && !isClientDispatch(value) ? value : "");
         availability();
         tail.follow();
     });
+    on(compose, "click", "[data-accept-suggestion]", (_event, button) => {
+        const text = button.textContent?.trim() ?? "";
+        if (!text) return;
+        draft.value = text;
+        draft.focus();
+        draft.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     on(compose, "keydown", "textarea", (event) => {
         if (!(event instanceof KeyboardEvent) || event.isComposing || event.repeat) return;
+        if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            const live = Boolean(status && ["queued", "running", "parked"].includes(status.lifecycle));
+            const lead = !live && the(element, "connection") !== "interrupted" ? promptSuggestions()[0] : undefined;
+            if (draft.value === "" && lead) {
+                event.preventDefault();
+                draft.value = lead;
+                draft.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            return;
+        }
         if (event.key === "Escape" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
             event.preventDefault();
             draft.blur();
@@ -614,7 +740,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     on(compose, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(controls, "send-unavailable") !== null) return;
-        if (isCommand(draft.value, availableCommands())) {
+        if (isClientDispatch(draft.value)) {
             if (attachments.length > 0) {
                 the(feedback, {
                     messageStatus: "",
@@ -645,16 +771,13 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             return;
         }
         const source = draft.value;
-        const learnResolution = source.trim()
-            ? resolvePromptCommand(source, workspaceProjectRoot === undefined ? undefined : { projectRoot: workspaceProjectRoot })
-            : null;
-        if (learnResolution !== null && !learnResolution.ok) {
-            the(feedback, { messageStatus: "", commandError: learnResolution.error });
+        const prepared = source.trim()
+            ? prepareComposerPrompt(source, workspaceProjectRoot === undefined ? undefined : { projectRoot: workspaceProjectRoot })
+            : { ok: /** @type {const} */ (true), prompt: "", forceReview: false, openPaths: /** @type {readonly string[]} */ ([]) };
+        if ("error" in prepared) {
+            the(feedback, { messageStatus: "", commandError: prepared.error });
             return;
         }
-        const expanded = source.trim()
-            ? expandPromptCommand(source, workspaceProjectRoot === undefined ? undefined : { projectRoot: workspaceProjectRoot })
-            : "";
         const sourceKey = `${source}\0${attachments.map(({ id }) => id).join(",")}`;
         const queuedAttachments = attachments.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
         const message = pending?.sourceKey === sourceKey
@@ -662,8 +785,9 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             : {
                 id: randomUUID(),
                 role: /** @type {const} */ ("user"),
-                content: expanded,
+                content: prepared.prompt,
                 ...(queuedAttachments.length > 0 ? { attachments: queuedAttachments } : {}),
+                ...(prepared.openPaths.length > 0 ? { openPaths: prepared.openPaths } : {}),
             };
         pending = {
             message,
@@ -674,7 +798,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         };
         the(feedback, { messageStatus: "Sending…", commandError: "" });
         tail.pin();
-        connect({ message });
+        connect({ message, ...(prepared.forceReview ? { forceReview: true } : {}) });
     });
 
     on(review.form, "submit", "form", async (event) => {

@@ -393,6 +393,7 @@ table {
     padding-inline: var(--pico-form-element-spacing-vertical);
 }
 
+#session-compose [data-compose-suggestions],
 #session-compose [data-compose-attachments] {
     display: flex;
     flex-wrap: wrap;
@@ -400,6 +401,25 @@ table {
     gap: calc(var(--pico-spacing) * 0.4);
     margin: 0 0 calc(var(--pico-spacing) * 0.4);
     padding: 0;
+}
+
+#session-compose [data-suggestion-item] {
+    list-style: none;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    margin: 0;
+}
+
+#session-compose [data-accept-suggestion] {
+    --pico-form-element-spacing-vertical: 0.2rem;
+    --pico-form-element-spacing-horizontal: 0.5rem;
+
+    inline-size: auto;
+    max-inline-size: 100%;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 #session-compose [data-attachment-item] {
@@ -432,7 +452,7 @@ table {
     margin: 0;
 }
 
-article:where(#session-connection, #session-command-results article) > header {
+article:where(#session-connection, #session-onboarding-banner, #session-command-results article) > header {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -440,10 +460,16 @@ article:where(#session-connection, #session-command-results article) > header {
     gap: var(--pico-spacing);
 }
 
+#session-onboarding-banner [data-dismiss-onboarding],
 #session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
     --pico-form-element-spacing-vertical: 0;
     --pico-form-element-spacing-horizontal: 0;
 
+    inline-size: auto;
+    margin: 0;
+}
+
+#session-onboarding-banner > footer > button {
     inline-size: auto;
     margin: 0;
 }

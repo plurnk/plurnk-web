@@ -24,6 +24,7 @@ import {
     applyConfigOptionUpdate,
     applyLifecycleStateUpdate,
     applyNoticeStateUpdate,
+    applyPromptSuggestionsUpdate,
     applyResponseState,
     applySubagentState,
     applyTerminalStreamUpdate,
@@ -75,12 +76,13 @@ export { PROTOCOL_VERSION, SessionTranslator, Validator, client, createHttpStrea
 /**
  * @typedef {{
  *   abortController?: AbortController,
- *   message?: { id: string, role: "user", content: string, attachments?: readonly PromptImageAttachment[] },
+ *   message?: { id: string, role: "user", content: string, attachments?: readonly PromptImageAttachment[], openPaths?: readonly string[] },
  *   resolutions?: readonly GateResolution[],
  *   action?: Record<string, unknown>,
  *   workspace?: string,
  *   projectRoot?: string,
  *   gates?: readonly string[],
+ *   openPaths?: readonly string[],
  * }} SessionRunOptions
  */
 
@@ -789,7 +791,7 @@ export default class SessionAgent {
     }
 
     /**
-     * @param {{ id: string, role: "user", content: string, attachments?: readonly PromptImageAttachment[] }} message
+     * @param {{ id: string, role: "user", content: string, attachments?: readonly PromptImageAttachment[], openPaths?: readonly string[] }} message
      * @param {SessionRunOptions} options
      * @param {SessionSubscriber} subscriber
      */
@@ -837,6 +839,7 @@ export default class SessionAgent {
                     uri: `file:///${encodeURIComponent(attachment.name)}`,
                 });
             }
+            const openPaths = options.openPaths?.length ? options.openPaths : message.openPaths;
             const params = {
                 sessionId: this.sessionId ?? "user",
                 messageId: message.id,
@@ -847,6 +850,7 @@ export default class SessionAgent {
                         reasoning: "link",
                         ...(options.workspace ? { workspace: options.workspace } : {}),
                         ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
+                        ...(openPaths?.length ? { openPaths: [...openPaths] } : {}),
                     },
                 },
             };
@@ -1348,6 +1352,14 @@ export default class SessionAgent {
 
         if (kind === "available_commands_update" && Array.isArray(update.availableCommands)) {
             this.state = applyAvailableCommandsUpdate(this.state, update.availableCommands);
+            if (!this.#resuming) {
+                await subscriber.onStateChanged?.({ state: this.state });
+            }
+            return;
+        }
+
+        if (kind === "prompt_suggestions_update" && Array.isArray(update.suggestions)) {
+            this.state = applyPromptSuggestionsUpdate(this.state, update.suggestions);
             if (!this.#resuming) {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
