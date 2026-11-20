@@ -558,7 +558,6 @@ export class SessionTranslator {
                     (typeof plurnk?.origin === "string" && plurnk.origin !== "model")
                     || plurnk?.op === null
                     || (isRecord(plurnk?.attrs) && plurnk.attrs.kind === "emissionAttempt")
-                    || (plurnk?.op === "note" && isRecord(plurnk?.attrs) && typeof plurnk.attrs.distilled === "string" && plurnk.attrs.distilled.trim().length > 0)
                 ) {
                     continue;
                 }

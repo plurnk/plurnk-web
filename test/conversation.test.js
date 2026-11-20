@@ -391,13 +391,12 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             "an empty done renders its article header with no body nodes",
                         );
 
-                        // Transient ACP plan_update notifications synthesize no conversation rows,
-                        // and synthesized kill distillation notes are suppressed beside kill.
+                        // Transient ACP plan_update notifications synthesize no conversation rows.
                         current = [];
                         await apply([
                             {
                                 sessionUpdate: "user_message_chunk",
-                                messageId: "distill-prompt-1",
+                                messageId: "prune-prompt-1",
                                 content: { type: "text", text: "Prune superseded readback." },
                                 _meta: { plurnk: { id: 20, coordinate: "1/1/1", loopId: 1, origin: "operator", receipt: { status: 200, resource: "message://user/20" } } },
                             },
@@ -432,27 +431,17 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                                 name: "kill",
                                 title: "kill",
                                 status: "completed",
-                                rawInput: { target: { raw: "log:///1/1/2" }, body: { raw: "Readback distilled." } },
+                                rawInput: { target: { raw: "log:///1/1/2" } },
                                 _meta: { plurnk: { id: 24, op: "kill", coordinate: "1/2/3", origin: "model", state: "resolved", status: 200 } },
-                            },
-                            {
-                                sessionUpdate: "tool_call_update",
-                                toolCallId: "1/2/4",
-                                name: "note",
-                                title: "note",
-                                status: "completed",
-                                rawInput: { body: "Readback distilled." },
-                                _meta: { plurnk: { id: 25, op: "note", coordinate: "1/2/4", origin: "model", state: "resolved", status: 200, attrs: { distilled: "log:///1/1/2/read" } } },
                             },
                         ]);
                         assert.deepEqual(
                             await page.locator('[data-loop-seq="1"] > details > ul > li').evaluateAll((items) => items.map((item) =>
                                 item.hasAttribute("data-operations") ? "operations" : item.dataset.messageId)),
-                            ["distill-prompt-1", "operations"],
+                            ["prune-prompt-1", "operations"],
                             "transient plan_update notifications add no phantom conversation entries",
                         );
                         assert.equal(await page.locator('[data-operations] > details > ul > li').count(), 2, "only the real read and kill operations render");
-                        assert.equal(await page.locator('[data-call-id="1/2/4"]').count(), 0, "synthesized kill distillation note is not duplicated beside kill");
                     });
 
                     await t.test("{§web-session-conversation} streaming and reconnect snapshots preserve open details, focus, unchanged body selection and scroll", async () => {

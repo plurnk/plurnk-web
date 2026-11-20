@@ -726,6 +726,20 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
                 return;
             }
+            case "loop/started":
+            case "loop/parked": {
+                if (notifWorkspaceId !== workspaceId) return;
+                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+                if (sid === null) return;
+                const cur = sessionsById.get(sid);
+                if (!cur) return;
+                const lifecycle = event === "loop/parked" ? "parked" : "running";
+                if (cur.lifecycle !== lifecycle) {
+                    sessionsById.set(sid, { ...cur, lifecycle });
+                    reconcileTabs();
+                }
+                return;
+            }
             case "loop/terminated": {
                 if (notifWorkspaceId !== workspaceId) return;
                 const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;

@@ -653,9 +653,7 @@ A standard call whose `name` and `_meta.plurnk.op` are both `note`
 presents its string `body` as literal text in a `pre` inside one direct list entry's
 article. No Markdown interpretation or `code` semantics are implied.
 `data-plurnk-type="note"` identifies the operation, and any supplied `aside`
-renders in the shared operation header under {§web-operation-summary}. Synthesized
-`kill` distillation `note` rows carrying `_meta.plurnk.attrs.distilled` are
-suppressed so `kill` owns its authored distillation body without a duplicate row.
+renders in the shared operation header under {§web-operation-summary}.
 No enclosing assistant article, nested call list or arguments copy is added. Its
 literal body uses the initially collapsed disclosure under {§web-card-disclosure}.
 Incomplete JSON, non-object arguments or non-string bodies supply no body;

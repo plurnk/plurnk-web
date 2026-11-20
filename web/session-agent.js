@@ -452,6 +452,7 @@ export default class SessionAgent {
                         commands: {
                             skill: {},
                         },
+                        promptSuggestions: {},
                     },
                 },
             }));
@@ -723,7 +724,7 @@ export default class SessionAgent {
                     ...(typeof actionParams.name === "string" ? { title: actionParams.name } : {}),
                     _meta: {
                         plurnk: {
-                            ...(typeof actionParams.name === "string" ? { name: actionParams.name } : {}),
+                            ...(typeof actionParams.name === "string" ? { sessionName: actionParams.name, name: actionParams.name } : {}),
                             ...(options.workspace ? { workspace: options.workspace } : {}),
                             ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
                         },
