@@ -6,6 +6,16 @@ import problemFromResponse from "./problem-response.js";
 // Firefox delays resolving fetch() on chunked text/event-stream responses until the first body byte arrives.
 const SSE_HEADERS_FLUSH_MS = 25;
 
+const DAEMON_SCOPED_ACTIONS = new Set([
+    "models.local",
+    "service.env.list",
+    "service.env.set",
+    "service.update",
+    "workspace.list",
+    "workspace.create",
+    "workspace.attach",
+]);
+
 /** {§web-session-commands} {§web-workspace-settings} Isolated action delivery never owns observation, conversation or work lifetime. A refusal, before the
  * stream opens or as an ACP error, is the daemon's Problem: the thrown Error carries it as its cause.
  * @param {string} kind @param {Record<string, unknown>} params @param {string} sessionId
@@ -24,7 +34,13 @@ export default async function managementAction(kind, params, sessionId, auth, si
     /** @type {Error | undefined} */
     let httpFailure;
     let connected = false;
-    const needsConnSse = kind === "providers/list" || !sessionId;
+    const needsConnSse = !sessionId
+        || kind === "providers/list"
+        || kind === "session/new"
+        || kind === "session/fork"
+        || kind === "session/delete"
+        || kind === "session/list"
+        || DAEMON_SCOPED_ACTIONS.has(kind);
     /** @type {typeof fetch} */
     const acpFetch = async (input, init) => {
         if (init?.method === "DELETE") {
@@ -124,6 +140,26 @@ export default async function managementAction(kind, params, sessionId, auth, si
         let outcome;
         if (kind === "providers/list") {
             outcome = await conn.agent.request(methods.agent.providers.list, {});
+        } else if (kind === "session/new") {
+            const rawMeta = typeof params._meta === "object" && params._meta !== null && !Array.isArray(params._meta)
+                ? /** @type {Record<string, unknown>} */ (params._meta)
+                : undefined;
+            outcome = await conn.agent.request(methods.agent.session.new, {
+                cwd: typeof params.cwd === "string" && params.cwd ? params.cwd : "/",
+                ...(rawMeta ? { _meta: rawMeta } : {}),
+            });
+        } else if (kind === "session/fork") {
+            outcome = await conn.agent.request(methods.agent.session.fork, {
+                sessionId,
+                cwd: typeof params.cwd === "string" && params.cwd ? params.cwd : "/",
+                ...(typeof params.name === "string" && params.name
+                    ? { _meta: { plurnk: { sessionName: params.name } } }
+                    : {}),
+            });
+        } else if (kind === "session/delete") {
+            outcome = await conn.agent.request(methods.agent.session.delete, {
+                sessionId: typeof params.sessionId === "string" && params.sessionId ? params.sessionId : sessionId,
+            });
         } else if (kind === "session/resume") {
             outcome = await conn.agent.request(methods.agent.session.resume, {
                 sessionId,
@@ -152,8 +188,8 @@ export default async function managementAction(kind, params, sessionId, auth, si
             outcome = await conn.agent.request("_plurnk/action", {
                 kind,
                 params,
-                ...(sessionId ? { sessionId } : {}),
-                ...(typeof options.workspaceId === "number" ? { workspaceId: options.workspaceId } : {}),
+                ...(sessionId && !DAEMON_SCOPED_ACTIONS.has(kind) ? { sessionId } : {}),
+                ...(typeof options.workspaceId === "number" && !DAEMON_SCOPED_ACTIONS.has(kind) ? { workspaceId: options.workspaceId } : {}),
             });
         }
         signal.throwIfAborted();

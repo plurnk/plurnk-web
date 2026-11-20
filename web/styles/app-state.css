@@ -68,6 +68,7 @@ button[data-attach-image]::before { content: "📎" / ""; }
 
 [aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"],
 [aria-label="Session controls"]:not([data-prompt-image="true"]) button[data-attach-image],
+[data-compose-suggestions]:empty,
 [data-compose-attachments]:empty {
     display: none;
 }
@@ -104,7 +105,10 @@ button[data-attach-image]::before { content: "📎" / ""; }
 [data-proposal-target-empty="true"] > [data-proposal-target-line],
 [data-proposal-has-diff="false"] > [data-proposal-diff],
 [data-proposal-has-diff="true"] > [data-proposal-body-block],
-[data-proposal-body-empty="true"] > [data-proposal-body-block] {
+[data-proposal-body-empty="true"] > [data-proposal-body-block],
+[data-proposal-editable="false"] > [data-proposal-edit-choice],
+[data-proposal-editable="false"] > [data-proposal-edit-field],
+fieldset:not(:has(> [data-proposal-edit-choice] > input[type="radio"][value="edit"]:checked)) > [data-proposal-edit-field] {
     display: none;
 }
 
@@ -153,10 +157,13 @@ button[data-attach-image]::before { content: "📎" / ""; }
     display: none;
 }
 
-#session-command-results [data-dismiss-command]::before { content: "✕" / ""; }
+#session-command-results [data-dismiss-command]::before,
+#session-onboarding-banner [data-dismiss-onboarding]::before { content: "✕" / ""; }
 
-/* {§web-session-settings} {§web-workspace-settings} Empty feedback occupies no page space. */
-:is(#session-model-settings, #session-effort-settings, #session-command-results article, #dialog-workspace-settings > article) > p:empty,
+/* {§web-session-settings} {§web-workspace-settings} {§web-onboarding} Empty feedback occupies no page space. */
+:is(#session-model-settings, #session-effort-settings, #session-command-results article, #dialog-workspace-settings > article, #dialog-onboarding > article) > p:empty,
+#dialog-onboarding [data-onboarding-form]:not([data-onboarding-mode="hosted"]) [data-onboarding-hosted-fields],
+#dialog-onboarding [data-onboarding-form] small:empty,
 #session-command-results [data-command-output]:empty {
     display: none;
 }

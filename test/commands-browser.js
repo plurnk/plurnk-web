@@ -139,7 +139,8 @@ export default async function verifyCommands(t) {
                     const command = (text) => page.evaluate((text) => window.command(text), text);
                     const isCommand = (text, available = []) => page.evaluate(({ text, available }) => window.isCommand(text, available), { text, available });
                     assert.equal(await isCommand("/skill run", [{ name: "skill" }]), false, "advertised non-skill availableCommands pass through to session/prompt");
-                    assert.equal(await isCommand("/review pr", [{ type: "command", name: "review" }]), false, "advertised command entries pass through to session/prompt");
+                    assert.equal(await isCommand("/github:review pr", [{ type: "command", name: "github:review" }]), false, "advertised MCP prompt command entries pass through to session/prompt");
+                    assert.equal(await isCommand("/personas list", [{ type: "command", name: "personas" }]), true, "built-in client commands remain intercepted even when advertised in availableCommands");
                     assert.equal(await isCommand("/triage", [{ type: "skill", name: "triage" }]), true, "advertised skill entries do not match as slash commands");
                     assert.equal(await isCommand("/learn distill this", []), false, "/learn expands into a session prompt instead of running locally");
                     const expandedLearn = await page.evaluate(() => window.expandPromptCommand("/learn focus on tests"));
@@ -147,6 +148,31 @@ export default async function verifyCommands(t) {
                     assert.doesNotMatch(expandedLearn, /recipes\.md/u);
                     assert.equal(await isCommand("/model", [{ name: "skill" }]), true, "local slash commands remain intercepted");
                     assert.equal(await isCommand("/quit", [{ name: "skill" }]), true, "unadvertised unknown slash commands remain intercepted locally");
+                    assert.equal(await isCommand(": /model", []), false, "leading ': ' escapes slash commands");
+                    assert.equal(await page.evaluate(() => window.isLocalExec("! git status")), true);
+                    assert.equal(await page.evaluate(() => window.isLocalExec("await plurnk.note({ body: 'ok' })")), true);
+                    assert.equal(await page.evaluate(() => window.isLocalExec(": ! git status")), false, "leading ': ' escapes local exec");
+                    assert.deepEqual(
+                        await page.evaluate(() => window.extractOpenPaths("Inspect @src/index.ts and @README.md, ignore user@example.com, @alice, and @../secret.env.", "/workspace")),
+                        ["src/index.ts", "README.md"],
+                    );
+                    assert.deepEqual(
+                        await page.evaluate(() => window.extractOpenPaths("Inspect @src/index.ts", null)),
+                        [],
+                        "folderless workspaces emit no openPaths",
+                    );
+                    assert.deepEqual(
+                        await page.evaluate(() => window.prepareComposerPrompt("? Check @src/app.js", { projectRoot: "/workspace" })),
+                        { ok: true, prompt: "Check @src/app.js", forceReview: true, openPaths: ["src/app.js"] },
+                    );
+                    assert.deepEqual(
+                        await page.evaluate(() => window.prepareComposerPrompt(": /model literal", { projectRoot: "/workspace" })),
+                        { ok: true, prompt: "/model literal", forceReview: false, openPaths: [] },
+                    );
+                    assert.deepEqual(
+                        await page.evaluate(() => window.prepareComposerPrompt("... follow up", { projectRoot: null })),
+                        { ok: true, prompt: "follow up", forceReview: false, openPaths: [] },
+                    );
                     const rows = page.locator("#session-command-results > ul > li");
                     assert.equal(await page.locator("#session-command-results").isVisible(), false, "empty command results occupy no space");
                     assert.equal(await command("/"), true);
@@ -189,6 +215,32 @@ export default async function verifyCommands(t) {
                     assert.equal(await command("/personas list"), true);
                     assert.equal(requests.at(-1).params.kind, "workspace.personas.list");
                     assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "personas: none");
+                    result = { results: [{ status: 200, content: "shell-ok" }] };
+                    assert.equal(await command("! echo shell-ok"), true);
+                    assert.equal(requests.at(-1).params.kind, "op.exec");
+                    assert.match(requests.at(-1).params.params.text, /plurnk\.sh\(/u);
+                    assert.equal(await rows.last().locator("pre").textContent(), "shell-ok");
+                    result = { results: [{ status: 200, content: "note-ok" }] };
+                    assert.equal(await command('plurnk.note({ body: "note-ok" })'), true);
+                    assert.equal(requests.at(-1).params.kind, "op.exec");
+                    assert.equal(await rows.last().locator("pre").textContent(), "note-ok");
+                    result = { configOptions: [{ configId: "persona", name: "Persona", type: "select", currentValue: "reviewer", options: [{ value: "none", name: "none" }, { value: "reviewer", name: "reviewer" }] }] };
+                    assert.equal(await command("/persona reviewer"), true);
+                    assert.equal(requests.at(-1).method, "session/set_config_option");
+                    assert.equal(requests.at(-1).params.configId, "persona");
+                    assert.match(await rows.last().textContent(), /Persona: reviewer\./u);
+                    result = { configOptions: [{ configId: "spawn_model", name: "Child Session Model", type: "select", currentValue: "inherit", options: [{ value: "inherit", name: "inherit" }] }] };
+                    assert.equal(await command("/child inherit"), true);
+                    assert.equal(requests.at(-1).params.configId, "spawn_model");
+                    assert.match(await rows.last().textContent(), /Child model: inherit\./u);
+                    result = { to: "1/1/2", restored: ["a.ts"], skipped: [] };
+                    assert.equal(await command("/rollback 1/1/2"), true);
+                    assert.equal(requests.at(-1).params.kind, "session.rollback");
+                    assert.match(await rows.last().textContent(), /Rolled back to 1\/1\/2 \(1 restored, 0 skipped\)\./u);
+                    result = { folder: "/tmp/digest-out" };
+                    assert.equal(await command("/share /tmp/digest-out"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.share");
+                    assert.match(await rows.last().textContent(), /Shared digest: \/tmp\/digest-out\./u);
                     result = {
                         definitions: [
                             { alias: "API_TOKEN", origin: "session", state: "active", definition: { value: "top-secret-value" } },

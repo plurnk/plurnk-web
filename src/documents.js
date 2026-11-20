@@ -506,13 +506,13 @@ export default class Documents {
 
     /** {§web-session-observer} Identity and navigation belong to the document; status arrives through ACP.
      * @param {import("./directory-addresses.js").Directory & {kind: "session"}} directory @param {number} workspaceId @param {boolean} authenticated
-     * @param {boolean} automatic
+     * @param {boolean} automatic @param {boolean} [needsOnboarding]
      */
-    #sessionStatus(directory, workspaceId, authenticated, automatic) {
+    #sessionStatus(directory, workspaceId, authenticated, automatic, needsOnboarding = false) {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted session must have a directory address.");
         const footer = `<footer id="session-status" aria-label="Session status" data-session-id="${workspaceId}#${escapeHtml(directory.session)}"`
-            + ` data-session-name="${escapeHtml(directory.session)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial">`
+            + ` data-session-name="${escapeHtml(directory.session)}" data-auth="${authenticated ? "session" : "none"}" data-reasoning-preview-chars="${this.#reasoningPreviewChars}" data-connection="initial"${needsOnboarding ? ' data-needs-onboarding="true"' : ""}>`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + '<div data-status-line><ul aria-label="Model controls">'
             + `<li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="${automatic}" aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)"><span data-text="yolo-label">${automatic ? "YOLO" : "Review"}</span></button></li>`
@@ -642,7 +642,14 @@ export default class Documents {
 
     /**
      * @param {import("./directory-addresses.js").Directory} directory
-     * @param {{ listWorkspaces(): Promise<readonly DirectoryWorkspace[]>, listSessions(workspaceId: number): Promise<readonly DirectorySession[]>, readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview> }} port
+     * @param {{
+     *   listWorkspaces(): Promise<readonly DirectoryWorkspace[]>,
+     *   listSessions(workspaceId: number): Promise<readonly DirectorySession[]>,
+     *   readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview>,
+     *   listProviders?: () => { readonly aliases: readonly unknown[] },
+     *   listModels?: (args: { limit?: number }) => { readonly total: number },
+     *   readOperatorEnvironment?: () => Promise<unknown>,
+     * }} port
      * @param {boolean} authenticated
      * @param {boolean} [own] {§web-session-approval} whether the person reached the page by their own navigation; only then
      * does a session page start with the configured automatic approval
@@ -712,7 +719,21 @@ export default class Documents {
         const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
         const iconLabel = workspace.project_label === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${workspace.project_label !== null && !folder ? "🗂️" : "☁️"}</span>`;
-        const status = this.#sessionStatus(directory, workspace.id, authenticated, this.#yolo && own);
+        // {§web-onboarding} Flag unconfigured session arrivals only when zero aliases and zero ready models exist.
+        // {§web-session-diagnostics} A broken alias configuration throws from listProviders; render the session so ACP projects its Problem.
+        const needsOnboarding = (() => {
+            if (typeof port.readOperatorEnvironment !== "function"
+                || typeof port.listProviders !== "function"
+                || typeof port.listModels !== "function") {
+                return false;
+            }
+            try {
+                return port.listProviders().aliases.length === 0 && port.listModels({ limit: 1 }).total === 0;
+            } catch {
+                return false;
+            }
+        })();
+        const status = this.#sessionStatus(directory, workspace.id, authenticated, this.#yolo && own, needsOnboarding);
         const dialogs = this.#sessionArchiveForm(workspace, session) + this.#sessionCreationForm(workspace);
         const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, session.name, authenticated, live);
         return render(title, `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`

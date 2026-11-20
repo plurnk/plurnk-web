@@ -726,6 +726,20 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
                 return;
             }
+            case "loop/started":
+            case "loop/parked": {
+                if (notifWorkspaceId !== workspaceId) return;
+                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+                if (sid === null) return;
+                const cur = sessionsById.get(sid);
+                if (!cur) return;
+                const lifecycle = event === "loop/parked" ? "parked" : "running";
+                if (cur.lifecycle !== lifecycle) {
+                    sessionsById.set(sid, { ...cur, lifecycle });
+                    reconcileTabs();
+                }
+                return;
+            }
             case "loop/terminated": {
                 if (notifWorkspaceId !== workspaceId) return;
                 const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
@@ -752,6 +766,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
         auth,
         workspaceId,
         onNotification: applyNotification,
+        onStateChange: (state) => {
+            the(tabs, "notifications", state);
+        },
     });
 
     /** @type {Map<string, PaneEntry>} */
@@ -1021,24 +1038,35 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     if (seq !== navSeq || pageLifetime.signal.aborted) return;
                 }
 
-                $("#main")?.remove();
+                const mountedMain = transitionalMain.isConnected ? transitionalMain : nextMain;
+                if (mountedMain === transitionalMain) {
+                    for (const attr of [...transitionalMain.attributes]) {
+                        if (!nextMain.hasAttribute(attr.name)) transitionalMain.removeAttribute(attr.name);
+                    }
+                    for (const attr of nextMain.attributes) {
+                        transitionalMain.setAttribute(attr.name, attr.value);
+                    }
+                    transitionalMain.replaceChildren(...nextMain.childNodes);
+                } else {
+                    $("#main")?.remove();
+                    tabs.insertAdjacentElement("afterend", nextMain);
+                }
                 $("#session-status")?.remove();
                 const currentCrumb = $('header nav[aria-label="breadcrumb"]');
                 if (currentCrumb) currentCrumb.replaceWith(nextBreadcrumb);
                 else headerEl.append(nextBreadcrumb);
-                tabs.insertAdjacentElement("afterend", nextMain);
-                if (nextFooter) nextMain.insertAdjacentElement("afterend", nextFooter);
+                if (nextFooter) mountedMain.insertAdjacentElement("afterend", nextFooter);
 
                 if (dir.kind === "workspace") {
-                    hydrateSessionsFromOverview(nextMain);
+                    hydrateSessionsFromOverview(mountedMain);
                     const { default: observeOverview } = await import("./overview.js");
                     if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                    const controller = observeOverview(nextMain);
+                    const controller = observeOverview(mountedMain);
                     const entry = {
                         routeKey,
                         kind: /** @type {const} */ ("workspace"),
                         sessionName: null,
-                        main: nextMain,
+                        main: mountedMain,
                         footer: null,
                         breadcrumb: nextBreadcrumb,
                         controller,
@@ -1050,12 +1078,12 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     if (!nextFooter) return;
                     const { default: observeSession } = await import("./session.js");
                     if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                    const controller = observeSession(nextFooter, { main: nextMain });
+                    const controller = observeSession(nextFooter, { main: mountedMain });
                     const entry = {
                         routeKey,
                         kind: /** @type {const} */ ("session"),
                         sessionName: dir.session,
-                        main: nextMain,
+                        main: mountedMain,
                         footer: nextFooter,
                         breadcrumb: nextBreadcrumb,
                         controller,

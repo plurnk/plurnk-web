@@ -70,3 +70,22 @@ export async function sessionEffort(call, selection) {
         supported,
     };
 }
+
+/** @param {Action} call @param {"persona" | "spawn_model" | "mode"} configId @param {string} [selection] */
+export async function sessionConfigOption(call, configId, selection) {
+    const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: Array<{value?: unknown}>}>}} */ (
+        await call(
+            selection === undefined ? "session/resume" : "session/set_config_option",
+            selection === undefined ? { replayFrom: null } : { configId, value: selection },
+        )
+    );
+    if (!Array.isArray(response?.configOptions)) {
+        throw new Error("Configuration options result is invalid.");
+    }
+    const option = response.configOptions.find((entry) => entry?.configId === configId);
+    const currentValue = typeof option?.currentValue === "string" ? option.currentValue : "";
+    const supported = Array.isArray(option?.options)
+        ? option.options.flatMap((item) => typeof item?.value === "string" && item.value ? [item.value] : [])
+        : [];
+    return { currentValue, supported };
+}

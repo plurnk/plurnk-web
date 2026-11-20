@@ -580,3 +580,37 @@ test("{§web-workspace-tabs} {§web-workspace-settings} workspace and session do
     const archivedNav = extractTabs(archivedHtml);
     assert.match(archivedNav, /data-archived="true"><a href="\/~\/alpha@archived-root\/"[^>]*aria-current="true"/u, "viewing an archived session directly includes its tab");
 });
+
+test("{§web-onboarding} session documents mark data-needs-onboarding only when zero aliases and zero ready catalog models exist", async () => {
+    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128);
+    const basePort = {
+        listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
+        listSessions: async () => [session(9, "user")],
+    };
+    const withoutOperatorEnv = (await document.read({ kind: "session", workspace: "work", session: "user" }, basePort, false)).toString();
+    assert.doesNotMatch(withoutOperatorEnv, /data-needs-onboarding/u);
+
+    const unconfigured = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
+        ...basePort,
+        readOperatorEnvironment: async () => ({ configFile: "/tmp/.env", entries: [] }),
+        listProviders: () => ({ aliases: [] }),
+        listModels: () => ({ total: 0 }),
+    }, false)).toString();
+    assert.match(unconfigured, /id="session-status"[^>]*data-needs-onboarding="true"/u);
+
+    const withReadyCatalog = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
+        ...basePort,
+        readOperatorEnvironment: async () => ({ configFile: "/tmp/.env", entries: [] }),
+        listProviders: () => ({ aliases: [] }),
+        listModels: () => ({ total: 3 }),
+    }, false)).toString();
+    assert.doesNotMatch(withReadyCatalog, /data-needs-onboarding/u);
+
+    const withCatalogProblem = (await document.read({ kind: "session", workspace: "work", session: "user" }, {
+        ...basePort,
+        readOperatorEnvironment: async () => ({ configFile: "/tmp/.env", entries: [] }),
+        listProviders: () => { throw new Error("Invalid effort on alias"); },
+        listModels: () => ({ total: 0 }),
+    }, false)).toString();
+    assert.doesNotMatch(withCatalogProblem, /data-needs-onboarding/u, "catalog configuration errors render the session page for diagnostic projection");
+});

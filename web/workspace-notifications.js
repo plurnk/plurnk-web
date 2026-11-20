@@ -13,6 +13,8 @@ export const NOTIFICATION_EVENT_LIST = [
     "session/deleted",
     "session/titled",
     "session/policy",
+    "loop/started",
+    "loop/parked",
     "loop/proposal",
     "loop/interaction",
     "loop/gate-settled",

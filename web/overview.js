@@ -790,6 +790,21 @@ export default function observeOverview(main) {
                 }
                 return;
             }
+            case "loop/started":
+            case "loop/parked": {
+                const wsId = notifWorkspaceId;
+                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+                if (wsId === null || sid === null) return;
+                const key = `${wsId}:${sid}`;
+                const cur = sessionsByKey.get(key);
+                if (!cur) return;
+                const lifecycle = event === "loop/parked" ? "parked" : "running";
+                if (cur.lifecycle !== lifecycle) {
+                    sessionsByKey.set(key, { ...cur, lifecycle });
+                    reconcileDom();
+                }
+                return;
+            }
             case "loop/terminated": {
                 const wsId = notifWorkspaceId;
                 const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
