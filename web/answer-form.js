@@ -79,8 +79,8 @@ function fieldControl(parent, name, schema, required) {
     const value = $(row, "[data-answer-value]");
     const include = $(row, "[data-answer-include]");
     if (!(value instanceof HTMLFieldSetElement) || !(include instanceof HTMLInputElement)) throw new Error("Answer field template is incomplete.");
-    the(row, { fieldName: name, fieldTitle: typeof schema.title === "string" ? schema.title : name,
-        fieldDescription: typeof schema.description === "string" ? schema.description : "", fieldOptional: !required });
+    the(row, { "field-name": name, "field-title": typeof schema.title === "string" ? schema.title : name,
+        "field-description": typeof schema.description === "string" ? schema.description : "", "field-optional": !required });
     include.checked = required || Object.hasOwn(schema, "default");
     value.disabled = !include.checked;
     on(row, "change", "[data-answer-include]", () => { value.disabled = !include.checked; });
@@ -94,7 +94,7 @@ function fieldControl(parent, name, schema, required) {
             const choice = $.clone(value, "#answer-choice");
             const input = $(choice, "[data-answer-choice]");
             if (!(input instanceof HTMLInputElement)) throw new Error("Answer choice template is incomplete.");
-            the(choice, { optionValue: String(index), optionLabel: item.label });
+            the(choice, { "option-value": String(index), "option-label": item.label });
             input.checked = defaults.has(item.value);
             return /** @type {const} */ ([item.value, input]);
         });
@@ -104,7 +104,7 @@ function fieldControl(parent, name, schema, required) {
         if (!(select instanceof HTMLSelectElement)) throw new Error("Answer select template is incomplete.");
         if (single.length > 0) {
             for (const [index, item] of single.entries()) {
-                the($.clone(select, "#answer-option"), { optionValue: String(index), optionLabel: item.label });
+                the($.clone(select, "#answer-option"), { "option-value": String(index), "option-label": item.label });
             }
             const selected = single.findIndex((item) => item.value === schema.default);
             if (selected !== -1) select.value = String(selected);

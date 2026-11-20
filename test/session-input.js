@@ -290,6 +290,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await stop.isEnabled(), true);
         assert.equal(inputs[0].params.prompt[0].text, body);
         assert.equal(inputs[0].params._meta.plurnk.reasoning, "link");
+        assert.equal(inputs[0].params._meta.plurnk.bodies, "link");
         assert.equal(inputs[0].params._meta.plurnk.workspace, undefined);
 
         await text.fill("Lifecycle fixture: follow-up.");
@@ -489,7 +490,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
             const target = document.querySelector(targetSelector);
             return Boolean(conversation && target && target.closest("main") && (conversation.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING));
         }, selector);
-        await text.fill(["Lifecycle fixture: long-note.", ...Array.from({ length: 150 }, (_, index) => `Line ${index + 1} of a long note.`)].join("\n"));
+        await text.fill(["Lifecycle fixture: long-note.", ...Array.from({ length: 150 }, (_, index) => `Line ${index + 1} of a long note.`)].join("\n\n"));
         await send.click();
         await page.getByText("Completed long-note.", { exact: true }).waitFor();
         assert.ok(await page.locator("main").evaluate((main) => main.scrollHeight > 2 * main.clientHeight), "the conversation is longer than the view");

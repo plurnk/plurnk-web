@@ -70,7 +70,7 @@ export default function highlight(outlets) {
         const language = outlet.getAttribute("data-code-lang") ?? "";
         const node = outlet.firstChild;
         if (!hljs.getLanguage(language) || !(node instanceof Text) || outlet.childNodes.length !== 1) {
-            the(outlet, "codeHighlighted", "");
+            the(outlet, "code-highlighted", "");
             continue;
         }
         const { text, spans } = tokens(hljs.highlight(node.data, { language, ignoreIllegals: true }).value);
@@ -81,6 +81,6 @@ export default function highlight(outlets) {
             range.setEnd(node, end);
             registry(category).add(range);
         }
-        the(outlet, "codeHighlighted", "");
+        the(outlet, "code-highlighted", "");
     }
 }

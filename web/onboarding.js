@@ -1,6 +1,6 @@
 import { $, on, the } from "on_the_money";
-import { isRecord } from "@plurnk/plurnk-contracts";
 import SessionAgent, { randomUUID } from "./session-agent.js";
+import { isRecord } from "./session-translator.js";
 import accessHeaders from "./access-headers.js";
 import managementAction from "./management-action.js";
 import describeFailure from "./failure.js";
@@ -116,7 +116,7 @@ export function createOnboardingController(getContext) {
                 ? matching.map((m) => ({ value: m.selector, label: m.modelName && m.modelName !== m.selector ? `${m.selector} — ${m.modelName}` : m.selector }))
                 : [{ value: provider.fallbackSelector, label: provider.fallbackSelector }];
             $.cloneEach(modelSelect, "#onboarding-model-option", choices, (opt, item) => {
-                the(opt, { optionValue: item.value, optionLabel: item.label });
+                the(opt, { "option-value": item.value, "option-label": item.label });
             });
             const preferredChoice = choices.find((c) => provider.preferred.test(c.value)) ?? choices[0];
             if (preferredChoice) {
@@ -179,11 +179,11 @@ export function createOnboardingController(getContext) {
             }
 
             the(article, {
-                onboardingBusy: "true",
-                onboardingStatus: "Saving configuration and verifying live model reply…",
-                onboardingError: "",
-                onboardingRecovery: "",
-                onboardingShadowed: "",
+                "onboarding-busy": "true",
+                "onboarding-status": "Saving configuration and verifying live model reply…",
+                "onboarding-error": "",
+                "onboarding-recovery": "",
+                "onboarding-shadowed": "",
             });
 
             try {
@@ -263,11 +263,11 @@ export function createOnboardingController(getContext) {
 
                 await ctx.onConfigured?.(alias);
                 the(article, {
-                    onboardingBusy: null,
-                    onboardingStatus: `Verified ${chosenSelector} (${alias}) and saved to ${configFile}.`,
-                    onboardingError: "",
-                    onboardingRecovery: "",
-                    onboardingShadowed: shadowedText,
+                    "onboarding-busy": null,
+                    "onboarding-status": `Verified ${chosenSelector} (${alias}) and saved to ${configFile}.`,
+                    "onboarding-error": "",
+                    "onboarding-recovery": "",
+                    "onboarding-shadowed": shadowedText,
                 });
                 if (!shadowedText && dialog?.open) {
                     dialog.close();
@@ -275,10 +275,10 @@ export function createOnboardingController(getContext) {
             } catch (error) {
                 const { message, recovery } = await describeFailure(error);
                 the(article, {
-                    onboardingBusy: null,
-                    onboardingStatus: "",
-                    onboardingError: ctx.signal.aborted ? "Setup was interrupted." : message,
-                    onboardingRecovery: recovery,
+                    "onboarding-busy": null,
+                    "onboarding-status": "",
+                    "onboarding-error": ctx.signal.aborted ? "Setup was interrupted." : message,
+                    "onboarding-recovery": recovery,
                 });
             }
         });
@@ -297,12 +297,12 @@ export function createOnboardingController(getContext) {
         }
         apiKeyInput.value = "";
         the(article, {
-            onboardingBusy: "true",
-            onboardingStatus: "Checking local inference servers and provider configuration…",
-            onboardingError: "",
-            onboardingRecovery: "",
-            onboardingShadowed: "",
-            onboardingConfigPath: "",
+            "onboarding-busy": "true",
+            "onboarding-status": "Checking local inference servers and provider configuration…",
+            "onboarding-error": "",
+            "onboarding-recovery": "",
+            "onboarding-shadowed": "",
+            "onboarding-config-path": "",
         });
         if (!modal.open) modal.showModal();
 
@@ -367,23 +367,23 @@ export function createOnboardingController(getContext) {
                 })),
             ];
             $.cloneEach(sourceSelect, "#onboarding-source-option", options, (opt, item) => {
-                the(opt, { optionValue: item.value, optionLabel: item.label });
+                the(opt, { "option-value": item.value, "option-label": item.label });
             });
             if (options[0]) sourceSelect.value = options[0].value;
             modal._syncOnboarding?.();
             the(article, {
-                onboardingBusy: null,
-                onboardingStatus: "",
-                onboardingConfigPath: configFile ? `Configuration file: ${configFile}` : "",
+                "onboarding-busy": null,
+                "onboarding-status": "",
+                "onboarding-config-path": configFile ? `Configuration file: ${configFile}` : "",
             });
         } catch (error) {
             if (request.signal.aborted) return;
             const { message, recovery } = await describeFailure(error);
             the(article, {
-                onboardingBusy: null,
-                onboardingStatus: "",
-                onboardingError: message,
-                onboardingRecovery: recovery,
+                "onboarding-busy": null,
+                "onboarding-status": "",
+                "onboarding-error": message,
+                "onboarding-recovery": recovery,
             });
         }
     }

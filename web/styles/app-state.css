@@ -1,319 +1,820 @@
-/* {§web-page-shell} The session and directory views are product surfaces, not reading columns. */
-body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, #workspace-tabs, main, footer) {
-    max-inline-size: none;
-}
+@layer state {
+    /* {§web-page-shell} Intrinsic header/footer tracks and full-width product surfaces on directory and session pages. */
+    body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) {
+        block-size: 100dvh;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+    }
 
-#workspace-tabs:not([data-live="true"]) > [data-workspace-settings] {
-    display: none;
-}
+    body:has(> #workspace-tabs):has(> main:is([data-page="workspace"], [data-page="session"])) {
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+    }
 
-#workspace-tabs > ul > li > a[aria-current="true"],
-#dialog-workspace-settings [data-settings-nav] button[aria-pressed="true"] {
-    border-block-end-color: var(--pico-primary);
-    font-weight: 700;
-}
+    body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, #workspace-tabs, main, footer) {
+        max-inline-size: none;
+    }
 
-#dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"] {
-    background-color: var(--plurnk-user-surface);
-    font-weight: 700;
-}
+    body > main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"]) {
+        min-block-size: 0;
+        overflow: auto;
+    }
 
-/* {§web-page-shell} Keep keyboard focus inside the breadcrumb and workspace tab scroll areas. */
-body > header > nav[aria-label="breadcrumb"] a:focus-visible,
-#workspace-tabs > ul > li > a:focus-visible {
-    box-shadow: inset 0 0 0 var(--pico-outline-width) var(--pico-primary-focus);
-}
+    body > header > nav[aria-label="breadcrumb"] [aria-current="page"] {
+        display: inline-block;
+    }
 
-header nav button:is(:hover, :focus-visible),
-#workspace-tabs > button:is(:hover, :focus-visible),
-#dialog-workspace-settings [data-settings-nav] button:is(:hover, :focus-visible),
-#session-command-results [data-open-workspace-settings]:is(:hover, :focus-visible),
-#dialog-workspace-switcher [data-switcher-list] > li > a:is(:hover, :focus-visible) {
-    text-decoration: underline;
-}
+    header nav button:is(:hover, :focus-visible) {
+        text-decoration: underline;
+    }
 
-/* {§web-page-shell} An ordinary input interrupt is still a live connection. */
-body:not(:has(:is(#session-status, #main):is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
-    display: none;
-}
+    ul:has(> [data-directory-entry]),
+    #session-conversation [data-prompt-replies],
+    #dialog-workspace-settings :where([data-candidate-rows]) {
+        padding: 0;
+    }
 
-/* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
-#session-conversation {
-    --pico-card-background-color: var(--plurnk-working-surface);
-    --pico-primary: var(--pico-primary-hover);
-    --pico-accordion-open-summary-color: var(--pico-color);
-}
+    [data-session-reply] ol > li {
+        list-style-type: decimal;
+    }
 
-#session-conversation :is([data-message-id] > article, [data-reasoning-preview]) {
-    --pico-card-sectioning-background-color: var(--pico-card-background-color);
-}
+    [data-directory-entry],
+    #session-conversation [data-prompt-replies] > li {
+        list-style: none;
+    }
 
-#session-conversation [data-message-role="user"] {
-    --pico-card-background-color: var(--plurnk-user-surface);
-}
+    #workspace-tabs > [data-workspace-switcher] {
+        display: none;
+        flex: 1 1 auto;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.5ch;
+        min-inline-size: 0;
+        overflow: hidden;
+    }
 
-#session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="send"]:not([data-message-role="user"]), [data-plurnk-type="done"]:not([data-message-role="user"]), [data-plurnk-type="fail"]:not([data-message-role="user"])) {
-    --pico-card-background-color: var(--plurnk-reply-surface);
-}
+    [data-switcher-current],
+    [data-session-excerpt] {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 
-/* {§web-session-input} Native controls and document state own their presentation. */
-#session-message:focus {
-    --pico-box-shadow: inset 0 0 0 var(--pico-outline-width) var(--pico-form-element-focus-color);
-}
+    @media (scripting: enabled) and (width < 768px) {
+        #workspace-tabs > [data-workspace-switcher] {
+            display: inline-flex;
+        }
+    }
 
-button[form="session-compose"]::before { content: "▶️" / ""; }
-button[form="session-stop"]::before { content: "⏹️" / ""; }
-button[data-attach-image]::before { content: "📎" / ""; }
-#session-compose [data-remove-attachment]::before { content: "✕" / ""; }
+    #workspace-tabs:not([data-live="true"]) > [data-workspace-settings] {
+        display: none;
+    }
 
-[aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"],
-[aria-label="Session controls"]:not([data-prompt-image="true"]) button[data-attach-image],
-[data-compose-suggestions]:empty,
-[data-compose-attachments]:empty {
-    display: none;
-}
+    #workspace-tabs > ul > li > a[aria-current="true"],
+    #dialog-workspace-settings [data-settings-nav] button[aria-pressed="true"] {
+        border-block-end-color: var(--otm-primary);
+        font-weight: 700;
+    }
 
-[aria-label="Session controls"]:not([data-live-work])[data-prompt-image="true"] button[data-attach-image] {
-    margin-inline-start: 0;
-    border-start-start-radius: var(--pico-border-radius);
-    border-end-start-radius: var(--pico-border-radius);
-}
+    #dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"] {
+        background-color: var(--plurnk-user-surface);
+        font-weight: 700;
+    }
 
-[aria-label="Session controls"]:not([data-live-work], [data-prompt-image="true"]) #session-message {
-    border-start-start-radius: var(--pico-border-radius);
-    border-end-start-radius: var(--pico-border-radius);
-}
+    /* {§web-page-shell} Keep keyboard focus inside the breadcrumb and workspace tab scroll areas. */
+    details > summary:is(:focus, :focus-visible) {
+        outline: var(--otm-outline-width) solid var(--otm-primary-focus);
+        outline-offset: 0.125rem;
+        border-radius: var(--otm-border-radius);
+    }
 
-[aria-label="Message feedback"][data-command-error=""] > article,
-[aria-label="Message feedback"][data-message-status=""] > [role="status"],
-[aria-label="Message feedback"][data-message-status=""][data-command-error=""] {
-    display: none;
-}
+    body > header > nav[aria-label="breadcrumb"] a:focus-visible,
+    #workspace-tabs > ul > li > a:focus-visible {
+        box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
+    }
 
-#session-conversation [data-message-role="user"] > article {
-    box-shadow: 0 0 0 var(--pico-border-width) var(--plurnk-user-border), var(--pico-card-box-shadow);
-}
+    #dialog-workspace-settings :where([data-candidate-rows] > li) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        list-style: none;
+        padding-block: calc(var(--otm-spacing) * 0.25);
+    }
 
-/* {§web-session-approval} No review is implied by an empty or unsupported interrupt set. */
-[aria-label="Review requests"][data-request-count="0"] {
-    display: none;
-}
+    :is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.35);
+        margin: 0;
+    }
 
-/* {§web-session-approval} A proposal's deadline, and the notice once it has passed, show only when they apply. */
-[aria-label="Review requests"]:not([data-deadline-passed]) [data-deadline-notice],
-[data-proposal-deadline=""] > [data-proposal-deadline-line],
-[data-proposal-target-empty="true"] > [data-proposal-target-line],
-[data-proposal-has-diff="false"] > [data-proposal-diff],
-[data-proposal-has-diff="true"] > [data-proposal-body-block],
-[data-proposal-body-empty="true"] > [data-proposal-body-block],
-[data-proposal-editable="false"] > [data-proposal-edit-choice],
-[data-proposal-editable="false"] > [data-proposal-edit-field],
-fieldset:not(:has(> [data-proposal-edit-choice] > input[type="radio"][value="edit"]:checked)) > [data-proposal-edit-field] {
-    display: none;
-}
+    :is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset > button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.4) calc(var(--otm-form-element-spacing-inline) * 0.65);
+    }
 
-[data-proposal-diff] [data-diff-line="add"] {
-    background-color: var(--plurnk-diff-add-surface);
-    color: var(--plurnk-diff-add-color);
-    text-decoration: none;
-}
+    @media (scripting: none) {
+        dialog:not([open]) {
+            display: block;
+            position: static;
+            inline-size: auto;
+            min-inline-size: 0;
+            block-size: auto;
+            min-block-size: 0;
+            margin-block: var(--otm-spacing);
+            padding: 0;
+            border: 0;
+            background-color: transparent;
+            backdrop-filter: none;
+            opacity: 1;
+        }
 
-[data-proposal-diff] [data-diff-line="del"] {
-    background-color: var(--plurnk-diff-del-surface);
-    color: var(--plurnk-diff-del-color);
-    text-decoration: none;
-}
+        button[data-dialog-target],
+        button[data-workspace-switcher],
+        button[data-workspace-settings] {
+            display: none;
+        }
+    }
 
-[data-proposal-diff] [data-diff-line="hunk"] {
-    background-color: var(--plurnk-diff-hunk-surface);
-    color: var(--plurnk-diff-hunk-color);
-}
+    /* {§web-page-shell} An ordinary input interrupt is still a live connection. */
+    body:not(:has(:is(#session-status, #main):is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
+        display: none;
+    }
 
-[data-proposal-diff] [data-diff-line="meta"] {
-    color: var(--plurnk-diff-meta-color);
-}
+    /* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
+    #session-conversation:has([data-message-id], [data-reasoning-preview]),
+    #session-conversation[data-conversation-empty] {
+        --otm-card-background-color: var(--plurnk-working-surface);
+        --otm-primary: var(--otm-primary-hover);
+    }
 
-/* {§web-session-commands} {§web-workspace-settings} Results and settings controls reflect explicit state. */
-#session-command-results:not(:has(ul > li)),
-#session-command-results article[aria-busy="true"] :is([data-dismiss-command], [data-open-workspace-settings]),
-#session-command-results section:not([data-alias-count="0"]) > [data-no-aliases],
-:is(#session-command-results, #dialog-workspace-settings) [data-env-panel][data-env-count="0"] > figure,
-:is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="true"] [data-env-enable],
-:is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="false"] [data-env-disable],
-:is(#session-command-results, #dialog-workspace-settings) [data-env-removable="false"] [data-env-unset],
-#dialog-workspace-settings [data-family-count="0"] > [data-family-table-wrap],
-#dialog-workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
-#dialog-workspace-settings [data-candidate-count="0"] > [data-candidate-rows],
-#dialog-workspace-settings [data-family-enabled="true"] [data-family-enable],
-#dialog-workspace-settings [data-family-enabled="false"] [data-family-disable],
-#dialog-workspace-settings [data-family-removable="false"] [data-family-remove],
-#dialog-workspace-settings [data-family-auth="false"] [data-family-authorize],
-#dialog-workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
-#dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
-#dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
-#dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],
-#dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="inline"]) [data-persona-inline-fields],
-#dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields] {
-    display: none;
-}
+    #session-conversation :is([data-message-id] > article, [data-reasoning-preview]) {
+        --otm-card-sectioning-background-color: var(--otm-card-background-color);
+    }
 
-#session-command-results [data-dismiss-command]::before,
-#session-onboarding-banner [data-dismiss-onboarding]::before { content: "✕" / ""; }
+    #session-conversation [data-message-role="user"] {
+        --otm-card-background-color: var(--plurnk-user-surface);
+    }
 
-/* {§web-session-settings} {§web-workspace-settings} {§web-onboarding} Empty feedback occupies no page space. */
-:is(#session-model-settings, #session-effort-settings, #session-command-results article, #dialog-workspace-settings > article, #dialog-onboarding > article) > p:empty,
-#dialog-onboarding [data-onboarding-form]:not([data-onboarding-mode="hosted"]) [data-onboarding-hosted-fields],
-#dialog-onboarding [data-onboarding-form] small:empty,
-#session-command-results [data-command-output]:empty {
-    display: none;
-}
+    #session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="send"]:not([data-message-role="user"]), [data-plurnk-type="done"]:not([data-message-role="user"]), [data-plurnk-type="fail"]:not([data-message-role="user"])) {
+        --otm-card-background-color: var(--plurnk-reply-surface);
+    }
 
-/* {§web-session-questions} Omission and diagnostics are explicit document state. */
-[data-field-optional="false"] > [data-optional-answer],
-[data-field-description=""] > [data-text="field-description"],
-[data-request-session=""] [data-request-origin],
-[data-question][data-response-error=""] > [data-response-error] {
-    display: none;
-}
+    [aria-label="Message feedback"][data-command-error=""] > article,
+    [aria-label="Message feedback"][data-message-status=""] > [role="status"],
+    [aria-label="Message feedback"][data-message-status=""][data-command-error=""] {
+        display: none;
+    }
 
-/* {§web-session-observer} Failed connections expose native recovery, never stale live indicators. */
-body:not(:has(#session-status:is([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]))) #session-connection,
-body:not(:has(#session-status[data-connection="signed-out"])) [data-sign-in],
-body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
-    display: none;
-}
+    #session-conversation [data-message-role="user"] > article {
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-user-border), var(--otm-card-box-shadow);
+    }
 
-/* {§web-session-identity} {§web-session-status} Optional supplied facts, not guessed activity. */
-#session-folder[data-project-label=""],
-#session-status:not([data-lifecycle]) > [data-status-line],
-#session-status[data-connection="connected"] > [role="status"],
-#session-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
-#session-status:not([data-elapsed]) [data-status-field="elapsed"],
-#session-status[data-elapsed=""] [data-status-field="elapsed"],
-#session-status[data-context=""] [data-status-field="context"],
-#session-status[data-descendants="0"] [data-status-field="descendants"],
-#session-status[data-gated="0"] [data-status-field="gated"],
-#session-status[data-wait=""] [data-status-field="wait"],
-#session-status[data-inbox="0"] [data-status-field="inbox"],
-#session-status[data-preparation=""] [data-status-field="preparation"],
-#session-status[data-activity=""] [data-status-field="activity"] {
-    display: none;
-}
+    /* {§web-session-input} Native controls and document state own their presentation. */
+    #session-message:focus {
+        box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
+    }
 
-/* {§web-session-status} Native interaction and active YOLO retain the row; unfocused live work remains observable. */
-#session-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"], #session-yolo[aria-pressed="true"])) > [data-status-line] {
-    display: none;
-}
+    #session-status [data-status-line] button,
+    #session-compose [data-remove-attachment],
+    #session-onboarding-banner [data-dismiss-onboarding],
+    #session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: transparent;
+        --otm-primary-inverse: var(--otm-primary);
 
-/* {§web-session-reasoning} Coordinates are content; the reasoning glyph is presentation. */
-[data-message-role="reasoning"] [data-plurnk-field="heading"]::before,
-[data-reasoning-preview] > header::before {
-    content: "💭" / "";
-    margin-inline-end: 0.5ch;
-}
+        cursor: pointer;
+    }
 
-/* {§web-session-status} Status fields remain semantic; CSS owns their compact notation. */
-#session-yolo[aria-pressed="true"]::before { content: "🔥 " / ""; }
-#session-yolo[aria-pressed="false"]::before { content: "🐹 " / ""; }
-#session-status [data-text="input"]::before { content: "↓" / ""; }
-#session-status [data-text="output"]::before { content: "↑" / ""; }
-#session-status [data-text="effort"]:not(:empty)::before { content: "(" / ""; }
-#session-status [data-text="effort"]:not(:empty)::after { content: ")" / ""; }
-#session-effort:has([data-text="effort"]:empty)::before { content: "(—)" / ""; }
-#session-descendants > summary::before { content: "🐜 " / ""; }
-#session-status [data-status-field="gated"]::before { content: "🚦 " / ""; }
-#session-status [data-status-field="inbox"]::before { content: "✉️ " / ""; }
-#session-status [data-status-field="activity"]::before { content: "🧮 " / ""; }
-#session-status [data-status-field="preparation"]::before { content: "⚙️ " / ""; }
+    button[data-attach-image],
+    button[data-accept-suggestion],
+    button[data-cancel-settings],
+    dialog button[data-dialog-close]:not([rel="prev"]) {
+        --otm-primary-background: var(--otm-secondary-background);
+        --otm-primary-hover-background: var(--otm-secondary-hover-background);
+        --otm-primary-inverse: var(--otm-secondary-inverse);
+        --otm-primary-focus: var(--otm-secondary-focus);
+    }
 
-/* {§web-session-directory} The directory and live statusline share one lifecycle vocabulary. */
-#session-status [data-status-field="lifecycle"]::before,
-:is([data-session-identity], #workspace-tabs, #dialog-workspace-switcher) [data-lifecycle]::before { content: var(--session-lifecycle-glyph, "○") / ""; }
-[data-lifecycle="running"] { --session-lifecycle-glyph: "⌛"; }
-[data-lifecycle="queued"] { --session-lifecycle-glyph: "⏳"; }
-[data-lifecycle="parked"] { --session-lifecycle-glyph: "💤"; }
-[data-lifecycle="cancelled"] { --session-lifecycle-glyph: "🛑"; }
-[data-lifecycle="failed"] { --session-lifecycle-glyph: "❌"; }
-[data-lifecycle="completed"] { --session-lifecycle-glyph: "✓"; }
+    button[data-attach-image]::before {
+        content: "📎" / "";
+    }
 
-/* {§web-session-diagnostics} Diagnostic presence and optional fields are document state. */
-#session-diagnostics:not(:has(ul > li)) {
-    display: none;
-}
+    #session-compose [data-remove-attachment]::before {
+        content: "✕" / "";
+    }
 
-/* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
-[data-plurnk-type] [data-plurnk-field="heading"]::before,
-[data-operation-tally] [data-plurnk-field="heading"]::before,
-[data-diagnostic-level] [data-plurnk-field="heading"]::before {
-    content: var(--plurnk-operation-glyph, "⚙️") / "";
-    margin-inline-end: 0.5ch;
-}
+    #session-compose [data-compose-suggestions],
+    #session-compose [data-compose-attachments] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin: 0 0 calc(var(--otm-spacing) * 0.4);
+        padding: 0;
+    }
 
-:is([data-plurnk-type="note"], [data-operation-tally="note"]) { --plurnk-operation-glyph: "🗒️"; }
-:is([data-plurnk-type="find"], [data-operation-tally="find"]) { --plurnk-operation-glyph: "🔎"; }
-:is([data-plurnk-type="read"], [data-operation-tally="read"]) { --plurnk-operation-glyph: "📖"; }
-:is([data-plurnk-type="edit"], [data-operation-tally="edit"]) { --plurnk-operation-glyph: "📝"; }
-:is([data-plurnk-type="copy"], [data-operation-tally="copy"]) { --plurnk-operation-glyph: "🖨️"; }
-:is([data-plurnk-type="move"], [data-operation-tally="move"]) { --plurnk-operation-glyph: "📦"; }
-:is([data-plurnk-type="kill"], [data-operation-tally="kill"]) { --plurnk-operation-glyph: "🗑️"; }
-:is([data-plurnk-type="work"], [data-operation-tally="work"]) { --plurnk-operation-glyph: "🐜"; }
-:is([data-plurnk-type="fork"], [data-operation-tally="fork"]) { --plurnk-operation-glyph: "🔱"; }
-:is([data-plurnk-type="bare"], [data-operation-tally="bare"]) { --plurnk-operation-glyph: "☁️"; }
-:is([data-plurnk-type="wait"], [data-operation-tally="wait"]) { --plurnk-operation-glyph: "⏳"; }
-[data-plurnk-type="send"] { --plurnk-operation-glyph: "✉️"; }
-[data-plurnk-type="done"] { --plurnk-operation-glyph: "🐹"; }
-[data-plurnk-type="fail"][data-plurnk-signal="499"] { --plurnk-operation-glyph: "❌"; }
-:is([data-plurnk-type="warn"], [data-operation-tally="warn"]) { --plurnk-operation-glyph: "⚠️"; }
+    #session-compose [data-suggestion-item] {
+        list-style: none;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        margin: 0;
+    }
 
-[data-plurnk-type="fail"],
-:is([data-plurnk-type="error"], [data-operation-tally="error"]) { --plurnk-operation-glyph: "⛔"; }
-:is([data-plurnk-type="info"], [data-operation-tally="info"]) { --plurnk-operation-glyph: "📌"; }
-[data-diagnostic-level="info"] { --plurnk-operation-glyph: "📌"; }
-[data-diagnostic-level="warn"] { --plurnk-operation-glyph: "⚠️"; }
-[data-diagnostic-level="error"] { --plurnk-operation-glyph: "⛔"; }
-[data-operation-tally="reasoning"] { --plurnk-operation-glyph: "💭"; }
+    #session-compose [data-accept-suggestion] {
+        --otm-form-element-spacing-block: 0.2rem;
+        --otm-form-element-spacing-inline: 0.5rem;
 
-/* {§web-page-shell} {§web-session-directory} Directory identity remains accessible without decorative glyphs. */
-[data-directory-entry="workspace"] > article > header::before {
-    content: var(--directory-glyph) / "";
-    margin-inline-end: 0.5ch;
-}
-:is([data-session-link], #workspace-tabs a[data-workspace-route="session"], #dialog-workspace-switcher a[data-workspace-route="session"])::before { content: var(--session-kind-glyph, "💬") / ""; }
-[data-session-kind="work"] { --session-kind-glyph: "🐜"; }
-[data-session-kind="fork"] { --session-kind-glyph: "🔱"; }
-[data-session-gates]::before { content: "🚦 " / ""; }
-[data-switcher-active]::before { content: "⌛ " / ""; }
-[data-session-children]::before { content: "🐜 " / ""; }
-[data-session-workspace] [data-folder]::before { content: var(--directory-glyph) / ""; }
-[data-folder="true"] { --directory-glyph: "🗂️"; }
-[data-folder="false"] { --directory-glyph: "☁️"; }
+        inline-size: auto;
+        max-inline-size: 100%;
+        margin: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 
-details[open]:has(> [data-session-reply]) > summary > [data-session-excerpt] {
-    display: none;
-}
+    #session-compose [data-attachment-item] {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4ch;
+        list-style: none;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.5);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+    }
 
-/* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
-:is(#session-conversation, [data-session-reply]) [data-math-error]::after {
-    content: " (" attr(data-math-error) ")";
-}
+    #session-compose [data-remove-attachment] {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
 
-:is(#session-conversation, [data-session-reply]) [data-diagram-error]::after {
-    content: " (" attr(data-diagram-error) ")";
-}
+        inline-size: auto;
+        margin: 0;
+        padding: 0 0.2ch;
+        border-width: 0;
+        line-height: inherit;
+    }
 
-/* {§web-code-content} An unavailable highlighter leaves literal code and says so. */
-:is(#session-conversation, [data-session-reply]) [data-code-error]::after {
-    content: "(" attr(data-code-error) ")";
-}
+    #session-onboarding-banner [data-dismiss-onboarding],
+    #session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
 
-#session-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
-    display: none;
-}
+        inline-size: auto;
+        margin: 0;
+    }
 
-[data-reasoning-preview]:has(> pre:empty) {
-    display: none;
-}
+    #session-command-results [data-open-workspace-settings] {
+        margin-inline-start: auto;
+    }
 
-[data-history-boundary] [data-text="history-error"]:empty {
-    display: none;
+    #session-status [data-status-line],
+    #session-status [data-status-line] > ul {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: center;
+        gap: var(--otm-spacing);
+        padding: 0;
+        margin: 0;
+    }
+
+    #session-status [data-status-line] > ul {
+        min-inline-size: 0;
+        max-inline-size: 100%;
+    }
+
+    #session-status [data-status-line] > ul > li {
+        list-style: none;
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    #session-status [data-status-line] button {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        margin: 0;
+    }
+
+    #workspace-tabs > button:is(:hover, :focus-visible),
+    #dialog-workspace-settings [data-settings-nav] button:is(:hover, :focus-visible),
+    #session-command-results [data-open-workspace-settings]:is(:hover, :focus-visible),
+    #dialog-workspace-switcher [data-switcher-list] > li > a:is(:hover, :focus-visible) {
+        text-decoration: underline;
+    }
+
+    /* {§web-session-reasoning} The preview follows its tail within its own bounded outlet. */
+    [data-reasoning-preview] pre {
+        max-block-size: calc(100dvh / 3);
+        overflow: auto;
+    }
+
+    #main li > article > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
+    #main li > article > details > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
+    #session-conversation :is([data-loop-seq], [data-operations]) > details > ul,
+    #session-conversation [data-prompt-replies] > li:last-child > article,
+    [data-session-reply] > :last-child {
+        margin-block-end: 0;
+    }
+
+    [data-directory-entry="session"] > article > header:only-child,
+    #session-conversation [data-message-id] > article > header:only-child {
+        margin-block-end: calc(var(--otm-spacing) * -1);
+        border-block-end: 0;
+        border-end-start-radius: var(--otm-border-radius);
+        border-end-end-radius: var(--otm-border-radius);
+    }
+
+    #main :is(li > article, li) > details[open] > summary::after {
+        content: "▾" / "";
+    }
+
+    :is(header, summary) > :is([data-plurnk-field="outcome"], [data-plurnk-operands]),
+    :is(header, summary) > :is([data-session-identity], [data-session-workspace], [data-session-excerpt]) {
+        display: block;
+    }
+
+    [data-session-identity] > small,
+    [data-session-workspace] > time {
+        margin-inline-start: 0.75ch;
+    }
+
+    :is([data-env-set-form], [data-env-row-form]) > :where(fieldset) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin: 0;
+    }
+
+    [data-env-set-form] > :where(fieldset > select, fieldset > button),
+    [data-env-row-form] > :where(fieldset > button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+    }
+
+    [data-env-row-form] > :where(fieldset > button) {
+        padding: calc(var(--otm-form-element-spacing-block) * 0.4) calc(var(--otm-form-element-spacing-inline) * 0.65);
+    }
+
+    [data-env-set-form] > :where(fieldset > input) {
+        flex: 1 1 12ch;
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    [data-proposal-target-line] {
+        margin-block-end: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-proposal-target] {
+        max-inline-size: 100%;
+        overflow-wrap: anywhere;
+    }
+
+    [data-proposal-diff] > code {
+        inline-size: max-content;
+        min-inline-size: 100%;
+        padding-block: calc(var(--otm-spacing) * 0.5);
+        padding-inline: 0;
+    }
+
+    [data-proposal-diff] [data-diff-line] {
+        display: inline-block;
+        min-inline-size: 100%;
+        padding-inline: var(--otm-spacing);
+    }
+
+    [data-session-reply] pre,
+    :is(#session-conversation, [data-session-reply]) [data-math],
+    :is(#session-conversation, [data-session-reply]) [data-diagram-viewport] {
+        max-inline-size: 100%;
+        overflow-x: auto;
+    }
+
+    /* {§web-diagram-content} Preserve readable intrinsic labels; wide images scroll locally. */
+    :is(#session-conversation, [data-session-reply]) [data-diagram-viewport] > img {
+        max-inline-size: none;
+    }
+
+    /* {§web-inline-images} Verified raster attachments scale within the card width and bounded height. */
+    :is(#session-conversation, [data-session-reply]) [data-inline-image] {
+        margin-block: 0 var(--otm-spacing);
+    }
+
+    :is(#session-conversation, [data-session-reply]) [data-inline-image-viewport] > img {
+        display: block;
+        max-inline-size: 100%;
+        max-block-size: 60dvh;
+        block-size: auto;
+        border-radius: var(--otm-border-radius);
+    }
+
+    /* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */
+    :is(#session-conversation, [data-session-reply]) [data-math="inline"] {
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    :is(#session-conversation, [data-session-reply]) [data-math="block"] {
+        display: block;
+        margin-block: var(--otm-spacing);
+    }
+
+    :is(#session-conversation, [data-session-reply]) [data-math] > math {
+        inline-size: max-content;
+        min-inline-size: 100%;
+    }
+
+    [aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"],
+    [aria-label="Session controls"]:not([data-prompt-image="true"]) button[data-attach-image],
+    #session-compose [data-compose-suggestions]:empty,
+    #session-compose [data-compose-attachments]:empty {
+        display: none;
+    }
+
+    [aria-label="Session controls"]:not([data-live-work])[data-prompt-image="true"] button[data-attach-image] {
+        margin-inline-start: 0;
+        border-start-start-radius: var(--otm-border-radius);
+        border-end-start-radius: var(--otm-border-radius);
+    }
+
+    [aria-label="Session controls"]:not([data-live-work], [data-prompt-image="true"]) #session-message {
+        margin-inline-start: 0;
+        border-start-start-radius: var(--otm-border-radius);
+        border-end-start-radius: var(--otm-border-radius);
+    }
+
+    /* {§web-session-approval} No review is implied by an empty or unsupported interrupt set. */
+    [aria-label="Review requests"][data-request-count="0"] {
+        display: none;
+    }
+
+    /* {§web-session-approval} A proposal's deadline, and the notice once it has passed, show only when they apply. */
+    [aria-label="Review requests"]:not([data-deadline-passed]) [data-deadline-notice],
+    [data-proposal-deadline=""] > [data-proposal-deadline-line],
+    [data-proposal-target-empty="true"] > [data-proposal-target-line],
+    [data-proposal-has-diff="false"] > [data-proposal-diff],
+    [data-proposal-has-diff="true"] > [data-proposal-body-block],
+    [data-proposal-body-empty="true"] > [data-proposal-body-block],
+    [data-proposal-editable="false"] > [data-proposal-edit-choice],
+    [data-proposal-editable="false"] > [data-proposal-edit-field],
+    fieldset:not(:has(> [data-proposal-edit-choice] > input[type="radio"][value="edit"]:checked)) > [data-proposal-edit-field] {
+        display: none;
+    }
+
+    [data-proposal-diff] [data-diff-line="add"] {
+        background-color: var(--plurnk-diff-add-surface);
+        color: var(--plurnk-diff-add-color);
+        text-decoration: none;
+    }
+
+    [data-proposal-diff] [data-diff-line="del"] {
+        background-color: var(--plurnk-diff-del-surface);
+        color: var(--plurnk-diff-del-color);
+        text-decoration: none;
+    }
+
+    [data-proposal-diff] [data-diff-line="hunk"] {
+        background-color: var(--plurnk-diff-hunk-surface);
+        color: var(--plurnk-diff-hunk-color);
+    }
+
+    [data-proposal-diff] [data-diff-line="meta"] {
+        color: var(--plurnk-diff-meta-color);
+    }
+
+    /* {§web-session-commands} {§web-workspace-settings} Results and settings controls reflect explicit state. */
+    #session-command-results article[aria-busy="true"] :is([data-dismiss-command], [data-open-workspace-settings]),
+    #session-command-results section:not([data-alias-count="0"]) > [data-no-aliases],
+    :is(#session-command-results, #dialog-workspace-settings) [data-env-panel][data-env-count="0"] > figure,
+    :is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="true"] [data-env-enable],
+    :is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="false"] [data-env-disable],
+    :is(#session-command-results, #dialog-workspace-settings) [data-env-removable="false"] [data-env-unset],
+    #dialog-workspace-settings [data-family-count="0"] > [data-family-table-wrap],
+    #dialog-workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
+    #dialog-workspace-settings [data-candidate-count="0"] > [data-candidate-rows],
+    #dialog-workspace-settings [data-family-enabled="true"] [data-family-enable],
+    #dialog-workspace-settings [data-family-enabled="false"] [data-family-disable],
+    #dialog-workspace-settings [data-family-removable="false"] [data-family-remove],
+    #dialog-workspace-settings [data-family-auth="false"] [data-family-authorize],
+    #dialog-workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
+    #dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
+    #dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
+    #dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],
+    #dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="inline"]) [data-persona-inline-fields],
+    #dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields] {
+        display: none;
+    }
+
+    #session-command-results [data-dismiss-command]::before,
+    #session-onboarding-banner [data-dismiss-onboarding]::before {
+        content: "✕" / "";
+    }
+
+    /* {§web-session-settings} {§web-workspace-settings} {§web-onboarding} Empty feedback occupies no page space. */
+    :is(#session-model-settings, #session-effort-settings, #session-command-results article, #dialog-workspace-settings > article, #dialog-onboarding > article) > p:empty,
+    #dialog-onboarding [data-onboarding-form]:not([data-onboarding-mode="hosted"]) [data-onboarding-hosted-fields],
+    #dialog-onboarding [data-onboarding-form] small:empty,
+    #session-command-results [data-command-output]:empty {
+        display: none;
+    }
+
+    /* {§web-session-questions} Omission and diagnostics are explicit document state. */
+    [data-field-optional="false"] > [data-optional-answer],
+    [data-field-description=""] > [data-text="field-description"],
+    [data-request-session=""] [data-request-origin],
+    [data-question][data-response-error=""] > [data-response-error] {
+        display: none;
+    }
+
+    /* {§web-session-observer} Failed connections expose native recovery, never stale live indicators. */
+    body:not(:has(#session-status:is([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]))) #session-connection,
+    body:not(:has(#session-status[data-connection="signed-out"])) [data-sign-in],
+    body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
+        display: none;
+    }
+
+    /* {§web-session-identity} {§web-session-status} Optional supplied facts, not guessed activity. */
+    #session-folder[data-project-label=""],
+    #session-status:not([data-lifecycle]) > [data-status-line],
+    #session-status[data-connection="connected"] > [role="status"],
+    #session-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
+    #session-status:not([data-elapsed]) [data-status-field="elapsed"],
+    #session-status[data-elapsed=""] [data-status-field="elapsed"],
+    #session-status[data-context=""] [data-status-field="context"],
+    #session-status[data-descendants="0"] [data-status-field="descendants"],
+    #session-status[data-gated="0"] [data-status-field="gated"],
+    #session-status[data-wait=""] [data-status-field="wait"],
+    #session-status[data-inbox="0"] [data-status-field="inbox"],
+    #session-status[data-preparation=""] [data-status-field="preparation"],
+    #session-status[data-activity=""] [data-status-field="activity"] {
+        display: none;
+    }
+
+    /* {§web-session-status} Native interaction and active YOLO retain the row; unfocused live work remains observable. */
+    #session-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"], #session-yolo[aria-pressed="true"])) > [data-status-line] {
+        display: none;
+    }
+
+    /* {§web-session-reasoning} Coordinates are content; the reasoning glyph is presentation. */
+    [data-message-role="reasoning"] [data-plurnk-field="heading"]::before,
+    [data-reasoning-preview] > header::before {
+        content: "💭" / "";
+        margin-inline-end: 0.5ch;
+    }
+
+    /* {§web-session-status} Status fields remain semantic; CSS owns their compact notation. */
+    #session-yolo[aria-pressed="true"]::before {
+        content: "🔥 " / "";
+    }
+
+    #session-yolo[aria-pressed="false"]::before {
+        content: "🐹 " / "";
+    }
+
+    #session-status [data-text="input"]::before {
+        content: "↓" / "";
+    }
+
+    #session-status [data-text="output"]::before {
+        content: "↑" / "";
+    }
+
+    #session-status [data-text="effort"]:not(:empty)::before {
+        content: "(" / "";
+    }
+
+    #session-status [data-text="effort"]:not(:empty)::after {
+        content: ")" / "";
+    }
+
+    #session-effort:has([data-text="effort"]:empty)::before {
+        content: "(—)" / "";
+    }
+
+    #session-status [data-status-field="gated"]::before {
+        content: "🚦 " / "";
+    }
+
+    #session-status [data-status-field="inbox"]::before {
+        content: "✉️ " / "";
+    }
+
+    #session-status [data-status-field="activity"]::before {
+        content: "🧮 " / "";
+    }
+
+    #session-status [data-status-field="preparation"]::before {
+        content: "⚙️ " / "";
+    }
+
+    /* {§web-session-directory} The directory and live statusline share one lifecycle vocabulary. */
+    #session-status [data-status-field="lifecycle"]::before,
+    :is([data-session-identity], #workspace-tabs, #dialog-workspace-switcher) [data-lifecycle]::before {
+        content: var(--session-lifecycle-glyph, "○") / "";
+    }
+
+    [data-lifecycle="running"] {
+        --session-lifecycle-glyph: "⌛";
+    }
+
+    [data-lifecycle="queued"] {
+        --session-lifecycle-glyph: "⏳";
+    }
+
+    [data-lifecycle="parked"] {
+        --session-lifecycle-glyph: "💤";
+    }
+
+    [data-lifecycle="cancelled"] {
+        --session-lifecycle-glyph: "🛑";
+    }
+
+    [data-lifecycle="failed"] {
+        --session-lifecycle-glyph: "❌";
+    }
+
+    [data-lifecycle="completed"] {
+        --session-lifecycle-glyph: "✓";
+    }
+
+    /* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
+    [data-plurnk-type] [data-plurnk-field="heading"]::before,
+    [data-operation-tally] [data-plurnk-field="heading"]::before,
+    [data-diagnostic-level] [data-plurnk-field="heading"]::before {
+        content: var(--plurnk-operation-glyph, "⚙️") / "";
+        margin-inline-end: 0.5ch;
+    }
+
+    :is([data-plurnk-type="note"], [data-operation-tally="note"]) {
+        --plurnk-operation-glyph: "🗒️";
+    }
+
+    :is([data-plurnk-type="find"], [data-operation-tally="find"]) {
+        --plurnk-operation-glyph: "🔎";
+    }
+
+    :is([data-plurnk-type="read"], [data-operation-tally="read"]) {
+        --plurnk-operation-glyph: "📖";
+    }
+
+    :is([data-plurnk-type="edit"], [data-operation-tally="edit"]) {
+        --plurnk-operation-glyph: "📝";
+    }
+
+    :is([data-plurnk-type="copy"], [data-operation-tally="copy"]) {
+        --plurnk-operation-glyph: "🖨️";
+    }
+
+    :is([data-plurnk-type="move"], [data-operation-tally="move"]) {
+        --plurnk-operation-glyph: "📦";
+    }
+
+    :is([data-plurnk-type="kill"], [data-operation-tally="kill"]) {
+        --plurnk-operation-glyph: "🗑️";
+    }
+
+    :is([data-plurnk-type="work"], [data-operation-tally="work"]) {
+        --plurnk-operation-glyph: "🐜";
+    }
+
+    :is([data-plurnk-type="fork"], [data-operation-tally="fork"]) {
+        --plurnk-operation-glyph: "🔱";
+    }
+
+    :is([data-plurnk-type="bare"], [data-operation-tally="bare"]) {
+        --plurnk-operation-glyph: "☁️";
+    }
+
+    :is([data-plurnk-type="wait"], [data-operation-tally="wait"]) {
+        --plurnk-operation-glyph: "⏳";
+    }
+
+    [data-plurnk-type="send"] {
+        --plurnk-operation-glyph: "✉️";
+    }
+
+    [data-plurnk-type="done"] {
+        --plurnk-operation-glyph: "🐹";
+    }
+
+    [data-plurnk-type="fail"][data-plurnk-signal="499"] {
+        --plurnk-operation-glyph: "❌";
+    }
+
+    :is([data-plurnk-type="warn"], [data-operation-tally="warn"]) {
+        --plurnk-operation-glyph: "⚠️";
+    }
+
+    [data-plurnk-type="fail"],
+    :is([data-plurnk-type="error"], [data-operation-tally="error"]) {
+        --plurnk-operation-glyph: "⛔";
+    }
+
+    :is([data-plurnk-type="info"], [data-operation-tally="info"]) {
+        --plurnk-operation-glyph: "📌";
+    }
+
+    [data-diagnostic-level="info"] {
+        --plurnk-operation-glyph: "📌";
+    }
+
+    [data-diagnostic-level="warn"] {
+        --plurnk-operation-glyph: "⚠️";
+    }
+
+    [data-diagnostic-level="error"] {
+        --plurnk-operation-glyph: "⛔";
+    }
+
+    [data-operation-tally="reasoning"] {
+        --plurnk-operation-glyph: "💭";
+    }
+
+    /* {§web-page-shell} {§web-session-directory} Directory identity remains accessible without decorative glyphs. */
+    [data-directory-entry="workspace"] > article > header::before {
+        content: var(--directory-glyph) / "";
+        margin-inline-end: 0.5ch;
+    }
+
+    :is([data-session-link], #workspace-tabs a[data-workspace-route="session"], #dialog-workspace-switcher a[data-workspace-route="session"])::before {
+        content: var(--session-kind-glyph, "💬") / "";
+    }
+
+    [data-session-kind="work"] {
+        --session-kind-glyph: "🐜";
+    }
+
+    [data-session-kind="fork"] {
+        --session-kind-glyph: "🔱";
+    }
+
+    [data-session-gates]::before {
+        content: "🚦 " / "";
+    }
+
+    [data-switcher-active]::before {
+        content: "⌛ " / "";
+    }
+
+    [data-session-children]::before {
+        content: "🐜 " / "";
+    }
+
+    [data-session-workspace] [data-folder]::before {
+        content: var(--directory-glyph) / "";
+    }
+
+    [data-folder="true"] {
+        --directory-glyph: "🗂️";
+    }
+
+    [data-folder="false"] {
+        --directory-glyph: "☁️";
+    }
+
+    details[open]:has(> [data-session-reply]) > summary > [data-session-excerpt] {
+        display: none;
+    }
+
+    /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
+    :is(#session-conversation, [data-session-reply]) [data-math-error]::after {
+        content: " (" attr(data-math-error) ")";
+    }
+
+    :is(#session-conversation, [data-session-reply]) [data-diagram-error]::after {
+        content: " (" attr(data-diagram-error) ")";
+    }
+
+    /* {§web-code-content} An unavailable highlighter leaves literal code and says so. */
+    :is(#session-conversation, [data-session-reply]) [data-code-error]::after {
+        content: "(" attr(data-code-error) ")";
+    }
+
+    #session-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
+        display: none;
+    }
+
+    [data-reasoning-preview]:has(> pre:empty) {
+        display: none;
+    }
+
+    [data-history-boundary] [data-text="history-error"]:empty {
+        display: none;
+    }
+
+    [hidden] {
+        display: none;
+    }
 }

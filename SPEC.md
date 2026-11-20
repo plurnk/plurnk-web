@@ -44,7 +44,7 @@ More-specific mounts retain their ownership.
 | GET `/icons/plurnk.svg` | Scalable app icon. |
 | GET `/icons/plurnk-maskable.svg` | Maskable app icon. |
 | GET `/icons/NOTO-NOTICE.txt`, `/icons/APACHE-2.0.txt` | Artwork attribution and license. |
-| GET `/vendor/OTM-LICENSE.txt`, `/vendor/PICO-LICENSE.txt`, `/vendor/DEPENDENCIES-LICENSE.txt` | Packaged substrate and bundled JavaScript dependency licenses. |
+| GET `/vendor/OTM-LICENSE.txt`, `/vendor/DEPENDENCIES-LICENSE.txt` | Packaged substrate and bundled JavaScript dependency licenses. |
 | GET `/vendor/<PACKAGE>-LICENSE.txt` | The license text of a bundled package whose npm artifact omits it, retained from the package's published git revision and named for the package (`@scope/name` as `SCOPE-NAME`, uppercase); its `DEPENDENCIES-LICENSE.txt` entry is a heading only. |
 | HEAD on any served path | Same status and headers as GET, without a body. |
 | Other asset path | 404 error document, never a home-page fallback or filesystem listing. |
@@ -198,8 +198,7 @@ persistent browser state or additional session registry.
 |---|---|
 | Registration | At setup the module registers the single stylesheet declared in the compiled document's head as its client's `stylesheetPath`, verifying its presence in the asset inventory. Missing or multiple document stylesheets are build-contract faults. Lazy content-renderer styles are independent assets, never authorization-page dependencies; no alias route or theme setting is added. |
 | Document ownership | The authority owns sign-in, setup/error, consent and session documents, credential validation and security policy. Web supplies neither a form nor an HTML rewrite. The authority selects the stylesheet from the trusted client registration, never arbitrary request input. |
-| Presentation | The same Pico Classless Green, monospace, 65ch measure, light/dark colors, native controls and article cards apply to authorization and web documents. Ordinary authorization pages work without JavaScript. |
-| Production pruning | The public `authorizationDocumentSpecimens()` export from `@plurnk/plurnk-auth` supplies the authority's markup to PurgeCSS. No copied templates or private daemon-source scan. This is a build-time import, not a browser/runtime import. |
+| Presentation | The same OTM classless green substrate, monospace, 65ch measure, light/dark colors, native controls and article cards apply to authorization and web documents. Ordinary authorization pages work without JavaScript. |
 
 The daemon's standalone documents remain its own responsibility when no registered
 module stylesheet applies. Browser coverage exercises the installed module and
@@ -209,8 +208,8 @@ authority together, including empty/wrong passwords and signed-out re-entry.
 
 | Surface | Contract |
 |---|---|
-| GET/HEAD `/account/` or `/account/index.html` | Protected Pico article containing native navigation to Sessions. No displayed internal subject, fictional profile or inline session inventory. |
-| GET/HEAD `/account/sessions/` or `/account/sessions/index.html` | Protected Pico article with Account breadcrumb and a native table of the authenticated subject's live sign-ins from `credentials.sessions(subject)`. No independent inventory. Table overflow stays inside its figure on narrow screens. |
+| GET/HEAD `/account/` or `/account/index.html` | Protected semantic `article` containing native navigation to Sessions. No displayed internal subject, fictional profile or inline session inventory. |
+| GET/HEAD `/account/sessions/` or `/account/sessions/index.html` | Protected semantic `article` with Account breadcrumb and a native table of the authenticated subject's live sign-ins from `credentials.sessions(subject)`. No independent inventory. Table overflow stays inside its figure on narrow screens. |
 | Each sign-in | Authority-issued creation/expiry times and client names; mark the family of the presented web session as “This session”. Do not invent device identity or last activity. Family handles are not credentials. |
 | POST `/account/sessions/<family>/revoke` | Require a live web session and the issuer's exact Origin; revoke only a family in that subject's live inventory. A missing or foreign handle is 404. Revoking this session also clears the web cookie and returns home; otherwise redirect to Sessions. |
 | POST `/account/sessions/revoke-others` | Same admission and Origin check; revoke all listed families except this session, then redirect to Sessions. |
@@ -415,12 +414,12 @@ stateDiagram-v2
 | Transport | A fresh official ACP client using `/acp` (`initialize` advertising `capabilities.session.commands.skill`, then `session/resume` with `replayFrom: { type: "start" }`) and the qualified `sessionId` supplied by the document. No forwarded workspace, action or control claim. `replay_complete` ends historical replay buffering immediately so subsequent live thought chunks and error Problem notices on the resume stream are observed as live, while snapshot and initial state projection settle with `ResumeSessionResponse` (falling back to settlement if `replay_complete` is omitted). A pending review keeps its current client instance and open ACP connection until its held `session/request_permission` or `elicitation/create` requests settle. The SDK and `SessionTranslator` own notification parsing, replay and state updates; a fresh attachment rediscovers current conversation and interrupt continuations. |
 | Credentials | Before each connection, use {§web-access-token}; explicitly anonymous documents send no Authorization header and never call `/auth/token`. An admitted stream outlives access expiry. Credentials live only in the active request/client instance and are released on departure. |
 | Continuity | Standard successful/cancelled turn responses (`stopReason: end_turn | cancelled`), or a `state_update` / JSON-RPC error carrying a session terminal in `data.plurnk.terminal`, ends the delivery; reconnect passively to watch subsequent work. A held observation may finish when its gate settles, before the session concludes: only daemon status/terminal evidence establishes the session outcome. A protocol/credential failure stops observation. An interrupt applies {§web-session-input}: configured approval or explicit input required. Never retry work or infer completion from transport closure. |
-| Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown immediately enters `disconnected`, shows a Pico error card with the initial failure's diagnostic, retains clearly stale last-observed values with frozen clocks, and offers a native Reconnect form inline in the card header beside the connection label. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission cancels any pending backoff and reattaches immediately without navigation, preserving the draft; it never resubmits input. When no mutating prompt or gate decision is in flight or unconfirmed, transient passive-observation losses (stream closure, network failure, `408`, `429`, or `5xx`) schedule bounded jittered exponential-backoff recovery (`1.5s` base up to `30s`, keeping `disconnected` and the initial diagnostic steady without flicker until reattachment succeeds) and retry immediately on `window` `online` or `document` `visibilitychange` to `visible`. Deterministic client/authority/contract refusals (`401`, `403`, `404`, `409`, `422` and malformed protocol or credential payloads) and failed mutating submissions never auto-retry. A revoked/expired browser session (`401`) transitions to `signed-out` and offers native sign-in instead. |
+| Disconnection | Transport/protocol failure, admission refusal, or daemon shutdown immediately enters `disconnected`, shows a semantic error `article` card with the initial failure's diagnostic, retains clearly stale last-observed values with frozen clocks, and offers a native Reconnect form inline in the card header beside the connection label. Credential-response failures describe the status or invalid format, never response bytes or headers. Its enhanced submission cancels any pending backoff and reattaches immediately without navigation, preserving the draft; it never resubmits input. When no mutating prompt or gate decision is in flight or unconfirmed, transient passive-observation losses (stream closure, network failure, `408`, `429`, or `5xx`) schedule bounded jittered exponential-backoff recovery (`1.5s` base up to `30s`, keeping `disconnected` and the initial diagnostic steady without flicker until reattachment succeeds) and retry immediately on `window` `online` or `document` `visibilitychange` to `visible`. Deterministic client/authority/contract refusals (`401`, `403`, `404`, `409`, `422` and malformed protocol or credential payloads) and failed mutating submissions never auto-retry. A revoked/expired browser session (`401`) transitions to `signed-out` and offers native sign-in instead. |
 | Intake | A notification the page cannot take in (an invalid Problem, notice, stream outcome, activity row or history page) ends the observation as a protocol failure, with that failure's diagnostic. |
 | Page lifetime | `pagehide` closes the observation and stops local timers without cancelling the session. A restored page opens a fresh observation. Hidden tabs do not claim or cancel work. |
 | Projection | Public state supplies identity under {§web-session-identity}, status under {§web-session-status}, and the complete descendant census under {§web-session-descendants}. The browser keeps no accounting ledger, inferred topology or transcript cache. |
 | Elapsed | Measure the latest loop from daemon `claimedAt` to `terminatedAt`, or the current clock while connected. Update seconds locally; freeze on disconnect. No claim time means unknown. Local clock arithmetic never changes daemon lifecycle or accounting. |
-| Presentation | The compact footer under {§web-session-status} uses native HTML and OTM text/state projection, ordinary light/dark Pico styling, no application classes or imperative styling. Connection changes and errors are announced separately; ticking gauges are not live announcements. A healthy connection needs no persistent “Connected” label. |
+| Presentation | The compact footer under {§web-session-status} uses native HTML and OTM text/state projection, ordinary light/dark substrate styling, no application classes or imperative styling. Connection changes and errors are announced separately; ticking gauges are not live announcements. A healthy connection needs no persistent “Connected” label. |
 
 Opening the page submits no message and cancels no work. Existing owner proposals
 may receive the configured response under {§web-session-approval}. Message
@@ -472,7 +471,7 @@ submission and explicit cancellation belong to {§web-session-input}.
 
 | Boundary | Contract |
 |---|---|
-| Document | A document-owned OTM template places ⏹️ Stop, capability-gated 📎 Attach image (`[data-attach-image]`), a native textarea named Message with a concise command/shortcut placeholder (`Message (/help · Shift+Tab YOLO)`), and ▶️ Send in one row below status, preceded inside `#session-compose` by an initially hidden `<ul data-compose-suggestions>` list of idle `prompt_suggestions_update` chips, an initially hidden `<ul data-compose-attachments>` queue, and a hidden `<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>`. The textarea starts at one line, grows with content to a bounded viewport-relative height, then scrolls internally; visible action buttons stretch to its height. Send uses Pico's primary palette; Stop, Attach image, and suggestion chips use its secondary tokens. Stop and Send submit independent native forms: Stop neither validates nor resets the message field or queued attachments. Icon-only buttons retain accessible names and native explanatory titles. JavaScript mounts them only on session pages; questions and command results stay in main, not the pinned composer. |
+| Document | A document-owned OTM template places ⏹️ Stop, capability-gated 📎 Attach image (`[data-attach-image]`), a native textarea named Message with a concise command/shortcut placeholder (`Message (/help · Shift+Tab YOLO)`), and ▶️ Send in one row below status, preceded inside `#session-compose` by an initially hidden `<ul data-compose-suggestions>` list of idle `prompt_suggestions_update` chips, an initially hidden `<ul data-compose-attachments>` queue, and a hidden `<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>`. The textarea starts at one line, grows with content to a bounded viewport-relative height, then scrolls internally; visible action buttons stretch to its height. Send uses the substrate's primary palette; Stop, Attach image, and suggestion chips use secondary control tokens. Stop and Send submit independent native forms: Stop neither validates nor resets the message field or queued attachments. Icon-only buttons retain accessible names and native explanatory titles. JavaScript mounts them only on session pages; questions and command results stay in main, not the pinned composer. |
 | Keyboard | On fine-pointer hardware keyboards (`!matchMedia("(pointer: coarse)").matches`), unmodified `Enter` in the message field requests native Send-form submission; on coarse-pointer touch viewports (`(pointer: coarse)`), unmodified `Enter` remains a native newline so virtual keyboards preserve multiline editing alongside the Send button. `Shift+Enter` and `Ctrl+J` insert a newline across all pointer types without triggering browser shortcuts. `Ctrl+Enter` and `Cmd+Enter` (`Meta+Enter`) request native Send-form submission across all pointer types, preserving validation, slash-command routing and delivery availability. In an empty idle message field, unmodified `Tab` accepts the lead `prompt_suggestions_update` suggestion into the draft; clicking any `[data-accept-suggestion]` chip fills and focuses the message field. In the message field, or anywhere on the page while interrupted with pending `session/request_permission` proposals, `Shift+Tab` toggles page-local YOLO approval in place under {§web-session-approval}; elsewhere when no proposal gate is awaiting input, `Shift+Tab` retains ordinary backward focus navigation. `Escape` escalates predictably: in the message field it leaves the field without clearing the draft; inside an open idle model or effort selector it closes the selector and returns focus to its status button under {§web-session-settings}; otherwise outside text-entry controls and open modal `<dialog>` elements it dismisses completed command-result cards first under {§web-session-commands}, then requests Stop when live work is cancellable. Outside text-entry controls and open modal `<dialog>` elements, `/` focuses the message field, `?` opens `/help` (including the keyboard-shortcut reference), and while interrupted with an answerable review form, `y`/`a` selects Accept, `n`/`r` selects Reject, and `e` selects Edit (focusing `[data-proposal-edit-body]`, where `Ctrl/Cmd+Enter` submits the form) on the focused or first unanswered pending proposal fieldset. Composing text and repeated keydown events do not trigger shortcuts. The Send button and `/help` expose platform-aware shortcut hints (`⌘` on Apple platforms, `Ctrl` elsewhere) and accurate `aria-keyshortcuts`. |
 | Focus | The textarea retains a visible inward focus ring, keeping its visual boundary aligned with adjacent buttons as its content grows. Focus does not change the controls' geometry. |
 | Send | Except for client slash commands and local `! <command>` / `plurnk.<tool>(...)` execution under {§web-session-commands}, submit exact nonblank text and/or verified raster image attachments under {§web-inline-images} as one standard `session/prompt` request to `/acp`, on the document's qualified session. Leading `: ` escapes a literal prompt without triggering `/` or `!` / `plurnk.` client dispatch; leading `? <message>` forces manual proposal review for that run even when page-local YOLO is enabled; leading `... <message>` strips the `...` prefix and submits as a follow-up prompt; relative workspace `@<path>` tokens (containing `/` or a file extension, without `..` traversal) populate `_meta.plurnk.openPaths` on project workspaces. When `initialize` negotiates `capabilities.session.prompt.skill.inline`, split inline `$<name>` tokens matching advertised `type: "skill"` entries in `availableCommands` into `{ type: "skill", name }` content blocks alongside `{ type: "text", text }` blocks. New text or a changed attachment set gets a new ID; a deliberate retry of the same unconfirmed draft and attachment set retains its ID for daemon idempotency. Client commands refuse submission while attachments are queued, preserving the queue until removed. Message identity generation works on ordinary HTTP as well as secure contexts; it does not change transport security or authentication policy. A prompt or resolution request declares an attended client and no unimplemented tools; passive connection alone never attaches control. Server permissions remain unchanged. |
@@ -592,7 +591,7 @@ persistence or execution policy. Client commands require no inference.
 |---|---|
 | Order | The always-visible header or summary contains the heading (decorative glyph and authored aside), optional diagnostic, then optional operation operands/counts. Omit absent regions. A diagnostic never replaces authored intent. The body follows these regions. |
 | Interaction | Working operations, observed activity and diagnostics with a nonempty body use native `details/summary`; the existing summary is its control, without a synthetic “View body” label. With no body there is no disclosure. User prompts, assistant/system/developer prose, and `send`, `done` and `fail` replies render directly in their article without an individual card disclosure. Summary and header fields use phrasing content; CSS arranges their rows. Accessible names identify the card or operation-run tally independently of glyphs and include visible diagnostics. |
-| Spacing | Retain Pico card padding and spacing between body paragraphs, without an extra trailing disclosure/content margin or an empty body strip below a header-only card. Multiline summaries retain ordinary line spacing; their chevron stays beside the first row, not on an additional empty row. |
+| Spacing | Retain substrate card padding and spacing between body paragraphs, without an extra trailing disclosure/content margin or an empty body strip below a header-only card. Multiline summaries retain ordinary line spacing; their chevron stays beside the first row, not on an additional empty row. |
 | Defaults | Loop disclosures start open. Contiguous operation-run disclosures and working-operation card disclosures (including `note`, `edit`, ordinary tool evidence, observed activity and completed reasoning) start closed. Each disclosure is independent, never an exclusive accordion. Live reasoning retains its visible bounded preview under {§web-session-reasoning}. |
 | Continuity | Set the initial open state only when creating a disclosure. Surviving disclosures retain the reader's choice across content updates, receipt arrival, paging, replay and reconnect. Preserve unchanged body nodes and selection. No click controller, preference store or body copy in attributes. |
 | Boundaries | Disclosure changes visibility, not content policy or lifecycle. Literal text and sanitized Markdown keep their existing owners. Referenced bodies load only when visible under {§web-result-bodies}; non-image `read` operations remain summary-only, while verified raster image receipts follow {§web-inline-images}. |
@@ -601,15 +600,15 @@ persistence or execution policy. Client commands require no inference.
 
 | Entry | Surface |
 |---|---|
-| User content, including incoming messages annotated as `send`, `done` or `fail` | Distinguishable green tint derived from the active Pico theme with an explicit tinted border; user authorship takes precedence over operation metadata. |
-| Assistant prose and confirmed `send`, `done` and `fail` bodies, including delivered tool-role replies | Ordinary Pico card surface. |
-| Other conversation entries, including assistant tool calls, `note` and reasoning; live reasoning preview | Neutral muted slate sectioning surface derived from Pico's theme tokens. |
+| User content, including incoming messages annotated as `send`, `done` or `fail` | Distinguishable green tint derived from the active substrate theme with an explicit tinted border; user authorship takes precedence over operation metadata. |
+| Assistant prose and confirmed `send`, `done` and `fail` bodies, including delivered tool-role replies | Ordinary substrate card surface. |
+| Other conversation entries, including assistant tool calls, `note` and reasoning; live reasoning preview | Neutral muted slate sectioning surface derived from the substrate's theme tokens. |
 
 Existing role and operation attributes select the category in CSS; no additional
 markup, presentation field or JavaScript classification. An operation's header
 shares its body's background. Normal text and links retain at least 4.5:1 contrast
 in light and dark modes. Accessible identity and content remain independent of
-color. Non-conversation cards retain their existing Pico presentation.
+color. Non-conversation cards retain their existing substrate presentation.
 ## §web-operation-summary Shared operation summary
 
 | Boundary | Contract |
@@ -646,7 +645,7 @@ color. Non-conversation cards retain their existing Pico presentation.
 
 | Boundary | Contract |
 |---|---|
-| Negotiation | Every browser ACP request supplies `_meta.plurnk.reasoning: "link"`, including observation, held observation, prompt submission, resume and management requests. Preserve other request properties. The ACP client keeps the standard empty reasoning messages and their metadata; web never writes preview or fetched text into them. Unnegotiated third-party clients retain the daemon's standard reasoning behavior. |
+| Negotiation | Browser session `session/resume` and `session/prompt` requests supply `_meta.plurnk.reasoning: "link"` and `_meta.plurnk.bodies: "link"`. Preserve other request properties. The ACP client keeps the standard empty reasoning messages, linked receipt references and their metadata; web never writes preview or fetched text into them. Unnegotiated third-party clients retain the daemon's standard inline behavior. |
 | Preview | `agent_thought_chunk` session updates feed one literal-text article outside the message list, with a 💭 header and `<sessionName> > Loop <loop> > Turn <turn>` (or `Loop <loop> > Turn <turn>` when `sessionName` is absent) from `_meta.plurnk` when present. A new attempt replaces its predecessor. A delta must name that active message. No Markdown interpretation, transcript entry, hidden full-trace accumulator or browser persistence. |
 | Retention | `PLURNK_WEB_REASONING_PREVIEW_CHARS` is a positive integer read at module startup and projected explicitly into session documents. Retain only the newest configured number of Unicode code points across fragments. CSS bounds the visible area to one third of the dynamic viewport. Streaming updates do not move focus or announce each token. |
 | Clearing | The matching reasoning-message end clears its preview. Turn start, terminal outcome, delivery failure, delivery handoff and page departure clear it too. Reattachment never reconstructs a preview from snapshots or body links. A link-only repeated start/end cannot clear another attempt's preview. No preview is retained as evidence of a failed request. |
@@ -662,7 +661,7 @@ color. Non-conversation cards retain their existing Pico presentation.
 | Literal content | `note`, reasoning and ordinary operation evidence enter template-owned `pre` elements as text nodes, never Markdown or HTML. Whitespace, entities and tag-shaped strings stay literal; content cannot close its container or create elements. `pre` supplies semantics, not sanitization. No escaping-and-reparsing filter or body copy in attributes. |
 | Ownership | Markdown owns only its content outlet. OTM owns message structure and scoped application state; rendered content cannot become an OTM binding or mutate navigation, credentials or controls. Sanitized fragments are inserted directly; only recognized math, diagram and code outlets receive their bounded enhancements. |
 | Continuity | The same admission boundary applies to every rich-text message and `send` body, including partial updates and replay. Message identities, author/category labels, call arguments, errors and structured payloads remain data, never markup. Rendering performs no model-directed navigation or resource request; ordinary links require user activation. |
-| Build | Parser and sanitizer are bundled only with the session entry and include their licenses. The allowed Markdown elements participate in CSS pruning so production preserves their Pico presentation. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Highlighter code and its palette load only when a language-tagged fence occurs. Only recognized Mermaid blocks request server compilation. Renderer-owned selectors survive pruning. All assets and licenses are locally packaged. |
+| Build | Parser and sanitizer are bundled only with the session entry and include their licenses. The allowed Markdown elements inherit the 5-S substrate presentation directly. Math code and its vendor stylesheet load only when a recognized formula occurs; fonts are requested by the renderer's CSS when needed. Highlighter code and its palette load only when a language-tagged fence occurs. Only recognized Mermaid blocks request server compilation. All assets and licenses are locally packaged. |
 
 ## §web-working-notes Inspectable working material
 
@@ -709,7 +708,7 @@ name or content. This presentation adds no conversation store or protocol role.
 |---|---|
 | Recognition | A fenced block whose first info-string word is a plausible language name (`[a-z0-9][a-z0-9_+#.-]*`, case-folded) marks its `code` with `data-code-lang`; `text`, `txt`, `plain`, `plaintext`, `mermaid`, untagged, indented and inline code do not. Recognition requests nothing; the pinned Highlight.js common language set decides what it can highlight, and an unknown language stays plain. |
 | Interpretation | Highlight.js tokenizes the code's text. Its escaped HTML is read as a token stream and never becomes DOM; the decoded tokens must reproduce the code exactly. Scopes collapse onto a fixed palette registered as `plurnk-code-*` CSS Custom Highlight ranges over the code's single text node. No class, style or element is added to the content; the Markdown allowlist adds only `data-code-lang`. |
-| Presentation | `::highlight()` rules color tokens from a palette with at least 4.5:1 contrast on Pico's code background in light and dark schemes; scheme selection follows the native preference. Selection, copying, wrapping and local scrolling remain those of plain code. |
+| Presentation | `::highlight()` rules color tokens from a palette with at least 4.5:1 contrast on the substrate's code background in light and dark schemes; scheme selection follows the native preference. Selection, copying, wrapping and local scrolling remain those of plain code. |
 | Failure and streaming | Code stays readable literal text while the highlighter loads or if it fails; a failed load marks the outlet `data-code-error` with a local note and reports the error. Each highlight pass releases ranges whose text node has left the document, so replaced generations hold none; an unchanged outlet is highlighted once. |
 | Build | Highlighter code and palette are one lazy chunk with its own stylesheet, loaded on the first marked outlet; ordinary pages download neither. |
 
@@ -768,7 +767,7 @@ limitations do not introduce a second renderer or compatibility polyfill.
 |---|---|
 | Shared navigation | Home/brand and the Workspaces breadcrumb root are real links preceding the single `main` landmark (the workspace index instead marks its root as current); no skip-navigation control. Authenticated documents add Account and a compact secondary Sign Out POST form in the header; no footer logout. Anonymous documents omit account/session controls. Native links and controls retain visible keyboard focus. |
 | Header actions | Mascot-only home link with accessible Plurnk name; its square SVG uses the two-character monospace scale (`2ch`), matching the inline SVG navigation and directory action icons (`Workspaces`, `Account`, `Sign out`, `New workspace`, `Rename workspace`, `Archive workspace`, `New session`, `Archive session`), rather than fixed pixel sizes. Icon-only controls retain explicit accessible names and native explanatory titles. Brand and actions align in one horizontal row, including narrow viewports. The workspace root has an explicit Workspaces accessible name/title, not another menu action; workspace and session names remain text. |
-| Breadcrumb layout | A compact single-row CSS grid keeps the breadcrumb between mascot and menu. Complete names never wrap or abbreviate; overflow scrolls horizontally within the breadcrumb, not the document. Pico's navigation padding belongs inside the breadcrumb's scroll area, with no vertical overflow or clipped content; its keyboard-focus ring stays inward. Native keyboard focus reveals linked ancestors without JavaScript measurements or a responsive navigation widget. The header adds no block padding beyond the top viewport safe-area inset. Keyboard order remains mascot, menu, breadcrumb. |
+| Breadcrumb layout | A compact single-row CSS grid keeps the breadcrumb between mascot and menu. Complete names never wrap or abbreviate; overflow scrolls horizontally within the breadcrumb, not the document. Navigation padding belongs inside the breadcrumb's scroll area, with no vertical overflow or clipped content; its keyboard-focus ring stays inward. Native keyboard focus reveals linked ancestors without JavaScript measurements or a responsive navigation widget. The header adds no block padding beyond the top viewport safe-area inset. Keyboard order remains mascot, menu, breadcrumb. |
 | Disconnection | A decorative inline SVG indicator with an accessible Disconnected name/title appears immediately left of Account when the session or overview observation is disconnected or signed out. It is absent during initial connection, healthy observation and ordinary input interrupts, and on documents without live observation. CSS projects the existing observed connection state (never `navigator.onLine` guesswork); `online` and `visibilitychange` events only trigger an actual passive reattachment attempt under {§web-session-observer}, with no duplicate state or new action. Existing failure details and recovery controls remain available. |
 | Document title | Home: `Plurnk`. Directory/error: its identity or HTTP status followed by ` — Plurnk`. Home and directory pages omit duplicate headings; the breadcrumb identifies the current session. Account and error pages retain one `h1`. |
 | Directory breadcrumbs | Workspaces icon → whole workspace name → session; only applicable ancestors appear. Non-directory pages retain the root link, including Account/session navigation. The current item is text marked `aria-current="page"`. The workspace-page marker follows {§web-workspace-folder}. Slashes in names do not invent intermediate directories. |
@@ -776,7 +775,7 @@ limitations do not introduce a second renderer or compatibility polyfill.
 | Page width | Account and error documents retain a centered 65ch reading measure. Home, Workspaces, Workspace and Session share the available viewport width. Gutters, safe-area insets and wrapping preserve narrow-screen and edge-to-edge standalone usability and complete names. |
 | Viewport layout | Home and directory/session documents use a viewport-height CSS grid: stationary header, optional workspace tab bar under {§web-workspace-tabs}, scrollable main, and (on sessions) stationary status/composer footer. Native viewport resizing and textarea sizing handle changing available space; no measured offsets or JavaScript layout controller. Main retains conversation, settings, reviews, detailed connection/message feedback and command results. Reading/form documents retain ordinary page flow. |
 | Directory entries | Native lists use `li > article`. Workspace headers retain folder/cloud identity; session cards use the identity/disclosure under {§web-session-directory}. Accessible names do not depend on CSS glyphs. Preserve nested child disclosures and the daemon's membership/order; no second browser directory or custom tree widget. |
-| Expected HTTP failures | A Pico `article` card within the same HTML shell: heading, decorative warning emoji, escaped explanation and native Home link. Preserve status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
+| Expected HTTP failures | A semantic `article` card within the same HTML shell: heading, decorative warning emoji, escaped explanation and native Home link. Preserve status/Allow/HEAD semantics and private headers from {§web-directory-documents}. Do not echo URLs, credentials or internal exceptions. Unknown internal failures still propagate to the host. |
 
 The compiled root document owns shared navigation and assets, including an inert
 template for authenticated navigation. OTM's documented indirect-template marker
@@ -786,10 +785,10 @@ daemon state supplies every workspace and session inventory, with no browser-own
 
 ## §web-document Document
 
-The home document renders the daemon-wide session overview. The document initializes OTM from locally packaged ES modules. Locally packaged Pico Classless Green styles semantic elements
+The home document renders the daemon-wide session overview. The document initializes OTM from locally packaged ES modules. Locally packaged OTM Classless Green (`on_the_money/css/schema` and `on_the_money/css/schemes/green`) styles semantic elements
 without application classes. Brand green is `#148800`; dark-mode link colors remain
-bright enough for contrast. Native color-scheme selection is preserved; typography
-uses Pico's system monospace stack and a shared numeric line-height token of 1.25.
+bright enough for contrast. Native color-scheme selection is preserved via CSS `light-dark()`; typography
+uses the substrate's system monospace stack and a shared numeric line-height token of 1.25.
 Content and styling
 work without JavaScript.
 There is no theme switcher, client-only route table, persistent `localStorage`, or external
@@ -798,17 +797,18 @@ under {§web-workspace-tabs}, and tab-ephemeral `sessionStorage` holds only unse
 drafts under {§web-session-input}. The root links to the directory index. Protected
 directory documents supply daemon identities as escaped HTML, never credentials.
 
-Source stylesheets load in this order, with one concern per file. Production
+Source stylesheets load in the 5-S `@layer schema, scheme, structure, style, state;` cascade order, with one concern per layer. Production
 compilation may combine them without changing their cascade:
 
-| File | Responsibility |
+| Layer | Responsibility |
 |---|---|
-| `app-vendor.css` | Unmodified pinned Pico Classless Green, copied during build. |
-| `app-structure.css` | Readable page width, gutters and wrapping. |
-| `app-style.css` | Presentation through substrate tokens; brand accents, system monospace and conversation surface colors. |
-| `app-state.css` | Session page width, semantic background selection, observer connection/error presentation and native focus visibility. |
+| `on_the_money/css/schema` (`@layer schema`) | Classless semantic HTML foundation and `light-dark()` tokens. |
+| `on_the_money/css/schemes/green` (`@layer scheme`) | Green palette scheme. |
+| `app-structure.css` (`@layer structure`) | Readable page width, gutters, grouped controls and wrapping. |
+| `app-style.css` (`@layer style`) | Presentation through `--otm-*` substrate tokens; brand accents, system monospace and conversation surface colors. |
+| `app-state.css` (`@layer state`) | Session page width, semantic background selection, observer connection/error presentation and native focus visibility. |
 
-Session content, diagnostics and status inherit Pico's typography and colors.
+Session content, diagnostics and status inherit the substrate's typography and colors.
 Additional session CSS supplies geometry, overflow containment, declared glyphs,
 visibility and the three backgrounds in {§web-conversation-surfaces}, not a
 separate component theme. Layout uses
@@ -841,7 +841,7 @@ storage even when storage is denied. No language picker or additional locale is 
 | Boundary | Contract |
 |---|---|
 | Scripts and styles | Same-origin resources only; no inline execution or dynamic code generation. Browser schema validation runs without JIT, configured before SDK schema initialization. |
-| Images | Same-origin and data-URI images, including Pico's embedded SVG controls. This permission does not extend to scripts, styles or connections. |
+| Images | Same-origin and data-URI images, including compiled diagram and raster attachment data URIs. This permission does not extend to scripts, styles or connections. |
 | Other directives | Default same-origin; no objects, base URL changes or framing. Forms submit to the same origin. |
 | Browser gate | Capture console warnings/errors and uncaught exceptions from document, authentication, directory, SDK and actual session journeys. Healthy paths produce none. Negative cases assert their specific expected diagnostics; no blanket filtering of CSP or SDK errors. |
 | Content checks | Adversarial compiled-renderer tests exercise HTML/SVG, executable URL schemes, application-binding injection, literal fields, streaming and replay in Chromium and Firefox. Assert preserved application structure, inert rejected links, no model-directed requests or new browsing contexts, and clean diagnostics. Math additionally exercises untrusted extensions, macro isolation and delayed rendering. A packed authenticated session receives hostile `note` and answer bodies through real SDK delivery and refresh. These checks verify concrete cases, not a claim of exhaustive security assurance. |
@@ -859,23 +859,21 @@ checkout. This checks traceability, not whether a cited test proves its contract
 | Command | Contract |
 |---|---|
 | `npm run dev` | Prepare static assets, then serve `web/` through Vite on loopback with HTML reload and CSS hot updates. No daemon or model is started. |
-| `node --import ./scripts/dev-loader.mjs` | Redirect `@plurnk/plurnk-web/module` in a development daemon checkout to `scripts/dev-module.mjs`, recompiling `web/` and reloading `src/documents.js` into a disposable directory when source files change while preserving production CSP, PurgeCSS pruning and registered OAuth stylesheet routing without restarting the daemon. Never packaged in the npm archive. |
+| `node --import ./scripts/dev-loader.mjs` | Redirect `@plurnk/plurnk-web/module` in a development daemon checkout to `scripts/dev-module.mjs`, recompiling `web/` and reloading `src/documents.js` into a disposable directory when source files change while preserving production CSP, Brotli/gzip asset negotiation and registered OAuth stylesheet routing without restarting the daemon. Never packaged in the npm archive. |
 | `npm run build` | Prepare assets, clean and compile into `dist/`, then generate `dist/assets.json` from the complete output. |
 | `npm run preview` | Locally preview the last build through Vite; not a production server. |
 | Daemon startup | Load the inventory and every listed production asset; serve them through the module's existing mount. No Vite runtime or development server in the published module. |
 
 `web/index.html` owns the document, `web/app.js` imports OTM's npm entry,
-and `web/public/` supplies unchanged public assets. The four CSS source
-concerns remain under `web/styles/`. Generated output is packed, not committed.
+and `web/public/` supplies unchanged public assets. The application CSS source
+layers remain under `web/styles/`. Generated output is packed, not committed.
 Production contains no development-client injection, frontend sources, or source maps.
 Current stable browsers are the supported platform. Compile native modern syntax;
 do not add legacy browser transforms or a module-preload polyfill.
-Development serves readable, complete Pico Classless Green. A CSS import entry
-composes all four layers before production pruning. PostCSS/PurgeCSS scans the
-browser source and server document renderer, preserves browser pseudo-states and
-ARIA/role/data-driven states, and removes unused rules, variables and keyframes.
-Vite then minifies the result. Browser coverage verifies the compiled presentation,
-including error cards, native controls, light/dark mode and narrow viewports.
+A CSS import entry composes the 5-S `@layer schema, scheme, structure, style, state;`
+cascade directly from `on_the_money/css` and `web/styles/`, which Vite bundles and
+minifies without heuristic selector pruning. Browser coverage verifies the compiled
+presentation, including error cards, native controls, light/dark mode and narrow viewports.
 
 ## §web-installation App identity and installation
 
@@ -899,7 +897,7 @@ References: [installability](https://developer.mozilla.org/en-US/docs/Web/Progre
 
 The npm archive exports `./module` and `./package.json` and includes the native module,
 root `.env.defaults`, document and its complete browser dependency graph, including OTM,
-Pico, the ACP SDK and artwork licenses, and declares its peer ranges on the platform's
+the ACP SDK and artwork licenses, and declares its peer ranges on the platform's
 contracts, modules, auth and ACP packages.
 Tests and build tooling are not runtime inputs. Verification installs the archive
 beside candidate service archives in an isolated environment and exercises actual module

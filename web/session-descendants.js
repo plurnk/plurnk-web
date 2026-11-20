@@ -23,8 +23,8 @@ export default function sessionDescendants(element) {
             const path = directoryPath({ kind: "session", workspace, session: session.name });
             if (path === null) throw new Error("Descendant has no directory address.");
             the(row, {
-                descendantId: session.id, descendantName: session.name, descendantPath: path,
-                descendantKind: session.kind, descendantLifecycle: session.lifecycle, descendantGates: gateCount(session.gates),
+                "descendant-id": session.id, "descendant-name": session.name, "descendant-path": path,
+                "descendant-kind": session.kind, "descendant-lifecycle": session.lifecycle, "descendant-gates": gateCount(session.gates),
             });
             let branch = $(row, ":scope > details");
             if (children.length) {

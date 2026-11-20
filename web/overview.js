@@ -97,7 +97,7 @@ export default function observeOverview(main) {
         const token = Symbol("reply-read");
         activeTokens.set(outlet, token);
         inFlight.set(outlet, address);
-        the(outlet, "bodyState", "loading");
+        the(outlet, "body-state", "loading");
         outlet.setAttribute("aria-busy", "true");
         outlet.removeAttribute("role");
         outlet.replaceChildren();
@@ -106,14 +106,14 @@ export default function observeOverview(main) {
             if (!outlet.isConnected || activeTokens.get(outlet) !== token || outlet.getAttribute("data-session-reply") !== address) return;
             outlet.replaceChildren(markdown(source, `reply-${++replyCounter}`));
             outlet.dataset.replyLoaded = address;
-            the(outlet, "bodyState", "loaded");
+            the(outlet, "body-state", "loaded");
         } catch (error) {
             if (!outlet.isConnected || activeTokens.get(outlet) !== token || outlet.getAttribute("data-session-reply") !== address) return;
             if (error instanceof DOMException && error.name === "AbortError") return;
             const message = $.clone(outlet, "#conversation-literal");
             message.textContent = error instanceof Error ? error.message : String(error);
             message.setAttribute("role", "alert");
-            the(outlet, "bodyState", "error");
+            the(outlet, "body-state", "error");
             const retry = $.clone(outlet, "#conversation-body-retry");
             on(retry, "submit", "form", (event) => {
                 event.preventDefault();

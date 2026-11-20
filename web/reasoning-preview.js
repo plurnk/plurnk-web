@@ -14,7 +14,7 @@ export default function reasoningPreview(root, limit) {
     if (!(scroll instanceof HTMLElement)) throw new Error("Reasoning preview has no text outlet.");
     const text = scroll;
     const clear = () => {
-        the(outlet, { reasoningId: "", reasoningCoordinate: "" });
+        the(outlet, { "reasoning-id": "", "reasoning-coordinate": "" });
         text.replaceChildren();
     };
     clear();
@@ -53,7 +53,7 @@ export default function reasoningPreview(root, limit) {
             }
             if (update.messageId !== the(outlet, "reasoning-id")) {
                 clear();
-                the(outlet, { reasoningId: update.messageId, reasoningCoordinate: reasoningCoordinate(metaPlurnk) });
+                the(outlet, { "reasoning-id": update.messageId, "reasoning-coordinate": reasoningCoordinate(metaPlurnk) });
             } else if (metaPlurnk !== undefined) {
                 the(outlet, "reasoning-coordinate", reasoningCoordinate(metaPlurnk));
             }

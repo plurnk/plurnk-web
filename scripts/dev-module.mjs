@@ -3,14 +3,15 @@ import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseEnv } from "node:util";
+import { parseEnv, promisify } from "node:util";
+import { brotliCompress, gzip } from "node:zlib";
 import { build } from "vite";
-import purgeCSSModule from "@fullhuman/postcss-purgecss";
-import { authorizationDocumentSpecimens } from "@plurnk/plurnk-auth";
 import createModule from "../src/module.js";
 import prepareAssets from "./assets.mjs";
 
-const purgeCSS = /** @type {typeof purgeCSSModule.default} */ (/** @type {unknown} */ (purgeCSSModule));
+const compressBrotli = promisify(brotliCompress);
+const compressGzip = promisify(gzip);
+const CODECS = /** @type {const} */ ([["br", compressBrotli], ["gzip", compressGzip]]);
 
 /** @type {Record<string, string>} */
 const MEDIA_TYPES = {
@@ -26,17 +27,20 @@ const MEDIA_TYPES = {
 };
 
 /**
+ * {§web-asset-encoding} Pre-compress live assets in memory with the same Brotli/gzip discipline as dist/.
  * @param {import("../src/module.js").LoadedAsset["body"]} body
  * @param {string} mediaType
- * @returns {import("../src/module.js").LoadedAsset}
+ * @returns {Promise<import("../src/module.js").LoadedAsset>}
  */
-function identityAsset(body, mediaType) {
-    return {
-        body,
-        mediaType,
-        representations: new Map([["identity", body]]),
-        preferred: ["identity"],
-    };
+async function encodeAsset(body, mediaType) {
+    /** @type {Array<readonly [string, import("../src/module.js").LoadedAsset["body"]]>} */
+    const variants = mediaType === "text/html" ? [] : (await Promise.all(CODECS.map(async ([encoding, compress]) => {
+        const bytes = /** @type {import("../src/module.js").LoadedAsset["body"]} */ (await compress(body));
+        return bytes.byteLength < body.byteLength ? /** @type {const} */ ([encoding, bytes]) : null;
+    }))).filter((entry) => entry !== null);
+    const representations = new Map([["identity", body], ...variants]);
+    const preferred = [...representations].toSorted(([, a], [, b]) => a.byteLength - b.byteLength).map(([encoding]) => encoding);
+    return { body, mediaType, representations, preferred };
 }
 
 /** @param {string} directory */
@@ -56,7 +60,7 @@ async function treeSignature(directory) {
 /**
  * {§web-build} Live-source development module: compiles web/ + src/documents.js into a
  * disposable directory whenever source mtime/size changes, preserving production CSP,
- * PurgeCSS pruning, and OAuth stylesheet registration without restarting the daemon.
+ * compressed asset negotiation, and OAuth stylesheet registration without restarting the daemon.
  *
  * @param {{
  *   webRoot?: URL,
@@ -85,7 +89,7 @@ export default function createDevModule(options = {}) {
     let generation = 0;
     /** @type {typeof import("../src/documents.js").default | null} */
     let DocumentsClass = null;
-    /** @type {{ documents: import("../src/documents.js").default, resources: Map<string, ReturnType<typeof identityAsset>>, stylesheetPath: string } | null} */
+    /** @type {{ documents: import("../src/documents.js").default, resources: Map<string, import("../src/module.js").LoadedAsset>, stylesheetPath: string } | null} */
     let compiled = null;
     /** @type {Promise<void> | null} */
     let building = null;
@@ -114,22 +118,6 @@ export default function createDevModule(options = {}) {
                 configFile,
                 root: webDir,
                 logLevel: "error",
-                css: {
-                    postcss: {
-                        plugins: [purgeCSS({
-                            content: [
-                                join(webDir, "**/*.{html,js}"),
-                                documentsPath,
-                                fileURLToPath(import.meta.resolve("temml/dist/Temml-Local.css")),
-                                ...authorizationDocumentSpecimens().map((raw) => ({ raw, extension: "html" })),
-                            ],
-                            defaultExtractor: (content) => content.match(/[A-Za-z0-9_-]+/gu) ?? [],
-                            safelist: { standard: [/^:/], deep: [/aria-/, /data-/] },
-                            variables: true,
-                            keyframes: true,
-                        })],
-                    },
-                },
                 build: {
                     outDir,
                     emptyOutDir: true,
@@ -137,15 +125,15 @@ export default function createDevModule(options = {}) {
             });
             const entries = (await readdir(outDir, { recursive: true, withFileTypes: true }))
                 .filter((entry) => entry.isFile());
-            /** @type {Map<string, import("../src/module.js").LoadedAsset>} */
-            const resources = new Map();
-            for (const entry of entries) {
+            const assetPairs = await Promise.all(entries.map(async (entry) => {
                 const full = resolve(entry.parentPath, entry.name);
                 const rel = relative(outDir, full).replaceAll("\\", "/");
                 const mediaType = MEDIA_TYPES[extname(rel)];
                 if (!mediaType) throw new Error(`Undeclared media type for built asset: ${rel}`);
-                resources.set(`/${rel}`, identityAsset(await readFile(full), mediaType));
-            }
+                return /** @type {const} */ ([`/${rel}`, await encodeAsset(await readFile(full), mediaType)]);
+            }));
+            /** @type {Map<string, import("../src/module.js").LoadedAsset>} */
+            const resources = new Map(assetPairs);
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
             const stylesheetPath = DocumentsClass.stylesheet(root.body.toString("utf8"));

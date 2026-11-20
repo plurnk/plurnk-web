@@ -1,5 +1,4 @@
 import { $, the } from "on_the_money";
-import { Validator } from "@plurnk/plurnk-contracts";
 import card, { nameCard } from "./card.js";
 
 /** @param {import("@plurnk/plurnk-contracts").Notice} notice */
@@ -42,6 +41,7 @@ export default function diagnostics(root) {
                     && Reflect.get(plurnk.notice, "kind") === "search_progress"
                     && Reflect.get(plurnk.notice, "phase") !== "failed"))) return;
         const value = isNotice ? plurnk.notice : plurnk.problem;
+        const { Validator } = await import("@plurnk/plurnk-contracts");
         const fields = isNotice ? noticeFields(Validator.assertNotice(value))
             : problemFields(Validator.assertProblemDetails(value));
         const attribution = typeof plurnk.subagentRunId === "string" ? plurnk.subagentRunId : "";
@@ -52,10 +52,10 @@ export default function diagnostics(root) {
         const severity = { info: "Information", warn: "Warning", error: "Error" }[fields.diagnosticLevel];
         const row = $.clone(list, "#session-diagnostic");
         the(row, {
-            diagnosticLevel: fields.diagnosticLevel,
-            diagnosticType,
-            diagnosticLabel: [severity, diagnosticTitle, attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
-            subagentRunId: attribution || null,
+            "diagnostic-level": fields.diagnosticLevel,
+            "diagnostic-type": diagnosticType,
+            "diagnostic-label": [severity, diagnosticTitle, attribution ? `Subagent ${attribution}` : null].filter(Boolean).join(" · "),
+            "subagent-run-id": attribution || null,
         });
         const { header, body } = card(row, Boolean(fields.body));
         $.clone(header, "#operation-header").textContent = fields.heading;

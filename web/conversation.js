@@ -334,16 +334,16 @@ export default function conversation(root, readBody) {
     function directImage(outlet, encoded, label) {
         const holder = $.clone(outlet, "#conversation-image-reference");
         if (label) holder.setAttribute("aria-label", label);
-        the(holder, { bodyState: "loading", bodyPending: "true" });
+        the(holder, { "body-state": "loading", "body-pending": "true" });
         void mountRasterImage(holder, encoded, label).then(
             () => {
-                if (holder.isConnected) the(holder, { bodyState: "loaded", bodyPending: null });
+                if (holder.isConnected) the(holder, { "body-state": "loaded", "body-pending": null });
             },
             (error) => {
                 if (!holder.isConnected) return;
                 holder.textContent = error instanceof Error ? error.message : String(error);
                 holder.setAttribute("role", "alert");
-                the(holder, { bodyState: "error", bodyPending: null });
+                the(holder, { "body-state": "error", "body-pending": null });
             },
         );
     }
@@ -405,19 +405,19 @@ export default function conversation(root, readBody) {
             : message.role === "activity" ? message.activityType : labels[message.role];
         const author = "name" in message ? message.name : undefined;
         the(row, {
-            messageId: message.id,
-            messageRole: message.role,
-            messageLabel: [label, author, message.subagentRunId ? `Subagent ${message.subagentRunId}` : null].filter(Boolean).join(" · "),
-            messageAuthor: author ?? null,
-            subagentRunId: message.subagentRunId ?? null,
-            messageError: error ? true : null,
-            toolCallId: message.role === "tool" ? message.toolCallId : null,
-            callId: call?.toolCallId ?? null,
-            plurnkType: typeof op === "string" ? op : null,
-            plurnkSession: typeof facts?.sessionId === "number" ? facts.sessionId : null,
-            plurnkStatus: typeof receipt?.status === "number" ? receipt.status : typeof facts?.status === "number" ? facts.status : null,
-            plurnkSignal: typeof receipt?.completion === "number" ? receipt.completion : typeof facts?.signal === "number" ? facts.signal : null,
-            plurnkState: typeof facts?.state === "string" ? facts.state : null,
+            "message-id": message.id,
+            "message-role": message.role,
+            "message-label": [label, author, message.subagentRunId ? `Subagent ${message.subagentRunId}` : null].filter(Boolean).join(" · "),
+            "message-author": author ?? null,
+            "subagent-run-id": message.subagentRunId ?? null,
+            "message-error": error ? true : null,
+            "tool-call-id": message.role === "tool" ? message.toolCallId : null,
+            "call-id": call?.toolCallId ?? null,
+            "plurnk-type": typeof op === "string" ? op : null,
+            "plurnk-session": typeof facts?.sessionId === "number" ? facts.sessionId : null,
+            "plurnk-status": typeof receipt?.status === "number" ? receipt.status : typeof facts?.status === "number" ? facts.status : null,
+            "plurnk-signal": typeof receipt?.completion === "number" ? receipt.completion : typeof facts?.signal === "number" ? facts.signal : null,
+            "plurnk-state": typeof facts?.state === "string" ? facts.state : null,
         });
         const linked = message.role === "reasoning" ? message._meta?.plurnk?.body : undefined;
         if (linked !== undefined && (typeof linked?.url !== "string" || typeof linked?.mimeType !== "string")) {
@@ -497,7 +497,7 @@ export default function conversation(root, readBody) {
         const list = [...buckets.values()];
         the(opsRow, {
             operations: items[0].key,
-            operationsLabel: list.map((b) => `${b.label} ${b.count}`).join(" · "),
+            "operations-label": list.map((b) => `${b.label} ${b.count}`).join(" · "),
         });
         const line = $(opsRow, ":scope > details > summary > span");
         if (!line) return;
@@ -507,7 +507,7 @@ export default function conversation(root, readBody) {
         for (const [index, b] of list.entries()) {
             if (index > 0) line.append(" · ");
             const tally = $.clone(line, "#operation-tally");
-            the(tally, { operationTally: b.tally });
+            the(tally, { "operation-tally": b.tally });
             const heading = $(tally, '[data-plurnk-field="heading"]');
             if (heading) heading.textContent = b.heading;
             const count = $(tally, '[data-plurnk-field="count"]');
@@ -619,7 +619,7 @@ export default function conversation(root, readBody) {
                 if (!(cloned instanceof HTMLElement)) throw new Error("Loop template must contain an HTML element.");
                 loopRow = cloned;
             }
-            the(loopRow, { loopSeq: seq });
+            the(loopRow, { "loop-seq": seq });
             const loopList = $(loopRow, ":scope > details > ul");
             if (!(loopList instanceof HTMLUListElement)) throw new Error("Loop disclosure has no list.");
 

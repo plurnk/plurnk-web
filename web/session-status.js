@@ -56,7 +56,7 @@ export function clocks(status, now) {
     return {
         elapsed: elapsed(status, now),
         wait: status.waitUntil === null ? "" : duration(Math.max(0, Math.ceil((status.waitUntil - now) / 1000))),
-        waitAt: status.waitUntil === null ? null : new Date(status.waitUntil).toISOString(),
+        "wait-at": status.waitUntil === null ? null : new Date(status.waitUntil).toISOString(),
     };
 }
 
@@ -116,17 +116,17 @@ export function gauges(status, budget) {
     return {
         lifecycle: status.lifecycle,
         input: input.text, output: output.text, cost: price.text === "?" ? "$?" : price.text,
-        usageLabel: `Cumulative tokens, session and descendants. Input: ${input.exact}. Output: ${output.exact}.`,
-        costLabel: `Cumulative USD, session and descendants: ${price.exact}.`,
+        "usage-label": `Cumulative tokens, session and descendants. Input: ${input.exact}. Output: ${output.exact}.`,
+        "cost-label": `Cumulative USD, session and descendants: ${price.exact}.`,
         model: model === null ? "No model" : model.alias || `${model.provider}/${model.model}`,
         effort: model?.effort ?? "",
-        modelLabel: model === null ? "No model selected" : `Model: ${model.provider}/${model.model}${model.effort ? `; effort: ${model.effort}${model.effortSource ? ` (${model.effortSource})` : ""}` : ""}`,
+        "model-label": model === null ? "No model selected" : `Model: ${model.provider}/${model.model}${model.effort ? `; effort: ${model.effort}${model.effortSource ? ` (${model.effortSource})` : ""}` : ""}`,
         descendants: String(status.descendants.length),
-        descendantsLabel: `Descendant sessions: ${status.descendants.length}; active direct children: ${children}`,
-        gated: String(gated), gatedLabel: `Descendant sessions awaiting input: ${gated}`,
+        "descendants-label": `Descendant sessions: ${status.descendants.length}; active direct children: ${children}`,
+        gated: String(gated), "gated-label": `Descendant sessions awaiting input: ${gated}`,
         context: occupancy(budget?.contextTokens, budget?.contextCapacity),
-        contextLabel: `Current packet context: ${budget?.contextTokens ?? "unknown"} / ${budget?.contextCapacity ?? "unknown"} tokens`,
-        inbox: String(status.inbox.length), inboxLabel: `Accepted messages not yet observed: ${status.inbox.length}`,
+        "context-label": `Current packet context: ${budget?.contextTokens ?? "unknown"} / ${budget?.contextCapacity ?? "unknown"} tokens`,
+        inbox: String(status.inbox.length), "inbox-label": `Accepted messages not yet observed: ${status.inbox.length}`,
     };
 }
 

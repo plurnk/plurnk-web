@@ -1,5 +1,5 @@
 import { $, the } from "on_the_money";
-import { isRecord } from "@plurnk/plurnk-contracts";
+import { isRecord } from "./session-translator.js";
 
 /**
  * {§web-session-commands} {§web-workspace-settings} Extracts effective environment entries without exposing secret values.
@@ -38,13 +38,13 @@ export function populateEnvPanel(panel, res, listScope) {
     const entries = extractEnvEntries(res, listScope);
     $.cloneEach(tbody, "#command-env-row", entries, (tr, entry) => {
         the(tr, {
-            envAlias: entry.alias,
-            envOrigin: entry.origin,
-            envStatus: entry.source ? `${entry.state} (${entry.source})` : entry.state,
-            envRemovable: entry.origin === "session" || entry.origin === "workspace" ? "true" : "false",
-            envEnabled: entry.state !== "disabled" ? "true" : "false",
+            "env-alias": entry.alias,
+            "env-origin": entry.origin,
+            "env-status": entry.source ? `${entry.state} (${entry.source})` : entry.state,
+            "env-removable": entry.origin === "session" || entry.origin === "workspace" ? "true" : "false",
+            "env-enabled": entry.state !== "disabled" ? "true" : "false",
         });
     });
-    the(panel, { envCount: entries.length, envBusy: null });
+    the(panel, { "env-count": entries.length, "env-busy": null });
     return entries.length;
 }

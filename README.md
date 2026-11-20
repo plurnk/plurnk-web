@@ -38,7 +38,7 @@ Navigation never creates state or starts inference; closing or reloading a page 
 ```sh
 npm ci --no-audit --no-fund
 npm run dev                                        # standalone Vite frontend server
-npm run build                                      # compile pruned production assets into dist/
+npm run build                                      # compile production assets into dist/
 npm test                                           # spec-check, lint, OTM contracts, Chromium/Firefox/WebKit suites
 npm run test:candidate -- /path/to/packed-packages # clean-clone packed-tarball + PTY/Playwright gate
 ```
@@ -53,10 +53,11 @@ node --conditions=plurnk-dev --import /path/to/plurnk-web/scripts/dev-loader.mjs
 
 | Layer | Role |
 | --- | --- |
-| `app-vendor.css` | Generated Pico Classless Green substrate. |
-| `app-structure.css` | Viewport grid, reading width, composer sizing, local horizontal scroll. |
-| `app-style.css` | `#148800` brand accents, system monospace, light/dark conversation surface tokens. |
-| `app-state.css` | Glyphs, semantic card states, connection indicators, focus visibility. |
+| `on_the_money/css/schema` (`@layer schema`) | Classless semantic HTML foundation and `light-dark()` tokens. |
+| `on_the_money/css/schemes/green` (`@layer scheme`) | Green palette scheme. |
+| `app-structure.css` (`@layer structure`) | Viewport grid, reading width, composer sizing, local horizontal scroll. |
+| `app-style.css` (`@layer style`) | `#148800` brand accents, system monospace, light/dark conversation surface tokens. |
+| `app-state.css` (`@layer state`) | Glyphs, semantic card states, connection indicators, focus visibility. |
 
 ## License
 

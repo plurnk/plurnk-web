@@ -1,90 +1,107 @@
-:root {
-    --pico-font-family: var(--pico-font-family-monospace);
-    --pico-line-height: 1.25;
+@layer style {
+    :root {
+        --otm-font-family: var(--otm-font-family-monospace);
+        --otm-primary: light-dark(#148800, #4eb31b);
+        --otm-primary-hover: light-dark(#106d00, #72cc46);
+        --otm-primary-underline: light-dark(rgb(20 136 0 / 50%), rgb(78 179 27 / 50%));
+        --otm-primary-background: #148800;
+        --otm-primary-hover-background: #106d00;
+        --otm-primary-focus: rgb(20 136 0 / 50%);
+        --otm-primary-inverse: #fff;
+        --otm-text-selection-color: rgb(20 136 0 / 25%);
+        --otm-secondary-background: #525f7a;
+        --otm-secondary-hover-background: light-dark(#48536b, #5d6b89);
+        --otm-secondary-inverse: #fff;
+        --otm-secondary-focus: light-dark(rgb(93 107 137 / 25%), rgb(144 158 190 / 25%));
 
-    /* {§web-conversation-surfaces} Resolve theme surfaces before per-entry overrides. */
-    --plurnk-user-surface: color-mix(in srgb, var(--pico-primary) 12%, var(--pico-card-background-color));
-    --plurnk-user-border: color-mix(in srgb, var(--pico-primary) 28%, var(--pico-card-border-color));
-    --plurnk-reply-surface: var(--pico-card-background-color);
-    --plurnk-working-surface: color-mix(in srgb, var(--pico-color) 6%, var(--pico-card-background-color));
-}
-
-header nav button,
-nav[aria-label="breadcrumb"] button,
-#workspace-tabs > button,
-#dialog-workspace-settings [data-settings-nav] button,
-#session-status [data-status-line] button,
-#session-compose [data-remove-attachment],
-#session-onboarding-banner [data-dismiss-onboarding],
-#session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
-    --pico-primary-background: transparent;
-    --pico-primary-border: transparent;
-    --pico-primary-hover-background: transparent;
-    --pico-primary-hover-border: transparent;
-    --pico-primary-inverse: var(--pico-primary);
-
-    cursor: pointer;
-}
-
-/* {§web-session-input} Cancellation and attachment controls use Pico's secondary control palette. */
-button[form="session-stop"],
-button[data-attach-image],
-button[data-accept-suggestion],
-button[data-cancel-settings],
-dialog button[data-dialog-close]:not([rel="prev"]) {
-    --pico-primary-background: var(--pico-secondary-background);
-    --pico-primary-border: var(--pico-secondary-border);
-    --pico-primary-hover-background: var(--pico-secondary-hover-background);
-    --pico-primary-hover-border: var(--pico-secondary-hover-border);
-    --pico-primary-inverse: var(--pico-secondary-inverse);
-    --pico-primary-focus: var(--pico-secondary-focus);
-}
-
-:root:not([data-theme="dark"]),
-[data-theme="light"] {
-    --pico-primary: #148800;
-    --pico-primary-underline: rgb(20 136 0 / 50%);
-    --pico-primary-hover: #106d00;
-    --plurnk-diff-add-surface: #e4f6e2;
-    --plurnk-diff-add-color: #0e5a00;
-    --plurnk-diff-del-surface: #fce6e6;
-    --plurnk-diff-del-color: #8a1616;
-    --plurnk-diff-hunk-surface: #e8eef8;
-    --plurnk-diff-hunk-color: #1c4480;
-    --plurnk-diff-meta-color: #464e5c;
-}
-
-[data-theme="dark"] {
-    --plurnk-diff-add-surface: #132d14;
-    --plurnk-diff-add-color: #96ec82;
-    --plurnk-diff-del-surface: #36171a;
-    --plurnk-diff-del-color: #ffb3b3;
-    --plurnk-diff-hunk-surface: #17253d;
-    --plurnk-diff-hunk-color: #9ec5ff;
-    --plurnk-diff-meta-color: #b4bdcd;
-}
-
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-        --pico-primary: #4eb31b;
-        --pico-primary-underline: rgb(78 179 27 / 50%);
-        --pico-primary-hover: #72cc46;
-        --plurnk-diff-add-surface: #132d14;
-        --plurnk-diff-add-color: #96ec82;
-        --plurnk-diff-del-surface: #36171a;
-        --plurnk-diff-del-color: #ffb3b3;
-        --plurnk-diff-hunk-surface: #17253d;
-        --plurnk-diff-hunk-color: #9ec5ff;
-        --plurnk-diff-meta-color: #b4bdcd;
+        /* {§web-conversation-surfaces} Resolve theme surfaces before per-entry overrides. */
+        --plurnk-user-surface: color-mix(in srgb, var(--otm-primary) 12%, var(--otm-card-background-color));
+        --plurnk-user-border: color-mix(in srgb, var(--otm-primary) 28%, var(--otm-muted-border-color));
+        --plurnk-reply-surface: var(--otm-card-background-color);
+        --plurnk-working-surface: color-mix(in srgb, var(--otm-color) 6%, var(--otm-card-background-color));
+        --plurnk-diff-add-surface: light-dark(#e4f6e2, #132d14);
+        --plurnk-diff-add-color: light-dark(#0e5a00, #96ec82);
+        --plurnk-diff-del-surface: light-dark(#fce6e6, #36171a);
+        --plurnk-diff-del-color: light-dark(#8a1616, #ffb3b3);
+        --plurnk-diff-hunk-surface: light-dark(#e8eef8, #17253d);
+        --plurnk-diff-hunk-color: light-dark(#1c4480, #9ec5ff);
+        --plurnk-diff-meta-color: light-dark(#464e5c, #b4bdcd);
     }
-}
 
-[data-theme],
-:root:not([data-theme]),
-:root[data-theme] {
-    --pico-primary-background: #148800;
-    --pico-primary-hover-background: #106d00;
-    --pico-primary-focus: rgb(20 136 0 / 50%);
-    --pico-primary-inverse: #fff;
-    --pico-text-selection-color: rgb(20 136 0 / 25%);
+    body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
+        color: var(--otm-muted-color);
+    }
+
+    header nav button,
+    nav[aria-label="breadcrumb"] button,
+    #workspace-tabs > button,
+    #dialog-workspace-settings nav[aria-label="Settings sections"] button {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: transparent;
+        --otm-primary-inverse: var(--otm-primary);
+
+        cursor: pointer;
+    }
+
+    dialog article > header button[rel="prev"] {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: transparent;
+        --otm-primary-inverse: var(--otm-muted-color);
+    }
+
+    /* {§web-session-input} Cancellation and secondary controls use the secondary control palette. */
+    button[form="session-stop"] {
+        --otm-primary-background: var(--otm-secondary-background);
+        --otm-primary-hover-background: var(--otm-secondary-hover-background);
+        --otm-primary-inverse: var(--otm-secondary-inverse);
+        --otm-primary-focus: var(--otm-secondary-focus);
+    }
+
+    fieldset[role="group"] > :not(:first-child) {
+        border-start-start-radius: 0;
+        border-end-start-radius: 0;
+    }
+
+    fieldset[role="group"] > :not(:last-child) {
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+    }
+
+    #workspace-tabs,
+    #dialog-workspace-settings nav[aria-label="Settings sections"] > ul {
+        border-block-end: var(--otm-border-width) solid var(--otm-muted-border-color);
+    }
+
+    #workspace-tabs :where(ul > li > a) {
+        border-block-end: calc(var(--otm-border-width) * 2) solid transparent;
+        text-decoration: none;
+    }
+
+    #dialog-workspace-settings nav[aria-label="Settings sections"] button {
+        border-radius: 0;
+        border-block-end: calc(var(--otm-border-width) * 2) solid transparent;
+    }
+
+    #dialog-workspace-switcher :where(ul > li > a) {
+        border-radius: var(--otm-border-radius);
+        text-decoration: none;
+    }
+
+    article {
+        border: 0;
+    }
+
+    dialog {
+        transition: none;
+    }
+
+    #main li > article > details {
+        border-block-end: 0;
+    }
+
+    #session-diagnostics > ul > li > article > header:only-child {
+        border-block-end: 0;
+        border-end-start-radius: var(--otm-border-radius);
+        border-end-end-radius: var(--otm-border-radius);
+    }
 }

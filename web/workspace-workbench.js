@@ -850,10 +850,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const wsSpan = $(breadcrumb, "#session-workspace");
             if (wsSpan && workspacePath !== null) {
                 the(wsSpan, {
-                    workspaceName: currentWorkspaceName,
-                    workspacePath,
-                    workspaceIcon: workspaceMarker.icon,
-                    workspaceIconLabel: workspaceMarker.label,
+                    "workspace-name": currentWorkspaceName,
+                    "workspace-path": workspacePath,
+                    "workspace-icon": workspaceMarker.icon,
+                    "workspace-icon-label": workspaceMarker.label,
                 });
             }
             const sessionEl = $(breadcrumb, '[aria-current="page"][data-text="name"]');

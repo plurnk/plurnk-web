@@ -126,9 +126,13 @@ export default async function verifyWebApp(browser, base) {
             const resolved = await tab.evaluate((theme) => {
                 document.documentElement.dataset.theme = theme;
                 const root = getComputedStyle(document.documentElement);
-                return { scheme: root.colorScheme, primary: root.getPropertyValue("--pico-primary").trim() };
+                const probe = document.createElement("a");
+                document.body.append(probe);
+                const primary = getComputedStyle(probe).color;
+                probe.remove();
+                return { scheme: root.colorScheme, primary };
             }, theme);
-            assert.deepEqual(resolved, { scheme: theme, primary: theme === "light" ? "#148800" : "#4eb31b" });
+            assert.deepEqual(resolved, { scheme: theme, primary: theme === "light" ? "rgb(20, 136, 0)" : "rgb(78, 179, 27)" });
         }
         await tab.evaluate(() => document.documentElement.removeAttribute("data-theme"));
         for (const width of [320, 768, 1280]) {

@@ -676,6 +676,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.ok(upload, "the browser sent the follow-up through its real SDK");
                         assert.equal(upload.method, "session/prompt");
                         assert.equal(upload.params._meta.plurnk.reasoning, "link");
+                        assert.equal(upload.params._meta.plurnk.bodies, "link");
                         assert.deepEqual(upload.params.prompt, [{ type: "text", text: "Lifecycle fixture: reasoning-followup." }]);
                         assert.equal(JSON.stringify(upload).includes("Considering conversation."), false,
                             "neither preview nor inspected full reasoning enters a later prompt request");
@@ -707,6 +708,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.equal(input.method, "session/resume");
                             assert.equal(input.params.prompt, undefined);
                             assert.equal(input.params._meta.plurnk.reasoning, "link");
+                            assert.equal(input.params._meta.plurnk.bodies, "link");
                         }
                         checkBrowser();
                     } finally {

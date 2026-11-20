@@ -78,19 +78,6 @@ Dependency code stays behind its owning boundary. Bundle locally, load optional
 renderers on demand, and retain licenses. A framework-specific requirement does
 not justify weakening CSP or adding a compatibility system.
 
-### Accepted development dependency exposure
-
-The build-only PurgeCSS → fast-glob → micromatch → braces chain (Stylelint 18 dropped
-its own micromatch path) retains
-[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), a
-stack-exhaustion risk from deeply nested glob patterns. The build supplies only
-its own repository-owned content globs; these packages are absent from
-the production dependency graph and browser bundle. Keep normal audit reporting
-without a fork, override or suppression. Reassess when the upstream chain changes
-or a consumer begins accepting untrusted patterns. This accepts the bounded
-development exposure, not the dependency's correctness; [#9](https://repo.possumtech.com/plurnk/plurnk-web/issues/9)
-retains the investigation and dependency evidence.
-
 ### Pinned and reviewed dependencies
 
 | Dependency | Why it stands as it does |

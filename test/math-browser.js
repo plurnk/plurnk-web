@@ -109,7 +109,7 @@ Escaped \$x$; unclosed $x.
                         for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                             await page.emulateMedia({ colorScheme });
                             const colors = await body.locator("math").evaluate((element) => ({ math: getComputedStyle(element).color, text: getComputedStyle(element.closest("article")).color }));
-                            assert.equal(colors.math, colors.text, "math inherits the current Pico text color");
+                            assert.equal(colors.math, colors.text, "math inherits the current substrate text color");
                         }
                     });
                     checkBrowser();

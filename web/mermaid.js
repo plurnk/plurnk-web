@@ -31,7 +31,7 @@ function compile(source) {
 
 /** @param {Element} outlet @param {unknown} error */
 function failed(outlet, error) {
-    the(outlet, "diagramError", "Diagram failed to render");
+    the(outlet, "diagram-error", "Diagram failed to render");
     outlet.setAttribute("title", String(error));
     if (error instanceof Busy && outlet.nextElementSibling?.hasAttribute("data-diagram-retry") !== true) $.clone(outlet, "#diagram-retry", { position: "afterend" });
 }
@@ -71,7 +71,7 @@ on(document, "click", "[data-diagram-retry]", (event) => {
     const outlet = retry?.previousElementSibling;
     if (!retry || !outlet?.hasAttribute("data-mermaid")) return;
     retry.remove();
-    the(outlet, "diagramError", null);
+    the(outlet, "diagram-error", null);
     outlet.removeAttribute("title");
     void render(outlet).catch(reportError);
 });
