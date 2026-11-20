@@ -21,7 +21,7 @@ export default function bodyReferences(root, read) {
 
     /** @param {Element} outlet @param {PendingReference} entry */
     async function load(outlet, entry) {
-        the(outlet, { bodyState: "loading", bodyPending: "true" });
+        the(outlet, { "body-state": "loading", "body-pending": "true" });
         outlet.removeAttribute("role");
         outlet.replaceChildren();
         try {
@@ -33,23 +33,23 @@ export default function bodyReferences(root, read) {
             } else {
                 outlet.textContent = raw;
             }
-            the(outlet, "bodyState", "loaded");
+            the(outlet, "body-state", "loaded");
         } catch (error) {
             if (!outlet.isConnected) return;
             // A read the page abandoned, as when it is left, is not a failure: it rests, and reads again when asked.
             if (error instanceof DOMException && error.name === "AbortError") {
-                the(outlet, "bodyState", "idle");
+                the(outlet, "body-state", "idle");
                 const again = $.clone(outlet, "#conversation-body-read", { position: "afterend" });
                 on(again, "submit", "form", (event) => { event.preventDefault(); again.remove(); void load(outlet, entry); });
                 return;
             }
             outlet.textContent = error instanceof Error ? error.message : String(error);
             outlet.setAttribute("role", "alert");
-            the(outlet, "bodyState", "error");
+            the(outlet, "body-state", "error");
             const retry = $.clone(outlet, "#conversation-body-retry", { position: "afterend" });
             on(retry, "submit", "form", (event) => { event.preventDefault(); retry.remove(); void load(outlet, entry); });
         } finally {
-            if (outlet.isConnected) the(outlet, "bodyPending", null);
+            if (outlet.isConnected) the(outlet, "body-pending", null);
         }
     }
 

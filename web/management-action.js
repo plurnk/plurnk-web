@@ -1,4 +1,3 @@
-import { Validator } from "@plurnk/plurnk-contracts";
 import { PROTOCOL_VERSION, client, createHttpStream, methods } from "./session-agent.js";
 import accessHeaders from "./access-headers.js";
 import problemFromResponse from "./problem-response.js";
@@ -25,7 +24,8 @@ const DAEMON_SCOPED_ACTIONS = new Set([
  */
 export default async function managementAction(kind, params, sessionId, auth, signal, options = {}) {
     /** @param {unknown} value */
-    const refused = (value) => {
+    const refused = async (value) => {
+        const { Validator } = await import("@plurnk/plurnk-contracts");
         const problem = Validator.assertProblemDetails(value);
         return Object.assign(new Error(problem.detail ?? problem.title, { cause: problem }), { status: problem.status });
     };
@@ -169,6 +169,8 @@ export default async function managementAction(kind, params, sessionId, auth, si
                 _meta: {
                     plurnk: {
                         control: false,
+                        reasoning: "link",
+                        bodies: "link",
                         ...(typeof params._meta === "object" && params._meta !== null && "plurnk" in params._meta
                             && typeof params._meta.plurnk === "object" && params._meta.plurnk !== null ? params._meta.plurnk : {}),
                     },
@@ -211,7 +213,7 @@ export default async function managementAction(kind, params, sessionId, auth, si
                 : undefined;
             const rawProblem = data && "problem" in data ? data.problem : (plurnk && "problem" in plurnk ? plurnk.problem : data);
             if (rawProblem && typeof rawProblem === "object" && "type" in rawProblem && "status" in rawProblem) {
-                throw refused(rawProblem);
+                throw await refused(rawProblem);
             }
         }
         throw error;

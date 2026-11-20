@@ -91,21 +91,21 @@ export default async function verifyCommands(t) {
                         await page.emulateMedia({ colorScheme });
                         assert.equal(await stop.evaluate((button) => {
                             const style = getComputedStyle(button);
-                            return ["background", "border", "hover-background", "hover-border", "inverse", "focus"]
-                                .every((token) => style.getPropertyValue(`--pico-primary-${token}`) === style.getPropertyValue(`--pico-secondary-${token}`));
-                        }), true, "Stop inherits Pico's secondary palette, including hover and focus");
+                            return ["background", "hover-background", "inverse", "focus"]
+                                .every((token) => style.getPropertyValue(`--otm-primary-${token}`).trim() === style.getPropertyValue(`--otm-secondary-${token}`).trim());
+                        }), true, "Stop inherits the secondary control palette, including hover and focus");
                     }
                     for (const width of [320, 1280]) {
                         await page.setViewportSize({ width, height: 700 });
                         const sendBox = await send.boundingBox();
                         const stopBox = await stop.boundingBox();
-                        assert.equal(sendBox.y, stopBox.y, "Pico groups both actions on the same row");
+                        assert.equal(sendBox.y, stopBox.y, "role=group aligns actions on the same row");
                         const attachBox = await attach.boundingBox();
                         const draftBox = await page.getByRole("textbox", { name: "Message", exact: true }).boundingBox();
                         const margin = await send.evaluate((button) => parseFloat(getComputedStyle(button).marginInlineStart));
                         assert.ok(stopBox.x < attachBox.x && attachBox.x < draftBox.x && draftBox.x < sendBox.x);
                         assert.equal(Math.round(draftBox.x + draftBox.width + margin), Math.round(sendBox.x),
-                            "Send joins the textarea with Pico's native group margin");
+                            "Send joins the textarea with the native group margin");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     }
                     for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
@@ -129,7 +129,7 @@ export default async function verifyCommands(t) {
                             assert.ok(geometry.every(({ top, bottom }) => top === geometry[0].top && bottom === geometry[0].bottom),
                                 "focus and multiline growth keep every composer control aligned");
                             assert.ok(geometry.every(({ lineHeight, fontSize }) => lineHeight / fontSize === 1.25),
-                                "the single Pico line-height token consistently sizes the composer");
+                                "the single substrate line-height token consistently sizes the composer");
                             assert.equal(await field.evaluate((element) => getComputedStyle(element).boxShadow.includes("inset")), true,
                                 `${colorScheme}: textarea focus remains visible without projecting beyond the control`);
                         }

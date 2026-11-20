@@ -38,7 +38,7 @@ export default function sessionHistory(root, readBody, readPage) {
                 controls.set(url, control);
                 on(control, "submit", "form", (event) => { event.preventDefault(); void load(url); });
             }
-            the(control, { historyPending: pending.has(url) ? "true" : null, historyError: errors.get(url) ?? "" });
+            the(control, { "history-pending": pending.has(url) ? "true" : null, "history-error": errors.get(url) ?? "" });
             const target = before === null ? null : Array.from(list.children).find((row) =>
                 row.getAttribute("data-message-id") === before
                 || $(row, `[data-message-id="${CSS.escape(before)}"]`) !== null) ?? null;

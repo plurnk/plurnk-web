@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { setTimeout } from "node:timers/promises";
 import { directoryPath } from "../src/directory-addresses.js";
 import verifyPageShell from "./page-shell.js";
 
@@ -62,43 +61,22 @@ export default async function verifySessionDirectory(page, workspace) {
     const review = models.find(({ name }) => name === "review");
     const evidence = models.find(({ name }) => name === "evidence");
     const summary = entry(parent).locator(":scope > details > summary");
-    // Browser animation-frame callbacks do not run with JavaScript disabled.
-    const markerSettled = async (expected) => {
-        const deadline = performance.now() + 3000;
-        let actual;
-        do {
-            actual = await summary.evaluate((element) => getComputedStyle(element, "::after").transform);
-            if (actual === expected) return;
-            await setTimeout(20);
-        } while (performance.now() < deadline);
-        assert.equal(actual, expected, "Pico's disclosure marker settles to its native open/closed state");
-    };
     for (const colorScheme of ["light", "dark"]) {
         await page.emulateMedia({ colorScheme });
         await summary.focus();
         const closed = await summary.evaluate((element) => ({
-            marker: getComputedStyle(element, "::after").backgroundImage,
-            transform: getComputedStyle(element, "::after").transform,
+            marker: getComputedStyle(element, "::after").content,
             focus: getComputedStyle(element).outlineStyle,
         }));
-        assert.notEqual(closed.marker, "none", `${colorScheme}: compiled Pico supplies the disclosure marker`);
-        const dimensions = await summary.evaluate(async (element) => {
-            const background = getComputedStyle(element, "::after").backgroundImage;
-            const image = new Image();
-            image.src = JSON.parse(background.slice(4, -1));
-            await image.decode();
-            return [image.naturalWidth, image.naturalHeight];
-        });
-        assert.deepEqual(dimensions, [24, 24], `${colorScheme}: the shipped CSP permits Pico's actual disclosure image`);
+        assert.match(closed.marker, /▸/u, `${colorScheme}: compiled stylesheet supplies the closed disclosure marker`);
         assert.notEqual(closed.focus, "none", `${colorScheme}: disclosure keyboard focus is visible`);
         await page.keyboard.press("Enter");
         assert.equal(await link(review).isVisible(), true);
         assert.equal(await link(evidence).isVisible(), false);
-        await markerSettled("matrix(1, 0, 0, 1, 0, 0)");
-        assert.notEqual(await summary.evaluate((element) => getComputedStyle(element, "::after").transform), closed.transform);
+        assert.match(await summary.evaluate((element) => getComputedStyle(element, "::after").content), /▾/u);
         await page.keyboard.press("Space");
         assert.equal(await link(review).isVisible(), false);
-        await markerSettled(closed.transform);
+        assert.equal(await summary.evaluate((element) => getComputedStyle(element, "::after").content), closed.marker);
     }
     await summary.click();
     await entry(review).locator(":scope > details > summary").press("Space");

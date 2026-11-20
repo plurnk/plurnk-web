@@ -24,8 +24,8 @@ export default function sessionState(element, main = $("#main")) {
         const breadcrumb = $("#session-workspace");
         if (breadcrumb) {
             the(breadcrumb, {
-                workspaceName: latestIdentity.workspaceName, workspacePath: latestIdentity.workspacePath,
-                workspaceIcon: latestIdentity.workspaceIcon, workspaceIconLabel: latestIdentity.workspaceIconLabel,
+                "workspace-name": latestIdentity.workspaceName, "workspace-path": latestIdentity.workspacePath,
+                "workspace-icon": latestIdentity.workspaceIcon, "workspace-icon-label": latestIdentity.workspaceIconLabel,
             });
         }
     };
@@ -40,7 +40,7 @@ export default function sessionState(element, main = $("#main")) {
             latestIdentity = identity;
             syncHeader();
             the(folder, "project-label", identity.projectLabel);
-            the(connectionNotice, { sessionPath: identity.sessionPath, signInPath: `/auth/login?return=${encodeURIComponent(identity.sessionPath)}` });
+            the(connectionNotice, { "session-path": identity.sessionPath, "sign-in-path": `/auth/login?return=${encodeURIComponent(identity.sessionPath)}` });
             for (const link of $$(main, "a[data-session-name]")) {
                 const session = /** @type {HTMLAnchorElement} */ (link).dataset.sessionName;
                 if (!session) throw new Error("Session navigation has no identity.");
@@ -49,7 +49,7 @@ export default function sessionState(element, main = $("#main")) {
             the(element, {
                 preparation: workspace.preparation.map(({ family, alias, phase }) => `${phase} ${family}${alias ? `/${alias}` : ""}`).join("; "),
                 activity: workspace.activity ? `${workspace.activity.phase}${workspace.activity.percent === null ? "" : ` ${workspace.activity.percent}%`}` : "",
-                activityMessage: workspace.activity?.message ?? "",
+                "activity-message": workspace.activity?.message ?? "",
             });
         }
         if (status) {

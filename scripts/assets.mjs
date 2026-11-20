@@ -6,14 +6,9 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
  */
 export default async function prepareAssets(webRoot = new URL("../web/", import.meta.url)) {
     const otm = new URL("../../", import.meta.resolve("on_the_money"));
-    const pico = new URL("./", import.meta.resolve("@picocss/pico/package.json"));
     const vendor = new URL("./public/vendor/", webRoot);
-    const styles = new URL("./styles/", webRoot);
     await mkdir(vendor, { recursive: true });
-    await mkdir(styles, { recursive: true });
     await copyFile(new URL("LICENSE", otm), new URL("OTM-LICENSE.txt", vendor));
-    await copyFile(new URL("css/pico.classless.green.css", pico), new URL("app-vendor.css", styles));
-    await copyFile(new URL("LICENSE.md", pico), new URL("PICO-LICENSE.txt", vendor));
 
     const icons = new URL("./public/icons/", webRoot);
     const artwork = await readFile(new URL("plurnk.svg", icons), "utf8");

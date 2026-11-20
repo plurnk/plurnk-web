@@ -139,6 +139,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const diagnose = diagnostics(diagnosticList);
     const presentState = sessionState(element, main);
     const agent = new SessionAgent({ url: "/acp", sessionId });
+    void import("@plurnk/plurnk-contracts").catch(() => {});
     /** @type {string | null | undefined} */
     let workspaceProjectRoot = $(main.ownerDocument.body, '#session-workspace [aria-label="Folderless workspace"]') ? null : undefined;
     let latestWorkspaceName = $("#session-workspace a")?.textContent?.trim() || "";
@@ -213,7 +214,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             if (the(element, "connection") !== "interrupted" || cancellation) {
                 throw new Error("No interrupt is awaiting resolution.");
             }
-            the(feedback, { messageStatus: "", commandError: "" });
+            the(feedback, { "message-status": "", "command-error": "" });
             connect({ resolutions: [resolution] });
         },
         navigate: (targetPath) => {
@@ -238,9 +239,9 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             const row = $.clone(attachmentOutlet, "#compose-attachment");
             if (row instanceof HTMLElement) row.dataset.removeId = item.id;
             the(row, {
-                attachmentName: item.name,
-                attachmentSize: item.sizeLabel,
-                attachmentRemove: `Remove ${item.name}`,
+                "attachment-name": item.name,
+                "attachment-size": item.sizeLabel,
+                "attachment-remove": `Remove ${item.name}`,
             });
         }
     }
@@ -258,7 +259,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     /** @param {readonly File[]} files */
     async function verifyAttachmentFiles(files) {
         if (!agent.promptImageSupported) {
-            the(feedback, { messageStatus: "", commandError: "Image attachments are not supported on this session." });
+            the(feedback, { "message-status": "", "command-error": "Image attachments are not supported on this session." });
             tail.follow();
             return;
         }
@@ -276,8 +277,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         if (attachments.length > 0) draft.setCustomValidity("");
         syncAttachments();
         the(feedback, {
-            messageStatus: pending ? (the(feedback, "message-status") ?? "") : "",
-            commandError: errors.join(" "),
+            "message-status": pending ? (the(feedback, "message-status") ?? "") : "",
+            "command-error": errors.join(" "),
         });
         availability();
         tail.follow();
@@ -288,7 +289,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const suggestions = live || the(element, "connection") === "interrupted" ? [] : promptSuggestions();
         if (suggestions.length > 0) {
             $.cloneEach(suggestionOutlet, "#compose-suggestion", suggestions, (item, text) => {
-                the(item, { suggestionText: text });
+                the(item, { "suggestion-text": text });
             });
             const lead = suggestions[0]?.replaceAll(/\s+/gu, " ").trim() ?? "";
             draft.placeholder = lead ? `→ ${lead} (Tab)` : defaultPlaceholder;
@@ -303,11 +304,11 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const live = status && ["queued", "running", "parked"].includes(status.lifecycle);
         const commandPending = the(controls, "command-pending") !== null;
         the(controls, {
-            liveWork: live ? "" : null,
-            promptImage: agent.promptImageSupported ? "true" : null,
-            sendUnavailable: (isClientDispatch(draft.value) ? !commandPending
+            "live-work": live ? "" : null,
+            "prompt-image": agent.promptImageSupported ? "true" : null,
+            "send-unavailable": (isClientDispatch(draft.value) ? !commandPending
                 : current === "connected" && !arriving && (!pending || pending.retryable) && !cancellation && !commandPending) ? null : "",
-            stopUnavailable: live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
+            "stop-unavailable": live && ["connected", "interrupted"].includes(current ?? "") && !cancellation ? null : "",
         });
         the(review.form, "review-unavailable", current === "interrupted" && !cancellation && the(review.form, "deadline-passed") === null ? null : "");
         syncSuggestions();
@@ -315,7 +316,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
 
     /** @param {string} current @param {string} label */
     function connection(current, label) {
-        the(element, { connection: current, connectionLabel: label });
+        the(element, { connection: current, "connection-label": label });
         the(connectionNotice, "connection-label", label);
         availability();
         tail.follow();
@@ -336,7 +337,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             syncAttachments();
         }
         pending = undefined;
-        the(feedback, { messageStatus: "", commandError: "" });
+        the(feedback, { "message-status": "", "command-error": "" });
         availability();
     }
 
@@ -401,7 +402,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                         if (snapshot.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
                         else if (!submission) {
                             pending.retryable = true;
-                            the(feedback, { messageStatus: "Delivery remains unconfirmed. You may retry this draft.", commandError: "" });
+                            the(feedback, { "message-status": "Delivery remains unconfirmed. You may retry this draft.", "command-error": "" });
                             availability();
                         }
                     },
@@ -504,8 +505,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 const guidance = signedOut ? "Sign in to connect to this session again." : "Displayed values are no longer live. Reconnect to check the session.";
                 the(connectionNotice, "connection-detail", `${error instanceof Error ? error.message : String(error)} ${guidance}`);
             }
-            if (pending) the(feedback, { messageStatus: "", commandError: "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
-            if (submission?.resolutions) the(feedback, { messageStatus: "", commandError: `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
+            if (pending) the(feedback, { "message-status": "", "command-error": "Message delivery is unconfirmed. Your draft is retained; reconnect before trying again." });
+            if (submission?.resolutions) the(feedback, { "message-status": "", "command-error": `Response could not be confirmed: ${error instanceof Error ? error.message : String(error)}` });
             if (!signedOut && !submission && !pending && isRetryableObservationFailure(error)) reconnect.schedule();
             else reconnect.stop();
         } finally {
@@ -743,8 +744,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         if (isClientDispatch(draft.value)) {
             if (attachments.length > 0) {
                 the(feedback, {
-                    messageStatus: "",
-                    commandError: "Remove queued image attachments before running a client slash command.",
+                    "message-status": "",
+                    "command-error": "Remove queued image attachments before running a client slash command.",
                 });
                 tail.follow();
                 return;
@@ -775,7 +776,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             ? prepareComposerPrompt(source, workspaceProjectRoot === undefined ? undefined : { projectRoot: workspaceProjectRoot })
             : { ok: /** @type {const} */ (true), prompt: "", forceReview: false, openPaths: /** @type {readonly string[]} */ ([]) };
         if ("error" in prepared) {
-            the(feedback, { messageStatus: "", commandError: prepared.error });
+            the(feedback, { "message-status": "", "command-error": prepared.error });
             return;
         }
         const sourceKey = `${source}\0${attachments.map(({ id }) => id).join(",")}`;
@@ -796,7 +797,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             attachmentIds: new Set(attachments.map(({ id }) => id)),
             retryable: false,
         };
-        the(feedback, { messageStatus: "Sending…", commandError: "" });
+        the(feedback, { "message-status": "Sending…", "command-error": "" });
         tail.pin();
         connect({ message, ...(prepared.forceReview ? { forceReview: true } : {}) });
     });
@@ -809,11 +810,11 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         try {
             const resolutions = await reading;
             if (!resolutions || cancellation || the(element, "connection") !== "interrupted") return;
-            the(feedback, { messageStatus: "", commandError: "" });
+            the(feedback, { "message-status": "", "command-error": "" });
             connect({ resolutions });
         } catch (error) {
             const { message, recovery } = await describeFailure(error);
-            the(feedback, { messageStatus: "", commandError: `Responses could not be submitted: ${[message, recovery].filter(Boolean).join(" ")}` });
+            the(feedback, { "message-status": "", "command-error": `Responses could not be submitted: ${[message, recovery].filter(Boolean).join(" ")}` });
         } finally { availability(); }
     });
 
@@ -837,17 +838,17 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     on(stop, "submit", "form", async (event) => {
         event.preventDefault();
         if (the(controls, "stop-unavailable") !== null) return;
-        the(feedback, { messageStatus: "Requesting Stop…", commandError: "" });
+        the(feedback, { "message-status": "Requesting Stop…", "command-error": "" });
         // The visit that asked: leaving the page ends it, whatever a later return starts.
         const visit = resources.signal;
         try { the(feedback, "message-status", await cancelWork()); }
         catch (error) {
             if (visit.aborted) {
-                the(feedback, { messageStatus: "", commandError: "Stop could not be confirmed before the page was left." });
+                the(feedback, { "message-status": "", "command-error": "Stop could not be confirmed before the page was left." });
                 return;
             }
             const { message, recovery } = await describeFailure(error);
-            the(feedback, { messageStatus: "", commandError: `Stop could not be confirmed: ${[message, recovery].filter(Boolean).join(" ")}` });
+            the(feedback, { "message-status": "", "command-error": `Stop could not be confirmed: ${[message, recovery].filter(Boolean).join(" ")}` });
         }
     });
 

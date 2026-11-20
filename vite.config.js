@@ -1,7 +1,5 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import purgeCSS from "@fullhuman/postcss-purgecss";
-import { authorizationDocumentSpecimens } from "@plurnk/plurnk-auth";
 import indexDocument from "./src/index-document.js";
 
 /** @param {import("vite").ViteDevServer | import("vite").PreviewServer} server */
@@ -15,7 +13,7 @@ function configureDirectories(server) {
     });
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
     root: fileURLToPath(new URL("./web/", import.meta.url)),
     appType: "mpa",
     plugins: [{
@@ -25,25 +23,6 @@ export default defineConfig(({ command }) => ({
     }],
     server: { host: "127.0.0.1" },
     preview: { host: "127.0.0.1" },
-    // {§web-build} Scan both browser documents and the server-owned document renderer.
-    css: {
-        postcss: {
-            plugins: command === "build" ? [purgeCSS({
-                content: [
-                    fileURLToPath(new URL("./web/**/*.{html,js}", import.meta.url)),
-                    fileURLToPath(new URL("./src/documents.js", import.meta.url)),
-                    // {§web-math-content} The dynamic renderer, not application markup, owns these selectors.
-                    fileURLToPath(import.meta.resolve("temml/dist/Temml-Local.css")),
-                    ...authorizationDocumentSpecimens().map((raw) => ({ raw, extension: "html" })),
-                ],
-                defaultExtractor: (content) => content.match(/[A-Za-z0-9_-]+/gu) ?? [],
-                // Browser pseudo-states are not HTML tokens, including inside :is() and :where().
-                safelist: { standard: [/^:/], deep: [/aria-/, /data-/] },
-                variables: true,
-                keyframes: true,
-            })] : [],
-        },
-    },
     build: {
         target: "esnext",
         license: { fileName: "vendor/DEPENDENCIES-LICENSE.txt" },
@@ -51,4 +30,4 @@ export default defineConfig(({ command }) => ({
         outDir: fileURLToPath(new URL("./dist/", import.meta.url)),
         emptyOutDir: true,
     },
-}));
+});

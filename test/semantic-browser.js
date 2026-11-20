@@ -99,7 +99,7 @@ export default async function verifySemanticContent(t) {
                             outcome: getComputedStyle(element).color,
                             article: getComputedStyle(element.parentElement).color,
                         }));
-                        assert.equal(appearance.outcome, appearance.article, `${colorScheme}: an outcome inherits its Pico article color`);
+                        assert.equal(appearance.outcome, appearance.article, `${colorScheme}: an outcome inherits its article color`);
                     }
                     assert.equal(await row("read").locator("header > [data-plurnk-field=heading] + [data-plurnk-field=outcome] + [data-plurnk-operands]").count(), 1,
                         "a diagnostic separates authored intent from operation operands");

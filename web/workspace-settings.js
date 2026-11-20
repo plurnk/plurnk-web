@@ -1,8 +1,9 @@
 import { $, $$, on, the } from "on_the_money";
-import { EFFORTS, isRecord } from "@plurnk/plurnk-contracts";
+import { EFFORTS } from "@plurnk/plurnk-contracts";
 import describeFailure from "./failure.js";
 import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
+import { isRecord } from "./session-translator.js";
 
 /**
  * @typedef {"mcp" | "skills" | "schedule" | "personas" | "members" | "env"} SettingsSection
@@ -110,9 +111,9 @@ export function createWorkspaceSettingsController(getContext) {
         busy = nextBusy;
         if (!article) return;
         the(article, {
-            wsSettingsBusy: nextBusy ? "true" : null,
-            wsSettingsMessage: message,
-            wsSettingsRecovery: recovery,
+            "ws-settings-busy": nextBusy ? "true" : null,
+            "ws-settings-message": message,
+            "ws-settings-recovery": recovery,
         });
         if (envPanel) {
             the(envPanel, "env-busy", nextBusy ? "" : null);
@@ -181,16 +182,16 @@ export function createWorkspaceSettingsController(getContext) {
                 || (def?.type === "streamable-http" && isRecord(def.authorization) && def.authorization.type === "oauth")
             );
             the(tr, {
-                familyAlias: alias,
-                familyOrigin: origin,
-                familySummary: formatFamilyDetails(family, item),
-                familyStatus: statusText,
-                familyRemovable: origin === "workspace" ? "true" : "false",
-                familyEnabled: state !== "disabled" ? "true" : "false",
-                familyAuth: supportsOAuth ? "true" : "false",
+                "family-alias": alias,
+                "family-origin": origin,
+                "family-summary": formatFamilyDetails(family, item),
+                "family-status": statusText,
+                "family-removable": origin === "workspace" ? "true" : "false",
+                "family-enabled": state !== "disabled" ? "true" : "false",
+                "family-auth": supportsOAuth ? "true" : "false",
             });
         });
-        the(panel, { familyCount: items.length });
+        the(panel, { "family-count": items.length });
     }
 
     /**
@@ -213,9 +214,9 @@ export function createWorkspaceSettingsController(getContext) {
                 ? alias.length > 0 && def !== null && ["preview", "candidate", "ignored"].includes(provKind)
                 : family !== "schedule" && alias.length > 0 && def !== null;
             the(li, {
-                candidateAlias: alias || family,
-                candidateSummary: summary,
-                candidateAddable: addable ? "true" : "false",
+                "candidate-alias": alias || family,
+                "candidate-summary": summary,
+                "candidate-addable": addable ? "true" : "false",
             });
             const form = $(li, "form[data-candidate-add-form]");
             if (addable && form && def) {
@@ -226,7 +227,7 @@ export function createWorkspaceSettingsController(getContext) {
                 });
             }
         });
-        the(panel, { candidateCount: candidates.length });
+        the(panel, { "candidate-count": candidates.length });
     }
 
     /** @param {unknown} resumeOrSetResult */
@@ -250,9 +251,9 @@ export function createWorkspaceSettingsController(getContext) {
         });
         $.cloneEach(select, "#setting-option", choices, (optEl, choice) => {
             the(optEl, {
-                optionValue: choice.value,
-                optionLabel: choice.label,
-                optionDisabled: null,
+                "option-value": choice.value,
+                "option-label": choice.label,
+                "option-disabled": null,
             });
         });
         if (typeof personaOption.currentValue === "string") {
@@ -359,7 +360,7 @@ export function createWorkspaceSettingsController(getContext) {
         if (effortSelect instanceof HTMLSelectElement) {
             for (const level of EFFORTS) {
                 const opt = $.clone(effortSelect, "#setting-option");
-                the(opt, { optionValue: level, optionLabel: level, optionDisabled: null });
+                the(opt, { "option-value": level, "option-label": level, "option-disabled": null });
             }
         }
 
@@ -429,7 +430,7 @@ export function createWorkspaceSettingsController(getContext) {
                     if (isRecord(beginRes) && isRecord(beginRes.authorization) && typeof beginRes.authorization.url === "string") {
                         const url = beginRes.authorization.url;
                         if (oauthBox instanceof HTMLElement && /^https?:\/\//iu.test(url)) {
-                            the(oauthBox, { mcpOauthUrl: url, mcpOauthAlias: alias });
+                            the(oauthBox, { "mcp-oauth-url": url, "mcp-oauth-alias": alias });
                             oauthBox.hidden = false;
                         }
                         return `${alias}: open authorization link and submit the callback URL.`;

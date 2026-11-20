@@ -91,7 +91,7 @@ export default async function verifyStatus(t) {
                             const parent = getComputedStyle(element.parentElement);
                             return { list: [list.fontSize, list.color], parent: [parent.fontSize, parent.color] };
                         });
-                        assert.deepEqual(appearance.list, appearance.parent, `${colorScheme}: the status inherits Pico typography and color`);
+                        assert.deepEqual(appearance.list, appearance.parent, `${colorScheme}: the status inherits substrate typography and color`);
                     }
                     const requestCount = requests.length;
                     assert.equal(await value("model"), "No model");

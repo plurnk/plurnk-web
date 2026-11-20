@@ -25,12 +25,12 @@ export default function sessionSettings(main, status, call, lifetime) {
         /** @type {AbortController | undefined} */
         let lookup;
         const available = () => field instanceof HTMLInputElement || [...field.options].some(({ value }) => value);
-        const clear = () => the(article, { settingsMessage: "", settingsRecovery: "" });
+        const clear = () => the(article, { "settings-message": "", "settings-recovery": "" });
         panel.close = () => { lookup?.abort(); article.hidden = true; the(button, "expanded", false); };
         /** @param {unknown} error @param {AbortSignal} signal */
         const failure = async (error, signal) => {
             const { message, recovery } = await describeFailure(error);
-            return { settingsMessage: signal.aborted ? "Response not confirmed." : message, settingsRecovery: recovery };
+            return { "settings-message": signal.aborted ? "Response not confirmed." : message, "settings-recovery": recovery };
         };
         const load = async () => {
             lookup?.abort();
@@ -48,16 +48,16 @@ export default function sessionSettings(main, status, call, lifetime) {
                     $.cloneEach(options, "#setting-option", [
                         ...aliases.map((model) => ({ value: model.alias, label: modelLabel(model) })),
                         ...catalog.items.map((model) => ({ value: model.selector, label: `${model.modelName}${model.readiness.ready ? "" : " — Not configured"}` })),
-                    ], (option, { value, label }) => the(option, { optionValue: value, optionLabel: label }));
+                    ], (option, { value, label }) => the(option, { "option-value": value, "option-label": label }));
                 } else {
                     the(article, "selection-unavailable", "");
                     const { supported } = await sessionEffort(invoke);
                     signal.throwIfAborted();
                     $.cloneEach(field, "#setting-option", ["", ...supported], (option, value) => the(option, {
-                        optionValue: value, optionLabel: value || "Reasoning Effort", optionDisabled: value ? null : "",
+                        "option-value": value, "option-label": value || "Reasoning Effort", "option-disabled": value ? null : "",
                     }));
                     field.value = "";
-                    the(article, { selectionUnavailable: supported.length ? null : "", settingsMessage: supported.length ? "" : "No supported efforts." });
+                    the(article, { "selection-unavailable": supported.length ? null : "", "settings-message": supported.length ? "" : "No supported efforts." });
                     if (document.activeElement === article) field.focus();
                 }
             } catch (error) {
@@ -93,7 +93,7 @@ export default function sessionSettings(main, status, call, lifetime) {
             lookup?.abort();
             clear();
             const signal = lifetime();
-            the(article, { settingsPending: "true", selectionUnavailable: "" });
+            the(article, { "settings-pending": "true", "selection-unavailable": "" });
             try {
                 const invoke = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) => call(kind, params, signal);
                 if (kind === "model") await sessionModel(invoke, field.value);
@@ -102,7 +102,7 @@ export default function sessionSettings(main, status, call, lifetime) {
                 button.focus();
                 panel.close();
             } catch (error) { the(article, await failure(error, signal)); }
-            finally { the(article, { settingsPending: null, selectionUnavailable: available() ? null : "" }); }
+            finally { the(article, { "settings-pending": null, "selection-unavailable": available() ? null : "" }); }
         });
     }
     return () => {

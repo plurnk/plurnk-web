@@ -24,11 +24,14 @@ export default async function verifyAuthorizationPage(page, response, { warning 
         await page.emulateMedia({ colorScheme });
         const style = await page.locator("article").evaluate((element) => {
             const article = getComputedStyle(element);
-            const root = getComputedStyle(document.documentElement);
             const input = document.querySelector('input[type="password"]');
+            const probe = document.createElement("a");
+            document.body.append(probe);
+            const primary = getComputedStyle(probe).color;
+            probe.remove();
             return {
                 font: article.fontFamily, background: article.backgroundColor, shadow: article.boxShadow,
-                padding: parseFloat(article.paddingInlineStart), primary: root.getPropertyValue("--pico-primary").trim(),
+                padding: parseFloat(article.paddingInlineStart), primary,
                 inputHeight: input?.getBoundingClientRect().height, inputPadding: input ? parseFloat(getComputedStyle(input).paddingInlineStart) : null,
             };
         });
@@ -36,9 +39,9 @@ export default async function verifyAuthorizationPage(page, response, { warning 
         assert.notEqual(style.background, "rgba(0, 0, 0, 0)");
         assert.notEqual(style.shadow, "none");
         assert.ok(style.padding > 0);
-        assert.equal(style.primary, colorScheme === "light" ? "#148800" : "#4eb31b");
+        assert.equal(style.primary, colorScheme === "light" ? "rgb(20, 136, 0)" : "rgb(78, 179, 27)");
         if (password) {
-            assert.ok(style.inputHeight >= 40, "production pruning keeps Pico's native form-control sizing");
+            assert.ok(style.inputHeight >= 40, "compiled substrate keeps native form-control sizing");
             assert.ok(style.inputPadding > 0);
         }
         for (const width of [320, 1280]) {

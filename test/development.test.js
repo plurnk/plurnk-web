@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpServer, get as httpGet } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { chromium } from "playwright";
 import { build, createServer, preview } from "vite";
 import createDevModule from "../scripts/dev-module.mjs";
@@ -53,8 +54,13 @@ test("{§web-build} development reloads HTML and hot-updates CSS without the dae
         assert.deepEqual(await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
             ["/styles/index.css"]);
         const entry = await readFile(join(root, "styles", "index.css"), "utf8");
-        assert.deepEqual([...entry.matchAll(/@import url\("(.+)"\);/gu)].map((match) => match[1]),
-            ["vendor", "structure", "style", "state"].map((name) => `./app-${name}.css`));
+        assert.deepEqual([...entry.matchAll(/@import url\("(.+)"\);/gu)].map((match) => match[1]), [
+            "on_the_money/css/schema",
+            "on_the_money/css/schemes/green",
+            "./app-structure.css",
+            "./app-style.css",
+            "./app-state.css",
+        ]);
 
         const html = join(root, "index.html");
         await writeFile(html, (await readFile(html, "utf8")).replace("</main>", '<p data-text="reload">Live reload works</p></main>'));
@@ -217,8 +223,7 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
         const stylesFile = join(root, "styles", "app-style.css");
         await writeFile(
             stylesFile,
-            (await readFile(stylesFile, "utf8"))
-                + "\n:root { --dev-live-probe: 17px; }\nmain { scroll-padding-top: var(--dev-live-probe); }\n.unused-dev-class { color: red; }\n",
+            (await readFile(stylesFile, "utf8")).replace(/\}\s*$/u, "    :root { --dev-live-probe: 17px; }\n}\n"),
         );
         await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replace("No workspaces.", "Zero workspaces yet."));
 
@@ -230,11 +235,25 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
         );
         assert.match(await page.locator("main").innerText(), /Zero workspaces yet\./u);
 
-        const updatedAuthCss = await page.request.get(`${base}${registeredStylesheetPath}`);
-        assert.equal(updatedAuthCss.status(), 200);
-        const cssText = await updatedAuthCss.text();
+        const rawGet = (url, encoding) => new Promise((resolve, reject) => {
+            httpGet(url, { headers: { "accept-encoding": encoding } }, (res) => {
+                const chunks = [];
+                res.on("data", (chunk) => chunks.push(chunk));
+                res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+                res.on("error", reject);
+            }).on("error", reject);
+        });
+
+        const updatedAuthCss = await rawGet(`${base}${registeredStylesheetPath}`, "br");
+        assert.equal(updatedAuthCss.status, 200);
+        assert.equal(updatedAuthCss.headers["content-encoding"], "br");
+        const cssText = brotliDecompressSync(updatedAuthCss.body).toString("utf8");
         assert.match(cssText, /--dev-live-probe:\s*17px/u);
-        assert.doesNotMatch(cssText, /unused-dev-class/u, "live builds preserve production PurgeCSS pruning");
+
+        const gzipAuthCss = await rawGet(`${base}${registeredStylesheetPath}`, "gzip");
+        assert.equal(gzipAuthCss.status, 200);
+        assert.equal(gzipAuthCss.headers["content-encoding"], "gzip");
+        assert.equal(gunzipSync(gzipAuthCss.body).toString("utf8"), cssText);
 
         checkBrowser();
         await context.close();

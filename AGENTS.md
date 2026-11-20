@@ -11,8 +11,9 @@ interface. OTM enhances documents, not a generic JavaScript application shell.
 Readable English lives at its rendering site, not in placeholders replaced at
 boot. OTM defects and missing general mechanisms go upstream; do not introduce
 consumer shims or disable its checks to work around them.
-Keep CSS concerns in four files: app-vendor.css (pinned Pico Classless Green),
-app-structure.css (layout), app-style.css (token overrides), and app-state.css
+Keep CSS concerns in the 5-S `@layer schema, scheme, structure, style, state;` cascade:
+`on_the_money/css/schema` and `on_the_money/css/schemes/green` as the classless substrate,
+`app-structure.css` (layout), `app-style.css` (token overrides and skin), and `app-state.css`
 (attribute-driven visual state). Use #148800 brand accents, readable light/dark
 colors and system monospace typography. Do not add decorative theming, navigation,
 state machinery or dependencies for future work. Content-renderer dependencies

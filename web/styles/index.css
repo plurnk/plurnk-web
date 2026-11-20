@@ -1,4 +1,7 @@
-@import url("./app-vendor.css");
+@layer schema, scheme, structure, style, state;
+
+@import url("on_the_money/css/schema");
+@import url("on_the_money/css/schemes/green");
 @import url("./app-structure.css");
 @import url("./app-style.css");
 @import url("./app-state.css");

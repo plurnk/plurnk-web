@@ -181,7 +181,7 @@ export default function reviewRequests(controls, yolo) {
         const late = supported && current.some(expired);
         const auto = effectiveYolo();
         const manual = !supported ? 0 : late ? current.length : current.filter((gate) => !auto || proposal(gate) === undefined).length;
-        the(form, { requestCount: manual, deadlinePassed: late ? "" : null });
+        the(form, { "request-count": manual, "deadline-passed": late ? "" : null });
         return !supported ? "unsupported" : late ? "expired" : manual > 0 ? "manual" : "automatic";
     }
     /** @param {SessionGate} gate @param {number} index @param {Element} [before] */
@@ -196,13 +196,13 @@ export default function reviewRequests(controls, yolo) {
             : "";
         const editable = typeof facts.body === "string";
         the(row, {
-            interruptId: gate.id, proposalChoice: `decision-${index}`, proposalEditName: `body-${index}`, proposalSession: facts.session,
-            proposalOp: facts.op, proposalDeadline: gate.expiresAt ?? "",
-            proposalDeadlineLabel: gate.expiresAt === undefined ? "" : new Date(gate.expiresAt).toLocaleString(),
-            proposalTargetEmpty: targetText ? "false" : "true",
-            proposalHasDiff: patchText ? "true" : "false",
-            proposalBodyEmpty: facts.body ? "false" : "true",
-            proposalEditable: editable ? "true" : "false",
+            "interrupt-id": gate.id, "proposal-choice": `decision-${index}`, "proposal-edit-name": `body-${index}`, "proposal-session": facts.session,
+            "proposal-op": facts.op, "proposal-deadline": gate.expiresAt ?? "",
+            "proposal-deadline-label": gate.expiresAt === undefined ? "" : new Date(gate.expiresAt).toLocaleString(),
+            "proposal-target-empty": targetText ? "false" : "true",
+            "proposal-has-diff": patchText ? "true" : "false",
+            "proposal-body-empty": facts.body ? "false" : "true",
+            "proposal-editable": editable ? "true" : "false",
         });
         const target = $(row, "[data-proposal-target]");
         const diff = $(row, "[data-proposal-diff] > code");
@@ -218,7 +218,7 @@ export default function reviewRequests(controls, yolo) {
         body.textContent = facts.body;
         editField.value = facts.body;
     }
-    the(form, { requestCount: 0, reviewUnavailable: "" });
+    the(form, { "request-count": 0, "review-unavailable": "" });
     return {
         form,
         /** {§web-session-commands} Change only proposal controls; question answers remain in their original nodes.
@@ -274,10 +274,10 @@ export default function reviewRequests(controls, yolo) {
                     const row = $.clone(list, "#session-question");
                     rows.set(gate.id, row);
                     the(row, {
-                        interruptId: gate.id,
-                        requestSession: interaction?.sessionId ?? "",
-                        requestTool: toolName,
-                        responseError: "",
+                        "interrupt-id": gate.id,
+                        "request-session": interaction?.sessionId ?? "",
+                        "request-tool": toolName,
+                        "response-error": "",
                     });
                     const message = $(row, "[data-request-message]");
                     const args = $(row, "[data-request-arguments]");

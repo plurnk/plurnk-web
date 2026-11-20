@@ -56,7 +56,7 @@ export default async function math(fragment) {
     let temml;
     try { ({ default: temml } = await (renderer ??= import("./math-renderer.js"))); }
     catch (error) {
-        for (const outlet of outlets) the(outlet, "mathError", "Math unavailable");
+        for (const outlet of outlets) the(outlet, "math-error", "Math unavailable");
         throw error;
     }
     for (const outlet of outlets) {
@@ -68,7 +68,7 @@ export default async function math(fragment) {
             temml.render(match.text, rendered, { displayMode: match.display, annotate: true, trust: false, throwOnError: true, macros: {} });
         } catch (error) {
             if (!(error instanceof temml.ParseError)) throw error;
-            the(outlet, "mathError", "Invalid or unsupported math");
+            the(outlet, "math-error", "Invalid or unsupported math");
             outlet.setAttribute("title", String(error));
             continue;
         }

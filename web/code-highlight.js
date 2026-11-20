@@ -23,7 +23,7 @@ export default async function highlightCode(fragment) {
     let highlight;
     try { ({ default: highlight } = await (renderer ??= import("./code-highlight-renderer.js"))); }
     catch (error) {
-        for (const outlet of outlets) the(outlet, "codeError", "Syntax highlighting unavailable");
+        for (const outlet of outlets) the(outlet, "code-error", "Syntax highlighting unavailable");
         throw error;
     }
     // Markdown inserts the fragment synchronously after starting enhancements.

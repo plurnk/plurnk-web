@@ -54,7 +54,6 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
     assert.ok(archive.files.some(({ path }) => /^dist\/assets\/.+\.js$/u.test(path)));
     assert.ok(archive.files.some(({ path }) => /^dist\/assets\/.+\.css$/u.test(path)));
     assert.ok(archive.files.some(({ path }) => path === "dist/vendor/OTM-LICENSE.txt"));
-    assert.ok(archive.files.some(({ path }) => path === "dist/vendor/PICO-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "dist/vendor/DEPENDENCIES-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "dist/assets.json"));
     assert.ok(archive.files.some(({ path }) => path === ".env.defaults"));
@@ -169,20 +168,24 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                             await tab.goto(base);
                             assert.equal(await tab.locator("main").innerText(), "No sessions.");
                             assert.equal(await tab.title(), "Plurnk");
-                            for (const [colorScheme, primary] of /** @type {const} */ ([["light", "#148800"], ["dark", "#4eb31b"]])) {
+                            for (const [colorScheme, primary] of /** @type {const} */ ([["light", "rgb(20, 136, 0)"], ["dark", "rgb(78, 179, 27)"]])) {
                                 await tab.emulateMedia({ colorScheme });
                                 const rendered = await tab.evaluate(() => {
                                     const root = getComputedStyle(document.documentElement);
+                                    const probe = document.createElement("a");
+                                    document.body.append(probe);
+                                    const resolvedPrimary = getComputedStyle(probe).color;
+                                    probe.remove();
                                     return {
-                                        primary: root.getPropertyValue("--pico-primary").trim(),
+                                        primary: resolvedPrimary,
                                         scheme: root.colorScheme,
                                         padding: parseFloat(getComputedStyle(document.querySelector("main")).paddingTop),
                                         font: getComputedStyle(document.querySelector("main")).fontFamily,
-                                        monospace: root.getPropertyValue("--pico-font-family-monospace").trim(),
+                                        monospace: root.getPropertyValue("--otm-font-family-monospace").trim(),
                                     };
                                 });
                                 assert.equal(rendered.primary, primary);
-                                assert.equal(rendered.scheme, colorScheme);
+                                assert.equal(rendered.scheme, "light dark");
                                 assert.ok(rendered.padding > 0, "semantic main receives the substrate layout");
                                 assert.deepEqual(rendered.font.split(",").map((name) => name.trim()),
                                     rendered.monospace.split(",").map((name) => name.trim()),

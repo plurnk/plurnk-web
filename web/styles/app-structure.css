@@ -1,730 +1,513 @@
-/* {§web-page-shell} Native documents retain readable measure, viewport gutters and standalone safe-area clearance. */
-body > header,
-body > :where(#workspace-tabs),
-body > main,
-body > footer {
-    max-inline-size: 65ch;
-    padding-right: calc(var(--pico-spacing) + env(safe-area-inset-right, 0px));
-    padding-left: calc(var(--pico-spacing) + env(safe-area-inset-left, 0px));
-    overflow-wrap: anywhere;
-}
+@layer structure {
+    :root {
+        --otm-line-height: 1.25;
+        --otm-form-element-spacing-block: 0.75rem;
+        --otm-form-element-spacing-inline: 1rem;
+    }
 
-body:not(:has(> footer)) > main {
-    padding-block-end: calc(var(--pico-block-spacing-vertical) + env(safe-area-inset-bottom, 0px));
-}
-
-/* {§web-page-shell} Intrinsic header/footer tracks need no measured offsets. */
-body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) {
-    block-size: 100dvh;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    overflow: hidden;
-}
-
-body:has(> #workspace-tabs):has(> main:is([data-page="workspace"], [data-page="session"])) {
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-}
-
-body > main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"]) {
-    min-block-size: 0;
-    overflow: auto;
-}
-
-#session-status {
-    min-block-size: 0;
-    overflow: auto;
-    padding-block: var(--pico-spacing) calc(var(--pico-spacing) + env(safe-area-inset-bottom, 0px));
-}
-
-nav,
-nav ul {
-    flex-wrap: wrap;
-}
-
-nav ul,
-nav li {
-    min-inline-size: 0;
-    max-inline-size: 100%;
-}
-
-ul:has(> [data-directory-entry]) {
-    padding: 0;
-}
-
-/* {§web-page-shell} Breadcrumbs own overflow, never another fixed-header row. */
-body > header {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: "brand breadcrumb menu";
-    align-items: center;
-    gap: var(--pico-spacing);
-    padding-block: env(safe-area-inset-top, 0) 0;
-}
-
-body > header > a {
-    display: flex;
-    grid-area: brand;
-    align-items: center;
-}
-
-body > header > a > img {
-    inline-size: 2ch;
-    block-size: 2ch;
-}
-
-body > header nav svg {
-    display: inline-block;
-    inline-size: 2ch;
-    block-size: 2ch;
-    vertical-align: middle;
-}
-
-body > header > nav[aria-label="Main navigation"] {
-    grid-area: menu;
-}
-
-body > header > nav[aria-label] > ul {
-    flex-wrap: nowrap;
-    margin-inline: 0;
-}
-
-body > header > nav[aria-label] li {
-    flex: 0 0 auto;
-    max-inline-size: none;
-    padding-block: 0;
-}
-
-body > header > nav[aria-label="breadcrumb"] {
-    position: relative;
-    grid-area: breadcrumb;
-    min-inline-size: 0;
-    padding-block: var(--pico-nav-link-spacing-vertical);
-    overflow-x: auto;
-    white-space: nowrap;
-}
-
-body > header > nav[aria-label="breadcrumb"] > ul {
-    inline-size: max-content;
-    margin-inline: auto;
-}
-
-body > header > nav[aria-label="breadcrumb"] :is(a, [aria-current="page"]) {
-    display: inline-block;
-}
-
-header nav form,
-header nav button[type="submit"] {
-    margin: 0;
-}
-
-header nav button {
-    --pico-form-element-spacing-vertical: 0;
-    --pico-form-element-spacing-horizontal: 0;
-}
-
-/* {§web-page-shell} The header keeps Pico's close convention; footers inside forms align like article footers. */
-dialog form > footer {
-    text-align: right;
-}
-
-dialog form > footer button {
-    inline-size: auto;
-    margin-bottom: 0;
-}
-
-dialog form > footer button:not(:first-of-type) {
-    margin-inline-start: calc(var(--pico-spacing) * 0.5);
-}
-
-body > header nav[aria-label="breadcrumb"] li button {
-    --pico-nav-link-spacing-vertical: 0px;
-    --pico-nav-link-spacing-horizontal: 0px;
-
-    height: auto;
-    margin: 0;
-    padding: 0;
-    border-width: 0;
-    line-height: inherit;
-    vertical-align: baseline;
-}
-
-/* {§web-workspace-tabs} Stationary intra-workspace tab strip above the scroller; compact switcher below 768px. */
-#workspace-tabs {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    justify-content: flex-start;
-    gap: calc(var(--pico-spacing) * 0.5);
-    min-inline-size: 0;
-    padding-block: calc(var(--pico-spacing) * 0.25);
-    border-block-end: var(--pico-border-width) solid var(--pico-muted-border-color);
-}
-
-#workspace-tabs :where(svg) {
-    display: inline-block;
-    inline-size: 2ch;
-    block-size: 2ch;
-    vertical-align: middle;
-}
-
-#workspace-tabs > :where(button) {
-    --pico-form-element-spacing-vertical: 0;
-    --pico-form-element-spacing-horizontal: 0;
-
-    flex: 0 0 auto;
-    inline-size: auto;
-    height: auto;
-    margin: 0;
-    padding: calc(var(--pico-spacing) * 0.25);
-    border-width: 0;
-}
-
-#workspace-tabs > [data-workspace-switcher] {
-    display: none;
-    flex: 1 1 auto;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.5ch;
-    min-inline-size: 0;
-    overflow: hidden;
-}
-
-[data-switcher-current] {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-#workspace-tabs > :where(ul) {
-    display: flex;
-    flex: 1 1 auto;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: calc(var(--pico-spacing) * 0.25);
-    min-inline-size: 0;
-    margin: 0;
-    padding: 0;
-    overflow-x: auto;
-    white-space: nowrap;
-}
-
-#workspace-tabs :where(ul > li) {
-    flex: 0 0 auto;
-    max-inline-size: none;
-    margin: 0;
-    padding: 0;
-}
-
-#workspace-tabs :where(ul > li > a) {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35ch;
-    margin: 0;
-    padding: calc(var(--pico-spacing) * 0.25) calc(var(--pico-spacing) * 0.6);
-    border-block-end: calc(var(--pico-border-width) * 2) solid transparent;
-}
-
-#dialog-workspace-switcher :where([data-switcher-list]) {
-    max-block-size: 50dvh;
-    margin: 0;
-    padding: 0;
-    overflow-y: auto;
-}
-
-#dialog-workspace-switcher :where([data-switcher-list] > li) {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-#dialog-workspace-switcher :where([data-switcher-list] > li > a) {
-    display: flex;
-    align-items: center;
-    gap: 0.5ch;
-    padding: calc(var(--pico-spacing) * 0.4) calc(var(--pico-spacing) * 0.6);
-    border-radius: var(--pico-border-radius);
-    text-decoration: none;
-}
-
-/* {§web-workspace-settings} Responsive modal layout for workspace subsystem management. */
-#dialog-workspace-settings > :where(article) {
-    inline-size: min(100%, 72ch);
-    max-inline-size: 72ch;
-}
-
-#dialog-workspace-settings :where([data-settings-nav]) {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: calc(var(--pico-spacing) * 0.25);
-    margin: 0 0 var(--pico-spacing);
-    padding: 0;
-    border-block-end: var(--pico-border-width) solid var(--pico-muted-border-color);
-    overflow-x: auto;
-    white-space: nowrap;
-}
-
-#dialog-workspace-settings :where([data-settings-nav] > li) {
-    flex: 0 0 auto;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-#dialog-workspace-settings :where([data-settings-nav] button) {
-    --pico-form-element-spacing-vertical: 0;
-    --pico-form-element-spacing-horizontal: 0;
-
-    inline-size: auto;
-    margin: 0;
-    padding: calc(var(--pico-spacing) * 0.3) calc(var(--pico-spacing) * 0.6);
-    border-width: 0;
-    border-radius: 0;
-    border-block-end: calc(var(--pico-border-width) * 2) solid transparent;
-}
-
-#dialog-workspace-settings :where([data-candidate-rows]) {
-    padding: 0;
-}
-
-#dialog-workspace-settings :where([data-candidate-rows] > li) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: calc(var(--pico-spacing) * 0.5);
-    list-style: none;
-    padding-block: calc(var(--pico-spacing) * 0.25);
-}
-
-:is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: calc(var(--pico-spacing) * 0.35);
-    margin: 0;
-}
-
-:is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset > button) {
-    flex: 0 0 auto;
-    inline-size: auto;
-    margin: 0;
-    padding: calc(var(--pico-form-element-spacing-vertical) * 0.4) calc(var(--pico-form-element-spacing-horizontal) * 0.65);
-}
-
-@media (scripting: enabled) and (width < 768px) {
-    #workspace-tabs > :where(ul) {
+    template {
         display: none;
     }
 
-    #workspace-tabs > [data-workspace-switcher] {
-        display: inline-flex;
+    /* {§web-page-shell} Native documents retain readable measure, viewport gutters and standalone safe-area clearance. */
+    body > header,
+    body > :where(#workspace-tabs),
+    body > main,
+    body > footer {
+        max-inline-size: 65ch;
+        padding-inline: calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)) calc(var(--otm-spacing) + env(safe-area-inset-right, 0px));
+        overflow-wrap: anywhere;
     }
-}
 
-figure:has(> table) {
-    overflow-x: auto;
-}
+    body:not(:has(> footer)) > main {
+        padding-block-end: calc(var(--otm-spacing) + env(safe-area-inset-bottom, 0px));
+    }
 
-table {
-    overflow-wrap: normal;
-}
-
-/* {§web-session-conversation} {§web-session-history} Native main scroller; stream updates do not move focus. */
-#session-conversation li {
-    min-inline-size: 0;
-}
-
-#session-conversation :where(details > ul, [data-prompt-replies]),
-:is(#session-conversation, #session-diagnostics, #session-command-results) > ul {
-    padding: 0;
-}
-
-[data-directory-entry],
-#session-conversation :where(details > ul, [data-prompt-replies]) > li,
-:is(#session-conversation, #session-diagnostics, #session-command-results) > ul > li {
-    list-style: none;
-}
-
-/* Pico's `ul li` rule otherwise overrides numbered lists inside the conversation's ul. */
-:is(#session-conversation, [data-session-reply]) ol > li {
-    list-style-type: decimal;
-}
-
-#session-descendants > ul {
-    margin-block-start: var(--pico-spacing);
-}
-
-@media (scripting: none) {
-    /* Nothing opens a dialog without scripting; Pico hides one that is not open, at this same specificity,
-       and sizes it as a modal overlay. In flow it is a card in the page's content. */
-    dialog:not([open]) {
-        display: block;
-        position: static;
-        inline-size: auto;
-        min-inline-size: 0;
-        block-size: auto;
+    #session-status {
         min-block-size: 0;
-        margin-block: var(--pico-spacing);
-        padding: 0;
-        border: 0;
-        background-color: transparent;
-        backdrop-filter: none;
+        overflow: auto;
+        padding-block: var(--otm-spacing) calc(var(--otm-spacing) + env(safe-area-inset-bottom, 0px));
     }
 
-    dialog > article {
-        inline-size: auto;
+    nav,
+    nav ul {
+        flex-wrap: wrap;
+    }
+
+    nav ul,
+    nav li {
+        min-inline-size: 0;
+        max-inline-size: 100%;
+    }
+
+    /* {§web-page-shell} Breadcrumbs own overflow, never another fixed-header row. */
+    body > header {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas: "brand breadcrumb menu";
+        align-items: center;
+        gap: var(--otm-spacing);
+        padding-block: env(safe-area-inset-top, 0) 0;
+    }
+
+    body > header > a {
+        display: flex;
+        grid-area: brand;
+        align-items: center;
+    }
+
+    body > header > a > img {
+        inline-size: 2ch;
+        block-size: 2ch;
+    }
+
+    body > header nav svg {
+        display: inline-block;
+        inline-size: 2ch;
+        block-size: 2ch;
+        vertical-align: middle;
+    }
+
+    body > header > nav[aria-label="Main navigation"] {
+        grid-area: menu;
+    }
+
+    body > header > nav[aria-label] > ul {
+        flex-wrap: nowrap;
+        margin-inline: 0;
+    }
+
+    body > header > nav[aria-label] li {
+        flex: 0 0 auto;
         max-inline-size: none;
-        max-block-size: none;
+        padding-block: 0;
+    }
+
+    body > header > nav[aria-label="breadcrumb"] {
+        position: relative;
+        grid-area: breadcrumb;
+        min-inline-size: 0;
+        padding-block: calc(var(--otm-spacing) * 0.5);
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    body > header > nav[aria-label="breadcrumb"] > ul {
+        align-items: stretch;
+        inline-size: max-content;
+        margin-inline: auto;
+    }
+
+    body > header > nav[aria-label="breadcrumb"] > ul > li {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35ch;
+    }
+
+    body > header > nav[aria-label="breadcrumb"] a {
+        display: inline-block;
+    }
+
+    body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
+        content: "›" / "";
+        margin-inline-start: var(--otm-spacing);
+    }
+
+    header nav li > :is(a, form) {
+        display: flex;
+        align-items: center;
+    }
+
+    header nav form,
+    header nav button[type="submit"] {
         margin: 0;
     }
 
-    button[data-dialog-target],
-    button[data-workspace-switcher],
-    button[data-workspace-settings] {
+    header nav button {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        border-width: 0;
+    }
+
+    /* Grouped inline controls (<fieldset role="group">) */
+    fieldset[role="group"] {
+        display: flex;
+        inline-size: 100%;
+        margin-block-end: var(--otm-spacing);
+    }
+
+    fieldset[role="group"] > * {
+        flex: 1 1 auto;
+        inline-size: auto;
+        margin-block-end: 0;
+    }
+
+    fieldset[role="group"] > :is(button, input:where([type="submit"], [type="button"], [type="reset"])) {
+        flex: 0 0 auto;
+    }
+
+    fieldset[role="group"] > :not(:first-child) {
+        margin-inline-start: calc(var(--otm-border-width) * -1);
+    }
+
+    /* {§web-page-shell} Dialog headers align titles with close controls; footers inside forms align actions to the end. */
+    article:where(#session-connection, #session-onboarding-banner, #session-command-results article) > header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+    }
+
+    dialog article > header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+    }
+
+    dialog article > header > p {
+        margin-block-end: 0;
+    }
+
+    dialog form > footer {
+        text-align: end;
+    }
+
+    dialog form > footer button {
+        inline-size: auto;
+        margin-block-end: 0;
+    }
+
+    dialog form > footer button:not(:first-of-type) {
+        margin-inline-start: calc(var(--otm-spacing) * 0.5);
+    }
+
+    dialog article > header button[rel="prev"] {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+        padding: 0.25rem;
+        border-width: 0;
+        line-height: 1;
+    }
+
+    dialog article > header button[rel="prev"]::before {
+        content: "✕" / "";
+    }
+
+    body > header nav[aria-label="breadcrumb"] li button {
+        display: inline-block;
+        block-size: auto;
+        margin: 0;
+        padding: 0;
+        border-width: 0;
+        line-height: inherit;
+        vertical-align: middle;
+    }
+
+    /* {§web-workspace-tabs} Stationary intra-workspace tab strip above the scroller; compact switcher below 768px. */
+    #workspace-tabs {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: calc(var(--otm-spacing) * 0.5);
+        min-inline-size: 0;
+        padding-block: calc(var(--otm-spacing) * 0.25);
+    }
+
+    #workspace-tabs :where(svg) {
+        display: inline-block;
+        inline-size: 2ch;
+        block-size: 2ch;
+        vertical-align: middle;
+    }
+
+    #workspace-tabs > :where(button) {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        flex: 0 0 auto;
+        inline-size: auto;
+        block-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.25);
+        border-width: 0;
+    }
+
+    #workspace-tabs > :where(ul) {
+        display: flex;
+        flex: 1 1 auto;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.25);
+        min-inline-size: 0;
+        margin: 0;
+        padding: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    #workspace-tabs :where(ul > li) {
+        flex: 0 0 auto;
+        max-inline-size: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    #workspace-tabs :where(ul > li > a) {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35ch;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.25) calc(var(--otm-spacing) * 0.6);
+    }
+
+    #dialog-workspace-switcher :where(ul) {
+        max-block-size: 50dvh;
+        margin: 0;
+        padding: 0;
+        overflow-y: auto;
+    }
+
+    #dialog-workspace-switcher :where(ul > li) {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    #dialog-workspace-switcher :where(ul > li > a) {
+        display: flex;
+        align-items: center;
+        gap: 0.5ch;
+        padding: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.6);
+    }
+
+    /* {§web-workspace-settings} Responsive modal layout for workspace subsystem management. */
+    #dialog-workspace-settings > :where(article) {
+        inline-size: min(100%, 72ch);
+        max-inline-size: 72ch;
+    }
+
+    #dialog-workspace-settings :where(nav[aria-label="Settings sections"] > ul) {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.25);
+        margin: 0 0 var(--otm-spacing);
+        padding: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    #dialog-workspace-settings :where(nav[aria-label="Settings sections"] > ul > li) {
+        flex: 0 0 auto;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    #dialog-workspace-settings :where(nav[aria-label="Settings sections"] button) {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.6);
+        border-width: 0;
+    }
+
+    @media (scripting: enabled) and (width < 768px) {
+        #workspace-tabs > :where(ul) {
+            display: none;
+        }
+    }
+
+    figure:has(> table) {
+        overflow-x: auto;
+    }
+
+    table {
+        overflow-wrap: normal;
+    }
+
+    /* {§web-session-conversation} {§web-session-history} Native main scroller; stream updates do not move focus. */
+    #session-conversation li {
+        min-inline-size: 0;
+    }
+
+    #session-conversation :where(details > ul),
+    :is(#session-conversation, #session-diagnostics, #session-command-results) > ul {
+        padding: 0;
+    }
+
+    #session-conversation :where(details > ul) > li,
+    :is(#session-conversation, #session-diagnostics, #session-command-results) > ul > li {
+        list-style: none;
+    }
+
+    #session-conversation ol > li {
+        list-style-type: decimal;
+    }
+
+    #session-descendants > ul {
+        margin-block-start: var(--otm-spacing);
+    }
+
+    @media (scripting: none) {
+        dialog > article {
+            inline-size: auto;
+            max-inline-size: none;
+            max-block-size: none;
+            margin: 0;
+        }
+    }
+
+    #session-compose button {
+        flex: 0 0 auto;
+        inline-size: auto;
+        padding-inline: var(--otm-form-element-spacing-block);
+    }
+
+    button[form="session-compose"]::before {
+        content: "▶️" / "";
+    }
+
+    button[form="session-stop"]::before {
+        content: "⏹️" / "";
+    }
+
+    #session-reconnect,
+    #session-reconnect > button {
+        inline-size: auto;
+        margin: 0;
+    }
+
+    #session-onboarding-banner > footer > button {
+        inline-size: auto;
+        margin: 0;
+    }
+
+    #session-status [aria-label="Model controls"] {
+        flex-wrap: nowrap;
+    }
+
+    /* {§web-session-input} Native sizing grows the draft, never a JS resize controller. */
+    #session-compose,
+    #session-compose fieldset,
+    #session-stop,
+    [aria-label="Session controls"] {
+        margin: 0;
+    }
+
+    #session-compose fieldset {
+        align-items: stretch;
+        min-inline-size: 0;
+    }
+
+    #session-message {
+        field-sizing: content;
+        min-inline-size: 0;
+        min-block-size: 1lh;
+        max-block-size: calc(100dvh / 3);
+        resize: none;
+        margin: 0;
+    }
+
+    #session-descendants,
+    #session-descendants > summary {
+        margin: 0;
+    }
+
+    #session-descendants > summary::before {
+        content: "🐜 " / "";
+    }
+
+    /* {§web-content-reflow} Literal text preserves whitespace without imposing code geometry. */
+    #main :where(pre:not(:has(> code))) {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    /* {§web-card-disclosure} The card owns outer spacing; its final content adds no second margin. */
+    #main li > article > :last-child:not(header),
+    #main li > article > details,
+    #main li > article > details > :last-child {
+        margin-block-end: 0;
+    }
+
+    #main li > article > details {
+        padding-block-end: 0;
+    }
+
+    #session-diagnostics > ul > li > article > header:only-child {
+        margin-block-end: calc(var(--otm-spacing) * -1);
+    }
+
+    #session-command-results:not(:has(ul > li)),
+    #session-diagnostics:not(:has(ul > li)) {
         display: none;
     }
-}
 
-#session-compose button {
-    flex: 0 0 auto;
-    inline-size: auto;
-    padding-inline: var(--pico-form-element-spacing-vertical);
-}
+    /* Phrasing fields wrap beside the native chevron, never pushing it into an empty row. */
+    #main :is(li > article, li) > details > summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        column-gap: 0.5ch;
+        line-height: inherit;
+    }
 
-#session-compose [data-compose-suggestions],
-#session-compose [data-compose-attachments] {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: calc(var(--pico-spacing) * 0.4);
-    margin: 0 0 calc(var(--pico-spacing) * 0.4);
-    padding: 0;
-}
+    #main :is(li > article, li) > details > summary > * {
+        grid-column: 1;
+        min-inline-size: 0;
+    }
 
-#session-compose [data-suggestion-item] {
-    list-style: none;
-    min-inline-size: 0;
-    max-inline-size: 100%;
-    margin: 0;
-}
+    #main :is(li > article, li) > details > summary::after {
+        content: "▸" / "";
+        grid-column: 2;
+        grid-row: 1;
+    }
 
-#session-compose [data-accept-suggestion] {
-    --pico-form-element-spacing-vertical: 0.2rem;
-    --pico-form-element-spacing-horizontal: 0.5rem;
+    #session-connection > p:last-child {
+        margin-block-end: 0;
+    }
 
-    inline-size: auto;
-    max-inline-size: 100%;
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+    section#overview-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block-end: var(--otm-spacing);
+    }
 
-#session-compose [data-attachment-item] {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4ch;
-    list-style: none;
-    min-inline-size: 0;
-    max-inline-size: 100%;
-    margin: 0;
-    padding: calc(var(--pico-spacing) * 0.2) calc(var(--pico-spacing) * 0.5);
-    border: var(--pico-border-width) solid var(--pico-muted-border-color);
-    border-radius: var(--pico-border-radius);
-}
+    #overview-controls > input[type="search"] {
+        flex: 1 1 18ch;
+        min-inline-size: 0;
+        margin: 0;
+    }
 
-#session-compose [data-remove-attachment] {
-    --pico-form-element-spacing-vertical: 0;
-    --pico-form-element-spacing-horizontal: 0;
+    #overview-controls > select {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+    }
 
-    inline-size: auto;
-    margin: 0;
-    padding: 0 0.2ch;
-    border-width: 0;
-    line-height: inherit;
-}
+    /* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */
+    :is(#main, #dialog-workspace-settings) fieldset {
+        min-inline-size: 0;
+    }
 
-#session-reconnect,
-#session-reconnect > button {
-    inline-size: auto;
-    margin: 0;
-}
-
-article:where(#session-connection, #session-onboarding-banner, #session-command-results article) > header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--pico-spacing);
-}
-
-#session-onboarding-banner [data-dismiss-onboarding],
-#session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
-    --pico-form-element-spacing-vertical: 0;
-    --pico-form-element-spacing-horizontal: 0;
-
-    inline-size: auto;
-    margin: 0;
-}
-
-#session-onboarding-banner > footer > button {
-    inline-size: auto;
-    margin: 0;
-}
-
-#session-command-results [data-open-workspace-settings] {
-    margin-inline-start: auto;
-}
-
-#session-status [data-status-line],
-#session-status [data-status-line] > ul {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: center;
-    gap: var(--pico-spacing);
-    padding: 0;
-    margin: 0;
-}
-
-#session-status [data-status-line] > ul {
-    min-inline-size: 0;
-    max-inline-size: 100%;
-}
-
-#session-status [aria-label="Model controls"] {
-    flex-wrap: nowrap;
-}
-
-#session-status [data-status-line] > ul > li {
-    list-style: none;
-    min-inline-size: 0;
-    margin: 0;
-}
-
-#session-status [data-status-line] button {
-    --pico-form-element-spacing-vertical: 0;
-    --pico-form-element-spacing-horizontal: 0;
-
-    margin: 0;
-}
-
-/* {§web-session-input} Native sizing grows the draft, never a JS resize controller. */
-#session-compose,
-#session-compose fieldset,
-#session-stop,
-[aria-label="Session controls"] {
-    margin: 0;
-}
-
-#session-compose fieldset {
-    align-items: stretch;
-    min-inline-size: 0;
-}
-
-#session-message {
-    field-sizing: content;
-    min-inline-size: 0;
-    min-block-size: 1lh;
-    max-block-size: calc(100dvh / 3);
-    resize: none;
-    margin: 0;
-}
-
-#session-descendants,
-#session-descendants > summary {
-    margin: 0;
-}
-
-/* {§web-session-reasoning} The preview follows its tail within its own bounded outlet. */
-[data-reasoning-preview] pre {
-    max-block-size: calc(100dvh / 3);
-    overflow: auto;
-}
-
-/* {§web-content-reflow} Literal text preserves whitespace without imposing code geometry. */
-#main :where(pre:not(:has(> code))) {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-}
-
-/* {§web-card-disclosure} The card owns outer spacing; its final content adds no second margin. */
-#main li > article > :last-child:not(header),
-#main li > article > details,
-#main li > article > details > :last-child,
-#main li > article > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
-#main li > article > details > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
-#session-conversation :is([data-loop-seq], [data-operations]) > details > ul,
-#session-conversation [data-prompt-replies] > li:last-child > article,
-[data-session-reply] > :last-child {
-    margin-block-end: 0;
-}
-
-[data-directory-entry="session"] > article > header:only-child,
-#session-diagnostics > ul > li > article > header:only-child,
-#session-conversation [data-message-id] > article > header:only-child {
-    margin-block-end: calc(var(--pico-block-spacing-vertical) * -1);
-    border-block-end: 0;
-    border-end-start-radius: var(--pico-border-radius);
-    border-end-end-radius: var(--pico-border-radius);
-}
-
-/* Phrasing fields wrap beside the native chevron, never pushing it into an empty row. */
-#main :is(li > article, li) > details > summary {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    line-height: inherit;
-}
-
-#main :is(li > article, li) > details > summary > * {
-    grid-column: 1;
-    min-inline-size: 0;
-}
-
-#main :is(li > article, li) > details > summary::after {
-    grid-column: 2;
-    grid-row: 1;
-}
-
-:is(header, summary) > :is([data-plurnk-field="outcome"], [data-plurnk-operands]) {
-    display: block;
-}
-
-/* {§web-session-directory} Native summaries contain phrasing content, arranged in compact rows. */
-:is(header, summary) > :is([data-session-identity], [data-session-workspace], [data-session-excerpt]) {
-    display: block;
-}
-
-[data-session-identity] > small,
-[data-session-workspace] > time {
-    margin-inline-start: 0.75ch;
-}
-
-[data-session-excerpt] {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-#session-connection > p:last-child {
-    margin-block-end: 0;
-}
-
-#overview-controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: calc(var(--pico-spacing) * 0.5);
-    margin-block-end: var(--pico-spacing);
-}
-
-#overview-controls > input[type="search"] {
-    flex: 1 1 18ch;
-    min-inline-size: 0;
-    margin: 0;
-}
-
-#overview-controls > select {
-    flex: 0 0 auto;
-    inline-size: auto;
-    margin: 0;
-}
-
-:is([data-env-set-form], [data-env-row-form]) > :where(fieldset) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: calc(var(--pico-spacing) * 0.5);
-    margin: 0;
-}
-
-[data-env-set-form] > :where(fieldset > select, fieldset > button),
-[data-env-row-form] > :where(fieldset > button) {
-    flex: 0 0 auto;
-    inline-size: auto;
-    margin: 0;
-}
-
-[data-env-row-form] > :where(fieldset > button) {
-    padding: calc(var(--pico-form-element-spacing-vertical) * 0.4) calc(var(--pico-form-element-spacing-horizontal) * 0.65);
-}
-
-[data-env-set-form] > :where(fieldset > input) {
-    flex: 1 1 12ch;
-    min-inline-size: 0;
-    margin: 0;
-}
-
-/* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */
-:is(#main, #dialog-workspace-settings) fieldset {
-    min-inline-size: 0;
-}
-
-[data-proposal-target-line] {
-    margin-block-end: calc(var(--pico-spacing) * 0.5);
-}
-
-[data-proposal-target] {
-    max-inline-size: 100%;
-    overflow-wrap: anywhere;
-}
-
-[data-proposal-diff] > code {
-    inline-size: max-content;
-    min-inline-size: 100%;
-    padding-block: calc(var(--pico-spacing) * 0.5);
-    padding-inline: 0;
-}
-
-[data-proposal-diff] [data-diff-line] {
-    display: inline-block;
-    min-inline-size: 100%;
-    padding-inline: var(--pico-spacing);
-}
-
-[data-session-reply] pre,
-#session-conversation pre,
-#session-command-results pre,
-#dialog-workspace-settings pre,
-#main [aria-label="Review requests"] pre,
-:is(#session-conversation, [data-session-reply]) [data-math],
-:is(#session-conversation, [data-session-reply]) [data-diagram-viewport] {
-    max-inline-size: 100%;
-    overflow-x: auto;
-}
-
-/* {§web-diagram-content} Preserve readable intrinsic labels; wide images scroll locally. */
-:is(#session-conversation, [data-session-reply]) [data-diagram-viewport] > img {
-    max-inline-size: none;
-}
-
-/* {§web-inline-images} Verified raster attachments scale within the card width and bounded height. */
-:is(#session-conversation, [data-session-reply]) [data-inline-image] {
-    margin-block: 0 var(--pico-spacing);
-}
-
-:is(#session-conversation, [data-session-reply]) [data-inline-image-viewport] > img {
-    display: block;
-    max-inline-size: 100%;
-    max-block-size: 60dvh;
-    block-size: auto;
-    border-radius: var(--pico-border-radius);
-}
-
-/* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */
-:is(#session-conversation, [data-session-reply]) [data-math="inline"] {
-    display: inline-block;
-    vertical-align: middle;
-}
-
-:is(#session-conversation, [data-session-reply]) [data-math="block"] {
-    display: block;
-    margin-block: var(--pico-spacing);
-}
-
-:is(#session-conversation, [data-session-reply]) [data-math] > math {
-    inline-size: max-content;
-    min-inline-size: 100%;
+    #session-conversation pre,
+    #session-command-results pre,
+    #dialog-workspace-settings pre,
+    #main [aria-label="Review requests"] pre {
+        max-inline-size: 100%;
+        overflow-x: auto;
+    }
 }

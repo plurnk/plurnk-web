@@ -36,8 +36,8 @@ export default async function verifyPageShell(page, { title, kind }) {
                 const card = getComputedStyle(element);
                 return { padding: parseFloat(card.paddingInlineStart), shadow: card.boxShadow, background: card.backgroundColor };
             });
-            assert.ok(style.padding > 0, `${colorScheme}: ${kind} article receives Pico card spacing`);
-            assert.notEqual(style.shadow, "none", `${colorScheme}: ${kind} article receives Pico card presentation`);
+            assert.ok(style.padding > 0, `${colorScheme}: ${kind} article receives substrate card spacing`);
+            assert.notEqual(style.shadow, "none", `${colorScheme}: ${kind} article receives substrate card presentation`);
             assert.notEqual(style.background, "rgba(0, 0, 0, 0)", `${colorScheme}: ${kind} article has a visible surface`);
         }
     }

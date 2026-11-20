@@ -6,7 +6,6 @@ import {
     methods,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
-import { Validator } from "@plurnk/plurnk-contracts";
 import {
     SessionTranslator,
     isRecord,
@@ -37,7 +36,7 @@ import {
     resolveAcpUrl,
 } from "./session-transport.js";
 
-export { PROTOCOL_VERSION, SessionTranslator, Validator, client, createHttpStream, methods, randomUUID };
+export { PROTOCOL_VERSION, SessionTranslator, client, createHttpStream, methods, randomUUID };
 
 /** @typedef {import("./session-translator.js").ToolCall} ToolCall */
 /** @typedef {import("./session-translator.js").MessagePart} MessagePart */
@@ -544,6 +543,7 @@ export default class SessionAgent {
                         control: false,
                         window: true,
                         reasoning: "link",
+                        bodies: "link",
                         ...(options.workspace ? { workspace: options.workspace } : {}),
                         ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
                     },
@@ -848,6 +848,7 @@ export default class SessionAgent {
                     plurnk: {
                         messageId: message.id,
                         reasoning: "link",
+                        bodies: "link",
                         ...(options.workspace ? { workspace: options.workspace } : {}),
                         ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
                         ...(openPaths?.length ? { openPaths: [...openPaths] } : {}),

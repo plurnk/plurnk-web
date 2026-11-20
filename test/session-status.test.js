@@ -27,14 +27,14 @@ test("{§web-session-observer} unknown accounting is not zero or a known subtota
     assert.equal(incomplete.input, "400 + ?");
     assert.equal(incomplete.output, "10 + ?");
     assert.equal(incomplete.cost, "$0.1200 + ?");
-    assert.equal(incomplete.usageLabel, "Cumulative tokens, session and descendants. Input: unknown total; known subtotal 400. Output: unknown total; known subtotal 10.");
-    assert.equal(incomplete.costLabel, "Cumulative USD, session and descendants: unknown total; known subtotal 0.12.");
+    assert.equal(incomplete["usage-label"], "Cumulative tokens, session and descendants. Input: unknown total; known subtotal 400. Output: unknown total; known subtotal 10.");
+    assert.equal(incomplete["cost-label"], "Cumulative USD, session and descendants: unknown total; known subtotal 0.12.");
     const partial = gauges({ ...idle, spend: { requests: 1, usage: { inputTokens: 12 }, knownUsage: { inputTokens: 12 },
         costUsd: "0.0000000123", knownCostUsd: "0.0000000123" } }, emptyBudget);
     assert.equal(partial.input, "12");
     assert.equal(partial.output, "?");
     assert.equal(partial.cost, "<$0.0001", "nonzero expense never rounds to free");
-    assert.equal(partial.costLabel, "Cumulative USD, session and descendants: 0.0000000123.");
+    assert.equal(partial["cost-label"], "Cumulative USD, session and descendants: 0.0000000123.");
     const unknown = gauges({ ...idle, spend: { requests: 1, usage: null, knownUsage: null, costUsd: null, knownCostUsd: null } });
     assert.equal(unknown.input, "?");
     assert.equal(unknown.output, "?");
@@ -57,14 +57,14 @@ test("{§web-session-status} model identity, effort, direct children and budgets
     { contextTokens: 0, contextCapacity: 32768, curationWeight: 4200, curationBudget: 8000 });
     assert.equal(selected.model, "local");
     assert.equal(selected.effort, "high");
-    assert.equal(selected.modelLabel, "Model: host/qwen; effort: high (explicit)");
-    assert.equal(selected.descendantsLabel, "Descendant sessions: 4; active direct children: 2");
+    assert.equal(selected["model-label"], "Model: host/qwen; effort: high (explicit)");
+    assert.equal(selected["descendants-label"], "Descendant sessions: 4; active direct children: 2");
     assert.equal(selected.gated, "1", "count sessions awaiting input, not gates");
     assert.equal(selected.descendants, "4", "the census includes completed descendants");
     assert.equal(selected.context, "0%/32.8k");
-    assert.equal(selected.contextLabel, "Current packet context: 0 / 32768 tokens");
+    assert.equal(selected["context-label"], "Current packet context: 0 / 32768 tokens");
     assert.equal(Object.hasOwn(selected, "curation"), false, "curation stays in SDK state, not the status projection");
-    assert.equal(Object.hasOwn(selected, "curationLabel"), false);
+    assert.equal(Object.hasOwn(selected, "curation-label"), false);
     assert.equal(selected.inbox, "1");
     assert.equal(gauges({ ...idle, model: { provider: "host", model: "other" } }).model, "host/other");
     assert.equal(gauges(idle).context, "", "absence is not an inherited previous budget");
@@ -99,18 +99,18 @@ test("{§web-session-status} compact accounting preserves exact accessible value
     assert.equal(result.input, "166.1k");
     assert.equal(result.output, "7.1k");
     assert.equal(result.cost, "$0.0327");
-    assert.equal(result.usageLabel, "Cumulative tokens, session and descendants. Input: 166123. Output: 7123.");
-    assert.equal(result.costLabel, "Cumulative USD, session and descendants: 0.0326789.");
+    assert.equal(result["usage-label"], "Cumulative tokens, session and descendants. Input: 166123. Output: 7123.");
+    assert.equal(result["cost-label"], "Cumulative USD, session and descendants: 0.0326789.");
     assert.deepEqual(status, before, "formatting never rewrites SDK accounting");
     assert.equal(Object.hasOwn(result, "requests"), false, "unpresented data stays out of the projection");
-    assert.equal(Object.keys(result).some((key) => key.startsWith("usage-") || key.startsWith("known-")), false);
+    assert.equal(Object.keys(result).some((key) => key !== "usage-label" && (key.startsWith("usage-") || key.startsWith("known-"))), false);
     assert.equal(gauges({ ...idle, spend: { ...idle.spend, costUsd: null, knownCostUsd: "0" } }).cost, "$0.0000 + ?");
 });
 
 test("{§web-session-status} wait uses the daemon deadline without changing lifecycle at expiry", () => {
-    assert.deepEqual(clocks(idle, 1000), { elapsed: "", wait: "", waitAt: null });
+    assert.deepEqual(clocks(idle, 1000), { elapsed: "", wait: "", "wait-at": null });
     const waiting = { ...idle, lifecycle: "parked", claimedAt: 1000, waitUntil: 62_001 };
-    assert.deepEqual(clocks(waiting, 1001), { elapsed: "0s", wait: "1m01s", waitAt: "1970-01-01T00:01:02.001Z" });
+    assert.deepEqual(clocks(waiting, 1001), { elapsed: "0s", wait: "1m01s", "wait-at": "1970-01-01T00:01:02.001Z" });
     assert.equal(clocks(waiting, 62_000).wait, "1s");
     assert.equal(clocks(waiting, 62_001).wait, "0s");
     assert.equal(clocks(waiting, 90_000).wait, "0s");

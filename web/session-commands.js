@@ -1,6 +1,6 @@
 import { $, $$, on, the } from "on_the_money";
-import { formatServiceUpdateReport, isRecord, parseFamilyCommand } from "@plurnk/plurnk-contracts";
 import { directoryPath } from "../src/directory-addresses.js";
+import { isRecord } from "./session-translator.js";
 import { listModels, sessionConfigOption, sessionEffort, sessionModel, modelLabel } from "./session-models.js";
 import { allowOptionId, rejectOptionId } from "./session-review.js";
 import { populateEnvPanel } from "./env-panel.js";
@@ -383,7 +383,7 @@ export default function sessionCommands(controls, actions) {
         const targetScope = operation === "remove"
             ? (origin === "workspace" ? "workspace" : "session")
             : ctx.listScope;
-        the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandRecovery: "" });
+        the(article, { "command-state": "pending", "command-busy": "true", "command-message": "Running…", "command-recovery": "" });
         the(panel, "env-busy", "");
         try {
             ctx.signal.throwIfAborted();
@@ -392,12 +392,12 @@ export default function sessionCommands(controls, actions) {
             ctx.signal.throwIfAborted();
             populateEnvPanel(panel, fresh, ctx.listScope);
             const verbLabel = operation === "remove" ? "unset" : `${operation}d`;
-            the(article, { commandState: "done", commandBusy: "false", commandMessage: `${alias}  ${verbLabel}`, commandRecovery: "" });
+            the(article, { "command-state": "done", "command-busy": "false", "command-message": `${alias}  ${verbLabel}`, "command-recovery": "" });
         } catch (error) {
             const { message, recovery, status } = await describeFailure(error);
             the(panel, "env-busy", null);
-            the(article, { commandState: "error", commandBusy: "false",
-                commandMessage: ctx.signal.aborted ? "Response not confirmed." : message, commandRecovery: recovery, commandStatus: status });
+            the(article, { "command-state": "error", "command-busy": "false",
+                "command-message": ctx.signal.aborted ? "Response not confirmed." : message, "command-recovery": recovery, "command-status": status });
         }
     });
     on(outlet, "submit", "[data-env-set-form]", async (event, target) => {
@@ -421,7 +421,7 @@ export default function sessionCommands(controls, actions) {
         const targetScope = scopeSelect instanceof HTMLSelectElement && scopeSelect.value === "workspace"
             ? "workspace"
             : "session";
-        the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandRecovery: "" });
+        the(article, { "command-state": "pending", "command-busy": "true", "command-message": "Running…", "command-recovery": "" });
         the(panel, "env-busy", "");
         try {
             ctx.signal.throwIfAborted();
@@ -431,12 +431,12 @@ export default function sessionCommands(controls, actions) {
             populateEnvPanel(panel, fresh, ctx.listScope);
             aliasInput.value = "";
             valueInput.value = "";
-            the(article, { commandState: "done", commandBusy: "false", commandMessage: `${alias}  active`, commandRecovery: "" });
+            the(article, { "command-state": "done", "command-busy": "false", "command-message": `${alias}  active`, "command-recovery": "" });
         } catch (error) {
             const { message, recovery, status } = await describeFailure(error);
             the(panel, "env-busy", null);
-            the(article, { commandState: "error", commandBusy: "false",
-                commandMessage: ctx.signal.aborted ? "Response not confirmed." : message, commandRecovery: recovery, commandStatus: status });
+            the(article, { "command-state": "error", "command-busy": "false",
+                "command-message": ctx.signal.aborted ? "Response not confirmed." : message, "command-recovery": recovery, "command-status": status });
         }
     });
 
@@ -463,7 +463,7 @@ export default function sessionCommands(controls, actions) {
         const body = $(row, "[data-command-output]");
         if (!article || !input || !body) throw new Error("Command result template is incomplete.");
         input.textContent = text;
-        the(article, { commandState: "pending", commandBusy: "true", commandMessage: "Running…", commandRecovery: "" });
+        the(article, { "command-state": "pending", "command-busy": "true", "command-message": "Running…", "command-recovery": "" });
         try {
             signal.throwIfAborted();
             if (isLocalExec(text)) {
@@ -479,7 +479,7 @@ export default function sessionCommands(controls, actions) {
                 signal.throwIfAborted();
                 const out = formatExecResults(res);
                 if (out) appendLiteral(body, out);
-                the(article, { commandState: "done", commandBusy: "false", commandMessage: out ? "" : "Completed." });
+                the(article, { "command-state": "done", "command-busy": "false", "command-message": out ? "" : "Completed." });
                 return true;
             }
             const { name, rest, args } = parseCommand(text);
@@ -513,6 +513,7 @@ export default function sessionCommands(controls, actions) {
                 await actions.openOnboarding?.();
                 message = "Opened model setup.";
             } else if (familyCommands.has(name)) {
+                const { parseFamilyCommand } = await import("@plurnk/plurnk-contracts");
                 const parsed = parseFamilyCommand(name, args);
                 let params = parsed.params;
                 if (parsed.actionName === "workspace.mcp.oauth.begin") {
@@ -551,15 +552,15 @@ export default function sessionCommands(controls, actions) {
                 const entries = $(result, "tbody");
                 if (!aliasList || !entries) throw new Error("Model catalog template is incomplete.");
                 $.cloneEach(aliasList, "#command-alias", matches, (item, alias) => the(item, {
-                    aliasName: alias.alias, aliasRoute: `${alias.provider}/${alias.model}`,
-                    aliasEffort: alias.effort ?? "Unspecified", aliasActive: alias.active ? "Default" : "",
+                    "alias-name": alias.alias, "alias-route": `${alias.provider}/${alias.model}`,
+                    "alias-effort": alias.effort ?? "Unspecified", "alias-active": alias.active ? "Default" : "",
                 }));
                 $.cloneEach(entries, "#command-model", catalog.items, (item, model) => the(item, {
-                    modelSelector: model.selector, modelName: model.modelName, modelContext: model.limits.contextTokens,
-                    modelEfforts: model.capabilities.efforts.join(", "), modelReadiness: model.readiness.ready ? "Configured" : "Not configured",
+                    "model-selector": model.selector, "model-name": model.modelName, "model-context": model.limits.contextTokens,
+                    "model-efforts": model.capabilities.efforts.join(", "), "model-readiness": model.readiness.ready ? "Configured" : "Not configured",
                 }));
-                the(result, { aliasCount: matches.length, modelTotal: catalog.total, modelCount: catalog.items.length,
-                    modelOffset: catalog.offset, modelMore: catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search." });
+                the(result, { "alias-count": matches.length, "model-total": catalog.total, "model-count": catalog.items.length,
+                    "model-offset": catalog.offset, "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search." });
             } else if (name === "model") {
                 const model = await sessionModel(call, args[0], args[1]);
                 message = `Model: ${modelLabel(model)}${model?.effort === undefined ? "" : ` (${model.effort})`}.`;
@@ -576,7 +577,10 @@ export default function sessionCommands(controls, actions) {
                 const { currentValue } = await sessionConfigOption(call, "mode", args[0]);
                 message = `Approval policy: ${currentValue || "review"}.`;
             } else if (name === "update") {
-                const res = await call("service.update", {});
+                const [{ formatServiceUpdateReport }, res] = await Promise.all([
+                    import("@plurnk/plurnk-contracts"),
+                    call("service.update", {}),
+                ]);
                 signal.throwIfAborted();
                 const report = formatServiceUpdateReport(isRecord(res) ? res : {});
                 appendLiteral(body, report);
@@ -838,12 +842,12 @@ export default function sessionCommands(controls, actions) {
                 }
             }
             signal.throwIfAborted();
-            the(article, { commandState: "done", commandBusy: "false", commandMessage: message });
+            the(article, { "command-state": "done", "command-busy": "false", "command-message": message });
             return true;
         } catch (error) {
             const { message, recovery, status } = await describeFailure(error);
-            the(article, { commandState: "error", commandBusy: "false",
-                commandMessage: signal.aborted ? "Response not confirmed." : message, commandRecovery: recovery, commandStatus: status });
+            the(article, { "command-state": "error", "command-busy": "false",
+                "command-message": signal.aborted ? "Response not confirmed." : message, "command-recovery": recovery, "command-status": status });
             return false;
         }
     };

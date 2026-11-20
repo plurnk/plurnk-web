@@ -185,35 +185,26 @@ test("{§web-build} production HTML references compiled assets, not development 
     assert.ok(!inventory.some(([path]) => /mermaid-renderer|\.wasm$/u.test(path)), "no browser diagram compiler or WASM asset");
 });
 
-test("{§web-build} production prunes unused CSS without dropping native state selectors", async () => {
-    const target = fileURLToPath(new URL("../web/styles/index.css", import.meta.url));
+test("{§web-build} {§web-document} production compiles the 5-S cascade and retains native state selectors", async () => {
     const bundle = await build({
         configFile: fileURLToPath(new URL("../vite.config.js", import.meta.url)),
         logLevel: "error",
         build: { write: false },
-        plugins: [{
-            name: "css-pruning-witness",
-            enforce: "pre",
-            async load(id) {
-                if (id !== target) return;
-                return await readFile(id, "utf8")
-                    + '\n:root { --unused-build-witness: red; }'
-                    + '\nunused-build-witness { color: red; }'
-                    + '\n[aria-invalid="true"] { --retained-build-witness: 1; opacity: var(--retained-build-witness); }';
-            },
-        }],
     });
     const [{ output }] = /** @type {{ output: any[] }[]} */ (Array.isArray(bundle) ? bundle : [bundle]);
-    const css = output.filter((entry) => entry.type === "asset" && entry.fileName.endsWith(".css"))
-        .map((entry) => entry.source).join("\n");
-    assert.doesNotMatch(css, /unused-build-witness/u);
+    const indexCss = output.find((entry) => entry.type === "asset" && /^assets\/index-[^/]+\.css$/u.test(entry.fileName));
+    assert.ok(indexCss, "compiled output includes the root index stylesheet");
+    const css = String(indexCss.source);
+    const layerPositions = ["schema", "scheme", "structure", "style", "state"].map((layer) => css.indexOf(`@layer ${layer}{`));
+    assert.ok(layerPositions.every((pos, i) => pos >= 0 && (i === 0 || pos > layerPositions[i - 1])),
+        `5-S cascade layers appear in canonical order: ${JSON.stringify(layerPositions)}`);
     assert.match(css, /aria-invalid/u);
-    assert.match(css, /retained-build-witness/u);
-    assert.match(css, /prefers-color-scheme/u);
+    assert.match(css, /aria-busy/u);
+    assert.match(css, /light-dark\(/u);
     assert.match(css, /prefers-reduced-motion/u);
-    assert.ok(css.includes("focus-visible"), "native keyboard-focus selectors survive production pruning");
-    assert.match(css, /details\[open\]/u, "native disclosure state survives production pruning");
-    assert.match(css, /#session-conversation :where\(details\s*>\s*ul[^)]*\)\s*>\s*li[\s\S]*?list-style:\s*none/u, "conversation loop and operation list resets survive production pruning");
+    assert.ok(css.includes("focus-visible"), "native keyboard-focus selectors survive production compilation");
+    assert.match(css, /details\[open\]|\[open\]>summary/u, "native disclosure state survives production compilation");
+    assert.match(css, /#session-conversation\s+:where\(details\s*>\s*ul\)\s*>\s*li[\s\S]*?list-style:\s*none/u, "conversation loop and operation list resets survive production compilation");
 });
 
 test("{§web-asset-encoding} the build records only useful, lossless static representations", async () => {

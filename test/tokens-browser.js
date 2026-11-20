@@ -20,10 +20,12 @@ async function sessionAgentBundle() {
         },
     });
     const [{ output }] = /** @type {{ output: any[] }[]} */ (Array.isArray(built) ? built : [built]);
-    const chunk = output.find((entry) => entry.type === "chunk" && entry.isEntry);
+    const chunks = output.filter((entry) => entry.type === "chunk");
     return async (page, base) => {
-        await page.route(new URL("/__test__/session-agent.js", base).href, (route) =>
-            route.fulfill({ contentType: "text/javascript", body: chunk.code }));
+        for (const chunk of chunks) {
+            await page.route(new URL(`/__test__/${chunk.fileName}`, base).href, (route) =>
+                route.fulfill({ contentType: "text/javascript", body: chunk.code }));
+        }
     };
 }
 
