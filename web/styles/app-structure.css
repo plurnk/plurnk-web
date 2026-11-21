@@ -320,8 +320,8 @@
         padding: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.6);
     }
 
-    /* {§web-workspace-settings} Dedicated workspace settings page layout. */
-    #workspace-settings :where(nav[aria-label="Settings sections"] > ul) {
+    /* {§web-workspace-settings} {§web-account} Dedicated workspace settings and account page layout. */
+    :is(#workspace-settings, #account-settings) :where(nav[aria-label] > ul) {
         display: flex;
         flex: 1 1 auto;
         flex-wrap: nowrap;
@@ -333,14 +333,14 @@
         white-space: nowrap;
     }
 
-    #workspace-settings :where(nav[aria-label="Settings sections"] > ul > li) {
+    :is(#workspace-settings, #account-settings) :where(nav[aria-label] > ul > li) {
         flex: 0 0 auto;
         list-style: none;
         margin: 0;
         padding: 0;
     }
 
-    #workspace-settings :where(nav[aria-label="Settings sections"] a) {
+    :is(#workspace-settings, #account-settings) :where(nav[aria-label] a) {
         display: inline-flex;
         align-items: center;
         padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.6);
@@ -352,6 +352,27 @@
 
     #workspace-settings :where(form > footer > button) {
         inline-size: auto;
+        margin: 0;
+    }
+
+    :is(#workspace-settings, #account-settings) :where(table) {
+        inline-size: 100%;
+    }
+
+    :is(#workspace-settings, #account-settings) :where(th, td) {
+        padding: calc(var(--otm-spacing) * 0.45) calc(var(--otm-spacing) * 0.55);
+        vertical-align: middle;
+    }
+
+    #account-settings :where(dl) {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        align-items: baseline;
+        gap: calc(var(--otm-spacing) * 0.5) calc(var(--otm-spacing) * 1.25);
+        margin: 0;
+    }
+
+    #account-settings :where(dt, dd) {
         margin: 0;
     }
 

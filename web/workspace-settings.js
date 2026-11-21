@@ -114,6 +114,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             "ws-settings-busy": nextBusy ? "true" : null,
             "ws-settings-message": message,
             "ws-settings-recovery": recovery,
+            "env-busy": nextBusy ? "" : null,
         });
         if (envPanel) {
             the(envPanel, "env-busy", nextBusy ? "" : null);
@@ -180,13 +181,16 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 state === "authorization-required"
                 || (def?.type === "streamable-http" && isRecord(def.authorization) && def.authorization.type === "oauth")
             );
+            const rowState = state === "disabled" ? "disabled"
+                : (state === "unavailable" || state === "authorization-required") ? "retryable"
+                : "active";
             the(tr, {
                 "family-alias": alias,
                 "family-origin": origin,
                 "family-summary": formatFamilyDetails(family, item),
                 "family-status": statusText,
                 "family-removable": origin === "workspace" ? "true" : "false",
-                "family-enabled": state !== "disabled" ? "true" : "false",
+                "family-state": rowState,
                 "family-auth": supportsOAuth ? "true" : "false",
             });
         });
@@ -264,7 +268,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         const ctx = getContext();
         const scopeForm = $(article, "form[data-ws-env-scope-form]");
         const listSelect = scopeForm ? $(scopeForm, 'select[name="listScope"]') : null;
-        const setSelect = $(envPanel, '[data-env-set-form] select[name="scope"]');
+        const setSelect = $(article, '[data-env-set-form] select[name="scope"]');
         const sessionOption = setSelect ? $(setSelect, 'option[value="session"]') : null;
         if (ctx.sessionName === null) {
             envListScope = "workspace";
@@ -367,6 +371,11 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         const envOutlet = $(article, "[data-ws-env-outlet]");
         if (envOutlet && !envPanel) {
             envPanel = $.clone(envOutlet, "#command-env");
+            const envSetForm = $(envPanel, "form[data-env-set-form]");
+            const envFormOutlet = $(article, "[data-ws-env-form-outlet]");
+            if (envSetForm && envFormOutlet) {
+                envFormOutlet.replaceWith(envSetForm);
+            }
         }
         const effortSelect = $(article, '[data-personas-save-form] select[name="effort"]');
         if (effortSelect instanceof HTMLSelectElement && effortSelect.options.length <= 1) {
@@ -375,6 +384,17 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 the(opt, { "option-value": level, "option-label": level, "option-disabled": null });
             }
         }
+
+        on(article, "click", '[data-dialog-target^="dialog-settings-"]', (_event, btn) => {
+            if (!busy) setFeedback(false, "", "");
+            if (btn.getAttribute("data-dialog-target") === "dialog-settings-schedule") {
+                const scheduleTarget = $(article, '[data-schedule-save-form] input[name="target"]');
+                const ctx = getContext();
+                if (scheduleTarget instanceof HTMLInputElement && scheduleTarget.value === "" && ctx.sessionName) {
+                    scheduleTarget.value = ctx.sessionName;
+                }
+            }
+        });
 
         on(article, "click", "[data-settings-section]", (event, link) => {
             const raw = link.getAttribute("data-settings-section");
@@ -453,7 +473,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     const sessionRes = await invoke("session/resume", {}, { requireSession: true }).catch(() => null);
                     if (sessionRes !== null) renderSessionPersonaOptions(sessionRes);
                 }
-                const verbLabel = operation === "remove" ? "removed" : `${operation}d`;
+                const isRetry = submitter?.hasAttribute("data-family-retry") === true;
+                const verbLabel = operation === "remove" ? "removed" : isRetry ? "retried" : `${operation}d`;
                 return `${alias}  ${verbLabel}`;
             });
         });
@@ -527,6 +548,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     const sessionRes = await invoke("session/resume", {}, { requireSession: true }).catch(() => null);
                     if (sessionRes !== null) renderSessionPersonaOptions(sessionRes);
                 }
+                const enclosing = form.closest("dialog");
+                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
                 return `${meta.alias}  active`;
             });
         });
@@ -576,6 +599,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 for (const input of $$(form, "input")) {
                     if (input instanceof HTMLInputElement) input.value = "";
                 }
+                const enclosing = form.closest("dialog");
+                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
                 return `${alias}  saved`;
             });
         });
@@ -599,6 +624,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 for (const input of $$(form, "input")) {
                     if (input instanceof HTMLInputElement) input.value = "";
                 }
+                const enclosing = form.closest("dialog");
+                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
                 return `${alias}  saved`;
             });
         });
@@ -622,6 +649,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 for (const field of $$(form, 'input[name="alias"], input[name="rule"], textarea[name="prompt"]')) {
                     if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = "";
                 }
+                const enclosing = form.closest("dialog");
+                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
                 return `${alias}  saved`;
             });
         });
@@ -689,6 +718,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 }
                 const effortField = $(form, 'select[name="effort"]');
                 if (effortField instanceof HTMLSelectElement) effortField.value = "";
+                const enclosing = form.closest("dialog");
+                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
                 return `${alias}  saved`;
             });
         });
@@ -706,6 +737,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 for (const input of $$(form, "input")) {
                     if (input instanceof HTMLInputElement) input.value = "";
                 }
+                const enclosing = form.closest("dialog");
+                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
                 return `${files.join(", ")}  saved`;
             });
         });
@@ -763,6 +796,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 if (envPanel) populateEnvPanel(envPanel, fresh, envListScope);
                 aliasInput.value = "";
                 valueInput.value = "";
+                const enclosing = form.closest("dialog");
+                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
                 return `${alias}  active`;
             });
         });

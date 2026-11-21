@@ -1,6 +1,6 @@
 @layer state {
-    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat, search, and settings pages. */
-    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"])) {
+    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat, search, settings, and account pages. */
+    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="account"])) {
         block-size: 100dvh;
         display: grid;
         grid-template-columns: minmax(0, 1fr);
@@ -18,14 +18,14 @@
         }
     }
 
-    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"]) {
+    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="account"]) {
         max-inline-size: none;
         min-block-size: 0;
         padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2));
         overflow: auto;
     }
 
-    body > main[data-page="search"] {
+    body > main:is([data-page="search"], [data-page="settings"], [data-page="account"]) {
         padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-search-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-search-measure)) / 2));
     }
 
@@ -173,9 +173,14 @@
     }
 
     #workspace-tabs > ul > li > a[aria-current="true"],
-    #workspace-settings [data-settings-nav] a[aria-current="true"] {
+    :is(#workspace-settings, #account-settings) [data-settings-nav] a[aria-current="true"] {
         border-block-end-color: var(--otm-primary);
         font-weight: 700;
+    }
+
+    #account-settings:not(:has(> #about:target)) > #about,
+    #account-settings:has(> #about:target) > #sign-ins {
+        display: none;
     }
 
     #dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"],
@@ -196,6 +201,61 @@
         box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
     }
 
+    [data-panel-toolbar] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.65);
+        margin-block: 0 var(--otm-spacing);
+    }
+
+    [data-panel-toolbar] > :where(h2) {
+        margin: 0;
+        font-size: 1.05rem;
+    }
+
+    [data-panel-toolbar] > :where(button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0 0 0 auto;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.45) calc(var(--otm-form-element-spacing-inline) * 0.75);
+    }
+
+    [data-panel-toolbar] > :where(form) {
+        flex: 0 1 auto;
+        margin: 0;
+    }
+
+    [data-panel-toolbar] :where(form > fieldset) {
+        inline-size: auto;
+        margin: 0;
+    }
+
+    [data-panel-toolbar] :where(select, form button) {
+        inline-size: auto;
+        margin: 0;
+        padding-block: calc(var(--otm-form-element-spacing-block) * 0.4);
+    }
+
+    [data-toolbar-actions] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-inline-start: auto;
+    }
+
+    [data-toolbar-actions] :where(form) {
+        margin: 0;
+    }
+
+    [data-toolbar-actions] :where(button) {
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.45) calc(var(--otm-form-element-spacing-inline) * 0.75);
+    }
+
     #workspace-settings :where([data-candidate-rows] > li) {
         display: flex;
         flex-wrap: wrap;
@@ -206,19 +266,35 @@
         padding-block: calc(var(--otm-spacing) * 0.25);
     }
 
-    :is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset) {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: calc(var(--otm-spacing) * 0.35);
+    :is([data-family-row-form], [data-env-row-form], [data-candidate-add-form], #account-settings [data-session] form) {
         margin: 0;
     }
 
-    :is([data-family-row-form], [data-candidate-add-form]) > :where(fieldset > button) {
+    :is([data-family-row-form], [data-env-row-form], [data-candidate-add-form]) > :where(fieldset) {
+        display: inline-flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.35);
+        margin: 0;
+        padding: 0;
+    }
+
+    :is([data-family-row-form], [data-env-row-form], [data-candidate-add-form]) > :where(fieldset > button),
+    #account-settings [data-session] :where(form > button) {
         flex: 0 0 auto;
         inline-size: auto;
         margin: 0;
-        padding: calc(var(--otm-form-element-spacing-block) * 0.4) calc(var(--otm-form-element-spacing-inline) * 0.65);
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.6);
+        font-size: 0.875em;
+        white-space: nowrap;
+    }
+
+    #workspace-settings :where(td[data-text="family-summary"], td[data-text="family-status"]) {
+        overflow-wrap: anywhere;
+    }
+
+    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form])) {
+        white-space: nowrap;
     }
 
     @media (scripting: none) {
@@ -241,6 +317,16 @@
         #workspace-tabs button[data-open-sessions],
         #workspace-settings [data-settings-nav] > li:not(:first-child) {
             display: none;
+        }
+
+        #account-settings:has(> #about:target) [data-settings-nav] a[data-account-section="sign-ins"] {
+            border-block-end-color: transparent;
+            font-weight: 400;
+        }
+
+        #account-settings:has(> #about:target) [data-settings-nav] a[data-account-section="about"] {
+            border-block-end-color: var(--otm-primary);
+            font-weight: 700;
         }
     }
 
@@ -877,11 +963,13 @@
     :is(#session-command-results, #workspace-settings) [data-env-removable="false"] [data-env-unset],
     #workspace-settings [data-family-count="0"] > [data-family-table-wrap],
     #workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
-    #workspace-settings [data-candidate-count="0"] > [data-candidate-rows],
-    #workspace-settings [data-family-enabled="true"] [data-family-enable],
-    #workspace-settings [data-family-enabled="false"] [data-family-disable],
-    #workspace-settings [data-family-removable="false"] [data-family-remove],
-    #workspace-settings [data-family-auth="false"] [data-family-authorize],
+    #workspace-settings [data-settings-panel="env"]:has([data-env-panel]:not([data-env-count="0"])) > [data-env-empty],
+    #workspace-settings [data-candidate-count="0"] [data-candidate-rows],
+    #workspace-settings tr[data-family-state]:not([data-family-state="disabled"]) [data-family-enable],
+    #workspace-settings tr[data-family-state]:not([data-family-state="retryable"]) [data-family-retry],
+    #workspace-settings tr[data-family-state="disabled"] [data-family-disable],
+    #workspace-settings tr[data-family-removable="false"] [data-family-remove],
+    #workspace-settings tr[data-family-auth="false"] [data-family-authorize],
     #workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
@@ -897,7 +985,7 @@
     }
 
     /* {§web-session-settings} {§web-workspace-settings} {§web-onboarding} Empty feedback occupies no page space. */
-    :is(#session-model-settings, #session-effort-settings, #session-command-results article, #workspace-settings, #dialog-session-manage > article, #dialog-onboarding > article) > p:empty,
+    :is(#session-model-settings, #session-effort-settings, #session-command-results article, #workspace-settings, [data-settings-dialog] > article, #dialog-session-manage > article, #dialog-onboarding > article) > p:empty,
     #dialog-onboarding [data-onboarding-form]:not([data-onboarding-mode="hosted"]) [data-onboarding-hosted-fields],
     #dialog-onboarding [data-onboarding-form] small:empty,
     #session-command-results [data-command-output]:empty {

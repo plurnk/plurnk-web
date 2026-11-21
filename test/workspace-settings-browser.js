@@ -56,40 +56,54 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await verifyPageShell(page, { title: `${workspace} · Settings — Plurnk`, kind: "settings" });
             await page.setViewportSize({ width: 1280, height: 800 });
 
-            // 1. General is default tab; switch to MCP: invalid alias triggers real daemon Problem and preserves form inputs
+            // 1. General is default tab; switch to MCP: + Add server modal keeps invalid alias draft + inline Problem visible
             assert.equal(await settingsArticle.getByRole("link", { name: "General", exact: true }).getAttribute("aria-current"), "true");
             await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
             await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
             assert.equal(await settingsArticle.getByRole("link", { name: "MCP", exact: true }).getAttribute("aria-current"), "true");
             const mcpPanel = settingsArticle.locator('[data-settings-panel="mcp"]');
+            const mcpDialog = page.locator("#dialog-settings-mcp");
             assert.equal(await mcpPanel.isVisible(), true);
-            await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).fill("123-invalid");
-            await mcpPanel.getByRole("textbox", { name: "Server command", exact: true }).fill("echo");
-            await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
-            await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("123-invalid"));
-            assert.equal(await mcpPanel.getByRole("textbox", { name: "Server command", exact: true }).inputValue(), "echo", "daemon Problem preserves MCP form draft");
+            await mcpPanel.getByRole("button", { name: "+ Add server", exact: true }).click();
+            await mcpDialog.waitFor({ state: "visible" });
+            await mcpDialog.getByRole("textbox", { name: "Server alias", exact: true }).fill("123-invalid");
+            await mcpDialog.getByRole("textbox", { name: "Server command", exact: true }).fill("echo");
+            await mcpDialog.getByRole("button", { name: "Save server", exact: true }).click();
+            await page.waitForFunction(() => (document.querySelector('#dialog-settings-mcp [data-text="ws-settings-message"]')?.textContent ?? "").includes("123-invalid"));
+            assert.equal(await mcpDialog.isVisible(), true, "daemon Problem keeps MCP dialog open");
+            assert.equal(await mcpDialog.getByRole("textbox", { name: "Server command", exact: true }).inputValue(), "echo", "daemon Problem preserves MCP form draft");
+            await mcpDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+            assert.equal(await mcpDialog.isVisible(), false);
 
-            // 2. Personas: add an inline persona on 0-session workspace
+            // 2. Personas: add an inline persona via + Add persona modal on 0-session workspace
             await settingsArticle.getByRole("link", { name: "Personas", exact: true }).click();
             const personasPanel = settingsArticle.locator('[data-settings-panel="personas"]');
+            const personasDialog = page.locator("#dialog-settings-personas");
             await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
             assert.equal(await personasPanel.locator("[data-session-persona-form]").isVisible(), false, "0-session workspace hides session persona selector");
-            await personasPanel.getByRole("textbox", { name: "Persona name", exact: true }).fill("reviewer");
-            await personasPanel.getByRole("textbox", { name: "Persona description", exact: true }).fill("Strict code reviewer");
-            await personasPanel.getByRole("textbox", { name: "Persona instructions", exact: true }).fill("Verify all edge cases before done.");
-            await personasPanel.getByRole("combobox", { name: "Persona default effort", exact: true }).selectOption("high");
-            await personasPanel.getByRole("button", { name: "Save persona", exact: true }).click();
+            await personasPanel.getByRole("button", { name: "+ Add persona", exact: true }).click();
+            await personasDialog.waitFor({ state: "visible" });
+            await personasDialog.getByRole("textbox", { name: "Persona name", exact: true }).fill("reviewer");
+            await personasDialog.getByRole("textbox", { name: "Persona description", exact: true }).fill("Strict code reviewer");
+            await personasDialog.getByRole("textbox", { name: "Persona instructions", exact: true }).fill("Verify all edge cases before done.");
+            await personasDialog.getByRole("combobox", { name: "Persona default effort", exact: true }).selectOption("high");
+            await personasDialog.getByRole("button", { name: "Save persona", exact: true }).click();
             await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="personas"] [data-family-rows] tr').length === 1);
+            assert.equal(await personasDialog.isVisible(), false, "Save persona closes dialog");
             assert.match(await personasPanel.locator("[data-family-rows] tr").first().textContent(), /reviewer[\s\S]*Strict code reviewer \[high\]/u);
 
-            // 3. Environment: set a masked workspace variable on 0-session workspace
+            // 3. Environment: set a masked workspace variable via + Set variable modal on 0-session workspace
             await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();
             const envPanel = settingsArticle.locator('[data-settings-panel="env"]');
+            const envDialog = page.locator("#dialog-settings-env");
             await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
-            await envPanel.getByRole("textbox", { name: "Variable name", exact: true }).fill("WS_API_KEY");
-            await envPanel.getByLabel("Variable value", { exact: true }).fill("ultra-secret-overview-token");
-            await envPanel.getByRole("button", { name: "Set", exact: true }).click();
+            await envPanel.getByRole("button", { name: "+ Set variable", exact: true }).click();
+            await envDialog.waitFor({ state: "visible" });
+            await envDialog.getByRole("textbox", { name: "Variable name", exact: true }).fill("WS_API_KEY");
+            await envDialog.getByLabel("Variable value", { exact: true }).fill("ultra-secret-overview-token");
+            await envDialog.getByRole("button", { name: "Set", exact: true }).click();
             await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="WS_API_KEY"]') !== null);
+            assert.equal(await envDialog.isVisible(), false, "Set variable closes dialog");
             assert.equal(
                 await envPanel.locator('tr[data-env-alias="WS_API_KEY"] [data-text="env-origin"]').textContent(),
                 "workspace",
@@ -125,16 +139,20 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await sessionPersonaForm.getByRole("button", { name: "Apply to session", exact: true }).click();
             await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Session persona: reviewer.");
 
-            // Schedule targeting #session1 now that session exists
+            // Schedule targeting #session1 via + Add schedule modal now that session exists
             await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();
             const schedulePanel = settingsArticle.locator('[data-settings-panel="schedule"]');
+            const scheduleDialog = page.locator("#dialog-settings-schedule");
             await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
-            assert.equal(await schedulePanel.getByRole("textbox", { name: "Target session", exact: true }).inputValue(), "session1", "Target session defaults to active session");
-            await schedulePanel.getByRole("textbox", { name: "Schedule name", exact: true }).fill("hourly-ping");
-            await schedulePanel.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 * * * *");
-            await schedulePanel.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Status check.");
-            await schedulePanel.getByRole("button", { name: "Save schedule", exact: true }).click();
+            await schedulePanel.getByRole("button", { name: "+ Add schedule", exact: true }).click();
+            await scheduleDialog.waitFor({ state: "visible" });
+            assert.equal(await scheduleDialog.getByRole("textbox", { name: "Target session", exact: true }).inputValue(), "session1", "Target session defaults to active session");
+            await scheduleDialog.getByRole("textbox", { name: "Schedule name", exact: true }).fill("hourly-ping");
+            await scheduleDialog.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 * * * *");
+            await scheduleDialog.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Status check.");
+            await scheduleDialog.getByRole("button", { name: "Save schedule", exact: true }).click();
             await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
+            assert.equal(await scheduleDialog.isVisible(), false, "Save schedule closes dialog");
 
             checkBrowser();
         } finally {

@@ -91,7 +91,7 @@ export default class Session {
     /** @param {SessionRequest} req */
     #mutation(req) {
         const account = this.account(req);
-        if (account === null) throw new RequestError(401, "Sign in again before managing sessions.");
+        if (account === null) throw new RequestError(401, "Sign in again before managing sign-ins.");
         this.sameOriginForm(req);
         return account;
     }
@@ -99,10 +99,10 @@ export default class Session {
     /** @param {SessionRequest} req @param {SessionResponse} res @param {string} family */
     revoke(req, res, family) {
         const account = this.#mutation(req);
-        if (!account.sessions.some((entry) => entry.family === family)) throw new RequestError(404, "Session not found.");
+        if (!account.sessions.some((entry) => entry.family === family)) throw new RequestError(404, "Sign-in not found.");
         if (family === account.family) { this.logout(req, res); return; }
         this.#credentials.revokeFamily(family);
-        redirect(res, "/account/sessions/");
+        redirect(res, "/account/");
     }
     /** {§web-workspace-creation} Module-owned form mutations use the daemon's own origin.
      * @param {SessionRequest} req
@@ -116,7 +116,7 @@ export default class Session {
     revokeOthers(req, res) {
         const account = this.#mutation(req);
         for (const entry of account.sessions) if (entry.family !== account.family) this.#credentials.revokeFamily(entry.family);
-        redirect(res, "/account/sessions/");
+        redirect(res, "/account/");
     }
 
     /** @param {SessionRequest} req */
@@ -155,7 +155,7 @@ export default class Session {
             : "";
         const target = document === "/search/index.html" ? `/search/${query}`
             : document === "/settings/index.html" ? `/settings/${query}`
-            : ["/index.html", "/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
+            : ["/index.html", "/account/index.html"].includes(document) ? document.slice(0, -"index.html".length)
             : directory === null ? null
             : directory.kind === "daemon" ? "/search/"
             : directoryPath(directory);

@@ -17,6 +17,7 @@ const execFileAsync = promisify(execFile);
 
 async function copySources(directory) {
     const root = join(directory, "web");
+    await cp(new URL("../package.json", import.meta.url), join(directory, "package.json"));
     await cp(new URL("../web/", import.meta.url), root, { recursive: true });
     await mkdir(join(directory, "src"));
     for (const name of ["directory-addresses.js", "index-document.js"]) {

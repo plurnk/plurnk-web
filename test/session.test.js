@@ -162,7 +162,7 @@ test("{§web-account} sign-in returns to native account pages without treating q
         { clientId: "plurnk-web", clientSecret: "test" }, { issuer: () => "https://daemon.example" }, { ttl: 600 });
     const locations = [];
     const response = { setHeader() {}, writeHead: (status, headers) => { assert.equal(status, 303); locations.push(headers.location); }, end() {} };
-    for (const path of ["/", "/account/", "/account/sessions/"]) {
+    for (const path of ["/", "/account/"]) {
         for (const requested of [path, `${path}index.html`, `${path}?filter=example`, `${path}index.html#section`]) {
             await session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response);
             assert.equal(locations.at(-1), path);
@@ -174,7 +174,7 @@ test("{§web-account} sign-in returns to native account pages without treating q
     assert.equal(locations.at(-1), "/settings/?workspace=work&session=session1");
     await session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: "/auth/login" }, response);
     assert.equal(locations.at(-1), "/");
-    for (const requested of ["https://foreign.example/account/", "//foreign.example/account/", "/account", "/account/../sessions/"]) {
+    for (const requested of ["https://foreign.example/account/", "//foreign.example/account/", "/account", "/account/sign-ins/"]) {
         await assert.rejects(session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: requested })}` }, response),
             { status: 400, message: "Invalid return page." });
     }
@@ -208,10 +208,10 @@ test("{§web-account} inventory and revocation are scoped to the authenticated s
     assert.deepEqual(revoked, []);
     session.revoke(req, response, "other");
     assert.deepEqual(revoked, ["other"]);
-    assert.equal(headers.get("location"), "/account/sessions/");
+    assert.equal(headers.get("location"), "/account/");
     session.revokeOthers(req, response);
     assert.deepEqual(revoked, ["other", "other"]);
-    assert.equal(headers.get("location"), "/account/sessions/");
+    assert.equal(headers.get("location"), "/account/");
     session.revoke(req, response, "current");
     assert.deepEqual(revoked, ["other", "other", "current"]);
     const clearedCookies = headers.get("set-cookie");

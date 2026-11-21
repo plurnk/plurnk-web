@@ -105,7 +105,7 @@
         border-block-start: var(--otm-border-width) solid var(--otm-muted-border-color);
     }
 
-    #workspace-settings nav[aria-label="Settings sections"] > ul {
+    :is(#workspace-settings, #account-settings) :where(nav[aria-label] > ul) {
         border-block-end: var(--otm-border-width) solid var(--otm-muted-border-color);
     }
 
@@ -122,9 +122,13 @@
         text-decoration: none;
     }
 
-    #workspace-settings :where(nav[aria-label="Settings sections"] a) {
+    :is(#workspace-settings, #account-settings) :where(nav[aria-label] a) {
         border-block-end: calc(var(--otm-border-width) * 2) solid transparent;
         text-decoration: none;
+    }
+
+    #account-settings :where(dt) {
+        color: var(--otm-muted-color);
     }
 
     :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul > li > a) {

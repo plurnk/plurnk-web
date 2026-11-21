@@ -348,6 +348,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const directory = await mkdtemp(new URL("../.module-test-", import.meta.url));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const base = pathToFileURL(`${directory}/`);
+    await copyFile(new URL("../package.json", import.meta.url), new URL("package.json", base));
     await mkdir(new URL("src/", base));
     for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "creations.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
         await copyFile(new URL(`../src/${file}`, import.meta.url), new URL(`src/${file}`, base));

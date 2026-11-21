@@ -390,36 +390,37 @@ test("{§web-page-shell} named slots tolerate sibling header templates without s
     assert.ok(auth.includes(extraAfter));
 });
 
-test("{§web-account} Account offers native navigation and Sign out without a fictional profile or inline session inventory", () => {
+test("{§web-account} Account renders tabbed Sign-ins and About with authority facts, package versions, conditional plurnk-desktop version, and no fictional profile", () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128, 128);
-    const html = document.account().toString();
-    assert.match(html, /<title[^>]*>Account — Plurnk<\/title>/u);
-    assert.match(html, /<header>[\s\S]*<nav id="header-place" aria-label="breadcrumb">[\s\S]*>Home<[\s\S]*>Account<[\s\S]*<\/nav>[\s\S]*<\/header>/u);
-    assert.match(html, /<article[\s\S]*<h1[^>]*>Account<\/h1>/u);
-    assert.match(html, /<nav aria-label="Account"><ul><li><a href="\/account\/sessions\/"[^>]*>Sessions<\/a><\/li><\/ul><\/nav>/u);
-    assert.match(html, /<footer><form method="post" action="\/auth\/logout"><button type="submit"[^>]*>Sign out<\/button><\/form><\/footer>/u);
-    assert.doesNotMatch(html, /Signed in as|Local operator|data-session|<table|revoke/iu);
-});
-
-test("{§web-account} Sessions renders authority facts in a native table without invented device facts", () => {
-    const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128, 128);
-    const html = document.sessions({ family: "current", sessions: [
+    const html = document.account({ family: "current", sessions: [
         { family: "current", createdAt: 0, expiresAt: 60_000, clients: ["browser", "plurnk-web"] },
         { family: "other&family", createdAt: 1000, expiresAt: 61_000, clients: ["browser", "a<script>"] },
-    ] }).toString();
-    assert.match(html, /<title[^>]*>Sessions — Plurnk<\/title>/u);
-    assert.match(html, /<article[\s\S]*<figure><table><thead>/u);
+    ] }, { serviceVersion: "8.0.0" }).toString();
+    assert.match(html, /<title[^>]*>Account — Plurnk<\/title>/u);
+    assert.match(html, /<header>[\s\S]*<nav id="header-place" aria-label="breadcrumb">[\s\S]*>Home<[\s\S]*>Account<[\s\S]*<\/nav>[\s\S]*<\/header>/u);
+    assert.match(html, /<article id="account-settings"[\s\S]*<h1[^>]*>Account<\/h1>/u);
+    assert.match(html, /<nav aria-label="Account sections"><ul data-settings-nav>[\s\S]*href="#sign-ins"[\s\S]*href="#about"/u);
+    assert.match(html, /<figure><table><thead>/u);
     assert.match(html, /<th scope="row"/u);
-    assert.match(html, /This session/u);
+    assert.match(html, /This sign-in/u);
     assert.match(html, /<time datetime="1970-01-01T00:00:00.000Z"/u);
     assert.match(html, /a&lt;script&gt;/u);
-    assert.match(html, /action="\/account\/sessions\/other%26family\/revoke"/u);
-    assert.match(html, /action="\/account\/sessions\/revoke-others"/u);
-    assert.match(html, /<header>[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
+    assert.match(html, /action="\/account\/sign-ins\/other%26family\/revoke"/u);
+    assert.match(html, /action="\/account\/sign-ins\/revoke-others"/u);
+    assert.match(html, /action="\/auth\/logout"><button type="submit"[^>]*>Sign out<\/button><\/form>/u);
+    assert.match(html, /<dt>plurnk-service<\/dt><dd><code data-text="about-service-version">8\.0\.0<\/code><\/dd>/u);
+    assert.match(html, /<dt>plurnk-web<\/dt><dd><code data-text="about-web-version">\d+\.\d+\.\d+<\/code><\/dd>/u);
+    assert.doesNotMatch(html, /plurnk-desktop/u, "ordinary browser omits plurnk-desktop row");
+    assert.match(html, /href="https:\/\/github\.com\/plurnk\/plurnk-service\/issues"/u);
     assert.doesNotMatch(html.split("<main")[0], /action="\/auth\/logout"/u);
-    assert.match(html, /<header>[\s\S]*<nav id="header-place" aria-label="breadcrumb">[\s\S]*<\/nav>[\s\S]*<\/header>/u);
     assert.doesNotMatch(html.split("<main")[1], /aria-label="breadcrumb"/u);
-    assert.doesNotMatch(html, /<script>|<template|last active|device|Signed in as/iu);
+    assert.doesNotMatch(html, /<script>|<template|last active|device|Signed in as|Local operator/iu);
+
+    const desktopHtml = document.account(
+        { family: "current", sessions: [{ family: "current", createdAt: 0, expiresAt: 60_000, clients: ["plurnk-web"] }] },
+        { serviceVersion: "8.0.0", desktopVersion: "1.4.2" },
+    ).toString();
+    assert.match(desktopHtml, /<dt>plurnk-desktop<\/dt><dd><code data-text="about-desktop-version">1\.4\.2<\/code><\/dd>/u);
 });
 
 test("{§web-directory-documents} {§web-search} archived places leave default lists, appear with Unarchive under status=archived, and still open directly", async () => {
@@ -540,7 +541,7 @@ test("{§web-session-directory} {§web-search} workspace-grouped search orders w
 test("{§web-workspace-tabs} {§web-workspace-settings} workspace session documents render bottom Google Sheets-style tabs in creation order, fold settled workers, unselected drafts, and archived sessions, and omit tabs outside workspaces", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128, 128);
     assert.doesNotMatch(document.home(false).toString(), /id="workspace-tabs"/u);
-    assert.doesNotMatch(document.account().toString(), /id="workspace-tabs"/u);
+    assert.doesNotMatch(document.account({ family: "current", sessions: [] }).toString(), /id="workspace-tabs"/u);
     assert.doesNotMatch(document.error(404, "Missing.").toString(), /id="workspace-tabs"/u);
 
     const archived = "2026-04-06T00:00:00.000Z";

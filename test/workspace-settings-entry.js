@@ -1,9 +1,11 @@
 import { $, the } from "on_the_money";
+import initDialogs from "../web/dialogs.js";
 import sessionCommands from "../web/session-commands.js";
 import managementAction from "../web/management-action.js";
 import observeWorkspaceSettings from "../web/workspace-settings.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
+initDialogs();
 const lifetime = new AbortController();
 const main = $("#main");
 

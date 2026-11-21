@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { STATUS_CODES } from "node:http";
 import { directoryPath, workspaceSettingsPath } from "./directory-addresses.js";
 import { escapeHtml, RequestError } from "./http.js";
+
+const WEB_MANIFEST = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+const WEB_VERSION = typeof WEB_MANIFEST.version === "string" && WEB_MANIFEST.version.length > 0 ? WEB_MANIFEST.version : "3.0.0";
+const WEB_LICENSE = typeof WEB_MANIFEST.license === "string" && WEB_MANIFEST.license.length > 0 ? WEB_MANIFEST.license : "MIT";
+const BUG_REPORT_URL = "https://github.com/plurnk/plurnk-service/issues";
 
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
@@ -316,43 +322,61 @@ export default class Documents {
     /** {§web-session-creation} @param {string} workspace @param {string} name */
     retrySession(workspace, name) { return this.#sessionFields(workspace, name, ""); }
 
-    /** {§web-account} Account navigation bundles active sign-ins and Sign out. */
-    account() {
-        const placeHtml = '<nav id="header-place" aria-label="breadcrumb"><ul>'
-            + '<li><a href="/" data-i18n="home">Home</a></li>'
-            + '<li><span aria-current="page" data-i18n="account">Account</span></li></ul></nav>';
-        const headerLead = this.#headerLead({ placeHtml });
-        return this.#render("Account", '<article aria-labelledby="account-title"><header><h1 id="account-title" data-i18n="account">Account</h1></header>'
-            + '<nav aria-label="Account"><ul><li><a href="/account/sessions/" data-i18n="sessions">Sessions</a></li></ul></nav>'
-            + '<footer><form method="post" action="/auth/logout"><button type="submit" data-i18n="sign-out">Sign out</button></form></footer></article>', "account", true, { headerLead });
-    }
-
-    /** {§web-account} Only authority-supplied facts are presented as session information.
+    /** {§web-account} Unified tabbed Account document (`#sign-ins` and `#about`); only authority-supplied facts are presented as sign-in information.
      * @param {{ family: string, sessions: readonly Pick<import("@plurnk/plurnk-contracts").CredentialSession, "family" | "createdAt" | "expiresAt" | "clients">[] }} account
+     * @param {{ serviceVersion?: string | null, desktopVersion?: string | null }} [about]
      */
-    sessions({ family, sessions }) {
+    account({ family, sessions }, { serviceVersion = null, desktopVersion = null } = {}) {
         const time = (/** @type {number} */ timestamp) => {
             const iso = new Date(timestamp).toISOString();
             return `<time datetime="${iso}" data-text="session-time">${iso.replace("T", " ").replace(/\.\d{3}Z$/u, " UTC")}</time>`;
         };
         const entries = sessions.map((entry) => {
             const current = entry.family === family;
-            const action = current ? "/auth/logout" : `/account/sessions/${encodeURIComponent(entry.family)}/revoke`;
-            return `<tr data-session="${escapeHtml(entry.family)}"><th scope="row"><span data-i18n="${current ? "this-session" : "another-session"}">${current ? "This session" : "Another session"}</span>`
+            const action = current ? "/auth/logout" : `/account/sign-ins/${encodeURIComponent(entry.family)}/revoke`;
+            return `<tr data-session="${escapeHtml(entry.family)}"><th scope="row"><span data-i18n="${current ? "this-sign-in" : "another-sign-in"}">${current ? "This sign-in" : "Another sign-in"}</span>`
                 + `<br><small data-text="session-clients">${entry.clients.map(escapeHtml).join(", ")}</small></th>`
                 + `<td>${time(entry.createdAt)}</td><td>${time(entry.expiresAt)}</td>`
-                + `<td><form method="post" action="${escapeHtml(action)}"><button type="submit" data-i18n="${current ? "end-this-session" : "revoke-session"}">${current ? "End this session" : "Revoke session"}</button></form></td></tr>`;
+                + `<td><form method="post" action="${escapeHtml(action)}"><button type="submit" data-i18n="${current ? "end-this-sign-in" : "revoke-sign-in"}">${current ? "End this sign-in" : "Revoke sign-in"}</button></form></td></tr>`;
         }).join("");
         const others = sessions.some((entry) => entry.family !== family)
-            ? '<form method="post" action="/account/sessions/revoke-others"><button type="submit" data-i18n="revoke-others">Revoke other sessions</button></form>' : "";
+            ? '<form method="post" action="/account/sign-ins/revoke-others"><button type="submit" data-i18n="revoke-other-sign-ins">Revoke other sign-ins</button></form>' : "";
+        const navHtml = '<nav aria-label="Account sections"><ul data-settings-nav>'
+            + '<li><a href="#sign-ins" data-account-section="sign-ins" aria-current="true" data-i18n="sign-ins">Sign-ins</a></li>'
+            + '<li><a href="#about" data-account-section="about" data-i18n="about">About</a></li>'
+            + "</ul></nav>";
+        const signInsPanel = '<section id="sign-ins" data-account-panel="sign-ins" aria-label="Sign-ins">'
+            + '<header data-panel-toolbar>'
+            + '<h2 data-i18n="active-sign-ins">Active sign-ins</h2>'
+            + `<div data-toolbar-actions>${others}<form method="post" action="/auth/logout"><button type="submit" data-i18n="sign-out">Sign out</button></form></div>`
+            + "</header>"
+            + '<figure><table><thead><tr><th scope="col" data-i18n="sign-in">Sign-in</th><th scope="col" data-i18n="started">Started</th>'
+            + '<th scope="col" data-i18n="expires">Expires</th><th scope="col" data-i18n="actions">Actions</th></tr></thead>'
+            + `<tbody>${entries}</tbody></table></figure></section>`;
+        const serviceRow = typeof serviceVersion === "string" && serviceVersion.length > 0
+            ? `<dt>plurnk-service</dt><dd><code data-text="about-service-version">${escapeHtml(serviceVersion)}</code></dd>`
+            : "";
+        const desktopRow = typeof desktopVersion === "string" && desktopVersion.length > 0
+            ? `<dt>plurnk-desktop</dt><dd><code data-text="about-desktop-version">${escapeHtml(desktopVersion)}</code></dd>`
+            : "";
+        const aboutPanel = '<section id="about" data-account-panel="about" aria-label="About">'
+            + '<dl data-about-facts>'
+            + serviceRow
+            + `<dt>plurnk-web</dt><dd><code data-text="about-web-version">${escapeHtml(WEB_VERSION)}</code></dd>`
+            + desktopRow
+            + `<dt data-i18n="license">License</dt><dd>${escapeHtml(WEB_LICENSE)}</dd>`
+            + `<dt data-i18n="report-issue">Report an issue</dt><dd><a href="${BUG_REPORT_URL}" target="_blank" rel="noopener noreferrer">github.com/plurnk/plurnk-service/issues</a></dd>`
+            + "</dl></section>";
         const placeHtml = '<nav id="header-place" aria-label="breadcrumb"><ul>'
             + '<li><a href="/" data-i18n="home">Home</a></li>'
-            + '<li><a href="/account/" data-i18n="account">Account</a></li>'
-            + '<li><span aria-current="page" data-i18n="sessions">Sessions</span></li></ul></nav>';
-        return this.#render("Sessions", '<article aria-labelledby="sessions-title"><header><h1 id="sessions-title" data-i18n="sessions">Sessions</h1></header>'
-            + '<figure><table><thead><tr><th scope="col" data-i18n="session">Session</th><th scope="col" data-i18n="started">Started</th>'
-            + '<th scope="col" data-i18n="expires">Expires</th><th scope="col" data-i18n="actions">Actions</th></tr></thead>'
-            + `<tbody>${entries}</tbody></table></figure>${others ? `<footer>${others}</footer>` : ""}</article>`, "account", true, { headerLead: this.#headerLead({ placeHtml }) });
+            + '<li><span aria-current="page" data-i18n="account">Account</span></li></ul></nav>';
+        const body = '<article id="account-settings" aria-labelledby="account-title">'
+            + '<header><h1 id="account-title" data-i18n="account">Account</h1></header>'
+            + navHtml
+            + signInsPanel
+            + aboutPanel
+            + "</article>";
+        return this.#render("Account", body, "account", true, { headerLead: this.#headerLead({ placeHtml }) });
     }
 
     /** @param {string} label @param {import("./directory-addresses.js").Directory} directory */

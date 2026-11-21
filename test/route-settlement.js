@@ -141,7 +141,7 @@ export default async function verifyRouteSettlement(t, createModule) {
         t.mock.method(f.credentials, "verify", () => { throw new Error("credentials accessed after stop"); });
         for (const [path, method] of [
             ["/", "GET"], ["/manifest.webmanifest", "GET"], ["/search/", "GET"], ["/~/", "GET"], ["/~/example", "GET"],
-            ["/account/", "GET"], ["/account/sessions/", "GET"], ["/account/sessions/one/revoke", "POST"],
+            ["/account/", "GET"], ["/account/sign-ins/one/revoke", "POST"],
             ["/auth/login", "GET"], ["/auth/callback", "GET"], ["/auth/logout", "POST"],
             ["/auth/token", "POST"], ["/render/mermaid", "POST"], ["/missing", "GET"],
         ]) await stopping(await fetch(`${f.base}${path}`, { method, redirect: "manual", headers: { cookie } }));

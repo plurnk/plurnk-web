@@ -24,6 +24,7 @@ import Diagrams from "./diagrams.js";
 /** @typedef {{ credentials?: Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort["credentials"], "registerClient"> | null }} SetupPort */
 /**
  * @typedef {{
+ *   serviceVersion?: string,
  *   credentials?: (import("./session.js").SessionCredentials & Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort["credentials"], "face">) | null,
  *   registerHttpRoute: import("@plurnk/plurnk-contracts/port").ApplicationPort["registerHttpRoute"],
  *   listWorkspaces: () => Promise<readonly import("./documents.js").DirectoryWorkspace[]>,
@@ -323,9 +324,8 @@ export default function createModule(assets = productionAssets()) {
                 const search = indexDocument(pathname) === "/search/index.html";
                 const settings = indexDocument(pathname) === "/settings/index.html";
                 const account = indexDocument(pathname) === "/account/index.html";
-                const sessions = indexDocument(pathname) === "/account/sessions/index.html";
-                const revoke = /^\/account\/sessions\/([^/]+)\/revoke$/u.exec(pathname);
-                const others = pathname === "/account/sessions/revoke-others";
+                const revoke = /^\/account\/sign-ins\/([^/]+)\/revoke$/u.exec(pathname);
+                const others = pathname === "/account/sign-ins/revoke-others";
                 const token = pathname === "/auth/token";
                 const creation = pathname === "/workspaces/new";
                 const rename = pathname === "/workspaces/rename";
@@ -340,8 +340,8 @@ export default function createModule(assets = productionAssets()) {
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
                 let admitted = false;
                 try {
-                    const inventory = sessions ? session?.account(req) : null;
-                    admitted = sessions ? inventory != null : session?.admitted(req) ?? false;
+                    const inventory = account ? session?.account(req) : null;
+                    admitted = account ? inventory != null : session?.admitted(req) ?? false;
                     if (diagram) {
                         if (session !== null && !admitted) throw new RequestError(401, "Sign in to render diagrams.");
                         if (diagrams === null) throw new RequestError(503, "Diagram compilation is unavailable because its configuration is invalid.");
@@ -627,7 +627,7 @@ export default function createModule(assets = productionAssets()) {
                             return;
                         }
                     }
-                    if (account || sessions || revoke !== null || others) {
+                    if (account || revoke !== null || others) {
                         if (session === null) throw new RequestError(404, "Account is unavailable while authentication is disabled.");
                         if (revoke !== null || others) {
                             if (req.method !== "POST") {
@@ -638,13 +638,13 @@ export default function createModule(assets = productionAssets()) {
                             else if (revoke !== null) {
                                 let family;
                                 try { family = decodeURIComponent(revoke[1]); }
-                                catch (cause) { throw new RequestError(400, "Invalid session address.", { cause }); }
+                                catch (cause) { throw new RequestError(400, "Invalid sign-in address.", { cause }); }
                                 session.revoke(req, res, family);
                             }
                             return;
                         }
                     }
-                    if (directory !== null || home || search || settings || account || sessions) {
+                    if (directory !== null || home || search || settings || account) {
                         if (req.method !== "GET" && req.method !== "HEAD") {
                             res.setHeader("allow", "GET, HEAD");
                             throw new RequestError(405, "Method not allowed.");
@@ -716,9 +716,11 @@ export default function createModule(assets = productionAssets()) {
                             res.end(req.method === "HEAD" ? undefined : body);
                             return;
                         }
+                        const desktopVersion = account
+                            ? (/\bplurnk-desktop\/([^\s;()]+)/iu.exec(String(req.headers["user-agent"] ?? ""))?.[1] ?? null)
+                            : null;
                         const body = home ? documents.home(admitted)
-                            : account ? documents.account()
-                            : inventory ? documents.sessions(inventory)
+                            : inventory ? documents.account(inventory, { serviceVersion: seam.serviceVersion ?? null, desktopVersion })
                             : null;
                         if (body === null) throw new RequestError(404, "The requested page does not exist.");
                         res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
