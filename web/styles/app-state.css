@@ -91,7 +91,7 @@
         color: var(--otm-muted-color);
     }
 
-    @container (width < 46em) {
+    @container (width < 62em) {
         body > header [data-header-label] {
             display: none;
         }
@@ -249,11 +249,12 @@
 
     #main li > details[data-prompt-work] > summary {
         display: inline-flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         align-items: center;
         gap: 0.35rem;
         max-inline-size: 100%;
         padding: 0;
+        border-block-end: 0;
         line-height: 1.2;
     }
 
@@ -286,6 +287,10 @@
         font-size: 0.8125em;
         line-height: 1.25;
         white-space: nowrap;
+    }
+
+    [data-operation-tally] > [data-plurnk-field="heading"]:not(:empty) {
+        margin-inline-end: 0.45ch;
     }
 
     [data-prompt-work][data-work-running="true"] > summary [data-operation-tally] {
@@ -485,15 +490,21 @@
         margin: 0;
     }
 
-    #session-status [data-status-line] :is(> ul, [data-status-telemetry] > ul) {
+    #session-status :is([data-status-line], [data-status-telemetry]) > ul {
         min-inline-size: 0;
         max-inline-size: 100%;
     }
 
-    #session-status [data-status-line] :is(> ul, [data-status-telemetry] > ul) > li {
+    #session-status [data-status-field] {
         list-style: none;
         min-inline-size: 0;
         margin: 0;
+    }
+
+    #session-status [data-status-field="model"] {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.45ch;
     }
 
     #session-status [data-status-line] button {
@@ -760,12 +771,6 @@
         display: none;
     }
 
-    /* {§web-session-reasoning} Reasoning glyph inside prompt-work items. */
-    [data-message-role="reasoning"] [data-plurnk-field="heading"]::before {
-        content: "💭" / "";
-        margin-inline-end: 0.5ch;
-    }
-
     /* {§web-session-status} Status fields remain semantic; CSS owns their compact notation. */
     #session-yolo[aria-pressed="true"]::before {
         content: "🔥 " / "";
@@ -841,10 +846,12 @@
         --session-lifecycle-glyph: "✓";
     }
 
-    /* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
-    [data-plurnk-type] [data-plurnk-field="heading"]::before,
-    [data-operation-tally] [data-plurnk-field="heading"]::before,
-    [data-diagnostic-level] [data-plurnk-field="heading"]::before {
+    /* {§web-operation-summary} {§web-session-reasoning} Decorative glyphs never supply the accessible operation name. */
+    :is([data-plurnk-type], [data-operation-tally], [data-diagnostic-level], [data-message-role="reasoning"]) {
+        --plurnk-operation-glyph: "⚙️";
+    }
+
+    :is([data-plurnk-type], [data-operation-tally], [data-diagnostic-level], [data-message-role="reasoning"]) [data-plurnk-field="heading"]::before {
         content: var(--plurnk-operation-glyph, "⚙️") / "";
         margin-inline-end: 0.35ch;
     }
@@ -893,7 +900,7 @@
         --plurnk-operation-glyph: "⏳";
     }
 
-    [data-plurnk-type="send"] {
+    [data-plurnk-type="send"]:not([data-message-role="user"]) {
         --plurnk-operation-glyph: "✉️";
     }
 
@@ -930,7 +937,7 @@
         --plurnk-operation-glyph: "⛔";
     }
 
-    [data-operation-tally="reasoning"] {
+    :is([data-message-role="reasoning"], [data-operation-tally="reasoning"]) {
         --plurnk-operation-glyph: "💭";
     }
 

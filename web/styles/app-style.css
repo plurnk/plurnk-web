@@ -106,7 +106,10 @@
         border-radius: var(--otm-border-radius);
     }
 
-    #main li > article > details {
+    #main li > article > details,
+    #search-workspaces > ul > li > article > header,
+    :is(#session-usage, #session-descendants),
+    :is(#session-usage, #session-descendants) > summary {
         border-block-end: 0;
     }
 

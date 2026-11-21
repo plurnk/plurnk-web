@@ -761,7 +761,11 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             }
                         });
                         page.on("response", async (response) => {
-                            if (new URL(response.url()).pathname === "/auth/token" && response.ok()) access.push((await response.json()).access_token);
+                            try {
+                                if (new URL(response.url()).pathname === "/auth/token" && response.ok()) access.push((await response.json()).access_token);
+                            } catch {
+                                // Response body may be released when navigation closes the context.
+                            }
                         });
                         const path = directoryPath({ kind: "session", workspace, session: sessionId });
                         await page.goto(new URL(path, base).href);

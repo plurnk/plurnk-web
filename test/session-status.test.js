@@ -47,6 +47,13 @@ test("{§web-session-status} model identity, effort, direct children and budgets
     assert.equal(unselected.effort, "");
     assert.equal(unselected.context, "");
     assert.equal(Object.hasOwn(unselected, "curation"), false);
+    const activeDefault = gauges(idle, emptyBudget, {
+        providers: [{ alias: "deepdumb", provider: "deepseek", model: "deepseek-chat", effort: "medium", effortSource: "default", active: true }],
+        configOptions: [{ configId: "model", currentValue: "deepdumb" }, { configId: "thought_level", currentValue: "medium" }],
+    });
+    assert.equal(activeDefault.model, "deepdumb");
+    assert.equal(activeDefault.effort, "medium");
+    assert.equal(activeDefault["model-label"], "Model: deepseek/deepseek-chat; effort: medium (default)");
     const selected = gauges({ ...idle, model: { alias: "local", provider: "host", model: "qwen", effort: "high", effortSource: "explicit" },
         descendants: [
             { id: 2, name: "first", parentSessionId: 1, kind: /** @type {const} */ ("work"), lifecycle: /** @type {const} */ ("queued"), gates: 0 },

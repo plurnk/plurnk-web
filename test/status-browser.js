@@ -71,6 +71,11 @@ export default async function verifyStatus(t) {
                     assert.equal(await approval.getAttribute("title"), "Manual Approval (Shift+Tab · /yolo)");
                     assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Review");
                     assert.equal(await approval.isVisible(), true, "manual approval is an explicit mode, not an absent indicator");
+                    assert.deepEqual(
+                        await page.locator('#session-status [aria-label="Model controls"] > li').evaluateAll((items) => items.map((li) => getComputedStyle(li).listStyleType)),
+                        ["none", "none"],
+                        "model controls render without list bullets",
+                    );
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "true"));
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);

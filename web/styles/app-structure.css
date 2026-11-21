@@ -84,7 +84,7 @@
         display: flex;
         flex: 1 1 auto;
         align-items: center;
-        justify-content: center;
+        justify-content: safe center;
         gap: 0.2ch;
         min-inline-size: 0;
         padding-block: calc(var(--otm-spacing) * 0.25);
@@ -419,16 +419,21 @@
         flex-wrap: nowrap;
     }
 
-    #session-usage,
-    #session-usage > summary {
+    :is(#session-usage, #session-descendants),
+    :is(#session-usage, #session-descendants) > summary {
         display: inline-flex;
         align-items: center;
         gap: 0.25ch;
+        padding-block-end: 0;
         margin: 0;
     }
 
-    #session-usage > summary::after {
+    :is(#session-usage, #session-descendants) > summary::after {
         content: none;
+    }
+
+    #session-descendants > summary::before {
+        content: "🐜" / "";
     }
 
     #session-usage > ul {
@@ -469,15 +474,6 @@
         max-block-size: calc(100dvh / 3);
         resize: none;
         margin: 0;
-    }
-
-    #session-descendants,
-    #session-descendants > summary {
-        margin: 0;
-    }
-
-    #session-descendants > summary::before {
-        content: "🐜 " / "";
     }
 
     /* {§web-content-reflow} Literal text preserves whitespace without imposing code geometry. */

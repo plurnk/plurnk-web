@@ -164,6 +164,9 @@ export function applyUsageUpdate(state, update, plurnk) {
                 ...structuredClone(plurnk.workspace),
             };
         }
+        if (Array.isArray(plurnk.providers)) {
+            prevPlurnk.providers = structuredClone(plurnk.providers);
+        }
     }
     if (Object.keys(prevStatus).length > 0) {
         prevPlurnk.status = prevStatus;

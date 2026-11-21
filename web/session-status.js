@@ -87,6 +87,57 @@ function amount(total, known, format) {
 const occupancy = (used, capacity) => used != null && capacity != null && capacity > 0
     ? `${Math.round(used / capacity * 100)}%/${tokens(capacity)}` : "";
 
+/**
+ * @param {(Partial<NonNullable<import("@plurnk/plurnk-acp/client").AcpSessionStatus["model"]>> & Pick<NonNullable<import("@plurnk/plurnk-acp/client").AcpSessionStatus["model"]>, "provider" | "model">) | null} statusModel
+ * @param {{
+ *   providers?: readonly Partial<import("@plurnk/plurnk-acp/client").AcpProviderRoute>[],
+ *   configOptions?: readonly { configId?: string, currentValue?: unknown }[],
+ * }} [defaults]
+ */
+function resolveDisplayModel(statusModel, defaults) {
+    const thoughtOption = Array.isArray(defaults?.configOptions)
+        ? defaults.configOptions.find((entry) => entry?.configId === "thought_level")
+        : undefined;
+    const configEffort = typeof thoughtOption?.currentValue === "string" && thoughtOption.currentValue.length > 0
+        ? thoughtOption.currentValue
+        : "";
+    if (statusModel !== null) {
+        const effort = typeof statusModel.effort === "string" && statusModel.effort.length > 0 ? statusModel.effort : configEffort;
+        return {
+            display: statusModel.alias || `${statusModel.provider}/${statusModel.model}`,
+            route: `${statusModel.provider}/${statusModel.model}`,
+            effort,
+            effortSource: statusModel.effortSource ?? "",
+        };
+    }
+    const activeProvider = Array.isArray(defaults?.providers)
+        ? defaults.providers.find((entry) => entry?.active === true && typeof entry.provider === "string" && typeof entry.model === "string")
+        : undefined;
+    if (activeProvider && typeof activeProvider.provider === "string" && typeof activeProvider.model === "string") {
+        const effort = typeof activeProvider.effort === "string" && activeProvider.effort.length > 0
+            ? activeProvider.effort
+            : configEffort;
+        return {
+            display: activeProvider.alias || `${activeProvider.provider}/${activeProvider.model}`,
+            route: `${activeProvider.provider}/${activeProvider.model}`,
+            effort,
+            effortSource: activeProvider.effortSource ?? "default",
+        };
+    }
+    const modelOption = Array.isArray(defaults?.configOptions)
+        ? defaults.configOptions.find((entry) => entry?.configId === "model")
+        : undefined;
+    if (typeof modelOption?.currentValue === "string" && modelOption.currentValue.length > 0 && modelOption.currentValue !== "none") {
+        return {
+            display: modelOption.currentValue,
+            route: modelOption.currentValue,
+            effort: configEffort,
+            effortSource: configEffort ? "default" : "",
+        };
+    }
+    return null;
+}
+
 /** {§web-session-status} Unknown complete values and known subtotals are different facts.
  * @param {{
  *   lifecycle: string,
@@ -104,9 +155,14 @@ const occupancy = (used, capacity) => used != null && capacity != null && capaci
  *   },
  * }} status
  * @param {Partial<import("@plurnk/plurnk-acp/client").AcpBudgetState>} [budget]
+ * @param {{
+ *   providers?: readonly Partial<import("@plurnk/plurnk-acp/client").AcpProviderRoute>[],
+ *   configOptions?: readonly { configId?: string, currentValue?: unknown }[],
+ * }} [defaults]
  */
-export function gauges(status, budget) {
-    const { model, spend } = status;
+export function gauges(status, budget, defaults) {
+    const { spend } = status;
+    const resolvedModel = resolveDisplayModel(status.model, defaults);
     const tree = descendantTree(status.descendants);
     const children = tree.filter(({ session }) => ["queued", "running", "parked"].includes(session.lifecycle)).length;
     const input = amount(spend.usage?.inputTokens, spend.knownUsage?.inputTokens, tokens);
@@ -123,9 +179,11 @@ export function gauges(status, budget) {
         input: input.text, output: output.text, cost: price.text === "?" ? "$?" : price.text,
         "usage-label": `Cumulative tokens, session and descendants. Input: ${input.exact}. Output: ${output.exact}.`,
         "cost-label": `Cumulative USD, session and descendants: ${price.exact}.`,
-        model: model === null ? "No model" : model.alias || `${model.provider}/${model.model}`,
-        effort: model?.effort ?? "",
-        "model-label": model === null ? "No model selected" : `Model: ${model.provider}/${model.model}${model.effort ? `; effort: ${model.effort}${model.effortSource ? ` (${model.effortSource})` : ""}` : ""}`,
+        model: resolvedModel === null ? "No model" : resolvedModel.display,
+        effort: resolvedModel?.effort ?? "",
+        "model-label": resolvedModel === null
+            ? "No model selected"
+            : `Model: ${resolvedModel.route}${resolvedModel.effort ? `; effort: ${resolvedModel.effort}${resolvedModel.effortSource ? ` (${resolvedModel.effortSource})` : ""}` : ""}`,
         descendants: String(status.descendants.length),
         "descendants-label": `Descendant sessions: ${status.descendants.length}; active direct children: ${children}`,
         gated: String(gated), "gated-label": `Descendant sessions awaiting input: ${gated}`,

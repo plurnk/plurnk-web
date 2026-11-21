@@ -155,17 +155,31 @@ export default async function verifySemanticContent(t) {
                     assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
 
                     await present([
-                        call("done", "done", { body: { raw: "Actual **reply**.", json: null } }), result("done", { status: 200, completion: 200 }),
+                        { id: "prompt-mcp", role: "user", content: "Check MCP.", _meta: { plurnk: { op: "send", address: "message://user/prompt" } } },
+                        call("mcp-work", "gitea", { target: { raw: "issue_read" }, body: '{"repo":"plurnk-web"}' }),
+                        call("done", "done", { body: { raw: "Actual **reply**.", json: null }, target: { raw: "message://gookie/scoutproxy_00" } }), result("done", { status: 200, completion: 200 }),
                         call("work", "work", { target: { raw: "helper" }, aside: "Delegate" }), result("work", { status: 202 }),
-                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', _meta: { plurnk: { op: "done", status: 200, signal: 200 } } },
+                        { id: "child-reply", role: "tool", toolCallId: "work-call", content: '{"answer":"Delivered **reply**"}', _meta: { plurnk: { op: "done", status: 200, signal: 200, address: "message://gookie/scoutproxy_00" } } },
                         { id: "observation", role: "tool", toolCallId: "work-call", content: '{"status":200,"path":"ops://helper/1","range":{"unit":"line","total":2,"requested":[1,-1],"returned":[1,2]}}', _meta: { plurnk: { op: "read", status: 200 } } },
                     ]);
-                    assert.deepEqual(await list.locator("[data-message-id]").evaluateAll((items) => items.map((item) => item.dataset.messageId)), ["done", "work", "child-reply", "observation"]);
+                    assert.equal(await row("prompt-mcp").locator(":scope > article > header").count(), 0, "user prompt never renders a send envelope header");
+                    const giteaTally = row("prompt-mcp").locator('[data-operation-tally="gitea"]');
+                    assert.match(await giteaTally.locator('[data-plurnk-field="heading"]').evaluate((el) => getComputedStyle(el, "::before").content), /⚙/u, "MCP chiclet renders gear glyph instead of inheriting send envelope");
+                    const tallyGap = await giteaTally.evaluate((el) => {
+                        const h = el.querySelector('[data-plurnk-field="heading"]').getBoundingClientRect();
+                        const c = el.querySelector('[data-plurnk-field="count"]').getBoundingClientRect();
+                        return c.left - h.right;
+                    });
+                    assert.ok(tallyGap >= 3, `chiclet label and count maintain visible separation (${tallyGap}px)`);
+                    await row("prompt-mcp").locator("[data-prompt-work] > summary").click();
+                    assert.deepEqual(await list.locator("[data-message-id]").evaluateAll((items) => items.map((item) => item.dataset.messageId)), ["prompt-mcp", "mcp-work", "work", "observation", "done", "child-reply"]);
                     assert.equal(await row("done").locator("article > p > strong").textContent(), "reply");
-                    assert.match(await glyph(row("done")), /🐹/u);
+                    assert.equal(await row("done").locator("header, [data-plurnk-operands]").count(), 0, "bodied done reply has no hamster glyph or message:// header");
+                    assert.doesNotMatch(await row("done").innerText(), /scoutproxy_00/u);
                     await assert.rejects(present([call("duplicate", "wait", {}), result("duplicate", { status: 200 }), { ...result("duplicate", { status: 200 }), id: "other-result" }]), /Operation has duplicate immediate receipts\./u);
                     assert.equal(await row("done").count(), 1, "a rejected snapshot leaves the last valid projection intact");
                     assert.equal(await row("child-reply").locator("article > p").innerText(), '{"answer":"Delivered reply"}', "JSON-looking delivered speech remains content");
+                    assert.equal(await row("child-reply").locator("header, [data-plurnk-operands]").count(), 0);
                     assert.equal(await field(row("observation"), "path").textContent(), "ops://helper/1");
                     assert.equal(await field(row("observation"), "aside").count(), 0, "later observations do not borrow the invocation's aside");
                     assert.equal(await field(row("observation"), "count").textContent(), "2 lines");

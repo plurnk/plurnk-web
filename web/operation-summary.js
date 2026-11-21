@@ -148,9 +148,10 @@ export default function operationSummary(summary, name, args, receipt, facts, er
     if (!GLYPH_OPS.has(name) && name === name.toLowerCase()) heading.push(["runtime", name]);
     if (aside) heading.push(["aside", aside]);
     const paired = record(args?.source) || record(args?.destination);
+    const suppressMessageAddress = op === "send" || op === "done";
     const operands = paired
         ? [operand(op, record(args?.source), null), operand(op, record(args?.destination), null)]
-        : [operand(op, args, receipt?.path ?? facts?.address, fieldsOf(op, args))];
+        : [operand(op, suppressMessageAddress ? null : args, suppressMessageAddress ? null : (receipt?.path ?? facts?.address), fieldsOf(op, args))];
     /** @type {Field[]} */
     const result = [];
     if (count !== null) result.push(["count", formatCount(op, count)]);

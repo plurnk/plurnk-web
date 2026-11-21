@@ -514,7 +514,8 @@ export default function conversation(root, readBody) {
         const frame = card(row, hasBody, !conversational);
         if (frame.removedDisclosure && frame.body) painted.delete(frame.body);
         body(frame.body, content, rich, call ? `call-${call.toolCallId}` : `message-${message.id}`);
-        if (summarized) {
+        const showOperationSummary = summarized && (!conversational || (!hasBody && message.role !== "user"));
+        if (showOperationSummary) {
             painted.delete(frame.header);
             operationSummary(frame.header, operationName, args, receipt, facts, error);
         } else {

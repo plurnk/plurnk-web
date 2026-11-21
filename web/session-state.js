@@ -48,11 +48,11 @@ export default function sessionState(element, main = $("#main")) {
             }
         }
     };
-    /** @param {{plurnk?: Partial<import("@plurnk/plurnk-acp/client").AcpPlusState["plurnk"]> & {budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}, budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}} state
+    /** @param {{plurnk?: Partial<import("@plurnk/plurnk-acp/client").AcpPlusState["plurnk"]> & {budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState, configOptions?: readonly {configId?: string, currentValue?: unknown}[]}, budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}} state
      * @param {number} now
      */
     const present = (state, now) => {
-        const { workspace, status } = state.plurnk ?? {};
+        const { workspace, status, providers, configOptions } = state.plurnk ?? {};
         if (workspace) {
             if (`${workspace.id}#${sessionName}` !== sessionId) throw new Error("Session state identifies a different workspace.");
             const identity = workspaceIdentity(workspace, sessionName);
@@ -73,7 +73,7 @@ export default function sessionState(element, main = $("#main")) {
         }
         if (status) {
             if (!workspace) throw new Error("Session state has no workspace identity.");
-            the(element, { ...gauges(status, state.budget ?? state.plurnk?.budget), ...clocks(status, now) });
+            the(element, { ...gauges(status, state.budget ?? state.plurnk?.budget, { providers, configOptions }), ...clocks(status, now) });
             presentDescendants(status.descendants, workspace.name);
         }
     };

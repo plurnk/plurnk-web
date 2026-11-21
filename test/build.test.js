@@ -57,14 +57,14 @@ test("{§web-page-shell} compact header stays on one row and long workspace plac
                             labelsVisible: [...header.querySelectorAll("[data-header-label]")].every((el) => getComputedStyle(el).display !== "none"),
                         };
                     });
-                    for (const width of [500, 320, 768, 500]) {
+                    for (const width of [500, 320, 768, 1024, 500]) {
                         await page.setViewportSize({ width, height: 700 });
                         const { logo, mascot, glyph, create, menu, place, header, overflow, font, scrollable, verticalOverflow, labelsVisible } = await measure();
                         assert.equal(mascot.height, mascot.width, "the mascot retains a square glyph box");
                         assert.ok(glyph.width > 0 && mascot.width >= glyph.width, "the mascot scales alongside header icons");
                         assert.equal(overflow, false);
                         assert.equal(verticalOverflow, false, "place controls fit their scroll area vertically");
-                        assert.equal(labelsVisible, width >= 768, `${width}px collapses header button text labels below 768px`);
+                        assert.equal(labelsVisible, width >= 1024, `${width}px collapses header button text labels below 1024px`);
                         assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), name);
                         assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), "user");
                         assert.ok(place.y < logo.bottom && place.bottom > logo.y, "place shares the mascot row");

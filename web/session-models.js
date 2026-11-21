@@ -23,6 +23,25 @@ export async function listModels(call, search = "") {
     return { aliases, catalog };
 }
 
+/**
+ * @param {unknown} providers
+ * @param {(input: unknown) => ModelRoute} assertModelRoute
+ * @returns {ModelRoute | null}
+ */
+function activeProviderRoute(providers, assertModelRoute) {
+    if (!Array.isArray(providers)) return null;
+    const active = providers.find((entry) => entry?.active === true && typeof entry.provider === "string" && typeof entry.model === "string");
+    if (!active) return null;
+    return assertModelRoute({
+        ...(typeof active.alias === "string" && active.alias ? { alias: active.alias } : {}),
+        provider: active.provider,
+        model: active.model,
+        ...(typeof active.effort === "string" && active.effort
+            ? { effort: active.effort, effortSource: active.effortSource ?? "default" }
+            : {}),
+    });
+}
+
 /** @param {Action} call @param {string} [selector] @param {string} [effort] */
 export async function sessionModel(call, selector, effort) {
     const { Validator } = await import("@plurnk/plurnk-contracts");
@@ -35,16 +54,19 @@ export async function sessionModel(call, selector, effort) {
             response = await call("session/set_config_option", { configId: "thought_level", value: effort });
         }
     }
-    const status = /** @type {{_meta?: {plurnk?: {status?: Record<string, unknown>}}}} */ (response)?._meta?.plurnk?.status;
+    const plurnk = /** @type {{_meta?: {plurnk?: {status?: Record<string, unknown>, providers?: unknown}}}} */ (response)?._meta?.plurnk;
+    const status = plurnk?.status;
     if (!status || !Object.hasOwn(status, "model")) throw new Error("Model result is invalid.");
-    return selector !== undefined ? Validator.assertModelRoute(status.model)
-        : status.model === null ? null : Validator.assertModelRoute(status.model);
+    if (selector !== undefined) return Validator.assertModelRoute(status.model);
+    return status.model !== null
+        ? Validator.assertModelRoute(status.model)
+        : activeProviderRoute(plurnk?.providers, Validator.assertModelRoute);
 }
 
 /** @param {Action} call @param {string} [selection] */
 export async function sessionEffort(call, selection) {
     const { Validator } = await import("@plurnk/plurnk-contracts");
-    const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: Array<{value?: unknown}>}>, _meta?: {plurnk?: {status?: Record<string, unknown>}}}} */ (
+    const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: Array<{value?: unknown}>}>, _meta?: {plurnk?: {status?: Record<string, unknown>, providers?: unknown}}}} */ (
         await call(
             selection === undefined ? "session/resume" : "session/set_config_option",
             selection === undefined ? { replayFrom: null } : { configId: "thought_level", value: selection },
@@ -57,15 +79,18 @@ export async function sessionEffort(call, selection) {
     if (!Array.isArray(response?.configOptions) || !status || !Object.hasOwn(status, "model")) {
         throw new Error("Effort result is invalid.");
     }
-    const model = status.model === null ? null : Validator.assertModelRoute(status.model);
+    const model = status.model !== null
+        ? Validator.assertModelRoute(status.model)
+        : activeProviderRoute(response?._meta?.plurnk?.providers, Validator.assertModelRoute);
     const supported = thought && Array.isArray(thought.options) && model !== null
         ? thought.options.map((option) => Validator.assertEffort(option?.value))
         : [];
-    if (model === null || model.effort === undefined) {
+    const rawEffort = model?.effort ?? (typeof thought?.currentValue === "string" && thought.currentValue ? thought.currentValue : undefined);
+    if (model === null || rawEffort === undefined) {
         return { effort: null, source: "default", supported };
     }
     return {
-        effort: Validator.assertEffort(model.effort),
+        effort: Validator.assertEffort(rawEffort),
         source: model.effortSource ?? "default",
         supported,
     };
