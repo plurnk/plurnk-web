@@ -1,6 +1,6 @@
 @layer state {
-    /* {§web-page-shell} Intrinsic header/footer tracks and full-width product surfaces on directory and session pages. */
-    body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) {
+    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat and search pages. */
+    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"])) {
         block-size: 100dvh;
         display: grid;
         grid-template-columns: minmax(0, 1fr);
@@ -8,25 +8,110 @@
         overflow: hidden;
     }
 
-    body:has(> #workspace-tabs):has(> main:is([data-page="workspace"], [data-page="session"])) {
+    body:has(> #workspace-tabs:not([data-tab-count="0"], [data-tab-count="1"])):has(> main:is([data-page="workspace"], [data-page="session"])) {
         grid-template-rows: auto auto minmax(0, 1fr) auto;
     }
 
-    body:has(> main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"])) > :is(header, #workspace-tabs, main, footer) {
+    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"]) {
         max-inline-size: none;
+        min-block-size: 0;
+        padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2));
+        overflow: auto;
     }
 
-    body > main:is([data-page="home"], [data-page="daemon"], [data-page="workspace"], [data-page="session"]) {
-        min-block-size: 0;
-        overflow: auto;
+    body > main[data-page="search"] {
+        padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-search-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-search-measure)) / 2));
+    }
+
+    [data-session-manage-actions],
+    [data-alias-choices] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin: 0 0 var(--otm-spacing);
+        padding: 0;
+    }
+
+    [data-alias-choices] > li {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    [data-alias-choices] button,
+    [data-session-manage-actions] button {
+        --otm-primary-background: var(--plurnk-working-surface);
+        --otm-primary-hover-background: var(--plurnk-user-surface);
+        --otm-primary-inverse: var(--otm-color);
+
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+        inline-size: 100%;
+        margin: 0;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        text-align: start;
+        cursor: pointer;
+    }
+
+    body > header > [data-header-create] {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.4);
+    }
+
+    header [data-header-form] {
+        display: inline-flex;
+        align-items: center;
+        margin: 0;
+    }
+
+    header [data-header-create] button {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: transparent;
+        --otm-primary-inverse: var(--otm-primary);
+
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35ch;
+        inline-size: auto;
+        block-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.35);
+        border-width: 0;
+        line-height: inherit;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    [data-place-hash] {
+        color: var(--otm-muted-color);
+    }
+
+    @container (width < 62em) {
+        body > header [data-header-label] {
+            display: none;
+        }
     }
 
     body > header > nav[aria-label="breadcrumb"] [aria-current="page"] {
         display: inline-block;
     }
 
-    header nav button:is(:hover, :focus-visible) {
+    header :is([data-header-create] button, #header-place button, nav button, nav a):is(:hover, :focus-visible) {
         text-decoration: underline;
+    }
+
+    form[data-inline-unarchive],
+    form[data-inline-unarchive] > button {
+        display: inline-flex;
+        inline-size: auto;
+        margin: 0 0 0 0.5ch;
+        padding: 0.1rem 0.45rem;
+        font-size: 0.85em;
     }
 
     ul:has(> [data-directory-entry]),
@@ -42,6 +127,11 @@
     [data-directory-entry],
     #session-conversation [data-prompt-replies] > li {
         list-style: none;
+    }
+
+    /* {§web-workspace-tabs} Progressive disclosure: single-session chats hide tab chrome completely. */
+    #workspace-tabs:is([data-tab-count="0"], [data-tab-count="1"]) {
+        display: none;
     }
 
     #workspace-tabs > [data-workspace-switcher] {
@@ -61,14 +151,10 @@
         white-space: nowrap;
     }
 
-    @media (scripting: enabled) and (width < 768px) {
-        #workspace-tabs > [data-workspace-switcher] {
+    @media (scripting: enabled) and (width < 48rem) {
+        #workspace-tabs:not([data-tab-count="0"], [data-tab-count="1"]) > [data-workspace-switcher] {
             display: inline-flex;
         }
-    }
-
-    #workspace-tabs:not([data-live="true"]) > [data-workspace-settings] {
-        display: none;
     }
 
     #workspace-tabs > ul > li > a[aria-current="true"],
@@ -82,14 +168,14 @@
         font-weight: 700;
     }
 
-    /* {§web-page-shell} Keep keyboard focus inside the breadcrumb and workspace tab scroll areas. */
+    /* {§web-page-shell} Keep keyboard focus inside header and workspace tab scroll areas. */
     details > summary:is(:focus, :focus-visible) {
         outline: var(--otm-outline-width) solid var(--otm-primary-focus);
         outline-offset: 0.125rem;
         border-radius: var(--otm-border-radius);
     }
 
-    body > header > nav[aria-label="breadcrumb"] a:focus-visible,
+    body > header :is(a, button):focus-visible,
     #workspace-tabs > ul > li > a:focus-visible {
         box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
     }
@@ -135,9 +221,8 @@
             opacity: 1;
         }
 
-        button[data-dialog-target],
-        button[data-workspace-switcher],
-        button[data-workspace-settings] {
+        button[data-dialog-target]:not(#header-session),
+        button[data-workspace-switcher] {
             display: none;
         }
     }
@@ -147,14 +232,98 @@
         display: none;
     }
 
+    [aria-label="Message feedback"][data-command-error=""] > article,
+    [aria-label="Message feedback"][data-message-status=""] > [role="status"],
+    [aria-label="Message feedback"][data-message-status=""][data-command-error=""] {
+        display: none;
+    }
+
+    /* {§web-session-conversation} Prompt-top tiny glyph pill strip and inline operation drilldown. */
+    #main li > details[data-prompt-work] {
+        --otm-card-background-color: var(--plurnk-working-surface);
+
+        margin-block: 0 var(--otm-spacing);
+        padding: 0;
+        border: 0;
+    }
+
+    #main li > details[data-prompt-work] > summary {
+        display: inline-flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.35rem;
+        max-inline-size: 100%;
+        padding: 0;
+        border-block-end: 0;
+        line-height: 1.2;
+    }
+
+    #main li > details[data-prompt-work] > summary::after {
+        content: "▸" / "";
+        color: var(--otm-muted-color);
+        font-size: 0.75em;
+    }
+
+    #main li > details[data-prompt-work][open] > summary::after {
+        content: "▾" / "";
+    }
+
+    [data-prompt-pills] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.3rem;
+        min-inline-size: 0;
+    }
+
+    [data-prompt-pills] > [data-operation-tally] {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2ch;
+        padding: 0.12rem 0.45rem;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: 999px;
+        background-color: var(--plurnk-pill-surface);
+        font-size: 0.8125em;
+        line-height: 1.25;
+        white-space: nowrap;
+    }
+
+    [data-operation-tally] > [data-plurnk-field="heading"]:not(:empty) {
+        margin-inline-end: 0.45ch;
+    }
+
+    [data-prompt-work][data-work-running="true"] > summary [data-operation-tally] {
+        border-color: var(--otm-primary);
+    }
+
+    [data-prompt-work] > [data-work-items] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.35);
+        margin-block: calc(var(--otm-spacing) * 0.5) 0;
+        padding: 0;
+    }
+
+    #session-conversation [data-prompt-work] > [data-work-items] > li {
+        margin: 0;
+    }
+
     /* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
-    #session-conversation:has([data-message-id], [data-reasoning-preview]),
+    #session-conversation:has([data-message-id]),
     #session-conversation[data-conversation-empty] {
         --otm-card-background-color: var(--plurnk-working-surface);
         --otm-primary: var(--otm-primary-hover);
     }
 
-    #session-conversation :is([data-message-id] > article, [data-reasoning-preview]) {
+    [data-prompt-work] > [data-work-items] > li > article {
+        --otm-spacing: 0.6rem;
+
+        margin: 0;
+        background-color: var(--plurnk-working-surface);
+        box-shadow: 0 0 0 var(--otm-border-width) var(--otm-muted-border-color);
+    }
+
+    #session-conversation [data-message-id] > article {
         --otm-card-sectioning-background-color: var(--otm-card-background-color);
     }
 
@@ -166,14 +335,33 @@
         --otm-card-background-color: var(--plurnk-reply-surface);
     }
 
-    [aria-label="Message feedback"][data-command-error=""] > article,
-    [aria-label="Message feedback"][data-message-status=""] > [role="status"],
-    [aria-label="Message feedback"][data-message-status=""][data-command-error=""] {
-        display: none;
-    }
-
     #session-conversation [data-message-role="user"] > article {
         box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-user-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"]:has(> [data-prompt-work]) {
+        margin-block-end: var(--otm-spacing);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-user-surface);
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-user-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"] > [data-prompt-work] {
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.55) var(--otm-spacing) 0;
+    }
+
+    #session-conversation [data-message-role="user"] > [data-prompt-work][open] {
+        padding-block-end: calc(var(--otm-spacing) * 0.5);
+        border-block-end: var(--otm-border-width) solid var(--plurnk-user-border);
+    }
+
+    #session-conversation [data-message-role="user"] > [data-prompt-work] + article {
+        margin-block-end: 0;
+        padding-block-start: calc(var(--otm-spacing) * 0.45);
+        border-start-start-radius: 0;
+        border-start-end-radius: 0;
+        box-shadow: none;
     }
 
     /* {§web-session-input} Native controls and document state own their presentation. */
@@ -193,8 +381,9 @@
     }
 
     button[data-attach-image],
+    button[data-insert-command],
     button[data-accept-suggestion],
-    button[data-cancel-settings],
+    button[data-cancel-settings]:not([rel="prev"]),
     dialog button[data-dialog-close]:not([rel="prev"]) {
         --otm-primary-background: var(--otm-secondary-background);
         --otm-primary-hover-background: var(--otm-secondary-hover-background);
@@ -204,6 +393,11 @@
 
     button[data-attach-image]::before {
         content: "📎" / "";
+    }
+
+    button[data-insert-command]::before {
+        content: "/" / "";
+        font-weight: 700;
     }
 
     #session-compose [data-remove-attachment]::before {
@@ -276,8 +470,17 @@
         margin-inline-start: auto;
     }
 
+    #session-status [data-status-telemetry] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: calc(var(--otm-spacing) * 0.65);
+        min-inline-size: 0;
+    }
+
     #session-status [data-status-line],
-    #session-status [data-status-line] > ul {
+    #session-status [data-status-line] > ul,
+    #session-status [data-status-telemetry] > ul {
         display: flex;
         flex-wrap: wrap;
         align-items: baseline;
@@ -287,15 +490,21 @@
         margin: 0;
     }
 
-    #session-status [data-status-line] > ul {
+    #session-status :is([data-status-line], [data-status-telemetry]) > ul {
         min-inline-size: 0;
         max-inline-size: 100%;
     }
 
-    #session-status [data-status-line] > ul > li {
+    #session-status [data-status-field] {
         list-style: none;
         min-inline-size: 0;
         margin: 0;
+    }
+
+    #session-status [data-status-field="model"] {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.45ch;
     }
 
     #session-status [data-status-line] button {
@@ -305,6 +514,10 @@
         margin: 0;
     }
 
+    #session-usage [data-usage-context]:empty {
+        display: none;
+    }
+
     #workspace-tabs > button:is(:hover, :focus-visible),
     #dialog-workspace-settings [data-settings-nav] button:is(:hover, :focus-visible),
     #session-command-results [data-open-workspace-settings]:is(:hover, :focus-visible),
@@ -312,15 +525,9 @@
         text-decoration: underline;
     }
 
-    /* {§web-session-reasoning} The preview follows its tail within its own bounded outlet. */
-    [data-reasoning-preview] pre {
-        max-block-size: calc(100dvh / 3);
-        overflow: auto;
-    }
-
     #main li > article > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
     #main li > article > details > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
-    #session-conversation :is([data-loop-seq], [data-operations]) > details > ul,
+    #session-conversation [data-prompt-work] > [data-work-items],
     #session-conversation [data-prompt-replies] > li:last-child > article,
     [data-session-reply] > :last-child {
         margin-block-end: 0;
@@ -334,7 +541,7 @@
         border-end-end-radius: var(--otm-border-radius);
     }
 
-    #main :is(li > article, li) > details[open] > summary::after {
+    #main :is(li > article, li) > details:not([data-prompt-work])[open] > summary::after {
         content: "▾" / "";
     }
 
@@ -439,7 +646,8 @@
     [aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"],
     [aria-label="Session controls"]:not([data-prompt-image="true"]) button[data-attach-image],
     #session-compose [data-compose-suggestions]:empty,
-    #session-compose [data-compose-attachments]:empty {
+    #session-compose [data-compose-attachments]:empty,
+    [data-alias-choices]:empty {
         display: none;
     }
 
@@ -449,7 +657,7 @@
         border-end-start-radius: var(--otm-border-radius);
     }
 
-    [aria-label="Session controls"]:not([data-live-work], [data-prompt-image="true"]) #session-message {
+    [aria-label="Session controls"]:not([data-live-work], [data-prompt-image="true"]) button[data-insert-command] {
         margin-inline-start: 0;
         border-start-start-radius: var(--otm-border-radius);
         border-end-start-radius: var(--otm-border-radius);
@@ -545,9 +753,10 @@
         display: none;
     }
 
-    /* {§web-session-identity} {§web-session-status} Optional supplied facts, not guessed activity. */
+    /* {§web-session-identity} {§web-session-status} Optional supplied facts, not guessed activity; steady control strip once connected. */
     #session-folder[data-project-label=""],
     #session-status:not([data-lifecycle]) > [data-status-line],
+    #session-status:is([data-connection="disconnected"], [data-connection="signed-out"]) > [data-status-line],
     #session-status[data-connection="connected"] > [role="status"],
     #session-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
     #session-status:not([data-elapsed]) [data-status-field="elapsed"],
@@ -560,18 +769,6 @@
     #session-status[data-preparation=""] [data-status-field="preparation"],
     #session-status[data-activity=""] [data-status-field="activity"] {
         display: none;
-    }
-
-    /* {§web-session-status} Native interaction and active YOLO retain the row; unfocused live work remains observable. */
-    #session-status:not(:focus-within, :active, [data-lifecycle="queued"], [data-lifecycle="running"], [data-lifecycle="parked"], :has([aria-expanded="true"], #session-yolo[aria-pressed="true"])) > [data-status-line] {
-        display: none;
-    }
-
-    /* {§web-session-reasoning} Coordinates are content; the reasoning glyph is presentation. */
-    [data-message-role="reasoning"] [data-plurnk-field="heading"]::before,
-    [data-reasoning-preview] > header::before {
-        content: "💭" / "";
-        margin-inline-end: 0.5ch;
     }
 
     /* {§web-session-status} Status fields remain semantic; CSS owns their compact notation. */
@@ -649,12 +846,14 @@
         --session-lifecycle-glyph: "✓";
     }
 
-    /* {§web-operation-summary} Decorative glyphs never supply the accessible operation name. */
-    [data-plurnk-type] [data-plurnk-field="heading"]::before,
-    [data-operation-tally] [data-plurnk-field="heading"]::before,
-    [data-diagnostic-level] [data-plurnk-field="heading"]::before {
+    /* {§web-operation-summary} {§web-session-reasoning} Decorative glyphs never supply the accessible operation name. */
+    :is([data-plurnk-type], [data-operation-tally], [data-diagnostic-level], [data-message-role="reasoning"]) {
+        --plurnk-operation-glyph: "⚙️";
+    }
+
+    :is([data-plurnk-type], [data-operation-tally], [data-diagnostic-level], [data-message-role="reasoning"]) [data-plurnk-field="heading"]::before {
         content: var(--plurnk-operation-glyph, "⚙️") / "";
-        margin-inline-end: 0.5ch;
+        margin-inline-end: 0.35ch;
     }
 
     :is([data-plurnk-type="note"], [data-operation-tally="note"]) {
@@ -701,7 +900,7 @@
         --plurnk-operation-glyph: "⏳";
     }
 
-    [data-plurnk-type="send"] {
+    [data-plurnk-type="send"]:not([data-message-role="user"]) {
         --plurnk-operation-glyph: "✉️";
     }
 
@@ -738,7 +937,7 @@
         --plurnk-operation-glyph: "⛔";
     }
 
-    [data-operation-tally="reasoning"] {
+    :is([data-message-role="reasoning"], [data-operation-tally="reasoning"]) {
         --plurnk-operation-glyph: "💭";
     }
 
@@ -803,10 +1002,6 @@
     }
 
     #session-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
-        display: none;
-    }
-
-    [data-reasoning-preview]:has(> pre:empty) {
         display: none;
     }
 

@@ -6,6 +6,7 @@ import {
     methods,
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
+import { createWebSocketStream } from "@agentclientprotocol/sdk/experimental/ws-client";
 import {
     SessionTranslator,
     isRecord,
@@ -36,7 +37,7 @@ import {
     resolveAcpUrl,
 } from "./session-transport.js";
 
-export { PROTOCOL_VERSION, SessionTranslator, client, createHttpStream, methods, randomUUID };
+export { PROTOCOL_VERSION, SessionTranslator, client, createHttpStream, createWebSocketStream, methods, randomUUID };
 
 /** @typedef {import("./session-translator.js").ToolCall} ToolCall */
 /** @typedef {import("./session-translator.js").MessagePart} MessagePart */
@@ -173,6 +174,8 @@ export default class SessionAgent {
     #submittedPrompt = undefined;
     /** @type {boolean} */
     #needsConnectionSse = false;
+    /** @type {"http" | "ws"} */
+    #transport = "http";
 
     /**
      * @param {{
@@ -182,12 +185,14 @@ export default class SessionAgent {
      *   state?: Record<string, unknown>,
      *   messages?: Message[],
      *   fetch?: typeof globalThis.fetch,
+     *   transport?: "http" | "ws",
      * }} [config]
      */
     constructor(config = {}) {
         this.url = config.url ?? "/acp";
         this.sessionId = config.sessionId ?? null;
         this.headers = { ...config.headers };
+        this.#transport = config.transport === "ws" && typeof globalThis.WebSocket === "function" ? "ws" : "http";
         /** @type {Record<string, unknown>} */
         this.state = isRecord(config.state) ? structuredClone(config.state) : {};
         /** @type {Message[]} */
@@ -299,7 +304,7 @@ export default class SessionAgent {
         }
         setTimeout(() => {
             void this.#notificationChain.then(async () => {
-                if (this.#connController?.signal.aborted) return;
+                if (this.#connController?.signal.aborted || this.#streamProblem !== undefined) return;
                 if (changed && !this.#resuming) {
                     await this.#subscriber.onStateChanged?.({ state: this.state });
                 }
@@ -347,11 +352,11 @@ export default class SessionAgent {
             this.#gates.resolvers.set(entry.id, {
                 method,
                 resolve: (res) => {
-                    signal.removeEventListener("abort", onCancel);
+                    signal.onabort = null;
                     resolve(/** @type {never} */ (res));
                 },
                 reject: (err) => {
-                    signal.removeEventListener("abort", onCancel);
+                    signal.onabort = null;
                     reject(err);
                 },
             });
@@ -374,32 +379,98 @@ export default class SessionAgent {
         this.#connController = connController;
         this.#streamProblem = undefined;
 
-        const acpFetch = createAcpFetch({
-            fetchImpl: this.#fetch,
-            getHeaders: () => this.headers,
-            getSessionId: () => this.sessionId,
-            needsConnectionSse: () => this.#needsConnectionSse,
-            connSignal: connController.signal,
-            getNotificationChain: () => this.#notificationChain,
-            getStreamProblem: () => this.#streamProblem,
-            setStreamProblem: (problem) => { this.#streamProblem = problem; },
-            emitLiveOutcome: (outcome) => this.#emitLiveOutcome(outcome),
-            onPostStart: (fetchPromise) => {
-                this.#inFlightPostCount += 1;
-                this.#outboundPostChain = this.#outboundPostChain
-                    .catch(() => undefined)
-                    .then(() => fetchPromise.then(() => undefined, () => undefined));
-            },
-            onPostEnd: () => {
-                this.#inFlightPostCount = Math.max(0, this.#inFlightPostCount - 1);
-            },
-        });
+        /** @type {ReturnType<typeof createHttpStream>} */
+        let stream;
+        if (this.#transport === "ws") {
+            const httpUrl = new URL(resolveAcpUrl(this.url));
+            httpUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
+            const authHeader = this.headers.Authorization ?? this.headers.authorization ?? "";
+            const bearerMatch = /^Bearer\s+(\S+)$/iu.exec(authHeader.trim());
+            if (bearerMatch) {
+                httpUrl.searchParams.set("access_token", bearerMatch[1]);
+            }
+            const getChain = () => this.#notificationChain;
+            const getProblem = () => this.#streamProblem;
+            const emitOutcome = (/** @type {LiveOutcome} */ outcome) => this.#emitLiveOutcome(outcome);
+            const markInFlightGatesCancelled = () => {
+                for (const id of this.#gates.submittedIds) {
+                    this.#gates.cancelledSubmitted.add(id);
+                }
+            };
+            /** @type {import("@agentclientprotocol/sdk/experimental/ws-client").WebSocketConstructor} */
+            const MonitoredWebSocket = /** @type {any} */ (class extends globalThis.WebSocket {
+                /**
+                 * @param {string | URL} url
+                 * @param {string | string[]} [protocols]
+                 */
+                constructor(url, protocols) {
+                    super(url, protocols);
+                    let opened = false;
+                    this.onopen = () => { opened = true; };
+                    /** @param {MessageEvent} event */
+                    this.onmessage = (event) => {
+                        if (typeof event.data !== "string" || !event.data.includes("$/cancel_request")) return;
+                        try {
+                            const parsed = JSON.parse(event.data);
+                            if (isRecord(parsed) && parsed.method === "$/cancel_request") {
+                                markInFlightGatesCancelled();
+                            }
+                        } catch { /* ignore */ }
+                    };
+                    /** @param {CloseEvent} event */
+                    this.onclose = (event) => {
+                        if (connController.signal.aborted) return;
+                        void getChain().then(() => {
+                            if (connController.signal.aborted) return;
+                            const problem = getProblem();
+                            if (problem !== undefined) {
+                                emitOutcome({ stopReason: "error", error: problem });
+                                return;
+                            }
+                            if (!opened || !event.wasClean || event.code !== 1000) {
+                                emitOutcome({
+                                    stopReason: "transport_error",
+                                    transportError: new Error(event.reason || "ACP WebSocket disconnected."),
+                                });
+                                return;
+                            }
+                            emitOutcome({ stopReason: "eof" });
+                        });
+                    };
+                }
+            });
+            stream = createWebSocketStream(httpUrl.href, {
+                WebSocket: MonitoredWebSocket,
+                cookies: "omit",
+            });
+        } else {
+            const acpFetch = createAcpFetch({
+                fetchImpl: this.#fetch,
+                getHeaders: () => this.headers,
+                getSessionId: () => this.sessionId,
+                needsConnectionSse: () => this.#needsConnectionSse,
+                connSignal: connController.signal,
+                getNotificationChain: () => this.#notificationChain,
+                getStreamProblem: () => this.#streamProblem,
+                setStreamProblem: (problem) => { this.#streamProblem = problem; },
+                emitLiveOutcome: (outcome) => this.#emitLiveOutcome(outcome),
+                onPostStart: (fetchPromise) => {
+                    this.#inFlightPostCount += 1;
+                    this.#outboundPostChain = this.#outboundPostChain
+                        .catch(() => undefined)
+                        .then(() => fetchPromise.then(() => undefined, () => undefined));
+                },
+                onPostEnd: () => {
+                    this.#inFlightPostCount = Math.max(0, this.#inFlightPostCount - 1);
+                },
+            });
 
-        const stream = createHttpStream(resolveAcpUrl(this.url), {
-            fetch: acpFetch,
-            headers: this.headers,
-            cookies: "omit",
-        });
+            stream = createHttpStream(resolveAcpUrl(this.url), {
+                fetch: acpFetch,
+                headers: this.headers,
+                cookies: "omit",
+            });
+        }
 
         const app = client({ name: "@plurnk/plurnk-web" });
 
@@ -473,6 +544,9 @@ export default class SessionAgent {
                     problem: streamProblem.problem,
                 });
             }
+            if (!(error instanceof Error)) {
+                throw new Error("ACP WebSocket connection failed.", { cause: error });
+            }
             throw error;
         }
         return conn;
@@ -502,19 +576,15 @@ export default class SessionAgent {
                     return { result: {}, stopReason };
                 }
                 const outcome = await this.#waitForLiveOutcome(signal);
-                if (outcome.error) {
+                await this.#drainNotifications();
+                if (outcome.error || this.#streamProblem !== undefined) {
+                    const sp = outcome.error ?? this.#streamProblem;
+                    this.#streamProblem = undefined;
                     this.close();
-                    await subscriber.onError?.(outcome.error);
-                    return { result: undefined, stopReason: "error" };
+                    if (sp) await subscriber.onError?.(sp);
+                    return { result: undefined, stopReason: "error", meta: outcome.meta };
                 }
                 if (outcome.stopReason === "eof") {
-                    await this.#drainNotifications();
-                    if (this.#streamProblem !== undefined) {
-                        const sp = this.#streamProblem;
-                        this.close();
-                        await subscriber.onError?.(sp);
-                        return { result: undefined, stopReason: "error", meta: outcome.meta };
-                    }
                     this.close();
                     return { result: {}, stopReason: "end_turn" };
                 }
@@ -1243,31 +1313,40 @@ export default class SessionAgent {
                 : undefined;
             return { result: errorResult, stopReason: "error" };
         }
+        if (!(error instanceof Error)) {
+            throw new Error("ACP WebSocket connection failed.", { cause: error });
+        }
         throw error;
     }
 
     /** @param {SessionSubscriber} subscriber */
     async #finalizeLiveThought(subscriber) {
         const pending = this.#pendingLiveThought;
-        if (!pending) return;
         this.#pendingLiveThought = undefined;
-        const idx = this.messages.findIndex((m) => m.id === pending.messageId && m.role === "reasoning");
-        const found = idx !== -1 ? this.messages[idx] : undefined;
-        if (!found || (isRecord(found._meta?.plurnk) && found._meta.plurnk.body !== undefined)) {
-            return;
-        }
-        const updated = {
-            ...found,
-            _meta: {
-                ...found._meta,
-                plurnk: {
-                    ...(isRecord(found._meta?.plurnk) ? found._meta.plurnk : {}),
-                    body: pending.body,
+        let changed = false;
+        const nextMessages = this.messages.map((item) => {
+            if (item.role !== "reasoning") return item;
+            const itemPlurnk = isRecord(item._meta?.plurnk) ? item._meta.plurnk : undefined;
+            const matchesPending = pending !== undefined && item.id === pending.messageId && itemPlurnk?.body === undefined;
+            const wasStreaming = itemPlurnk?.streaming === true;
+            if (!matchesPending && !wasStreaming) return item;
+            changed = true;
+            const { streaming: _streaming, ...restPlurnk } = itemPlurnk ?? {};
+            return {
+                ...item,
+                _meta: {
+                    ...item._meta,
+                    plurnk: {
+                        ...restPlurnk,
+                        ...(matchesPending ? { body: pending.body } : {}),
+                    },
                 },
-            },
-        };
-        this.messages = this.messages.with(idx, updated);
-        await subscriber.onMessagesChanged?.({ messages: this.messages });
+            };
+        });
+        if (changed) {
+            this.messages = nextMessages;
+            await subscriber.onMessagesChanged?.({ messages: this.messages });
+        }
     }
 
     /**
@@ -1302,7 +1381,20 @@ export default class SessionAgent {
                     ...update,
                     _meta: {
                         ...(isRecord(update._meta) ? update._meta : {}),
-                        plurnk: restPlurnk,
+                        plurnk: { ...restPlurnk, streaming: true },
+                    },
+                };
+            } else if (
+                isRecord(update.content)
+                && update.content.type === "text"
+                && typeof update.content.text === "string"
+                && update.content.text.length > 0
+            ) {
+                projectedUpdate = {
+                    ...update,
+                    _meta: {
+                        ...(isRecord(update._meta) ? update._meta : {}),
+                        plurnk: { ...(plurnk ?? {}), streaming: true },
                     },
                 };
             }

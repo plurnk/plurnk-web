@@ -10,7 +10,7 @@ import { chromium } from "playwright";
 import Documents from "../src/documents.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-test("{§web-page-shell} compact header stays on one row and long breadcrumbs scroll without JavaScript", async (t) => {
+test("{§web-page-shell} compact header stays on one row and long workspace places scroll without JavaScript", async (t) => {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
@@ -29,65 +29,71 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
             const page = await context.newPage();
             for (const authenticated of [false, true]) {
                 for (const name of ["w", "~/ptl/project", `~/project/${"long-name-".repeat(20)}`]) {
-                    const port = { listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, archived_at: null }], listSessions: async () => [] };
-                    html = await documents.read({ kind: "workspace", workspace: name }, port, authenticated);
+                    const port = {
+                        listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, archived_at: null }],
+                        listSessions: async () => [{ id: 2, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
+                    };
+                    html = await documents.read({ kind: "session", workspace: name, session: "user" }, port, authenticated);
                     await page.goto("http://web.test/");
-                    assert.equal(await page.locator('header > nav[aria-label="breadcrumb"]').count(), 1);
+                    assert.equal(await page.locator("header > #header-place").count(), 1);
                     assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
                     const measure = () => page.evaluate(() => {
                         const header = document.querySelector("body > header");
-                        const glyph = document.createRange();
-                        glyph.selectNodeContents(header.querySelector('[aria-label="Workspaces"]'));
+                        const place = header.querySelector("#header-place");
+                        const createGroup = header.querySelector("[data-header-create]");
+                        const searchIcon = header.querySelector('[data-nav="search"] > svg');
                         return {
                             header: header.getBoundingClientRect().toJSON(),
                             logo: header.querySelector('a[href="/"]').getBoundingClientRect().toJSON(),
                             mascot: header.querySelector('a[href="/"] > img').getBoundingClientRect().toJSON(),
-                            glyph: glyph.getBoundingClientRect().toJSON(),
+                            glyph: searchIcon.getBoundingClientRect().toJSON(),
+                            create: createGroup.getBoundingClientRect().toJSON(),
                             menu: header.querySelector('nav[aria-label="Main navigation"]').getBoundingClientRect().toJSON(),
-                            breadcrumb: header.querySelector('nav[aria-label="breadcrumb"]').getBoundingClientRect().toJSON(),
+                            place: place.getBoundingClientRect().toJSON(),
                             font: parseFloat(getComputedStyle(header).fontSize),
-                            scrollable: header.querySelector('nav[aria-label="breadcrumb"]').scrollWidth > header.querySelector('nav[aria-label="breadcrumb"]').clientWidth,
-                            verticalOverflow: header.querySelector('nav[aria-label="breadcrumb"]').scrollHeight > header.querySelector('nav[aria-label="breadcrumb"]').clientHeight,
+                            scrollable: place.scrollWidth > place.clientWidth,
+                            verticalOverflow: place.scrollHeight > place.clientHeight + 1,
                             overflow: document.documentElement.scrollWidth > innerWidth,
-                            items: [...header.querySelectorAll('nav[aria-label="breadcrumb"] li')].map((item) => item.getBoundingClientRect().toJSON()),
+                            labelsVisible: [...header.querySelectorAll("[data-header-label]")].every((el) => getComputedStyle(el).display !== "none"),
                         };
                     });
-                    for (const width of [500, 320, 768, 500]) {
+                    for (const width of [500, 320, 768, 1024, 500]) {
                         await page.setViewportSize({ width, height: 700 });
-                        const { logo, mascot, glyph, menu, breadcrumb, header, overflow, items, font, scrollable, verticalOverflow } = await measure();
-                        assert.ok(Math.abs(mascot.width - glyph.width) < glyph.width / 10, "the mascot matches the navigation emoji's scale");
+                        const { logo, mascot, glyph, create, menu, place, header, overflow, font, scrollable, verticalOverflow, labelsVisible } = await measure();
                         assert.equal(mascot.height, mascot.width, "the mascot retains a square glyph box");
+                        assert.ok(glyph.width > 0 && mascot.width >= glyph.width, "the mascot scales alongside header icons");
                         assert.equal(overflow, false);
-                        assert.equal(verticalOverflow, false, "breadcrumb links fit their scroll area vertically");
-                        assert.equal(await page.locator('[aria-current="page"]').innerText(), name);
-                        assert.ok(breadcrumb.y < logo.bottom && breadcrumb.bottom > logo.y, "breadcrumb shares the mascot row");
+                        assert.equal(verticalOverflow, false, "place controls fit their scroll area vertically");
+                        assert.equal(labelsVisible, width >= 1024, `${width}px collapses header button text labels below 1024px`);
+                        assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), name);
+                        assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), "user");
+                        assert.ok(place.y < logo.bottom && place.bottom > logo.y, "place shares the mascot row");
                         assert.ok(menu.y < logo.bottom && menu.bottom > logo.y, "menu shares the mascot row");
-                        assert.ok(breadcrumb.x >= logo.right && breadcrumb.right <= menu.x, "the breadcrumb remains between controls");
-                        assert.ok(items.every((item) => Math.abs(item.y - items[0].y) < 1), "breadcrumb never wraps");
-                        assert.ok(header.height <= Math.max(logo.height, menu.height, breadcrumb.height) + font, "header padding is at most one text line in total");
-                        await page.locator('nav[aria-label="breadcrumb"] a').first().focus();
-                        assert.equal(await page.locator('nav[aria-label="breadcrumb"] a').first().evaluate((link) => {
-                            const style = getComputedStyle(link);
-                            return document.activeElement === link && style.boxShadow.includes("inset");
-                        }), true, "keyboard focus stays visible inside the breadcrumb's scroll area");
+                        assert.ok(place.x >= create.right - 1 && place.right <= menu.x + 1, "the place remains between creation and navigation controls");
+                        assert.ok(header.height <= Math.max(logo.height, create.height, menu.height, place.height) + font, "header padding is at most one text line in total");
+                        await page.locator("#session-workspace").focus();
+                        assert.equal(await page.locator("#session-workspace").evaluate((btn) => {
+                            const style = getComputedStyle(btn);
+                            return document.activeElement === btn && style.boxShadow.includes("inset");
+                        }), true, "keyboard focus stays visible inside the header place scroll area");
                         if (name.length > 100) {
-                            assert.equal(scrollable, true, "long names are retained in a locally scrollable breadcrumb");
-                            assert.equal(await page.locator('nav[aria-label="breadcrumb"]').evaluate((nav) => {
-                                nav.scrollLeft = nav.scrollWidth;
-                                return nav.scrollLeft > 0;
+                            assert.equal(scrollable, true, "long names are retained in a locally scrollable header place");
+                            assert.equal(await page.locator("#header-place").evaluate((el) => {
+                                el.scrollLeft = el.scrollWidth;
+                                return el.scrollLeft > 0;
                             }), true);
                         }
                     }
                     if (name === "~/ptl/project") {
                         await page.setViewportSize({ width: 768, height: 700 });
                         await page.evaluate(() => { document.documentElement.style.fontSize = "48px"; });
-                        const { logo, mascot, glyph, menu, breadcrumb, overflow, verticalOverflow } = await measure();
-                        assert.ok(Math.abs(mascot.width - glyph.width) < glyph.width / 10, "the mascot follows enlarged navigation glyphs, not a fixed pixel size");
+                        const { logo, mascot, glyph, create, menu, place, overflow, verticalOverflow } = await measure();
+                        assert.ok(mascot.width >= glyph.width, "the mascot follows enlarged navigation glyphs, not a fixed pixel size");
                         assert.equal(mascot.height, mascot.width);
-                        assert.ok(breadcrumb.y < logo.bottom && breadcrumb.bottom > logo.y, "large text still has one header row");
-                        assert.ok(breadcrumb.x >= logo.right && breadcrumb.right <= menu.x);
+                        assert.ok(place.y < logo.bottom && place.bottom > logo.y, "large text still has one header row");
+                        assert.ok(place.x >= create.right - 1 && place.right <= menu.x + 1);
                         assert.equal(overflow, false);
-                        assert.equal(verticalOverflow, false, "large text introduces no vertical breadcrumb scroll");
+                        assert.equal(verticalOverflow, false, "large text introduces no vertical header place scroll");
                         await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
                     }
                 }
@@ -99,7 +105,7 @@ test("{§web-page-shell} compact header stays on one row and long breadcrumbs sc
     }
 });
 
-test("{§web-page-shell} disconnection is a named header glyph before Account, not a second connection state", async (t) => {
+test("{§web-page-shell} disconnection is a named header glyph before Search and Profile, not a second connection state", async (t) => {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
@@ -111,6 +117,10 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
     const port = {
         listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, archived_at: null }],
         listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
+    };
+    const emptyPort = {
+        listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, archived_at: null }],
+        listSessions: async () => [],
     };
     let html;
     await context.route("http://web.test/**", (route) => {
@@ -130,16 +140,20 @@ test("{§web-page-shell} disconnection is a named header glyph before Account, n
             for (const state of ["initial", "connecting", "connected", "interrupted", "disconnected", "signed-out", "connected"]) {
                 await page.locator("#session-status").evaluate((element, state) => { element.dataset.connection = state; }, state);
                 assert.equal(await indicator.isVisible(), ["disconnected", "signed-out"].includes(state), `${state}: the header follows observed transport state only`);
-                if (authenticated && await indicator.isVisible()) {
+                if (await indicator.isVisible()) {
                     const box = await indicator.boundingBox();
-                    const account = await page.getByRole("link", { name: "Account", exact: true }).boundingBox();
-                    assert.ok(box.x + box.width <= account.x, "the plug is immediately left of Account");
-                    assert.ok(Math.abs(box.y + box.height / 2 - account.y - account.height / 2) < 1);
+                    const search = await page.getByRole("link", { name: "Search", exact: true }).boundingBox();
+                    assert.ok(box.x + box.width <= search.x, "the plug is immediately left of Search");
+                    assert.ok(Math.abs(box.y + box.height / 2 - search.y - search.height / 2) < 1);
+                    if (authenticated) {
+                        const profile = await page.getByRole("link", { name: "Profile", exact: true }).boundingBox();
+                        assert.ok(search.x + search.width <= profile.x, "Profile follows Search on the same row");
+                    }
                 }
                 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             }
         }
-        html = await documents.read({ kind: "workspace", workspace: "project" }, port, authenticated);
+        html = await documents.read({ kind: "workspace", workspace: "project" }, emptyPort, authenticated);
         await page.goto("http://web.test/");
         assert.equal(await indicator.isVisible(), false, "a document without an observation never claims disconnection");
     }

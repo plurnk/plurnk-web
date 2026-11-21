@@ -2,18 +2,17 @@ import assert from "node:assert/strict";
 import SessionAgent from "../web/session-agent.js";
 import { networkFailure } from "./browser-diagnostics.js";
 import { inspectResult, observeMessages } from "./result-body.js";
-import { inputPage } from "./session-input.js";
+import { inputPage, onAcpSent, routeAcpWebSocket } from "./session-input.js";
 
 const interrupted = (page) => page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
 const connected = (page) => page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
 
 function requestsFrom(page) {
     const requests = [];
-    page.on("request", (request) => {
-        const body = request.postDataJSON();
+    onAcpSent(page, (body) => {
         if (
-            new URL(request.url()).pathname === "/acp"
-            && body !== null
+            body !== null
+            && body.error === undefined
             && body.method !== "initialize"
             && body.params?._meta?.plurnk?.control !== false
         ) {
@@ -120,7 +119,24 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
     await t.test("{§web-session-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
-        await page.route("**/acp", (route) => route.request().postDataJSON()?.result?.outcome ? route.abort() : route.continue());
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                if (typeof message === "string") {
+                    try {
+                        if (JSON.parse(message)?.result?.outcome) {
+                            ws.close({ code: 3001, reason: "ACP WebSocket disconnected." });
+                            server.close();
+                            return;
+                        }
+                    } catch { /* ignore */ }
+                }
+                server.send(message);
+            });
+        });
+        await page.reload();
+        await connected(page);
+        requests.length = 0;
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-auto-failure.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
@@ -153,7 +169,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             assert.equal(requests.length, 1, "native required controls prevent an unanswered review");
             assert.equal(model.requests.length, 1);
             const reasoning = page.locator('[data-message-role="reasoning"]').first();
-            await page.locator("[data-operations] > details > summary").first().click();
+            await page.locator("[data-prompt-work] > summary").first().click();
             await reasoning.locator("summary").click();
             await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();
             await reasoning.locator('[data-body-state="loaded"]').waitFor();
@@ -233,9 +249,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
 
     await t.test("{§web-session-approval} held review retains unsent choices and live elapsed time without repeated presentations", { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
         const resumes = [];
-        page.on("request", (request) => {
-            if (new URL(request.url()).pathname !== "/acp") return;
-            const input = request.postDataJSON();
+        onAcpSent(page, (input) => {
             if (input?.method === "session/resume") resumes.push(input);
         });
         await requestApproval(page, "approval-held");
@@ -261,18 +275,35 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         await requestApproval(page, "approval-late");
         const other = await context.newPage();
         other.setDefaultTimeout(5000);
+        const sent = Promise.withResolvers();
+        const releaseDelayed = Promise.withResolvers();
+        let delayOnce = true;
+        await routeAcpWebSocket(other, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                if (delayOnce && typeof message === "string") {
+                    try {
+                        if (JSON.parse(message)?.result?.outcome) {
+                            delayOnce = false;
+                            sent.resolve();
+                            void releaseDelayed.promise.then(() => server.send(message));
+                            return;
+                        }
+                    } catch { /* ignore */ }
+                }
+                server.send(message);
+            });
+        });
         await other.goto(path);
         await interrupted(other);
         const requests = requestsFrom(other);
-        const sent = Promise.withResolvers();
-        await other.route("**/acp", (route) => { sent.resolve(route); }, { times: 1 });
         await other.getByRole("radio", { name: "Reject", exact: true }).check();
         await other.getByRole("button", { name: "Submit responses", exact: true }).click();
-        const delayed = await sent.promise;
+        await sent.promise;
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.getByText("Completed approval-late.", { exact: true }).waitFor();
-        await delayed.continue();
+        releaseDelayed.resolve();
         await other.getByText("Completed approval-late.", { exact: true }).waitFor();
         await connected(other);
         assert.match(await other.locator('[data-text="command-error"]').textContent(), /^Response not accepted: /u);
@@ -370,7 +401,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             await page.getByRole("button", { name: "Submit responses", exact: true }).click();
             // Each accepted child finishes independently of the owner's already-finished loop.
             const childPage = await context.newPage();
-            await childPage.goto(path.replace("@user/", `@${session}/`));
+            await childPage.goto(path.replace("#user", `#${session}`));
             await childPage.getByText(`Completed held-approval-${session}.`, { exact: true }).waitFor();
             assert.equal(await childPage.locator('[data-message-role="user"]').count(), 2, "fork retains the owner's history plus the child's prompt");
             await childPage.close();
@@ -387,13 +418,31 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
     }));
 
     await t.test("{§web-session-approval} a failed decision delivery requires rediscovery and a new explicit choice", { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
+        let abortOnce = true;
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                if (abortOnce && typeof message === "string") {
+                    try {
+                        if (JSON.parse(message)?.result?.outcome) {
+                            abortOnce = false;
+                            ws.close({ code: 3001, reason: "ACP WebSocket disconnected." });
+                            server.close();
+                            return;
+                        }
+                    } catch { /* ignore */ }
+                }
+                server.send(message);
+            });
+        });
+        await page.reload();
+        await connected(page);
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-transport");
-        await page.route("**/acp", (route) => route.abort("failed"), { times: 1 });
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
-        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*(Failed to fetch|NetworkError|Load failed)/u);
+        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*(Failed to fetch|NetworkError|Load failed|ACP WebSocket disconnected)/u);
         assert.equal(await page.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 2);
@@ -418,33 +467,44 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
     }));
 
     await t.test("{§web-session-approval} lost settlement delivery is rediscovered without replaying an accepted decision", { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
+        const truncated = Promise.withResolvers();
+        let truncateOnce = true;
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            let dropInbound = false;
+            ws.onMessage((message) => {
+                server.send(message);
+                if (truncateOnce && typeof message === "string") {
+                    try {
+                        if (JSON.parse(message)?.result?.outcome) {
+                            truncateOnce = false;
+                            dropInbound = true;
+                            void (async () => {
+                                const deadline = Date.now() + 2000;
+                                while (model.requests.length < 2 && Date.now() < deadline) {
+                                    await new Promise((r) => setTimeout(r, 10));
+                                }
+                                ws.close({ code: 1000 });
+                                server.close();
+                                truncated.resolve();
+                            })();
+                        }
+                    } catch { /* ignore */ }
+                }
+            });
+            server.onMessage((message) => {
+                if (dropInbound) return;
+                ws.send(message);
+            });
+        });
+        await page.reload();
+        await connected(page);
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-lost-settlement");
-        const truncated = Promise.withResolvers();
-        await page.route("**/acp", async (route) => {
-            try {
-                const response = await route.fetch();
-                assert.equal(response.status(), 202);
-                await new Promise((r) => setTimeout(r, 5));
-                const connId = route.request().headers()["acp-connection-id"];
-                if (connId) {
-                    await fetch(route.request().url(), { method: "DELETE", headers: { "acp-connection-id": connId } });
-                }
-                const deadline = Date.now() + 2000;
-                while (model.requests.length < 2 && Date.now() < deadline) {
-                    await new Promise((r) => setTimeout(r, 10));
-                }
-                await route.fulfill({ response });
-                truncated.resolve();
-            } catch (error) {
-                await route.abort();
-                truncated.reject(error);
-            }
-        }, { times: 1 });
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         await Promise.all([page.getByRole("button", { name: "Submit responses", exact: true }).click(), truncated.promise]);
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
-        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed: Delivery ended without a session outcome/u);
+        assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed: (Delivery ended without a session outcome|Connection closed)/u);
         assert.equal(model.requests.length, 2);
         await page.getByRole("button", { name: "Reconnect", exact: true }).click();
         await page.getByText("Completed approval-lost-settlement.", { exact: true }).waitFor();
@@ -464,10 +524,10 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             await requestApproval(page, name);
             await page.getByRole("radio", { name: "Accept", exact: true }).check();
             await page.getByRole("button", { name: "Submit responses", exact: true }).click();
-            await page.locator("[data-reasoning-preview]").getByText(`Considering ${name}.`, { exact: true }).waitFor();
+            await page.waitForFunction(() => document.querySelector('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]')?.textContent === "2");
             assert.equal(model.requests.length, 2, "the accepted operation has released the next model call");
             if (departure === "navigate") {
-                await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
+                await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
                 await page.waitForLoadState("load");
             } else await page.close();
             model.release(name);
@@ -501,7 +561,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         await page.waitForLoadState("load");
         await page.getByLabel("Password", { exact: true }).fill("compose-password");
         await page.getByRole("button", { name: "Continue", exact: true }).click();
-        await page.waitForURL(path);
+        await page.waitForURL((url) => new URL(url).pathname === new URL(path).pathname);
         await interrupted(page);
         assert.equal(await page.locator('[data-requests] input:checked').count(), 0);
         await page.getByRole("radio", { name: "Reject", exact: true }).check();

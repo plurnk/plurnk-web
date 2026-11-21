@@ -27,9 +27,9 @@ export default class Creations {
 
     /**
      * @param {string} token The form's hidden token.
-     * @param {() => Promise<string | { workspaceName: string, projectRoot: string | null }>} create
+     * @param {() => Promise<string | { workspaceName: string, projectRoot: string | null, sessionName?: string }>} create
      * @param {{ folderRequested?: boolean }} [options]
-     * @returns {Promise<string>} The canonical address of the created workspace.
+     * @returns {Promise<string>} The canonical address of the created workspace or session.
      */
     async submit(token, create, { folderRequested = false } = {}) {
         if (!UUID_PATTERN.test(token)) throw new RequestError(400, "Invalid form token.");
@@ -53,7 +53,9 @@ export default class Creations {
             if (typeof result === "string") return result;
             if (!folderRequested && result.projectRoot !== null) throw new Error("The daemon created a workspace with a project folder from a folderless request.");
             if (folderRequested && result.projectRoot === null) throw new Error("The daemon created a folderless workspace when a project folder was requested.");
-            const path = directoryPath({ kind: "workspace", workspace: result.workspaceName });
+            const path = result.sessionName
+                ? directoryPath({ kind: "session", workspace: result.workspaceName, session: result.sessionName })
+                : directoryPath({ kind: "workspace", workspace: result.workspaceName });
             if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
             return path;
         })();

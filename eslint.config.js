@@ -46,6 +46,10 @@ export default defineConfig(
                     name: "@agentclientprotocol/sdk/experimental/http-client",
                     message: "Use session-agent.js so schema security is initialized before the browser SDK.",
                 },
+                {
+                    name: "@agentclientprotocol/sdk/experimental/ws-client",
+                    message: "Use session-agent.js so schema security is initialized before the browser SDK.",
+                },
             ] }],
         },
     },

@@ -11,7 +11,7 @@ import disconnectProxy from "./disconnect-proxy.js";
 import { engines, launchBrowser } from "./engines.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { inspectResult } from "./result-body.js";
-import { acquireSharedDaemon } from "./session-input.js";
+import { acquireSharedDaemon, onAcpSent } from "./session-input.js";
 
 async function controller(base, secret) {
     const headers = {};
@@ -70,7 +70,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const context = await browser.newContext();
                 const checkBrowser = browserDiagnostics(context);
                 const page = await context.newPage();
-                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await page.goto(new URL(`/~/${workspace}#user`, base).href);
                 await connected(page);
                 await page.getByText("No messages.", { exact: true }).waitFor();
                 assert.equal(await family(page), "Descendant sessions: 2; active direct children: 0");
@@ -135,13 +135,12 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const checkBrowser = browserDiagnostics(context);
                 const page = await context.newPage();
                 const observations = [];
-                page.on("request", (request) => {
-                    const body = request.postDataJSON();
-                    if (new URL(request.url()).pathname === "/acp" && body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
+                onAcpSent(page, (body) => {
+                    if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
                         observations.push(body);
                     }
                 });
-                await page.goto(new URL(`/~/${workspace}@user/`, proxy.url).href);
+                await page.goto(new URL(`/~/${workspace}#user`, proxy.url).href);
                 await connected(page);
                 await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: wait-status.");
                 await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -205,7 +204,13 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const context = await browser.newContext();
                         const checkBrowser = browserDiagnostics(context);
                         const page = await context.newPage();
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                        const observations = [];
+                        onAcpSent(page, (body) => {
+                            if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
+                                observations.push(body);
+                            }
+                        });
+                        await page.goto(new URL(`/~/${workspace}#user`, base).href);
                         await connected(page);
                         const rows = page.locator("#session-diagnostics ul > li");
                         const notice = rows.filter({ hasText: "PLURNK_SERVICE_EXEC_CONCURRENCY" });
@@ -227,18 +232,13 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(await page.locator("[data-messages] > li").count(), 0, "configuration evidence is not a fabricated conversation");
                         await notice.evaluate((element) => { window.retainedNotice = element; });
                         const count = await rows.count();
-                        const reattached = page.waitForRequest((request) => {
-                            const body = request.postDataJSON();
-                            return new URL(request.url()).pathname === "/acp"
-                                && body?.method === "session/resume"
-                                && body?.params?._meta?.plurnk?.control === false;
-                        });
+                        const beforeRun = observations.length;
                         const run = await controller(base);
                         await run.send({ workspace, message: prompt("diagnostics") });
                         run.close();
                         await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
-                        await reattached;
                         await connected(page);
+                        assert.ok(observations.length > beforeRun, "completed turn reattaches passive observation");
                         assert.equal(await notice.count(), 1, "a replayed warning keeps its existing entry");
                         assert.equal(await problem.count(), 1, "a replayed Problem keeps its existing entry");
                         assert.equal(await rows.filter({ hasText: "engine:turn" }).count(), 0, "routine turn progress does not clutter diagnostics");
@@ -284,13 +284,15 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             unexpected.push(url.href);
                             return route.abort();
                         });
-                        const path = new URL(`/~/${workspace}@user/`, base).href;
+                        const path = new URL(`/~/${workspace}#user`, base).href;
                         await page.goto(path);
                         await page.getByLabel("Password", { exact: true }).fill("content-password");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
-                        await page.waitForURL(path);
+                        await page.waitForURL((url) => new URL(url).pathname === `/~/${workspace}`);
                         await connected(page);
-                        const header = await page.locator("body > header").evaluate((element) => element.outerHTML);
+                        const readHeader = () => page.locator("body > header").evaluate((element) =>
+                            element.outerHTML.replaceAll(/name="token" value="[0-9a-f-]{36}"/giu, 'name="token"'));
+                        const header = await readHeader();
                         const run = await controller(base, secret);
                         await run.send({ workspace, message: prompt("content-security") });
                         run.close();
@@ -314,7 +316,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.equal(await page.locator('[data-message-role="assistant"] article [data-text]').count(), 0, "rich content cannot add bindings; literal result templates retain their owned text slot");
                             assert.equal(await page.locator('[data-messages] article a[href^="javascript:"]').count(), 0);
                             assert.equal(await page.locator("#session-status").count(), 1);
-                            assert.equal(await page.locator("body > header").evaluate((element) => element.outerHTML), header);
+                            assert.equal(await readHeader(), header);
                             assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
                             assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
                             await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
@@ -346,7 +348,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
                 const checkBrowser = browserDiagnostics(context);
                 const page = await context.newPage();
-                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await page.goto(new URL(`/~/${workspace}#user`, base).href);
                 await connected(page);
                 const run = await controller(base);
                 await run.send({ workspace, message: prompt("notes") });
@@ -358,7 +360,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     assert.equal(await note.locator("section, div, ul").count(), 0);
                     assert.equal(await note.locator("article > details > summary").count(), 1);
                     assert.equal(await note.locator("details").evaluate((node) => node.open), false);
-                    await page.locator("[data-operations] > details > summary").click();
+                    await page.locator("[data-prompt-work] > summary").click();
                     assert.deepEqual(await notes.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-plurnk-field="aside"]')?.textContent ?? "")), ["fact", "idea", ""]);
                     assert.equal(await note.getByRole("article", { name: "note", exact: true }).count(), 1);
                     assert.equal(await note.locator("article > details > pre").textContent(), "A **working fact**, not the answer.");
@@ -397,7 +399,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
                 const checkBrowser = browserDiagnostics(context);
                 const page = await context.newPage();
-                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await page.goto(new URL(`/~/${workspace}#user`, base).href);
                 await connected(page);
                 const run = await controller(base);
                 await run.send({ workspace, message: prompt("footnotes") });
@@ -408,7 +410,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     await page.waitForFunction(() => document.querySelector('[data-message-role="assistant"]:not([data-call-id]) article section[aria-label="Footnotes"]'));
                     const answer = page.locator('[data-message-role="assistant"]:not([data-call-id]) > article').filter({ has: page.locator("section") });
                     const note = page.locator('[data-messages] [data-plurnk-type="note"]');
-                    await page.locator("[data-operations] > details > summary").click();
+                    await page.locator("[data-prompt-work] > summary").click();
                     assert.equal(await note.getByRole("article", { name: "note", exact: true }).count(), 1);
                     assert.equal(/** @type {any} */ (run.messages.flatMap((message) => ("toolCalls" in message ? message.toolCalls : undefined) ?? []).find((call) => call.name === "note").rawInput).body, footnoteAnswer);
                     assert.equal(await note.locator("article > details > pre").textContent(), footnoteAnswer);
@@ -452,7 +454,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                 const page = await context.newPage();
                 const requests = [];
                 page.on("request", (request) => requests.push(request.url()));
-                await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                await page.goto(new URL(`/~/${workspace}#user`, base).href);
                 await connected(page);
                 assert.ok(!requests.some((path) => /math-renderer-|Temml-/u.test(path)), "no math code, style or font load before a formula exists");
                 const run = await controller(base);
@@ -502,11 +504,11 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             unexpected.push(url.href);
                             return route.abort();
                         });
-                        const path = new URL(`/~/${workspace}@user/`, base).href;
+                        const path = new URL(`/~/${workspace}#user`, base).href;
                         await page.goto(path);
                         await page.getByLabel("Password", { exact: true }).fill("diagram-password");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
-                        await page.waitForURL(path);
+                        await page.waitForURL((url) => new URL(url).pathname === `/~/${workspace}`);
                         await connected(page);
                         assert.ok(!requests.some((path) => path.endsWith("/render/mermaid")), "an idle session requests no compilation");
                         const run = await controller(base, secret);
@@ -562,7 +564,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const checkBrowser = browserDiagnostics(context);
                         const page = await context.newPage();
                         // Replay renders both bodies at once: two compilations against an admission of one.
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                        await page.goto(new URL(`/~/${workspace}#user`, base).href);
                         await connected(page);
                         const held = () => page.evaluate(() => ({
                             rendered: document.querySelectorAll("[data-messages] [data-diagram]:not([hidden])").length,
@@ -607,29 +609,30 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const checkBrowser = browserDiagnostics(context);
                         const page = await context.newPage();
                         const requests = [];
+                        const acpSent = [];
                         page.on("request", (request) => requests.push(request));
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                        onAcpSent(page, (body) => acpSent.push(body));
+                        await page.goto(new URL(`/~/${workspace}#user`, base).href);
                         await connected(page);
                         assert.equal(model.requests.length, 0, "viewing an idle session starts no inference");
                         completion = run.send({ workspace, message: prompt("conversation") });
-                        const preview = page.locator("[data-reasoning-preview]");
-                        await preview.getByText("Considering conversation.", { exact: true }).waitFor();
-                        assert.equal(await page.locator('[data-message-role="reasoning"]').count(), 0,
-                            "{§web-session-reasoning} live text is a preview, not history");
+                        const workStrip = page.locator("[data-prompt-work]").first();
+                        await workStrip.locator('[data-operation-tally="reasoning"]').waitFor({ state: "attached" });
+                        assert.equal(await workStrip.getAttribute("data-work-running"), "true",
+                            "{§web-session-reasoning} live reasoning surfaces as a running glyph pill, never a separate panel");
                         assert.equal(model.requests.length, 1, "only the controlling request starts inference");
                         model.release("conversation");
                         await completion;
                         await page.getByText("Completed conversation.", { exact: true }).waitFor();
                         await connected(page);
                         assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed conversation.");
-                        assert.equal(await preview.isVisible(), false);
-                        assert.equal(await preview.locator("pre").textContent(), "");
+                        assert.equal(await workStrip.getAttribute("data-work-running"), null);
                         const reasoning = page.locator('[data-message-role="reasoning"]').first();
                         await reasoning.waitFor({ state: "attached" });
                         assert.equal(await reasoning.locator("details").getAttribute("open"), null);
                         assert.equal(requests.some((request) => entryRequest(request, "reasoning")), false,
                             "completed reasoning is a reference, not an automatic fetch");
-                        await page.locator("[data-operations] > details > summary").first().click();
+                        await page.locator("[data-prompt-work] > summary").first().click();
                         await reasoning.locator("summary").click();
                         await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                         await reasoning.locator('[data-body-state="loaded"]').waitFor();
@@ -644,10 +647,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.ok(reads.every(({ body }) => body === ""), "bodyless read calls are semantic entries, not argument envelopes");
                         const readRows = page.locator('[data-call-id][data-plurnk-type="read"]');
                         const successful = readRows.filter({ has: page.locator('[data-plurnk-field="count"]') });
-                        assert.equal(await successful.locator('[data-plurnk-field="path"]').textContent(), "(witness.txt)");
-                        assert.equal(await successful.locator('[data-plurnk-field="scope"]').textContent(), "<1,1>");
+                        assert.equal(await successful.locator('[data-plurnk-field="path"]').textContent(), "witness.txt");
+                        assert.equal(await successful.locator('[data-plurnk-field="scope"]').textContent(), "L1");
                         assert.equal(await successful.locator('[data-plurnk-field="pattern"]').textContent(), "/cobalt/");
-                        assert.equal(await successful.locator('[data-plurnk-field="count"]').textContent(), "{1}");
+                        assert.equal(await successful.locator('[data-plurnk-field="count"]').textContent(), "1 line");
                         assert.equal(await successful.locator('[data-plurnk-field="heading"]').innerText(), "selected evidence");
                         const successfulId = await successful.getAttribute("data-call-id");
                         const evidence = run.messages.find((message) => message.role === "tool" && message.toolCallId === successfulId);
@@ -663,7 +666,12 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "long literal receipts do not widen the viewport");
                             const incoming = page.locator('[data-message-role="user"]').first();
                             assert.equal(await incoming.getAttribute("data-plurnk-type"), "send", "the real daemon decorates incoming user messages");
-                            const surface = (element) => element.evaluate((node) => getComputedStyle(node.closest("article") ?? node.querySelector("article")).backgroundColor);
+                            const surface = (element) => element.evaluate((node) => {
+                                if (node.matches?.('[data-message-role="user"]:has(> [data-prompt-work])')) {
+                                    return getComputedStyle(node).backgroundColor;
+                                }
+                                return getComputedStyle(node.closest("article") ?? node.querySelector(":scope > article")).backgroundColor;
+                            });
                             const colors = await Promise.all([incoming, successful, page.getByText("Completed conversation.", { exact: true })].map(surface));
                             assert.equal(new Set(colors).size, 3, `${colorScheme}: real user, work and delivered reply keep three distinct surfaces`);
                         }
@@ -671,15 +679,14 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await page.getByRole("button", { name: "Send", exact: true }).click();
                         await page.getByText("Completed reasoning-followup.", { exact: true }).waitFor();
                         await connected(page);
-                        const upload = requests.find((request) => new URL(request.url()).pathname === "/acp"
-                            && request.postDataJSON()?.method === "session/prompt")?.postDataJSON();
+                        const upload = acpSent.find((body) => body?.method === "session/prompt");
                         assert.ok(upload, "the browser sent the follow-up through its real SDK");
                         assert.equal(upload.method, "session/prompt");
                         assert.equal(upload.params._meta.plurnk.reasoning, "link");
                         assert.equal(upload.params._meta.plurnk.bodies, "link");
                         assert.deepEqual(upload.params.prompt, [{ type: "text", text: "Lifecycle fixture: reasoning-followup." }]);
                         assert.equal(JSON.stringify(upload).includes("Considering conversation."), false,
-                            "neither preview nor inspected full reasoning enters a later prompt request");
+                            "inspected full reasoning never enters a later prompt request");
                         assert.equal(await reasoning.evaluate((element) => element === window.observedReasoning), true, "passive replay retains the existing row");
                         assert.equal(await reasoning.locator("[data-body-reference]").evaluate((element) => element === window.observedBody), true);
                         assert.equal(await reasoning.locator("details").evaluate((element) => element.open), true, "native disclosure choice survives replay");
@@ -690,7 +697,6 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await page.waitForFunction((count) => document.querySelectorAll("[data-messages] [data-message-id]").length === count, beforeReload.length);
                         assert.deepEqual(await ids(), beforeReload, "a fresh page reads the same SDK snapshot, without a browser history store");
                         assert.equal(model.requests.length, 3, "two original calls and one explicit follow-up; replay and refresh create none");
-                        assert.equal(await preview.isVisible(), false);
                         assert.equal(await page.locator('[data-message-role="reasoning"] [data-body-state="loaded"]').count(), 0);
                         assert.equal(requests.filter((request) => entryRequest(request, "reasoning")).length, 1,
                             "refresh does not re-fetch an inspected reasoning body");
@@ -698,13 +704,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             "reload does not fetch receipt bodies for summaries");
                         assert.deepEqual(model.errors, []);
                         assert.equal(await page.locator("#session-conversation form, #session-conversation textarea, #session-conversation [contenteditable]").count(), 0);
-                        for (const request of requests.filter((request) => {
-                            const body = request.postDataJSON();
-                            return new URL(request.url()).pathname === "/acp"
-                                && body?.method === "session/resume"
-                                && body?.params?._meta?.plurnk?.control === false;
-                        })) {
-                            const input = request.postDataJSON();
+                        for (const input of acpSent.filter((body) => body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false)) {
                             assert.equal(input.method, "session/resume");
                             assert.equal(input.params.prompt, undefined);
                             assert.equal(input.params._meta.plurnk.reasoning, "link");
@@ -755,20 +755,23 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const page = await context.newPage();
                         const observations = [];
                         const access = [];
-                        page.on("request", (request) => {
-                            const body = request.postDataJSON();
-                            if (new URL(request.url()).pathname === "/acp" && body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
+                        onAcpSent(page, (body) => {
+                            if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
                                 observations.push(body);
                             }
                         });
                         page.on("response", async (response) => {
-                            if (new URL(response.url()).pathname === "/auth/token" && response.ok()) access.push((await response.json()).access_token);
+                            try {
+                                if (new URL(response.url()).pathname === "/auth/token" && response.ok()) access.push((await response.json()).access_token);
+                            } catch {
+                                // Response body may be released when navigation closes the context.
+                            }
                         });
                         const path = directoryPath({ kind: "session", workspace, session: sessionId });
                         await page.goto(new URL(path, base).href);
                         await page.getByLabel("Password", { exact: true }).fill("session-password");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
-                        await page.waitForURL(new URL(path, base).href);
+                        await page.waitForURL((url) => new URL(url).pathname === new URL(path, base).pathname);
                         assert.equal(await page.locator("#session-status").count(), 1, "the packed session page supplies the status surface");
                         const connected = () => page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                         const value = (key) => key === "lifecycle"
@@ -812,16 +815,12 @@ export default async function verifySessionPage({ t, withDaemon }) {
                                 await connected();
                                 assert.equal(run.isRunning, true, "refresh does not cancel the controlling request");
                                 assert.equal(await value("lifecycle"), "running");
-                                assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
-                                    "{§web-session-reasoning} a new attachment never reconstructs the ongoing attempt's preview");
-                                await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
+                                await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
                                 await page.waitForLoadState("load");
                                 assert.equal(run.isRunning, true, "native navigation leaves the session running");
                                 await page.goBack();
                                 await connected();
                                 assert.equal(await value("lifecycle"), "running");
-                                assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
-                                    "history restoration does not resurrect a departed preview");
                             }
                             model.release("held-session-page");
                             await completion;
@@ -888,13 +887,12 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await connected();
                         assert.equal(observations.at(-1).params.sessionId, identity, "the open page reattaches by ID after another client renames its workspace");
                         assert.equal(await page.locator("#session-workspace [data-text=workspace-name]").textContent(), renamed);
-                        assert.equal(await page.locator("#session-workspace a").getAttribute("href"), directoryPath({ kind: "workspace", workspace: renamed }));
                         assert.equal(await page.locator("#session-reconnect").getAttribute("action"), directoryPath({ kind: "session", workspace: renamed, session: sessionId }));
-                        assert.equal(await page.title(), `${renamed}@user — Plurnk`);
+                        assert.equal(await page.title(), `${renamed}#user — Plurnk`);
                         assert.equal(page.url(), new URL(path, base).href, "a live rename does not rewrite browser history");
                         const attempts = observations.length;
                         assert.equal((await page.reload()).status(), 404, "an old named URL is not an identity alias");
-                        checkBrowser([httpFailure(path, 404)]);
+                        checkBrowser([httpFailure(new URL(path, base).pathname, 404)]);
                         assert.equal(observations.length, attempts, "a missing directory starts no observation");
                         const renamedPath = directoryPath({ kind: "session", workspace: renamed, session: sessionId });
                         await page.goto(new URL(renamedPath, base).href);
@@ -933,11 +931,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const checkBrowser = browserDiagnostics(context);
                         const page = await context.newPage();
                         let attempts = 0;
-                        page.on("request", (request) => {
-                            const body = request.postDataJSON();
-                            if (new URL(request.url()).pathname === "/acp" && body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) attempts++;
+                        onAcpSent(page, (body) => {
+                            if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) attempts++;
                         });
-                        await page.goto(new URL(`/~/${workspace}@user/`, base).href);
+                        await page.goto(new URL(`/~/${workspace}#user`, base).href);
                         await page.getByLabel("Password", { exact: true }).fill("revocation-password");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await connected(page);
@@ -988,22 +985,23 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const checkBrowser = browserDiagnostics(context);
                         const page = await context.newPage();
                         const requests = [];
+                        const observations = [];
                         page.on("request", (request) => requests.push(request));
-                        await page.goto(new URL("/~/", proxy.url).href);
+                        onAcpSent(page, (body) => {
+                            if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
+                                observations.push(body);
+                            }
+                        });
+                        await page.goto(new URL("/search/", proxy.url).href);
                         assert.equal(requests.some((request) => /session-.*\.js|\/auth\/token|\/acp/u.test(request.url())), false, "directory navigation needs no session runtime");
-                        await page.goto(new URL("/~/observer-approval@user/", proxy.url).href);
+                        await page.goto(new URL("/~/observer-approval#user", proxy.url).href);
                         await connection(page, "interrupted");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false,
                             "an ordinary held approval remains connected");
                         assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true);
                         assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "passive discovery chooses nothing");
                         assert.equal(model.requests.length, 1, "the approval remains pending");
-                        assert.equal(requests.filter((request) => {
-                            const body = request.postDataJSON();
-                            return new URL(request.url()).pathname === "/acp"
-                                && body?.method === "session/resume"
-                                && body?.params?._meta?.plurnk?.control === false;
-                        }).length, 1, "one held passive observation");
+                        assert.equal(observations.length, 1, "one held passive observation");
                         assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);
                         for (const request of requests) assert.equal(request.headers().authorization, undefined);
                         await run.send({
@@ -1027,7 +1025,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const nativePage = await native.newPage();
                         const nativeRequests = [];
                         nativePage.on("request", (request) => nativeRequests.push(request.url()));
-                        await nativePage.goto(new URL("/~/observer-approval@user/", base).href);
+                        await nativePage.goto(new URL("/~/observer-approval#user", base).href);
                         assert.equal(await nativePage.getByText("Live status requires JavaScript.", { exact: true }).isVisible(), true);
                         assert.equal(await nativePage.locator("#session-status > [data-status-line]").isVisible(), false, "without delivery the footer cannot invent session state");
                         assert.equal(await value(nativePage, "lifecycle"), null);
@@ -1040,7 +1038,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         proxy.drop();
                         await connection(page, "disconnected");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), true);
-                        const afterLoss = requests.length;
+                        const observationsAfterLoss = observations.length;
                         const card = page.locator('#session-connection');
                         assert.equal(await card.isVisible(), true);
                         for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
@@ -1052,7 +1050,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         checkBrowser([networkFailure("/acp"), networkFailure("/notifications")]);
                         await connected(page);
                         await page.waitForFunction(() => document.querySelector("#workspace-tabs")?.dataset.notifications === "connected");
-                        assert.ok(requests.length > afterLoss, "passive observation automatically recovers after transient network loss");
+                        assert.ok(observations.length > observationsAfterLoss, "passive observation automatically recovers after transient network loss");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false);
                         assert.equal(await value(page, "input"), "800");
                         await daemon.stop();

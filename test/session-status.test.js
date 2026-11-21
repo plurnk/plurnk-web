@@ -47,6 +47,13 @@ test("{§web-session-status} model identity, effort, direct children and budgets
     assert.equal(unselected.effort, "");
     assert.equal(unselected.context, "");
     assert.equal(Object.hasOwn(unselected, "curation"), false);
+    const activeDefault = gauges(idle, emptyBudget, {
+        providers: [{ alias: "deepdumb", provider: "deepseek", model: "deepseek-chat", effort: "medium", effortSource: "default", active: true }],
+        configOptions: [{ configId: "model", currentValue: "deepdumb" }, { configId: "thought_level", currentValue: "medium" }],
+    });
+    assert.equal(activeDefault.model, "deepdumb");
+    assert.equal(activeDefault.effort, "medium");
+    assert.equal(activeDefault["model-label"], "Model: deepseek/deepseek-chat; effort: medium (default)");
     const selected = gauges({ ...idle, model: { alias: "local", provider: "host", model: "qwen", effort: "high", effortSource: "explicit" },
         descendants: [
             { id: 2, name: "first", parentSessionId: 1, kind: /** @type {const} */ ("work"), lifecycle: /** @type {const} */ ("queued"), gates: 0 },
@@ -69,8 +76,11 @@ test("{§web-session-status} model identity, effort, direct children and budgets
     assert.equal(gauges({ ...idle, model: { provider: "host", model: "other" } }).model, "host/other");
     assert.equal(gauges(idle).context, "", "absence is not an inherited previous budget");
     assert.equal(gauges(idle, { contextTokens: 14080, contextCapacity: 128000 }).context, "11%/128k");
+    assert.equal(gauges(idle, { contextTokens: 14080, contextCapacity: 128000 })["context-high"], "");
+    assert.equal(gauges(idle, { contextTokens: 96000, contextCapacity: 128000 })["context-high"], "75%/128k");
     for (const budget of [{ contextTokens: 1, contextCapacity: 0 }, { contextTokens: null, contextCapacity: 10 }, { contextTokens: 2 }]) {
         assert.equal(gauges(idle, budget).context, "", "incomplete or zero-capacity gauges cannot invent a percentage");
+        assert.equal(gauges(idle, budget)["context-high"], "");
     }
 });
 
@@ -120,15 +130,15 @@ test("{§web-session-status} wait uses the daemon deadline without changing life
 
 test("{§web-session-identity} folder labels are compared, not derived, and names use the shared URL codec", () => {
     assert.deepEqual(workspaceIdentity({ name: "~/project", projectLabel: "~/project" }, "user"), {
-        workspaceName: "~/project", workspacePath: "/~/~/project/", sessionPath: "/~/~/project@user/", projectLabel: "",
-        workspaceIcon: "🗂️", workspaceIconLabel: "Project workspace", pageTitle: "~/project@user — Plurnk",
+        workspaceName: "~/project", workspacePath: "/~/~/project", sessionPath: "/~/~/project#user", projectLabel: "",
+        workspaceIcon: "🗂️", workspaceIconLabel: "Project workspace", pageTitle: "~/project#user — Plurnk",
     });
     const named = workspaceIdentity({ name: 'review <&@%>', projectLabel: "~/project" }, "user");
     assert.equal(named.workspaceIcon, "☁️");
     assert.equal(named.workspaceIconLabel, "Workspace");
     assert.equal(named.projectLabel, "~/project");
-    assert.equal(named.workspacePath, "/~/review%20%3C%26%40%25%3E/");
-    assert.equal(named.sessionPath, "/~/review%20%3C%26%40%25%3E@user/");
+    assert.equal(named.workspacePath, "/~/review%20%3C%26%40%25%3E");
+    assert.equal(named.sessionPath, "/~/review%20%3C%26%40%25%3E#user");
     const folderless = workspaceIdentity({ name: "scratch", projectLabel: null }, "user");
     assert.equal(folderless.workspaceIconLabel, "Folderless workspace");
     assert.equal(folderless.projectLabel, "");

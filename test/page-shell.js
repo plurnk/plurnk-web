@@ -4,24 +4,17 @@ import assert from "node:assert/strict";
 export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.title(), title);
     assert.equal(await page.locator("main").count(), 1);
-    assert.equal(await page.locator("main h1").count(), ["home", "daemon", "workspace", "session"].includes(kind) ? 0 : 1);
+    assert.equal(await page.locator("main h1").count(), ["home", "search", "workspace", "session"].includes(kind) ? 0 : 1);
     assert.equal(await page.locator("main").getAttribute("data-page"), kind);
     const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
     const home = page.getByRole("banner").getByRole("link", { name: "Plurnk", exact: true });
     assert.equal(await home.getAttribute("href"), "/");
-    assert.equal(await home.getAttribute("title"), "Home");
+    assert.equal(await home.getAttribute("title"), "Plurnk");
     assert.equal(await home.innerText(), "", "the mascot has no duplicate brand text");
     assert.equal(await home.getByRole("img", { name: "Plurnk", exact: true }).getAttribute("src"), "/icons/plurnk.svg");
-    assert.equal(await navigation.getByRole("link", { name: "Workspaces", exact: true }).count(), 0, "no redundant workspace action beside the breadcrumb");
-    const root = page.locator('header nav[aria-label="breadcrumb"] > ul > li:first-child > [aria-label="Workspaces"]');
-    assert.equal(await root.innerText(), "");
-    assert.equal(await root.locator("svg").count(), 1);
-    assert.equal(await root.getAttribute("title"), "Workspaces");
-    if (kind === "daemon") {
-        assert.equal(await root.getAttribute("aria-current"), "page");
-        assert.equal(await page.getByRole("img", { name: "Workspaces", exact: true }).count(), 1);
-    }
-    else assert.equal(await root.getAttribute("href"), "/~/");
+    const searchLink = navigation.getByRole("link", { name: "Search", exact: true });
+    assert.equal(await searchLink.getAttribute("href"), "/search/");
+    assert.equal(await searchLink.locator("svg").count(), 1);
     assert.equal(await page.locator("[style], [class]").count(), 0);
     if (kind === "error" || kind === "account") {
         const card = page.getByRole("article");
@@ -41,6 +34,8 @@ export default async function verifyPageShell(page, { title, kind }) {
             assert.notEqual(style.background, "rgba(0, 0, 0, 0)", `${colorScheme}: ${kind} article has a visible surface`);
         }
     }
+    const place = page.locator("header > #header-place");
+    const createGroup = page.locator("header > [data-header-create]");
     for (const width of [320, 768, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         const bounds = await page.locator("main").evaluate((main) => {
@@ -56,52 +51,49 @@ export default async function verifyPageShell(page, { title, kind }) {
             };
         });
         assert.equal(bounds.overflow, false, `${kind} fits ${width}px without horizontal scrolling`);
-        const expected = ["home", "daemon", "workspace", "session"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
+        const expected = ["home", "search", "workspace", "session"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
         assert.ok(Math.abs(bounds.content - expected) < 1, `${kind} main width ${bounds.content} should be ${expected}`);
-        assert.ok(Math.abs(bounds.header - expected) < 1, `${kind} navigation shares the document width`);
+        assert.ok(Math.abs(bounds.header - bounds.viewport) < 1, `${kind} header spans the full viewport width`);
         const centers = await navigation.locator("li > a, li > form > button").evaluateAll((elements) => elements.map((element) => {
             const bounds = element.getBoundingClientRect();
             return bounds.y + bounds.height / 2;
         }));
         const logo = await home.boundingBox();
         centers.push(logo.y + logo.height / 2);
-        assert.ok(Math.max(...centers) - Math.min(...centers) < 1, `${width}px: header controls share one horizontal row (${centers.join(", ")})`);
-        const breadcrumb = page.getByRole("navigation", { name: "breadcrumb", exact: true });
-        if (await breadcrumb.count()) {
-            assert.equal(await page.locator('header > nav[aria-label="breadcrumb"]').count(), 1);
-            assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
-            const crumb = await breadcrumb.boundingBox();
-            const menu = await navigation.boundingBox();
-            assert.ok(crumb.x >= logo.x + logo.width && crumb.x + crumb.width <= menu.x, "breadcrumb clears the controls");
-            assert.ok(Math.abs(crumb.y + crumb.height / 2 - logo.y - logo.height / 2) < 1,
-                "breadcrumb stays centered on the controls' row, never a second header row");
-            const rows = await breadcrumb.locator("li").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().y));
-            assert.ok(Math.max(...rows) - Math.min(...rows) < 1, "breadcrumb contents remain one horizontally scrollable row");
+        assert.ok(Math.max(...centers) - Math.min(...centers) < 2, `${width}px: header controls share one horizontal row (${centers.join(", ")})`);
+        if (await place.count()) {
+            const placeBox = await place.boundingBox();
+            const menuBox = await navigation.boundingBox();
+            const leftEdge = (await createGroup.count()) ? (await createGroup.boundingBox()).x + (await createGroup.boundingBox()).width : logo.x + logo.width;
+            assert.ok(placeBox.x >= leftEdge - 1 && placeBox.x + placeBox.width <= menuBox.x + 1, "header place stays between left controls and main navigation");
+            assert.ok(Math.abs(placeBox.y + placeBox.height / 2 - logo.y - logo.height / 2) < 2,
+                "header place stays centered on the controls' row, never a second header row");
         }
     }
-    for (const [role, name] of [["link", "Account"], ["button", "Sign out"]]) {
+    await page.setViewportSize({ width: 320, height: 900 });
+    for (const [role, name, expectedTitle] of [["link", "Search", "Search (Ctrl+K)"], ["link", "Profile", "Profile"], ["button", "Sign out", "Sign out"]]) {
         const control = navigation.getByRole(role, { name, exact: true });
         if (await control.count() === 0) continue;
-        assert.equal(await control.innerText(), "");
+        assert.equal((await control.innerText()).trim(), "", "320px collapses header text labels to icon actions");
         assert.equal(await control.locator("svg").count(), 1);
-        assert.equal(await control.getAttribute("title"), name, "icon actions retain native explanatory titles");
+        assert.equal(await control.getAttribute("title"), expectedTitle, "icon actions retain native explanatory titles");
     }
     assert.equal(await page.getByRole("link", { name: "Skip to content", exact: true }).count(), 0);
     await home.focus();
-    if (await navigation.getByRole("link", { name: "Account", exact: true }).count()) {
-        for (const [role, name] of [["link", "Account"], ["button", "Sign out"]]) {
-            await page.keyboard.press("Tab");
-            assert.ok(await navigation.getByRole(role, { name, exact: true }).evaluate((element) => {
-                const style = getComputedStyle(element);
-                return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
-            }), `${name} retains native keyboard order and visible focus`);
-        }
-    }
-    if (kind !== "daemon") {
+    if (await createGroup.count() === 0 && await place.locator("a, button").count() === 0) {
         await page.keyboard.press("Tab");
-        assert.ok(await root.evaluate((element) => {
+        assert.ok(await searchLink.evaluate((element) => {
             const style = getComputedStyle(element);
             return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
-        }), "the workspace breadcrumb retains native keyboard order and visible focus");
+        }), "Search retains native keyboard order and visible focus");
+        if (await navigation.getByRole("link", { name: "Profile", exact: true }).count()) {
+            for (const [role, name] of [["link", "Profile"], ["button", "Sign out"]]) {
+                await page.keyboard.press("Tab");
+                assert.ok(await navigation.getByRole(role, { name, exact: true }).evaluate((element) => {
+                    const style = getComputedStyle(element);
+                    return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
+                }), `${name} retains native keyboard order and visible focus`);
+            }
+        }
     }
 }

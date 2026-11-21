@@ -1,35 +1,67 @@
-import indexDocument from "./index-document.js";
-
 /** @typedef {{ kind: "daemon" } | { kind: "workspace", workspace: string } | { kind: "session", workspace: string, session: string }} Directory */
 
-/** @param {Directory} directory @returns {string | null} */
+/**
+ * {§web-directory-addresses} Map canonical workspace and session identities to `/~/<workspace>` and `/~/<workspace>#<session>`.
+ * No normalization or substitute identity for legacy names.
+ * @param {Directory} directory
+ * @returns {string | null}
+ */
 export function directoryPath(directory) {
-    // {§web-directory-addresses} No normalization or substitute identity for legacy names.
     if (directory.kind === "daemon") return "/~/";
     const { workspace } = directory;
     if (!workspace || !workspace.isWellFormed() || workspace.split("/").some((part) => part === "." || part === "..")) return null;
     const path = `/~/${workspace.split("/").map(encodeURIComponent).join("/")}`;
-    if (directory.kind === "workspace") return `${path}/`;
+    if (directory.kind === "workspace") return path;
     if (!directory.session || !directory.session.isWellFormed()) return null;
-    return `${path}@${encodeURIComponent(directory.session)}/`;
+    return `${path}#${encodeURIComponent(directory.session)}`;
 }
 
-/** @param {string} target Origin-relative request target. @returns {Directory | null} */
+/**
+ * {§web-directory-addresses} Decode an origin-relative `/~/<workspace>[#<session>]` target without database lookups.
+ * @param {string} target Origin-relative request target or href.
+ * @returns {Directory | null}
+ */
 export function parseDirectory(target) {
-    const pathname = indexDocument(target.split(/[?#]/u, 1)[0]);
-    // Split syntax before decoding; an encoded @ or slash is part of the name.
-    const match = /^\/(?:~|%7[eE])\/(?:(?<workspace>[^@]+)(?:@(?<session>[^/@]+))?\/)?index\.html$/u.exec(pathname);
+    const hashIndex = target.indexOf("#");
+    const beforeHash = hashIndex >= 0 ? target.slice(0, hashIndex) : target;
+    const rawSession = hashIndex >= 0 ? target.slice(hashIndex + 1) : undefined;
+    const pathname = beforeHash.split("?", 1)[0];
+    const match = /^\/(?:~|%7[eE])\/(?<workspace>.*)$/u.exec(pathname);
     if (!match) return null;
-    const { workspace, session } = match.groups ?? {};
-    if (workspace === undefined) return { kind: "daemon" };
+    const rawWorkspace = match.groups?.workspace ?? "";
+    if (rawWorkspace === "") {
+        return rawSession === undefined ? { kind: "daemon" } : null;
+    }
+    if (rawSession === "") return null;
     try {
+        const workspace = decodeURIComponent(rawWorkspace);
+        if (rawSession === undefined) {
+            /** @type {Directory} */
+            const directory = { kind: "workspace", workspace };
+            return directoryPath(directory) === null ? null : directory;
+        }
+        const session = decodeURIComponent(rawSession);
         /** @type {Directory} */
-        const directory = session === undefined
-            ? { kind: "workspace", workspace: decodeURIComponent(workspace) }
-            : { kind: "session", workspace: decodeURIComponent(workspace), session: decodeURIComponent(session) };
+        const directory = { kind: "session", workspace, session };
         return directoryPath(directory) === null ? null : directory;
     } catch (error) {
         if (error instanceof URIError) return null;
         throw error;
+    }
+}
+
+/**
+ * {§web-directory-addresses} Extract a session name from a URL hash fragment, ignoring empty fragments and in-message footnote anchors.
+ * @param {string} hash `location.hash` or `#<session>` string.
+ * @returns {string | null}
+ */
+export function parseSessionHash(hash) {
+    const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+    if (!raw || raw.startsWith("footnote-")) return null;
+    try {
+        const decoded = decodeURIComponent(raw);
+        return decoded && decoded.isWellFormed() ? decoded : null;
+    } catch {
+        return null;
     }
 }

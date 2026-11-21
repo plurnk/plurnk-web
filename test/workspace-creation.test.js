@@ -69,8 +69,8 @@ async function fixture(t, { auth = false, admitted = true, create = async (/** @
     return { base, created, post };
 }
 async function formToken(base, headers = {}) {
-    const page = await fetch(new URL("/~/", base), { headers });
-    assert.equal(page.status, 200, "the workspaces directory carries the creation form");
+    const page = await fetch(new URL("/search/", base), { headers });
+    assert.equal(page.status, 200, "the search page carries the workspace creation forms");
     const html = await page.text();
     const token = /name="token" value="([^"]+)"/u.exec(html)?.[1];
     assert.ok(token);
@@ -79,15 +79,19 @@ async function formToken(base, headers = {}) {
     return token;
 }
 
-test("{§web-workspace-creation} the native form creates one folderless workspace and converges retries", async (t) => {
-    const { base, created, post } = await fixture(t);
+test("{§web-workspace-creation} the native form creates one folderless workspace with starter user session and converges retries", async (t) => {
+    const createdSessions = [];
+    const { base, created, post } = await fixture(t, {
+        createSession: async (args) => { createdSessions.push(args); return { sessionId: 10, sessionName: args.name || "user" }; },
+    });
     const token = await formToken(base);
     for (const attempt of ["first submission", "retry after the browser lost the response"]) {
         const res = await post(token);
         assert.equal(res.status, 303, attempt);
-        assert.equal(res.headers.get("location"), "/~/fresh/", attempt);
+        assert.equal(res.headers.get("location"), "/~/fresh#user", attempt);
     }
     assert.deepEqual(created, [{ projectRoot: null }], "the daemon's creation contract is invoked exactly once with no folder, name or settings");
+    assert.deepEqual(createdSessions, [{ workspaceId: 41, name: "user" }], "starter user session is allocated once");
 });
 
 test("{§web-workspace-creation} racing double-clicks converge to one creation", async (t) => {
@@ -99,7 +103,7 @@ test("{§web-workspace-creation} racing double-clicks converge to one creation",
     gate.resolve();
     for (const res of await Promise.all(posts)) {
         assert.equal(res.status, 303);
-        assert.equal(res.headers.get("location"), "/~/raced/");
+        assert.equal(res.headers.get("location"), "/~/raced#user");
     }
     assert.deepEqual(created, [{ projectRoot: null }]);
 });
@@ -172,7 +176,7 @@ test("{§web-workspace-creation} authenticated creation enforces admission and o
     // Admitted same-origin POST returns 303 redirect
     const admittedRes = await post(token);
     assert.equal(admittedRes.status, 303);
-    assert.equal(admittedRes.headers.get("location"), "/~/fresh/");
+    assert.equal(admittedRes.headers.get("location"), "/~/fresh#user");
     assert.deepEqual(created, [{ projectRoot: null }]);
 });
 
@@ -188,13 +192,16 @@ for (const [form, path, fields] of /** @type {const} */ ([
     ["session-create", "/sessions/new", (token, name) => ({ token, workspace: "work", name })],
 ])) {
     for (const refused of [true, false]) {
-        test(`{§web-workspace-creation} {§web-workspace-rename} {§web-session-creation} ${form}: a daemon ${refused ? "refusal keeps its status, detail and recovery" : "failure is a 502"}, and the draft comes back with a fresh token`, async (t) => {
+        test(`{§web-workspace-creation} {§web-workspace-rename} {§web-session-creation} ${form}: a daemon ${refusalLabel(refused)}, and the draft comes back with a fresh token`, async (t) => {
             const calls = [];
             const fail = (name) => { calls.push(name); if (name === "taken") throw refused ? nameConflict(name) : new Error("daemon unreachable"); };
             const { base } = await fixture(t, {
                 create: async ({ name }) => { fail(name); return envelope(name); },
                 rename: async (id, name) => { fail(name); return { id, name }; },
-                createSession: async ({ name }) => { fail(name); return { sessionId: 10, sessionName: name }; },
+                createSession: async ({ workspaceId, name }) => {
+                    if (form === "session-create") fail(name);
+                    return { sessionId: workspaceId + 10, sessionName: name || "user" };
+                },
             });
             const send = (body) => fetch(new URL(path, base), { method: "POST", redirect: "manual",
                 headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams(body) });
@@ -226,10 +233,17 @@ for (const [form, path, fields] of /** @type {const} */ ([
     }
 }
 
+function refusalLabel(refused) {
+    return refused ? "refusal keeps its status, detail and recovery" : "failure is a 502";
+}
+
 test("{§web-workspace-creation} {§web-session-creation} an empty name is no name, and any other name reaches the daemon verbatim", async (t) => {
     const sessions = [];
     const { base, created, post } = await fixture(t, {
-        createSession: async (args) => { sessions.push(args); return { sessionId: 10, sessionName: args.name ?? "a1b2c3d4" }; },
+        createSession: async (args) => {
+            if (args.workspaceId === 7) sessions.push(args);
+            return { sessionId: 10, sessionName: args.name ?? "a1b2c3d4" };
+        },
     });
     const sessionPost = (body) => fetch(new URL("/sessions/new", base), {
         method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: base }, body: new URLSearchParams(body), redirect: "manual",
@@ -272,7 +286,7 @@ test("{§web-workspace-creation} optional projectRoot reaches the daemon verbati
 
     const okRes = await post(retryToken, {}, { name: "my-repo", projectRoot: "/srv/my-repo" });
     assert.equal(okRes.status, 303);
-    assert.equal(okRes.headers.get("location"), "/~/my-repo/");
+    assert.equal(okRes.headers.get("location"), "/~/my-repo#user");
     assert.deepEqual(created, [
         { name: "my-repo", projectRoot: "relative/repo" },
         { name: "my-repo", projectRoot: "/srv/my-repo" },
@@ -314,11 +328,14 @@ test("{§web-workspace-rename} workspace rename updates name and redirects to ne
     const spaced = await renamePost({ workspace: "old-name", name: "  spaced  " });
     assert.equal(spaced.status, 303);
 
-    // Valid rename
+    // Valid rename (without and with active session fragment)
     const success = await renamePost({ workspace: "old-name", name: "new-name" });
     assert.equal(success.status, 303);
-    assert.equal(success.headers.get("location"), "/~/new-name/");
-    assert.deepEqual(renamed, [{ id: 7, name: "  spaced  " }, { id: 7, name: "new-name" }]);
+    assert.equal(success.headers.get("location"), "/~/new-name");
+    const withSession = await renamePost({ workspace: "old-name", name: "new-name", session: "bob" });
+    assert.equal(withSession.status, 303);
+    assert.equal(withSession.headers.get("location"), "/~/new-name#bob");
+    assert.deepEqual(renamed, [{ id: 7, name: "  spaced  " }, { id: 7, name: "new-name" }, { id: 7, name: "new-name" }]);
 });
 
 test("{§web-session-creation} session creation creates independent session and redirects", async (t) => {
@@ -354,30 +371,30 @@ test("{§web-session-creation} session creation creates independent session and 
     // Create named session
     const namedRes = await sessionPost({ workspace: "my-workspace", token: randomUUID(), name: "alice" });
     assert.equal(namedRes.status, 303);
-    assert.equal(namedRes.headers.get("location"), "/~/my-workspace@alice/");
+    assert.equal(namedRes.headers.get("location"), "/~/my-workspace#alice");
     assert.deepEqual(createdSessions[0], { workspaceId: 7, name: "alice" });
 
     // Create unnamed session (daemon generates name)
     const unnamedToken = randomUUID();
     const unnamedRes = await sessionPost({ workspace: "my-workspace", token: unnamedToken });
     assert.equal(unnamedRes.status, 303);
-    assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace@bob/");
+    assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace#bob");
     assert.deepEqual(createdSessions[1], { workspaceId: 7 });
 
     // Idempotent retry converges to same session
     const retryRes = await sessionPost({ workspace: "my-workspace", token: unnamedToken });
     assert.equal(retryRes.status, 303);
-    assert.equal(retryRes.headers.get("location"), "/~/my-workspace@bob/");
+    assert.equal(retryRes.headers.get("location"), "/~/my-workspace#bob");
     assert.equal(createdSessions.length, 2);
 });
 
-test("{§web-workspace-archive} workspace archive calls daemon and redirects to /~/", async (t) => {
+test("{§web-workspace-archive} {§web-search} workspace archive and unarchive call daemon and redirect cleanly", async (t) => {
     const archived = [];
     const { base } = await fixture(t, {
         workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, archived_at: null }],
-        setWorkspaceArchived: async (args) => { archived.push(args); return { id: args.workspaceId, archived_at: "2026-10-23T00:00:00Z" }; },
+        setWorkspaceArchived: async (args) => { archived.push(args); return { id: args.workspaceId, archived_at: args.archived ? "2026-10-23T00:00:00Z" : null }; },
     });
-    const archivePost = (body, headers = {}) => fetch(new URL("/workspaces/archive", base), {
+    const archivePost = (body, headers = {}, route = "/workspaces/archive") => fetch(new URL(route, base), {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
         body: new URLSearchParams(body),
@@ -403,22 +420,37 @@ test("{§web-workspace-archive} workspace archive calls daemon and redirects to 
     const empty = await archivePost({ workspace: "" });
     assert.equal(empty.status, 400);
 
-    // Successful archive
-    const res = await archivePost({ workspace: "target-ws" });
+    // Successful archive redirects to / (clearing remembered place cookie if it belonged to workspace 7)
+    const res = await archivePost({ workspace: "target-ws" }, { cookie: "plurnk_web_place=7:10" });
     assert.equal(res.status, 303);
-    assert.equal(res.headers.get("location"), "/~/");
-    assert.deepEqual(archived, [{ workspaceId: 7, archived: true }]);
+    assert.equal(res.headers.get("location"), "/");
+    assert.match(res.headers.get("set-cookie") ?? "", /^plurnk_web_place=;.*Max-Age=0/u);
+
+    // Successful unarchive redirects to /~/target-ws
+    const unarchiveRes = await archivePost({ workspace: "target-ws" }, {}, "/workspaces/unarchive");
+    assert.equal(unarchiveRes.status, 303);
+    assert.equal(unarchiveRes.headers.get("location"), "/~/target-ws");
+    assert.deepEqual(archived, [{ workspaceId: 7, archived: true }, { workspaceId: 7, archived: false }]);
 });
 
-test("{§web-session-archive} session archive calls daemon and redirects to workspace address", async (t) => {
+test("{§web-session-archive} {§web-search} session archive redirects to remaining session or / and unarchive restores #session", async (t) => {
     const archived = [];
+    const sessionRows = [
+        { id: 10, name: "target-session", origin: "model", parentSessionId: null, kind: "root", lifecycle: "completed", archived_at: null },
+        { id: 11, name: "sibling", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null },
+    ];
     const { base } = await fixture(t, {
         workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, archived_at: null }],
-        sessions: [{ id: 10, name: "target-session", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", archived_at: null }],
-        setSessionArchived: async (args) => { archived.push(args); return { id: args.sessionId, archived_at: "2026-10-23T00:00:00Z", sessionIds: [args.sessionId] }; },
+        sessions: sessionRows,
+        setSessionArchived: async (args) => {
+            archived.push(args);
+            const row = sessionRows.find((s) => s.id === args.sessionId);
+            if (row) row.archived_at = args.archived ? "2026-10-23T00:00:00Z" : null;
+            return { id: args.sessionId, archived_at: row?.archived_at ?? null, sessionIds: [args.sessionId] };
+        },
     });
 
-    const archivePost = (body, headers = {}) => fetch(new URL("/sessions/archive", base), {
+    const archivePost = (body, headers = {}, route = "/sessions/archive") => fetch(new URL(route, base), {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, ...headers },
         body: new URLSearchParams(body),
@@ -448,9 +480,23 @@ test("{§web-session-archive} session archive calls daemon and redirects to work
     const empty = await archivePost({ workspace: "target-ws", session: "" });
     assert.equal(empty.status, 400);
 
-    // Successful archive
-    const res = await archivePost({ workspace: "target-ws", session: "target-session" });
-    assert.equal(res.status, 303);
-    assert.equal(res.headers.get("location"), "/~/target-ws/");
-    assert.deepEqual(archived, [{ workspaceId: 7, sessionId: 10, archived: true }]);
+    // Archiving when a sibling remains redirects to /~/target-ws#sibling
+    const firstArchive = await archivePost({ workspace: "target-ws", session: "target-session" });
+    assert.equal(firstArchive.status, 303);
+    assert.equal(firstArchive.headers.get("location"), "/~/target-ws#sibling");
+
+    // Archiving the last unarchived session redirects to /
+    const lastArchive = await archivePost({ workspace: "target-ws", session: "sibling" });
+    assert.equal(lastArchive.status, 303);
+    assert.equal(lastArchive.headers.get("location"), "/");
+
+    // Unarchiving restores /~/target-ws#target-session
+    const unarchiveRes = await archivePost({ workspace: "target-ws", session: "target-session" }, {}, "/sessions/unarchive");
+    assert.equal(unarchiveRes.status, 303);
+    assert.equal(unarchiveRes.headers.get("location"), "/~/target-ws#target-session");
+    assert.deepEqual(archived, [
+        { workspaceId: 7, sessionId: 10, archived: true },
+        { workspaceId: 7, sessionId: 11, archived: true },
+        { workspaceId: 7, sessionId: 10, archived: false },
+    ]);
 });

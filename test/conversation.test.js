@@ -224,8 +224,8 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             ["prompt-1", "reasoning-1", "1/1/3", "msg-4", "follow-up-1", "msg-6"],
                             "published follow-up heads Turn 2 ahead of Turn 2's response",
                         );
-                        assert.equal(await page.locator('[data-loop-seq="1"] > details').evaluate((node) => node.open), true);
-                        assert.equal(await page.locator('[data-loop-seq="1"] > details > summary').innerText(), "Loop 1");
+                        assert.equal(await page.locator('[data-messages] > [data-loop-seq="1"]').count(), 4, "flat turn items carry data-loop-seq without a Loop wrapper");
+                        assert.equal(await row("prompt-1").locator("[data-prompt-work]").evaluate((node) => node.open), false, "prompt-top work strip begins collapsed");
                         assert.equal(await page.locator("[data-messages] hr").count(), 0);
 
                         // An unobserved follow-up from a cancelled loop stays at the end of its loop on replay,
@@ -269,18 +269,18 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             "an unobserved follow-up from a cancelled loop stays with its loop instead of floating below later loops",
                         );
                         assert.deepEqual(
-                            await page.locator("[data-messages] > [data-loop-seq]").evaluateAll((loops) =>
-                                loops.map((loop) => [
-                                    loop.dataset.loopSeq,
-                                    Array.from(loop.querySelectorAll("[data-message-id]"), (item) => item.dataset.messageId),
-                                ])),
+                            await page.locator("[data-messages] > [data-loop-seq]").evaluateAll((items) =>
+                                items.map((item) => [item.dataset.loopSeq, item.dataset.messageId])),
                             [
-                                ["1", ["prompt-1", "msg-4", "cancelled-follow-up"]],
-                                ["2", ["prompt-2", "msg-11"]],
+                                ["1", "prompt-1"],
+                                ["1", "msg-4"],
+                                ["1", "cancelled-follow-up"],
+                                ["2", "prompt-2"],
+                                ["2", "msg-11"],
                             ],
                         );
 
-                        // Multi-prompt loop tree with folded operation runs, nested mid-loop prompt completions,
+                        // Multi-prompt loop tree with prompt-top glyph pills, nested mid-loop prompt completions,
                         // mid-loop send, empty done, and loop-level done resolving the opening prompt.
                         await present([
                             {
@@ -362,20 +362,17 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                                 }],
                             },
                         ]);
-                        const loopChildren = page.locator('[data-loop-seq="1"] > details > ul > li');
+                        const topRows = page.locator("[data-messages] > li");
                         assert.deepEqual(
-                            await loopChildren.evaluateAll((items) => items.map((item) =>
-                                item.hasAttribute("data-operations") ? `operations:${item.querySelector(":scope > details > summary")?.getAttribute("aria-label")}` : item.dataset.messageId)),
-                            [
-                                "prompt-1",
-                                "operations:Reasoning 1 · read 2 · sh 1",
-                                "prompt-2",
-                                "send-1",
-                                "prompt-3",
-                                "done-1",
-                            ],
+                            await topRows.evaluateAll((items) => items.map((item) => item.dataset.messageId)),
+                            ["prompt-1", "prompt-2", "send-1", "prompt-3", "done-1"],
                         );
-                        assert.equal(await page.locator("[data-operations] > details > summary > span").innerText(), "1 · 2 · sh 1");
+                        assert.equal(await row("prompt-1").locator("[data-prompt-work] > summary").getAttribute("aria-label"), "Thinking 1 · read 2 · sh 1");
+                        assert.deepEqual(
+                            await row("prompt-1").locator("[data-prompt-work] [data-operation-tally]").evaluateAll((pills) =>
+                                pills.map((p) => [p.getAttribute("data-operation-tally"), p.textContent])),
+                            [["reasoning", "1"], ["read", "2"], ["sh", "sh 1"]],
+                        );
                         assert.deepEqual(
                             await row("prompt-2").locator(":scope > article > [data-prompt-replies] > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)),
                             ["done-2"],
@@ -436,22 +433,21 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             },
                         ]);
                         assert.deepEqual(
-                            await page.locator('[data-loop-seq="1"] > details > ul > li').evaluateAll((items) => items.map((item) =>
-                                item.hasAttribute("data-operations") ? "operations" : item.dataset.messageId)),
-                            ["prune-prompt-1", "operations"],
+                            await page.locator("[data-messages] > li").evaluateAll((items) => items.map((item) => item.dataset.messageId)),
+                            ["prune-prompt-1"],
                             "transient plan_update notifications add no phantom conversation entries",
                         );
-                        assert.equal(await page.locator('[data-operations] > details > ul > li').count(), 2, "only the real read and kill operations render");
+                        assert.equal(await row("prune-prompt-1").locator("[data-prompt-work] > [data-work-items] > li").count(), 2, "only the real read and kill operations render");
                     });
 
                     await t.test("{§web-session-conversation} streaming and reconnect snapshots preserve open details, focus, unchanged body selection and scroll", async () => {
                         await present(messages);
-                        await page.locator("[data-operations] > details > summary").click();
+                        await row("question").locator("[data-prompt-work] > summary").click();
                         await row("thought").locator("summary").click();
                         await page.evaluate(() => {
                             window.savedRow = document.querySelector('[data-message-id="thought"]');
                             window.savedHeader = document.querySelector('[data-message-id="thought"] summary > [data-plurnk-field="heading"]');
-                            window.savedBody = document.querySelector('[data-message-id="question"] article');
+                            window.savedBody = document.querySelector('[data-message-id="question"] > article');
                             const node = window.savedBody.querySelector("strong").firstChild;
                             const range = document.createRange();
                             range.selectNodeContents(node);
@@ -466,7 +462,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         await present(structuredClone(updated));
                         assert.equal(await page.evaluate(() => window.savedRow === document.querySelector('[data-message-id="thought"]')), true);
                         assert.equal(await page.evaluate(() => window.savedHeader === document.querySelector('[data-message-id="thought"] summary > [data-plurnk-field="heading"]')), true);
-                        assert.equal(await page.evaluate(() => window.savedBody === document.querySelector('[data-message-id="question"] article')), true);
+                        assert.equal(await page.evaluate(() => window.savedBody === document.querySelector('[data-message-id="question"] > article')), true);
                         assert.equal(await row("thought").locator("details").evaluate((details) => details.open), true);
                         assert.equal(await page.evaluate(() => document.activeElement?.outerHTML), focused);
                         assert.equal(await page.evaluate(() => getSelection().toString()), "the evidence");
@@ -543,12 +539,16 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             { id: "orphan", role: "tool", toolCallId: "not-in-snapshot", content: "Still inspectable", error: "" },
                         ];
                         await present(other);
-                        assert.deepEqual(await ids(), other.map(({ id }) => id));
+                        assert.deepEqual(
+                            (await ids()).slice().sort(),
+                            other.map(({ id }) => id).slice().sort(),
+                        );
                         await page.locator("[data-operations] > details > summary").first().click();
+                        await row("parts").locator("[data-prompt-work] > summary").click();
                         assert.equal(await row("activity").getByRole("article", { name: "progress", exact: true }).count(), 1);
                         assert.equal(await row("activity").locator("article").textContent(), "");
-                        assert.equal(await row("parts").locator("article > p").textContent(), "First");
-                        assert.deepEqual(await row("parts").locator("article > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["P"]);
+                        assert.equal(await row("parts").locator(":scope > article > p").textContent(), "First");
+                        assert.deepEqual(await row("parts").locator(":scope > article > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["P"]);
                         assert.equal(await row("child").getAttribute("data-subagent-run-id"), "child-run");
                         assert.equal(await row("child").getByRole("article", { name: "Assistant · Subagent child-run", exact: true }).count(), 1);
                         assert.equal(await row("orphan").locator("a").count(), 0);

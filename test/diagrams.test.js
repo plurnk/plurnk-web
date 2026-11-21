@@ -224,10 +224,11 @@ test("{§web-route-settlement} compiler cleanup failure still joins requests bef
     const order = [];
     const { base, post, module } = await fixture(t, { PLURNK_AUTH: "1" }, () => order.push("observer closed"), {
         async listWorkspaces() { entered.resolve(); await release.promise; order.push("read settled"); return []; },
+        async listSessions() { return []; },
     });
     const headers = { cookie: "plurnk_web_session=valid" };
     assert.equal((await post(simple, { headers })).status, 200);
-    const response = fetch(`${base}/~/`, { headers });
+    const response = fetch(`${base}/search/`, { headers });
     await entered.promise;
     const failure = new Error("compiler cleanup failed", { cause: new Error("compiler fixture failure") });
     const destroy = Piscina.prototype.destroy;

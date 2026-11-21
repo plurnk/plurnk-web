@@ -2,31 +2,52 @@ import { $, on, the } from "on_the_money";
 import { listModels, sessionModel, sessionEffort, modelLabel } from "./session-models.js";
 import describeFailure from "./failure.js";
 
-/** {§web-session-settings} Native suggestions are an aid, never a route admission policy.
+/** {§web-session-settings} Native modal dialogs and suggestions are an aid, never a route admission policy.
  * @param {Element} main @param {Element} status
  * @param {import("./session-models.js").Action} call
  * @param {() => AbortSignal} lifetime
+ * @param {{ openOnboarding?: () => Promise<void> | void }} [options]
  */
-export default function sessionSettings(main, status, call, lifetime) {
+export default function sessionSettings(main, status, call, lifetime, options = {}) {
     const panels = [
-        { kind: "model", article: $.clone(main, "#model-settings") },
-        { kind: "effort", article: $.clone(main, "#effort-settings") },
-    ].map(({ kind, article }) => {
+        { kind: "model", dialog: $.clone(main, "#model-settings") },
+        { kind: "effort", dialog: $.clone(main, "#effort-settings") },
+    ].map(({ kind, dialog }) => {
+        const article = dialog instanceof HTMLElement ? $(dialog, "article") : null;
         const button = $(status, `#session-${kind}`);
-        const field = $(article, '[name="selection"]');
-        if (!(article instanceof HTMLElement) || !(button instanceof HTMLButtonElement)
+        const field = dialog instanceof HTMLElement ? $(dialog, '[name="selection"]') : null;
+        if (!(dialog instanceof HTMLDialogElement) || !(article instanceof HTMLElement)
+            || !(button instanceof HTMLButtonElement)
             || !(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) {
             throw new Error("Session settings template is incomplete.");
         }
-        return { kind, article, button, field, close() {} };
+        const onboardingFooter = $(article, "footer:has([data-open-model-onboarding])");
+        if (onboardingFooter instanceof HTMLElement && !options.openOnboarding) {
+            onboardingFooter.hidden = true;
+        }
+        return { kind, dialog, article, button, field, close() {} };
     });
     for (const panel of panels) {
-        const { kind, article, button, field } = panel;
+        const { kind, dialog, article, button, field } = panel;
+        const aliasList = kind === "model" ? $(article, "[data-alias-choices]") : null;
         /** @type {AbortController | undefined} */
         let lookup;
         const available = () => field instanceof HTMLInputElement || [...field.options].some(({ value }) => value);
         const clear = () => the(article, { "settings-message": "", "settings-recovery": "" });
-        panel.close = () => { lookup?.abort(); article.hidden = true; the(button, "expanded", false); };
+        panel.close = () => {
+            lookup?.abort();
+            if (dialog.open) dialog.close();
+            the(button, "expanded", false);
+        };
+        dialog.onclose = () => {
+            lookup?.abort();
+            the(button, "expanded", false);
+        };
+        dialog.oncancel = (event) => {
+            if (the(article, "settings-pending") !== null) {
+                event.preventDefault();
+            }
+        };
         /** @param {unknown} error @param {AbortSignal} signal */
         const failure = async (error, signal) => {
             const { message, recovery } = await describeFailure(error);
@@ -36,16 +57,26 @@ export default function sessionSettings(main, status, call, lifetime) {
             lookup?.abort();
             const request = lookup = new AbortController();
             const signal = AbortSignal.any([lifetime(), request.signal]);
-            const invoke = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) => call(kind, params, signal);
+            const invoke = (/** @type {string} */ actionKind, /** @type {Record<string, unknown>} */ params = {}) => call(actionKind, params, signal);
             clear();
             try {
                 if (field instanceof HTMLInputElement) {
-                    const options = $(article, "datalist");
-                    if (!options) throw new Error("Model suggestions are missing.");
-                    options.replaceChildren();
+                    const datalist = $(article, "datalist");
+                    if (!datalist) throw new Error("Model suggestions are missing.");
+                    datalist.replaceChildren();
                     const { aliases, catalog } = await listModels(invoke, field.value);
                     signal.throwIfAborted();
-                    $.cloneEach(options, "#setting-option", [
+                    if (aliasList instanceof HTMLUListElement) {
+                        $.cloneEach(aliasList, "#alias-choice-item", aliases, (item, model) => {
+                            const btn = $(item, "[data-select-alias]");
+                            if (btn instanceof HTMLButtonElement) btn.dataset.selectAlias = model.alias;
+                            the(item, {
+                                "alias-name": model.alias,
+                                "alias-route": `${model.provider}/${model.model}${model.effort ? ` (${model.effort})` : ""}`,
+                            });
+                        });
+                    }
+                    $.cloneEach(datalist, "#setting-option", [
                         ...aliases.map((model) => ({ value: model.alias, label: modelLabel(model) })),
                         ...catalog.items.map((model) => ({ value: model.selector, label: `${model.modelName}${model.readiness.ready ? "" : " — Not configured"}` })),
                     ], (option, { value, label }) => the(option, { "option-value": value, "option-label": label }));
@@ -66,50 +97,62 @@ export default function sessionSettings(main, status, call, lifetime) {
                 if (!request.signal.aborted) the(article, message);
             }
         };
-        on(status, "click", `#session-${kind}`, async () => {
-            if (panels.some(({ article }) => the(article, "settings-pending") !== null)) return;
-            if (!article.hidden) { panel.close(); return; }
-            for (const other of panels) other.close();
-            article.hidden = false;
-            the(button, "expanded", true);
-            field.value = "";
-            if (field instanceof HTMLInputElement) field.focus();
-            else article.focus();
-            await load();
-        });
-        on(article, "click", "[data-cancel-settings]", () => { button.focus(); panel.close(); });
-        on(article, "keydown", "article", (event) => {
-            if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || event.isComposing || event.repeat
-                || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
-            if (the(article, "settings-pending") !== null) return;
-            event.preventDefault();
-            button.focus();
-            panel.close();
-        });
-        if (field instanceof HTMLInputElement) on(article, "input", 'input[name="selection"]', load);
-        on(article, "submit", "form", async (event) => {
-            event.preventDefault();
+        /** @param {string} selection */
+        const applySelection = async (selection) => {
             if (the(article, "settings-pending") !== null) return;
             lookup?.abort();
             clear();
             const signal = lifetime();
             the(article, { "settings-pending": "true", "selection-unavailable": "" });
             try {
-                const invoke = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) => call(kind, params, signal);
-                if (kind === "model") await sessionModel(invoke, field.value);
-                else await sessionEffort(invoke, field.value);
+                const invoke = (/** @type {string} */ actionKind, /** @type {Record<string, unknown>} */ params = {}) => call(actionKind, params, signal);
+                if (kind === "model") await sessionModel(invoke, selection);
+                else await sessionEffort(invoke, selection);
                 signal.throwIfAborted();
-                button.focus();
                 panel.close();
-            } catch (error) { the(article, await failure(error, signal)); }
-            finally { the(article, { "settings-pending": null, "selection-unavailable": available() ? null : "" }); }
+                button.focus();
+            } catch (error) {
+                the(article, await failure(error, signal));
+            } finally {
+                the(article, { "settings-pending": null, "selection-unavailable": available() ? null : "" });
+            }
+        };
+        on(status, "click", `#session-${kind}`, async () => {
+            if (panels.some(({ article: a }) => the(a, "settings-pending") !== null)) return;
+            if (dialog.open) { panel.close(); return; }
+            for (const other of panels) other.close();
+            dialog.showModal();
+            the(button, "expanded", true);
+            field.value = "";
+            if (field instanceof HTMLInputElement) field.focus();
+            else article.focus();
+            await load();
+        });
+        on(dialog, "click", "[data-cancel-settings]", () => {
+            if (the(article, "settings-pending") !== null) return;
+            panel.close();
+            button.focus();
+        });
+        on(dialog, "click", "[data-select-alias]", (_event, btn) => {
+            const alias = btn instanceof HTMLButtonElement ? btn.dataset.selectAlias : "";
+            if (alias) void applySelection(alias);
+        });
+        on(dialog, "click", "[data-open-model-onboarding]", () => {
+            if (the(article, "settings-pending") !== null) return;
+            panel.close();
+            void options.openOnboarding?.();
+        });
+        if (field instanceof HTMLInputElement) on(dialog, "input", 'input[name="selection"]', load);
+        on(dialog, "submit", "form", async (event) => {
+            event.preventDefault();
+            await applySelection(field.value);
         });
     }
     return () => {
-        const openPanel = panels.find(({ article }) => !article.hidden && the(article, "settings-pending") === null);
+        const openPanel = panels.find(({ dialog, article }) => dialog.open && the(article, "settings-pending") === null);
         if (!openPanel) return false;
-        openPanel.button.focus();
         openPanel.close();
+        openPanel.button.focus();
         return true;
     };
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { inputPage } from "./session-input.js";
+import { inputPage, onAcpSent } from "./session-input.js";
 
 /** {§web-session-history} The installed browser on an authenticated candidate daemon, no substituted wire. */
 export default async function verifySessionHistory({ t, withDaemon }) {
@@ -7,9 +7,11 @@ export default async function verifySessionHistory({ t, withDaemon }) {
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const requests = [];
             const pages = [];
+            onAcpSent(page, (body) => {
+                if (body?.method === "session/prompt") requests.push(body);
+            });
             page.on("request", (request) => {
                 const url = new URL(request.url());
-                if (url.pathname === "/acp" && request.postDataJSON()?.method === "session/prompt") requests.push(request.postDataJSON());
                 if (url.pathname.endsWith("/messages")) pages.push(request);
             });
             const field = page.getByRole("textbox", { name: "Message", exact: true });
@@ -25,7 +27,7 @@ export default async function verifySessionHistory({ t, withDaemon }) {
             assert.equal(await page.getByText("Completed history-first.", { exact: true }).count(), 0, "the daemon's default attachment holds two loops");
             assert.equal(await page.getByText("Completed history-second.", { exact: true }).count(), 1);
             assert.equal(pages.length, 0, "attachment does not preload older loops");
-            await page.getByRole("button", { name: "Load previous loop" }).click();
+            await page.getByRole("button", { name: "Load earlier messages" }).click();
             await page.getByText("Completed history-first.", { exact: true }).waitFor();
             assert.equal(pages.length, 1);
             assert.match(pages[0].headers().authorization, /^Bearer /u);
@@ -62,12 +64,12 @@ export default async function verifySessionHistory({ t, withDaemon }) {
             await page.getByText("Completed history-paste-second.", { exact: true }).waitFor();
             assert.equal(await page.locator("#main").evaluate((main) => main.scrollHeight - main.scrollTop - main.clientHeight <= 24), true, "initial reload lands at main's bottom edge");
             assert.equal(await page.getByText("Completed history-paste.", { exact: true }).count(), 0, "character ceiling drops the oversized earlier loop from initial window");
-            await page.getByRole("button", { name: "Load previous loop" }).first().click();
+            await page.getByRole("button", { name: "Load earlier messages" }).first().click();
             await page.getByText("Completed history-paste.", { exact: true }).waitFor();
             const user = page.locator('[data-message-role="user"]').first();
-            assert.equal((await user.textContent())?.trim(), source.trim());
+            assert.equal((await user.locator(":scope > article").textContent())?.trim(), source.trim());
             assert.equal(await user.locator("p p").count(), 0, "pasted words are literal text, not inserted HTML markup");
-            await page.locator("[data-operations] > details > summary").first().click();
+            await page.locator("[data-prompt-work] > summary").first().click();
             const reasoning = page.locator('[data-message-role="reasoning"]').first();
             await reasoning.locator("summary").click();
             await reasoning.locator("[data-body-reference]").scrollIntoViewIfNeeded();

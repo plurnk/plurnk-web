@@ -144,11 +144,10 @@ export default function createDevModule(options = {}) {
             if (registeredStylesheetPath !== null && registeredStylesheetPath !== stylesheetPath) {
                 resources.set(registeredStylesheetPath, stylesheetAsset);
             }
-            const activeKnobs = knobs ?? { yolo: null, reasoningPreviewChars: null, overviewSessions: null, overviewExcerptChars: null };
+            const activeKnobs = knobs ?? { yolo: null, overviewSessions: null, overviewExcerptChars: null };
             const documents = new DocumentsClass(
                 root.body.toString("utf8"),
                 activeKnobs.yolo,
-                activeKnobs.reasoningPreviewChars,
                 activeKnobs.overviewSessions,
                 activeKnobs.overviewExcerptChars,
             );
@@ -189,7 +188,6 @@ export default function createDevModule(options = {}) {
                 documents: new DocumentsClass(
                     root.body.toString("utf8"),
                     initialKnobs.yolo,
-                    initialKnobs.reasoningPreviewChars,
                     initialKnobs.overviewSessions,
                     initialKnobs.overviewExcerptChars,
                 ),

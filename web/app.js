@@ -13,6 +13,21 @@ await the.boot({
 
 initDialogs();
 
+on.target(window, "keydown", (event) => {
+    if (!(event instanceof KeyboardEvent) || event.defaultPrevented || event.isComposing || event.repeat) return;
+    const modOnly = (event.metaKey !== event.ctrlKey) && !event.altKey && !event.shiftKey;
+    if (!modOnly || (event.code !== "KeyK" && event.key.toLowerCase() !== "k")) return;
+    if ($("#workspace-tabs") || $("dialog[open]")) return;
+    event.preventDefault();
+    const searchInput = $("input[data-overview-search]");
+    if (searchInput instanceof HTMLInputElement) {
+        searchInput.focus();
+        searchInput.select();
+    } else {
+        location.assign("/search/");
+    }
+});
+
 try {
     const tabs = $("#workspace-tabs");
     if (tabs instanceof HTMLElement) {

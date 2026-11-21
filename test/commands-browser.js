@@ -64,19 +64,26 @@ export default async function verifyCommands(t) {
                     await page.waitForFunction(() => typeof window.command === "function");
                     assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
                     assert.equal(await page.locator('label[for="session-message"]').count(), 0, "the textarea keeps its name without a visible title");
-                    for (const [name, glyph] of [["Send", "▶️"], ["Stop", "⏹️"], ["Attach image", "📎"]]) {
+                    for (const [name, glyph, expectedTitle] of [
+                        ["Send", "▶️", "Send (Enter · Ctrl+Enter)"],
+                        ["Stop", "⏹️", "Stop"],
+                        ["Attach image", "📎", "Attach image"],
+                        ["Commands and skills", "/", "Commands and skills (/)"],
+                    ]) {
                         const button = page.getByRole("button", { name, exact: true, includeHidden: true });
-                        assert.equal(await button.getAttribute("title"), name === "Send" ? "Send (Enter · Ctrl+Enter)" : name);
+                        assert.equal(await button.getAttribute("title"), expectedTitle);
                         assert.equal(await button.innerText(), "");
                         assert.ok((await button.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
                     }
                     const send = page.getByRole("button", { name: "Send", exact: true });
                     const stop = page.getByRole("button", { name: "Stop", exact: true, includeHidden: true });
                     const attach = page.getByRole("button", { name: "Attach image", exact: true, includeHidden: true });
+                    const insertCmd = page.getByRole("button", { name: "Commands and skills", exact: true });
                     assert.equal(await stop.isVisible(), false, "no Stop is presented without known live work");
                     assert.equal(await attach.isVisible(), false, "no Attach image is presented without prompt.image capability");
+                    assert.equal(await insertCmd.isVisible(), true);
                     const actions = page.getByRole("group", { name: "Session actions", exact: true });
-                    assert.equal(await actions.locator("button").count(), 3);
+                    assert.equal(await actions.locator("button").count(), 4);
                     assert.equal(await send.evaluate((button) => button.form.id), "session-compose");
                     assert.equal(await stop.evaluate((button) => button.form.id), "session-stop", "Stop has independent native submission, not reset semantics");
                     assert.equal(await stop.getAttribute("type"), "submit");
@@ -101,10 +108,12 @@ export default async function verifyCommands(t) {
                         const stopBox = await stop.boundingBox();
                         assert.equal(sendBox.y, stopBox.y, "role=group aligns actions on the same row");
                         const attachBox = await attach.boundingBox();
-                        const draftBox = await page.getByRole("textbox", { name: "Message", exact: true }).boundingBox();
+                        const insertBox = await insertCmd.boundingBox();
+                        const draftBox = page.getByRole("textbox", { name: "Message", exact: true });
+                        const draftRect = await draftBox.boundingBox();
                         const margin = await send.evaluate((button) => parseFloat(getComputedStyle(button).marginInlineStart));
-                        assert.ok(stopBox.x < attachBox.x && attachBox.x < draftBox.x && draftBox.x < sendBox.x);
-                        assert.equal(Math.round(draftBox.x + draftBox.width + margin), Math.round(sendBox.x),
+                        assert.ok(stopBox.x < attachBox.x && attachBox.x < insertBox.x && insertBox.x < draftRect.x && draftRect.x < sendBox.x);
+                        assert.equal(Math.round(draftRect.x + draftRect.width + margin), Math.round(sendBox.x),
                             "Send joins the textarea with the native group margin");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     }
@@ -311,24 +320,25 @@ export default async function verifyCommands(t) {
                     assert.equal(await rows.last().locator("[data-text=model-more]").isVisible(), true);
                     assert.equal(requests.at(-1).params.params.search, "fixture");
                     const modelButton = page.getByRole("button", { name: "Model", exact: true });
+                    const modelDialog = page.locator("#dialog-session-model");
                     const modelPanel = page.locator("#session-model-settings");
                     const selectModel = modelPanel.getByRole("combobox", { name: "Search Models", exact: true });
                     const statusLine = page.locator("#session-status > [data-status-line]");
                     result = modelResponse(null);
                     await page.getByRole("textbox", { name: "Message", exact: true }).focus();
                     await modelButton.press("Enter");
+                    await modelDialog.waitFor({ state: "visible" });
                     await modelPanel.locator('datalist option[value="fixture/small"]').waitFor({ state: "attached" });
                     assert.equal(await modelButton.getAttribute("aria-expanded"), "true");
-                    assert.equal(await statusLine.isVisible(), true, "open settings retain status while focus is in main");
+                    assert.equal(await statusLine.isVisible(), true);
                     assert.equal(await selectModel.inputValue(), "");
                     assert.equal(await selectModel.getAttribute("placeholder"), "Search Models");
                     assert.equal(await modelPanel.locator('datalist option[value="fixture/small"]').textContent(), `${source} — Not configured`);
+                    assert.equal(await modelPanel.locator("[data-select-alias='local']").count(), 1, "configured alias renders as a 1-click button");
                     assert.equal(await modelPanel.locator("script").count(), 0);
-                    assert.equal(await modelPanel.locator("header, footer, label, h2, select, [data-text=catalog-summary]").count(), 0);
-                    assert.deepEqual(await modelPanel.getByRole("button").allTextContents(), ["Cancel", "Select Model"]);
-                    assert.equal(await modelPanel.locator("p:visible").count(), 0, "no success or catalog-summary chatter");
-                    assert.equal(await modelPanel.evaluate((panel) => Boolean(document.querySelector("#session-conversation").compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
-                    assert.equal(await page.locator("main").evaluate((main) => main.scrollWidth <= main.clientWidth), true, "native model choices fit the narrow main region");
+                    assert.equal(await modelPanel.locator("label, h2, select, [data-text=catalog-summary]").count(), 0);
+                    assert.equal(await modelPanel.locator("p[role='status']:visible").count(), 0, "no success or catalog-summary chatter");
+                    assert.equal(await page.locator("main").evaluate((main) => main.scrollWidth <= main.clientWidth), true, "native model dialog fits the narrow viewport");
                     delayed = { search: "stale", started: Promise.withResolvers(), release: Promise.withResolvers(), done: Promise.withResolvers(),
                         outcome: { ok: false, problem: { type: "https://example.test/problems/catalog", title: "Stale search", status: 503, detail: "Stale failure." } } };
                     await selectModel.fill("stale");
@@ -342,7 +352,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await modelPanel.locator('datalist option[value="local"]').count(), 0);
                     delayed.release.resolve();
                     await delayed.done.promise;
-                    assert.equal(await modelPanel.locator("p:visible").count(), 0, "superseded catalog failure cannot overwrite current suggestions");
+                    assert.equal(await modelPanel.locator("p[role='status']:visible").count(), 0, "superseded catalog failure cannot overwrite current suggestions");
                     assert.equal(await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').count(), 1);
                     delayed = undefined;
                     catalog.error = { ok: false, problem: { type: "https://example.test/problems/catalog", title: "Catalog unavailable", status: 503, detail: "Catalog unavailable." } };
@@ -358,36 +368,37 @@ export default async function verifyCommands(t) {
                     assert.equal(await selectModel.inputValue(), "fixture/not-in-catalog", "suggestions are not an admission allowlist");
                     assert.equal(await modelPanel.locator("[data-text=settings-recovery]").textContent(), "Configure this provider.");
                     assert.equal(await rows.count(), historyCount, "native selection is not synthetic command history");
-                    assert.equal(await modelPanel.isVisible(), true, "refusal retains the form");
+                    assert.equal(await modelDialog.isVisible(), true, "refusal retains the dialog");
                     result = modelResponse({ provider: "fixture", model: "not-in-catalog" });
                     await modelPanel.getByRole("button", { name: "Select Model", exact: true }).click();
-                    await modelPanel.waitFor({ state: "hidden" });
+                    await modelDialog.waitFor({ state: "hidden" });
                     assert.equal(await modelButton.getAttribute("aria-expanded"), "false");
                     assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true);
                     assert.equal(await statusLine.isVisible(), true, "successful selection retains focus and status");
                     const effortButton = page.getByRole("button", { name: "Effort", exact: true });
+                    const effortDialog = page.locator("#dialog-session-effort");
                     const effortPanel = page.locator("#session-effort-settings");
                     result = effortResponse(null, []);
                     await effortButton.click();
+                    await effortDialog.waitFor({ state: "visible" });
                     await effortPanel.getByRole("status").filter({ hasText: "No supported efforts." }).waitFor();
-                    assert.equal(await modelPanel.isVisible(), false);
+                    assert.equal(await modelDialog.isVisible(), false);
                     assert.equal(await effortPanel.getByRole("button", { name: "Select Effort", exact: true }).isDisabled(), true);
-                    assert.deepEqual(await effortPanel.getByRole("button").allTextContents(), ["Cancel", "Select Effort"]);
                     assert.equal(await effortPanel.getByRole("combobox").locator('option[value=""]').textContent(), "Reasoning Effort");
                     await effortPanel.getByRole("button", { name: "Cancel", exact: true }).click();
+                    await effortDialog.waitFor({ state: "hidden" });
                     assert.equal(await effortButton.evaluate((button) => document.activeElement === button), true);
                     assert.equal(await statusLine.isVisible(), true, "Cancel retains focus and status");
-                    await page.locator("body > header > a").focus();
-                    assert.equal(await statusLine.isVisible(), false, "closed selectors no longer pin idle status");
                     await page.getByRole("textbox", { name: "Message", exact: true }).focus();
                     await modelButton.click();
+                    await modelDialog.waitFor({ state: "visible" });
                     await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
-                    assert.equal(await modelPanel.isVisible(), true, "pointer activation survives moving focus out of the composer");
+                    assert.equal(await modelDialog.isVisible(), true, "pointer activation opens the modal");
                     await selectModel.press("Escape");
-                    // Firefox's native <datalist> popup consumes the first Escape in browser chrome before DOM keydown.
-                    if (engine === firefox && await modelPanel.isVisible()) await selectModel.press("Escape");
-                    await modelPanel.waitFor({ state: "hidden" });
-                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true, "Escape closes idle selector and restores focus");
+                    // Firefox's native <datalist> popup consumes the first Escape in browser chrome before DOM cancel.
+                    if (engine === firefox && await modelDialog.isVisible()) await selectModel.press("Escape");
+                    await modelDialog.waitFor({ state: "hidden" });
+                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true, "Escape closes model dialog and restores focus");
                     catalog.page = { items: [], offset: 0, total: 0 };
                     assert.equal(await command("/models absent"), true);
                     assert.equal(await rows.last().locator("[data-no-aliases]").isVisible(), true);

@@ -52,9 +52,12 @@ export default async function verifySessionCards(t) {
                 return;
             }
         }
-        const asset = (path === "/" && html ? { body: html, contentType: "text/html" } : assets.get(path))
-            ?? (path.startsWith("/~/") ? { body: html, contentType: "text/html" } : null);
-        response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.contentType ?? "text/plain" });
+        const isDocument = (path === "/" || path === "/search/") && Boolean(html) || path.startsWith("/~/");
+        const asset = isDocument ? { body: html, contentType: "text/html" } : assets.get(path);
+        const headers = isDocument
+            ? { ...privateHeaders, "content-type": asset?.contentType ?? "text/plain" }
+            : { "content-type": asset?.contentType ?? "text/plain", ...(asset ? { "cache-control": "public, max-age=31536000, immutable" } : privateHeaders) };
+        response.writeHead(asset ? 200 : 404, headers);
         response.end(asset?.body ?? "Not found");
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -82,28 +85,26 @@ export default async function verifySessionCards(t) {
                     for (const project_root of [null, "/srv/project"]) {
                         const name = `~/research/<script>&"${"long-".repeat(12)}`;
                         const workspacePath = directoryPath({ kind: "workspace", workspace: name });
-                        html = await documents.read({ kind: "workspace", workspace: name }, {
+                        html = await documents.search(false, {
                             listWorkspaces: async () => [{ id: 7, name, project_root, project_label: project_root, archived_at: null }],
                             listSessions: async () => sessions,
-                        }, false);
-                        await page.goto(new URL(workspacePath, base).href);
+                        });
+                        await page.goto(new URL("/search/", base).href);
                         if (!javaScriptEnabled) {
-                            // {§web-session-creation} {§web-workspace-rename} {§web-workspace-archive} Without scripting each form is a card in main:
-                            // it takes only its own space, inside main's measure.
                             const boxes = await page.locator("main > dialog").evaluateAll((dialogs) => dialogs.map((dialog) => {
                                 const box = dialog.getBoundingClientRect(), card = dialog.firstElementChild.getBoundingClientRect();
                                 const main = dialog.parentElement.getBoundingClientRect();
                                 return [dialog.id, Math.abs(box.height - card.height) < 1, box.left >= main.left && box.right <= main.right];
                             }));
-                            assert.deepEqual(boxes, [["dialog-workspace-rename", true, true], ["dialog-workspace-archive", true, true], ["dialog-session-create", true, true]]);
+                            assert.deepEqual(boxes, [["dialog-workspace-create", true, true]]);
                         }
-                        const link = (name) => page.locator(`main a[data-session-link][aria-label=${JSON.stringify(name)}]`);
+                        const link = (name) => page.locator(`#search-sessions a[data-session-link][aria-label=${JSON.stringify(name)}]`);
                         const card = (name) => link(name).locator("xpath=ancestor::article[1]");
                         const parent = card("parent");
                         const summary = parent.locator(":scope > details > summary");
                         assert.equal(await summary.count(), 1, "the identity is the native disclosure, not a child-count teaser");
                         assert.equal(await link("_plurnk").count(), 0);
-                        assert.equal(await page.locator('main a[data-session-link]').count(), sessions.length - 1);
+                        assert.equal(await page.locator('#search-sessions a[data-session-link]').count(), sessions.length - 1);
                         assert.equal(await parent.locator(':scope > details > summary [data-session-workspace] a').textContent(), name);
                         assert.equal(await parent.locator(':scope > details > summary [data-session-workspace] a').getAttribute("href"), workspacePath);
                         const folder = parent.locator(':scope > details > summary [data-session-workspace] [role="img"]');
@@ -145,11 +146,14 @@ export default async function verifySessionCards(t) {
                             });
                         }
                         await link("parent").click();
-                        assert.equal(new URL(page.url()).pathname, sessionPath);
+                        assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, sessionPath);
                         if (javaScriptEnabled) {
                             assert.equal(await page.evaluate(() => window.name), "true", "a real ant link does not toggle its enclosing summary");
                         }
-                        await summary.press("Enter");
+                        await page.goBack();
+                        if (!(await parent.locator(":scope > details").evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open))) {
+                            await summary.press("Enter");
+                        }
                         await parent.locator(':scope > details > summary [data-session-workspace] a').click();
                         assert.equal(new URL(page.url()).pathname, workspacePath);
                         assert.equal(await page.locator('main [data-connection-indicator], main [role="tree"], main [data-text="session-kind"]').count(), 0);
@@ -205,33 +209,33 @@ export default async function verifySessionCards(t) {
                     res.writeHead(200, { ...privateHeaders, "content-type": "text/plain; charset=utf-8" });
                     res.end("Parent initial reply");
                 });
-                html = await documents.read({ kind: "workspace", workspace: "work" }, {
+                html = await documents.search(true, {
                     listWorkspaces: async () => overviewData.workspaces,
                     listSessions: async () => overviewData.sessions,
                     readSessionOverview: async () => overviewData,
-                }, true);
+                });
                 requests.length = 0;
-                await page.goto(new URL("/~/work/", base).href);
+                await page.goto(new URL("/search/", base).href);
                 await page.locator('main[data-connection="connected"]').waitFor();
                 assert.equal(notificationRequests.length, 1);
                 assert.equal(notificationRequests[0].authorization, "Bearer overview-token");
-                assert.equal(notificationRequests[0].path, "/notifications/7");
+                assert.equal(notificationRequests[0].path, "/notifications");
                 assert.equal(notificationRequests[0].search, "");
                 assert.equal(await page.locator("header [data-connection-indicator]").isVisible(), false);
 
-                const rootNames = () => page.locator("main > ul > li > article > header [data-session-link], main > ul > li > article > details > summary [data-session-link]")
+                const rootNames = () => page.locator("#search-sessions > ul > li > article > header [data-session-link], #search-sessions > ul > li > article > details > summary [data-session-link]")
                     .evaluateAll((links) => links.map((el) => el.getAttribute("aria-label")));
                 assert.deepEqual(await rootNames(), ["done", "parent", "idle"]);
 
-                const card = (name) => page.locator(`main a[data-session-link][aria-label=${JSON.stringify(name)}]`).locator("xpath=ancestor::article[1]");
+                const card = (name) => page.locator(`#search-sessions a[data-session-link][aria-label=${JSON.stringify(name)}]`).locator("xpath=ancestor::article[1]");
                 assert.equal(await card("done").locator(":scope > details > [data-session-reply]").count(), 1, "completed leaf has reply disclosure");
                 assert.equal(await card("idle").locator(":scope > details").count(), 0, "silent leaf has no disclosure");
                 assert.equal(doneReads, 0, "closed reply disclosure does not fetch entry body at load");
 
                 // Session kind glyphs, badges, relative timestamps, excerpts, and filter controls
-                assert.match(await page.locator('main a[data-session-link][aria-label="parent"]').evaluate((el) => getComputedStyle(el, "::before").content), /💬/u);
-                assert.match(await page.locator('main a[data-session-link][aria-label="child"]').evaluate((el) => getComputedStyle(el, "::before").content), /🐜/u);
-                assert.match(await page.locator('main a[data-session-link][aria-label="done"]').evaluate((el) => getComputedStyle(el, "::before").content), /🔱/u);
+                assert.match(await page.locator('#search-sessions a[data-session-link][aria-label="parent"]').evaluate((el) => getComputedStyle(el, "::before").content), /💬/u);
+                assert.match(await page.locator('#search-sessions a[data-session-link][aria-label="child"]').evaluate((el) => getComputedStyle(el, "::before").content), /🐜/u);
+                assert.match(await page.locator('#search-sessions a[data-session-link][aria-label="done"]').evaluate((el) => getComputedStyle(el, "::before").content), /🔱/u);
                 assert.equal(await card("parent").locator("[data-session-title]").textContent(), "Root task");
                 assert.equal(await card("parent").locator("[data-session-gates]").textContent(), "1");
                 assert.equal(await card("parent").locator("[data-session-children]").textContent(), "1");
@@ -240,17 +244,17 @@ export default async function verifySessionCards(t) {
                 assert.equal(await card("done").locator("[data-session-excerpt]").textContent(), "Delivered reply preview…");
                 assert.equal(await card("done").locator("[data-session-excerpt]").isVisible(), true);
 
-                // Filter controls: scope and search
-                await page.locator('#overview-controls select[data-overview-scope]').selectOption("active");
+                // Filter controls: scope, kind, and search
+                await page.locator('#search-controls select[data-overview-scope]').selectOption("active");
                 assert.equal(await card("parent").isVisible(), true);
                 assert.equal(await card("done").isVisible(), false);
                 assert.equal(await card("idle").isVisible(), false);
-                await page.locator('#overview-controls select[data-overview-scope]').selectOption("all");
+                await page.locator('#search-controls select[data-overview-scope]').selectOption("all");
                 assert.equal(await card("done").isVisible(), true);
-                await page.locator('#overview-controls input[data-overview-search]').fill("Root task");
+                await page.locator('#search-controls input[data-overview-search]').fill("Root task");
                 assert.equal(await card("parent").isVisible(), true);
                 assert.equal(await card("done").isVisible(), false);
-                await page.locator('#overview-controls input[data-overview-search]').fill("");
+                await page.locator('#search-controls input[data-overview-search]').fill("");
                 assert.equal(await card("done").isVisible(), true);
 
                 // Open "done" card: fetches once on demand and renders sanitized Markdown, hiding the collapsed excerpt
@@ -352,8 +356,8 @@ export default async function verifySessionCards(t) {
                 assert.equal(await doneOutlet.locator("strong").textContent(), "Delivered reply", "unchanged reply body remains rendered without refetch");
                 assert.equal(doneReads, 1);
                 assert.equal(await doneSummary.evaluate((el) => document.activeElement === el), true, "keyboard focus is preserved across live reconciliation");
-                assert.equal(await page.title(), "renamed-work — Plurnk");
-                assert.equal(await page.locator('header nav[aria-label="breadcrumb"] [aria-current="page"]').textContent(), "renamed-work");
+                assert.equal(await page.title(), "Search — Plurnk");
+                assert.equal(await card("parent").locator(':scope > details > summary [data-session-workspace] a').textContent(), "renamed-work");
                 assert.equal(await card("idle").locator("[data-lifecycle]").getAttribute("aria-label"), "running");
 
                 // Live gate open + loop/gate-settled + session/titled updates on the default discrete stream

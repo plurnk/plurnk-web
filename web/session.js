@@ -1,4 +1,4 @@
-import { $, $$, on, route, the } from "on_the_money";
+import { $, $$, on, the } from "on_the_money";
 import { parseDirectory } from "../src/directory-addresses.js";
 import SessionAgent, { randomUUID } from "./session-agent.js";
 import { clocks } from "./session-status.js";
@@ -9,9 +9,14 @@ import diagnostics from "./session-diagnostics.js";
 import accessHeaders from "./access-headers.js";
 import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
-import reasoningPreview from "./reasoning-preview.js";
 import managementAction from "./management-action.js";
-import sessionCommands, { isCommand, isLocalExec, prepareComposerPrompt, primaryModifierLabel } from "./session-commands.js";
+import sessionCommands, {
+    SLASH_COMMAND_NAMES,
+    isCommand,
+    isLocalExec,
+    prepareComposerPrompt,
+    primaryModifierLabel,
+} from "./session-commands.js";
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
@@ -28,6 +33,11 @@ function isTextEntry(target) {
     }
     return target instanceof HTMLElement && target.isContentEditable;
 }
+
+const ZERO_ARG_COMPLETIONS = new Set([
+    "/help", "/yolo", "/stop", "/onboard", "/update", "/workspaces", "/sessions", "/loops", "/review",
+    "/parent", "/enter", "/older", "/newer",
+]);
 
 /** @typedef {{message?: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[], openPaths?: readonly string[]}, resolutions?: readonly import("./session-agent.js").GateResolution[], forceReview?: boolean}} Submission */
 
@@ -54,9 +64,9 @@ function failing(subscriber, fail) {
 
 /** {§web-session-observer} {§web-session-input} Delivery changes never own the session's lifetime.
  * @param {HTMLElement} element
- * @param {{ main?: Element | null }} [options]
+ * @param {{ main?: Element | null, transport?: "http" | "ws", onNavigate?: (targetPath: string) => void }} [options]
  */
-export default function observeSession(element, { main: suppliedMain = $("#main") } = {}) {
+export default function observeSession(element, { main: suppliedMain = $("#main"), transport, onNavigate } = {}) {
     const { sessionId, auth } = element.dataset;
     if (!sessionId || (auth !== "session" && auth !== "none")) throw new Error("Session document metadata is incomplete.");
     const approval = $(element, "#session-yolo");
@@ -90,7 +100,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         throw new Error("Session controls are incomplete.");
     }
     const draft = field;
-    const defaultPlaceholder = draft.getAttribute("placeholder") || "Message (/help · Shift+Tab YOLO)";
+    const defaultPlaceholder = draft.getAttribute("placeholder") || "Message…";
     const fileInput = attachInput;
     const suggestionOutlet = suggestionList;
     const attachmentOutlet = attachmentList;
@@ -133,16 +143,18 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     let resources = new AbortController();
     const transcript = sessionHistory(history, (address) => readBody(address, auth, resources.signal),
         (address, signal) => readHistory(address, auth, AbortSignal.any([signal, resources.signal])));
-    const preview = reasoningPreview(history, Number(element.dataset.reasoningPreviewChars));
     const diagnosticList = $(main, "#session-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Session document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
     const presentState = sessionState(element, main);
-    const agent = new SessionAgent({ url: "/acp", sessionId });
+    const effectiveTransport = transport ?? ($('#workspace-tabs[data-live="true"]') ? "ws" : "http");
+    const agent = new SessionAgent({ url: "/acp", sessionId, transport: effectiveTransport });
     void import("@plurnk/plurnk-contracts").catch(() => {});
     /** @type {string | null | undefined} */
     let workspaceProjectRoot = $(main.ownerDocument.body, '#session-workspace [aria-label="Folderless workspace"]') ? null : undefined;
-    let latestWorkspaceName = $("#session-workspace a")?.textContent?.trim() || "";
+    let latestWorkspaceName = $('#session-workspace [data-text="workspace-name"]')?.textContent?.trim()
+        || $("#session-workspace")?.textContent?.trim()
+        || "";
     /** @type {import("@plurnk/plurnk-acp/client").AcpSessionStatus | undefined} */
     let status;
     /** @type {{message: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[], openPaths?: readonly string[]}, source: string, sourceKey: string, attachmentIds: ReadonlySet<string>, retryable: boolean} | undefined} */
@@ -192,7 +204,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const enabled = approval.getAttribute("aria-pressed") !== "true";
         approval.setAttribute("aria-pressed", String(enabled));
         approval.title = `${enabled ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)`;
-        the(approval, "yolo-label", enabled ? "YOLO" : "Review");
+        the(approval, "yolo-label", enabled ? "Auto-approve" : "Review");
         const mode = review.automatic(enabled);
         if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
             const resolutions = await review.decisions(agent.pendingGates);
@@ -206,7 +218,9 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         stop: cancelWork,
         toggleYolo,
         getContext: () => ({
-            workspaceName: latestWorkspaceName || $("#session-workspace a")?.textContent?.trim() || "default",
+            workspaceName: latestWorkspaceName
+                || $('#session-workspace [data-text="workspace-name"]')?.textContent?.trim()
+                || "default",
             sessionName: element.dataset.sessionName || "user",
         }),
         getPendingGates: () => agent.pendingGates,
@@ -218,18 +232,20 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             connect({ resolutions: [resolution] });
         },
         navigate: (targetPath) => {
-            const tabs = $('#workspace-tabs[data-live="true"]');
-            const curWs = tabs instanceof HTMLElement ? tabs.dataset.workspaceName : null;
+            if (onNavigate) {
+                onNavigate(targetPath);
+                return;
+            }
             const dir = parseDirectory(targetPath);
-            if (tabs && curWs && dir && dir.kind !== "daemon" && dir.workspace === curWs) {
-                route.go(targetPath);
+            if (dir && dir.kind === "session" && dir.workspace === latestWorkspaceName && location.pathname.startsWith("/~/")) {
+                location.hash = `#${encodeURIComponent(dir.session)}`;
             } else {
                 location.assign(targetPath);
             }
         },
         openOnboarding,
     });
-    const dismissSettings = sessionSettings(main, element, action, () => resources.signal);
+    const dismissSettings = sessionSettings(main, element, action, () => resources.signal, { openOnboarding });
     const tail = stickyTail(main);
 
     function syncAttachments() {
@@ -284,15 +300,68 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         tail.follow();
     }
 
-    function syncSuggestions() {
+    /** @returns {{ kind: "command" | "skill" | "prompt", items: readonly string[] }} */
+    function computeComposeSuggestions() {
+        const value = draft.value;
+        const slashMatch = /^\s*\/([a-z0-9_-]*)$/iu.exec(value);
+        if (slashMatch) {
+            const prefix = `/${(slashMatch[1] ?? "").toLowerCase()}`;
+            const dynamic = availableCommands()
+                .filter((c) => c.type !== "skill" && typeof c.name === "string" && c.name.length > 0)
+                .map((c) => `/${c.name}`);
+            const skills = slashMatch[1] === ""
+                ? availableCommands()
+                    .filter((c) => c.type === "skill" && typeof c.name === "string" && c.name.length > 0)
+                    .map((c) => `$${c.name}`)
+                : [];
+            const all = [...new Set([...SLASH_COMMAND_NAMES, ...dynamic])];
+            const matches = all.filter((cmd) => cmd.toLowerCase().startsWith(prefix)).slice(0, 8);
+            return { kind: "command", items: [...matches, ...skills.slice(0, Math.max(0, 8 - matches.length))] };
+        }
+        const skillMatch = /(?:^|\s)\$([a-z0-9_-]*)$/iu.exec(value);
+        if (skillMatch) {
+            const prefix = (skillMatch[1] ?? "").toLowerCase();
+            const skills = availableCommands()
+                .filter((c) => c.type === "skill" && typeof c.name === "string" && c.name.toLowerCase().startsWith(prefix))
+                .map((c) => `$${c.name}`)
+                .slice(0, 8);
+            if (skills.length > 0) return { kind: "skill", items: skills };
+        }
         const live = Boolean(status && ["queued", "running", "parked"].includes(status.lifecycle));
-        const suggestions = live || the(element, "connection") === "interrupted" ? [] : promptSuggestions();
-        if (suggestions.length > 0) {
-            $.cloneEach(suggestionOutlet, "#compose-suggestion", suggestions, (item, text) => {
+        const prompts = value === "" && !live && the(element, "connection") !== "interrupted" ? promptSuggestions() : [];
+        return { kind: "prompt", items: prompts };
+    }
+
+    /** @param {string} suggestion */
+    function acceptComposeSuggestion(suggestion) {
+        const text = suggestion.trim();
+        if (!text) return;
+        if (text.startsWith("$") && /(?:^|\s)\$[a-z0-9_-]*$/iu.test(draft.value)) {
+            draft.value = draft.value.replace(/\$[a-z0-9_-]*$/iu, `${text} `);
+        } else if (text.startsWith("/") && /^\s*\/[a-z0-9_-]*$/iu.test(draft.value)) {
+            draft.value = ZERO_ARG_COMPLETIONS.has(text) ? text : `${text} `;
+        } else if (text.startsWith("$") && /^\s*\/$/u.test(draft.value)) {
+            draft.value = `${text} `;
+        } else {
+            draft.value = text;
+        }
+        draft.focus();
+        draft.setSelectionRange(draft.value.length, draft.value.length);
+        draft.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    function syncSuggestions() {
+        const { kind, items } = computeComposeSuggestions();
+        if (items.length > 0) {
+            $.cloneEach(suggestionOutlet, "#compose-suggestion", items, (item, text) => {
                 the(item, { "suggestion-text": text });
             });
-            const lead = suggestions[0]?.replaceAll(/\s+/gu, " ").trim() ?? "";
-            draft.placeholder = lead ? `→ ${lead} (Tab)` : defaultPlaceholder;
+            if (kind === "prompt") {
+                const lead = items[0]?.replaceAll(/\s+/gu, " ").trim() ?? "";
+                draft.placeholder = lead ? `→ ${lead} (Tab)` : defaultPlaceholder;
+            } else {
+                draft.placeholder = defaultPlaceholder;
+            }
         } else {
             suggestionOutlet.replaceChildren();
             draft.placeholder = defaultPlaceholder;
@@ -369,7 +438,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 signal.onabort = () => run.abort(signal.reason);
                 agent.abortController = run;
                 /** @type {{ error: unknown } | undefined} */
-                let intake;
+                let intakeFailure;
                 let terminal = false;
                 let interrupted = false;
                 let settled = false;
@@ -381,7 +450,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 const subscriber = {
                     onSessionUpdate: async ({ update }) => {
                         if (signal.aborted) return;
-                        preview.consume(update);
                         await diagnose(update);
                         tail.follow();
                     },
@@ -453,17 +521,17 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                         else refusal = message;
                     },
                 };
-                const delivered = failing(subscriber, (error) => { intake = { error }; run.abort(error); });
+                const delivered = failing(subscriber, (error) => { intakeFailure = { error }; run.abort(error); });
                 try {
                     if (submission) await agent.send({ abortController: run, message: submission.message, resolutions: submission.resolutions }, delivered);
                     else await agent.resume(holding ? { abortController: run, gates: agent.pendingGates.map(({ id }) => id) } : { abortController: run }, delivered);
                 } catch (error) {
-                    if (intake === undefined) throw error;
+                    if (intakeFailure === undefined) throw error;
                 }
-                if (intake !== undefined) {
+                if (intakeFailure !== undefined) {
                     agent.close();
                     throw Object.assign(
-                        intake.error instanceof Error ? intake.error : new Error(String(intake.error)),
+                        intakeFailure.error instanceof Error ? intakeFailure.error : new Error(String(intakeFailure.error)),
                         { protocolFailure: true },
                     );
                 }
@@ -512,7 +580,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         } finally {
             arriving = false;
             availability();
-            preview.clear();
             clearInterval(timer);
             agent.headers = {};
         }
@@ -522,7 +589,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     function connect(submission, passiveRetry = false) {
         const previous = delivery;
         previous?.controller.abort();
-        preview.clear();
         if (!passiveRetry) {
             reconnect.reset();
             connection("connecting", "Connecting…");
@@ -534,11 +600,31 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         })() };
     }
 
+    const forkCurrentSession = async () => {
+        if (the(controls, "command-pending") !== null) return;
+        the(controls, "command-pending", "");
+        availability();
+        tail.pin();
+        try {
+            await runCommand("/fork", resources.signal);
+            tail.follow();
+        } finally {
+            the(controls, "command-pending", null);
+            availability();
+        }
+    };
+
     on(element, "click", "#session-yolo", async () => {
         try { await toggleYolo(); }
         catch (error) {
             if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
         }
+    });
+    const offFork = on(document, "click", "[data-session-fork]", (_event, button) => {
+        if (!main.isConnected || element.hidden) return;
+        const dialog = button.closest("dialog");
+        if (dialog instanceof HTMLDialogElement && dialog.open) dialog.close();
+        void forkCurrentSession();
     });
     const offKeydown = on(document, "keydown", "body", (event) => {
         if (!main.isConnected || element.hidden) return;
@@ -650,22 +736,24 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         availability();
         tail.follow();
     });
-    on(compose, "click", "[data-accept-suggestion]", (_event, button) => {
-        const text = button.textContent?.trim() ?? "";
-        if (!text) return;
-        draft.value = text;
+    on(compose, "click", "[data-insert-command]", () => {
+        if (the(controls, "send-unavailable") !== null) return;
+        draft.value = draft.value === "/" ? "" : "/";
         draft.focus();
+        draft.setSelectionRange(draft.value.length, draft.value.length);
         draft.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    on(compose, "click", "[data-accept-suggestion]", (_event, button) => {
+        acceptComposeSuggestion(button.textContent ?? "");
     });
     on(compose, "keydown", "textarea", (event) => {
         if (!(event instanceof KeyboardEvent) || event.isComposing || event.repeat) return;
         if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-            const live = Boolean(status && ["queued", "running", "parked"].includes(status.lifecycle));
-            const lead = !live && the(element, "connection") !== "interrupted" ? promptSuggestions()[0] : undefined;
-            if (draft.value === "" && lead) {
+            const { kind, items } = computeComposeSuggestions();
+            const lead = items[0];
+            if (lead && (kind !== "prompt" || draft.value === "")) {
                 event.preventDefault();
-                draft.value = lead;
-                draft.dispatchEvent(new Event("input", { bubbles: true }));
+                acceptComposeSuggestion(lead);
             }
             return;
         }
@@ -860,7 +948,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         reconnect.reset();
         tail.pause();
         transcript.pause();
-        preview.clear();
         resources.abort();
         delivery?.controller.abort();
         cancellation?.abort();
@@ -890,9 +977,11 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             wasPinned = tail.isPinned();
             savedScrollTop = main.scrollTop;
             tail.pause();
+            element.hidden = true;
         },
         activate() {
             if (disposed) return;
+            element.hidden = false;
             presentState.syncHeader();
             tail.resume();
             if (wasPinned) tail.pin();
@@ -900,18 +989,10 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             void math(main).catch(reportError);
             void mermaid(main).catch(reportError);
         },
-        canEvict() {
-            return !main.isConnected
-                && !pending
-                && attachments.length === 0
-                && !cancellation
-                && the(controls, "command-pending") === null
-                && the(element, "connection") !== "interrupted"
-                && agent.pendingGates.length === 0;
-        },
         dispose() {
             if (disposed) return;
             disposed = true;
+            offFork();
             offKeydown();
             offCoarseMedia();
             offPageHide();
@@ -919,7 +1000,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             reconnect.dispose();
             tail.pause();
             transcript.pause();
-            preview.clear();
             resources.abort();
             delivery?.controller.abort();
             cancellation?.abort();

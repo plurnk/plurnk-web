@@ -195,10 +195,9 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
             registerHttpRoute(_mount, handler) { routeHandler = handler; },
             listWorkspaces: async () => [],
             listSessions: async () => [],
-            readSessionOverview: async () => ({ workspaces: [], sessions: [] }),
-            createWorkspace: async () => "alpha",
+            createWorkspace: async () => ({ workspaceId: 1, workspaceName: "alpha", projectRoot: null, projectLabel: null }),
             renameWorkspace: async () => ({ name: "alpha" }),
-            createSession: async () => ({ sessionName: "user" }),
+            createSession: async () => ({ sessionId: 1, sessionName: "user" }),
             setWorkspaceArchived: async () => ({}),
             setSessionArchived: async () => ({}),
         });
@@ -213,19 +212,19 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
         const checkBrowser = browserDiagnostics(context);
         const page = await context.newPage();
 
-        await page.goto(`${base}/~/`);
-        assert.match(await page.locator("main").innerText(), /No workspaces\./u);
+        await page.goto(`${base}/search/`);
+        assert.match(await page.locator("main").innerText(), /No matching workspaces\./u);
         const initialCss = await page.request.get(`${base}${registeredStylesheetPath}`);
         assert.equal(initialCss.status(), 200);
 
         const htmlFile = join(root, "index.html");
-        await writeFile(htmlFile, (await readFile(htmlFile, "utf8")).replace('title="Home"', 'title="Live home"'));
+        await writeFile(htmlFile, (await readFile(htmlFile, "utf8")).replace('title="Plurnk"', 'title="Live home"'));
         const stylesFile = join(root, "styles", "app-style.css");
         await writeFile(
             stylesFile,
             (await readFile(stylesFile, "utf8")).replace(/\}\s*$/u, "    :root { --dev-live-probe: 17px; }\n}\n"),
         );
-        await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replace("No workspaces.", "Zero workspaces yet."));
+        await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replace("No matching workspaces.", "Zero workspaces yet."));
 
         await page.reload();
         assert.equal(await page.locator('header a[title="Live home"]').count(), 1);

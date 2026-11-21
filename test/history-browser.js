@@ -109,7 +109,7 @@ export default async function verifyHistory(t) {
                     await run();
                     await settled();
                     assert.deepEqual(await ids(), ["old", "current", "next"], "replacement snapshot retains explicitly loaded pages alongside the new window");
-                    assert.equal(await page.getByRole("button", { name: "Load previous loop" }).count(), 1, "the reconnect gap is marked between retained and live content");
+                    assert.equal(await page.getByRole("button", { name: "Load earlier messages" }).count(), 1, "the reconnect gap is marked between retained and live content");
 
                     // Fresh component state, non-final page and late result through the real SDK.
                     await page.reload();
@@ -119,22 +119,22 @@ export default async function verifyHistory(t) {
                     pages.set("/history/call", pageEnvelope([call], null));
                     events = snapshot([message("now")], "/history/call");
                     await run();
-                    await page.getByRole("button", { name: "Load previous loop" }).click();
+                    await page.getByRole("button", { name: "Load earlier messages" }).click();
                     await page.locator('[data-call-id="call"]').waitFor({ state: "attached" });
                     const result = { id: "receipt", role: "tool", toolCallId: "call", content: '{"status":200,"path":"evidence.txt","range":{"returned":[1,2]}}' };
                     events = [{ sessionUpdate: "tool_call_update", toolCallId: result.toolCallId, status: "completed", rawOutput: result.content, _meta: { plurnk: { messageId: result.id } } }];
                     await run();
                     assert.deepEqual(await ids(), ["call-message", "now"], "immediate late result completes its original operation row exactly once");
-                    assert.equal(await page.locator('[data-call-id="call"] [data-plurnk-field="count"]').textContent(), "{2}");
+                    assert.equal(await page.locator('[data-call-id="call"] [data-plurnk-field="count"]').textContent(), "2 lines");
                     const readCount = reads.length;
                     pages.set("/history/call", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
                     events = snapshot([message("now")], "/history/call");
                     await run();
                     await page.getByRole("alert").filter({ hasText: "Read request failed (503)." }).waitFor();
-                    assert.equal(await page.locator('[data-call-id="call"] [data-plurnk-field="count"]').textContent(), "{2}", "failed revalidation cannot hide a confirmed result");
+                    assert.equal(await page.locator('[data-call-id="call"] [data-plurnk-field="count"]').textContent(), "2 lines", "failed revalidation cannot hide a confirmed result");
                     check(engine !== firefox ? [httpFailure("/history/call", 503)] : []);
                     pages.set("/history/call", pageEnvelope([call, result], null));
-                    await page.getByRole("button", { name: "Load previous loop" }).click();
+                    await page.getByRole("button", { name: "Load earlier messages" }).click();
                     await page.waitForFunction(() => !document.querySelector('[data-history-boundary] [aria-busy="true"]'));
                     await settled();
                     assert.equal(reads.length, readCount + 2, "non-final page revalidates on snapshot, then only on explicit retry after failure");
@@ -148,12 +148,12 @@ export default async function verifyHistory(t) {
                     pages.set("/history/failure", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
                     events = snapshot([message("retained")], "/history/failure");
                     await run();
-                    await page.getByRole("button", { name: "Load previous loop" }).click();
+                    await page.getByRole("button", { name: "Load earlier messages" }).click();
                     await page.getByRole("alert").filter({ hasText: "Read request failed (503)." }).waitFor();
                     assert.deepEqual(await ids(), ["retained"]);
                     check(engine !== firefox ? [httpFailure("/history/failure", 503)] : []);
                     pages.set("/history/failure", pageEnvelope([message("retried")], null));
-                    await page.getByRole("button", { name: "Load previous loop" }).click();
+                    await page.getByRole("button", { name: "Load earlier messages" }).click();
                     await page.locator('[data-message-id="retried"]').waitFor();
                     assert.deepEqual(await ids(), ["retried", "retained"]);
 
@@ -166,7 +166,7 @@ export default async function verifyHistory(t) {
                     });
                     events = snapshot([message("new-window")], "/history/held");
                     await run();
-                    await page.getByRole("button", { name: "Load previous loop" }).click();
+                    await page.getByRole("button", { name: "Load earlier messages" }).click();
                     await started.promise;
                     events = snapshot([message("last-window")], null);
                     await run();

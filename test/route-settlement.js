@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer, request } from "node:http";
 import { setImmediate } from "node:timers/promises";
 
-const workspace = { id: 1, name: "example", project_root: null, project_label: null };
+const workspace = { id: 1, name: "example", project_root: null, project_label: null, archived_at: null };
 
 async function fixture(t, createModule, /** @type {any} */ { credentials, ...port } = {}) {
     const module = createModule();
@@ -115,7 +115,7 @@ const sessionCookie = (response) => response.headers.getSetCookie().find((value)
 
 /** {§web-route-settlement} Real HTTP requests through source and packed module entry points. */
 export default async function verifyRouteSettlement(t, createModule) {
-    for (const [name, path] of [["readSessionOverview", "/"], ["listWorkspaces", "/~/"], ["readSessionOverview", "/~/example/"]]) {
+    for (const [name, path] of [["readSessionOverview", "/"], ["listWorkspaces", "/search/"], ["readSessionOverview", "/~/example"]]) {
         await t.test(`close joins ${name} on ${path} without needing a preceding stop`, async (t) => {
             const gate = hold();
             const f = await fixture(t, createModule, { [name]: gate.call });
@@ -140,7 +140,7 @@ export default async function verifyRouteSettlement(t, createModule) {
         f.module.stop();
         t.mock.method(f.credentials, "verify", () => { throw new Error("credentials accessed after stop"); });
         for (const [path, method] of [
-            ["/", "GET"], ["/manifest.webmanifest", "GET"], ["/~/", "GET"], ["/~/example/", "GET"],
+            ["/", "GET"], ["/manifest.webmanifest", "GET"], ["/search/", "GET"], ["/~/", "GET"], ["/~/example", "GET"],
             ["/account/", "GET"], ["/account/sessions/", "GET"], ["/account/sessions/one/revoke", "POST"],
             ["/auth/login", "GET"], ["/auth/callback", "GET"], ["/auth/logout", "POST"],
             ["/auth/token", "POST"], ["/render/mermaid", "POST"], ["/missing", "GET"],
@@ -158,9 +158,9 @@ export default async function verifyRouteSettlement(t, createModule) {
         let calls = 0;
         const f = await fixture(t, createModule, { listWorkspaces: () => gates[calls++].call() });
         const controller = new AbortController();
-        const first = fetch(`${f.base}/~/`, { signal: controller.signal });
+        const first = fetch(`${f.base}/search/`, { signal: controller.signal });
         await gates[0].entered;
-        const second = fetch(`${f.base}/~/`);
+        const second = fetch(`${f.base}/search/`);
         await gates[1].entered;
         const departed = assert.rejects(first, { name: "AbortError" });
         controller.abort();
