@@ -52,10 +52,24 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                     await inputPage(withDaemon, async ({ page, model, checkBrowser, base, workspace, secret }) => {
                         await rm(witness, { force: true });
                         const responses = [];
+                        const wsErrors = [];
                         page.on("response", (response) => {
                             if (new URL(response.url()).pathname === "/acp" && response.request().postDataJSON()?.result?.outcome !== undefined) {
                                 responses.push(response.text().catch(() => ""));
                             }
+                        });
+                        page.on("websocket", (ws) => {
+                            if (new URL(ws.url()).pathname !== "/acp") return;
+                            ws.on("framereceived", ({ payload }) => {
+                                for (const line of String(payload).split("\n")) {
+                                    const trimmed = line.trim();
+                                    if (!trimmed) continue;
+                                    try {
+                                        const parsed = JSON.parse(trimmed);
+                                        if (parsed?.error) wsErrors.push(parsed.error);
+                                    } catch { /* ignore */ }
+                                }
+                            });
                         });
                         const terminal = await startTerminal({ consumer, base, workspace, secret, yolo: terminalYolo });
                         const name = `held-approval-shared-${mode(terminalYolo).toLowerCase()}-${mode(browserYolo).toLowerCase()}-${answer}`;
@@ -65,7 +79,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                             await page.getByRole("button", { name: "Send", exact: true }).click();
                             await Promise.all([
                                 terminal.waitFor(new RegExp(RegExp.escape(`Considering ${name}.`), "u")),
-                                page.getByText(`Considering ${name}.`, { exact: true }).waitFor({ state: "attached", timeout: 5000 }),
+                                page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached", timeout: 5000 }),
                             ]);
                             assert.equal(model.requests.length, 1, "both real clients observe the same held inference");
                             model.release(name);
@@ -97,9 +111,12 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                             assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"), "the accepted executor actually ran");
                             assert.equal(await review.isVisible(), false, "the browser withdraws its old form");
                             await terminal.waitForScreen((text) => !/Enter: confirm|pending reviews?/u.test(text));
-                            const errors = (await Promise.all(responses)).flatMap((body) => body.split("\n\n")
-                                .filter((frame) => frame.startsWith("data: ")).map((frame) => JSON.parse(frame.slice(6))))
-                                .filter(({ error }) => error).map(({ error }) => error);
+                            const errors = [
+                                ...(await Promise.all(responses)).flatMap((body) => body.split("\n\n")
+                                    .filter((frame) => frame.startsWith("data: ")).map((frame) => JSON.parse(frame.slice(6))))
+                                    .filter(({ error }) => error).map(({ error }) => error),
+                                ...wsErrors,
+                            ];
                             assert.ok(errors.length <= (browserYolo && terminalYolo ? 1 : 0), "only two automatic answers may race");
                             for (const error of errors) {
                                 const problem = error.data?.plurnk?.problem;

@@ -28,7 +28,7 @@ function luminance(rgb) {
 }
 
 export default async function verifySurfaces(t) {
-    const { server, url } = await conversationFixture(new URL("./reasoning-entry.js", import.meta.url));
+    const { server, url } = await conversationFixture();
     try {
         for (const engine of engines) await t.test(engine.name(), async () => {
             const browser = await engine.launch();
@@ -40,7 +40,6 @@ export default async function verifySurfaces(t) {
                 await page.waitForFunction(() => typeof window.present === "function");
                 await page.evaluate((messages) => {
                     window.present(messages);
-                    window.preview.consume({ sessionUpdate: "agent_thought_chunk", messageId: "live", content: { type: "text", text: "Live working material." } });
                     // Contrast covers inspected working bodies too; hidden content has no painted colors.
                     for (const disclosure of document.querySelectorAll("[data-messages] details")) disclosure.open = true;
                 }, messages);
@@ -58,14 +57,14 @@ export default async function verifySurfaces(t) {
                             ctx.fillRect(0, 0, 1, 1);
                             return Array.from(ctx.getImageData(0, 0, 1, 1).data);
                         };
-                        const entries = [...document.querySelectorAll("[data-messages] [data-message-id], [data-reasoning-preview]")];
+                        const entries = [...document.querySelectorAll("[data-messages] [data-message-id]")];
                         return Object.fromEntries(entries.map((row) => {
                             const article = row.matches("article") ? row : row.querySelector(":scope > article");
                             const background = rgba(getComputedStyle(article).backgroundColor);
-                            return [row.dataset.callId ?? row.dataset.messageId ?? "preview", {
+                            return [row.dataset.callId ?? row.dataset.messageId, {
                                 background,
                                 header: article.querySelector(":scope > header") ? rgba(getComputedStyle(article.querySelector(":scope > header")).backgroundColor) : null,
-                                text: [...article.querySelectorAll("p, a, pre, summary, header")].map((element) => {
+                                text: [...article.querySelectorAll(":scope > p, :scope > a, :scope > pre, :scope > details:not([data-prompt-work]) > summary, :scope > details:not([data-prompt-work]) > pre, :scope > header")].map((element) => {
                                     const style = getComputedStyle(element);
                                     const local = rgba(style.backgroundColor);
                                     return { color: rgba(style.color), background: local[3] === 0 ? background : local, tag: element.tagName };
@@ -80,7 +79,7 @@ export default async function verifySurfaces(t) {
                     assert.ok(user[1] > user[0] && user[1] > user[2], "user tint is green");
                     assert.deepEqual(colors["decorated-user"].background, user, "send metadata never turns a user's prompt into a model reply");
                     for (const id of ["send", "reply", "cancelled", "outside"]) assert.deepEqual(colors[id].background, reply, id);
-                    for (const id of ["generic", "read", "note", "result", "system", "developer", "preview"]) assert.deepEqual(colors[id].background, working, id);
+                    for (const id of ["generic", "read", "note", "result", "system", "developer"]) assert.deepEqual(colors[id].background, working, id);
                     for (const [id, { background, header, text = [] }] of Object.entries(colors)) {
                         assert.equal(background[3], 255, `${id}: opaque background`);
                         if (header) assert.deepEqual(header, background, `${id}: coordinated header and body`);

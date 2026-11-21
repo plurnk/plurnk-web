@@ -11,9 +11,14 @@ test("{§web-workspace-creation} one token settles once and converges racing and
     const token = randomUUID();
     let calls = 0;
     const create = async () => { calls++; return envelope("fresh"); };
-    assert.equal(await creations.submit(token, create), "/~/fresh/");
-    assert.equal(await creations.submit(token, create), "/~/fresh/");
+    assert.equal(await creations.submit(token, create), "/~/fresh");
+    assert.equal(await creations.submit(token, create), "/~/fresh");
     assert.equal(calls, 1);
+
+    const sessionToken = randomUUID();
+    assert.equal(await creations.submit(sessionToken, async () => ({
+        workspaceId: 41, workspaceName: "fresh", projectRoot: null, projectLabel: null, sessionName: "user",
+    })), "/~/fresh#user");
 });
 
 test("{§web-workspace-creation} racing posts share one in-flight creation", async () => {
@@ -25,7 +30,7 @@ test("{§web-workspace-creation} racing posts share one in-flight creation", asy
     const posts = [creations.submit(token, create), creations.submit(token, create)];
     await new Promise((resolve) => setTimeout(resolve, 20));
     gate.resolve();
-    assert.deepEqual(await Promise.all(posts), ["/~/raced/", "/~/raced/"]);
+    assert.deepEqual(await Promise.all(posts), ["/~/raced", "/~/raced"]);
     assert.equal(calls, 1);
 });
 
@@ -45,10 +50,10 @@ test("{§web-workspace-creation} expired tokens are pruned so retries after TTL 
     const token = randomUUID();
     let calls = 0;
     const create = async () => { calls++; return envelope(`run-${calls}`); };
-    assert.equal(await creations.submit(token, create), "/~/run-1/");
+    assert.equal(await creations.submit(token, create), "/~/run-1");
     assert.equal(calls, 1);
     await new Promise((resolve) => setTimeout(resolve, 1100));
-    assert.equal(await creations.submit(token, create), "/~/run-2/");
+    assert.equal(await creations.submit(token, create), "/~/run-2");
     assert.equal(calls, 2);
 });
 
@@ -79,7 +84,7 @@ test("{§web-workspace-creation} envelope violations fail visibly instead of ada
     const foldered = new Creations({ ttl: 600, tokens: 128 });
     assert.equal(await foldered.submit(randomUUID(), async () => ({
         workspaceId: 2, workspaceName: "repo", projectRoot: "/srv/repo", projectLabel: "~/repo",
-    }), { folderRequested: true }), "/~/repo/");
+    }), { folderRequested: true }), "/~/repo");
 });
 
 test("{§web-workspace-creation} the bound evicts oldest completed entries when full", async () => {
@@ -87,11 +92,11 @@ test("{§web-workspace-creation} the bound evicts oldest completed entries when 
     const token1 = randomUUID();
     const token2 = randomUUID();
     const token3 = randomUUID();
-    assert.equal(await creations.submit(token1, async () => envelope("one")), "/~/one/");
-    assert.equal(await creations.submit(token2, async () => envelope("two")), "/~/two/");
+    assert.equal(await creations.submit(token1, async () => envelope("one")), "/~/one");
+    assert.equal(await creations.submit(token2, async () => envelope("two")), "/~/two");
     // Submitting a third token evicts the oldest completed entry (token1).
-    assert.equal(await creations.submit(token3, async () => envelope("three")), "/~/three/");
+    assert.equal(await creations.submit(token3, async () => envelope("three")), "/~/three");
     // Token2 and Token3 are still retained.
-    assert.equal(await creations.submit(token2, async () => { throw new Error("should converge"); }), "/~/two/");
-    assert.equal(await creations.submit(token3, async () => { throw new Error("should converge"); }), "/~/three/");
+    assert.equal(await creations.submit(token2, async () => { throw new Error("should converge"); }), "/~/two");
+    assert.equal(await creations.submit(token3, async () => { throw new Error("should converge"); }), "/~/three");
 });

@@ -16,13 +16,14 @@ export default function browserDiagnostics(context) {
         const actual = diagnostics.splice(0);
         for (const pattern of expected) {
             const isNetwork = Boolean(/** @type {any} */ (pattern).webkitOptional);
+            const optional = Boolean(/** @type {any} */ (pattern).optional);
             const index = actual.findIndex((message) => pattern.test(message));
-            if (index === -1 && (engine === "firefox" || (engine === "webkit" && isNetwork))) {
+            if (index === -1 && (optional || engine === "firefox" || (engine === "webkit" && isNetwork))) {
                 continue;
             }
             assert.notEqual(index, -1, `Expected browser diagnostic ${pattern}; received ${JSON.stringify(actual)}`);
             actual.splice(index, 1);
-            if (engine === "webkit" && isNetwork) {
+            if ((optional || (engine === "webkit" && isNetwork))) {
                 for (let next = actual.findIndex((message) => pattern.test(message)); next !== -1; next = actual.findIndex((message) => pattern.test(message))) {
                     actual.splice(next, 1);
                 }
@@ -41,6 +42,6 @@ export const networkFailure = (path) => {
         ? `${RegExp.escape(path)}(?:/[^:\\s]*)?`
         : RegExp.escape(path);
     return Object.assign(new RegExp(
-        `^error (${pattern}|): (Failed to load resource:.*|Fetch API cannot load .*${pattern} due to access control checks\\.)$`, "u",
-    ), { webkitOptional: true });
+        `^error (${pattern}|/assets/[^:\\s]+|): (Failed to load resource:.*|WebSocket connection to .*${pattern}.* failed:.*|Fetch API cannot load .*${pattern} due to access control checks\\.)$`, "u",
+    ), { webkitOptional: true, optional: path === "/acp" });
 };

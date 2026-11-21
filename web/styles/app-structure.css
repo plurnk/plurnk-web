@@ -3,19 +3,31 @@
         --otm-line-height: 1.25;
         --otm-form-element-spacing-block: 0.75rem;
         --otm-form-element-spacing-inline: 1rem;
+        --plurnk-chat-measure: 58rem;
+        --plurnk-search-measure: 72rem;
     }
 
     template {
         display: none;
     }
 
-    /* {§web-page-shell} Native documents retain readable measure, viewport gutters and standalone safe-area clearance. */
+    /* {§web-page-shell} Full-width chrome with wide centered desktop content measure and standalone safe-area clearance. */
     body > header,
-    body > :where(#workspace-tabs),
-    body > main,
-    body > footer {
+    body > :where(#workspace-tabs) {
+        max-inline-size: none;
+        padding-inline: calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)) calc(var(--otm-spacing) + env(safe-area-inset-right, 0px));
+        overflow-wrap: anywhere;
+    }
+
+    body > main {
         max-inline-size: 65ch;
         padding-inline: calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)) calc(var(--otm-spacing) + env(safe-area-inset-right, 0px));
+        overflow-wrap: anywhere;
+    }
+
+    body > footer {
+        max-inline-size: none;
+        padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2));
         overflow-wrap: anywhere;
     }
 
@@ -26,7 +38,7 @@
     #session-status {
         min-block-size: 0;
         overflow: auto;
-        padding-block: var(--otm-spacing) calc(var(--otm-spacing) + env(safe-area-inset-bottom, 0px));
+        padding-block: calc(var(--otm-spacing) * 0.65) calc(var(--otm-spacing) * 0.75 + env(safe-area-inset-bottom, 0px));
     }
 
     nav,
@@ -40,19 +52,19 @@
         max-inline-size: 100%;
     }
 
-    /* {§web-page-shell} Breadcrumbs own overflow, never another fixed-header row. */
+    /* {§web-page-shell} Single header row: brand + creation controls, centered place, and navigation actions. */
     body > header {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        grid-template-areas: "brand breadcrumb menu";
+        container-type: inline-size;
+        display: flex;
+        flex-wrap: nowrap;
         align-items: center;
-        gap: var(--otm-spacing);
-        padding-block: env(safe-area-inset-top, 0) 0;
+        gap: calc(var(--otm-spacing) * 0.65);
+        padding-block: max(env(safe-area-inset-top, 0px), calc(var(--otm-spacing) * 0.35)) calc(var(--otm-spacing) * 0.35);
     }
 
     body > header > a {
         display: flex;
-        grid-area: brand;
+        flex: 0 0 auto;
         align-items: center;
     }
 
@@ -61,35 +73,43 @@
         block-size: 2ch;
     }
 
-    body > header nav svg {
+    body > header :where(svg) {
         display: inline-block;
-        inline-size: 2ch;
-        block-size: 2ch;
+        inline-size: 1.75ch;
+        block-size: 1.75ch;
         vertical-align: middle;
     }
 
+    body > header > :where(#header-place) {
+        display: flex;
+        flex: 1 1 auto;
+        align-items: center;
+        justify-content: center;
+        gap: 0.2ch;
+        min-inline-size: 0;
+        padding-block: calc(var(--otm-spacing) * 0.25);
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
     body > header > nav[aria-label="Main navigation"] {
-        grid-area: menu;
+        flex: 0 0 auto;
+        margin-inline-start: auto;
     }
 
     body > header > nav[aria-label] > ul {
         flex-wrap: nowrap;
-        margin-inline: 0;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin: 0;
+        padding: 0;
     }
 
     body > header > nav[aria-label] li {
+        display: inline-flex;
+        align-items: center;
         flex: 0 0 auto;
         max-inline-size: none;
-        padding-block: 0;
-    }
-
-    body > header > nav[aria-label="breadcrumb"] {
-        position: relative;
-        grid-area: breadcrumb;
-        min-inline-size: 0;
-        padding-block: calc(var(--otm-spacing) * 0.5);
-        overflow-x: auto;
-        white-space: nowrap;
+        padding: 0;
     }
 
     body > header > nav[aria-label="breadcrumb"] > ul {
@@ -104,30 +124,41 @@
         gap: 0.35ch;
     }
 
-    body > header > nav[aria-label="breadcrumb"] a {
-        display: inline-block;
-    }
-
     body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
         content: "›" / "";
         margin-inline-start: var(--otm-spacing);
     }
 
-    header nav li > :is(a, form) {
-        display: flex;
+    header nav form {
+        display: inline-flex;
         align-items: center;
-    }
-
-    header nav form,
-    header nav button[type="submit"] {
         margin: 0;
     }
 
-    header nav button {
+    header nav li > :is(a, form, [role="img"]) {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35ch;
+    }
+
+    header :where(#header-place button, nav button) {
         --otm-form-element-spacing-block: 0;
         --otm-form-element-spacing-inline: 0;
 
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35ch;
+        inline-size: auto;
+        block-size: auto;
+        margin: 0;
+        padding: 0;
         border-width: 0;
+        line-height: inherit;
+        white-space: nowrap;
+    }
+
+    header :where(#header-place button) {
+        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.35);
     }
 
     /* Grouped inline controls (<fieldset role="group">) */
@@ -200,16 +231,6 @@
         content: "✕" / "";
     }
 
-    body > header nav[aria-label="breadcrumb"] li button {
-        display: inline-block;
-        block-size: auto;
-        margin: 0;
-        padding: 0;
-        border-width: 0;
-        line-height: inherit;
-        vertical-align: middle;
-    }
-
     /* {§web-workspace-tabs} Stationary intra-workspace tab strip above the scroller; compact switcher below 768px. */
     #workspace-tabs {
         display: flex;
@@ -218,7 +239,7 @@
         justify-content: flex-start;
         gap: calc(var(--otm-spacing) * 0.5);
         min-inline-size: 0;
-        padding-block: calc(var(--otm-spacing) * 0.25);
+        padding-block: calc(var(--otm-spacing) * 0.2);
     }
 
     #workspace-tabs :where(svg) {
@@ -322,7 +343,7 @@
         border-width: 0;
     }
 
-    @media (scripting: enabled) and (width < 768px) {
+    @media (scripting: enabled) and (width < 48rem) {
         #workspace-tabs > :where(ul) {
             display: none;
         }
@@ -388,7 +409,8 @@
         margin: 0;
     }
 
-    #session-onboarding-banner > footer > button {
+    #session-onboarding-banner > footer > button,
+    #dialog-session-model > article > footer > button {
         inline-size: auto;
         margin: 0;
     }
@@ -397,12 +419,42 @@
         flex-wrap: nowrap;
     }
 
+    #session-usage,
+    #session-usage > summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25ch;
+        margin: 0;
+    }
+
+    #session-usage > summary::after {
+        content: none;
+    }
+
+    #session-usage > ul {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin: 0 0 0 0.5ch;
+        padding: 0;
+    }
+
+    #session-usage > ul > li {
+        list-style: none;
+        margin: 0;
+    }
+
     /* {§web-session-input} Native sizing grows the draft, never a JS resize controller. */
     #session-compose,
     #session-compose fieldset,
     #session-stop,
     [aria-label="Session controls"] {
         margin: 0;
+    }
+
+    [aria-label="Session controls"] {
+        margin-block-start: calc(var(--otm-spacing) * 0.4);
     }
 
     #session-compose fieldset {
@@ -445,6 +497,65 @@
         padding-block-end: 0;
     }
 
+    /* {§web-search} Search controls and workspace/session directory layout. */
+    form#search-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block: var(--otm-spacing);
+    }
+
+    #search-controls > input[type="search"] {
+        flex: 1 1 22ch;
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    #search-controls > :is(select, button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        margin: 0;
+    }
+
+    #search-controls > select {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #search-workspaces > ul {
+        display: flex;
+        flex-wrap: wrap;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block: 0 var(--otm-spacing);
+        padding: 0;
+    }
+
+    #search-workspaces > ul > li {
+        flex: 0 1 auto;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        margin: 0;
+    }
+
+    #search-workspaces > ul > li > article {
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.35) calc(var(--otm-spacing) * 0.65);
+    }
+
+    #search-workspaces > ul > li > article > header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5ch;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        margin: 0;
+        padding: 0;
+    }
+
     #session-diagnostics > ul > li > article > header:only-child {
         margin-block-end: calc(var(--otm-spacing) * -1);
     }
@@ -476,26 +587,6 @@
 
     #session-connection > p:last-child {
         margin-block-end: 0;
-    }
-
-    section#overview-controls {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: calc(var(--otm-spacing) * 0.5);
-        margin-block-end: var(--otm-spacing);
-    }
-
-    #overview-controls > input[type="search"] {
-        flex: 1 1 18ch;
-        min-inline-size: 0;
-        margin: 0;
-    }
-
-    #overview-controls > select {
-        flex: 0 0 auto;
-        inline-size: auto;
-        margin: 0;
     }
 
     /* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */

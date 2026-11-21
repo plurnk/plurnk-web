@@ -259,7 +259,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => typeof window.openSettings === "function");
 
                     // 1. Overview mode (sessionName = null): workspace-only actions with workspaceId: 7 and omitted sessionId
-                    await page.locator("#workspace-tabs [data-workspace-settings]").click();
+                    await page.locator("#session-workspace").click();
                     const dialog = page.locator("#dialog-workspace-settings");
                     await dialog.waitFor({ state: "visible" });
                     await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);

@@ -34,5 +34,6 @@ export default function card(row, hasBody, collapsible = true) {
 export function nameCard(header) {
     if (header.tagName !== "SUMMARY") return;
     const label = header.closest("article")?.ariaLabel;
-    header.ariaLabel = [label, ...Array.from(header.children, (field) => field.textContent)].filter(Boolean).join(" · ");
+    const fields = Array.from(header.children, (field) => field.textContent).filter(Boolean);
+    header.ariaLabel = [label, ...fields.filter((f, i) => !(i === 0 && (label === f || label?.startsWith(`${f} · `))))].filter(Boolean).join(" · ");
 }

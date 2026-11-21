@@ -113,6 +113,11 @@ export function gauges(status, budget) {
     const output = amount(spend.usage?.outputTokens, spend.knownUsage?.outputTokens, tokens);
     const price = amount(spend.costUsd, spend.knownCostUsd, cost);
     const gated = status.descendants.filter(({ gates }) => gateCount(gates) > 0).length;
+    const ctxText = occupancy(budget?.contextTokens, budget?.contextCapacity);
+    const highContext = budget?.contextTokens != null && budget?.contextCapacity != null && budget.contextCapacity > 0
+        && (budget.contextTokens / budget.contextCapacity) >= 0.75
+        ? ctxText
+        : "";
     return {
         lifecycle: status.lifecycle,
         input: input.text, output: output.text, cost: price.text === "?" ? "$?" : price.text,
@@ -124,7 +129,8 @@ export function gauges(status, budget) {
         descendants: String(status.descendants.length),
         "descendants-label": `Descendant sessions: ${status.descendants.length}; active direct children: ${children}`,
         gated: String(gated), "gated-label": `Descendant sessions awaiting input: ${gated}`,
-        context: occupancy(budget?.contextTokens, budget?.contextCapacity),
+        context: ctxText,
+        "context-high": highContext,
         "context-label": `Current packet context: ${budget?.contextTokens ?? "unknown"} / ${budget?.contextCapacity ?? "unknown"} tokens`,
         inbox: String(status.inbox.length), "inbox-label": `Accepted messages not yet observed: ${status.inbox.length}`,
     };
@@ -143,6 +149,6 @@ export function workspaceIdentity({ name, projectLabel }, session) {
         workspaceName: name, workspacePath, sessionPath, projectLabel: namedFolder ? projectLabel : "",
         workspaceIcon: projectLabel !== null && !namedFolder ? "🗂️" : "☁️",
         workspaceIconLabel: projectLabel === null ? "Folderless workspace" : namedFolder ? "Workspace" : "Project workspace",
-        pageTitle: `${name}@${session} — Plurnk`,
+        pageTitle: `${name}#${session} — Plurnk`,
     };
 }

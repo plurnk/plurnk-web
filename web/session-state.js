@@ -19,14 +19,33 @@ export default function sessionState(element, main = $("#main")) {
     /** @type {ReturnType<typeof workspaceIdentity> | null} */
     let latestIdentity = null;
     const syncHeader = () => {
-        if (!latestIdentity || !main.isConnected) return;
+        if (!latestIdentity || !main.isConnected || element.hidden) return;
         the("page-title", latestIdentity.pageTitle);
-        const breadcrumb = $("#session-workspace");
-        if (breadcrumb) {
-            the(breadcrumb, {
-                "workspace-name": latestIdentity.workspaceName, "workspace-path": latestIdentity.workspacePath,
-                "workspace-icon": latestIdentity.workspaceIcon, "workspace-icon-label": latestIdentity.workspaceIconLabel,
+        const wsControl = $("#session-workspace");
+        if (wsControl) {
+            the(wsControl, {
+                "workspace-name": latestIdentity.workspaceName,
+                "workspace-path": latestIdentity.workspacePath,
+                "workspace-icon": latestIdentity.workspaceIcon,
+                "workspace-icon-label": latestIdentity.workspaceIconLabel,
             });
+        }
+        const sessionControl = $("#header-session");
+        if (sessionControl) {
+            the(sessionControl, "active-session-name", sessionName);
+        }
+        for (const el of $$('[data-text="active-session-name"]')) {
+            if (el.textContent !== sessionName) el.textContent = sessionName;
+        }
+        for (const input of $$('input[name="workspace"]')) {
+            if (input instanceof HTMLInputElement && input.type === "hidden") {
+                input.value = latestIdentity.workspaceName;
+            }
+        }
+        for (const input of $$('input[name="session"]')) {
+            if (input instanceof HTMLInputElement && input.type === "hidden") {
+                input.value = sessionName;
+            }
         }
     };
     /** @param {{plurnk?: Partial<import("@plurnk/plurnk-acp/client").AcpPlusState["plurnk"]> & {budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}, budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}} state

@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import * as oauth from "oauth4webapi";
-import { cookie, redirect, RequestError, privateHeaders, sameOriginFetch } from "./http.js";
+import { clearPlaceCookie, cookie, redirect, RequestError, privateHeaders, sameOriginFetch } from "./http.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
 import indexDocument from "./index-document.js";
 
@@ -120,18 +120,18 @@ export default class Session {
     }
 
     /** @param {SessionRequest} req */
-    #secure(req) { return this.#issuer(req).startsWith("https:"); }
+    secure(req) { return this.#issuer(req).startsWith("https:"); }
 
     /** @param {SessionRequest} req */
-    #session(req) { return `${this.#secure(req) ? HOST_ONLY : ""}${SESSION}`; }
+    #session(req) { return `${this.secure(req) ? HOST_ONLY : ""}${SESSION}`; }
 
     /** @param {SessionRequest} req @param {string} state */
-    #transaction(req, state) { return `${this.#secure(req) ? SECURE_ONLY : ""}${TRANSACTION}${state}`; }
+    #transaction(req, state) { return `${this.secure(req) ? SECURE_ONLY : ""}${TRANSACTION}${state}`; }
 
     /** @param {SessionRequest} req @param {string} name @param {string} value @param {string} path @param {number} ttl */
     #cookie(req, name, value, path, ttl) {
         return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.ceil(ttl))}`
-            + (this.#secure(req) ? "; Secure" : "");
+            + (this.secure(req) ? "; Secure" : "");
     }
 
     /** {§web-session} Where a browser starts sign-in: the issuer's own address, so its transaction and callback share one host.
@@ -146,10 +146,16 @@ export default class Session {
     async login(req, res) {
         const issuer = this.#issuer(req);
         const requested = new URL(req.url ?? "/", issuer).searchParams.get("return") ?? "/";
+        if (requested.startsWith("//") || !requested.startsWith("/")) throw new RequestError(400, "Invalid return page.");
         const directory = parseDirectory(requested);
-        const document = indexDocument(requested.split(/[?#]/u)[0]);
-        const target = ["/index.html", "/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
-            : directory === null ? null : directoryPath(directory);
+        const rawPathname = requested.split(/[?#]/u)[0];
+        const document = indexDocument(rawPathname);
+        const searchQuery = document === "/search/index.html" ? new URL(requested, "http://return.local").search : "";
+        const target = document === "/search/index.html" ? `/search/${searchQuery}`
+            : ["/index.html", "/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
+            : directory === null ? null
+            : directory.kind === "daemon" ? "/search/"
+            : directoryPath(directory);
         if (target === null) throw new RequestError(400, "Invalid return page.");
         if (this.admitted(req)) { redirect(res, target); return; }
         if (this.#limits.ttl === null) throw new RequestError(503, "Browser sign-in is unavailable because PLURNK_WEB_LOGIN_TTL_SEC is invalid.");
@@ -314,7 +320,7 @@ export default class Session {
         this.sameOriginForm(req);
         const claims = this.#claims(req);
         if (claims !== null) this.#credentials.revokeFamily(claims.family);
-        res.setHeader("set-cookie", this.#cookie(req, this.#session(req), "", "/", 0));
+        res.setHeader("set-cookie", [this.#cookie(req, this.#session(req), "", "/", 0), clearPlaceCookie(this.secure(req))]);
         redirect(res, "/");
     }
 

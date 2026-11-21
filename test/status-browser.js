@@ -13,7 +13,7 @@ const initial = {
     budget: { contextTokens: null, contextCapacity: null, curationWeight: null, curationBudget: null },
 };
 
-// {§web-session-status} {§web-session-identity} The production projection and templates, without a competing state reducer.
+// {§web-session-status} {§web-session-identity} Steady control bar, usage disclosure, and canonical #session navigation.
 export default async function verifyStatus(t) {
     const { server, url } = await conversationFixture(new URL("./status-entry.js", import.meta.url));
     try {
@@ -38,27 +38,22 @@ export default async function verifyStatus(t) {
                     await receive(initial);
                     const statusLine = page.locator("#session-status > [data-status-line]");
                     const draft = page.getByRole("textbox", { name: "Message", exact: true });
-                    assert.equal(await draft.getAttribute("placeholder"), "Message (/help · Shift+Tab YOLO)");
+                    assert.equal(await draft.getAttribute("placeholder"), "Message…");
                     const leave = () => page.locator("body > header > a").focus();
                     for (const width of [320, 1280]) {
                         await page.setViewportSize({ width, height: 700 });
-                        assert.equal(await statusLine.isVisible(), false, "idle, unfocused status is hidden");
-                        assert.equal(await statusLine.evaluate((element) => element.getBoundingClientRect().height), 0, "hidden status reserves no space");
-                        assert.equal(await draft.isVisible(), true, "hiding status never hides the composer");
-                        await draft.focus();
-                        assert.equal(await statusLine.isVisible(), true, "focusing the composer reveals status");
-                        await draft.press("Shift+Tab");
-                        assert.equal(await page.evaluate(() => document.activeElement.id), "session-effort");
-                        assert.equal(await statusLine.isVisible(), true, "keyboard movement into status retains it");
                         await leave();
-                        assert.equal(await statusLine.isVisible(), false, "leaving the footer hides idle status again");
+                        assert.equal(await statusLine.isVisible(), true, "once connected, steady status line remains visible without focus jump");
+                        const heightUnfocused = await statusLine.evaluate((element) => element.getBoundingClientRect().height);
+                        assert.ok(heightUnfocused > 0);
+                        await draft.focus();
+                        const heightFocused = await statusLine.evaluate((element) => element.getBoundingClientRect().height);
+                        assert.equal(heightFocused, heightUnfocused, "focusing the composer causes zero layout shift");
+                        await leave();
                     }
                     for (const lifecycle of ["idle", "completed", "cancelled", "failed", "queued", "running", "parked"]) {
                         await receive({ ...initial, plurnk: { ...initial.plurnk, status: { ...initial.plurnk.status, lifecycle } } });
-                        assert.equal(await statusLine.isVisible(), ["queued", "running", "parked"].includes(lifecycle), `${lifecycle}: only live work keeps unfocused status visible`);
-                        await draft.focus();
-                        assert.equal(await statusLine.isVisible(), true, `${lifecycle}: focus reveals the supplied status`);
-                        await leave();
+                        assert.equal(await statusLine.isVisible(), true, `${lifecycle}: steady status line stays visible across lifecycles`);
                     }
                     await receive(initial);
                     for (const connection of ["disconnected", "signed-out"]) {
@@ -79,11 +74,7 @@ export default async function verifyStatus(t) {
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "true"));
                     assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
-                    await leave();
-                    assert.equal(await statusLine.isVisible(), true, "active YOLO remains visible on unfocused idle sessions");
                     await approval.evaluate((element) => element.setAttribute("aria-pressed", "false"));
-                    assert.equal(await statusLine.isVisible(), false, "returning to Review hides unfocused idle status");
-                    await draft.focus();
                     for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         const appearance = await page.locator("#session-status > [data-status-line]").evaluate((element) => {
@@ -101,6 +92,7 @@ export default async function verifyStatus(t) {
                     for (const key of ["elapsed", "context", "descendants", "gated", "wait", "inbox", "preparation", "activity"]) {
                         assert.equal(await field(key).isVisible(), false, `${key} has no empty status placeholder`);
                     }
+                    assert.equal(await page.locator("#session-usage").evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false, "usage details start collapsed behind ⓘ");
                     assert.equal(await page.locator("#session-status dl, #session-status table, #session-accounting, #workspace-activity, #session-inbox").count(), 0);
                     assert.equal(await page.locator("#session-folder").isVisible(), false);
                     assert.equal(await page.locator("#session-workspace [role=img]").getAttribute("aria-label"), "Folderless workspace");
@@ -121,7 +113,7 @@ export default async function verifyStatus(t) {
                             { path: '<img src="/probe">', id: null, loopId: 3, lifecycle: "failed" }],
                         spend: { requests: 3, usage: null, knownUsage: { inputTokens: 999, outputTokens: 200, outputTokenDetails: { reasoningTokens: 100 } },
                             costUsd: null, knownCostUsd: "0.0000000123" } };
-                    active.budget = { contextTokens: 123, contextCapacity: 999, curationWeight: 432, curationBudget: 1000 };
+                    active.budget = { contextTokens: 800, contextCapacity: 1000, curationWeight: 432, curationBudget: 1000 };
                     await receive(active);
                     assert.equal(await value("model"), "local");
                     assert.equal(await value("effort"), "high");
@@ -130,10 +122,12 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#session-descendants > summary").getAttribute("aria-label"), "Descendant sessions: 4; active direct children: 2");
                     assert.equal(await value("gated"), "2");
                     assert.equal(await value("descendants"), "4");
-                    assert.equal(await value("context"), "12%/999");
+                    assert.equal(await value("context-high"), "80%/1k", "high context occupancy surfaces inline on ⓘ summary");
+                    await page.locator("#session-usage > summary").click();
+                    assert.equal(await value("context"), "80%/1k");
                     assert.doesNotMatch(await field("context").innerText(), /ctx/u);
                     assert.equal(await field("context").evaluate((element) => getComputedStyle(element, "::after").content), "none", "context has no decorative scroll");
-                    assert.equal(await field("context").getAttribute("aria-label"), "Current packet context: 123 / 999 tokens");
+                    assert.equal(await field("context").getAttribute("aria-label"), "Current packet context: 800 / 1000 tokens");
                     assert.equal(await field("curation").count(), 0, "no curation display even when the SDK supplies its budget");
                     assert.equal(await page.locator("#session-status").getAttribute("data-curation"), null);
                     assert.equal(await page.locator("#session-status").getAttribute("data-curation-label"), null);
@@ -142,25 +136,26 @@ export default async function verifyStatus(t) {
                     assert.equal(await field("cost").getAttribute("aria-label"), "Cumulative USD, session and descendants: unknown total; known subtotal 0.0000000123.");
                     assert.equal(await value("activity"), "indexing 65%", "display supplied progress, not a local ratio");
                     assert.equal(await value("inbox"), "2");
-                    assert.doesNotMatch(await page.locator("#session-status").innerHTML(), /message:\/\/user\/first|client-first|data-known-|data-usage-/u);
+                    assert.doesNotMatch(await page.locator("#session-status").innerHTML(), /message:\/\/user\/first|client-first|data-known-/u);
                     assert.match(await glyph("lifecycle"), /💤/u);
                     assert.equal(await glyph("model"), "none", "model has no decorative dice");
                     assert.equal(await page.locator("#session-status [aria-label='Session statistics'] > li:last-child").getAttribute("data-status-field"), "cost", "cost is last in document and accessibility order");
+                    await page.locator("#session-usage > summary").click();
                     for (const width of [320, 1280]) {
                         await page.setViewportSize({ width, height: 700 });
-                        assert.equal(await page.locator("#session-status > [data-status-line]").evaluate((element) => getComputedStyle(element).justifyContent), "center");
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     }
                     await page.setViewportSize({ width: 320, height: 700 });
+                    await page.locator("#session-usage > summary").click();
                     assert.match(await field("cost").ariaSnapshot(), /unknown total; known subtotal 0.0000000123/u);
+                    await page.locator("#session-usage > summary").click();
                     assert.equal(await page.locator("#session-status > [data-status-line] [aria-live], #session-status > [data-status-line] [role=status]").count(), 0, "ticking gauges do not announce every second");
                     assert.equal(await page.locator("#session-workspace [data-text=workspace-name]").textContent(), active.plurnk.workspace.name);
-                    assert.equal(await page.locator("#session-workspace a").getAttribute("href"), "/~/review%20%3Cscript%3E%26%40%25/");
                     assert.equal(await page.locator('#session-directory').count(), 0);
-                    assert.equal(await page.locator('nav[aria-label="breadcrumb"] [aria-current="page"]').textContent(), "user");
-                    assert.equal(await page.locator("#session-reconnect").getAttribute("action"), "/~/review%20%3Cscript%3E%26%40%25@user/");
-                    assert.equal(new URL(await page.locator("[data-sign-in]").getAttribute("href"), url).searchParams.get("return"), "/~/review%20%3Cscript%3E%26%40%25@user/");
-                    assert.equal(await page.title(), `${active.plurnk.workspace.name}@user — Plurnk`);
+                    assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), "user");
+                    assert.equal(await page.locator("#session-reconnect").getAttribute("action"), "/~/review%20%3Cscript%3E%26%40%25#user");
+                    assert.equal(new URL(await page.locator("[data-sign-in]").getAttribute("href"), url).searchParams.get("return"), "/~/review%20%3Cscript%3E%26%40%25#user");
+                    assert.equal(await page.title(), `${active.plurnk.workspace.name}#user — Plurnk`);
                     assert.equal(await page.locator("#session-folder").isVisible(), true);
                     assert.equal(await page.locator("#session-folder [data-text=project-label]").textContent(), "~/project");
                     assert.equal(await page.locator("#session-status").getAttribute("data-session-id"), "7#user");
@@ -173,7 +168,7 @@ export default async function verifyStatus(t) {
                     assert.deepEqual(await family.locator(":scope > ul > li > a").allTextContents(), ["child", "parallel", "finished"]);
                     assert.equal(await family.locator('[data-descendant-id="11"] > details > summary').textContent(), "Children: 1");
                     assert.equal(await family.locator('[data-descendant-id="12"] > a').getAttribute("href"),
-                        "/~/review%20%3Cscript%3E%26%40%25@grandchild/");
+                        "/~/review%20%3Cscript%3E%26%40%25#grandchild");
                     assert.equal(await family.locator('[data-descendant-id="12"] [data-text=descendant-gates]').textContent(), "2");
                     assert.equal(await family.locator('[data-descendant-id="14"] [data-text=descendant-lifecycle]').textContent(), "failed");
                     assert.equal(await family.locator('[data-descendant-id="14"] > details').count(), 0);
@@ -203,7 +198,7 @@ export default async function verifyStatus(t) {
                         "{§web-session-descendants} updating other descendants keeps this one's node and focus");
                     assert.equal(await family.locator('[data-descendant-id="11"] > details').evaluate((el) => el.open), true);
                     assert.equal(await family.locator('[data-descendant-id="13"] > details').evaluate((el) => el.open), false);
-                    assert.equal(await family.locator('[data-descendant-id="12"] > a').getAttribute("href"), "/~/renamed@grandchild/");
+                    assert.equal(await family.locator('[data-descendant-id="12"] > a').getAttribute("href"), "/~/renamed#grandchild");
                     assert.equal(await family.locator('[data-descendant-id="12"] [data-text=descendant-lifecycle]').textContent(), "completed");
                     assert.equal(await value("gated"), "1", "settlement changes supplied gate facts, not parent lifecycle");
                     assert.equal(await value("lifecycle"), "parked");
@@ -222,6 +217,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await value("effort"), "");
                     assert.equal(await page.locator("[data-text=wait]").getAttribute("datetime"), null);
                     assert.equal(await value("context"), "");
+                    assert.equal(await value("context-high"), "");
                     assert.equal(await value("activity"), "");
                     assert.equal(await value("preparation"), "");
                     assert.equal(await field("activity").isVisible(), false);
@@ -231,7 +227,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await family.isVisible(), false);
                     assert.equal(await family.evaluate((el) => el.open), true, "a census replacement preserves the containing disclosure");
                     assert.equal(await page.locator("#session-folder").isVisible(), false);
-                    assert.equal(await page.locator("#session-workspace a").getAttribute("href"), "/~/conversation/");
+                    assert.equal(await page.locator("#session-workspace [data-text=workspace-name]").textContent(), "conversation");
                     assert.equal(await page.locator("#session-status").getAttribute("data-connection"), "initial", "state projection does not own delivery or approval");
                     assert.equal(requests.length, requestCount, "projection and disclosure do not request more state or authored resources");
                     assert.equal(await page.locator("[data-messages] > li").count(), 0, "status and inbox are not conversation messages");
@@ -240,17 +236,14 @@ export default async function verifyStatus(t) {
                     await page.setViewportSize({ width: 640, height: 700 });
                     await receive(long);
                     const controlGroup = page.getByRole("list", { name: "Model controls", exact: true });
-                    const statistics = page.getByRole("list", { name: "Session statistics", exact: true });
-                    const controlBox = await controlGroup.boundingBox();
-                    const statsBox = await statistics.boundingBox();
-                    assert.ok(controlBox.y + controlBox.height <= statsBox.y, "a long non-alias model wraps above statistics as one control group");
+                    const telemetry = page.locator("#session-status [data-status-telemetry]");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     assert.deepEqual(await controlGroup.locator("button").evaluateAll((buttons) => buttons.map(({ id }) => id)), ["session-yolo", "session-model", "session-effort"]);
                     await page.setViewportSize({ width: 1440, height: 900 });
                     await receive(initial);
                     const compactControls = await controlGroup.boundingBox();
-                    const compactStats = await statistics.boundingBox();
-                    assert.ok(Math.abs(compactControls.y - compactStats.y) < 3, "short groups share a row when they fit");
+                    const compactTelemetry = await telemetry.boundingBox();
+                    assert.ok(Math.abs(compactControls.y - compactTelemetry.y) < 6, "controls and telemetry share a row when they fit");
                     checkBrowser();
                 } finally { await browser.close(); }
             });

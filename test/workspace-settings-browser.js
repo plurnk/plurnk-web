@@ -4,22 +4,31 @@ import { directoryPath } from "../src/directory-addresses.js";
 import SessionAgent from "../web/session-agent.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 import { launchBrowser } from "./engines.js";
-import { acquireSharedDaemon } from "./session-input.js";
+import { acquireSharedDaemon, onAcpSent } from "./session-input.js";
 
 /**
  * @param {string} base
- * @param {string} sessionId
+ * @param {string} [sessionId]
  */
 function createAgent(base, sessionId) {
-    return new SessionAgent({ url: new URL("/acp", base).href, sessionId, headers: {} });
+    return new SessionAgent({ url: new URL("/acp", base).href, ...(sessionId ? { sessionId } : {}), headers: {} });
 }
 
-// {§web-workspace-settings} End-to-end verification of workspace settings against a real packed daemon on zero-session Overview and live Session pages.
+// {§web-workspace-settings} End-to-end verification of workspace settings against a real packed daemon on zero-session workspace and live Session pages.
 export default async function verifyWorkspaceSettings({ t, withDaemon }) {
-    await t.test("{§web-workspace-settings} zero-session Overview and live Session tabs manage MCP, schedules, personas, and masked env with inline Problem recovery", { timeout: 60_000 }, async () => {
+    await t.test("{§web-workspace-settings} zero-session workspace and live Session tabs manage MCP, schedules, personas, and masked env with inline Problem recovery", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         model.reset();
         const workspace = `ws-settings-${crypto.randomUUID()}`;
+
+        // Create a zero-session workspace via workspace.env.list (creates workspace without creating a session)
+        const wsCreator = createAgent(base);
+        const createdWs = await wsCreator.send({
+            workspace,
+            action: { kind: "workspace.env.list", params: {} },
+        });
+        assert.equal(createdWs.result.ok, true, JSON.stringify(createdWs.result));
+        wsCreator.close();
 
         const browser = await launchBrowser(chromium);
         try {
@@ -28,27 +37,19 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             const page = await context.newPage();
             page.setDefaultTimeout(10_000);
 
-            // Create a brand-new folderless workspace via /workspaces/new (zero sessions exist!)
-            await page.goto(new URL("/~/", base).href);
-            await page.getByRole("button", { name: "New workspace", exact: true }).click();
-            const createWsDialog = page.locator("#dialog-workspace-create");
-            await createWsDialog.waitFor({ state: "visible" });
-            await createWsDialog.locator('input[name="name"]').fill(workspace);
-            await createWsDialog.getByRole("button", { name: "Confirm", exact: true }).click();
-            await page.waitForURL(new URL(directoryPath({ kind: "workspace", workspace }), base).href);
-
             /** @type {string[]} */
             const resumedSessions = [];
-            page.on("request", (req) => {
-                if (new URL(req.url()).pathname !== "/acp") return;
-                const body = req.postDataJSON();
+            onAcpSent(page, (body) => {
                 if (body?.method === "session/resume") {
                     resumedSessions.push(String(body.params?.sessionId ?? ""));
                 }
             });
 
-            // Open Workspace settings on zero-session Overview!
-            await page.locator("#workspace-tabs [data-workspace-settings]").click();
+            await page.goto(new URL(directoryPath({ kind: "workspace", workspace }), base).href);
+            assert.equal(await page.locator("#workspace-empty").count(), 1, "zero-session workspace renders #workspace-empty");
+
+            // Open Workspace settings from #session-workspace in header on zero-session workspace!
+            await page.locator("#session-workspace").click();
             const dialog = page.locator("#dialog-workspace-settings");
             await dialog.waitFor({ state: "visible" });
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
@@ -63,11 +64,11 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await page.waitForFunction(() => (document.querySelector("#dialog-workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("123-invalid"));
             assert.equal(await mcpPanel.getByRole("textbox", { name: "Server command", exact: true }).inputValue(), "echo", "daemon Problem preserves MCP form draft");
 
-            // 2. Personas: add an inline persona on 0-session Overview
+            // 2. Personas: add an inline persona on 0-session workspace
             await dialog.getByRole("button", { name: "Personas", exact: true }).click();
             const personasPanel = dialog.locator('[data-settings-panel="personas"]');
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
-            assert.equal(await personasPanel.locator("[data-session-persona-form]").isVisible(), false, "0-session Overview hides session persona selector");
+            assert.equal(await personasPanel.locator("[data-session-persona-form]").isVisible(), false, "0-session workspace hides session persona selector");
             await personasPanel.getByRole("textbox", { name: "Persona name", exact: true }).fill("reviewer");
             await personasPanel.getByRole("textbox", { name: "Persona description", exact: true }).fill("Strict code reviewer");
             await personasPanel.getByRole("textbox", { name: "Persona instructions", exact: true }).fill("Verify all edge cases before done.");
@@ -76,7 +77,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="personas"] [data-family-rows] tr').length === 1);
             assert.match(await personasPanel.locator("[data-family-rows] tr").first().textContent(), /reviewer[\s\S]*Strict code reviewer \[high\]/u);
 
-            // 3. Environment: set a masked workspace variable on 0-session Overview
+            // 3. Environment: set a masked workspace variable on 0-session workspace
             await dialog.getByRole("button", { name: "Environment", exact: true }).click();
             const envPanel = dialog.locator('[data-settings-panel="env"]');
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
@@ -90,7 +91,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             );
             assert.doesNotMatch(await envPanel.textContent(), /ultra-secret-overview-token/u);
 
-            assert.equal(resumedSessions.length, 0, "0-session Overview mutations never attach or create a session");
+            assert.equal(resumedSessions.length, 0, "0-session workspace mutations never attach or create a session");
             await dialog.getByRole("button", { name: "Close", exact: true }).click();
             await dialog.waitFor({ state: "hidden" });
 
@@ -119,7 +120,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await sessionPersonaForm.getByRole("button", { name: "Apply to session", exact: true }).click();
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings [data-text='ws-settings-message']")?.textContent === "Session persona: reviewer.");
 
-            // Schedule targeting @user now that session exists
+            // Schedule targeting #user now that session exists
             await dialog.getByRole("button", { name: "Schedule", exact: true }).click();
             const schedulePanel = dialog.locator('[data-settings-panel="schedule"]');
             await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);

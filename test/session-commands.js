@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { inputPage } from "./session-input.js";
+import { inputPage, onAcpSent } from "./session-input.js";
 import { httpFailure } from "./browser-diagnostics.js";
 
 function composer(page) {
@@ -30,13 +30,14 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             page.setDefaultTimeout(5000);
             const draft = page.getByRole("textbox", { name: "Message", exact: true });
             const statusLine = page.locator("#session-status > [data-status-line]");
-            assert.equal(await statusLine.isVisible(), false, "an idle attachment does not occupy status space");
+            assert.equal(await statusLine.isVisible(), true, "connected session exposes steady status bar without jump");
             await draft.fill("Keep this unsent draft.");
             assert.equal(await statusLine.isVisible(), true);
             await page.getByRole("button", { name: "Model", exact: true }).click();
             const models = page.locator("#session-model-settings");
             const selection = models.getByRole("combobox", { name: "Search Models", exact: true });
-            assert.equal(await statusLine.isVisible(), true, "inline settings retain the status controls");
+            assert.equal(await statusLine.isVisible(), true, "modal settings retain the steady status bar underneath");
+            await models.locator('[data-select-alias="browser"]').waitFor({ state: "visible" });
             await models.locator('datalist option[value="browser"]').waitFor({ state: "attached" });
             assert.equal(model.requests.length, 0);
             await selection.fill("browser");
@@ -55,8 +56,8 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await effort.isVisible(), false);
             assert.equal(await page.getByRole("button", { name: "Effort", exact: true }).evaluate((button) => document.activeElement === button), true);
             assert.equal(await statusLine.isVisible(), true);
-            await page.locator("body > header > a").focus();
-            assert.equal(await statusLine.isVisible(), false, "leaving the controls releases idle status space");
+            await page.locator("body > header a").first().focus();
+            assert.equal(await statusLine.isVisible(), true, "steady status bar stays visible without composer focus");
             assert.equal(await draft.inputValue(), "Keep this unsent draft.");
             assert.equal(await page.locator("#session-command-results > ul > li").count(), 0);
             assert.equal(model.requests.length, 0);
@@ -67,8 +68,8 @@ export default async function verifySessionCommands({ t, withDaemon }) {
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { send, field } = composer(page);
             await send("Lifecycle fixture: held-settings.");
-            await page.getByText("Considering held-settings.", { exact: true }).waitFor({ state: "attached" });
-            await page.locator("body > header > a").focus();
+            await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
+            await page.locator("body > header a").first().focus();
             assert.equal(await page.locator("#session-status > [data-status-line]").isVisible(), true, "live work remains observable without composer focus");
             await field.fill("An untouched next message.");
             await page.getByRole("button", { name: "Effort", exact: true }).click();
@@ -92,6 +93,8 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await field.inputValue(), "An untouched next message.");
             assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running");
             assert.equal(model.requests.length, 1);
+            await modelArticle.getByRole("button", { name: "Cancel", exact: true }).click();
+            await modelArticle.waitFor({ state: "hidden" });
             await page.getByRole("button", { name: "Stop", exact: true }).click();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.lifecycle === "cancelled");
             checkBrowser();
@@ -101,11 +104,9 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             const { field, rows, submit, send } = composer(page);
             const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
             const sent = [];
-            page.on("request", (request) => {
-                const body = request.postDataJSON();
+            onAcpSent(page, (body) => {
                 if (
-                    new URL(request.url()).pathname === "/acp"
-                    && body !== null
+                    body !== null
                     && body.method !== "initialize"
                     && body.params?._meta?.plurnk?.control !== false
                 ) {
@@ -120,7 +121,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await approval.click();
             assert.equal(await approval.getAttribute("aria-pressed"), "true");
             assert.equal(await approval.getAttribute("title"), "Auto Approval (Shift+Tab · /yolo)");
-            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "YOLO");
+            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Auto-approve");
             await approval.press("Space");
             assert.equal(await approval.getAttribute("aria-pressed"), "false");
             await approval.press("Enter");
@@ -171,7 +172,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await field.press("Shift+Tab");
             await page.getByText("Completed approval-shortcut.", { exact: true }).waitFor();
             assert.equal(await approval.getAttribute("aria-pressed"), "true");
-            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "YOLO");
+            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Auto-approve");
             assert.equal(await field.inputValue(), "Keep this draft during Shift+Tab.");
             assert.equal(sent.length, 4);
             assert.deepEqual(sent[3].result?.outcome, { outcome: "selected", optionId: "allow_once" });
@@ -183,11 +184,9 @@ export default async function verifySessionCommands({ t, withDaemon }) {
     await t.test("{§web-session-commands} slash commands remain outside model messages and preserve daemon truth", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const sent = [];
-            page.on("request", (request) => {
-                const body = request.postDataJSON();
+            onAcpSent(page, (body) => {
                 if (
-                    new URL(request.url()).pathname === "/acp"
-                    && body !== null
+                    body !== null
                     && body.method !== "initialize"
                     && body.params?._meta?.plurnk?.control !== false
                 ) {
@@ -331,7 +330,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await field.focus();
             assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "false", "reload restores configured client policy");
             await send("Lifecycle fixture: held-command.");
-            await page.getByText("Considering held-command.", { exact: true }).waitFor({ state: "attached" });
+            await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
             const applied = await submit("/effort low");
             assert.match(await applied.textContent(), /low \(explicit\)/u);
             const failed = await submit("/effort medium", "error");
@@ -407,7 +406,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { field, rows, send } = composer(page);
             await send("Lifecycle fixture: held-escape.");
-            await page.getByText("Considering held-escape.", { exact: true }).waitFor({ state: "attached" });
+            await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
             await field.fill("Draft preserved across Escape escalation.");
             await field.press("Escape");
             assert.notEqual(await page.evaluate(() => document.activeElement?.id), "session-message", "first Escape leaves composer");
@@ -425,10 +424,9 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await page.getByRole("button", { name: "Effort", exact: true }).click();
             const effortArticle = page.locator("#session-effort-settings");
             await effortArticle.locator('option[value="low"]').waitFor({ state: "attached" });
-            await page.locator("body > header > a").focus();
             await page.keyboard.press("Escape");
             await effortArticle.waitFor({ state: "hidden" });
-            assert.equal(await rows.count(), 1, "Escape closes open inline selector before dismissing command cards");
+            assert.equal(await rows.count(), 1, "Escape closes open modal selector before dismissing command cards");
             assert.equal(await page.locator("#session-status").getAttribute("data-lifecycle"), "running");
             await page.locator("body > header > a").focus();
             await page.keyboard.press("Escape");

@@ -19,6 +19,7 @@
         --plurnk-user-border: color-mix(in srgb, var(--otm-primary) 28%, var(--otm-muted-border-color));
         --plurnk-reply-surface: var(--otm-card-background-color);
         --plurnk-working-surface: color-mix(in srgb, var(--otm-color) 6%, var(--otm-card-background-color));
+        --plurnk-pill-surface: color-mix(in srgb, var(--otm-background-color) 68%, var(--otm-card-background-color));
         --plurnk-diff-add-surface: light-dark(#e4f6e2, #132d14);
         --plurnk-diff-add-color: light-dark(#0e5a00, #96ec82);
         --plurnk-diff-del-surface: light-dark(#fce6e6, #36171a);
@@ -28,13 +29,26 @@
         --plurnk-diff-meta-color: light-dark(#464e5c, #b4bdcd);
     }
 
+    article {
+        border: 0;
+    }
+
+    dialog {
+        transition: none;
+    }
+
+    body > header {
+        border-block-end: var(--otm-border-width) solid var(--otm-muted-border-color);
+    }
+
     body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
         color: var(--otm-muted-color);
     }
 
-    header nav button,
-    nav[aria-label="breadcrumb"] button,
+    header :where(#header-place button, nav button),
     #workspace-tabs > button,
+    #session-usage > summary,
+    #dialog-session-model > article > footer > button,
     #dialog-workspace-settings nav[aria-label="Settings sections"] button {
         --otm-primary-background: transparent;
         --otm-primary-hover-background: transparent;
@@ -87,12 +101,9 @@
         text-decoration: none;
     }
 
-    article {
-        border: 0;
-    }
-
-    dialog {
-        transition: none;
+    #search-workspaces > ul > li > article {
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
     }
 
     #main li > article > details {

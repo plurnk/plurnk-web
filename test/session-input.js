@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { once } from "node:events";
-import { createServer, request } from "node:http";
 import { after } from "node:test";
 import { chromium } from "playwright";
 import SessionAgent from "../web/session-agent.js";
@@ -82,6 +80,91 @@ export async function closeSharedDaemons() {
 
 after(closeSharedDaemons);
 
+const acpListeners = new WeakMap();
+const routedPages = new WeakSet();
+
+function emitAcpPayload(listeners, payload, transport) {
+    for (const line of String(payload).split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let parsed;
+        try { parsed = JSON.parse(trimmed); } catch { continue; }
+        for (const fn of listeners) fn(parsed, transport);
+    }
+}
+
+export function installAcpRecorder(page) {
+    let listeners = acpListeners.get(page);
+    if (listeners) return listeners;
+    listeners = new Set();
+    acpListeners.set(page, listeners);
+    const seenWs = new WeakSet();
+    page.on("websocket", (ws) => {
+        if (seenWs.has(ws)) return;
+        let pathname;
+        try { pathname = new URL(ws.url()).pathname; } catch { return; }
+        if (pathname !== "/acp") return;
+        seenWs.add(ws);
+        ws.on("framesent", ({ payload }) => {
+            if (routedPages.has(page)) return;
+            emitAcpPayload(listeners, payload, "ws");
+        });
+    });
+    page.on("request", (req) => {
+        let pathname;
+        try { pathname = new URL(req.url()).pathname; } catch { return; }
+        if (pathname !== "/acp" || req.method() !== "POST") return;
+        let body;
+        try { body = req.postDataJSON(); } catch { return; }
+        if (body !== null) {
+            for (const fn of listeners) fn(body, "http");
+        }
+    });
+    return listeners;
+}
+
+export function onAcpSent(page, listener) {
+    installAcpRecorder(page).add(listener);
+}
+
+export async function routeAcpWebSocket(page, handler) {
+    const listeners = installAcpRecorder(page);
+    await page.routeWebSocket("**/acp*", (ws) => {
+        routedPages.add(page);
+        let server = null;
+        let hasUserHandler = false;
+        const wrapped = new Proxy(ws, {
+            get(target, prop, receiver) {
+                if (prop === "connectToServer") {
+                    return (...args) => {
+                        server = target.connectToServer(...args);
+                        return server;
+                    };
+                }
+                if (prop === "onMessage") {
+                    return (fn) => {
+                        hasUserHandler = true;
+                        return target.onMessage((message) => {
+                            emitAcpPayload(listeners, message, "ws");
+                            return fn(message);
+                        });
+                    };
+                }
+                const val = Reflect.get(target, prop, receiver);
+                return typeof val === "function" ? val.bind(target) : val;
+            },
+        });
+        handler(wrapped);
+        if (!hasUserHandler && server !== null) {
+            const upstream = server;
+            ws.onMessage((message) => {
+                emitAcpPayload(listeners, message, "ws");
+                upstream.send(message);
+            });
+        }
+    });
+}
+
 export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser", contextOptions = {} } = {}) {
     const shared = await acquireSharedDaemon(withDaemon, authenticated, env);
     const { model, secret, base } = shared;
@@ -104,16 +187,17 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
                 ...contextOptions,
                 ...(hostProxy ? { proxy: { server: hostProxy.url } } : {}),
             });
+            context.on("page", installAcpRecorder);
             const checkBrowser = browserDiagnostics(context);
             const page = await context.newPage();
-            const address = new URL(`/~/${workspace}@user/`, base);
+            const address = new URL(`/~/${workspace}#user`, base);
             address.hostname = hostname;
             const path = address.href;
             await page.goto(path);
             if (authenticated) {
                 await page.getByLabel("Password", { exact: true }).fill("compose-password");
                 await page.getByRole("button", { name: "Continue", exact: true }).click();
-                await page.waitForURL(path);
+                await page.waitForURL((url) => new URL(url).pathname === `/~/${workspace}`);
                 if (hostname !== "127.0.0.1" && engine.name() === "firefox") {
                     checkBrowser([/^warning \/oauth\/authorize: .*Password fields present on an insecure \(http:\/\/\) page/u]);
                 }
@@ -145,9 +229,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await send.getAttribute("aria-keyshortcuts"), "Enter Control+Enter Meta+Enter");
         assert.equal(await send.getAttribute("title"), "Send (Enter · Ctrl+Enter)");
         const inputs = [];
-        page.on("request", (request) => {
-            const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
+        onAcpSent(page, (body) => {
+            if (body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 inputs.push(body);
             }
         });
@@ -182,6 +265,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await field.press("Meta+Enter");
         await page.locator('#session-command-results > ul > li header code').filter({ hasText: "/help" }).waitFor();
         assert.equal(inputs.length, 1, "Meta+Enter routes commands through the same non-model path");
+        await routeAcpWebSocket(page, (ws) => ws.close({ code: 3001, reason: "Unavailable" }));
         await page.route("**/acp", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
@@ -195,7 +279,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(inputs.length, 1, "keyboard submission cannot bypass unavailable delivery");
         assert.equal(model.requests.length, 1);
         checkBrowser([
-            httpFailure("/acp", 503),
+            networkFailure("/acp"),
         ]);
     }));
     await t.test("{§web-session-input} Apple keycap hints and coarse-pointer virtual keyboards preserve Enter newline while keeping Cmd/Ctrl+Enter submission", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
@@ -234,9 +318,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
                 { secure, uuid: secure ? "function" : "undefined" }, "exercise the browser's real origin rules, without changing its APIs");
             page.on("pageerror", (error) => t.diagnostic(error.message));
             const inputs = [];
-            page.on("request", (request) => {
-                const body = request.postDataJSON();
-                if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
+            onAcpSent(page, (body) => {
+                if (body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                     inputs.push(body);
                 }
             });
@@ -262,9 +345,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
     await t.test("{§web-session-input} native Send continues an observed session and Stop explicitly cancels its work", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         await page.setViewportSize({ width: 320, height: 700 });
         const inputs = [];
-        page.on("request", (request) => {
-            const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
+        onAcpSent(page, (body) => {
+            if (body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 inputs.push(body);
             }
         });
@@ -284,7 +366,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const body = "  Lifecycle fixture: held-input.\nKeep this exact text.  ";
         await text.fill(body);
         await send.click();
-        await page.getByText("Considering held-input.", { exact: true }).waitFor({ state: "attached" });
+        await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
         assert.equal(await text.inputValue(), "", "daemon admission clears the submitted draft");
         assert.equal(await send.isEnabled(), true, "a running session can receive a follow-up");
         assert.equal(await stop.isEnabled(), true);
@@ -298,8 +380,6 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
         assert.equal(await send.isEnabled(), true, "accepted input is acknowledged before the next model turn");
         assert.equal(model.requests.length, 1, "handoff neither restarts nor cancels the running inference");
-        assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false,
-            "{§web-session-reasoning} delivery handoff clears the old live preview");
         assert.equal(JSON.stringify(inputs[1].params.prompt).includes("Considering held-input."), false);
         assert.equal(await page.locator('#session-status [data-text="inbox"]').textContent(), "1");
         const accepted = await page.locator('[data-message-role="user"]').evaluateAll((nodes) => nodes.map((node) => node.dataset.messageId));
@@ -339,7 +419,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
 
         await text.fill("Lifecycle fixture: held-input-stop.");
         await send.click();
-        await page.getByText("Considering held-input-stop.", { exact: true }).waitFor({ state: "attached" });
+        await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
         await text.fill("Lifecycle fixture: cancelled-follow-up.");
         await send.click();
         await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
@@ -353,7 +433,6 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const action = inputs.at(-1);
         assert.equal(action.params.sessionId, inputs[0].params.sessionId);
         assert.equal(action.method, "session/cancel");
-        assert.equal(await page.locator("[data-reasoning-preview]").isVisible(), false);
         assert.equal(action.params.prompt, undefined, "cancellation does not resubmit conversation history");
         await text.fill("Lifecycle fixture: after-stop.");
         await send.click();
@@ -406,59 +485,24 @@ export default async function verifySessionInput({ t, withDaemon }) {
         checkBrowser();
     }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
-    await t.test("{§web-session-input} Send waits while an arriving interrupt is not yet presented", () => inputPage(withDaemon, async ({ page, base, workspace, model, checkBrowser }) => {
-        // The message Run's response stays open after its interrupt arrives, until the journey releases it.
+    await t.test("{§web-session-input} Send waits while an arriving interrupt is not yet presented", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const arrived = Promise.withResolvers();
         const release = Promise.withResolvers();
-        const proxy = createServer((req, res) => {
-            let reqBody = "";
-            req.on("data", (chunk) => { reqBody += chunk; });
-            req.on("end", () => {
-                const isSseGet = req.url === "/acp" && req.method === "GET" && Boolean(req.headers["acp-session-id"]);
-                const upstream = request(new URL(req.url, base), { method: req.method, headers: req.headers }, (response) => {
-                    res.writeHead(response.statusCode, response.headers);
-                    res.flushHeaders();
-                    if (!isSseGet) {
-                        response.pipe(res);
-                        return;
-                    }
-                    let buffer = "";
-                    let gateChain = Promise.resolve();
-                    response.setEncoding("utf8");
-                    response.on("data", (chunk) => {
-                        buffer += chunk;
-                        const parts = buffer.split("\n\n");
-                        buffer = parts.pop() ?? "";
-                        for (const frame of parts) {
-                            const payload = `${frame}\n\n`;
-                            if (/"method":"session\/request_permission"/u.test(frame)) {
-                                arrived.resolve();
-                                gateChain = gateChain.then(() => release.promise).then(() => {
-                                    if (!res.destroyed) res.write(payload);
-                                });
-                            } else {
-                                gateChain = gateChain.then(() => {
-                                    if (!res.destroyed) res.write(payload);
-                                });
-                            }
-                        }
-                    });
-                    response.on("end", () => {
-                        gateChain = gateChain.then(() => {
-                            if (buffer.length > 0 && !res.destroyed) res.write(buffer);
-                            if (!res.destroyed) res.end();
-                        });
-                    });
-                });
-                upstream.on("error", (error) => res.destroy(error));
-                upstream.end(reqBody);
+        let gateChain = Promise.resolve();
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            server.onMessage((message) => {
+                if (typeof message === "string" && message.includes('"method":"session/request_permission"')) {
+                    arrived.resolve();
+                    gateChain = gateChain.then(() => release.promise).then(() => ws.send(message));
+                } else {
+                    gateChain = gateChain.then(() => ws.send(message));
+                }
             });
         });
-        proxy.listen(0, "127.0.0.1");
-        await once(proxy, "listening");
         try {
             page.setDefaultTimeout(5000);
-            await page.goto(`http://127.0.0.1:${/** @type {import("node:net").AddressInfo} */ (proxy.address()).port}/~/${workspace}@user/`);
+            await page.reload();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             const text = page.getByRole("textbox", { name: "Message", exact: true });
             const send = page.getByRole("button", { name: "Send", exact: true });
@@ -466,7 +510,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
             await send.click();
             await arrived.promise;
             await text.fill("A follow-up.");
-            await page.waitForFunction(() => document.querySelector('button[aria-label="Send"]')?.disabled === true, null, { timeout: 2000 });
+            await page.waitForFunction(() => /** @type {HTMLButtonElement | null} */ (document.querySelector('button[aria-label="Send"]'))?.disabled === true, null, { timeout: 2000 });
             release.resolve();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
             assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true, "the review appears");
@@ -476,8 +520,6 @@ export default async function verifySessionInput({ t, withDaemon }) {
             checkBrowser();
         } finally {
             release.resolve();
-            proxy.closeAllConnections();
-            proxy.close();
         }
     }, { env: { PLURNK_WEB_YOLO: "0" } }));
 
@@ -517,22 +559,29 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const reached = Promise.withResolvers();
         const release = Promise.withResolvers();
         const requests = [];
-        page.on("request", (request) => {
-            const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
+        onAcpSent(page, (body) => {
+            if (body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 requests.push(body);
             }
         });
         let holdFirstPrompt = true;
-        await page.route("**/acp", async (route) => {
-            if (!holdFirstPrompt || route.request().postDataJSON()?.method !== "session/prompt") {
-                return route.continue();
-            }
-            holdFirstPrompt = false;
-            reached.resolve();
-            await release.promise;
-            await route.continue();
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                if (holdFirstPrompt && typeof message === "string") {
+                    const parsed = JSON.parse(message);
+                    if (parsed?.method === "session/prompt") {
+                        holdFirstPrompt = false;
+                        reached.resolve();
+                        void release.promise.then(() => server.send(message));
+                        return;
+                    }
+                }
+                server.send(message);
+            });
         });
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         const send = page.getByRole("button", { name: "Send", exact: true });
         try {
@@ -542,7 +591,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
             assert.equal(await send.isDisabled(), true);
             assert.equal(await text.inputValue(), "Lifecycle fixture: admission.");
             await text.fill("Newer typing must survive the acknowledgement.");
-            await page.locator("#session-compose").evaluate((form) => form.requestSubmit());
+            await page.locator("#session-compose").evaluate((form) => /** @type {HTMLFormElement} */ (form).requestSubmit());
             assert.equal(requests.length, 1, "a second submission cannot duplicate unconfirmed input");
         } finally { release.resolve(); }
         await page.getByText("Completed admission.", { exact: true }).waitFor();
@@ -554,10 +603,10 @@ export default async function verifySessionInput({ t, withDaemon }) {
         for (const departure of ["navigate", "close"]) {
             await text.fill(`Lifecycle fixture: held-${departure}-input.`);
             await send.click();
-            await page.getByText(`Considering held-${departure}-input.`, { exact: true }).waitFor({ state: "attached" });
+            await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
             assert.equal(await text.inputValue(), "");
             if (departure === "navigate") {
-                await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
+                await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
                 await page.waitForLoadState("load");
             } else await page.close();
             model.release(`held-${departure}-input`);
@@ -575,7 +624,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const arrivals = () => observer.locator('[data-message-role="user"]').evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
         const sent = requests.map(({ params }) => params.messageId);
         assert.deepEqual(await arrivals(), sent.slice(-2), "reattachment uses the daemon's two-loop window");
-        await observer.getByRole("button", { name: "Load previous loop" }).click();
+        await observer.getByRole("button", { name: "Load earlier messages" }).click();
         await observer.getByText("Completed admission.", { exact: true }).waitFor();
         assert.deepEqual(await arrivals(), sent, "every accepted message remains readable after both departures");
         checkBrowser();
@@ -583,20 +632,27 @@ export default async function verifySessionInput({ t, withDaemon }) {
 
     await t.test("{§web-session-input} refused delivery keeps its draft through explicit reconnection without retrying", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = [];
-        page.on("request", (request) => {
-            const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
+        onAcpSent(page, (body) => {
+            if (body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 requests.push(body);
             }
         });
         let abortNextPrompt = true;
-        await page.route("**/acp", (route) => {
-            if (abortNextPrompt && route.request().postDataJSON()?.method === "session/prompt") {
-                abortNextPrompt = false;
-                return route.abort("failed");
-            }
-            return route.continue();
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                if (abortNextPrompt && typeof message === "string" && JSON.parse(message)?.method === "session/prompt") {
+                    abortNextPrompt = false;
+                    ws.close({ code: 3001, reason: "ACP WebSocket disconnected." });
+                    server.close();
+                    return;
+                }
+                server.send(message);
+            });
         });
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+        requests.length = 0;
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         const send = page.getByRole("button", { name: "Send", exact: true });
         await text.fill("Lifecycle fixture: delivery-retry.");
@@ -605,7 +661,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await text.inputValue(), "Lifecycle fixture: delivery-retry.");
         assert.equal(await send.isDisabled(), true);
         assert.match(await page.locator('[aria-label="Message feedback"] [role="alert"]').innerText(), /delivery is unconfirmed/u);
-        assert.match(await page.locator('#session-connection').innerText(), /Failed to fetch|NetworkError|Load failed/u, "the transport failure remains visible beside the stale state");
+        assert.match(await page.locator('#session-connection').innerText(), /Failed to fetch|NetworkError|Load failed|ACP WebSocket disconnected/u, "the transport failure remains visible beside the stale state");
         assert.equal(model.requests.length, 0);
         assert.equal(requests.length, 1);
         checkBrowser([
@@ -650,13 +706,25 @@ export default async function verifySessionInput({ t, withDaemon }) {
     }
     await t.test("{§web-session-observer} an event the page cannot take in ends observation with its cause", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
         let injected = false;
-        await page.route("**/acp", (route) => {
-            if (injected || route.request().method() !== "GET" || !route.request().headers()["acp-session-id"]) return route.continue();
-            injected = true;
-            const sessionId = route.request().headers()["acp-session-id"];
-            return route.fulfill({ status: 200, contentType: "text/event-stream", body: [
-                { jsonrpc: "2.0", method: "session/update", params: { sessionId, update: { sessionUpdate: "notice", severity: "error", title: "Problem", _meta: { plurnk: { problem: { title: "Not a Problem" } } } } } },
-            ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                server.send(message);
+                if (!injected && typeof message === "string") {
+                    const parsed = JSON.parse(message);
+                    if (parsed?.method === "session/resume") {
+                        injected = true;
+                        ws.send(JSON.stringify({
+                            jsonrpc: "2.0",
+                            method: "session/update",
+                            params: {
+                                sessionId: parsed.params.sessionId,
+                                update: { sessionUpdate: "notice", severity: "error", title: "Problem", _meta: { plurnk: { problem: { title: "Not a Problem" } } } },
+                            },
+                        }));
+                    }
+                }
+            });
         });
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
@@ -693,36 +761,47 @@ export default async function verifySessionInput({ t, withDaemon }) {
     await t.test("{§web-session-input} delivery lost before acknowledgement is rediscovered without submitting again", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const requests = [];
         const truncated = Promise.withResolvers();
-        page.on("request", (request) => {
-            const body = request.postDataJSON();
-            if (new URL(request.url()).pathname === "/acp" && body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
+        onAcpSent(page, (body) => {
+            if (body !== null && body.method !== "initialize" && body.params?._meta?.plurnk?.control !== false) {
                 requests.push(body);
             }
         });
         let truncateNextPrompt = true;
-        await page.route("**/acp", async (route) => {
-            if (!truncateNextPrompt || route.request().postDataJSON()?.method !== "session/prompt") {
-                return route.continue();
-            }
-            truncateNextPrompt = false;
-            try {
-                const response = await route.fetch();
-                assert.equal(response.status(), 202);
-                const connId = route.request().headers()["acp-connection-id"];
-                if (connId) {
-                    await fetch(route.request().url(), { method: "DELETE", headers: { "acp-connection-id": connId } });
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            let promptId = null;
+            ws.onMessage((message) => {
+                server.send(message);
+                if (truncateNextPrompt && typeof message === "string") {
+                    const parsed = JSON.parse(message);
+                    if (parsed?.method === "session/prompt") {
+                        truncateNextPrompt = false;
+                        promptId = parsed.id;
+                        void (async () => {
+                            const deadline = Date.now() + 2000;
+                            while (model.requests.length === 0 && Date.now() < deadline) {
+                                await new Promise((r) => setTimeout(r, 10));
+                            }
+                            ws.close({ code: 1000 });
+                            server.close();
+                            truncated.resolve();
+                        })();
+                    }
                 }
-                const deadline = Date.now() + 2000;
-                while (model.requests.length === 0 && Date.now() < deadline) {
-                    await new Promise((r) => setTimeout(r, 10));
+            });
+            server.onMessage((message) => {
+                if (promptId !== null && typeof message === "string") {
+                    try {
+                        const parsed = JSON.parse(message);
+                        if (parsed?.id === promptId || parsed?.method === "session/update") return;
+                    } catch { /* ignore */ }
                 }
-                await route.fulfill({ response });
-                truncated.resolve();
-            } catch (error) {
-                await route.abort();
-                truncated.reject(error);
-            }
+                ws.send(message);
+            });
         });
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+        requests.length = 0;
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         await text.fill("Lifecycle fixture: lost-acknowledgement.");
         await Promise.all([page.getByRole("button", { name: "Send", exact: true }).click(), truncated.promise]);
@@ -745,7 +824,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const send = page.getByRole("button", { name: "Send", exact: true });
         await text.fill("Lifecycle fixture: held-unobserved.");
         await send.click();
-        await page.getByText("Considering held-unobserved.", { exact: true }).waitFor({ state: "attached" });
+        await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
         await text.fill("Lifecycle fixture: unobserved-follow-up.");
         await send.click();
         await page.waitForFunction(() => /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"))?.value === "", undefined, { timeout: 1000 });
@@ -773,7 +852,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         const text = page.getByRole("textbox", { name: "Message", exact: true });
         await text.fill("Lifecycle fixture: held-stop-failure.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await page.getByText("Considering held-stop-failure.", { exact: true }).waitFor({ state: "attached" });
+        await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
         await text.fill("Keep my next message.");
         const response = Promise.withResolvers();
         let abortNextCancel = true;
@@ -823,19 +902,37 @@ export default async function verifySessionInput({ t, withDaemon }) {
         checkBrowser();
     }));
     await t.test("{§web-session-observer} a refused observation shows the daemon's Problem, not a transport rendering of it", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
-        await page.route("**/acp", (route) => route.fulfill({ status: 409, contentType: "application/problem+json", body: JSON.stringify({
-            type: "https://problems.plurnk.xyz/fixture/observation-refused", title: "Conflict", status: 409, detail: "The fixture refused observation." }) }), { times: 1 });
+        let refusedOnce = false;
+        const problem = { type: "https://problems.plurnk.xyz/fixture/observation-refused", title: "Conflict", status: 409, detail: "The fixture refused observation." };
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                if (!refusedOnce && typeof message === "string") {
+                    const parsed = JSON.parse(message);
+                    if (parsed?.method === "session/resume") {
+                        refusedOnce = true;
+                        ws.send(JSON.stringify({
+                            jsonrpc: "2.0",
+                            id: parsed.id,
+                            error: { code: -32000, message: problem.detail, data: { plurnk: { problem } } },
+                        }));
+                        return;
+                    }
+                }
+                server.send(message);
+            });
+        });
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
         const notice = await page.locator("#session-connection").innerText();
         assert.match(notice, /The fixture refused observation\./u);
         assert.doesNotMatch(notice, /HTTP 409|"type"/u);
-        checkBrowser([httpFailure("/acp", 409)]);
+        checkBrowser();
     }));
     await t.test("{§web-session-input} Stop interrupted by leaving the page says so on return", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: held-departure.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await page.getByText("Considering held-departure.", { exact: true }).waitFor({ state: "attached" });
+        await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
         const answered = Promise.withResolvers();
         let holdCancel = true;
         await page.route("**/acp", async (route) => {
@@ -914,8 +1011,8 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(entryTargets[0].hasBearer, true);
         assert.match(entryTargets[0].target ?? "", /^session:\/\/user\/attachments\/[0-9a-f]+\/\S*pixel\.png$/u);
 
-        const loop2Ops = page.locator('[data-loop-seq="2"] [data-operations] > details');
-        assert.equal(await loop2Ops.evaluate((el) => el.open), false);
+        const loop2Ops = page.locator('[data-loop-seq="2"] [data-prompt-work]');
+        assert.equal(await loop2Ops.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
         await loop2Ops.locator(":scope > summary").click();
         const readCall = loop2Ops.locator('[data-plurnk-type="read"]');
         assert.equal(await readCall.locator("details").evaluate((el) => el.open), false);

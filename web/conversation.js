@@ -8,7 +8,6 @@ import {
     mountRasterImage,
     rasterMimeForFilename,
 } from "./inline-images.js";
-import reasoningCoordinate from "./reasoning-coordinate.js";
 import card, { nameCard } from "./card.js";
 import operationSummary, { GLYPH_OPS, argumentsOf, bodyOf, receiptOf, record } from "./operation-summary.js";
 
@@ -33,6 +32,7 @@ import operationSummary, { GLYPH_OPS, argumentsOf, bodyOf, receiptOf, record } f
  *   conversational: boolean,
  *   loopSeq: number | null,
  *   loopId: number | null,
+ *   workItems: PreparedEntry[],
  *   nestedReplies: PreparedEntry[],
  * }} PreparedEntry
  */
@@ -124,7 +124,7 @@ function repliedAddresses(item) {
 /** @param {PreparedEntry} item */
 function tallyBucket(item) {
     if (item.message.role === "reasoning") {
-        return { key: "reasoning", tally: "reasoning", heading: "", label: "Reasoning" };
+        return { key: "reasoning", tally: "reasoning", heading: "", label: "Thinking" };
     }
     const type = typeof item.op === "string" ? item.op : (item.call?.name ?? item.message.role);
     const showHeading = !GLYPH_OPS.has(type);
@@ -133,6 +133,24 @@ function tallyBucket(item) {
         tally: type,
         heading: showHeading ? `${type} ` : "",
         label: type,
+    };
+}
+
+/** @param {readonly PreparedEntry[]} items */
+function isWorkRunning(items) {
+    return items.some((item) =>
+        (item.message.role === "reasoning" && item.facts?.streaming === true)
+        || Boolean(item.call && (item.call.status === "in_progress" || item.call.status === "pending")));
+}
+
+/** @param {Record<string, unknown> | null} facts */
+function formatReasoningHeading(facts) {
+    const streaming = facts?.streaming === true;
+    const session = typeof facts?.sessionName === "string" && facts.sessionName ? `#${facts.sessionName}` : "";
+    const coordMatch = typeof facts?.coordinate === "string" ? /^(\d+)\/(\d+)$/u.exec(facts.coordinate) : null;
+    return {
+        text: streaming ? "Thinking…" : "Thinking",
+        title: [session, coordMatch ? `Loop ${coordMatch[1]} · Turn ${coordMatch[2]}` : ""].filter(Boolean).join(" · "),
     };
 }
 
@@ -382,11 +400,52 @@ export default function conversation(root, readBody) {
         painted.set(outlet, revision);
     }
 
+    /** @param {Element} workDetails @param {PreparedEntry[]} items @param {Map<string, HTMLElement>} rows */
+    function renderWorkDisclosure(workDetails, items, rows) {
+        /** @type {Map<string, ReturnType<typeof tallyBucket> & { count: number }>} */
+        const buckets = new Map();
+        for (const item of items) {
+            const bucket = tallyBucket(item);
+            const existing = buckets.get(bucket.key);
+            if (existing) existing.count += 1;
+            else buckets.set(bucket.key, { ...bucket, count: 1 });
+        }
+        const bucketList = [...buckets.values()];
+        the(workDetails, {
+            "work-running": isWorkRunning(items) ? "true" : null,
+            "operations-label": bucketList.map((b) => `${b.label} ${b.count}`).join(" · "),
+        });
+        const pills = $(workDetails, ":scope > summary > [data-prompt-pills]");
+        if (pills) {
+            const revision = JSON.stringify(bucketList);
+            if (painted.get(pills) !== revision) {
+                pills.replaceChildren();
+                for (const b of bucketList) {
+                    const tally = $.clone(pills, "#operation-tally");
+                    the(tally, { "operation-tally": b.tally });
+                    const heading = $(tally, '[data-plurnk-field="heading"]');
+                    if (heading) heading.textContent = b.heading;
+                    const count = $(tally, '[data-plurnk-field="count"]');
+                    if (count) count.textContent = String(b.count);
+                }
+                painted.set(pills, revision);
+            }
+        }
+        const workList = $(workDetails, ":scope > [data-work-items]");
+        if (!(workList instanceof HTMLUListElement)) throw new Error("Prompt work disclosure has no item list.");
+        /** @type {Element | null} */
+        let prevOp = null;
+        for (const opItem of items) {
+            const opRow = renderEntry(opItem, rows);
+            prevOp = placeChild(workList, opRow, prevOp);
+        }
+    }
+
     /** @param {PreparedEntry} item @param {Map<string, HTMLElement>} rows */
     function renderEntry(item, rows) {
         const {
             key, message, call, answered, operation, args,
-            facts, answeredFacts, op, ownResult, receipt, operationName, summarized, error, conversational,
+            facts, answeredFacts, op, ownResult, receipt, operationName, summarized, error, conversational, loopSeq,
         } = item;
         let row = rows.get(key);
         if (row && row.dataset.messageRole !== message.role) {
@@ -398,7 +457,8 @@ export default function conversation(root, readBody) {
             if (!(element instanceof HTMLElement)) throw new Error("Conversation template must contain an HTML element.");
             row = element;
         }
-        const labels = { user: "User", assistant: "Assistant", reasoning: "Reasoning", tool: "Result", activity: "Activity", system: "System", developer: "Developer" };
+        const reasoning = message.role === "reasoning" ? formatReasoningHeading(facts) : null;
+        const labels = { user: "User", assistant: "Assistant", reasoning: reasoning?.text ?? "Thinking", tool: "Result", activity: "Activity", system: "System", developer: "Developer" };
         const label = call ? call.name
             : summarized ? operationName
             : message.role === "tool" ? `Result · ${answered?.name ?? message.toolCallId}`
@@ -413,6 +473,7 @@ export default function conversation(root, readBody) {
             "message-error": error ? true : null,
             "tool-call-id": message.role === "tool" ? message.toolCallId : null,
             "call-id": call?.toolCallId ?? null,
+            "loop-seq": loopSeq ?? 1,
             "plurnk-type": typeof op === "string" ? op : null,
             "plurnk-session": typeof facts?.sessionId === "number" ? facts.sessionId : null,
             "plurnk-status": typeof receipt?.status === "number" ? receipt.status : typeof facts?.status === "number" ? facts.status : null,
@@ -457,18 +518,36 @@ export default function conversation(root, readBody) {
             painted.delete(frame.header);
             operationSummary(frame.header, operationName, args, receipt, facts, error);
         } else {
-            const headerCoordinate = message.role === "reasoning" ? reasoningCoordinate(message._meta?.plurnk) : "";
-            const headerRevision = `${headerCoordinate}\n${error}`;
+            const headerRevision = `${reasoning?.text ?? ""}\n${reasoning?.title ?? ""}\n${error}`;
             if (painted.get(frame.header) !== headerRevision) {
                 frame.header.replaceChildren();
-                if (message.role === "reasoning") $.clone(frame.header, "#operation-header").textContent = headerCoordinate;
+                if (reasoning) {
+                    $.clone(frame.header, "#operation-header").textContent = reasoning.text;
+                    if (reasoning.title) frame.header.setAttribute("title", reasoning.title);
+                    else frame.header.removeAttribute("title");
+                }
                 if (error) $.clone(frame.header, "#operation-outcome").textContent = error;
                 painted.set(frame.header, headerRevision);
             }
             if (frame.header.tagName === "HEADER" && !frame.header.hasChildNodes()) frame.header.remove();
         }
         if (frame.header.isConnected) nameCard(frame.header);
+
         const article = $(row, ":scope > article");
+        let workDetails = $(row, ":scope > [data-prompt-work]");
+        if (item.workItems.length > 0) {
+            if (!workDetails) {
+                const cloned = $.clone(row, "#prompt-work", { position: "afterbegin" });
+                if (!(cloned instanceof HTMLElement)) throw new Error("Prompt work template must contain an HTML element.");
+                workDetails = cloned;
+            } else if (row.firstElementChild !== workDetails) {
+                row.prepend(workDetails);
+            }
+            renderWorkDisclosure(workDetails, item.workItems, rows);
+        } else if (workDetails) {
+            workDetails.remove();
+        }
+
         let repliesList = article ? $(article, ":scope > [data-prompt-replies]") : null;
         if (item.nestedReplies.length > 0 && article) {
             repliesList ??= $.clone(article, "#prompt-replies");
@@ -482,38 +561,6 @@ export default function conversation(root, readBody) {
             repliesList.remove();
         }
         return row;
-    }
-
-    /** @param {HTMLElement} opsRow @param {PreparedEntry[]} items */
-    function renderOperationsSummary(opsRow, items) {
-        /** @type {Map<string, ReturnType<typeof tallyBucket> & { count: number }>} */
-        const buckets = new Map();
-        for (const item of items) {
-            const bucket = tallyBucket(item);
-            const existing = buckets.get(bucket.key);
-            if (existing) existing.count += 1;
-            else buckets.set(bucket.key, { ...bucket, count: 1 });
-        }
-        const list = [...buckets.values()];
-        the(opsRow, {
-            operations: items[0].key,
-            "operations-label": list.map((b) => `${b.label} ${b.count}`).join(" · "),
-        });
-        const line = $(opsRow, ":scope > details > summary > span");
-        if (!line) return;
-        const revision = JSON.stringify(list);
-        if (painted.get(line) === revision) return;
-        line.replaceChildren();
-        for (const [index, b] of list.entries()) {
-            if (index > 0) line.append(" · ");
-            const tally = $.clone(line, "#operation-tally");
-            the(tally, { "operation-tally": b.tally });
-            const heading = $(tally, '[data-plurnk-field="heading"]');
-            if (heading) heading.textContent = b.heading;
-            const count = $(tally, '[data-plurnk-field="count"]');
-            if (count) count.textContent = String(b.count);
-        }
-        painted.set(line, revision);
     }
 
     /** @param {readonly Readonly<Message>[]} messages @param {ReadonlySet<string>} [gapStarts] */
@@ -532,8 +579,15 @@ export default function conversation(root, readBody) {
         /** @type {Entry[]} */
         const entries = messages.flatMap((message) => {
             if (folded.has(message.id)) return [];
-            // {§web-session-reasoning} An empty live reasoning message is not a transcript body.
-            if (message.role === "reasoning" && !message.content && message._meta?.plurnk?.body === undefined) return [];
+            // {§web-session-reasoning} Empty reasoning with neither a body reference nor active streaming is omitted.
+            if (
+                message.role === "reasoning"
+                && !message.content
+                && message._meta?.plurnk?.body === undefined
+                && message._meta?.plurnk?.streaming !== true
+            ) {
+                return [];
+            }
             const operations = message.role === "assistant" ? message.toolCalls ?? [] : [];
             const hasContent = Array.isArray(message.content) ? message.content.length > 0 : Boolean(message.content);
             /** @type {Entry[]} */
@@ -570,6 +624,7 @@ export default function conversation(root, readBody) {
                 key, message, call, answered, operation, args,
                 facts, answeredFacts, op, ownResult, receipt, operationName,
                 summarized, error, conversational, loopSeq, loopId,
+                workItems: [],
                 nestedReplies: [],
             };
         });
@@ -602,27 +657,9 @@ export default function conversation(root, readBody) {
             loops.set(seq, group);
         }
 
-        const existingLoops = new Map(Array.from(list.querySelectorAll(":scope > [data-loop-seq]"), (child) => {
-            const row = /** @type {HTMLElement} */ (child);
-            return [Number(row.dataset.loopSeq), row];
-        }));
-        for (const [seq, loopRow] of existingLoops) {
-            if (!loops.has(seq)) loopRow.remove();
-        }
-
-        /** @type {Element | null} */
-        let previousLoop = null;
+        /** @type {({ kind: "entry", item: PreparedEntry } | { kind: "operations", items: PreparedEntry[], loopSeq: number })[]} */
+        const topBlocks = [];
         for (const [seq, loopItems] of loops) {
-            let loopRow = existingLoops.get(seq);
-            if (!loopRow) {
-                const cloned = $.clone(list, "#conversation-loop");
-                if (!(cloned instanceof HTMLElement)) throw new Error("Loop template must contain an HTML element.");
-                loopRow = cloned;
-            }
-            the(loopRow, { "loop-seq": seq });
-            const loopList = $(loopRow, ":scope > details > ul");
-            if (!(loopList instanceof HTMLUListElement)) throw new Error("Loop disclosure has no list.");
-
             /** @type {Set<string> | null} */
             let openingAddresses = null;
             /** @type {{ prompt: PreparedEntry, addresses: Set<string> }[]} */
@@ -646,55 +683,57 @@ export default function conversation(root, readBody) {
                 }
             }
 
-            /** @type {({ kind: "entry", item: PreparedEntry } | { kind: "operations", items: PreparedEntry[] })[]} */
-            const blocks = [];
+            /** @type {PreparedEntry | null} */
+            let activePrompt = null;
             for (const item of loopItems) {
                 if (nestedSet.has(item)) continue;
                 if (item.conversational) {
-                    blocks.push({ kind: "entry", item });
+                    if (item.message.role === "user" && !item.call) {
+                        activePrompt = item;
+                    }
+                    topBlocks.push({ kind: "entry", item });
+                } else if (activePrompt !== null) {
+                    activePrompt.workItems.push(item);
                 } else {
-                    const last = blocks.at(-1);
-                    if (last?.kind === "operations") last.items.push(item);
-                    else blocks.push({ kind: "operations", items: [item] });
+                    const last = topBlocks.at(-1);
+                    if (last?.kind === "operations" && last.loopSeq === seq) {
+                        last.items.push(item);
+                    } else {
+                        topBlocks.push({ kind: "operations", items: [item], loopSeq: seq });
+                    }
                 }
             }
+        }
 
-            const existingOps = Array.from(loopList.querySelectorAll(":scope > [data-operations]"), (el) => /** @type {HTMLElement} */ (el));
-            const usedOps = new Set();
-            /** @type {Element | null} */
-            let prevBlock = null;
-            for (const block of blocks) {
-                if (block.kind === "entry") {
-                    const row = renderEntry(block.item, rows);
-                    prevBlock = placeChild(loopList, row, prevBlock);
-                    continue;
-                }
-                const firstKey = block.items[0].key;
-                const memberRows = new Set(block.items.map(({ key }) => rows.get(key)).filter(Boolean));
-                let opsRow = existingOps.find((el) => !usedOps.has(el) && el.dataset.operations === firstKey)
-                    ?? existingOps.find((el) => !usedOps.has(el) && Array.from(memberRows).some((r) => r && el.contains(r)));
-                if (!opsRow) {
-                    const cloned = $.clone(loopList, "#conversation-operations");
-                    if (!(cloned instanceof HTMLElement)) throw new Error("Operations template must contain an HTML element.");
-                    opsRow = cloned;
-                }
-                usedOps.add(opsRow);
-                renderOperationsSummary(opsRow, block.items);
-                const opsList = $(opsRow, ":scope > details > ul");
-                if (!(opsList instanceof HTMLUListElement)) throw new Error("Operations disclosure has no list.");
-                /** @type {Element | null} */
-                let prevOp = null;
-                for (const opItem of block.items) {
-                    const row = renderEntry(opItem, rows);
-                    prevOp = placeChild(opsList, row, prevOp);
-                }
-                prevBlock = placeChild(loopList, opsRow, prevBlock);
+        const existingOps = Array.from(list.querySelectorAll(":scope > [data-operations]"), (el) => /** @type {HTMLElement} */ (el));
+        const usedOps = new Set();
+        const skipBoundary = (/** @type {Element} */ node) => node.hasAttribute("data-history-boundary");
+        /** @type {Element | null} */
+        let prevTop = null;
+        for (const block of topBlocks) {
+            if (block.kind === "entry") {
+                const row = renderEntry(block.item, rows);
+                prevTop = placeChild(list, row, prevTop, skipBoundary);
+                continue;
             }
-            for (const opsRow of existingOps) {
-                if (!usedOps.has(opsRow)) opsRow.remove();
+            const firstKey = block.items[0].key;
+            const memberRows = new Set(block.items.map(({ key }) => rows.get(key)).filter(Boolean));
+            let opsRow = existingOps.find((el) => !usedOps.has(el) && el.dataset.operations === firstKey)
+                ?? existingOps.find((el) => !usedOps.has(el) && Array.from(memberRows).some((r) => r && el.contains(r)));
+            if (!opsRow) {
+                const cloned = $.clone(list, "#conversation-operations");
+                if (!(cloned instanceof HTMLElement)) throw new Error("Operations template must contain an HTML element.");
+                opsRow = cloned;
             }
-
-            previousLoop = placeChild(list, loopRow, previousLoop, (node) => !node.hasAttribute("data-loop-seq"));
+            usedOps.add(opsRow);
+            the(opsRow, { operations: firstKey, "loop-seq": block.loopSeq });
+            const workDetails = $(opsRow, ":scope > [data-prompt-work]");
+            if (!(workDetails instanceof HTMLElement)) throw new Error("Operations disclosure is missing.");
+            renderWorkDisclosure(workDetails, block.items, rows);
+            prevTop = placeChild(list, opsRow, prevTop, skipBoundary);
+        }
+        for (const opsRow of existingOps) {
+            if (!usedOps.has(opsRow)) opsRow.remove();
         }
 
         reference.prune();

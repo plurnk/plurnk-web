@@ -60,18 +60,28 @@ function fieldsOf(op, args) {
     const rawBody = bodyOf(args, op);
     const bodyArgs = rawBody ? argumentsOf(rawBody) : record(args?.body);
     const keys = bodyArgs ? Object.keys(bodyArgs) : [];
-    return keys.length ? `{${keys.join(",")}}` : "";
+    return keys.length ? keys.join(", ") : "";
 }
 
-/** @param {RecordValue | null} selection @param {unknown} address @param {string} [fieldsToken] @returns {Field[]} */
-function operand(selection, address, fieldsToken = "") {
+/** @param {string} op @param {readonly unknown[]} marks @returns {string} */
+function formatMarks(op, marks) {
+    if (op === "wait" && marks.length === 1) return `${marks[0]}s`;
+    const formatBound = (/** @type {unknown} */ m) => m === -1 ? "end" : String(m);
+    if (marks.length === 1) return `L${formatBound(marks[0])}`;
+    if (marks.length === 2 && marks[0] === marks[1]) return `L${formatBound(marks[0])}`;
+    if (marks.length === 2) return `L${formatBound(marks[0])}–${formatBound(marks[1])}`;
+    return `L${marks.map(formatBound).join(",")}`;
+}
+
+/** @param {string} op @param {RecordValue | null} selection @param {unknown} address @param {string} [fieldsToken] @returns {Field[]} */
+function operand(op, selection, address, fieldsToken = "") {
     const path = textOf(record(selection?.target)?.raw) || textOf(address);
     const marks = record(selection?.lineMarker)?.marks;
     const pattern = textOf(record(selection?.matcher)?.raw);
     /** @type {Field[]} */
     const fields = [];
-    if (path) fields.push(["path", `(${path})`]);
-    if (Array.isArray(marks) && marks.length) fields.push(["scope", `<${marks.join(",")}>`]);
+    if (path) fields.push(["path", path]);
+    if (Array.isArray(marks) && marks.length) fields.push(["scope", formatMarks(op, marks)]);
     if (pattern) fields.push(["pattern", pattern]);
     if (fieldsToken) fields.push(["fields", fieldsToken]);
     return fields;
@@ -85,6 +95,13 @@ function countOf(op, receipt) {
     const returned = range?.returned;
     if (Array.isArray(returned) && returned.length === 2 && returned.every(Number.isSafeInteger)) return Math.max(0, returned[1] - returned[0] + 1);
     return op === "find" && typeof range?.total === "number" ? range.total : null;
+}
+
+/** @param {string} op @param {number} count @returns {string} */
+function formatCount(op, count) {
+    if (op === "read") return `${count} ${count === 1 ? "line" : "lines"}`;
+    if (op === "find") return `${count} ${count === 1 ? "match" : "matches"}`;
+    return String(count);
 }
 
 /** @param {RecordValue | null} receipt @param {unknown} status @param {string} error */
@@ -102,7 +119,7 @@ function outcomeOf(receipt, status, error) {
 /** @param {Element} outlet @param {Field[]} fields */
 function appendFields(outlet, fields) {
     for (const [kind, text] of fields) {
-        if (outlet.hasChildNodes()) outlet.append(" ");
+        if (outlet.hasChildNodes()) outlet.append(" · ");
         const field = $.clone(outlet, "#operation-field");
         the(field, "plurnk-field", kind);
         field.textContent = text;
@@ -132,11 +149,11 @@ export default function operationSummary(summary, name, args, receipt, facts, er
     if (aside) heading.push(["aside", aside]);
     const paired = record(args?.source) || record(args?.destination);
     const operands = paired
-        ? [operand(record(args?.source), null), operand(record(args?.destination), null)]
-        : [operand(args, receipt?.path ?? facts?.address, fieldsOf(op, args))];
+        ? [operand(op, record(args?.source), null), operand(op, record(args?.destination), null)]
+        : [operand(op, args, receipt?.path ?? facts?.address, fieldsOf(op, args))];
     /** @type {Field[]} */
     const result = [];
-    if (count !== null) result.push(["count", `{${count}}`]);
+    if (count !== null) result.push(["count", formatCount(op, count)]);
 
     let header = $(summary, ':scope > [data-plurnk-field="heading"]');
     header ??= $.clone(summary, "#operation-header", { position: "afterbegin" });
@@ -156,7 +173,7 @@ export default function operationSummary(summary, name, args, receipt, facts, er
             details.replaceChildren();
             for (const fields of operands) {
                 if (!fields.length) continue;
-                if (details.hasChildNodes()) details.append(" ");
+                if (details.hasChildNodes()) details.append(" → ");
                 appendFields($.clone(details, "#operation-operand"), fields);
             }
             appendFields(details, result);

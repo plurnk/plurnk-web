@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import SessionAgent from "../web/session-agent.js";
-import { inputPage } from "./session-input.js";
+import { inputPage, onAcpSent, routeAcpWebSocket } from "./session-input.js";
 import { answerSchema, exactAnswer } from "./question-fixture.js";
 import startMcp from "./mcp-fixture.js";
 import { inspectResult, observeMessages } from "./result-body.js";
@@ -13,11 +13,10 @@ const cancel = (page) => review(page).getByRole("checkbox", { name: "Cancel this
 
 function requestsFrom(page) {
     const requests = [];
-    page.on("request", (request) => {
-        const body = request.postDataJSON();
+    onAcpSent(page, (body) => {
         if (
-            new URL(request.url()).pathname === "/acp"
-            && body !== null
+            body !== null
+            && body.error === undefined
             && body.method !== "initialize"
             && body.params?._meta?.plurnk?.control !== false
         ) {
@@ -92,7 +91,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
             const receipt = await questionResult(page, base, headers);
-            await page.locator("[data-operations] > details > summary").first().click();
+            await page.locator("[data-prompt-work] > summary").first().click();
             const question = page.locator('[data-call-id][data-plurnk-type="plurnk"]');
             assert.equal(await question.locator('summary > [data-plurnk-field="heading"]').innerText(), "plurnk");
             assert.equal(await question.locator("article > details").evaluate((node) => node.open), false);
@@ -173,14 +172,29 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
     }, { authenticated: true }));
 
     await t.test("{§web-session-questions} daemon rejection remains pending until rediscovery and explicit correction", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
+        let corruptOnce = true;
+        await routeAcpWebSocket(page, (ws) => {
+            const server = ws.connectToServer();
+            ws.onMessage((message) => {
+                if (corruptOnce && typeof message === "string") {
+                    try {
+                        const input = JSON.parse(message);
+                        if (input?.result?.content) {
+                            corruptOnce = false;
+                            input.result.content.count = "invalid on wire";
+                            server.send(JSON.stringify(input));
+                            return;
+                        }
+                    } catch { /* ignore */ }
+                }
+                server.send(message);
+            });
+        });
+        await page.reload();
+        await connected(page);
         await ask(page, "question-invalid");
         const first = await page.locator("[data-question]").getAttribute("data-interrupt-id");
         await answer(page);
-        await page.route("**/acp", (route) => {
-            const input = route.request().postDataJSON();
-            if (input?.result?.content) input.result.content.count = "invalid on wire";
-            return route.continue({ postData: JSON.stringify(input) });
-        }, { times: 1 });
         await submit(page);
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
         assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:.*schema/iu);
@@ -197,14 +211,14 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
 
     await t.test("{§web-session-questions} leaving a pending or resumed question never cancels the session", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         await ask(page, "question-resumed-departure");
-        await page.getByRole("link", { name: "Workspaces", exact: true }).first().click();
+        await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
         await page.waitForLoadState("load");
         await page.goto(path);
         await interrupted(page);
         assert.equal(model.requests.length, 1, "navigation neither answers nor cancels a question");
         await answer(page);
         await submit(page);
-        await page.locator("[data-reasoning-preview]").getByText("Considering question-resumed-departure.", { exact: true }).waitFor();
+        await page.waitForFunction(() => document.querySelector('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]')?.textContent === "2");
         await page.close();
         model.release("question-resumed-departure");
         const observer = await context.newPage();
@@ -232,7 +246,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         await page.waitForLoadState("load");
         await page.getByLabel("Password", { exact: true }).fill("compose-password");
         await page.getByRole("button", { name: "Continue", exact: true }).click();
-        await page.waitForURL(path);
+        await page.waitForURL((url) => new URL(url).pathname === new URL(path).pathname);
         await interrupted(page);
         await cancel(page);
         await submit(page);
@@ -274,7 +288,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         await answer(page);
         await submit(page);
         const childPage = await context.newPage();
-        await childPage.goto(path.replace("@user/", "@child/"));
+        await childPage.goto(path.replace("#user", "#child"));
         await childPage.getByText("Completed held-question-child.", { exact: true }).waitFor();
         assert.deepEqual(JSON.parse((await questionResult(childPage, base, headers)).content), { action: "accept", content: exactAnswer });
         assert.equal(model.requests.length, 3, JSON.stringify(model.requests.map(({ messages }) => messages.map(({ role, content }) => ({ role, content: String(content).slice(-1200) })))));

@@ -103,7 +103,7 @@ export default async function verifySessionObserve(t) {
                         const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
                         const statusLine = page.locator("#session-status > [data-status-line]");
 
-                        assert.equal(await statusLine.isVisible(), false, "idle Manual Review session hides unfocused status row");
+                        assert.equal(await statusLine.isVisible(), true, "connected session keeps steady status row visible without focus jump");
                         await draft.focus();
                         await draft.fill("Draft stays intact.");
                         assert.equal(await statusLine.isVisible(), true);
@@ -120,8 +120,8 @@ export default async function verifySessionObserve(t) {
                             const before = await approval.getAttribute("aria-pressed");
                             await draft.press("Shift+Tab");
                             const expected = before === "true" ? "false" : "true";
-                            assert.equal(await approval.getAttribute("aria-pressed"), expected, `${lifecycle}: Shift+Tab in composer toggles YOLO`);
-                            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), expected === "true" ? "YOLO" : "Review");
+                            assert.equal(await approval.getAttribute("aria-pressed"), expected, `${lifecycle}: Shift+Tab in composer toggles auto-approval`);
+                            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), expected === "true" ? "Auto-approve" : "Review");
                             assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", `${lifecycle}: composer keeps focus`);
                             assert.equal(await draft.inputValue(), "Draft stays intact.");
                         }
@@ -131,7 +131,7 @@ export default async function verifySessionObserve(t) {
                         await draft.press("Escape");
                         assert.notEqual(await page.evaluate(() => document.activeElement?.id), "session-message", "Escape leaves the composer cleanly");
                         assert.equal(await draft.inputValue(), "Draft stays intact.", "Escape preserves unsent draft");
-                        assert.equal(await statusLine.isVisible(), true, "active YOLO keeps status row visible on unfocused completed session");
+                        assert.equal(await statusLine.isVisible(), true);
 
                         // Outside the composer when not interrupted, Shift+Tab preserves native backward focus traversal without toggling YOLO.
                         const effort = page.getByRole("button", { name: "Effort", exact: true });
@@ -141,12 +141,12 @@ export default async function verifySessionObserve(t) {
                         assert.equal(await page.evaluate(() => document.activeElement?.id), "session-model", "Shift+Tab outside composer moves focus backward");
                         assert.equal(await approval.getAttribute("aria-pressed"), "true", "backward focus navigation does not toggle YOLO");
 
-                        // Toggle YOLO off from composer and verify unfocused completed status hides again.
+                        // Toggle Auto-approve off from composer and verify steady status bar stays visible without shifting.
                         await draft.focus();
                         await draft.press("Shift+Tab");
                         assert.equal(await approval.getAttribute("aria-pressed"), "false");
                         await page.locator("body > header > a").focus();
-                        assert.equal(await statusLine.isVisible(), false, "disabling YOLO releases unfocused completed status space");
+                        assert.equal(await statusLine.isVisible(), true, "steady status bar causes zero focus/blur layout shift");
 
                         // When interrupted with a pending session/request_permission proposal, Shift+Tab anywhere auto-approves it.
                         fixture.pushFrame(permissionFrame("gate-yolo-1", {
@@ -280,15 +280,15 @@ export default async function verifySessionObserve(t) {
                         await draft.fill("");
                         await draft.focus();
 
-                        // Streaming message chunks, live reasoning preview, slash-command results, and review gates keep main pinned without moving focus.
+                        // Streaming message chunks, live prompt-top 💭 pills, slash-command results, and review gates keep main pinned without moving focus.
                         fixture.push({
                             sessionUpdate: "agent_thought_chunk",
                             messageId: "live-thought-1",
                             content: { type: "text", text: "Evaluating edge cases.\n".repeat(12) },
                             _meta: { plurnk: { sessionName: "user", loopSeq: 2, turnSeq: 9 } },
                         });
-                        await page.locator("[data-reasoning-preview] pre").filter({ hasText: "Evaluating edge cases." }).waitFor();
-                        assert.ok((await metrics()).gap <= 24, "live reasoning preview keeps main pinned at bottom");
+                        await page.locator('[data-message-id="live-16"] [data-prompt-work] [data-operation-tally="reasoning"]').waitFor();
+                        assert.ok((await metrics()).gap <= 24, "live reasoning pill keeps main pinned at bottom");
                         assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", "reasoning stream never moves focus");
 
                         fixture.push({
@@ -348,15 +348,15 @@ export default async function verifySessionObserve(t) {
                         const readingAfterStream = await metrics();
                         assert.equal(readingAfterStream.scrollTop, readingBefore.scrollTop, "tail streaming while unpinned does not jump scrollTop");
 
-                        // Scroll to top and click Load previous loop: prepending Loop 1 does not jump back to the bottom.
+                        // Scroll to top and click Load earlier messages: prepending older messages does not jump back to the bottom.
                         await page.locator("#main").evaluate((main) => {
                             main.scrollTop = 0;
                             main.dispatchEvent(new Event("scroll"));
                         });
-                        await page.getByRole("button", { name: "Load previous loop" }).click();
+                        await page.getByRole("button", { name: "Load earlier messages" }).click();
                         await page.locator('[data-message-id="older-0"]').waitFor();
                         const afterOlder = await metrics();
-                        assert.ok(afterOlder.gap > 400, "activating Load previous loop keeps reader away from bottom");
+                        assert.ok(afterOlder.gap > 400, "activating Load earlier messages keeps reader away from bottom");
 
                         // Explicit prompt submission re-pins to main's bottom edge.
                         await draft.fill("Resume at the tail.");

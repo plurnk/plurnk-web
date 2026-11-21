@@ -27,6 +27,7 @@ import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
  *   readonly kind: "root" | "work" | "fork",
  *   readonly lifecycle: string,
  *   readonly gates: number,
+ *   readonly archived: boolean,
  *   readonly title?: string,
  *   readonly reply: OverviewReply | null,
  * }} OverviewSession
@@ -64,16 +65,23 @@ const orderSessions = (a, b) => a.reply !== null && b.reply !== null ? b.reply.i
 
 /** @param {OverviewSession} session */
 const isActiveSession = (session) =>
-    session.lifecycle === "running" || session.lifecycle === "queued" || session.lifecycle === "parked" || session.gates > 0;
+    session.lifecycle === "running" || session.lifecycle === "queued" || session.lifecycle === "parked";
 
-/** {§web-session-directory} Live session dashboard, filtering, and on-demand reply disclosure on `/` and `/~/<workspace>/`.
+/** {§web-search} {§web-session-directory} Live Search & Directory page (`/search/`), instant filtering, and on-demand reply disclosure.
  * @param {HTMLElement} main
  */
 export default function observeOverview(main) {
-    const { auth: rawAuth, workspaceId: rawWorkspaceId } = main.dataset;
-    if (rawAuth !== "session" && rawAuth !== "none") throw new Error("Overview document metadata is incomplete.");
+    const { auth: rawAuth } = main.dataset;
+    if (rawAuth !== "session" && rawAuth !== "none") throw new Error("Search document metadata is incomplete.");
     const auth = rawAuth;
-    const workspaceId = rawWorkspaceId && /^[1-9]\d*$/u.test(rawWorkspaceId) ? Number(rawWorkspaceId) : undefined;
+    const sessionsOutlet = $(main, "#search-sessions") ?? main;
+    const workspacesOutlet = $(main, "#search-workspaces");
+    const controlsForm = $(main, "#search-controls");
+    const searchInput = controlsForm ? $(controlsForm, "input[data-overview-search]") : null;
+    const wsSelect = controlsForm ? $(controlsForm, "select[data-search-workspace]") : null;
+    const statusSelect = controlsForm ? $(controlsForm, "select[data-overview-scope]") : null;
+    const kindSelect = controlsForm ? $(controlsForm, "select[data-search-kind]") : null;
+
     let resources = new AbortController();
     /** @type {Map<string, HTMLLIElement>} */
     const rowsByKey = new Map();
@@ -86,9 +94,52 @@ export default function observeOverview(main) {
     /** @type {WeakMap<Element, string>} */
     const inFlight = new WeakMap();
     let replyCounter = 0;
-    let filterQuery = "";
-    /** @type {"all" | "active" | "roots"} */
-    let filterScope = "all";
+
+    let filterQuery = searchInput instanceof HTMLInputElement ? searchInput.value : "";
+    let filterWorkspace = wsSelect instanceof HTMLSelectElement ? wsSelect.value : "";
+    let filterStatus = statusSelect instanceof HTMLSelectElement ? statusSelect.value : "all";
+    let filterKind = kindSelect instanceof HTMLSelectElement ? kindSelect.value : "all";
+    const initialArchivedMode = filterStatus === "archived";
+
+    if (main.dataset.needsOnboarding === "true" && !$(main, "#session-onboarding-banner")) {
+        const anchor = controlsForm ?? main.firstElementChild;
+        if (anchor) $.clone(anchor, "#session-onboarding-banner", { position: "beforebegin" });
+        else $.clone(main, "#session-onboarding-banner");
+    }
+
+    /** @type {Promise<{ open: () => Promise<void> }> | null} */
+    let onboardingPromise = null;
+    on(main, "click", "[data-open-onboarding]", () => {
+        onboardingPromise ??= import("./onboarding.js").then(({ createOnboardingController }) =>
+            createOnboardingController(() => ({
+                auth,
+                signal: resources.signal,
+                onConfigured: () => {
+                    delete main.dataset.needsOnboarding;
+                    $(main, "#session-onboarding-banner")?.remove();
+                },
+            })),
+        );
+        void onboardingPromise.then((ctrl) => ctrl.open());
+    });
+    on(main, "click", "[data-dismiss-onboarding]", (_event, button) => {
+        delete main.dataset.needsOnboarding;
+        button.closest("#session-onboarding-banner")?.remove();
+    });
+
+    function syncUrlQuery() {
+        if (!location.pathname.startsWith("/search")) return;
+        const params = new URLSearchParams();
+        if (filterQuery.trim()) params.set("q", filterQuery.trim());
+        if (filterWorkspace) params.set("workspace", filterWorkspace);
+        if (filterStatus && filterStatus !== "all") params.set("status", filterStatus);
+        if (filterKind && filterKind !== "all") params.set("kind", filterKind);
+        const query = params.toString();
+        const nextUrl = `${location.pathname}${query ? `?${query}` : ""}`;
+        if (`${location.pathname}${location.search}` !== nextUrl) {
+            history.replaceState(null, "", nextUrl);
+        }
+    }
 
     /** @param {HTMLElement} outlet */
     async function loadReply(outlet) {
@@ -142,12 +193,40 @@ export default function observeOverview(main) {
 
     function applyFilter() {
         const query = filterQuery.trim().toLowerCase();
+
+        if (workspacesOutlet instanceof HTMLElement) {
+            const wsList = $(workspacesOutlet, ":scope > ul");
+            let visibleWsCount = 0;
+            if (wsList instanceof HTMLUListElement) {
+                for (const item of wsList.children) {
+                    if (!(item instanceof HTMLLIElement)) continue;
+                    const wsName = item.dataset.workspaceName ?? "";
+                    const text = (item.textContent ?? "").toLowerCase();
+                    const matchWs = (!filterWorkspace || wsName === filterWorkspace)
+                        && (!query || text.includes(query));
+                    item.hidden = !matchWs;
+                    if (matchWs) visibleWsCount++;
+                }
+                wsList.hidden = visibleWsCount === 0;
+            }
+            const emptyWs = $(workspacesOutlet, ':scope > p[data-i18n="no-workspaces"]');
+            if (visibleWsCount === 0 && wsList) {
+                if (!emptyWs) $.clone(workspacesOutlet, "#workspaces-empty");
+            } else if (visibleWsCount > 0) {
+                emptyWs?.remove();
+            }
+        }
+
         /** @param {OverviewSession} session */
         const matchesSelf = (session) => {
-            if (filterScope === "active" && !isActiveSession(session)) return false;
-            if (filterScope === "roots" && (session.kind !== "root" || session.parentSessionId !== null)) return false;
+            if (filterWorkspace && session.workspaceName !== filterWorkspace) return false;
+            if (filterStatus === "active" && !isActiveSession(session)) return false;
+            if (filterStatus === "gated" && session.gates <= 0) return false;
+            if (filterStatus === "failed" && session.lifecycle !== "failed") return false;
+            if (filterKind === "chats" && session.kind === "work") return false;
+            if (filterKind === "work" && session.kind !== "work") return false;
             if (query === "") return true;
-            const haystack = `${session.name} ${session.workspaceName} ${session.title ?? ""} ${session.reply?.excerpt ?? ""}`.toLowerCase();
+            const haystack = `${session.name} #${session.name} ${session.workspaceName} ${session.title ?? ""} ${session.reply?.excerpt ?? ""}`.toLowerCase();
             return haystack.includes(query);
         };
 
@@ -158,7 +237,7 @@ export default function observeOverview(main) {
             let childMatch = false;
             const childList = $(row, ":scope > article > details > ul");
             if (childList instanceof HTMLUListElement) {
-                if (filterScope === "roots") {
+                if (filterKind === "chats") {
                     childList.hidden = true;
                 } else {
                     childList.hidden = false;
@@ -169,23 +248,27 @@ export default function observeOverview(main) {
                     }
                 }
             }
-            const visible = (session ? matchesSelf(session) : true) || (filterScope !== "roots" && childMatch);
+            const visible = (session ? matchesSelf(session) : true) || (filterKind !== "chats" && childMatch);
             row.hidden = !visible;
             return visible;
         };
 
-        const rootList = $(main, ":scope > ul");
+        let visibleSessions = 0;
+        const rootList = $(sessionsOutlet, ":scope > ul");
         if (rootList instanceof HTMLUListElement) {
             for (const item of rootList.children) {
-                if (item instanceof HTMLLIElement) filterRow(item);
+                if (item instanceof HTMLLIElement && filterRow(item)) {
+                    visibleSessions++;
+                }
             }
+            rootList.hidden = visibleSessions === 0;
         }
-        const backgroundDetails = $(main, ":scope > details");
+        const backgroundDetails = $(sessionsOutlet, ":scope > details");
+        let anyBgVisible = false;
         if (backgroundDetails instanceof HTMLDetailsElement) {
-            if (filterScope === "roots") {
+            if (filterKind === "chats") {
                 backgroundDetails.hidden = true;
             } else {
-                let anyBgVisible = false;
                 const bgList = $(backgroundDetails, ":scope > ul");
                 if (bgList instanceof HTMLUListElement) {
                     for (const item of bgList.children) {
@@ -197,30 +280,56 @@ export default function observeOverview(main) {
                 backgroundDetails.hidden = !anyBgVisible;
             }
         }
+        const emptySess = $(sessionsOutlet, ':scope > p[data-i18n="no-sessions"]');
+        if (visibleSessions === 0 && !anyBgVisible) {
+            if (!emptySess) {
+                const omitted = $(sessionsOutlet, ":scope > p[data-overview-omitted]");
+                if (omitted) $.clone(omitted, "#overview-empty", { position: "beforebegin" });
+                else $.clone(sessionsOutlet, "#overview-empty");
+            }
+        } else if (sessionsByKey.size > 0) {
+            emptySess?.remove();
+        }
     }
 
-    function ensureControls() {
-        let controls = $(main, ":scope > #overview-controls");
-        if (sessionsByKey.size === 0) {
-            controls?.remove();
-            return;
-        }
-        if (controls instanceof HTMLElement) return;
-        const anchor = $(main, ":scope > ul, :scope > details, :scope > p[data-overview-omitted], :scope > dialog");
-        controls = anchor
-            ? $.clone(anchor, "#overview-controls", { position: "beforebegin" })
-            : $.clone(main, "#overview-controls");
-        on(controls, "input", "input[data-overview-search], select[data-overview-scope]", (_event, control) => {
-            if (control instanceof HTMLInputElement) {
-                filterQuery = control.value;
-                applyFilter();
-            } else if (control instanceof HTMLSelectElement) {
-                const nextScope = control.value;
-                if (nextScope === "all" || nextScope === "active" || nextScope === "roots") {
-                    filterScope = nextScope;
-                    applyFilter();
-                }
+    if (controlsForm instanceof HTMLFormElement) {
+        on(controlsForm, "submit", "form", (event) => {
+            const nextStatus = statusSelect instanceof HTMLSelectElement ? statusSelect.value : "all";
+            const switchingArchived = (nextStatus === "archived") !== initialArchivedMode;
+            const hasOmitted = $(sessionsOutlet, "[data-overview-omitted]") !== null;
+            const nextWs = wsSelect instanceof HTMLSelectElement ? wsSelect.value : "";
+            if (switchingArchived || (hasOmitted && nextWs !== "")) {
+                return;
             }
+            event.preventDefault();
+            filterQuery = searchInput instanceof HTMLInputElement ? searchInput.value : "";
+            filterWorkspace = nextWs;
+            filterStatus = nextStatus;
+            filterKind = kindSelect instanceof HTMLSelectElement ? kindSelect.value : "all";
+            syncUrlQuery();
+            applyFilter();
+        });
+        on(controlsForm, "input", "input[data-overview-search]", (_event, input) => {
+            if (input instanceof HTMLInputElement) {
+                filterQuery = input.value;
+                syncUrlQuery();
+                applyFilter();
+            }
+        });
+        on(controlsForm, "change", "select", (_event, select) => {
+            if (!(select instanceof HTMLSelectElement)) return;
+            const nextStatus = statusSelect instanceof HTMLSelectElement ? statusSelect.value : "all";
+            const nextWs = wsSelect instanceof HTMLSelectElement ? wsSelect.value : "";
+            if ((nextStatus === "archived") !== initialArchivedMode
+                || (select === wsSelect && nextWs !== "" && $(sessionsOutlet, "[data-overview-omitted]") !== null)) {
+                controlsForm.requestSubmit();
+                return;
+            }
+            filterWorkspace = nextWs;
+            filterStatus = nextStatus;
+            filterKind = kindSelect instanceof HTMLSelectElement ? kindSelect.value : "all";
+            syncUrlQuery();
+            applyFilter();
         });
     }
 
@@ -229,14 +338,6 @@ export default function observeOverview(main) {
      * @param {boolean} [bindLiveRows]
      */
     function hydrateFromDom(sourceRoot = main, bindLiveRows = true) {
-        if (workspaceId !== undefined) {
-            const crumbName = $('header nav[aria-label="breadcrumb"] [aria-current="page"][data-text="name"]');
-            const marker = crumbName?.previousElementSibling;
-            const labelEl = $(sourceRoot, '[data-text="project-label"]');
-            const name = crumbName?.textContent ?? String(workspaceId);
-            const projectLabel = labelEl?.textContent ?? (marker?.getAttribute("aria-label") === "Project workspace" ? name : null);
-            workspacesById.set(workspaceId, { name, projectRoot: projectLabel, projectLabel });
-        }
         for (const row of $$(sourceRoot, 'li[data-directory-entry="session"]')) {
             if (!(row instanceof HTMLLIElement)) continue;
             const details = $(row, ":scope > article > details");
@@ -258,18 +359,22 @@ export default function observeOverview(main) {
                 && $(enclosingDetails, ':scope > summary[data-i18n="background-work"]') !== null;
             const parentSessionId = parentKeyMatch ? Number(parentKeyMatch[2]) : isBackground ? 0 : null;
             const kind = asSessionKind(row.dataset.sessionKind) ?? (parentSessionId === null ? "root" : "work");
+            const archived = row.dataset.archived === "true";
 
             const article = $(row, ":scope > article");
             const headerOrSummary = article ? $(article, ":scope > header, :scope > details > summary") : null;
             const identity = headerOrSummary ? $(headerOrSummary, "[data-session-identity]") : null;
             const workspaceSpan = headerOrSummary ? $(headerOrSummary, "[data-session-workspace]") : null;
-            const name = (identity ? $(identity, ":scope > span:last-of-type")?.textContent : null) ?? String(id);
+            const rawName = (identity ? $(identity, ":scope > span:last-of-type")?.textContent : null) ?? String(id);
+            const name = rawName.startsWith("#") ? rawName.slice(1) : rawName;
             const lifecycle = (identity ? $(identity, "[data-lifecycle]")?.getAttribute("data-lifecycle") : null) ?? "idle";
             const titleText = identity ? $(identity, "[data-session-title]")?.textContent ?? undefined : undefined;
             const rawGates = identity ? $(identity, "[data-session-gates]")?.getAttribute("data-session-gates") : null;
             const gates = rawGates && /^\d+$/u.test(rawGates) ? Number(rawGates) : 0;
-            const workspaceName = (workspaceSpan ? $(workspaceSpan, '[data-text="name"]')?.textContent : null)
-                ?? workspacesById.get(wsId)?.name ?? String(wsId);
+            const workspaceName = row.dataset.workspaceName
+                ?? (workspaceSpan ? $(workspaceSpan, '[data-text="name"]')?.textContent : null)
+                ?? workspacesById.get(wsId)?.name
+                ?? String(wsId);
             const hasFolder = workspaceSpan ? $(workspaceSpan, "[data-folder]")?.getAttribute("data-folder") === "true" : false;
             const projectRoot = hasFolder ? (workspacesById.get(wsId)?.projectRoot ?? "/") : null;
             if (!workspacesById.has(wsId)) {
@@ -318,39 +423,19 @@ export default function observeOverview(main) {
                 kind,
                 lifecycle,
                 gates,
+                archived,
                 ...(titleText ? { title: titleText } : {}),
                 reply,
             });
         }
-        ensureControls();
-    }
-
-    function syncWorkspaceHeader() {
-        if (workspaceId === undefined) return;
-        const currentWs = workspacesById.get(workspaceId);
-        if (!currentWs) return;
-        for (const input of $$(main, 'dialog form input[name="workspace"]')) {
-            if (input instanceof HTMLInputElement) input.value = currentWs.name;
-        }
-        if (!main.isConnected) return;
-        the("page-title", `${currentWs.name} — Plurnk`);
-        const crumbName = $('header nav[aria-label="breadcrumb"] [aria-current="page"][data-text="name"]');
-        if (crumbName) {
-            if (crumbName.textContent !== currentWs.name) crumbName.textContent = currentWs.name;
-            const marker = crumbName.previousElementSibling;
-            if (marker) {
-                const separateFolder = currentWs.projectLabel !== null && currentWs.projectLabel !== currentWs.name;
-                const icon = separateFolder ? "☁️" : currentWs.projectRoot !== null ? "🗂️" : "☁️";
-                const label = separateFolder ? "Workspace" : currentWs.projectRoot !== null ? "Project workspace" : "Folderless workspace";
-                if (marker.textContent !== icon) marker.textContent = icon;
-                if (marker.getAttribute("aria-label") !== label) marker.setAttribute("aria-label", label);
-            }
-        }
     }
 
     function reconcileDom() {
-        syncWorkspaceHeader();
-        const models = [...sessionsByKey.values()].toSorted(orderSessions);
+        if (initialArchivedMode) {
+            applyFilter();
+            return;
+        }
+        const models = [...sessionsByKey.values()].filter(({ archived }) => !archived).toSorted(orderSessions);
         /** @type {Map<number, OverviewSession>} */
         const byId = new Map(models.map((session) => [session.id, session]));
         for (const session of models) {
@@ -366,6 +451,7 @@ export default function observeOverview(main) {
                     kind: "root",
                     lifecycle: "idle",
                     gates: 0,
+                    archived: false,
                     reply: null,
                 });
             }
@@ -384,13 +470,13 @@ export default function observeOverview(main) {
             const key = `${session.workspaceId}:${session.id}`;
             let row = rowsByKey.get(key);
             if (!row || !row.isConnected) {
-                const byKey = $(main, `li[data-directory-entry="session"][data-session-key="${CSS.escape(key)}"]`);
+                const byKey = $(sessionsOutlet, `li[data-directory-entry="session"][data-session-key="${CSS.escape(key)}"]`);
                 if (byKey instanceof HTMLLIElement && !claimedRows.has(byKey)) {
                     row = byKey;
                 } else {
                     const path = directoryPath({ kind: "session", workspace: session.workspaceName, session: session.name });
                     if (path !== null) {
-                        const link = $(main, `li[data-directory-entry="session"] a[data-session-link][href="${CSS.escape(path)}"]`);
+                        const link = $(sessionsOutlet, `li[data-directory-entry="session"] a[data-session-link][href="${CSS.escape(path)}"]`);
                         const existing = link?.closest('li[data-directory-entry="session"]');
                         if (existing instanceof HTMLLIElement && !claimedRows.has(existing)) {
                             row = existing;
@@ -402,6 +488,9 @@ export default function observeOverview(main) {
             }
             row.dataset.sessionKey = key;
             row.dataset.sessionKind = session.kind;
+            row.dataset.workspaceName = session.workspaceName;
+            row.dataset.lifecycleState = session.lifecycle;
+            row.dataset.gateCount = String(session.gates);
             if (session.reply !== null) row.dataset.replyId = String(session.reply.id);
             else delete row.dataset.replyId;
             claimedRows.add(row);
@@ -422,7 +511,7 @@ export default function observeOverview(main) {
                 if (link && sessionPath !== null) {
                     if (link.getAttribute("href") !== sessionPath) link.setAttribute("href", sessionPath);
                     if (link.getAttribute("aria-label") !== session.name) link.setAttribute("aria-label", session.name);
-                    const title = `Open session ${session.name}`;
+                    const title = `Open #${session.name}`;
                     if (link.getAttribute("title") !== title) link.setAttribute("title", title);
                 }
                 const lifecycleEl = $(identity, "[data-lifecycle]");
@@ -432,8 +521,9 @@ export default function observeOverview(main) {
                     lifecycleEl.setAttribute("title", session.lifecycle);
                 }
                 const nameSpan = $(identity, ":scope > span:last-of-type");
-                if (nameSpan && nameSpan.textContent !== session.name) {
-                    nameSpan.textContent = session.name;
+                const displayHashName = `#${session.name}`;
+                if (nameSpan && nameSpan.textContent !== displayHashName) {
+                    nameSpan.textContent = displayHashName;
                 }
                 let parentSpan = $(identity, "[data-session-parent]");
                 if (parent === null) {
@@ -577,30 +667,25 @@ export default function observeOverview(main) {
             }
         }
 
-        const firstDialog = $(main, ":scope > dialog");
-        const omittedEl = $(main, ":scope > p[data-overview-omitted]");
-        const emptyEl = $(main, ':scope > p[data-i18n="no-sessions"]');
-        let rootList = $(main, ":scope > ul");
-        let backgroundDetails = $(main, ":scope > details");
-        ensureControls();
+        const omittedEl = $(sessionsOutlet, ":scope > p[data-overview-omitted]");
+        const emptyEl = $(sessionsOutlet, ':scope > p[data-i18n="no-sessions"]');
+        let rootList = $(sessionsOutlet, ":scope > ul");
+        let backgroundDetails = $(sessionsOutlet, ":scope > details");
         if (models.length === 0) {
             rootList?.remove();
             backgroundDetails?.remove();
             omittedEl?.remove();
-            if (!emptyEl) {
-                if (firstDialog) $.clone(firstDialog, "#overview-empty", { position: "beforebegin" });
-                else $.clone(main, "#overview-empty");
-            }
+            if (!emptyEl) $.clone(sessionsOutlet, "#overview-empty");
             return;
         }
         emptyEl?.remove();
         const roots = children.get(null) ?? [];
         if (roots.length > 0) {
             if (!rootList) {
-                const anchor = backgroundDetails ?? omittedEl ?? firstDialog;
+                const anchor = backgroundDetails ?? omittedEl;
                 rootList = anchor
                     ? $.clone(anchor, "#overview-list", { position: "beforebegin" })
-                    : $.clone(main, "#overview-list");
+                    : $.clone(sessionsOutlet, "#overview-list");
             }
             reconcileList(rootList, roots);
         } else {
@@ -608,10 +693,9 @@ export default function observeOverview(main) {
         }
         if (background.length > 0) {
             if (!backgroundDetails) {
-                const anchor = omittedEl ?? firstDialog;
-                backgroundDetails = anchor
-                    ? $.clone(anchor, "#overview-background", { position: "beforebegin" })
-                    : $.clone(main, "#overview-background");
+                backgroundDetails = omittedEl
+                    ? $.clone(omittedEl, "#overview-background", { position: "beforebegin" })
+                    : $.clone(sessionsOutlet, "#overview-background");
             }
             const bgList = $(backgroundDetails, ":scope > ul");
             if (bgList) reconcileList(bgList, background);
@@ -623,6 +707,7 @@ export default function observeOverview(main) {
 
     /** @param {unknown} raw */
     function applyNotification(raw) {
+        if (initialArchivedMode) return;
         if (!isRecord(raw) || typeof raw.event !== "string" || !isRecord(raw.data)) return;
         const { event, data } = raw;
         const notifWorkspaceId = typeof raw.workspaceId === "number" ? raw.workspaceId : null;
@@ -635,11 +720,24 @@ export default function observeOverview(main) {
                 const name = typeof data.name === "string" ? data.name : null;
                 if (id === null || name === null) return;
                 const prev = workspacesById.get(id);
+                const oldName = prev?.name;
                 workspacesById.set(id, {
                     name,
                     projectRoot: prev?.projectRoot ?? null,
                     projectLabel: prev?.projectLabel ?? null,
                 });
+                if (oldName && workspacesOutlet) {
+                    const wsRow = $(workspacesOutlet, `li[data-directory-entry="workspace"][data-workspace-name="${CSS.escape(oldName)}"]`);
+                    if (wsRow instanceof HTMLLIElement) {
+                        wsRow.dataset.workspaceName = name;
+                        const wsLink = $(wsRow, 'a[data-text="name"]');
+                        const wsPath = directoryPath({ kind: "workspace", workspace: name });
+                        if (wsLink && wsPath) {
+                            wsLink.textContent = name;
+                            wsLink.setAttribute("href", wsPath);
+                        }
+                    }
+                }
                 for (const [key, session] of sessionsByKey.entries()) {
                     if (session.workspaceId === id) {
                         sessionsByKey.set(key, { ...session, workspaceName: name });
@@ -651,6 +749,10 @@ export default function observeOverview(main) {
             case "workspace/archived": {
                 const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
                 if (id === null || data.archived_at === null || data.archived_at === undefined) return;
+                const prev = workspacesById.get(id);
+                if (prev && workspacesOutlet) {
+                    $(workspacesOutlet, `li[data-directory-entry="workspace"][data-workspace-name="${CSS.escape(prev.name)}"]`)?.remove();
+                }
                 let removed = false;
                 for (const [key, session] of sessionsByKey.entries()) {
                     if (session.workspaceId === id) {
@@ -659,13 +761,13 @@ export default function observeOverview(main) {
                     }
                 }
                 if (removed) reconcileDom();
+                else applyFilter();
                 return;
             }
             case "session/created": {
                 const id = typeof data.id === "number" ? data.id : notifSessionId;
                 const wsId = typeof data.workspaceId === "number" ? data.workspaceId : notifWorkspaceId;
                 if (id === null || wsId === null || typeof data.name !== "string") return;
-                if (workspaceId !== undefined && wsId !== workspaceId) return;
                 const prevWs = workspacesById.get(wsId);
                 const wsName = typeof data.workspaceName === "string" ? data.workspaceName : prevWs?.name ?? String(wsId);
                 const projRoot = typeof data.projectRoot === "string" ? data.projectRoot : data.projectRoot === null ? null : prevWs?.projectRoot ?? null;
@@ -685,6 +787,7 @@ export default function observeOverview(main) {
                     kind,
                     lifecycle: typeof data.lifecycle === "string" ? data.lifecycle : "idle",
                     gates: 0,
+                    archived: false,
                     reply: null,
                 });
                 reconcileDom();
@@ -826,9 +929,7 @@ export default function observeOverview(main) {
             case "notifications/resync": {
                 void (async () => {
                     try {
-                        const targetPath = workspaceId === undefined
-                            ? "/"
-                            : `/~/${encodeURIComponent(workspacesById.get(workspaceId)?.name ?? String(workspaceId))}/`;
+                        const targetPath = `${location.pathname}${location.search}`;
                         const res = await fetch(targetPath, {
                             headers: { accept: "text/html" },
                             cache: "no-store",
@@ -852,13 +953,12 @@ export default function observeOverview(main) {
     }
 
     hydrateFromDom();
+    applyFilter();
 
-    let savedScrollTop = main.scrollTop;
     let disposed = false;
 
     const notifications = subscribeWorkspaceNotifications({
         auth,
-        workspaceId,
         onStateChange: (state) => {
             if (!disposed) the(main, "connection", state);
         },
@@ -879,20 +979,6 @@ export default function observeOverview(main) {
     });
 
     return {
-        main,
-        footer: null,
-        deactivate() {
-            if (disposed) return;
-            savedScrollTop = main.scrollTop;
-        },
-        activate() {
-            if (disposed) return;
-            syncWorkspaceHeader();
-            main.scrollTop = savedScrollTop;
-        },
-        canEvict() {
-            return false;
-        },
         dispose() {
             if (disposed) return;
             disposed = true;

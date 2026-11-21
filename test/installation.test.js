@@ -91,8 +91,9 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
         const { directoryPath, parseDirectory } = await import(pathToFileURL(join(webPackage, "src", "directory-addresses.js")).href);
         const directory = { kind: "session", workspace: "~/project @%/index.html", session: "user" };
         const path = directoryPath(directory);
-        assert.equal(path, "/~/~/project%20%40%25/index.html@user/");
-        assert.deepEqual(parseDirectory(new URL(path, "https://example.test").pathname), directory);
+        assert.equal(path, "/~/~/project%20%40%25/index.html#user");
+        const parsedUrl = new URL(path, "https://example.test");
+        assert.deepEqual(parseDirectory(parsedUrl.pathname + parsedUrl.hash), directory);
     });
     const start = (overrides = {}, userHome = home) => Launch.start({
         command: [daemonBin, "start"],
@@ -138,17 +139,20 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
         await withDaemon({ PLURNK_AUTH: "0" }, async (base) => {
             await discovery.test("{§web-asset-encoding} packed assets negotiate exact compressed bytes", () =>
                 verifyStaticAssets(base, pathToFileURL(`${webPackage}/`)));
+            const arrival = await fetch(base, { redirect: "manual" });
+            assert.equal(arrival.status, 303, "{§web-arrival} GET / allocates and redirects to a starter #user session");
+            assert.match(arrival.headers.get("location") ?? "", /^\/~\/[^/#]+#user$/u);
             const page = await fetch(base);
             assert.equal(page.status, 200);
-            assert.match(await page.text(), /<main\b[^>]*data-page="home"[^>]*data-auth="none"[^>]*><p data-i18n="no-sessions">No sessions\.<\/p><\/main>/u);
+            assert.match(await page.text(), /<main\b[^>]*data-page="session"[^>]*data-session-name="user"[^>]*>/u);
             const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
-            assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the root document");
-            assert.equal(await explicitIndex.text(), await (await fetch(base)).text());
+            assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the static root document");
+            assert.match(await explicitIndex.text(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
             const acp = await fetch(new URL("/acp", base));
             assert.notEqual(acp.status, 200);
             assert.match(acp.headers.get("content-type"), /application\/problem\+json/u);
             assert.equal(typeof (await acp.json()).type, "string");
-            for (const path of ["/not-a-page", "/~/example@user/asset"]) {
+            for (const path of ["/not-a-page", "/~/example/missing-session"]) {
                 const unknown = await fetch(new URL(path, base));
                 assert.equal(unknown.status, 404, `${path}: no unimplemented resource is served`);
                 assert.equal(unknown.headers.get("content-type"), "text/html; charset=utf-8");
@@ -166,8 +170,8 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                         try {
                             const tab = await context.newPage();
                             await tab.goto(base);
-                            assert.equal(await tab.locator("main").innerText(), "No sessions.");
-                            assert.equal(await tab.title(), "Plurnk");
+                            assert.equal(await tab.locator("main").getAttribute("data-page"), "session");
+                            assert.match(await tab.title(), /#user — Plurnk$/u);
                             for (const [colorScheme, primary] of /** @type {const} */ ([["light", "rgb(20, 136, 0)"], ["dark", "rgb(78, 179, 27)"]])) {
                                 await tab.emulateMedia({ colorScheme });
                                 const rendered = await tab.evaluate(() => {

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createServer, preview } from "vite";
-import { directoryPath, parseDirectory } from "../src/directory-addresses.js";
+import { directoryPath, parseDirectory, parseSessionHash } from "../src/directory-addresses.js";
 import createModule from "../src/module.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
@@ -42,8 +42,8 @@ const directories = [
         ["a\u0000\t\n\rb", "a%00%09%0A%0Db"],
         ['<a href="x">&</a>', "%3Ca%20href%3D%22x%22%3E%26%3C/a%3E"],
     ].flatMap(([workspace, encoded]) => /** @type {[import("../src/directory-addresses.js").Directory, string][]} */ ([
-        [{ kind: "workspace", workspace }, `/~/${encoded}/`],
-        [{ kind: "session", workspace, session: "user_1" }, `/~/${encoded}@user_1/`],
+        [{ kind: "workspace", workspace }, `/~/${encoded}`],
+        [{ kind: "session", workspace, session: "user_1" }, `/~/${encoded}#user_1`],
     ])),
 ];
 
@@ -54,24 +54,34 @@ test("{§web-directory-addresses} generated paths preserve exact identities thro
         assert.equal(path, expected, JSON.stringify(directory));
         assert.ok(!seen.has(path), `distinct identities must not share ${path}`);
         seen.add(path);
-        for (const suffix of ["", "index.html", "?q=%2F@other#fragment", "index.html?q=%2F@other#fragment"]) {
-            const url = new URL(`${path}${suffix}`, "https://example.test");
+        const queryVariants = directory.kind === "session"
+            ? [path, path.replace("#", "?q=%2F%23other#")]
+            : [path, `${path}?q=%2F%23other`];
+        for (const variant of queryVariants) {
+            const url = new URL(variant, "https://example.test");
             assert.equal(url.origin, "https://example.test");
-            assert.equal(url.pathname, path + (suffix.startsWith("index.html") ? "index.html" : ""));
             assert.deepEqual(parseDirectory(url.pathname + url.search + url.hash), directory, url.href);
         }
     }
 });
 
-test("{§web-directory-addresses} delimiters precede one decoding pass", () => {
-    for (const path of ["/%7E/a%2fb/", "/%7e/a%2Fb/index.html", "/~/a/b/"]) {
+test("{§web-directory-addresses} delimiters precede one decoding pass and parseSessionHash ignores footnote fragments", () => {
+    for (const path of ["/%7E/a%2fb", "/%7e/a/b", "/~/a/b"]) {
         assert.deepEqual(parseDirectory(path), { kind: "workspace", workspace: "a/b" }, path);
     }
-    assert.deepEqual(parseDirectory("/~/a%40b@user_1/"), { kind: "session", workspace: "a@b", session: "user_1" });
-    assert.deepEqual(parseDirectory("/~/a%2540b/"), { kind: "workspace", workspace: "a%40b" });
-    assert.deepEqual(parseDirectory("/~/a/%252e%252e/"), { kind: "workspace", workspace: "a/%2e%2e" });
-    assert.deepEqual(parseDirectory("/~/a@%75ser_1/"), { kind: "session", workspace: "a", session: "user_1" });
-    assert.equal(directoryPath({ kind: "session", workspace: "a", session: "_plurnk" }), "/~/a@_plurnk/");
+    assert.deepEqual(parseDirectory("/~/a%40b#user_1"), { kind: "session", workspace: "a@b", session: "user_1" });
+    assert.deepEqual(parseDirectory("/~/a%2540b"), { kind: "workspace", workspace: "a%40b" });
+    assert.deepEqual(parseDirectory("/~/a/%252e%252e"), { kind: "workspace", workspace: "a/%2e%2e" });
+    assert.deepEqual(parseDirectory("/~/a#%75ser_1"), { kind: "session", workspace: "a", session: "user_1" });
+    assert.equal(directoryPath({ kind: "session", workspace: "a", session: "_plurnk" }), "/~/a#_plurnk");
+
+    assert.equal(parseSessionHash("#user_1"), "user_1");
+    assert.equal(parseSessionHash("user_1"), "user_1");
+    assert.equal(parseSessionHash("#%75ser_1"), "user_1");
+    assert.equal(parseSessionHash(""), null);
+    assert.equal(parseSessionHash("#"), null);
+    assert.equal(parseSessionHash("#footnote-Igx1c2VyIjE-ref-1-0"), null);
+    assert.equal(parseSessionHash("#%GG"), null);
 });
 
 test("{§web-directory-addresses} unrepresentable legacy names are not repaired or aliased", () => {
@@ -84,10 +94,9 @@ test("{§web-directory-addresses} unrepresentable legacy names are not repaired 
         assert.equal(directoryPath({ kind: "session", workspace: "a", session }), null);
     }
     for (const path of [
-        "/", "/index.html", "/~", "/@/a/", "/~myHome/a/", "https://example.test/~/a/",
-        "/~/a", "/~/a@user", "/~/@user/", "/~/a@/", "/~/a@user@other/", "/~/a@user/child/",
-        "/~/a@user/asset.txt", "/~/./", "/~/a/../", "/~/a/%2E/", "/~/a%2F..%2fb/",
-        "/~/%/", "/~/%GG/", "/~/%c0%af/", "/~/%ED%A0%80/", "/~/a@%GG/",
+        "/", "/index.html", "/~", "/@/a/", "/~myHome/a/", "https://example.test/~/a",
+        "/~/#user", "/~/a#", "/~/./", "/~/a/..", "/~/a/%2E", "/~/a%2F..%2fb",
+        "/~/%/", "/~/%GG", "/~/%c0%af", "/~/%ED%A0%80", "/~/a#%GG",
     ]) {
         assert.equal(parseDirectory(path), null, path);
     }
@@ -105,8 +114,7 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
     const render = (template, directory) => template.replace("</main>", `<pre id="address" data-text="address">${
         JSON.stringify(directory).replaceAll("&", "&amp;").replaceAll("<", "&lt;")
     }</pre><ul>${browserCases.map(([entry], index) => `<li><a href="${directoryPath(entry)}" data-i18n="case-${index}">Case ${index}</a></li>`).join("")}</ul>
-        <a href="./index.html" data-i18n="explicit">Explicit index</a>
-        <a href="?query=%2F%40#address" data-i18n="query">Query and fragment</a></main>`);
+        <a href="?query=%2F%40#user_2" data-i18n="query">Query and fragment</a></main>`);
     const respond = (res, html) => {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(html);
@@ -162,26 +170,40 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
                 page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
                 await page.goto(`${base}/~/`);
                 for (const [index, [directory, path]] of browserCases.entries()) {
-                    if (javaScriptEnabled) await page.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
+                    const previousPathname = new URL(page.url()).pathname;
+                    const expectedUrl = new URL(base + path);
+                    if (javaScriptEnabled && previousPathname !== expectedUrl.pathname) {
+                        await page.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
+                    }
                     const before = navigations.length;
                     await page.getByRole("link", { name: `Case ${index}`, exact: true }).click();
                     assert.equal(page.url(), base + path);
-                    assert.equal(navigations.length, before + 1, "a real document request, not a pushState shell");
-                    assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
+                    if (previousPathname === expectedUrl.pathname && expectedUrl.hash !== "") {
+                        assert.equal(navigations.length, before, "same-workspace #session transition stays in-document");
+                    } else {
+                        assert.equal(navigations.length, before + 1, "changing workspace path issues a real document request");
+                    }
+                    const serverSeen = directory.kind === "session"
+                        ? { kind: "workspace", workspace: directory.workspace }
+                        : directory;
+                    assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
+                    assert.deepEqual(parseDirectory(expectedUrl.pathname + expectedUrl.search + expectedUrl.hash), directory);
                 }
                 const [directory, path] = browserCases.at(-1);
+                const serverSeen = directory.kind === "session"
+                    ? { kind: "workspace", workspace: directory.workspace }
+                    : directory;
                 await page.reload();
-                assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
-                await page.getByRole("link", { name: "Explicit index", exact: true }).click();
-                assert.equal(page.url(), `${base}${path}index.html`);
-                assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
+                assert.equal(page.url(), base + path);
+                assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
+                const wsOnlyPath = path.split("#", 1)[0];
                 await page.getByRole("link", { name: "Query and fragment", exact: true }).click();
-                assert.equal(page.url(), `${base}${path}index.html?query=%2F%40#address`);
-                assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
+                assert.equal(page.url(), `${base}${wsOnlyPath}?query=%2F%40#user_2`);
+                assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
                 await page.goBack();
-                assert.equal(page.url(), `${base}${path}index.html`);
+                assert.equal(page.url(), base + path);
                 await page.goForward();
-                assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), directory);
+                assert.equal(page.url(), `${base}${wsOnlyPath}?query=%2F%40#user_2`);
                 checkBrowser();
             } finally {
                 await context.close();

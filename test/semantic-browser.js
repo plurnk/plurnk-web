@@ -50,8 +50,8 @@ export default async function verifySemanticContent(t) {
                         assert.deepEqual(await item.locator("article > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["HEADER"]);
                         assert.deepEqual(await item.locator("article > header > *").evaluateAll((elements) => elements.map(({ tagName }) => tagName)), ["SPAN", "SPAN"]);
                         assert.equal(await field(item, "aside").textContent(), `Actual ${name} aside`);
-                        assert.equal(await field(item, "path").textContent(), "(README.md)");
-                        assert.equal(await field(item, "scope").textContent(), "<1,-1>");
+                        assert.equal(await field(item, "path").textContent(), "README.md");
+                        assert.equal(await field(item, "scope").textContent(), "L1–end");
                         assert.equal(await field(item, "pattern").textContent(), "/mudkips/");
                         assert.equal(await item.getByRole("article", { name, exact: true }).count(), 1);
                         assert.equal(await item.locator("section, div, details, button, a, dl, pre").count(), 0);
@@ -59,7 +59,7 @@ export default async function verifySemanticContent(t) {
                         assert.ok((await glyph(item)).includes(glyphs[name]), `${name}'s stylesheet glyph survives production pruning`);
                         assert.doesNotMatch(await item.innerText(), /200|Receipt body|private envelope/u);
                     }
-                    assert.equal(await field(row("glyph-read"), "count").textContent(), "{3}");
+                    assert.equal(await field(row("glyph-read"), "count").textContent(), "3 lines");
                     assert.equal(await field(row("glyph-edit"), "count").count(), 0, "no generic range-as-line-count guess");
                     assert.equal(await field(row("glyph-mcp"), "runtime").textContent(), "mcp");
                     assert.match(await glyph(row("glyph-read")), /📖/u);
@@ -75,9 +75,9 @@ export default async function verifySemanticContent(t) {
                     await list.locator("[data-operations] > details > summary").click();
                     assert.equal(await field(row("gitea-read"), "runtime").textContent(), "gitea");
                     assert.equal(await field(row("gitea-read"), "aside").textContent(), "aside");
-                    assert.equal(await field(row("gitea-read"), "path").textContent(), "(issue_read)");
-                    assert.equal(await field(row("gitea-read"), "fields").textContent(), "{repo,username,issue_number}");
-                    assert.equal(await row("gitea-read").locator("[data-plurnk-operands]").innerText(), "(issue_read) {repo,username,issue_number}");
+                    assert.equal(await field(row("gitea-read"), "path").textContent(), "issue_read");
+                    assert.equal(await field(row("gitea-read"), "fields").textContent(), "repo, username, issue_number");
+                    assert.equal(await row("gitea-read").locator("[data-plurnk-operands]").innerText(), "issue_read · repo, username, issue_number");
 
                     const read = call("read", "read", { ...selection("README.md", [1, -1], "/mudkips/"), aside: "Looking for mudkips" });
                     /** @type {any} */
@@ -86,7 +86,7 @@ export default async function verifySemanticContent(t) {
                     await present([read, readResult]);
                     await list.locator("[data-operations] > details > summary").click();
                     assert.equal(await field(row("read"), "heading").innerText(), "Looking for mudkips");
-                    assert.equal(await row("read").locator("[data-plurnk-operands]").innerText(), "(README.md) <1,-1> /mudkips/ {2}");
+                    assert.equal(await row("read").locator("[data-plurnk-operands]").innerText(), "README.md · L1–end · /mudkips/ · 2 lines");
                     await row("read").scrollIntoViewIfNeeded();
                     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                     assert.equal(await row("read").locator("[data-body-reference], details").count(), 0);
@@ -111,15 +111,15 @@ export default async function verifySemanticContent(t) {
 
                     await present([call("copy", "copy", { source: selection("a.txt", [2, 4], "/source/"), destination: selection("b.txt", [9], null) })]);
                     await list.locator("[data-operations] > details > summary").click();
-                    assert.equal(await row("copy").locator("[data-plurnk-operands]").innerText(), "(a.txt) <2,4> /source/ (b.txt) <9>");
-                    assert.deepEqual(await row("copy").locator('[data-plurnk-operand]').allTextContents(), ["(a.txt) <2,4> /source/", "(b.txt) <9>"]);
+                    assert.equal(await row("copy").locator("[data-plurnk-operands]").innerText(), "a.txt · L2–4 · /source/ → b.txt · L9");
+                    assert.deepEqual(await row("copy").locator('[data-plurnk-operand]').allTextContents(), ["a.txt · L2–4 · /source/", "b.txt · L9"]);
                     await present([call("wait", "wait", { lineMarker: { marks: [600] } }), call("empty", "wait", {})]);
                     await list.locator("[data-operations] > details > summary").click();
-                    assert.equal(await row("wait").locator("[data-plurnk-operands]").innerText(), "<600>");
+                    assert.equal(await row("wait").locator("[data-plurnk-operands]").innerText(), "600s");
                     assert.equal(await row("empty").locator("article > header").count(), 1);
                     assert.equal(await row("empty").locator("[data-plurnk-operands]").count(), 0, "no empty row or filler text");
                     await present([call("find", "find", {}), result("find", { status: 204, range: { unit: "result", total: 0, requested: [1, -1] } })]);
-                    assert.equal(await field(row("find"), "count").textContent(), "{0}");
+                    assert.equal(await field(row("find"), "count").textContent(), "0 matches");
                     const rejected = call("invalid", "read", { text: "plurnk.read(" });
                     rejected.toolCalls[0]._meta.plurnk.op = "error";
                     await present([rejected, result("invalid", { status: 400, problem: { title: "Invalid operation" } })]);
@@ -166,13 +166,13 @@ export default async function verifySemanticContent(t) {
                     await assert.rejects(present([call("duplicate", "wait", {}), result("duplicate", { status: 200 }), { ...result("duplicate", { status: 200 }), id: "other-result" }]), /Operation has duplicate immediate receipts\./u);
                     assert.equal(await row("done").count(), 1, "a rejected snapshot leaves the last valid projection intact");
                     assert.equal(await row("child-reply").locator("article > p").innerText(), '{"answer":"Delivered reply"}', "JSON-looking delivered speech remains content");
-                    assert.equal(await field(row("observation"), "path").textContent(), "(ops://helper/1)");
+                    assert.equal(await field(row("observation"), "path").textContent(), "ops://helper/1");
                     assert.equal(await field(row("observation"), "aside").count(), 0, "later observations do not borrow the invocation's aside");
-                    assert.equal(await field(row("observation"), "count").textContent(), "{2}");
+                    assert.equal(await field(row("observation"), "count").textContent(), "2 lines");
                     const hostile = '</header><script>window.summaryExecuted=true</script><img src="/unasked">&copy;';
                     await present([call("hostile", "read", { ...selection(hostile, [1, 2], hostile), aside: hostile })]);
                     assert.equal(await field(row("hostile"), "aside").textContent(), hostile);
-                    assert.equal(await field(row("hostile"), "path").textContent(), `(${hostile})`);
+                    assert.equal(await field(row("hostile"), "path").textContent(), hostile);
                     assert.equal(await field(row("hostile"), "pattern").textContent(), hostile);
                     assert.equal(await row("hostile").locator("script, img, form, a").count(), 0);
                     assert.equal(await page.evaluate(() => window.summaryExecuted), undefined);

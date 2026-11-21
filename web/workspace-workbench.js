@@ -1,26 +1,14 @@
-import { $, $$, on, route, the } from "on_the_money";
-import { directoryPath, parseDirectory } from "../src/directory-addresses.js";
+import { $, $$, on, the } from "on_the_money";
+import { directoryPath, parseDirectory, parseSessionHash } from "../src/directory-addresses.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
-
-// {§web-workspace-tabs} RFC 9112 caps HTTP/1.1 browsers at 6 concurrent connections per origin.
-// Retaining 1 workspace /notifications SSE stream plus at most 3 connected SessionAgent /acp streams
-// always reserves >= 2 connections for POST /auth/token, POST /acp, GET hydrations, and POST /render/mermaid.
-const MAX_CONNECTED_SESSION_PANES = 3;
-
-const INTRA_WORKSPACE_LINK = [
-    "[data-workspace-route]",
-    "main a[data-session-link]",
-    "main a[data-session-name]",
-    "main [data-session-workspace] a",
-    "#session-workspace a",
-    "#session-descendants a",
-].join(", ");
 
 /**
  * @typedef {{
  *   readonly id: number,
  *   readonly name: string,
  *   readonly parentSessionId: number | null,
+ *   readonly parentName?: string | null,
+ *   readonly parentOrigin?: string | null,
  *   readonly kind: "root" | "work" | "fork",
  *   readonly lifecycle: string,
  *   readonly gates: number,
@@ -33,21 +21,16 @@ const INTRA_WORKSPACE_LINK = [
  * @typedef {{
  *   deactivate(): void,
  *   activate(): void,
- *   canEvict(): boolean,
  *   dispose(): void,
  * }} PaneController
  */
 
 /**
  * @typedef {{
- *   readonly routeKey: string,
- *   readonly kind: "workspace" | "session",
- *   readonly sessionName: string | null,
+ *   readonly sessionName: string,
  *   readonly main: HTMLElement,
- *   readonly footer: HTMLElement | null,
- *   readonly breadcrumb: HTMLElement,
+ *   readonly footer: HTMLElement,
  *   readonly controller: PaneController,
- *   lastUsedSeq: number,
  * }} PaneEntry
  */
 
@@ -70,7 +53,7 @@ function isVisibleInTabStrip(session, selectedSession) {
 }
 
 /**
- * {§web-workspace-tabs} Live intra-workspace tab bar, quick-switcher modal, and resident pane workbench.
+ * {§web-workspace-tabs} Progressive-disclosure desktop session tabs, `#<session>` hash routing, quick-switcher modal, and resident WebSocket `/acp` panes.
  * @param {HTMLElement} tabs
  */
 export default async function observeWorkspaceWorkbench(tabs) {
@@ -82,6 +65,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
     const workspaceId = Number(rawWorkspaceId);
     const auth = rawAuth;
     const live = tabs.dataset.live === "true";
+    const initialYolo = tabs.dataset.initialYolo === "true";
     let currentWorkspaceName = tabs.dataset.workspaceName ?? String(workspaceId);
     /** @type {Set<string>} */
     const knownWorkspaceNames = new Set([currentWorkspaceName]);
@@ -95,12 +79,13 @@ export default async function observeWorkspaceWorkbench(tabs) {
     const tabsList = rawTabsList;
     const switcherButton = rawSwitcherButton;
 
-    const rawHeader = $("body > header");
-    if (!(rawHeader instanceof HTMLElement)) throw new Error("Workspace header is absent.");
-    const headerEl = rawHeader;
+    // Hoist workspace-level management dialogs to document.body so they survive pane swaps.
+    for (const dialog of $$(initialMain, ":scope > dialog")) {
+        document.body.append(dialog);
+    }
 
     /** @returns {{ icon: string, label: string }} */
-    function readBreadcrumbMarker() {
+    function readWorkspaceMarker() {
         const sessionMarker = $('#session-workspace > [role="img"]');
         if (sessionMarker) {
             return {
@@ -108,21 +93,15 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 label: sessionMarker.getAttribute("aria-label") ?? "Folderless workspace",
             };
         }
-        const overviewCurrent = $('header nav[aria-label="breadcrumb"] [aria-current="page"][data-text="name"]');
-        const prev = overviewCurrent?.previousElementSibling;
-        return {
-            icon: prev?.textContent ?? "☁️",
-            label: prev?.getAttribute("aria-label") ?? "Folderless workspace",
-        };
+        return { icon: "☁️", label: "Folderless workspace" };
     }
 
-    let workspaceMarker = readBreadcrumbMarker();
+    let workspaceMarker = readWorkspaceMarker();
     /** @type {boolean | null} */
     let hasProjectRoot = workspaceMarker.icon === "🗂️" ? true : null;
     /** @type {string | null} */
-    let projectLabel = initialMain.dataset.page === "session"
-        ? ($(initialMain, "#session-folder")?.getAttribute("data-project-label") || (workspaceMarker.icon === "🗂️" ? currentWorkspaceName : null))
-        : ($(initialMain, '[data-text="project-label"]')?.textContent ?? (workspaceMarker.icon === "🗂️" ? currentWorkspaceName : null));
+    let projectLabel = $(initialMain, "#session-folder")?.getAttribute("data-project-label")
+        || (workspaceMarker.icon === "🗂️" ? currentWorkspaceName : null);
     if (projectLabel !== null) hasProjectRoot = true;
 
     function recomputeWorkspaceMarker() {
@@ -136,65 +115,65 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
     }
 
+    const serverSessionName = $("#session-status")?.getAttribute("data-session-name")
+        ?? initialMain.dataset.sessionName
+        ?? null;
     /** @type {string | null} */
-    let selectedSessionName = initialMain.dataset.page === "session"
-        ? ($("#session-status")?.getAttribute("data-session-name") ?? null)
-        : null;
+    let selectedSessionName = serverSessionName;
 
     /** @type {Map<number, WorkbenchSession>} */
     const sessionsById = new Map();
     /** @type {Map<number, HTMLLIElement>} */
     const tabRowsById = new Map();
 
-    for (const item of $$(tabsList, ":scope > li[data-tab-id]")) {
-        if (!(item instanceof HTMLLIElement)) continue;
-        const idMatch = /^(\d+):(\d+)$/u.exec(item.dataset.tabId ?? "");
-        if (!idMatch) continue;
-        const id = Number(idMatch[2]);
-        tabRowsById.set(id, item);
-        const link = $(item, "a[data-tab-session]");
-        const name = link instanceof HTMLElement ? (link.dataset.tabSession ?? String(id)) : String(id);
-        const rawParent = item.dataset.parentId;
-        const parentSessionId = rawParent && /^\d+$/u.test(rawParent) ? Number(rawParent) : null;
-        const kind = asSessionKind(item.dataset.sessionKind) ?? (parentSessionId === null ? "root" : "work");
-        const lifecycle = $(item, "[data-lifecycle]")?.getAttribute("data-lifecycle") ?? "idle";
-        const rawGates = $(item, "[data-session-gates]")?.getAttribute("data-session-gates");
-        const gates = rawGates && /^\d+$/u.test(rawGates) ? Number(rawGates) : 0;
-        const rawReply = item.dataset.replyId;
-        const replyId = rawReply && /^\d+$/u.test(rawReply) ? Number(rawReply) : null;
-        const archived = item.dataset.archived === "true";
-        sessionsById.set(id, { id, name, parentSessionId, kind, lifecycle, gates, replyId, archived });
-    }
-
-    /** @param {ParentNode} overviewMain */
-    function hydrateSessionsFromOverview(overviewMain) {
-        for (const row of $$(overviewMain, 'li[data-directory-entry="session"]')) {
-            if (!(row instanceof HTMLLIElement)) continue;
-            const keyMatch = /^(\d+):(\d+)$/u.exec(row.dataset.sessionKey ?? "");
-            if (!keyMatch || Number(keyMatch[1]) !== workspaceId) continue;
-            const id = Number(keyMatch[2]);
-            const parentRow = row.parentElement?.closest('li[data-directory-entry="session"]');
-            const parentMatch = parentRow instanceof HTMLLIElement && parentRow.dataset.sessionKey
-                ? /^(\d+):(\d+)$/u.exec(parentRow.dataset.sessionKey)
-                : null;
-            const enclosingDetails = row.closest("details");
-            const isBackground = parentMatch === null && enclosingDetails instanceof HTMLDetailsElement
-                && $(enclosingDetails, ':scope > summary[data-i18n="background-work"]') !== null;
-            const parentSessionId = parentMatch ? Number(parentMatch[2]) : isBackground ? 0 : null;
-            const kind = asSessionKind(row.dataset.sessionKind) ?? (parentSessionId === null ? "root" : "work");
-            const identity = $(row, ":scope > article > header [data-session-identity], :scope > article > details > summary [data-session-identity]");
-            const name = (identity ? $(identity, ":scope > span:last-of-type")?.textContent : null) ?? String(id);
-            const lifecycle = (identity ? $(identity, "[data-lifecycle]")?.getAttribute("data-lifecycle") : null) ?? "idle";
-            const rawGates = identity ? $(identity, "[data-session-gates]")?.getAttribute("data-session-gates") : null;
+    /** @param {ParentNode} listRoot @param {boolean} [bindDomRows] */
+    function hydrateSessionsFromTabList(listRoot, bindDomRows = false) {
+        for (const item of $$(listRoot, ":scope > li[data-tab-id]")) {
+            if (!(item instanceof HTMLLIElement)) continue;
+            const idMatch = /^(\d+):(\d+)$/u.exec(item.dataset.tabId ?? "");
+            if (!idMatch) continue;
+            const id = Number(idMatch[2]);
+            if (bindDomRows) tabRowsById.set(id, item);
+            const link = $(item, "a[data-tab-session]");
+            const name = link instanceof HTMLElement ? (link.dataset.tabSession ?? String(id)) : String(id);
+            const rawParent = item.dataset.parentId;
+            const parentSessionId = rawParent && /^\d+$/u.test(rawParent) ? Number(rawParent) : null;
+            const parentName = item.dataset.parentName ?? null;
+            const parentOrigin = item.dataset.parentOrigin ?? null;
+            const kind = asSessionKind(item.dataset.sessionKind) ?? (parentSessionId === null ? "root" : "work");
+            const lifecycle = $(item, "[data-lifecycle]")?.getAttribute("data-lifecycle") ?? "idle";
+            const rawGates = $(item, "[data-session-gates]")?.getAttribute("data-session-gates");
             const gates = rawGates && /^\d+$/u.test(rawGates) ? Number(rawGates) : 0;
-            const rawReply = row.dataset.replyId;
-            const replyId = rawReply && /^\d+$/u.test(rawReply) ? Number(rawReply) : (sessionsById.get(id)?.replyId ?? null);
-            sessionsById.set(id, { id, name, parentSessionId, kind, lifecycle, gates, replyId, archived: false });
+            const rawReply = item.dataset.replyId;
+            const replyId = rawReply && /^\d+$/u.test(rawReply) ? Number(rawReply) : null;
+            const archived = item.dataset.archived === "true";
+            sessionsById.set(id, { id, name, parentSessionId, parentName, parentOrigin, kind, lifecycle, gates, replyId, archived });
         }
     }
 
-    if (initialMain.dataset.page === "workspace") {
-        hydrateSessionsFromOverview(initialMain);
+    hydrateSessionsFromTabList(tabsList, true);
+    if (tabs.dataset.foldedSessions) {
+        try {
+            const parsed = JSON.parse(tabs.dataset.foldedSessions);
+            if (Array.isArray(parsed)) {
+                for (const raw of parsed) {
+                    if (!isRecord(raw) || typeof raw.id !== "number" || typeof raw.name !== "string") continue;
+                    const parentSessionId = typeof raw.parentSessionId === "number" ? raw.parentSessionId : null;
+                    sessionsById.set(raw.id, {
+                        id: raw.id,
+                        name: raw.name,
+                        parentSessionId,
+                        parentName: typeof raw.parentName === "string" ? raw.parentName : null,
+                        parentOrigin: typeof raw.parentOrigin === "string" ? raw.parentOrigin : null,
+                        kind: asSessionKind(raw.kind) ?? (parentSessionId === null ? "root" : "work"),
+                        lifecycle: typeof raw.lifecycle === "string" ? raw.lifecycle : "idle",
+                        gates: typeof raw.gates === "number" ? raw.gates : 0,
+                        replyId: typeof raw.replyId === "number" ? raw.replyId : null,
+                        archived: false,
+                    });
+                }
+            }
+        } catch { /* ignore malformed metadata */ }
     }
 
     /** @returns {WorkbenchSession[]} */
@@ -233,6 +212,64 @@ export default async function observeWorkspaceWorkbench(tabs) {
         return ordered;
     }
 
+    function syncHeaderPlace() {
+        const wsControl = $("#session-workspace");
+        const workspacePath = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
+        if (wsControl && workspacePath !== null) {
+            the(wsControl, {
+                "workspace-name": currentWorkspaceName,
+                "workspace-path": workspacePath,
+                "workspace-icon": workspaceMarker.icon,
+                "workspace-icon-label": workspaceMarker.label,
+            });
+        }
+        if (selectedSessionName !== null) {
+            the("page-title", `${currentWorkspaceName}#${selectedSessionName} — Plurnk`);
+            for (const el of $$('[data-text="active-session-name"]')) {
+                if (el.textContent !== selectedSessionName) el.textContent = selectedSessionName;
+            }
+            for (const input of $$('input[name="session"]')) {
+                if (input instanceof HTMLInputElement && input.type === "hidden") {
+                    input.value = selectedSessionName;
+                }
+            }
+        }
+        for (const input of $$('input[name="workspace"]')) {
+            if (input instanceof HTMLInputElement && input.type === "hidden") {
+                input.value = currentWorkspaceName;
+            }
+        }
+
+        // Sync parent session link in #dialog-session-manage
+        const parentLine = $("#dialog-session-manage [data-session-parent-line]");
+        if (parentLine instanceof HTMLElement && selectedSessionName !== null) {
+            const currentEntry = [...sessionsById.values()].find(({ name }) => name === selectedSessionName);
+            const parentEntry = currentEntry?.parentSessionId != null
+                ? sessionsById.get(currentEntry.parentSessionId) ?? null
+                : null;
+            const resolvedParentName = parentEntry?.name ?? currentEntry?.parentName ?? null;
+            const resolvedParentOrigin = parentEntry ? "model" : (currentEntry?.parentOrigin ?? null);
+            if (resolvedParentName !== null) {
+                parentLine.hidden = false;
+                parentLine.replaceChildren();
+                if (resolvedParentOrigin === "model") {
+                    const frag = $.clone(parentLine, "#session-manage-parent-link");
+                    const link = $(frag, "a[data-workspace-route]");
+                    if (link instanceof HTMLAnchorElement) {
+                        link.href = `#${encodeURIComponent(resolvedParentName)}`;
+                        link.dataset.tabSession = resolvedParentName;
+                    }
+                } else {
+                    $.clone(parentLine, "#session-manage-parent-text");
+                }
+                the(parentLine, { "parent-name": resolvedParentName });
+            } else {
+                parentLine.hidden = true;
+                parentLine.replaceChildren();
+            }
+        }
+    }
+
     /** @type {HTMLDialogElement | null} */
     let switcherDialog = null;
     /** @type {HTMLInputElement | null} */
@@ -260,36 +297,18 @@ export default async function observeWorkspaceWorkbench(tabs) {
             if (direct) switcherSessions.push(direct);
         }
         switcherList.replaceChildren();
-        const overviewHref = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
-        if (overviewHref !== null) {
-            const overviewItem = /** @type {HTMLLIElement} */ ($.clone(switcherList, "#workspace-switcher-item"));
-            overviewItem.dataset.switcherEntry = "overview";
-            overviewItem.dataset.switcherSearchText = `overview ${currentWorkspaceName}`;
-            const link = $(overviewItem, "a[data-workspace-route]");
-            const lifecycleEl = $(overviewItem, "[data-lifecycle]");
-            const labelEl = $(overviewItem, "[data-switcher-label]");
-            lifecycleEl?.remove();
-            if (link) {
-                link.setAttribute("data-workspace-route", "overview");
-                link.setAttribute("href", overviewHref);
-                if (selectedSessionName === null) link.setAttribute("aria-current", "true");
-                else link.removeAttribute("aria-current");
-            }
-            if (labelEl) labelEl.textContent = "Overview";
-        }
         for (const session of switcherSessions) {
-            const sessionHref = directoryPath({ kind: "session", workspace: currentWorkspaceName, session: session.name });
-            if (sessionHref === null) continue;
             const item = /** @type {HTMLLIElement} */ ($.clone(switcherList, "#workspace-switcher-item"));
             item.dataset.switcherEntry = `${workspaceId}:${session.id}`;
             item.dataset.sessionKind = session.kind;
-            item.dataset.switcherSearchText = `@${session.name} ${session.kind} ${session.lifecycle}`;
+            item.dataset.switcherSearchText = `#${session.name} ${session.name} ${session.kind} ${session.lifecycle}`;
             const link = $(item, "a[data-workspace-route]");
             const lifecycleEl = $(item, "[data-lifecycle]");
             const labelEl = $(item, "[data-switcher-label]");
             if (link) {
                 link.setAttribute("data-workspace-route", "session");
-                link.setAttribute("href", sessionHref);
+                link.setAttribute("data-tab-session", session.name);
+                link.setAttribute("href", `#${encodeURIComponent(session.name)}`);
                 if (session.name === selectedSessionName) link.setAttribute("aria-current", "true");
                 else link.removeAttribute("aria-current");
                 if (session.gates > 0) {
@@ -302,16 +321,15 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
             }
             if (lifecycleEl) lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
-            if (labelEl) labelEl.textContent = `@${session.name}`;
+            if (labelEl) labelEl.textContent = `#${session.name}`;
         }
         applySwitcherFilter();
     }
 
     function reconcileTabs() {
         tabs.dataset.workspaceName = currentWorkspaceName;
-        for (const input of $$('dialog#dialog-session-create form input[name="workspace"]')) {
-            if (input instanceof HTMLInputElement) input.value = currentWorkspaceName;
-        }
+        syncHeaderPlace();
+
         const orderedUnarchived = computeOrderedUnarchived();
         const visible = orderedUnarchived.filter((entry) => isVisibleInTabStrip(entry, selectedSessionName));
         if (selectedSessionName !== null && !visible.some(({ name }) => name === selectedSessionName)) {
@@ -319,17 +337,8 @@ export default async function observeWorkspaceWorkbench(tabs) {
             if (direct) visible.push(direct);
         }
 
-        const overviewLink = $(tabsList, ':scope > li:first-child > a[data-workspace-route="overview"]');
-        const overviewHref = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
-        if (overviewLink && overviewHref !== null) {
-            if (overviewLink.getAttribute("href") !== overviewHref) overviewLink.setAttribute("href", overviewHref);
-            if (selectedSessionName === null) overviewLink.setAttribute("aria-current", "true");
-            else overviewLink.removeAttribute("aria-current");
-        }
-
         for (const [index, session] of visible.entries()) {
-            const sessionHref = directoryPath({ kind: "session", workspace: currentWorkspaceName, session: session.name });
-            if (sessionHref === null) continue;
+            const sessionHash = `#${encodeURIComponent(session.name)}`;
             let row = tabRowsById.get(session.id);
             if (!row) {
                 row = /** @type {HTMLLIElement} */ ($.clone(tabsList, "#workspace-tab-item"));
@@ -347,8 +356,8 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const link = $(row, 'a[data-workspace-route="session"]');
             if (link instanceof HTMLAnchorElement) {
                 link.dataset.tabSession = session.name;
-                if (link.getAttribute("href") !== sessionHref) link.setAttribute("href", sessionHref);
-                const title = `@${session.name} (${session.lifecycle})`;
+                if (link.getAttribute("href") !== sessionHash) link.setAttribute("href", sessionHash);
+                const title = `#${session.name} (${session.lifecycle})`;
                 if (link.getAttribute("title") !== title) link.setAttribute("title", title);
                 if (session.name === selectedSessionName) link.setAttribute("aria-current", "true");
                 else link.removeAttribute("aria-current");
@@ -358,7 +367,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
                 }
                 const labelEl = $(link, "[data-tab-label]");
-                const tabText = `@${session.name}`;
+                const tabText = `#${session.name}`;
                 if (labelEl && labelEl.textContent !== tabText) labelEl.textContent = tabText;
 
                 let gatesBadge = $(link, "[data-session-gates]");
@@ -374,24 +383,46 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
             }
 
-            const desiredPosition = index + 1;
-            if (tabsList.children[desiredPosition] !== row) {
-                tabsList.insertBefore(row, tabsList.children[desiredPosition] ?? null);
+            if (tabsList.children[index] !== row) {
+                tabsList.insertBefore(row, tabsList.children[index] ?? null);
             }
         }
 
-        while (tabsList.children.length > visible.length + 1) {
+        while (tabsList.children.length > visible.length) {
             tabsList.lastElementChild?.remove();
         }
 
+        tabs.dataset.tabCount = String(visible.length);
+
         let activeCount = 0;
         let gatedCount = 0;
+        let backgroundGatedCount = 0;
         for (const entry of orderedUnarchived) {
             if (["queued", "running", "parked"].includes(entry.lifecycle)) activeCount++;
-            if (entry.gates > 0) gatedCount += entry.gates;
+            if (entry.gates > 0) {
+                gatedCount += entry.gates;
+                if (entry.name !== selectedSessionName) backgroundGatedCount += entry.gates;
+            }
         }
+
+        const headerGates = $("[data-header-gates]");
+        if (headerGates instanceof HTMLElement) {
+            if (backgroundGatedCount > 0) {
+                const label = `${backgroundGatedCount} awaiting input in other sessions`;
+                headerGates.hidden = false;
+                headerGates.dataset.sessionGates = String(backgroundGatedCount);
+                headerGates.setAttribute("aria-label", label);
+                headerGates.setAttribute("title", label);
+                headerGates.textContent = String(backgroundGatedCount);
+            } else {
+                headerGates.hidden = true;
+                headerGates.removeAttribute("data-session-gates");
+                headerGates.textContent = "";
+            }
+        }
+
         const currentEl = $(switcherButton, "[data-switcher-current]");
-        const currentText = selectedSessionName === null ? "Overview" : `@${selectedSessionName}`;
+        const currentText = selectedSessionName === null ? currentWorkspaceName : `#${selectedSessionName}`;
         if (currentEl && currentEl.textContent !== currentText) currentEl.textContent = currentText;
 
         let switcherGates = $(switcherButton, "[data-session-gates]");
@@ -434,8 +465,11 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 applySwitcherFilter();
             }
         });
-        on(switcherDialog, "click", "a[data-workspace-route]", () => {
+        on(switcherDialog, "click", "a[data-workspace-route]", (event, link) => {
+            event.preventDefault();
+            const target = link.getAttribute("data-tab-session") ?? parseSessionHash(link.getAttribute("href") ?? "");
             switcherDialog?.close();
+            if (target) void selectSession(target, { updateHistory: "push", recordPlace: true });
         });
         return switcherDialog;
     }
@@ -453,13 +487,49 @@ export default async function observeWorkspaceWorkbench(tabs) {
         openSwitcherDialog();
     });
 
-    /** @param {string} href */
-    function navigateHref(href) {
-        if (live) {
-            route.go(href);
-        } else {
-            location.assign(href);
+    const pageLifetime = new AbortController();
+    on.target(window, "pagehide", (event) => {
+        if (!(event instanceof PageTransitionEvent) || !event.persisted) {
+            pageLifetime.abort();
         }
+    });
+
+    /** @param {string} sessionName */
+    function recordActivePlace(sessionName) {
+        if (!live || pageLifetime.signal.aborted) return;
+        const body = new URLSearchParams({ workspace: currentWorkspaceName, session: sessionName });
+        void fetch("/place", {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body,
+            signal: pageLifetime.signal,
+        }).catch(() => {});
+    }
+
+    /** @param {string} targetPath */
+    function navigateHref(targetPath) {
+        if (targetPath.startsWith("#")) {
+            const targetSession = parseSessionHash(targetPath);
+            if (targetSession) {
+                void selectSession(targetSession, { updateHistory: "push", recordPlace: true });
+            }
+            return;
+        }
+        const dir = parseDirectory(targetPath);
+        if (dir && dir.kind === "session" && (dir.workspace === currentWorkspaceName || knownWorkspaceNames.has(dir.workspace))) {
+            if (dir.workspace !== currentWorkspaceName) {
+                currentWorkspaceName = dir.workspace;
+                knownWorkspaceNames.add(dir.workspace);
+                recomputeWorkspaceMarker();
+            }
+            const nextUrl = directoryPath({ kind: "session", workspace: currentWorkspaceName, session: dir.session });
+            if (nextUrl && location.pathname !== nextUrl.split("#", 1)[0]) {
+                history.replaceState(null, "", nextUrl);
+            }
+            void selectSession(dir.session, { updateHistory: "push", recordPlace: true });
+            return;
+        }
+        location.assign(targetPath);
     }
 
     on.target(window, "keydown", (rawEvent) => {
@@ -483,11 +553,11 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const visibleLinks = /** @type {HTMLAnchorElement[]} */ ($$(switcherList, ":scope > li:not([hidden]) > a[data-workspace-route]"));
             if (rawEvent.key === "Enter" && rawEvent.target === switcherSearch) {
                 const first = visibleLinks[0];
-                const href = first?.getAttribute("href");
-                if (href) {
+                const target = first?.dataset.tabSession ?? parseSessionHash(first?.getAttribute("href") ?? "");
+                if (target) {
                     rawEvent.preventDefault();
                     switcherDialog.close();
-                    navigateHref(href);
+                    void selectSession(target, { updateHistory: "push", recordPlace: true });
                 }
                 return;
             }
@@ -518,10 +588,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const digit = Number(digitMatch[1]);
             const targetIndex = digit === 9 && links.length > 9 ? links.length - 1 : digit - 1;
             const targetLink = links[targetIndex];
-            const href = targetLink?.getAttribute("href");
-            if (href) {
+            const target = targetLink?.dataset.tabSession;
+            if (target) {
                 rawEvent.preventDefault();
-                navigateHref(href);
+                void selectSession(target, { updateHistory: "push", recordPlace: true });
             }
             return;
         }
@@ -533,8 +603,8 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const currentIndex = links.findIndex((link) => link.getAttribute("aria-current") === "true");
             const delta = rawEvent.code === "BracketRight" ? 1 : -1;
             const nextIndex = ((currentIndex < 0 ? 0 : currentIndex) + delta + links.length) % links.length;
-            const href = links[nextIndex]?.getAttribute("href");
-            if (href) navigateHref(href);
+            const target = links[nextIndex]?.dataset.tabSession;
+            if (target) void selectSession(target, { updateHistory: "push", recordPlace: true });
             return;
         }
 
@@ -552,10 +622,214 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
     });
 
+    /** @type {Promise<{ open(section?: import("./workspace-settings.js").SettingsSection): void, notifyChanged(familyOrTopic: string): void }> | null} */
+    let settingsControllerPromise = null;
+
+    /** @param {string} [rawSection] */
+    async function openSettingsModal(rawSection) {
+        settingsControllerPromise ??= import("./workspace-settings.js").then(({ createWorkspaceSettingsController }) =>
+            createWorkspaceSettingsController(() => ({
+                workspaceId,
+                workspaceName: currentWorkspaceName,
+                sessionName: selectedSessionName,
+                auth,
+                signal: pageLifetime.signal,
+            })),
+        );
+        const controller = await settingsControllerPromise;
+        const { isSettingsSection } = await import("./workspace-settings.js");
+        controller.open(isSettingsSection(rawSection) ? rawSection : undefined);
+    }
+
+    on(document.body, "click", "[data-workspace-settings]", () => {
+        void openSettingsModal();
+    });
+
+    on(document.body, "click", "[data-open-workspace-settings]", (_event, btn) => {
+        const targetSection = btn.getAttribute("data-open-workspace-settings") ?? undefined;
+        void openSettingsModal(targetSection);
+    });
+
+    on(document.body, "click", 'a[data-workspace-route="session"], main a[data-session-name], #session-descendants a', (event, link) => {
+        if (!(link instanceof HTMLAnchorElement)) return;
+        if (event instanceof MouseEvent && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
+        const rawHref = link.getAttribute("href") ?? "";
+        if (rawHref.startsWith("#")) {
+            const target = link.dataset.tabSession ?? parseSessionHash(rawHref);
+            if (target) {
+                event.preventDefault();
+                const openDialog = link.closest("dialog");
+                if (openDialog instanceof HTMLDialogElement && openDialog.open) openDialog.close();
+                void selectSession(target, { updateHistory: "push", recordPlace: true });
+            }
+            return;
+        }
+        const dir = parseDirectory(rawHref);
+        if (dir && dir.kind === "session" && knownWorkspaceNames.has(dir.workspace)) {
+            event.preventDefault();
+            const openDialog = link.closest("dialog");
+            if (openDialog instanceof HTMLDialogElement && openDialog.open) openDialog.close();
+            void selectSession(dir.session, { updateHistory: "push", recordPlace: true });
+        }
+    });
+
+    /** @type {Map<string, PaneEntry>} */
+    const panesBySession = new Map();
+    /** @type {PaneEntry | null} */
+    let activePane = null;
+    /** @type {Promise<typeof import("./session.js")["default"]> | null} */
+    let observeSessionPromise = null;
+    const getObserveSession = () => {
+        observeSessionPromise ??= import("./session.js").then((mod) => mod.default);
+        return observeSessionPromise;
+    };
+
+    function scrollActiveTabIntoView() {
+        const currentTab = $(tabsList, 'a[aria-current="true"]');
+        currentTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+
+    /** @param {string} sessionName @returns {Promise<PaneEntry>} */
+    async function createSessionPane(sessionName) {
+        const observeSession = await getObserveSession();
+        const folderLabel = projectLabel !== null && projectLabel !== currentWorkspaceName ? projectLabel : "";
+        const sessionPath = directoryPath({ kind: "session", workspace: currentWorkspaceName, session: sessionName }) ?? `/~/${encodeURIComponent(currentWorkspaceName)}#${encodeURIComponent(sessionName)}`;
+
+        const nextMain = /** @type {HTMLElement} */ ($.clone(tabs, "#workspace-session-main", { position: "afterend" }));
+        nextMain.dataset.sessionName = sessionName;
+        const folderEl = $(nextMain, "#session-folder");
+        if (folderEl) {
+            the(folderEl, "project-label", folderLabel);
+        }
+        const connEl = $(nextMain, "#session-connection");
+        if (connEl) {
+            the(connEl, {
+                "session-path": sessionPath,
+                "sign-in-path": `/auth/login?return=${encodeURIComponent(sessionPath)}`,
+            });
+        }
+
+        const nextFooter = /** @type {HTMLElement} */ ($.clone(nextMain, "#workspace-session-footer", { position: "afterend" }));
+        nextFooter.dataset.workspaceId = String(workspaceId);
+        nextFooter.dataset.sessionId = `${workspaceId}#${sessionName}`;
+        nextFooter.dataset.sessionName = sessionName;
+        nextFooter.dataset.auth = auth;
+        if (tabs.dataset.needsOnboarding === "true") {
+            nextFooter.dataset.needsOnboarding = "true";
+        }
+        const yoloBtn = $(nextFooter, "#session-yolo");
+        if (yoloBtn instanceof HTMLButtonElement) {
+            yoloBtn.setAttribute("aria-pressed", String(initialYolo));
+            yoloBtn.title = `${initialYolo ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)`;
+            the(yoloBtn, "yolo-label", initialYolo ? "Auto-approve" : "Review");
+        }
+
+        const controller = observeSession(nextFooter, {
+            main: nextMain,
+            transport: live ? "ws" : "http",
+            onNavigate: navigateHref,
+        });
+        const entry = {
+            sessionName,
+            main: nextMain,
+            footer: nextFooter,
+            controller,
+        };
+        panesBySession.set(sessionName, entry);
+        return entry;
+    }
+
+    let selectSeq = 0;
+
+    /**
+     * @param {string} sessionName
+     * @param {{ updateHistory: "push" | "replace" | "none", recordPlace: boolean }} options
+     */
+    async function selectSession(sessionName, { updateHistory, recordPlace }) {
+        if (switcherDialog?.open) switcherDialog.close();
+        const seq = ++selectSeq;
+        selectedSessionName = sessionName;
+
+        const targetHash = `#${encodeURIComponent(sessionName)}`;
+        if (updateHistory === "push" && location.hash !== targetHash) {
+            history.pushState(null, "", targetHash);
+        } else if (updateHistory === "replace" && location.hash !== targetHash) {
+            history.replaceState(null, "", targetHash);
+        }
+        if (recordPlace) recordActivePlace(sessionName);
+
+        reconcileTabs();
+        scrollActiveTabIntoView();
+
+        const cached = panesBySession.get(sessionName);
+        if (cached) {
+            if (activePane !== cached) {
+                if (activePane) {
+                    activePane.controller.deactivate();
+                    activePane.main.remove();
+                    activePane.footer.remove();
+                } else {
+                    $("#main")?.remove();
+                    $("#session-status")?.remove();
+                }
+                tabs.insertAdjacentElement("afterend", cached.main);
+                cached.main.insertAdjacentElement("afterend", cached.footer);
+                activePane = cached;
+                cached.controller.activate();
+            }
+            return;
+        }
+
+        if (activePane) {
+            activePane.controller.deactivate();
+            activePane.main.remove();
+            activePane.footer.remove();
+            activePane = null;
+        } else {
+            $("#main")?.remove();
+            $("#session-status")?.remove();
+        }
+
+        const created = await createSessionPane(sessionName);
+        if (seq !== selectSeq) {
+            if (created !== activePane) {
+                created.controller.deactivate();
+                created.main.remove();
+                created.footer.remove();
+            }
+            return;
+        }
+        activePane = created;
+        created.controller.activate();
+        reconcileTabs();
+        scrollActiveTabIntoView();
+    }
+
+    on.target(window, "hashchange", () => {
+        const hashSession = parseSessionHash(location.hash);
+        if (hashSession !== null && hashSession !== selectedSessionName) {
+            void selectSession(hashSession, { updateHistory: "none", recordPlace: true });
+        }
+    });
+
     if (!live) {
         const statusFooter = $("#session-status");
-        if (statusFooter instanceof HTMLElement) {
-            (await import("./session.js")).default(statusFooter, { main: initialMain });
+        if (statusFooter instanceof HTMLElement && serverSessionName !== null) {
+            const observeSession = await getObserveSession();
+            const controller = observeSession(statusFooter, {
+                main: initialMain,
+                transport: "http",
+                onNavigate: navigateHref,
+            });
+            const entry = { sessionName: serverSessionName, main: initialMain, footer: statusFooter, controller };
+            panesBySession.set(serverSessionName, entry);
+            activePane = entry;
+            const hashSession = parseSessionHash(location.hash);
+            if (hashSession !== null && hashSession !== serverSessionName) {
+                await selectSession(hashSession, { updateHistory: "none", recordPlace: false });
+            } else if (!location.hash) {
+                history.replaceState(null, "", `#${encodeURIComponent(serverSessionName)}`);
+            }
         }
         return;
     }
@@ -629,7 +903,16 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 const ids = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
                 let changed = false;
                 for (const sid of ids) {
-                    if (typeof sid === "number" && sessionsById.delete(sid)) {
+                    if (typeof sid !== "number") continue;
+                    const existing = sessionsById.get(sid);
+                    if (existing) {
+                        const pane = panesBySession.get(existing.name);
+                        if (pane && pane !== activePane) {
+                            pane.controller.dispose();
+                            panesBySession.delete(existing.name);
+                        }
+                    }
+                    if (sessionsById.delete(sid)) {
                         tabRowsById.delete(sid);
                         changed = true;
                     }
@@ -675,16 +958,18 @@ export default async function observeWorkspaceWorkbench(tabs) {
             case "notifications/resync": {
                 void (async () => {
                     try {
-                        const res = await fetch(`/~/${encodeURIComponent(currentWorkspaceName)}/`, {
+                        const wsPath = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
+                        if (!wsPath) return;
+                        const res = await fetch(wsPath, {
                             headers: { accept: "text/html" },
                             cache: "no-store",
                         });
                         if (!res.ok) return;
                         const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-                        const parsedMain = $(doc, "main#main");
-                        if (parsedMain) {
+                        const parsedTabsList = $(doc, "#workspace-tabs > ul");
+                        if (parsedTabsList) {
                             sessionsById.clear();
-                            hydrateSessionsFromOverview(parsedMain);
+                            hydrateSessionsFromTabList(parsedTabsList, false);
                             reconcileTabs();
                         }
                         if (settingsControllerPromise) {
@@ -771,334 +1056,34 @@ export default async function observeWorkspaceWorkbench(tabs) {
         },
     });
 
-    /** @type {Map<string, PaneEntry>} */
-    const panesByRoute = new Map();
-    /** @type {PaneEntry | null} */
-    let activePane = null;
-    let navSeq = 0;
-    let useSeq = 0;
-    const pageLifetime = new AbortController();
+    await notifications.initialAuthSettled;
+    const statusFooter = $("#session-status");
+    const initialHashSession = parseSessionHash(location.hash);
 
-    on.target(window, "pagehide", (event) => {
-        if (!(event instanceof PageTransitionEvent) || !event.persisted) {
-            pageLifetime.abort();
+    if (initialHashSession !== null && initialHashSession !== serverSessionName) {
+        await selectSession(initialHashSession, { updateHistory: "none", recordPlace: true });
+        return;
+    }
+
+    if (statusFooter instanceof HTMLElement && serverSessionName !== null) {
+        if (!location.hash) {
+            history.replaceState(null, "", `#${encodeURIComponent(serverSessionName)}`);
         }
-    });
-
-    /** @type {Promise<{ open(section?: import("./workspace-settings.js").SettingsSection): void, notifyChanged(familyOrTopic: string): void }> | null} */
-    let settingsControllerPromise = null;
-
-    /** @param {string} [rawSection] */
-    async function openSettingsModal(rawSection) {
-        settingsControllerPromise ??= import("./workspace-settings.js").then(({ createWorkspaceSettingsController }) =>
-            createWorkspaceSettingsController(() => ({
-                workspaceId,
-                workspaceName: currentWorkspaceName,
-                sessionName: selectedSessionName,
-                auth,
-                signal: pageLifetime.signal,
-            })),
-        );
-        const controller = await settingsControllerPromise;
-        const { isSettingsSection } = await import("./workspace-settings.js");
-        controller.open(isSettingsSection(rawSection) ? rawSection : undefined);
-    }
-
-    on(tabs, "click", "[data-workspace-settings]", () => {
-        void openSettingsModal();
-    });
-
-    on(document.body, "click", "[data-open-workspace-settings]", (_event, btn) => {
-        const targetSection = btn.getAttribute("data-open-workspace-settings") ?? undefined;
-        void openSettingsModal(targetSection);
-    });
-
-    const initialSessionCreateDialog = $("#dialog-session-create");
-    /** @type {HTMLDialogElement | null} */
-    const sessionCreateBlueprint = initialSessionCreateDialog instanceof HTMLDialogElement
-        ? /** @type {HTMLDialogElement} */ (initialSessionCreateDialog.cloneNode(true))
-        : null;
-
-    /** @param {number} maxCount */
-    function evictOverflowSessionPanes(maxCount) {
-        const sessionEntries = [...panesByRoute.values()].filter((entry) => entry.kind === "session");
-        if (sessionEntries.length <= maxCount) return;
-        const evictable = sessionEntries
-            .filter((entry) => entry !== activePane && entry.controller.canEvict())
-            .toSorted((a, b) => a.lastUsedSeq - b.lastUsedSeq);
-        let remaining = sessionEntries.length;
-        for (const victim of evictable) {
-            if (remaining <= maxCount) break;
-            victim.controller.dispose();
-            panesByRoute.delete(victim.routeKey);
-            remaining--;
-        }
-    }
-
-    /** @param {HTMLElement} breadcrumb @param {"workspace" | "session"} kind @param {string | null} sessionName */
-    function syncBreadcrumbElement(breadcrumb, kind, sessionName) {
-        const workspacePath = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
-        if (kind === "workspace") {
-            const markerEl = $(breadcrumb, "[data-workspace-marker], li:nth-child(2) > [role='img']");
-            if (markerEl) {
-                if (markerEl.textContent !== workspaceMarker.icon) markerEl.textContent = workspaceMarker.icon;
-                if (markerEl.getAttribute("aria-label") !== workspaceMarker.label) markerEl.setAttribute("aria-label", workspaceMarker.label);
-            }
-            const nameEl = $(breadcrumb, '[aria-current="page"][data-text="name"]');
-            if (nameEl && nameEl.textContent !== currentWorkspaceName) nameEl.textContent = currentWorkspaceName;
-        } else if (sessionName !== null) {
-            const wsSpan = $(breadcrumb, "#session-workspace");
-            if (wsSpan && workspacePath !== null) {
-                the(wsSpan, {
-                    "workspace-name": currentWorkspaceName,
-                    "workspace-path": workspacePath,
-                    "workspace-icon": workspaceMarker.icon,
-                    "workspace-icon-label": workspaceMarker.label,
-                });
-            }
-            const sessionEl = $(breadcrumb, '[aria-current="page"][data-text="name"]');
-            if (sessionEl && sessionEl.textContent !== sessionName) sessionEl.textContent = sessionName;
-        }
-    }
-
-    /** @param {"workspace" | "session"} kind @param {string | null} sessionName */
-    function mountTransitionalBreadcrumb(kind, sessionName) {
-        $('header nav[aria-label="breadcrumb"]')?.remove();
-        const crumb = kind === "workspace"
-            ? $.clone(headerEl, "#workspace-breadcrumb-overview")
-            : $.clone(headerEl, "#workspace-breadcrumb-session");
-        syncBreadcrumbElement(crumb, kind, sessionName);
-        return crumb;
-    }
-
-    function scrollActiveTabIntoView() {
-        const currentTab = $(tabsList, 'a[aria-current="true"]');
-        currentTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }
-
-    const initialBreadcrumb = $('header nav[aria-label="breadcrumb"]');
-    if (!(initialBreadcrumb instanceof HTMLElement)) throw new Error("Workspace breadcrumb is absent.");
-
-    if (initialMain.dataset.page === "session") {
-        const statusFooter = $("#session-status");
-        if (!(statusFooter instanceof HTMLElement)) throw new Error("Session footer is absent.");
-        const sessionName = statusFooter.dataset.sessionName ?? "";
-        await notifications.initialAuthSettled;
-        const { default: observeSession } = await import("./session.js");
-        const controller = observeSession(statusFooter, { main: initialMain });
-        const routeKey = `session:${sessionName}`;
+        const observeSession = await getObserveSession();
+        const controller = observeSession(statusFooter, {
+            main: initialMain,
+            transport: "ws",
+            onNavigate: navigateHref,
+        });
         const entry = {
-            routeKey,
-            kind: /** @type {const} */ ("session"),
-            sessionName,
+            sessionName: serverSessionName,
             main: initialMain,
             footer: statusFooter,
-            breadcrumb: initialBreadcrumb,
             controller,
-            lastUsedSeq: ++useSeq,
         };
-        panesByRoute.set(routeKey, entry);
+        panesBySession.set(serverSessionName, entry);
         activePane = entry;
-    } else if (initialMain.dataset.page === "workspace") {
-        const { default: observeOverview } = await import("./overview.js");
-        const controller = observeOverview(initialMain);
-        const routeKey = "overview";
-        const entry = {
-            routeKey,
-            kind: /** @type {const} */ ("workspace"),
-            sessionName: null,
-            main: initialMain,
-            footer: null,
-            breadcrumb: initialBreadcrumb,
-            controller,
-            lastUsedSeq: ++useSeq,
-        };
-        panesByRoute.set(routeKey, entry);
-        activePane = entry;
-    }
-
-    /** @param {string} pathname */
-    function handleRouteChange(pathname) {
-        if (switcherDialog?.open) switcherDialog.close();
-        const dir = parseDirectory(pathname);
-        if (!dir || dir.kind === "daemon" || !knownWorkspaceNames.has(dir.workspace)) {
-            location.assign(location.href);
-            return;
-        }
-        const routeKey = dir.kind === "workspace" ? "overview" : `session:${dir.session}`;
-        const cached = panesByRoute.get(routeKey);
-        if (!cached && dir.workspace !== currentWorkspaceName) {
-            location.assign(location.href);
-            return;
-        }
-
-        const seq = ++navSeq;
-        selectedSessionName = dir.kind === "session" ? dir.session : null;
-
-        if (cached) {
-            cached.lastUsedSeq = ++useSeq;
-            if (activePane !== cached) {
-                if (activePane) {
-                    activePane.controller.deactivate();
-                    activePane.main.remove();
-                    activePane.footer?.remove();
-                } else {
-                    $("#main")?.remove();
-                    $("#session-status")?.remove();
-                }
-                syncBreadcrumbElement(cached.breadcrumb, cached.kind, cached.sessionName);
-                const currentCrumb = $('header nav[aria-label="breadcrumb"]');
-                if (currentCrumb && currentCrumb !== cached.breadcrumb) {
-                    currentCrumb.replaceWith(cached.breadcrumb);
-                } else if (!currentCrumb) {
-                    headerEl.append(cached.breadcrumb);
-                }
-                tabs.insertAdjacentElement("afterend", cached.main);
-                if (cached.footer) cached.main.insertAdjacentElement("afterend", cached.footer);
-                activePane = cached;
-                the("page-title", cached.kind === "workspace"
-                    ? `${currentWorkspaceName} — Plurnk`
-                    : `${currentWorkspaceName}@${cached.sessionName} — Plurnk`);
-                cached.controller.activate();
-            }
-            reconcileTabs();
-            scrollActiveTabIntoView();
-            return;
-        }
-
-        if (activePane) {
-            activePane.controller.deactivate();
-            activePane.main.remove();
-            activePane.footer?.remove();
-            activePane = null;
-        } else {
-            $("#main")?.remove();
-            $("#session-status")?.remove();
-        }
-
-        const transitionalMain = $.clone(tabs, "#workspace-transitional-main", { position: "afterend" });
-        transitionalMain.dataset.page = dir.kind;
-        if (sessionCreateBlueprint) {
-            const createClone = /** @type {HTMLDialogElement} */ (sessionCreateBlueprint.cloneNode(true));
-            const wsInput = $(createClone, 'input[name="workspace"]');
-            if (wsInput instanceof HTMLInputElement) wsInput.value = currentWorkspaceName;
-            transitionalMain.append(createClone);
-        }
-        mountTransitionalBreadcrumb(dir.kind, dir.kind === "session" ? dir.session : null);
-        the("page-title", dir.kind === "workspace"
-            ? `${currentWorkspaceName} — Plurnk`
-            : `${currentWorkspaceName}@${dir.session} — Plurnk`);
         reconcileTabs();
         scrollActiveTabIntoView();
-
-        const fetchPath = directoryPath(dir.kind === "workspace"
-            ? { kind: "workspace", workspace: currentWorkspaceName }
-            : { kind: "session", workspace: currentWorkspaceName, session: dir.session });
-        if (fetchPath === null) {
-            location.assign(location.href);
-            return;
-        }
-
-        void (async () => {
-            try {
-                const response = await fetch(fetchPath, {
-                    headers: { accept: "text/html" },
-                    cache: "no-store",
-                    signal: pageLifetime.signal,
-                });
-                if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                if (!response.ok || response.redirected) {
-                    location.assign(fetchPath);
-                    return;
-                }
-                const html = await response.text();
-                if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                const parsed = new DOMParser().parseFromString(html, "text/html");
-                const fetchedMain = $(parsed, "#main");
-                const fetchedFooter = $(parsed, "#session-status");
-                const fetchedBreadcrumb = $(parsed, 'header nav[aria-label="breadcrumb"]');
-                if (!(fetchedMain instanceof HTMLElement) || !(fetchedBreadcrumb instanceof HTMLElement)) {
-                    location.assign(fetchPath);
-                    return;
-                }
-                if (dir.kind === "session" && !(fetchedFooter instanceof HTMLElement)) {
-                    location.assign(fetchPath);
-                    return;
-                }
-
-                const nextMain = /** @type {HTMLElement} */ (document.adoptNode(fetchedMain));
-                const nextFooter = fetchedFooter instanceof HTMLElement
-                    ? /** @type {HTMLElement} */ (document.adoptNode(fetchedFooter))
-                    : null;
-                const nextBreadcrumb = /** @type {HTMLElement} */ (document.adoptNode(fetchedBreadcrumb));
-
-                if (dir.kind === "session") {
-                    evictOverflowSessionPanes(MAX_CONNECTED_SESSION_PANES - 1);
-                    await notifications.initialAuthSettled;
-                    if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                }
-
-                const mountedMain = transitionalMain.isConnected ? transitionalMain : nextMain;
-                if (mountedMain === transitionalMain) {
-                    for (const attr of [...transitionalMain.attributes]) {
-                        if (!nextMain.hasAttribute(attr.name)) transitionalMain.removeAttribute(attr.name);
-                    }
-                    for (const attr of nextMain.attributes) {
-                        transitionalMain.setAttribute(attr.name, attr.value);
-                    }
-                    transitionalMain.replaceChildren(...nextMain.childNodes);
-                } else {
-                    $("#main")?.remove();
-                    tabs.insertAdjacentElement("afterend", nextMain);
-                }
-                $("#session-status")?.remove();
-                const currentCrumb = $('header nav[aria-label="breadcrumb"]');
-                if (currentCrumb) currentCrumb.replaceWith(nextBreadcrumb);
-                else headerEl.append(nextBreadcrumb);
-                if (nextFooter) mountedMain.insertAdjacentElement("afterend", nextFooter);
-
-                if (dir.kind === "workspace") {
-                    hydrateSessionsFromOverview(mountedMain);
-                    const { default: observeOverview } = await import("./overview.js");
-                    if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                    const controller = observeOverview(mountedMain);
-                    const entry = {
-                        routeKey,
-                        kind: /** @type {const} */ ("workspace"),
-                        sessionName: null,
-                        main: mountedMain,
-                        footer: null,
-                        breadcrumb: nextBreadcrumb,
-                        controller,
-                        lastUsedSeq: ++useSeq,
-                    };
-                    panesByRoute.set(routeKey, entry);
-                    activePane = entry;
-                } else {
-                    if (!nextFooter) return;
-                    const { default: observeSession } = await import("./session.js");
-                    if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                    const controller = observeSession(nextFooter, { main: mountedMain });
-                    const entry = {
-                        routeKey,
-                        kind: /** @type {const} */ ("session"),
-                        sessionName: dir.session,
-                        main: mountedMain,
-                        footer: nextFooter,
-                        breadcrumb: nextBreadcrumb,
-                        controller,
-                        lastUsedSeq: ++useSeq,
-                    };
-                    panesByRoute.set(routeKey, entry);
-                    activePane = entry;
-                }
-                reconcileTabs();
-            } catch {
-                if (seq !== navSeq || pageLifetime.signal.aborted) return;
-                location.assign(fetchPath);
-            }
-        })();
     }
-
-    route(handleRouteChange, { match: INTRA_WORKSPACE_LINK, initial: false });
 }

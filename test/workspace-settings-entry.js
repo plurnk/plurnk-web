@@ -17,7 +17,7 @@ const settings = createWorkspaceSettingsController(() => ({
     signal: lifetime.signal,
 }));
 
-on($("#workspace-tabs"), "click", "[data-workspace-settings]", () => {
+on(document.body, "click", "[data-workspace-settings]", () => {
     settings.open();
 });
 

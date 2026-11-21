@@ -6,30 +6,28 @@ Native OTM browser module for [`@plurnk/plurnk-service`](https://github.com/plur
 
 | Path | Surface |
 | --- | --- |
-| `/` | Live daemon-wide session overview ordered by latest delivered reply (`PLURNK_WEB_OVERVIEW_SESSIONS`, `PLURNK_WEB_OVERVIEW_EXCERPT_CHARS`), client-side filter, and `/notifications` SSE updates. |
-| `/~/` | Workspace directory (`☁️` folderless, `🗂️` folder-backed) with `New workspace` `<dialog>`. |
-| `/~/<workspace>/` | Live workspace session overview, workspace session tab strip (`#workspace-tabs`), collapsed child trees, `Background work` branch section, and `Rename workspace` / `Archive workspace` / `New session` `<dialog>` actions. |
-| `/~/<workspace>@<session>/` | Workspace session tab strip (`#workspace-tabs`), passive ACP v2 session attachment, live transcript, composer, inline approval/elicitation forms, and `Archive session` / `New session` actions ([directory addresses](SPEC.md#web-directory-addresses-named-directory-addresses)). |
+| `/` | Remembered-session arrival (`303` to this browser's last active unarchived session, else most recent unarchived root session, else one newly allocated starter `<workspace>#user`). |
+| `/~/<workspace>#<session>` | Singular chat workbench: full-width header (`New workspace`, `New session`, `workspace#session`, `Search`, `Profile`, `Sign out`), progressive-disclosure session tabs (`#workspace-tabs`, hidden when 1 session is visible), WebSocket ACP v2 live session attachment, prompt-top glyph pills, steady composer, and inline approval/elicitation forms ([directory addresses](SPEC.md#web-directory-addresses-named-directory-addresses)). |
+| `/search/` | Dedicated Search & Directory page (`Cmd/Ctrl+K`): autocomplete search (`q`), `workspace` / `status` (`all`, `active`, `gated`, `failed`, `archived`) / `kind` (`all`, `chats`, `work`) filters, `Open project folder…` (`#dialog-workspace-create`), `Unarchive` actions, collapsible reply previews, and live `/notifications` SSE updates. |
 | `/auth/token` | Same-origin `POST` exchanging the `HttpOnly` browser session cookie for short-lived ACP bearer credentials (refresh grants remain server-side). |
 
-Navigation never creates state or starts inference; closing or reloading a page never cancels running work. Passive `/notifications` and session observation streams recover automatically across transient network drops and daemon restarts without retrying mutations.
+Closing or reloading a page never cancels running work. Passive `/notifications` and WebSocket `/acp` session streams recover automatically across transient network drops and daemon restarts without retrying mutations.
 
 ## Session controls & rendering
 
 | Area | Behavior |
 | --- | --- |
-| Workspace tabs & settings | Daemon-truth `#workspace-tabs` strip (`Overview`, `💬` root, `🔱` fork, and active/gated/failed `🐜` child workers that fold once settled), in-place resident pane switching (up to 3 connected session streams per workspace tab), `< 768px` compact switcher, `⌘/Ctrl+K` quick-switcher `<dialog>`, `Alt+1…9` / `Alt+[` / `Alt+]` / `Alt+N` chords, and a lazy `Workspace settings` `<dialog>` managing MCP servers (including OAuth continuation), skills, schedules, personas (plus per-session persona selection), file members, and masked environment variables. |
-| Composer | Multiline input (`Enter` or `⌘/Ctrl+Enter` submits on desktop keyboards while `Enter` stays a newline on touch keyboards; `Shift+Enter` and `Ctrl+J` insert newlines; `Tab` accepts the leading prompt suggestion when empty; follow-ups allowed while running; `Stop` or unfocused `Esc` cancels active work while preserving unsent draft; `/` focuses composer, `?` opens `/help`). Supports `! <cmd>` / `plurnk.*` local execution, `: <msg>` literal escape, `? <msg>` one-turn forced review, `... <msg>` deep reasoning, and `@<path>` `openPaths` pre-population. Unsent prompt text survives same-tab reloads and navigation in `sessionStorage` (`plurnk:draft:<sessionId>`) until emptied or confirmed accepted. |
-| Slash commands | `/help [cmd]`, `/onboard`, `/models [search]`, `/model [selector] [effort]`, `/effort [policy]`, `/persona [name]`, `/child [selector\|inherit]`, `/mode [review\|accept\|reject]`, `/workspaces`, `/workspace [name] [root]`, `/rename <name>`, `/sessions`, `/session [name\|--delete <name>]`, `/fork [name]`, `/parent`, `/enter <name>`, `/older`, `/newer`, `/loops`, `/loop <n>`, `/rollback <coordinate>`, `/share <folder>`, `/update`, `/script <statement>`, `/mcp …`, `/skills …`, `/schedule …`, `/personas …`, `/members …`, `/env …`, `/learn [--scope project\|plurnk] [instructions]`, `/review`, `/accept`, `/reject`, `/cancel`, `/edit [body]`, `/answer <json>`, `/yolo`, `/stop`. |
-| Approval, input & setup | Manual review by default (`PLURNK_WEB_YOLO=0`) with readable target paths/URIs, semantic unified diffs, and inline `Edit` body overrides (`_meta.plurnk.body`). `🔥 YOLO` / `🐹 Review`, `/yolo`, or `Shift+Tab` toggles per-visit auto-approval (plain-HTTP non-localhost, cross-site navigations, and `? <msg>` prompts force manual review). Questions and MCP elicitations render schema-driven native controls or JSON editors. First-run sessions with zero configured models reveal an inline setup banner and `/onboard` `<dialog>` driving `models.local` and `service.env.*` write-only into the operator `.env` file. |
-| History & disclosures | User messages and delivered replies start open; `note`, tool receipts, and completed reasoning (`PLURNK_WEB_REASONING_PREVIEW_CHARS` while live) start folded; `Load previous loop` paginates older history without mutating model context. |
+| Progressive tabs & settings | `#workspace-tabs` stays hidden on single-session chats and appears when `2+` sessions (`💬` root, `🔱` fork, or active/gated/failed `🐜` child workers) are visible, switching `#<session>` panes in `0ms` from in-document templates while keeping all visited workspace sessions connected over WebSocket `/acp`. `< 768px` collapses into `#dialog-workspace-switcher` (`⌘/Ctrl+K`); `Alt+1…9` / `Alt+[` / `Alt+]` / `Alt+N` switch or create sessions. Clicking `workspace` opens `#dialog-workspace-settings` (`MCP`, `Skills`, `Schedule`, `Personas`, `Members`, `Environment`); clicking `#session` opens `#dialog-session-manage` (`Fork session`, `New named session…`, `Rename workspace…`, `Archive…`). |
+| Steady composer & model `<dialog>` | Persistent zero-shift control strip (`Review` / `Auto-approve`, `Model` & `Effort` `<dialog>` modals with 1-click aliases + catalog search + `Set up model…`, live elapsed/descendant/gate telemetry, and `ⓘ` usage/context/cost disclosure), `/` command & `$` skill picker/autocomplete, image paste/drop/attach, `Enter` / `⌘/Ctrl+Enter` send (`Enter` stays newline on touch keyboards), `Tab` completion, and `Stop` / unfocused `Esc` cancellation. |
+| Slash commands | `/help [cmd]`, `/onboard`, `/models [search]`, `/model [selector] [effort]`, `/effort [policy]`, `/persona [name]`, `/child [selector\|inherit]`, `/mode [review\|accept\|reject]`, `/workspaces`, `/workspace [name]`, `/rename <name>`, `/sessions`, `/session [name]`, `/fork [name]`, `/parent`, `/enter`, `/older`, `/newer`, `/loops`, `/loop [n]`, `/rollback <coordinate>`, `/share <folder>`, `/update`, `/script <statement>`, `/mcp …`, `/skills …`, `/schedule …`, `/personas …`, `/members …`, `/env …`, `/learn [--scope project\|plurnk] [instructions]`, `/review`, `/accept`, `/reject`, `/cancel`, `/edit <body…>`, `/answer <json>`, `/yolo`, `/stop`. |
+| Prompt-top glyph bubbles | User messages and delivered replies stay open as clean chat turns; working operations (`💭` thinking, `🔎` find, `📖` read, `📝` edit, `⚙️` script/MCP, `🗒️` note, `🐜` subagent) accumulate as compact pill badges along the top strip of the triggering user prompt and expand inline with human-readable operands on click. `Load earlier messages` paginates older history on demand. |
 | Rich content | Sanitized Markdown with isolated footnotes; client-side [Temml](https://temml.org/) MathML loaded on demand; server-side [Ondine](https://github.com/wevm/ondine) Mermaid SVG compiled in bounded Node worker threads (`PLURNK_WEB_DIAGRAM_*`). Zero browser storage of transcripts or secrets. |
 
 ## Authentication, proxy & PWA
 
 | Concern | Configuration |
 | --- | --- |
-| Operator sign-in | Shared daemon `PLURNK_AUTH=1` (default) and `PLURNK_PASS` (`Account → Sessions` revokes one or all other sessions; `Sign out` revokes browser + module credentials). |
+| Operator sign-in | Shared daemon `PLURNK_AUTH=1` (default) and `PLURNK_PASS` (`Profile → Sessions` revokes one or all other sessions; `Sign out` revokes browser + module credentials). |
 | Reverse proxy | Set `PLURNK_AUTH_ISSUER` to the public HTTPS origin. Run `PLURNK_AUTH=0` only on trusted isolated listeners. |
 | Installable app | Browser **Install app** / **Add to Home Screen** uses the bundled web manifest (requires localhost HTTP or proxy HTTPS; online-only, no offline service-worker cache). |
 
@@ -55,9 +53,9 @@ node --conditions=plurnk-dev --import /path/to/plurnk-web/scripts/dev-loader.mjs
 | --- | --- |
 | `on_the_money/css/schema` (`@layer schema`) | Classless semantic HTML foundation and `light-dark()` tokens. |
 | `on_the_money/css/schemes/green` (`@layer scheme`) | Green palette scheme. |
-| `app-structure.css` (`@layer structure`) | Viewport grid, reading width, composer sizing, local horizontal scroll. |
+| `app-structure.css` (`@layer structure`) | Viewport grid, wide desktop reading width, composer sizing, local horizontal scroll. |
 | `app-style.css` (`@layer style`) | `#148800` brand accents, system monospace, light/dark conversation surface tokens. |
-| `app-state.css` (`@layer state`) | Glyphs, semantic card states, connection indicators, focus visibility. |
+| `app-state.css` (`@layer state`) | Glyphs, prompt-work pills, progressive tab disclosure, connection indicators, focus visibility. |
 
 ## License
 

@@ -15,7 +15,7 @@ test("{§web-host} {§web-configuration} installed module claims root on the ass
 });
 
 test("{§web-configuration} missing and invalid limits never select code defaults", (t) => {
-    const keys = ["PLURNK_WEB_LOGIN_TTL_SEC", "PLURNK_WEB_REASONING_PREVIEW_CHARS",
+    const keys = ["PLURNK_WEB_LOGIN_TTL_SEC",
         "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_OVERVIEW_EXCERPT_CHARS",
         "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_CREATE_TOKENS", "PLURNK_WEB_FORM_BYTES",
         "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_DIAGRAM_PENDING", "PLURNK_WEB_DIAGRAM_TIMEOUT_MS",
@@ -117,9 +117,11 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
-    assert.equal((await fetch(`${base}/~/`)).status, 200, "directory reads stay live when other parts are contained and face() is null");
-    assert.equal((await fetch(`${base}/~/work/`)).status, 200, "workspace directory stays live");
-    assert.equal((await fetch(`${base}/~/work@user/`)).status, 503, "session page is withheld when PLURNK_WEB_YOLO is invalid");
+    const daemonDir = await fetch(`${base}/~/`, { redirect: "manual" });
+    assert.equal(daemonDir.status, 303, "{§web-search} /~/ redirects to /search/");
+    assert.equal(daemonDir.headers.get("location"), "/search/");
+    assert.equal((await fetch(`${base}/search/`)).status, 200, "search stays live when other parts are contained and face() is null");
+    assert.equal((await fetch(`${base}/~/work`)).status, 503, "workspace session page is withheld when PLURNK_WEB_YOLO is invalid");
     assert.equal((await fetch(`${base}/render/mermaid`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -130,12 +132,114 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, "sec-fetch-site": "same-origin" },
         body: "token=00000000-0000-4000-8000-000000000000",
     })).status, 503, "workspace creation is withheld when PLURNK_WEB_CREATE_TTL_SEC is invalid");
-    assert.equal((await fetch(`${base}/workspaces/rename`, {
+    const renameRes = await fetch(`${base}/workspaces/rename`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base, "sec-fetch-site": "same-origin" },
         body: "workspace=work&name=renamed",
         redirect: "manual",
-    })).status, 303, "rename does not depend on creation tokens and stays live");
+    });
+    assert.equal(renameRes.status, 303, "rename does not depend on creation tokens and stays live");
+    assert.equal(renameRes.headers.get("location"), "/~/renamed");
+});
+
+test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session arrival, converges empty-daemon allocation, and records POST /place", async (t) => {
+    /** @type {Array<{ id: number, name: string, project_root: string | null, project_label: string | null, archived_at: string | null }>} */
+    let workspaces = [];
+    /** @type {Map<number, Array<{ id: number, name: string, origin: string, parentSessionId: number | null, kind: string, lifecycle: string, archived_at: string | null, reply?: { id: number, at: number, coordinate: string, excerpt: string, continued: boolean } | null }>>} */
+    const sessionsByWs = new Map();
+    let wsAllocated = 0;
+    let sessAllocated = 0;
+    const starterGate = Promise.withResolvers();
+    let holdStarter = true;
+
+    let handler;
+    const mod = createModule();
+    await mod.start(/** @type {any} */ ({
+        registerHttpRoute(_prefix, serve) { handler = serve; },
+        listWorkspaces: async () => workspaces,
+        listSessions: async (wsId) => sessionsByWs.get(wsId) ?? [],
+        createWorkspace: async ({ projectRoot }) => {
+            if (holdStarter) await starterGate.promise;
+            wsAllocated += 1;
+            const ws = { id: 10 + wsAllocated, name: `amber-brook-${wsAllocated}`, project_root: projectRoot ?? null, project_label: projectRoot ?? null, archived_at: null };
+            workspaces = [...workspaces, ws];
+            return { workspaceId: ws.id, workspaceName: ws.name, projectRoot: ws.project_root, projectLabel: ws.project_label };
+        },
+        createSession: async ({ workspaceId, name }) => {
+            sessAllocated += 1;
+            const sessionName = name ?? `s-${sessAllocated}`;
+            const row = { id: 100 + sessAllocated, name: sessionName, origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: null };
+            sessionsByWs.set(workspaceId, [...(sessionsByWs.get(workspaceId) ?? []), row]);
+            return { sessionId: row.id, sessionName };
+        },
+    }));
+    const server = createServer(handler);
+    t.after(async () => {
+        await mod.close();
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    // Tier 3: racing GET / requests on an empty daemon converge on one starter <ws>#user allocation.
+    const racing = [
+        fetch(`${base}/`, { redirect: "manual" }),
+        fetch(`${base}/`, { redirect: "manual" }),
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    starterGate.resolve();
+    holdStarter = false;
+    const [firstArrival, secondArrival] = await Promise.all(racing);
+    assert.equal(firstArrival.status, 303);
+    assert.equal(secondArrival.status, 303);
+    assert.equal(firstArrival.headers.get("location"), "/~/amber-brook-1#user");
+    assert.equal(secondArrival.headers.get("location"), "/~/amber-brook-1#user");
+    assert.equal(wsAllocated, 1, "starterFlight allocates one workspace across concurrent GET / requests");
+    assert.equal(sessAllocated, 1, "starterFlight allocates one user session across concurrent GET / requests");
+    assert.match(firstArrival.headers.get("set-cookie") ?? "", /^plurnk_web_place=11:101;/u);
+
+    // Add a second workspace with a newer session and an older remembered session in workspace 11.
+    workspaces.push({ id: 12, name: "cobalt-pine", project_root: null, project_label: null, archived_at: null });
+    sessionsByWs.set(11, [
+        { id: 101, name: "user", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 1, at: 1000, coordinate: "1/1/1", excerpt: "Earlier", continued: false } },
+        { id: 102, name: "review", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 2, at: 2000, coordinate: "1/1/1", excerpt: "Review", continued: false } },
+    ]);
+    sessionsByWs.set(12, [
+        { id: 201, name: "latest", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 9, at: 9000, coordinate: "1/1/1", excerpt: "Newest", continued: false } },
+    ]);
+
+    // Tier 1: browser with plurnk_web_place=11:102 returns to /~/amber-brook-1#review instead of cobalt-pine#latest.
+    const rememberedRes = await fetch(`${base}/`, {
+        headers: { cookie: "plurnk_web_place=11:102" },
+        redirect: "manual",
+    });
+    assert.equal(rememberedRes.status, 303);
+    assert.equal(rememberedRes.headers.get("location"), "/~/amber-brook-1#review");
+
+    // Tier 2: stale/archived cookie falls through to the most recently active unarchived root session.
+    sessionsByWs.get(11)[1].archived_at = "2026-11-20T00:00:00Z";
+    const fallbackRes = await fetch(`${base}/`, {
+        headers: { cookie: "plurnk_web_place=11:102" },
+        redirect: "manual",
+    });
+    assert.equal(fallbackRes.status, 303);
+    assert.equal(fallbackRes.headers.get("location"), "/~/cobalt-pine#latest");
+    assert.match(fallbackRes.headers.get("set-cookie") ?? "", /^plurnk_web_place=12:201;/u);
+
+    // POST /place records active tab switch in plurnk_web_place and enforces same-origin POST.
+    const placeRes = await fetch(`${base}/place`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
+        body: new URLSearchParams({ workspace: "amber-brook-1", session: "user" }),
+    });
+    assert.equal(placeRes.status, 204);
+    assert.match(placeRes.headers.get("set-cookie") ?? "", /^plurnk_web_place=11:101;/u);
+    assert.equal((await fetch(`${base}/place`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example" },
+        body: "workspace=amber-brook-1&session=user",
+    })).status, 403);
 });
 
 test("{§web-authorization-style} the registered browser client uses the packaged application stylesheet", async () => {
@@ -195,7 +299,7 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             } else assert.deepEqual(body, expected);
         }
     }
-    for (const path of ["/missing", "/~/workspace@user/", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
+    for (const path of ["/missing", "/~/workspace/extra", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}`, { method });
             assert.equal(res.status, 404, `${method} ${path}`);

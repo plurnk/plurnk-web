@@ -17,14 +17,15 @@
 </head>
 <body>
     <header>
-        <a href="/" title="Home"><img src="/icons/plurnk.svg" width="32" height="32" alt="Plurnk"></a>
+        <a href="/" title="Plurnk"><img src="/icons/plurnk.svg" width="28" height="28" alt="Plurnk"></a>
         <nav aria-label="Main navigation">
             <ul>
                 <li data-connection-indicator><span role="img" aria-label="Disconnected" title="Disconnected"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5v3M10 2.5v3M4 5.5h8v2a4 4 0 0 1-8 0v-2ZM8 11.5v2M2.5 2.5l11 11"/></svg></span></li>
+                <li><a href="/search/" data-nav="search" aria-label="Search" title="Search (Ctrl+K)"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.25"/><path d="m10.25 10.25 3.25 3.25"/></svg> <span data-header-label data-i18n="search">Search</span></a></li>
                 <!-- {§web-page-shell} Instantiated by the document server, not browser JavaScript. -->
                 <template id="session-navigation" data-otm-dynamic>
-                    <li><a href="/account/" aria-label="Account" title="Account"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="2.75"/><path d="M3 13.5c0-2.5 2.2-4.25 5-4.25s5 1.75 5 4.25"/></svg></a></li>
-                    <li><form method="post" action="/auth/logout"><button type="submit" aria-label="Sign out" title="Sign out"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1H6M10.5 11l3-3-3-3M13.5 8H6.5"/></svg></button></form></li>
+                    <li><a href="/account/" data-nav="profile" aria-label="Profile" title="Profile"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="2.75"/><path d="M3 13.5c0-2.5 2.2-4.25 5-4.25s5 1.75 5 4.25"/></svg> <span data-header-label data-i18n="profile">Profile</span></a></li>
+                    <li><form method="post" action="/auth/logout"><button type="submit" aria-label="Sign out" title="Sign out"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1H6M10.5 11l3-3-3-3M13.5 8H6.5"/></svg> <span data-header-label data-i18n="sign-out">Sign out</span></button></form></li>
                 </template>
             </ul>
         </nav>
@@ -35,20 +36,13 @@
         <ul></ul>
     </template>
     <template id="overview-empty">
-        <p data-i18n="no-sessions">No sessions.</p>
+        <p data-i18n="no-sessions">No matching sessions.</p>
+    </template>
+    <template id="workspaces-empty">
+        <p data-i18n="no-workspaces">No matching workspaces.</p>
     </template>
     <template id="overview-background">
         <details><summary data-i18n="background-work">Background work</summary><ul></ul></details>
-    </template>
-    <template id="overview-controls">
-        <section id="overview-controls" aria-label="Filter sessions">
-            <input type="search" data-overview-search placeholder="Filter sessions…" aria-label="Filter sessions">
-            <select data-overview-scope aria-label="Session scope">
-                <option value="all" data-i18n="filter-all">All sessions</option>
-                <option value="active" data-i18n="filter-active">Active only</option>
-                <option value="roots" data-i18n="filter-roots">Root sessions</option>
-            </select>
-        </section>
     </template>
     <template id="session-card">
         <li data-directory-entry="session" data-session-key="" data-session-kind="root">
@@ -83,21 +77,57 @@
     <template id="session-reply">
         <div data-session-reply=""></div>
     </template>
-    <!-- {§web-workspace-tabs} Inert tab, breadcrumb and quick-switcher templates reconciled by workspace-workbench. -->
+    <!-- {§web-workspace-tabs} Inert tab, pane, and quick-switcher templates reconciled by workspace-workbench. -->
     <template id="workspace-tab-item">
         <li data-tab-id="" data-session-kind="root"><a data-workspace-route="session" data-tab-session=""><span data-lifecycle="idle" aria-hidden="true"></span><span data-tab-label></span></a></li>
     </template>
     <template id="workspace-switcher-active-badge">
         <small data-switcher-active=""></small>
     </template>
-    <template id="workspace-breadcrumb-overview">
-        <nav aria-label="breadcrumb"><ul><li><a href="/~/" aria-label="Workspaces" title="Workspaces"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg></a></li><li><span role="img" aria-label="Folderless workspace" data-workspace-marker>☁️</span> <span aria-current="page" data-text="name"></span> <button type="button" data-dialog-target="dialog-workspace-rename" aria-label="Rename workspace" title="Rename workspace"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a1.4 1.4 0 0 1 2 2L5.5 12.5 2.5 13.5l1-3 8-8Z"/></svg></button> <button type="button" data-dialog-target="dialog-workspace-archive" aria-label="Archive workspace" title="Archive workspace"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="0.75"/><path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M6.5 9h3"/></svg></button> <button type="button" data-dialog-target="dialog-session-create" aria-label="New session" title="New session"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg></button></li></ul></nav>
+    <template id="session-manage-parent-link">
+        <span><span data-i18n="parent-session">Parent:</span> <a data-workspace-route="session" data-text="parent-name"></a></span>
     </template>
-    <template id="workspace-breadcrumb-session">
-        <nav aria-label="breadcrumb"><ul><li><a href="/~/" aria-label="Workspaces" title="Workspaces"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg></a></li><li><span id="session-workspace"><span role="img" aria-label="Folderless workspace" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">☁️</span> <a data-bind="href:workspace-path" data-text="workspace-name"></a></span></li><li><span aria-current="page" data-text="name"></span> <button type="button" data-dialog-target="dialog-session-archive" aria-label="Archive session" title="Archive session"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="3" rx="0.75"/><path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M6.5 9h3"/></svg></button></li></ul></nav>
+    <template id="session-manage-parent-text">
+        <span><span data-i18n="parent-session">Parent:</span> <span data-text="parent-name"></span></span>
     </template>
-    <template id="workspace-transitional-main">
-        <main id="main" data-page="session" aria-busy="true"></main>
+    <template id="workspace-session-main">
+        <main id="main" data-page="session" data-session-name="">
+            <p id="session-folder" data-project-label=""><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label"></span></p>
+            <article id="session-connection" role="alert"><header><span><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></span><form id="session-reconnect" action="/" data-bind="action:session-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><a data-sign-in href="/auth/login" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a></header><p data-text="connection-detail">Displayed values are no longer live.</p></article>
+            <section id="session-diagnostics" aria-label="Diagnostics"><ul></ul></section>
+            <section id="session-conversation" aria-label="Conversation"><p data-empty-conversation data-i18n="no-messages">No messages.</p><ul data-messages></ul></section>
+        </main>
+    </template>
+    <template id="workspace-session-footer">
+        <footer id="session-status" aria-label="Session status" data-workspace-id="" data-session-id="" data-session-name="" data-auth="none" data-connection="initial">
+            <p role="status" data-text="connection-label">Not connected.</p>
+            <div data-status-line>
+                <ul aria-label="Model controls">
+                    <li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="false" aria-label="Automatic approval" title="Manual Approval (Shift+Tab · /yolo)"><span data-text="yolo-label">Review</span></button></li>
+                    <li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="session-model" aria-label="Model" aria-expanded="false" aria-controls="dialog-session-model"><span data-text="model">No model</span></button><button type="button" id="session-effort" aria-label="Effort" aria-expanded="false" aria-controls="dialog-session-effort"><span data-text="effort"></span></button></li>
+                </ul>
+                <div data-status-telemetry>
+                    <ul aria-label="Active session activity">
+                        <li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>
+                        <li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>
+                        <li data-status-field="descendants"><details id="session-descendants"><summary data-bind="aria-label:descendants-label title:descendants-label"><span data-text="descendants">0</span></summary><ul></ul></details></li>
+                        <li data-status-field="gated" data-bind="aria-label:gated-label title:gated-label"><span data-text="gated">0</span></li>
+                        <li data-status-field="wait"><span data-i18n="wait-remaining">updates in</span> <time data-text="wait" data-bind="datetime:wait-at title:wait-at"></time></li>
+                        <li data-status-field="inbox" data-bind="aria-label:inbox-label title:inbox-label"><span data-text="inbox">0</span></li>
+                        <li data-status-field="preparation" data-text="preparation"></li>
+                        <li data-status-field="activity" data-text="activity" data-bind="title:activity-message"></li>
+                    </ul>
+                    <details id="session-usage">
+                        <summary aria-label="Session usage and cost" title="Session usage and cost"><span aria-hidden="true">ⓘ</span> <span data-usage-context data-text="context-high"></span></summary>
+                        <ul aria-label="Session statistics">
+                            <li data-status-field="usage" data-bind="aria-label:usage-label title:usage-label"><span data-text="input">?</span> <span data-text="output">?</span></li>
+                            <li data-status-field="context" data-bind="aria-label:context-label title:context-label"><span data-text="context"></span></li>
+                            <li data-status-field="cost" data-text="cost" data-bind="aria-label:cost-label title:cost-label">?</li>
+                        </ul>
+                    </details>
+                </div>
+            </div>
+        </footer>
     </template>
     <template id="workspace-switcher-dialog">
         <dialog id="dialog-workspace-switcher" aria-label="Switch session">
@@ -108,6 +138,9 @@
                 </header>
                 <input type="search" data-switcher-search placeholder="Jump to session…" aria-label="Jump to session" autocomplete="off" spellcheck="false">
                 <ul data-switcher-list></ul>
+                <footer>
+                    <a href="/search/" data-i18n="search-all-workspaces">Search all workspaces…</a>
+                </footer>
             </article>
         </dialog>
     </template>
@@ -423,7 +456,8 @@
                 <fieldset role="group" aria-label="Session actions">
                     <button type="submit" form="session-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
                     <button type="button" data-attach-image disabled data-bind="disabled:send-unavailable" aria-label="Attach image" title="Attach image"></button>
-                    <textarea id="session-message" name="message" aria-label="Message" placeholder="Message (/help · Shift+Tab YOLO)" rows="1" required></textarea>
+                    <button type="button" data-insert-command disabled data-bind="disabled:send-unavailable" aria-label="Commands and skills" title="Commands and skills (/)"></button>
+                    <textarea id="session-message" name="message" aria-label="Message" placeholder="Message…" rows="1" required></textarea>
                     <button type="submit" form="session-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Enter Control+Enter Meta+Enter" title="Send (Enter · Ctrl+Enter)"></button>
                 </fieldset>
             </form>
@@ -506,35 +540,54 @@
             </article>
         </section>
     </template>
-    <!-- {§web-session-settings} Native disclosures and forms reuse the command action boundary. -->
+    <!-- {§web-session-settings} Native modal dialogs and forms reuse the command action boundary. -->
     <template id="model-settings">
-        <article id="session-model-settings" aria-label="Model selection" tabindex="-1" hidden>
-            <form data-setting="model" data-bind="aria-busy:settings-pending">
-                <input id="session-model-choice" type="search" name="selection" list="session-model-options" aria-label="Search Models" placeholder="Search Models" autocomplete="off" spellcheck="false" required data-bind="disabled:settings-pending">
-                <datalist id="session-model-options"></datalist>
-                <fieldset role="group">
-                    <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
-                    <button type="submit" data-bind="disabled:selection-unavailable" data-i18n="select-model">Select Model</button>
-                </fieldset>
-            </form>
-            <p role="status" data-text="settings-message"></p>
-            <p data-text="settings-recovery"></p>
-        </article>
+        <dialog id="dialog-session-model" aria-label="Model selection">
+            <article id="session-model-settings" aria-label="Model selection" tabindex="-1">
+                <header>
+                    <p><strong data-i18n="select-model">Select Model</strong></p>
+                    <button type="button" aria-label="Close" rel="prev" data-cancel-settings></button>
+                </header>
+                <ul data-alias-choices aria-label="Configured model aliases"></ul>
+                <form data-setting="model" data-bind="aria-busy:settings-pending">
+                    <input id="session-model-choice" type="search" name="selection" list="session-model-options" aria-label="Search Models" placeholder="Search Models" autocomplete="off" spellcheck="false" required data-bind="disabled:settings-pending">
+                    <datalist id="session-model-options"></datalist>
+                    <fieldset role="group">
+                        <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
+                        <button type="submit" data-bind="disabled:selection-unavailable" data-i18n="select-model">Select Model</button>
+                    </fieldset>
+                </form>
+                <p role="status" data-text="settings-message"></p>
+                <p data-text="settings-recovery"></p>
+                <footer>
+                    <button type="button" data-open-model-onboarding data-i18n="onboarding-open">Set up model…</button>
+                </footer>
+            </article>
+        </dialog>
+    </template>
+    <template id="alias-choice-item">
+        <li><button type="button" data-select-alias=""><strong data-text="alias-name"></strong> <small data-text="alias-route"></small></button></li>
     </template>
     <template id="effort-settings">
-        <article id="session-effort-settings" aria-label="Effort selection" tabindex="-1" hidden>
-            <form data-setting="effort" data-bind="aria-busy:settings-pending">
-                <select id="session-effort-choice" name="selection" aria-label="Reasoning Effort" required disabled data-bind="disabled:selection-unavailable">
-                    <option value="" disabled selected data-i18n="reasoning-effort">Reasoning Effort</option>
-                </select>
-                <fieldset role="group">
-                    <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
-                    <button type="submit" disabled data-bind="disabled:selection-unavailable" data-i18n="select-effort">Select Effort</button>
-                </fieldset>
-            </form>
-            <p role="status" data-text="settings-message"></p>
-            <p data-text="settings-recovery"></p>
-        </article>
+        <dialog id="dialog-session-effort" aria-label="Effort selection">
+            <article id="session-effort-settings" aria-label="Effort selection" tabindex="-1">
+                <header>
+                    <p><strong data-i18n="reasoning-effort">Reasoning Effort</strong></p>
+                    <button type="button" aria-label="Close" rel="prev" data-cancel-settings></button>
+                </header>
+                <form data-setting="effort" data-bind="aria-busy:settings-pending">
+                    <select id="session-effort-choice" name="selection" aria-label="Reasoning Effort" required disabled data-bind="disabled:selection-unavailable">
+                        <option value="" disabled selected data-i18n="reasoning-effort">Reasoning Effort</option>
+                    </select>
+                    <fieldset role="group">
+                        <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
+                        <button type="submit" disabled data-bind="disabled:selection-unavailable" data-i18n="select-effort">Select Effort</button>
+                    </fieldset>
+                </form>
+                <p role="status" data-text="settings-message"></p>
+                <p data-text="settings-recovery"></p>
+            </article>
+        </dialog>
     </template>
     <template id="setting-option"><option data-bind="value:option-value disabled:option-disabled" data-text="option-label"></option></template>
     <!-- {§web-session-commands} Command results are local presentation, not conversation messages. -->
@@ -602,7 +655,7 @@
             <dt><kbd>Enter</kbd> · <kbd><span data-text="shortcut-mod">Ctrl</span>+Enter</kbd></dt><dd data-i18n="shortcut-send">Send message (touch keyboards keep Enter as a newline).</dd>
             <dt><kbd>Shift+Enter</kbd> · <kbd>Ctrl+J</kbd></dt><dd data-i18n="shortcut-newline">Insert a newline in the message field.</dd>
             <dt><kbd>Tab</kbd></dt><dd data-i18n="shortcut-suggestion">Accept the lead prompt suggestion when the message field is empty.</dd>
-            <dt><kbd>Shift+Tab</kbd></dt><dd data-i18n="shortcut-yolo">Toggle automatic approval (YOLO) on this page.</dd>
+            <dt><kbd>Shift+Tab</kbd></dt><dd data-i18n="shortcut-yolo">Toggle automatic approval on this page.</dd>
             <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open selector or command results, or request Stop.</dd>
             <dt><kbd>/</kbd> · <kbd>?</kbd></dt><dd data-i18n="shortcut-focus-help">Focus the message field or open this command and shortcut reference.</dd>
             <dt><kbd>Y</kbd> / <kbd>N</kbd> / <kbd>E</kbd> (<kbd>A</kbd> / <kbd>R</kbd>)</dt><dd data-i18n="shortcut-review">Select Accept, Reject, or Edit on a pending proposal; confirm with Enter.</dd>
@@ -764,30 +817,22 @@
     <template id="conversation-history">
         <li data-history-boundary>
             <form data-bind="aria-busy:history-pending">
-                <button type="submit" data-bind="disabled:history-pending" data-i18n="load-previous-loop">Load previous loop</button>
+                <button type="submit" data-bind="disabled:history-pending" data-i18n="load-earlier-messages">Load earlier messages</button>
                 <p role="alert" data-text="history-error"></p>
             </form>
         </li>
     </template>
-    <template id="session-reasoning-preview">
-        <article data-reasoning-preview aria-label="Live reasoning">
-            <header data-text="reasoning-coordinate"></header>
-            <pre></pre>
-        </article>
-    </template>
-    <template id="conversation-loop">
-        <li data-loop-seq="">
-            <details open>
-                <summary><span><span data-i18n="loop-heading">Loop</span> <span data-text="loop-seq">1</span></span></summary>
-                <ul></ul>
-            </details>
-        </li>
+    <template id="prompt-work">
+        <details data-prompt-work>
+            <summary data-bind="aria-label:operations-label"><span data-prompt-pills></span></summary>
+            <ul data-work-items></ul>
+        </details>
     </template>
     <template id="conversation-operations">
         <li data-operations="">
-            <details>
-                <summary data-bind="aria-label:operations-label"><span></span></summary>
-                <ul></ul>
+            <details data-prompt-work>
+                <summary data-bind="aria-label:operations-label"><span data-prompt-pills></span></summary>
+                <ul data-work-items></ul>
             </details>
         </li>
     </template>

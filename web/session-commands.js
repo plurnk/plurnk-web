@@ -50,6 +50,47 @@ const commands = new Set([
 ]);
 const helpCommands = new Set([...commands, "learn"]);
 
+export const SLASH_COMMAND_NAMES = Object.freeze([
+    "/help",
+    "/model",
+    "/models",
+    "/effort",
+    "/yolo",
+    "/fork",
+    "/session",
+    "/sessions",
+    "/workspace",
+    "/workspaces",
+    "/rename",
+    "/mcp",
+    "/skills",
+    "/schedule",
+    "/personas",
+    "/members",
+    "/env",
+    "/learn",
+    "/review",
+    "/accept",
+    "/reject",
+    "/edit",
+    "/answer",
+    "/stop",
+    "/loops",
+    "/loop",
+    "/rollback",
+    "/share",
+    "/update",
+    "/onboard",
+    "/persona",
+    "/child",
+    "/mode",
+    "/parent",
+    "/enter",
+    "/older",
+    "/newer",
+    "/script",
+]);
+
 /**
  * @param {string} text
  * @returns {boolean}
@@ -442,7 +483,9 @@ export default function sessionCommands(controls, actions) {
 
     const readIdentity = () => {
         if (actions.getContext) return actions.getContext();
-        const workspaceName = $("#session-workspace a")?.textContent?.trim() || "default";
+        const workspaceName = $('#session-workspace [data-text="workspace-name"]')?.textContent?.trim()
+            || $("#session-workspace")?.textContent?.trim()
+            || "default";
         const sessionName = $("#session-status")?.getAttribute("data-session-name") || "user";
         return { workspaceName, sessionName };
     };

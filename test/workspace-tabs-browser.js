@@ -5,7 +5,7 @@ import { directoryPath } from "../src/directory-addresses.js";
 import SessionAgent from "../web/session-agent.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 import { launchBrowser } from "./engines.js";
-import { acquireSharedDaemon } from "./session-input.js";
+import { acquireSharedDaemon, onAcpSent } from "./session-input.js";
 
 /**
  * @param {string} base
@@ -29,12 +29,12 @@ async function waitConnectedSession(page, sessionName) {
     );
 }
 
-// {§web-workspace-tabs} End-to-end workbench switching, LRU pane bound, live worker folding, keyboard chords, and 320px/no-JS behavior.
+// {§web-workspace-tabs} End-to-end progressive-disclosure tabs, simultaneous WebSocket /acp panes, live worker folding, keyboard chords, and 320px/no-JS behavior.
 export default async function verifyWorkspaceTabs({ t, withDaemon }) {
-    await t.test("{§web-workspace-tabs} intra-workspace tabs swap resident panes without reconnecting, preserve drafts and live streams, and bound connected panes at 3", { timeout: 60_000 }, async () => {
+    await t.test("{§web-workspace-tabs} intra-workspace #session tabs keep all visited WebSocket /acp panes live without LRU eviction and preserve drafts and streams", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         model.reset();
-        const workspace = `tabs-lru-${crypto.randomUUID()}`;
+        const workspace = `tabs-ws-${crypto.randomUUID()}`;
         let workspaceId = 0;
         for (const name of ["user", "peer", "third", "fourth"]) {
             const setup = createAgent(base, name);
@@ -56,9 +56,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
 
             /** @type {Map<string, number>} */
             const resumes = new Map();
-            page.on("request", (request) => {
-                if (new URL(request.url()).pathname !== "/acp") return;
-                const body = request.postDataJSON();
+            onAcpSent(page, (body) => {
                 if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) {
                     const id = String(body.params.sessionId ?? "");
                     resumes.set(id, (resumes.get(id) ?? 0) + 1);
@@ -71,18 +69,15 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
 
             const tabs = page.locator("#workspace-tabs");
             await tabs.waitFor({ state: "visible" });
-            assert.equal(await tabs.locator('a[data-workspace-route="overview"]').getAttribute("aria-current"), "true");
             assert.deepEqual(
                 (await tabs.locator("a[data-tab-session]").evaluateAll((els) => els.map((el) => el.getAttribute("data-tab-session")))).toSorted(),
                 ["fourth", "peer", "third", "user"],
             );
-            assert.equal(resumes.size, 0, "workspace overview opens zero SessionAgent streams");
 
-            await tabs.locator('a[data-tab-session="user"]').click();
             await waitConnectedSession(page, "user");
-            assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "session", workspace, session: "user" }));
-            assert.equal(await page.title(), `${workspace}@user — Plurnk`);
-            assert.equal(await page.locator('header nav[aria-label="breadcrumb"] [aria-current="page"]').textContent(), "user");
+            assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, directoryPath({ kind: "session", workspace, session: "user" }));
+            assert.equal(await page.title(), `${workspace}#user — Plurnk`);
+            assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), "user");
             assert.equal(resumes.get(`${workspaceId}#user`), 1);
 
             const messageBox = page.getByRole("textbox", { name: "Message", exact: true });
@@ -93,19 +88,19 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.equal(resumes.get(`${workspaceId}#peer`), 1);
             await messageBox.fill("Lifecycle fixture: held-workbench.");
             await page.getByRole("button", { name: "Send", exact: true }).click();
-            await page.getByText("Considering held-workbench.", { exact: true }).waitFor();
+            await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').waitFor({ state: "attached" });
             await messageBox.fill("Unsent draft in peer");
 
             await tabs.locator('a[data-tab-session="user"]').click();
             await waitConnectedSession(page, "user");
             assert.equal(await messageBox.inputValue(), "Unsent draft in user");
-            assert.equal(resumes.get(`${workspaceId}#user`), 1, "resident @user swaps back with zero extra session/resume");
+            assert.equal(resumes.get(`${workspaceId}#user`), 1, "resident #user swaps back with zero extra session/resume");
 
             await tabs.locator('a[data-tab-session="peer"]').click();
             await waitConnectedSession(page, "peer");
             assert.equal(await messageBox.inputValue(), "Unsent draft in peer");
-            assert.equal(await page.getByText("Considering held-workbench.", { exact: true }).isVisible(), true);
-            assert.equal(resumes.get(`${workspaceId}#peer`), 1, "resident active @peer stream stays attached across tab switches");
+            assert.equal(await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').count(), 1);
+            assert.equal(resumes.get(`${workspaceId}#peer`), 1, "resident active #peer stream stays attached across tab switches");
 
             await tabs.locator('a[data-tab-session="third"]').click();
             await waitConnectedSession(page, "third");
@@ -117,14 +112,14 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
 
             await tabs.locator('a[data-tab-session="peer"]').click();
             await waitConnectedSession(page, "peer");
-            assert.equal(resumes.get(`${workspaceId}#peer`), 1, "running @peer is preserved when 4th session opens");
+            assert.equal(resumes.get(`${workspaceId}#peer`), 1, "running #peer stays live when 4th session opens");
             model.release("held-workbench");
             await page.getByText("Completed held-workbench.", { exact: true }).waitFor();
 
             await tabs.locator('a[data-tab-session="user"]').click();
             await waitConnectedSession(page, "user");
-            assert.equal(resumes.get(`${workspaceId}#user`), 2, "oldest idle @user was LRU-evicted at 4th pane and cleanly reconnected on revisit");
-            assert.equal(await messageBox.inputValue(), "Unsent draft in user", "sessionStorage draft survives LRU pane eviction");
+            assert.equal(resumes.get(`${workspaceId}#user`), 1, "all 4 sessions stay simultaneously live over WebSocket /acp without LRU eviction");
+            assert.equal(await messageBox.inputValue(), "Unsent draft in user");
 
             checkBrowser();
             await context.close();
@@ -133,7 +128,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
         }
     });
 
-    await t.test("{§web-workspace-tabs} live child workers materialize on notifications, stay visible while selected, fold once settled, and respond to switcher chords and mobile/no-JS layouts", { timeout: 60_000 }, async () => {
+    await t.test("{§web-workspace-tabs} single-session progressive disclosure, live child workers, folding, switcher chords, and mobile/no-JS layouts", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         model.reset();
         const workspace = `tabs-live-${crypto.randomUUID()}`;
@@ -146,11 +141,6 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
         const workspaceId = /** @type {any} */ (setup.state.plurnk).workspace.id;
         setup.close();
 
-        const forker = createAgent(base, `${workspaceId}#user`);
-        const forked = await forker.send({ action: { kind: "session/fork", name: "branch" } });
-        assert.equal(forked.result.ok, true, JSON.stringify(forked.result));
-        forker.close();
-
         const browser = await launchBrowser(chromium);
         try {
             const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -159,14 +149,23 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             page.setDefaultTimeout(10_000);
 
             const userPath = directoryPath({ kind: "session", workspace, session: "user" });
-            const overviewPath = directoryPath({ kind: "workspace", workspace });
             const branchPath = directoryPath({ kind: "session", workspace, session: "branch" });
-            assert.ok(userPath && overviewPath && branchPath);
+            assert.ok(userPath && branchPath);
 
+            // Progressive disclosure: 1 session hides #workspace-tabs completely!
             await page.goto(new URL(userPath, base).href);
             await waitConnectedSession(page, "user");
-
             const tabs = page.locator("#workspace-tabs");
+            assert.equal(await tabs.getAttribute("data-tab-count"), "1");
+            assert.equal(await tabs.isVisible(), false, "single-session chat hides tab chrome completely");
+
+            // Forking a 2nd session reveals #workspace-tabs live via notifications!
+            const forker = createAgent(base, `${workspaceId}#user`);
+            const forked = await forker.send({ action: { kind: "session/fork", name: "branch" } });
+            assert.equal(forked.result.ok, true, JSON.stringify(forked.result));
+            forker.close();
+
+            await tabs.waitFor({ state: "visible" });
             assert.equal(await tabs.locator('li[data-session-kind="root"] a[data-tab-session="user"]').getAttribute("aria-current"), "true");
             assert.equal(await tabs.locator('li[data-session-kind="fork"] a[data-tab-session="branch"]').count(), 1);
             assert.equal(await tabs.locator('a[data-tab-session="worker"]').count(), 0);
@@ -199,11 +198,12 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await page.keyboard.press("Control+KeyK");
             const switcher = page.locator("#dialog-workspace-switcher");
             await switcher.waitFor({ state: "visible" });
+            assert.equal(await switcher.getByRole("link", { name: "Search all workspaces…", exact: true }).getAttribute("href"), "/search/");
             const search = switcher.getByRole("searchbox", { name: "Jump to session", exact: true });
             await search.fill("worker");
             const visibleItems = switcher.locator("ul > li:not([hidden]) a");
             assert.equal(await visibleItems.count(), 1);
-            assert.match(await visibleItems.first().textContent(), /@worker/u, "settled worker remains reachable via quick switcher");
+            assert.match(await visibleItems.first().textContent(), /#worker/u, "settled worker remains reachable via quick switcher");
 
             await page.keyboard.press("Control+KeyK");
             assert.equal(await switcher.isVisible(), false, "Ctrl+K toggles quick switcher closed");
@@ -215,28 +215,28 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await page.keyboard.press("Enter");
             assert.equal(await switcher.isVisible(), false);
 
-            await page.keyboard.press("Alt+Digit1");
-            await page.waitForFunction(() => document.querySelector("#main")?.dataset.page === "workspace");
-            assert.equal(new URL(page.url()).pathname, overviewPath);
-
             await page.keyboard.press("Alt+Digit2");
+            await waitConnectedSession(page, "branch");
+            assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, branchPath);
+
+            await page.keyboard.press("Alt+Digit1");
             await waitConnectedSession(page, "user");
-            assert.equal(new URL(page.url()).pathname, userPath);
+            assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, userPath);
 
             await page.keyboard.press("Alt+BracketRight");
             await waitConnectedSession(page, "branch");
-            assert.equal(new URL(page.url()).pathname, branchPath);
+            assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, branchPath);
 
             await page.keyboard.press("Alt+BracketLeft");
             await waitConnectedSession(page, "user");
-            assert.equal(new URL(page.url()).pathname, userPath);
+            assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, userPath);
 
             await page.goBack();
             await waitConnectedSession(page, "branch");
-            assert.equal(new URL(page.url()).pathname, branchPath);
+            assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, branchPath);
             await page.goForward();
             await waitConnectedSession(page, "user");
-            assert.equal(new URL(page.url()).pathname, userPath);
+            assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, userPath);
 
             await page.keyboard.press("Alt+KeyN");
             const createDialog = page.locator("#dialog-session-create");
@@ -261,15 +261,15 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.equal(await mobilePage.locator("#workspace-tabs > ul").isVisible(), false, "320px collapses desktop strip");
             const mobileSwitcherBtn = mobilePage.locator("#workspace-tabs > button[data-workspace-switcher]");
             assert.equal(await mobileSwitcherBtn.isVisible(), true, "320px reveals compact switcher button");
-            assert.equal(await mobileSwitcherBtn.locator("[data-switcher-current]").textContent(), "@user");
+            assert.equal(await mobileSwitcherBtn.locator("[data-switcher-current]").textContent(), "#user");
             assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px session view has no horizontal overflow");
             await mobileSwitcherBtn.click();
             const mobileDialog = mobilePage.locator("#dialog-workspace-switcher");
             await mobileDialog.waitFor({ state: "visible" });
             assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px switcher dialog has no horizontal overflow");
-            await mobileDialog.locator('a[data-workspace-route="overview"]').click();
-            await mobilePage.waitForFunction(() => document.querySelector("#main")?.dataset.page === "workspace");
-            assert.equal(await mobileSwitcherBtn.locator("[data-switcher-current]").textContent(), "Overview");
+            await mobileDialog.locator('a[data-workspace-route="session"]').filter({ hasText: "#branch" }).click();
+            await waitConnectedSession(mobilePage, "branch");
+            assert.equal(await mobileSwitcherBtn.locator("[data-switcher-current]").textContent(), "#branch");
             checkMobile();
             await mobileContext.close();
 
@@ -281,8 +281,6 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.equal(await noJsPage.locator("#workspace-tabs > button[data-workspace-switcher]").isVisible(), false, "no-JS hides scripted switcher button");
             assert.equal(await noJsPage.locator("#workspace-tabs > ul").isVisible(), true, "no-JS retains native scrollable tab strip");
             assert.ok((await noJsPage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "no-JS 320px tab strip scrolls internally without page overflow");
-            await noJsPage.locator('#workspace-tabs a[data-workspace-route="overview"]').click();
-            assert.equal(new URL(noJsPage.url()).pathname, overviewPath);
             checkNoJs();
             await noJsContext.close();
         } finally {
