@@ -8,7 +8,8 @@ Native OTM browser module for [`@plurnk/plurnk-service`](https://github.com/plur
 | --- | --- |
 | `/` | Remembered-session arrival (`303` to this browser's last active unarchived session, else most recent unarchived root session, else one newly allocated starter `workspace1#session1`). |
 | `/~/<workspace>#<session>` | Singular session workbench: header (`Search` on the left, `Change workspace` switcher + workspace link to `/settings/` in the center, `Account` on the right), Google Sheets-style bottom session bar on `>= 768px` (`+`, `☰` archives/sessions, `#session1 ▾` tabs in creation order; below `768px`, `☰` sits in `#session-controls` alongside `📎` and `/`), WebSocket ACP v2 live session attachment, Reading Slate scroll framing with floating `↓`, warm-amber non-operator actor bubbles, prompt-top glyph pills, steady composer with `↑`/`↓` prompt history, and inline approval/elicitation forms ([directory addresses](SPEC.md#web-directory-addresses-named-directory-addresses)). |
-| `/settings/?workspace=<name>` | Dedicated Workspace Settings page (`General` rename/archive, `MCP`, `Skills`, `Schedule`, `Personas`, `Members`, and `Environment`, with live `/notifications/<workspace>` SSE updates). |
+| `/settings/?workspace=<name>` | Dedicated Workspace Settings page (`General` rename/archive, `MCP`, `Skills`, `Schedule`, `Personas`, `Members`, and `Environment` inventory tables with `Retry` recovery, `+ Add …` `<dialog>` modals, and live `/notifications/<workspace>` SSE updates). |
+| `/account/` | Tabbed Account page (`Sign-ins` active browser credential revocation + `Sign out`, and `About` version/support diagnostics). |
 | `/search/` | Workspace-grouped Search & Directory page (`Cmd/Ctrl+K`): full-text prompt/title/reply search (`q`, `"Search workspaces and sessions…"`), `status` (`all`, `active`, `gated`, `failed`, `archived`) filter, `Unarchive` actions, child-subagent disclosures, and live `/notifications` SSE updates. |
 | `/auth/token` | Same-origin `POST` exchanging the `HttpOnly` browser session cookie for short-lived ACP bearer credentials (refresh grants remain server-side). |
 
@@ -28,7 +29,7 @@ Closing or reloading a page never cancels running work. Passive `/notifications`
 
 | Concern | Configuration |
 | --- | --- |
-| Operator sign-in | Shared daemon `PLURNK_AUTH=1` (default) and `PLURNK_PASS` (`Account → Sessions` revokes one or all other sessions; `Account → Sign out` revokes browser + module credentials). |
+| Operator sign-in | Shared daemon `PLURNK_AUTH=1` (default) and `PLURNK_PASS` (`Account → Sign-ins` revokes one or all other sign-ins and signs out; `Account → About` reports package versions and issue reporting). |
 | Reverse proxy | Set `PLURNK_AUTH_ISSUER` to the public HTTPS origin. Run `PLURNK_AUTH=0` only on trusted isolated listeners. |
 | Installable app | Browser **Install app** / **Add to Home Screen** uses the bundled web manifest (requires localhost HTTP or proxy HTTPS; online-only, no offline service-worker cache). |
 

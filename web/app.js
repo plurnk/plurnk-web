@@ -1,4 +1,4 @@
-import { $, on, the } from "on_the_money";
+import { $, $$, on, the } from "on_the_money";
 import initDialogs from "./dialogs.js";
 
 let unloading = false;
@@ -29,9 +29,20 @@ on.target(window, "keydown", (event) => {
 });
 
 try {
+    const accountArticle = $("#account-settings");
     const settingsMain = $('#main[data-page="settings"]');
     const tabs = $("#workspace-tabs");
-    if (settingsMain instanceof HTMLElement) {
+    if (accountArticle instanceof HTMLElement) {
+        const syncAccountTab = () => {
+            const target = location.hash === "#about" ? "about" : "sign-ins";
+            for (const link of $$(accountArticle, "[data-account-section]")) {
+                if (link.getAttribute("data-account-section") === target) link.setAttribute("aria-current", "true");
+                else link.removeAttribute("aria-current");
+            }
+        };
+        syncAccountTab();
+        on.target(window, "hashchange", syncAccountTab);
+    } else if (settingsMain instanceof HTMLElement) {
         (await import("./workspace-settings.js")).default(settingsMain);
     } else if (tabs instanceof HTMLElement) {
         await (await import("./workspace-workbench.js")).default(tabs);

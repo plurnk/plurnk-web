@@ -24,9 +24,9 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         {
                             alias: "svc-git",
                             origin: "service",
-                            state: "active",
-                            definition: { type: "stdio", command: "git-mcp", args: ["--read-only"] },
-                            detail: { tools: ["status", "diff"] },
+                            state: "unavailable",
+                            definition: { type: "stdio", command: "git-mcp", args: ["--read-only", "--config=/very/long/path/to/operator/mcp/configuration.json"] },
+                            problem: { detail: "Configured MCP server 'svc-git' is unavailable. Error: MCP connection failed." },
                         },
                         {
                             alias: "remote-docs",
@@ -275,16 +275,34 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         await page.setViewportSize({ width, height: 740 });
                         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `no page overflow at ${width}px`);
                     }
+                    await page.setViewportSize({ width: 1280, height: 740 });
+                    assert.equal(
+                        await page.evaluate(() => {
+                            const fig = document.querySelector('#workspace-settings [data-settings-panel="mcp"] [data-family-table-wrap]');
+                            const tbl = fig?.querySelector("table");
+                            return Boolean(fig && tbl && tbl.scrollWidth <= fig.clientWidth);
+                        }),
+                        true,
+                        "MCP table fits cleanly inside 72rem desktop measure without horizontal table scrollbar",
+                    );
                     await page.setViewportSize({ width: 320, height: 740 });
 
-                    // MCP: list, service-vs-workspace buttons, OAuth begin+complete, discover+Add, 409 active-work refusal preserving draft, streamable-http save + remove
+                    // MCP: list, Retry on unavailable row, service-vs-workspace buttons, OAuth begin+complete, + Add server dialog (discover+Add, 409 refusal keeping dialog open, save + remove)
                     const mcpPanel = settingsArticle.locator('[data-settings-panel="mcp"]');
+                    const mcpDialog = page.locator("#dialog-settings-mcp");
                     assert.equal(await mcpPanel.isVisible(), true);
+                    assert.equal(await mcpDialog.isVisible(), false, "creation forms live inside closed <dialog> until opened");
                     const svcRow = mcpPanel.locator("[data-family-rows] tr").nth(0);
                     const oauthRow = mcpPanel.locator("[data-family-rows] tr").nth(1);
                     assert.equal(await svcRow.getByRole("button", { name: "Remove", exact: true, includeHidden: true }).isVisible(), false, "service-origin MCP server has no Remove button");
-                    assert.equal(await oauthRow.getByRole("button", { name: "Authorize", exact: true }).isVisible(), true);
+                    assert.equal(await svcRow.getByRole("button", { name: "Retry", exact: true }).isVisible(), true, "unavailable MCP server exposes 1-click Retry");
+                    assert.equal(await svcRow.getByRole("button", { name: "Disable", exact: true }).isVisible(), true);
+                    assert.equal(await svcRow.getByRole("button", { name: "Enable", exact: true, includeHidden: true }).isVisible(), false);
+                    await svcRow.getByRole("button", { name: "Retry", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr [data-text="family-status"]')?.textContent === "active");
+                    assert.equal(await svcRow.getByRole("button", { name: "Retry", exact: true, includeHidden: true }).isVisible(), false, "Retry hides once server is active");
 
+                    assert.equal(await oauthRow.getByRole("button", { name: "Authorize", exact: true }).isVisible(), true);
                     await oauthRow.getByRole("button", { name: "Authorize", exact: true }).click();
                     const oauthBox = mcpPanel.locator("[data-mcp-oauth-box]");
                     await oauthBox.waitFor({ state: "visible" });
@@ -294,70 +312,91 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await oauthBox.waitFor({ state: "hidden" });
                     assert.equal(await oauthRow.locator('[data-text="family-status"]').textContent(), "active");
 
-                    await mcpPanel.getByRole("searchbox", { name: "Search MCP registry", exact: true }).fill("sqlite");
-                    await mcpPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
-                    await mcpPanel.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
-                    await mcpPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    await mcpPanel.getByRole("button", { name: "+ Add server", exact: true }).click();
+                    await mcpDialog.waitFor({ state: "visible" });
+                    await mcpDialog.getByRole("searchbox", { name: "Search MCP registry", exact: true }).fill("sqlite");
+                    await mcpDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
+                    await mcpDialog.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    await mcpDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
+                    assert.equal(await mcpDialog.isVisible(), false, "adding a candidate closes the dialog");
 
-                    await mcpPanel.getByRole("combobox", { name: "MCP transport", exact: true }).selectOption("streamable-http");
-                    await mcpPanel.getByRole("combobox", { name: "Endpoint authentication", exact: true }).selectOption("bearer");
-                    await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).fill("edge-api");
-                    await mcpPanel.getByLabel("Endpoint URL", { exact: true }).fill("https://edge.example/mcp");
-                    await mcpPanel.getByRole("textbox", { name: "Bearer token reference", exact: true }).fill("${EDGE_TOKEN}");
+                    await mcpPanel.getByRole("button", { name: "+ Add server", exact: true }).click();
+                    await mcpDialog.waitFor({ state: "visible" });
+                    await mcpDialog.getByRole("combobox", { name: "MCP transport", exact: true }).selectOption("streamable-http");
+                    await mcpDialog.getByRole("combobox", { name: "Endpoint authentication", exact: true }).selectOption("bearer");
+                    await mcpDialog.getByRole("textbox", { name: "Server alias", exact: true }).fill("edge-api");
+                    await mcpDialog.getByLabel("Endpoint URL", { exact: true }).fill("https://edge.example/mcp");
+                    await mcpDialog.getByRole("textbox", { name: "Bearer token reference", exact: true }).fill("${EDGE_TOKEN}");
                     activeWork = true;
-                    await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Workspace has active loop work.");
-                    assert.equal(await settingsArticle.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
-                    assert.equal(await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "edge-api", "409 refusal preserves unsaved MCP server input");
-                    assert.equal(await mcpPanel.getByLabel("Endpoint URL", { exact: true }).inputValue(), "https://edge.example/mcp");
-                    assert.equal(await mcpPanel.getByRole("textbox", { name: "Bearer token reference", exact: true }).inputValue(), "${EDGE_TOKEN}");
+                    await mcpDialog.getByRole("button", { name: "Save server", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector('#dialog-settings-mcp [data-text="ws-settings-message"]')?.textContent === "Workspace has active loop work.");
+                    assert.equal(await mcpDialog.isVisible(), true, "409 refusal keeps the dialog open");
+                    assert.equal(await mcpDialog.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
+                    assert.equal(await mcpDialog.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "edge-api", "409 refusal preserves unsaved MCP server input");
+                    assert.equal(await mcpDialog.getByLabel("Endpoint URL", { exact: true }).inputValue(), "https://edge.example/mcp");
+                    assert.equal(await mcpDialog.getByRole("textbox", { name: "Bearer token reference", exact: true }).inputValue(), "${EDGE_TOKEN}");
 
                     activeWork = false;
-                    await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
+                    await mcpDialog.getByRole("button", { name: "Save server", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 4);
+                    assert.equal(await mcpDialog.isVisible(), false, "successful save closes the dialog");
                     assert.match(await mcpPanel.locator("[data-family-rows] tr").last().textContent(), /edge-api[\s\S]*https:\/\/edge\.example\/mcp \(bearer\)/u);
-                    assert.equal(await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "");
-                    assert.equal(await mcpPanel.getByLabel("Endpoint URL", { exact: true }).inputValue(), "");
+                    assert.equal(await mcpDialog.locator('input[name="alias"]').inputValue(), "");
+                    assert.equal(await mcpDialog.locator('input[name="url"]').inputValue(), "");
                     await mcpPanel.locator("[data-family-rows] tr").last().getByRole("button", { name: "Remove", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
 
-                    // Skills: discover + candidate Add (stripping commit)
+                    // Skills: + Add skill dialog -> discover + candidate Add (stripping commit)
                     await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
                     const skillsPanel = settingsArticle.locator('[data-settings-panel="skills"]');
-                    await skillsPanel.getByRole("textbox", { name: "Skill discovery source", exact: true }).fill("https://git.example/skills.git");
-                    await skillsPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
-                    await skillsPanel.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
-                    await skillsPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    const skillsDialog = page.locator("#dialog-settings-skills");
+                    await skillsPanel.getByRole("button", { name: "+ Add skill", exact: true }).click();
+                    await skillsDialog.waitFor({ state: "visible" });
+                    await skillsDialog.getByRole("textbox", { name: "Skill discovery source", exact: true }).fill("https://git.example/skills.git");
+                    await skillsDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
+                    await skillsDialog.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    await skillsDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="skills"] [data-family-rows] tr').length === 1);
                     const skillReplaceReq = requests.find((r) => r.params?.kind === "workspace.skills.replace");
                     assert.equal("commit" in skillReplaceReq.params.params, false, "client strips service-owned commit field when adding discovered skill");
 
-                    // Schedule: rule preview + save normalizing bare session name to session://
+                    // Schedule: + Add schedule dialog -> rule preview + save normalizing bare session name to session://
                     await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();
                     const schedulePanel = settingsArticle.locator('[data-settings-panel="schedule"]');
-                    await schedulePanel.getByRole("textbox", { name: "Preview schedule rule", exact: true }).fill("FREQ=DAILY");
-                    await schedulePanel.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
-                    await schedulePanel.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
-                    assert.equal(await schedulePanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true, includeHidden: true }).isVisible(), false);
-                    await schedulePanel.getByRole("textbox", { name: "Schedule name", exact: true }).fill("daily-audit");
-                    await schedulePanel.getByRole("textbox", { name: "Target session", exact: true }).fill("user");
-                    await schedulePanel.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 9 * * 1-5");
-                    await schedulePanel.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Check status.");
-                    await schedulePanel.getByRole("button", { name: "Save schedule", exact: true }).click();
+                    const scheduleDialog = page.locator("#dialog-settings-schedule");
+                    await schedulePanel.getByRole("button", { name: "+ Add schedule", exact: true }).click();
+                    await scheduleDialog.waitFor({ state: "visible" });
+                    await scheduleDialog.getByRole("textbox", { name: "Preview schedule rule", exact: true }).fill("FREQ=DAILY");
+                    await scheduleDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
+                    await scheduleDialog.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    assert.equal(await scheduleDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true, includeHidden: true }).isVisible(), false);
+                    await scheduleDialog.getByRole("textbox", { name: "Schedule name", exact: true }).fill("daily-audit");
+                    await scheduleDialog.getByRole("textbox", { name: "Target session", exact: true }).fill("user");
+                    await scheduleDialog.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 9 * * 1-5");
+                    await scheduleDialog.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Check status.");
+                    await scheduleDialog.getByRole("button", { name: "Save schedule", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
+                    assert.equal(await scheduleDialog.isVisible(), false);
                     assert.equal(requests.find((r) => r.params?.kind === "workspace.schedule.replace").params.params.target, "session://user");
 
-                    // Members: preview + candidate Add + batch add + row Remove ({ file })
+                    // Members: + Add rules dialog -> preview + candidate Add + batch add + row Remove ({ file })
                     await settingsArticle.getByRole("link", { name: "Members", exact: true }).click();
                     const membersPanel = settingsArticle.locator('[data-settings-panel="members"]');
-                    await membersPanel.getByRole("textbox", { name: "Inspect file or glob", exact: true }).fill("docs/**");
-                    await membersPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
-                    await membersPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    const membersDialog = page.locator("#dialog-settings-members");
+                    await membersPanel.getByRole("button", { name: "+ Add rules", exact: true }).click();
+                    await membersDialog.waitFor({ state: "visible" });
+                    await membersDialog.getByRole("textbox", { name: "Inspect file or glob", exact: true }).fill("docs/**");
+                    await membersDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
+                    await membersDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
-                    await membersPanel.getByRole("textbox", { name: "Member globs", exact: true }).fill("!docs/drafts/**");
-                    await membersPanel.getByRole("button", { name: "Add rules", exact: true }).click();
+                    assert.equal(await membersDialog.isVisible(), false);
+                    await membersPanel.getByRole("button", { name: "+ Add rules", exact: true }).click();
+                    await membersDialog.waitFor({ state: "visible" });
+                    await membersDialog.getByRole("textbox", { name: "Member globs", exact: true }).fill("!docs/drafts/**");
+                    await membersDialog.getByRole("button", { name: "Add rules", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 2);
+                    assert.equal(await membersDialog.isVisible(), false);
                     await membersPanel.locator("[data-family-rows] tr").first().getByRole("button", { name: "Remove", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     assert.deepEqual(requests.find((r) => r.params?.kind === "workspace.members.remove").params.params, { file: "docs/**" });

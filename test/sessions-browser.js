@@ -504,9 +504,8 @@ registerHooks({
                             assert.equal(await page.getByRole("link", { name: "Account", exact: true }).count(), 0);
                             assert.deepEqual(await context.cookies(), []);
                             assert.equal((await context.request.get(new URL("/account/", base).href)).status(), 404);
-                            assert.equal((await context.request.get(new URL("/account/sessions/", base).href)).status(), 404);
-                            assert.equal((await context.request.get(new URL("/account/sessions/index.html", base).href)).status(), 404);
-                            assert.equal((await context.request.post(new URL("/account/sessions/revoke-others", base).href)).status(), 404);
+                            assert.equal((await context.request.get(new URL("/account/index.html", base).href)).status(), 404);
+                            assert.equal((await context.request.post(new URL("/account/sign-ins/revoke-others", base).href)).status(), 404);
                             checkBrowser();
                         } finally { await context.close(); }
                     }
