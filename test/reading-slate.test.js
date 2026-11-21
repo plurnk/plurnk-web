@@ -189,13 +189,14 @@ test("{§web-session-history} readingSlate lands at bottom initially, frames sho
         assert.equal(env.jumpBtn.hidden, true);
 
         // 2. Short prompt (height 80 <= 35% of 400) frames near top (1400 - 12 = 1388) with dynamic trailing spacer.
-        env.addPrompt("m-short", 1400, 80);
+        const shortPrompt = env.addPrompt("m-short", 1400, 80);
         slate.frameTurn("m-short");
         assert.equal(env.scroller.scrollTop, 1388, "short prompt frames at top of Reading Slate");
         assert.equal(Number(env.spacer.getAttribute("height")), 308, "spacer reserves remaining viewport height");
         assert.equal(env.jumpBtn.hidden, true, "blank spacer never triggers ↓ button");
 
-        // 3. Streaming response grows below the fold WITHOUT forcing scrollTop = scrollHeight.
+        // 3. Streaming response (and expanded work/reply height inside prompt row) grows below the fold WITHOUT forcing scrollTop = scrollHeight or flipping tall-prompt anchor.
+        shortPrompt.height = 420;
         env.setRealHeight(2300);
         slate.sync();
         assert.equal(env.scroller.scrollTop, 1388, "streaming never yanks reader away from top of response");
@@ -203,23 +204,41 @@ test("{§web-session-history} readingSlate lands at bottom initially, frames sho
         assert.equal(env.jumpBtn.hidden, false, "floating ↓ button surfaces when real content passes bottom");
         assert.equal(env.jumpBtn.getAttribute("data-jump-gate"), null);
 
+        // 3b. Reader scrolls down to the bottom of generated output: sync() never jerks scrollTop back up to anchoredScrollTop (#147).
+        env.scrollToUser(1900);
+        assert.equal(env.jumpBtn.hidden, true, "scrolling to bottom hides ↓ button");
+        slate.sync();
+        assert.equal(env.scroller.scrollTop, 1900, "downward scroll to bottom releases anchor and never snaps back up");
+        env.setRealHeight(2450);
+        slate.sync();
+        assert.equal(env.scroller.scrollTop, 1900, "subsequent stream growth preserves reader's downward scroll position");
+
+        // Scroll back up so step 4 exercises off-screen review gate below the fold.
+        env.scrollToUser(1388);
+        slate.sync();
+        assert.equal(env.jumpBtn.hidden, false);
+
         // 4. Off-screen review gate sets data-jump-gate="true".
         env.review.setAttribute("data-request-count", "1");
-        env.review.top = 2150;
+        env.review.top = 2300;
         env.review.height = 150;
         slate.sync();
         assert.equal(env.jumpBtn.getAttribute("data-jump-gate"), "true");
 
         slate.jumpToBottom();
-        assert.equal(env.scroller.scrollTop, 1900);
+        assert.equal(env.scroller.scrollTop, 2050);
         assert.equal(env.jumpBtn.hidden, true);
         env.review.setAttribute("data-request-count", "0");
 
-        // 5. Tall pasted prompt (height 300 > 35% of 400) aligns bottom 30% of prompt + incoming response slate.
-        env.addPrompt("m-tall", 2300, 300);
+        // 5. Tall pasted prompt (height 300 > 35% of 400) aligns bottom 30% of prompt + incoming response slate, and release() unlocks anchor.
+        env.addPrompt("m-tall", 2450, 300);
         slate.frameTurn("m-tall");
-        assert.equal(env.scroller.scrollTop, 2480, "tall prompt aligns bottom tail of prompt so incoming response starts in view");
+        assert.equal(env.scroller.scrollTop, 2630, "tall prompt aligns bottom tail of prompt so incoming response starts in view");
         assert.equal(Number(env.spacer.getAttribute("height")), 280);
+        slate.release();
+        env.scroller.scrollTop = 2500;
+        slate.sync();
+        assert.equal(env.scroller.scrollTop, 2500, "release() unlocks frame anchor for disclosures and fragment links");
 
         slate.pause();
     } finally {

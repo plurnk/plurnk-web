@@ -40,6 +40,8 @@ export default function readingSlate(scroller) {
     let userScrolledAway = false;
     /** @type {number | null} */
     let anchoredScrollTop = null;
+    let anchoredPromptOffset = -TOP_BREATHING_PX;
+    let lastClientHeight = scroller.clientHeight;
 
     let jumpSlot = $(scroller, ":scope > [data-jump-slot]");
     if (!(jumpSlot instanceof HTMLElement) && $("#reading-slate-jump")) {
@@ -183,13 +185,16 @@ export default function readingSlate(scroller) {
         const users = Array.from(scroller.querySelectorAll('[data-messages] > [data-message-role="user"]'));
         anchoredUserIndex = users.indexOf(promptEl);
         const viewportH = scroller.clientHeight;
+        lastClientHeight = viewportH;
+        const { top } = offsetWithinScroller(promptEl);
         const targetTop = computeTargetTop(promptEl, viewportH);
-        anchoredScrollTop = targetTop;
+        anchoredPromptOffset = targetTop - top;
         const realBottom = realContentBottom();
         const naturalTurnHeight = Math.max(0, realBottom - targetTop);
         const neededSpacer = viewportH > 0 ? Math.max(0, viewportH - naturalTurnHeight) : 0;
         setSpacerHeight(neededSpacer);
         scroller.scrollTop = targetTop;
+        anchoredScrollTop = scroller.scrollTop;
         updateJumpIndicator();
     }
 
@@ -218,9 +223,11 @@ export default function readingSlate(scroller) {
         }
         if (anchoredTurn && anchoredScrollTop !== null) {
             const viewportH = scroller.clientHeight;
+            lastClientHeight = viewportH;
             const currentPrompt = findAnchoredPrompt();
             if (currentPrompt !== null) {
-                anchoredScrollTop = computeTargetTop(currentPrompt, viewportH);
+                const { top } = offsetWithinScroller(currentPrompt);
+                anchoredScrollTop = Math.max(0, Math.round(top + anchoredPromptOffset));
             }
             const realBottom = realContentBottom();
             const naturalTurnHeight = Math.max(0, realBottom - anchoredScrollTop);
@@ -228,6 +235,7 @@ export default function readingSlate(scroller) {
             setSpacerHeight(neededSpacer);
             if (!userScrolledAway && currentPrompt !== null && Math.abs(scroller.scrollTop - anchoredScrollTop) > 1) {
                 scroller.scrollTop = anchoredScrollTop;
+                anchoredScrollTop = scroller.scrollTop;
             }
         }
         updateJumpIndicator();
@@ -302,6 +310,7 @@ export default function readingSlate(scroller) {
 
     function release() {
         suppressInitial = true;
+        userScrolledAway = true;
         pendingTurnMessageId = null;
         priorLastUserId = null;
         updateJumpIndicator();
@@ -323,8 +332,8 @@ export default function readingSlate(scroller) {
 
     function handleScroll() {
         if (anchoredTurn && anchoredScrollTop !== null
-            && scroller.scrollTop < anchoredScrollTop - 2
-            && scroller.scrollTop < scroller.scrollHeight - scroller.clientHeight - 2) {
+            && scroller.clientHeight <= lastClientHeight
+            && Math.abs(scroller.scrollTop - anchoredScrollTop) > 2) {
             userScrolledAway = true;
         }
         updateJumpIndicator();
@@ -345,7 +354,12 @@ export default function readingSlate(scroller) {
     function connect() {
         scroller.onscroll = handleScroll;
         if (typeof MutationObserver === "function" && !mutationObserver) {
-            mutationObserver = new MutationObserver(scheduleSync);
+            mutationObserver = new MutationObserver((records) => {
+                const external = records.some((record) =>
+                    record.target !== spacer && !(jumpSlot && jumpSlot.contains(record.target)),
+                );
+                if (external) scheduleSync();
+            });
             mutationObserver.observe(scroller, {
                 childList: true,
                 subtree: true,

@@ -332,6 +332,30 @@ export default async function verifySessionObserve(t) {
                         assert.equal(await jumpBtn.getAttribute("aria-label"), "Jump to latest");
                         assert.equal(await jumpBtn.getAttribute("data-jump-gate"), null);
 
+                        // 3b. Manual downward scroll through and to the bottom of generated output hides [data-jump-bottom] and never jerks scrollTop back up across MutationObserver frames or composer typing (#147).
+                        await page.evaluate(() => {
+                            const main = document.querySelector("#main");
+                            main.scrollTop += 250;
+                        });
+                        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+                        await page.evaluate(() => {
+                            const main = document.querySelector("#main");
+                            main.scrollTop = main.scrollHeight - main.clientHeight;
+                        });
+                        await page.waitForFunction(() => document.querySelector("[data-jump-bottom]")?.hasAttribute("hidden") === true);
+                        await draft.fill("Follow-up note");
+                        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                        const atBottom = await metrics();
+                        assert.ok(atBottom.gap <= 24, `manual scroll to bottom stays at bottom without snapping back up (gap=${atBottom.gap}, scrollTop=${atBottom.scrollTop})`);
+                        assert.equal(await jumpBtn.isVisible(), false);
+                        await draft.fill("");
+
+                        // Scroll back up to the framed turn top so step 4 exercises the below-fold review gate indicator.
+                        await page.evaluate((top) => {
+                            document.querySelector("#main").scrollTop = top;
+                        }, framedShort.scrollTop);
+                        await page.waitForFunction(() => document.querySelector("[data-jump-bottom]")?.hasAttribute("hidden") === false);
+
                         // 4. When a permission review gate opens below the fold, the floating button escalates to pending-review state, and clicking it jumps to the review!
                         fixture.pushFrame(permissionFrame("gate-tail-1", {
                             logEntryId: 20,
