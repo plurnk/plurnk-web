@@ -32,7 +32,7 @@ const toUpdate = (m) => {
     return userChunk(m.id, m.content);
 };
 const pageEnvelope = (messages, older = null) => ({
-    session: "7#user",
+    session: "7#session1",
     history: { older },
     updates: messages.map(toUpdate),
 });

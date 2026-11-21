@@ -157,7 +157,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             const review = page.getByRole("form", { name: "Review requests", exact: true });
             assert.equal(await review.count(), 1);
             assert.equal(await review.locator("[data-requests] > fieldset").count(), 1);
-            assert.equal(await review.locator('[data-text="proposal-session"]').innerText(), "user");
+            assert.equal(await review.locator('[data-text="proposal-session"]').innerText(), "session1");
             assert.equal(await review.locator('[data-text="proposal-op"]').innerText(), "sh");
             const targetText = await review.locator("[data-proposal-target]").textContent();
             assert.ok(targetText && !targetText.includes('"scheme"'), "command proposal shows readable target instead of raw URI object JSON");
@@ -401,7 +401,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             await page.getByRole("button", { name: "Submit responses", exact: true }).click();
             // Each accepted child finishes independently of the owner's already-finished loop.
             const childPage = await context.newPage();
-            await childPage.goto(path.replace("#user", `#${session}`));
+            await childPage.goto(path.replace("#session1", `#${session}`));
             await childPage.getByText(`Completed held-approval-${session}.`, { exact: true }).waitFor();
             assert.equal(await childPage.locator('[data-message-role="user"]').count(), 2, "fork retains the owner's history plus the child's prompt");
             await childPage.close();
@@ -527,7 +527,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             await page.waitForFunction(() => document.querySelector('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]')?.textContent === "2");
             assert.equal(model.requests.length, 2, "the accepted operation has released the next model call");
             if (departure === "navigate") {
-                await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
+                await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
                 await page.waitForLoadState("load");
             } else await page.close();
             model.release(name);

@@ -8,7 +8,7 @@ import createModule from "../src/module.js";
 
 /** @type {Promise<Map<string, { body: Buffer | string, type: string }>> | null} */
 let baseAssetsPromise = null;
-/** @type {Map<string, Promise<{ assets: Map<string, { body: Buffer | string, type: string }>, document: Buffer }>>} */
+/** @type {Map<string, Promise<{ assets: Map<string, { body: Buffer | string, type: string }>, document: Buffer, documents: Documents, fixturePort: any }>>} */
 const compiledEntries = new Map();
 
 async function compileEntry(entryURL) {
@@ -40,11 +40,15 @@ async function compileEntry(entryURL) {
                 .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
                 .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" crossorigin src="/${entry.fileName}"></script>${preloads}`);
             const documents = new Documents(template, false, 64);
-            const document = await documents.read({ kind: "session", workspace: "conversation", session: "user" }, {
+            const fixturePort = {
                 listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null, archived_at: null }],
-                listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null }],
-            }, false);
-            return { assets, document };
+                listSessions: async () => [
+                    { id: 9, name: "session1", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null },
+                    { id: 10, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null },
+                ],
+            };
+            const document = await documents.read({ kind: "session", workspace: "conversation", session: "session1" }, fixturePort, false);
+            return { assets, document, documents, fixturePort };
         })();
         compiledEntries.set(entryURL.href, pending);
     }
@@ -53,7 +57,7 @@ async function compileEntry(entryURL) {
 
 // A component fixture using the real document and browser modules, not a second HTML implementation.
 export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url), routes = new Map()) {
-    const { assets, document } = await compileEntry(entryURL);
+    const { assets, document, documents, fixturePort } = await compileEntry(entryURL);
     let module = null;
     let serve = null;
     const ensureModule = async () => {
@@ -165,10 +169,20 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         }
     };
     const server = createServer((request, response) => {
-        const path = new URL(request.url, "http://fixture.invalid").pathname;
+        const parsed = new URL(request.url, "http://fixture.invalid");
+        const path = parsed.pathname;
         if (routes.has(path)) { routes.get(path)(request, response); return; }
         if (path === "/acp" && acpHandler) { void handleAcp(request, response).catch(() => {}); return; }
         if (path === "/render/mermaid") { void ensureModule().then((handler) => handler(request, response)); return; }
+        if (path === "/settings/" || path === "/settings/index.html") {
+            const wsName = parsed.searchParams.get("workspace") ?? "";
+            const sessName = parsed.searchParams.get("session");
+            void documents.settings(wsName, sessName, fixturePort, true).then((body) => {
+                response.writeHead(body ? 200 : 404, { ...privateHeaders, "content-type": body ? "text/html; charset=utf-8" : "text/plain" });
+                response.end(body ?? "Not found");
+            });
+            return;
+        }
         const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);
         response.writeHead(asset ? 200 : 404, { ...privateHeaders, "content-type": asset?.type ?? "text/plain" });
         response.end(asset?.body ?? "Not found");
@@ -177,7 +191,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     return {
         onAcp: (handler) => { acpHandler = handler; },
         setCapabilities: (next) => { capabilities = next ?? {}; },
-        push: (update, sessionId = "7#user") => {
+        push: (update, sessionId = "7#session1") => {
             for (const [key, entry] of sseStreams) {
                 if (!entry.closed) {
                     writeSse(key, `data: ${JSON.stringify({

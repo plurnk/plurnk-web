@@ -6,7 +6,9 @@ import browserDiagnostics from "./browser-diagnostics.js";
 // {§web-conversation-surfaces} Exercise real semantic rows and compiled theme CSS.
 export const messages = [
     { id: "user", role: "user", content: "Please inspect [the evidence](https://example.com/)." },
-    { id: "decorated-user", role: "user", content: "An incoming user message.", _meta: { plurnk: { op: "send", origin: "_plurnk" } } },
+    { id: "decorated-user", role: "user", content: "An incoming user message.", _meta: { plurnk: { op: "send", origin: "_plurnk", target: "session://session1" } } },
+    { id: "actor-inbound", role: "user", content: "Inbound message from [scoutproxy](https://example.com/).", _meta: { plurnk: { op: "send", origin: "_plurnk", voice: "scoutproxy" } } },
+    { id: "actor-outbound", role: "tool", toolCallId: "actor-delivered", content: "Reply to [scoutproxy](https://example.com/).", _meta: { plurnk: { op: "done", signal: 200, receipt: { repliedToSources: ["acp://scoutproxy/threads/1"] } } } },
     { id: "assistant", role: "assistant", content: "I will inspect [the evidence](https://example.com/).", toolCalls: [
         { toolCallId: "generic", name: "send", rawInput: {} },
         ...["read", "note", "send"].map((op) => ({ toolCallId: op, name: op,
@@ -64,7 +66,7 @@ export default async function verifySurfaces(t) {
                             return [row.dataset.callId ?? row.dataset.messageId, {
                                 background,
                                 header: article.querySelector(":scope > header") ? rgba(getComputedStyle(article.querySelector(":scope > header")).backgroundColor) : null,
-                                text: [...article.querySelectorAll(":scope > p, :scope > a, :scope > pre, :scope > details:not([data-prompt-work]) > summary, :scope > details:not([data-prompt-work]) > pre, :scope > header")].map((element) => {
+                                text: [...article.querySelectorAll(":scope > p, :scope > a, :scope > pre, :scope > [data-message-actor], :scope > details:not([data-prompt-work]) > summary, :scope > details:not([data-prompt-work]) > pre, :scope > header")].map((element) => {
                                     const style = getComputedStyle(element);
                                     const local = rgba(style.backgroundColor);
                                     return { color: rgba(style.color), background: local[3] === 0 ? background : local, tag: element.tagName };
@@ -73,11 +75,16 @@ export default async function verifySurfaces(t) {
                         }).concat([["outside", { background: rgba(getComputedStyle(document.querySelector("#session-connection")).backgroundColor), header: null, text: [] }]]));
                     });
                     const { background: user } = colors.user;
+                    const { background: actorIn } = colors["actor-inbound"];
+                    const { background: actorOut } = colors["actor-outbound"];
                     const { background: reply } = colors.assistant;
                     const { background: working } = colors.reasoning;
-                    assert.equal(new Set([user, reply, working].map((item) => JSON.stringify(item))).size, 3, `${colorScheme}: three distinct backgrounds`);
+                    assert.equal(new Set([user, actorIn, reply, working].map((item) => JSON.stringify(item))).size, 4, `${colorScheme}: four distinct backgrounds across operator, actor, reply, and working`);
                     assert.ok(user[1] > user[0] && user[1] > user[2], "user tint is green");
-                    assert.deepEqual(colors["decorated-user"].background, user, "send metadata never turns a user's prompt into a model reply");
+                    assert.ok(actorIn[0] > actorIn[1] && actorIn[1] > actorIn[2], `${colorScheme}: inbound actor tint is warm amber (${actorIn.join(", ")})`);
+                    assert.notDeepEqual(actorOut, user, "outbound actor reply is distinct from user green");
+                    assert.notDeepEqual(actorOut, actorIn, "outbound actor reply is lighter/subtler than inbound actor message");
+                    assert.deepEqual(colors["decorated-user"].background, user, "send metadata targeting this session never turns an operator's prompt into an actor or reply surface");
                     for (const id of ["send", "reply", "cancelled", "outside"]) assert.deepEqual(colors[id].background, reply, id);
                     for (const id of ["generic", "read", "note", "result", "system", "developer"]) assert.deepEqual(colors[id].background, working, id);
                     for (const [id, { background, header, text = [] }] of Object.entries(colors)) {

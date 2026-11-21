@@ -145,7 +145,7 @@ export default async function startModel({ approvalCommand: initialApprovalComma
                             { server: "plurnk", tool: "done", arguments: { text: "Completed notes." } },
                         ]
                         : lifecycle === "image-upload" && visit === 1
-                        ? [{ server: "plurnk", tool: "read", arguments: { path: Array.from(packet.matchAll(/<(session:\/\/user\/attachments\/[0-9a-f]+\/[^\s>]*pixel\.png)>/gu)).at(-1)?.[1] ?? "session://user/attachments/missing/pixel.png" } }]
+                        ? [{ server: "plurnk", tool: "read", arguments: { path: Array.from(packet.matchAll(/<(session:\/\/[^/\s>]+\/attachments\/[0-9a-f]+\/[^\s>]*pixel\.png)>/gu)).at(-1)?.[1] ?? "session://session1/attachments/missing/pixel.png" } }]
                         : lifecycle === "content-security"
                         ? [
                             { server: "plurnk", tool: "note", arguments: { text: contentAttack }, aside: "fact" },

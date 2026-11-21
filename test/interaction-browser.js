@@ -145,9 +145,9 @@ export default async function verifyInteractions(t) {
                             { optionId: "reject_once", name: "Reject once", kind: "reject_once" },
                         ],
                         _meta: { plurnk: { proposal: {
-                            logEntryId: 1, sessionId: 2, session: "user", loopId: 3, turnId: 4, coordinate: "3/4/1", op: "sh",
+                            logEntryId: 1, sessionId: 2, session: "session1", loopId: 3, turnId: 4, coordinate: "3/4/1", op: "sh",
                             target: { scheme: "exec", authority: null, pathname: "sh" }, body: "printf reviewed", attrs: {},
-                            owner: "acp://operator/sessions/user", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
+                            owner: "acp://operator/sessions/session1", disposition: { decision: "review" }, expiresAt: "2030-01-01T00:00:00Z",
                         } } },
                     });
                     assert.equal(await page.evaluate(({ gates }) => window.review(gates), mixed), true);

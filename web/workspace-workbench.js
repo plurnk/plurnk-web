@@ -1,5 +1,5 @@
 import { $, $$, on, the } from "on_the_money";
-import { directoryPath, parseDirectory, parseSessionHash } from "../src/directory-addresses.js";
+import { directoryPath, nextSequentialName, parseDirectory, parseSessionHash, workspaceSettingsPath } from "../src/directory-addresses.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
@@ -42,10 +42,6 @@ const isRecord = (value) => typeof value === "object" && value !== null && !Arra
 
 /** @param {unknown} value @returns {"root" | "work" | "fork" | null} */
 const asSessionKind = (value) => value === "root" || value === "work" || value === "fork" ? value : null;
-
-/** @param {WorkbenchSession} a @param {WorkbenchSession} b */
-const orderByReply = (a, b) => a.replyId !== null && b.replyId !== null ? b.replyId - a.replyId
-    : a.replyId !== null ? -1 : b.replyId !== null ? 1 : 0;
 
 /** @param {WorkbenchSession} session @param {boolean} hasModelChildren */
 function isUntouchedDraftWorkbenchSession(session, hasModelChildren) {
@@ -184,7 +180,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                         gates: typeof raw.gates === "number" ? raw.gates : 0,
                         title: typeof raw.title === "string" ? raw.title : null,
                         replyId: typeof raw.replyId === "number" ? raw.replyId : null,
-                        archived: false,
+                        archived: raw.archived === true,
                     });
                 }
             }
@@ -211,7 +207,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
                 return true;
             })
-            .toSorted(orderByReply);
+            .toSorted((a, b) => a.id - b.id);
         const unarchivedIds = new Set(unarchived.map(({ id }) => id));
         const childrenByParent = Map.groupBy(
             unarchived,
@@ -233,10 +229,12 @@ export default async function observeWorkspaceWorkbench(tabs) {
     function syncHeaderPlace() {
         const wsControl = $("#session-workspace");
         const workspacePath = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
+        const settingsPath = workspaceSettingsPath(currentWorkspaceName, selectedSessionName);
         if (wsControl && workspacePath !== null) {
             the(wsControl, {
                 "workspace-name": currentWorkspaceName,
                 "workspace-path": workspacePath,
+                ...(settingsPath !== null ? { "workspace-settings-path": settingsPath } : {}),
                 "workspace-icon": workspaceMarker.icon,
                 "workspace-icon-label": workspaceMarker.label,
             });
@@ -247,7 +245,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 if (el.textContent !== selectedSessionName) el.textContent = selectedSessionName;
             }
             for (const input of $$('input[name="session"]')) {
-                if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-tab-archive]")) {
+                if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-inline-unarchive]")) {
                     input.value = selectedSessionName;
                 }
             }
@@ -302,21 +300,42 @@ export default async function observeWorkspaceWorkbench(tabs) {
     let switcherSearch = null;
     /** @type {HTMLUListElement | null} */
     let switcherList = null;
+    /** @type {HTMLDetailsElement | null} */
+    let switcherArchivedDetails = null;
+    /** @type {HTMLUListElement | null} */
+    let switcherArchivedList = null;
+    /** @type {HTMLButtonElement | null} */
+    let switcherManageBtn = null;
     let switcherQuery = "";
 
     function applySwitcherFilter() {
-        if (!switcherList) return;
         const query = switcherQuery.trim().toLowerCase();
-        for (const item of switcherList.children) {
-            if (!(item instanceof HTMLLIElement)) continue;
-            const text = (item.dataset.switcherSearchText ?? item.textContent ?? "").toLowerCase();
-            item.hidden = query !== "" && !text.includes(query);
+        if (switcherList) {
+            for (const item of switcherList.children) {
+                if (!(item instanceof HTMLLIElement)) continue;
+                const text = (item.dataset.switcherSearchText ?? item.textContent ?? "").toLowerCase();
+                item.hidden = query !== "" && !text.includes(query);
+            }
+        }
+        if (switcherArchivedList && switcherArchivedDetails) {
+            let shownArchived = 0;
+            for (const item of switcherArchivedList.children) {
+                if (!(item instanceof HTMLLIElement)) continue;
+                const text = (item.dataset.switcherSearchText ?? item.textContent ?? "").toLowerCase();
+                const matches = query === "" || text.includes(query);
+                item.hidden = !matches;
+                if (matches) shownArchived += 1;
+            }
+            if (query !== "" && shownArchived > 0) switcherArchivedDetails.open = true;
         }
     }
 
     /** @param {readonly WorkbenchSession[]} orderedUnarchived */
     function renderSwitcherItems(orderedUnarchived) {
         if (!switcherList) return;
+        if (switcherManageBtn) {
+            switcherManageBtn.hidden = selectedSessionName === null;
+        }
         const childParents = new Set(orderedUnarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
         const switcherSessions = orderedUnarchived.filter((entry) =>
             entry.name === selectedSessionName || !isUntouchedDraftWorkbenchSession(entry, childParents.has(entry.id)));
@@ -351,6 +370,32 @@ export default async function observeWorkspaceWorkbench(tabs) {
             }
             if (lifecycleEl) lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
             if (labelEl) labelEl.textContent = titleText ? `${titleText} (#${session.name})` : `#${session.name}`;
+        }
+
+        if (switcherArchivedDetails && switcherArchivedList) {
+            const archivedSessions = [...sessionsById.values()]
+                .filter(({ archived }) => archived)
+                .toSorted((a, b) => b.id - a.id);
+            switcherArchivedList.replaceChildren();
+            if (archivedSessions.length === 0) {
+                switcherArchivedDetails.hidden = true;
+                the(switcherArchivedDetails, "archived-session-count", 0);
+            } else {
+                switcherArchivedDetails.hidden = false;
+                the(switcherArchivedDetails, "archived-session-count", archivedSessions.length);
+                for (const session of archivedSessions) {
+                    const item = /** @type {HTMLLIElement} */ ($.clone(switcherArchivedList, "#workspace-switcher-archived-item"));
+                    const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
+                    item.dataset.switcherArchivedEntry = `${workspaceId}:${session.id}`;
+                    item.dataset.switcherSearchText = `#${session.name} ${session.name} ${titleText ?? ""} archived`;
+                    const labelEl = $(item, "[data-switcher-archived-label]");
+                    if (labelEl) labelEl.textContent = titleText ? `${titleText} (#${session.name})` : `#${session.name}`;
+                    const wsInput = $(item, 'input[name="workspace"]');
+                    if (wsInput instanceof HTMLInputElement) wsInput.value = currentWorkspaceName;
+                    const sessInput = $(item, 'input[name="session"]');
+                    if (sessInput instanceof HTMLInputElement) sessInput.value = session.name;
+                }
+            }
         }
         applySwitcherFilter();
     }
@@ -422,20 +467,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
             }
 
-            const archiveForm = $(row, "form[data-tab-archive]");
-            if (archiveForm instanceof HTMLFormElement) {
-                const wsInput = $(archiveForm, 'input[name="workspace"]');
-                if (wsInput instanceof HTMLInputElement && wsInput.value !== currentWorkspaceName) wsInput.value = currentWorkspaceName;
-                const sessInput = $(archiveForm, 'input[name="session"]');
-                if (sessInput instanceof HTMLInputElement && sessInput.value !== session.name) sessInput.value = session.name;
-                const archiveBtn = $(archiveForm, 'button[type="submit"]');
-                const archiveLabel = `Archive #${session.name}`;
-                if (archiveBtn instanceof HTMLButtonElement) {
-                    if (archiveBtn.getAttribute("aria-label") !== archiveLabel) archiveBtn.setAttribute("aria-label", archiveLabel);
-                    if (archiveBtn.getAttribute("title") !== archiveLabel) archiveBtn.setAttribute("title", archiveLabel);
-                }
-            }
-
             if (tabsList.children[index] !== row) {
                 tabsList.insertBefore(row, tabsList.children[index] ?? null);
             }
@@ -459,6 +490,16 @@ export default async function observeWorkspaceWorkbench(tabs) {
         switcherDialog = cloned;
         switcherSearch = $(switcherDialog, "input[data-switcher-search]");
         switcherList = $(switcherDialog, "ul[data-switcher-list]");
+        const rawArchivedDetails = $(switcherDialog, "details[data-switcher-archived]");
+        switcherArchivedDetails = rawArchivedDetails instanceof HTMLDetailsElement ? rawArchivedDetails : null;
+        const rawArchivedList = $(switcherDialog, "ul[data-switcher-archived-list]");
+        switcherArchivedList = rawArchivedList instanceof HTMLUListElement ? rawArchivedList : null;
+        const rawManageBtn = $(switcherDialog, "button[data-switcher-manage-active]");
+        switcherManageBtn = rawManageBtn instanceof HTMLButtonElement ? rawManageBtn : null;
+        const newSessBtn = $(switcherDialog, "button[data-switcher-new-session]");
+        if (newSessBtn instanceof HTMLButtonElement && tabs.dataset.workspaceArchived === "true") {
+            newSessBtn.hidden = true;
+        }
         on(switcherDialog, "input", "input[data-switcher-search]", (_event, input) => {
             if (input instanceof HTMLInputElement) {
                 switcherQuery = input.value;
@@ -470,6 +511,19 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const target = link.getAttribute("data-tab-session") ?? parseSessionHash(link.getAttribute("href") ?? "");
             switcherDialog?.close();
             if (target) void selectSession(target, { updateHistory: "push", recordPlace: true });
+        });
+        on(switcherDialog, "click", "[data-switcher-new-session]", () => {
+            switcherDialog?.close();
+            if (live) {
+                void openFreshSequentialSession("push");
+            } else {
+                const newForm = $(tabs, "form[data-tab-new]");
+                if (newForm instanceof HTMLFormElement) newForm.requestSubmit();
+            }
+        });
+        on(switcherDialog, "click", "[data-switcher-manage-active]", () => {
+            switcherDialog?.close();
+            openSessionManageDialog();
         });
         return switcherDialog;
     }
@@ -639,32 +693,91 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
     });
 
-    /** @type {Promise<{ open(section?: import("./workspace-settings.js").SettingsSection): void, notifyChanged(familyOrTopic: string): void }> | null} */
-    let settingsControllerPromise = null;
-
-    /** @param {string} [rawSection] */
-    async function openSettingsModal(rawSection) {
-        settingsControllerPromise ??= import("./workspace-settings.js").then(({ createWorkspaceSettingsController }) =>
-            createWorkspaceSettingsController(() => ({
-                workspaceId,
-                workspaceName: currentWorkspaceName,
-                sessionName: selectedSessionName,
-                auth,
-                signal: pageLifetime.signal,
-            })),
-        );
-        const controller = await settingsControllerPromise;
-        const { isSettingsSection } = await import("./workspace-settings.js");
-        controller.open(isSettingsSection(rawSection) ? rawSection : undefined);
-    }
-
-    on(document.body, "click", "[data-workspace-settings]", () => {
-        void openSettingsModal();
+    on(document.body, "click", "[data-open-sessions]", () => {
+        openSwitcherDialog();
     });
 
-    on(document.body, "click", "[data-open-workspace-settings]", (_event, btn) => {
-        const targetSection = btn.getAttribute("data-open-workspace-settings") ?? undefined;
-        void openSettingsModal(targetSection);
+    let newSessionBusy = false;
+    /** @param {"push" | "replace"} historyMode */
+    async function openFreshSequentialSession(historyMode) {
+        if (newSessionBusy) return;
+        newSessionBusy = true;
+        try {
+            const seen = new Set([...sessionsById.values()].map(({ name }) => name));
+            /** @type {unknown} */
+            let created;
+            for (let attempt = 0; attempt < 8; attempt++) {
+                const candidate = nextSequentialName("session", seen);
+                try {
+                    created = await managementAction("session/new", {
+                        _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: candidate } },
+                    }, "", auth, pageLifetime.signal);
+                    break;
+                } catch (error) {
+                    if (Reflect.get(Object(error), "status") === 409 && attempt < 7) {
+                        seen.add(candidate);
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+            const rawSessionId = isRecord(created) && typeof created.sessionId === "string" ? created.sessionId : "";
+            const freshName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : "";
+            if (freshName) {
+                if (![...sessionsById.values()].some(({ name }) => name === freshName)) {
+                    const maxId = Math.max(0, ...sessionsById.keys());
+                    sessionsById.set(maxId + 1, {
+                        id: maxId + 1,
+                        name: freshName,
+                        parentSessionId: null,
+                        kind: "root",
+                        lifecycle: "idle",
+                        gates: 0,
+                        title: null,
+                        replyId: null,
+                        archived: false,
+                    });
+                }
+                await selectSession(freshName, { updateHistory: historyMode, recordPlace: true });
+            } else {
+                location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/");
+            }
+        } finally {
+            newSessionBusy = false;
+        }
+    }
+
+    on(document.body, "submit", "form[data-tab-new]", (event, form) => {
+        if (!live || !(form instanceof HTMLFormElement)) return;
+        event.preventDefault();
+        void openFreshSequentialSession("push");
+    });
+
+    let unarchiveMutationBusy = false;
+    on(document.body, "submit", 'form[action="/sessions/unarchive"][data-inline-unarchive]', (event, form) => {
+        if (!live || !(form instanceof HTMLFormElement)) return;
+        event.preventDefault();
+        if (unarchiveMutationBusy) return;
+        const targetSession = String(new FormData(form).get("session") ?? "").trim();
+        if (!targetSession) return;
+        unarchiveMutationBusy = true;
+        void (async () => {
+            try {
+                await managementAction("session/unarchive", {}, `${workspaceId}#${targetSession}`, auth, pageLifetime.signal);
+                for (const [sid, cur] of sessionsById) {
+                    if (cur.name === targetSession || (cur.archived && cur.parentName === targetSession)) {
+                        sessionsById.set(sid, { ...cur, archived: false });
+                    }
+                }
+                if (switcherDialog?.open) switcherDialog.close();
+                await selectSession(targetSession, { updateHistory: "push", recordPlace: true });
+            } catch {
+                // Fall back to native POST navigation on unexpected ACP error.
+                location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/search/?status=archived");
+            } finally {
+                unarchiveMutationBusy = false;
+            }
+        })();
     });
 
     on(document.body, "click", 'a[data-workspace-route="session"], main a[data-session-name], #session-descendants a', (event, link) => {
@@ -724,7 +837,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
     });
 
     let archiveMutationBusy = false;
-    on(document.body, "submit", "form[data-tab-archive], form[data-session-archive-form]", (event, form) => {
+    on(document.body, "submit", "form[data-session-archive-form]", (event, form) => {
         if (!live || !(form instanceof HTMLFormElement)) return;
         event.preventDefault();
         if (archiveMutationBusy) return;
@@ -778,30 +891,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     if (nextSession) {
                         await selectSession(nextSession.name, { updateHistory: "replace", recordPlace: true });
                     } else {
-                        const created = await managementAction("session/new", {
-                            _meta: { plurnk: { workspace: currentWorkspaceName } },
-                        }, "", auth, pageLifetime.signal);
-                        const rawSessionId = isRecord(created) && typeof created.sessionId === "string" ? created.sessionId : "";
-                        const freshName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : "";
-                        if (freshName) {
-                            if (![...sessionsById.values()].some(({ name }) => name === freshName)) {
-                                const maxId = Math.max(0, ...sessionsById.keys());
-                                sessionsById.set(maxId + 1, {
-                                    id: maxId + 1,
-                                    name: freshName,
-                                    parentSessionId: null,
-                                    kind: "root",
-                                    lifecycle: "idle",
-                                    gates: 0,
-                                    title: null,
-                                    replyId: null,
-                                    archived: false,
-                                });
-                            }
-                            await selectSession(freshName, { updateHistory: "replace", recordPlace: true });
-                        } else {
-                            location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/");
-                        }
+                        await openFreshSequentialSession("replace");
                     }
                 } else {
                     reconcileTabs();
@@ -839,7 +929,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
         const folderLabel = projectLabel !== null && projectLabel !== currentWorkspaceName ? projectLabel : "";
         const sessionPath = directoryPath({ kind: "session", workspace: currentWorkspaceName, session: sessionName }) ?? `/~/${encodeURIComponent(currentWorkspaceName)}#${encodeURIComponent(sessionName)}`;
 
-        const nextMain = /** @type {HTMLElement} */ ($.clone(tabs, "#workspace-session-main", { position: "afterend" }));
+        const nextMain = /** @type {HTMLElement} */ ($.clone(tabs, "#workspace-session-main", { position: "beforebegin" }));
         nextMain.dataset.sessionName = sessionName;
         const folderEl = $(nextMain, "#session-folder");
         if (folderEl) {
@@ -916,7 +1006,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     $("#main")?.remove();
                     $("#session-status")?.remove();
                 }
-                tabs.insertAdjacentElement("afterend", cached.main);
+                tabs.insertAdjacentElement("beforebegin", cached.main);
                 cached.main.insertAdjacentElement("afterend", cached.footer);
                 activePane = cached;
                 cached.controller.activate();
@@ -1099,21 +1189,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 reconcileTabs();
                 return;
             }
-            case "functionality/changed": {
-                if (notifWorkspaceId !== workspaceId) return;
-                const family = typeof data.family === "string" ? data.family : null;
-                if (family && settingsControllerPromise) {
-                    void settingsControllerPromise.then((ctrl) => ctrl.notifyChanged(family));
-                }
-                return;
-            }
-            case "session/policy": {
-                if (notifWorkspaceId !== workspaceId) return;
-                if (settingsControllerPromise) {
-                    void settingsControllerPromise.then((ctrl) => ctrl.notifyChanged("policy"));
-                }
-                return;
-            }
             case "notifications/resync": {
                 void (async () => {
                     try {
@@ -1132,9 +1207,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
                             hydrateSessionsFromTabList(parsedTabsList, false);
                             hydrateFoldedSessions(parsedTabs instanceof HTMLElement ? parsedTabs.dataset.foldedSessions : undefined);
                             reconcileTabs();
-                        }
-                        if (settingsControllerPromise) {
-                            void settingsControllerPromise.then((ctrl) => ctrl.notifyChanged("resync"));
                         }
                     } catch {
                         // Ignore transient resync fetch errors; passive reconnect will retry.

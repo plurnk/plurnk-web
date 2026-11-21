@@ -39,7 +39,7 @@ export default async function verifyReasoning(t) {
                         id: "attempt",
                         role: "reasoning",
                         content: "A provisional <script>window.pwned = true</script> hypothesis.",
-                        _meta: { plurnk: { sessionName: "user", loopSeq: 1, turnSeq: 3, coordinate: "1/3", streaming: true } },
+                        _meta: { plurnk: { sessionName: "session1", loopSeq: 1, turnSeq: 3, coordinate: "1/3", streaming: true } },
                     };
                     await page.evaluate((msgs) => window.present(msgs), [prompt, streamingAttempt]);
                     const promptRow = page.locator('[data-message-id="prompt-1"]');
@@ -62,11 +62,11 @@ export default async function verifyReasoning(t) {
                         content: "",
                         _meta: {
                             plurnk: {
-                                sessionName: "user",
+                                sessionName: "session1",
                                 loopSeq: 1,
                                 turnSeq: 3,
                                 coordinate: "1/3",
-                                body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fuser%2F1%2F3", mimeType: "text/plain" },
+                                body: { url: "/acp/7/9/entry?target=reasoning%3A%2F%2Fsession1%2F1%2F3", mimeType: "text/plain" },
                             },
                         },
                     };

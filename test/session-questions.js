@@ -211,7 +211,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
 
     await t.test("{§web-session-questions} leaving a pending or resumed question never cancels the session", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         await ask(page, "question-resumed-departure");
-        await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
+        await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
         await page.waitForLoadState("load");
         await page.goto(path);
         await interrupted(page);
@@ -288,7 +288,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         await answer(page);
         await submit(page);
         const childPage = await context.newPage();
-        await childPage.goto(path.replace("#user", "#child"));
+        await childPage.goto(path.replace("#session1", "#child"));
         await childPage.getByText("Completed held-question-child.", { exact: true }).waitFor();
         assert.deepEqual(JSON.parse((await questionResult(childPage, base, headers)).content), { action: "accept", content: exactAnswer });
         assert.equal(model.requests.length, 3, JSON.stringify(model.requests.map(({ messages }) => messages.map(({ role, content }) => ({ role, content: String(content).slice(-1200) })))));

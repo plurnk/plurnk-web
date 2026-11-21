@@ -172,7 +172,7 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
         model.reset(modelOptions);
         const headers = { ...shared.headers };
         const workspace = `input-${engine.name()}-${crypto.randomUUID()}`;
-        const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers });
+        const setup = new SessionAgent({ url: new URL("/acp", base).href, sessionId: "session1", headers });
         const initialized = await setup.send({
             workspace,
             action: selector === null
@@ -190,7 +190,7 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
             context.on("page", installAcpRecorder);
             const checkBrowser = browserDiagnostics(context);
             const page = await context.newPage();
-            const address = new URL(`/~/${workspace}#user`, base);
+            const address = new URL(`/~/${workspace}#session1`, base);
             address.hostname = hostname;
             const path = address.href;
             await page.goto(path);
@@ -606,7 +606,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
             await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
             assert.equal(await text.inputValue(), "");
             if (departure === "navigate") {
-                await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
+                await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
                 await page.waitForLoadState("load");
             } else await page.close();
             model.release(`held-${departure}-input`);
@@ -1009,7 +1009,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await page.locator('[data-message-role="user"] figure[data-inline-image] img[alt="pixel.png"]').waitFor();
         assert.equal(entryTargets.length, 1, "collapsed read operation does not duplicate user attachment fetch before disclosure");
         assert.equal(entryTargets[0].hasBearer, true);
-        assert.match(entryTargets[0].target ?? "", /^session:\/\/user\/attachments\/[0-9a-f]+\/\S*pixel\.png$/u);
+        assert.match(entryTargets[0].target ?? "", /^session:\/\/session1\/attachments\/[0-9a-f]+\/\S*pixel\.png$/u);
 
         const loop2Ops = page.locator('[data-loop-seq="2"] [data-prompt-work]');
         assert.equal(await loop2Ops.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);

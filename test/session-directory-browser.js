@@ -127,9 +127,20 @@ export default async function verifySessionDirectory(page, workspace) {
         { expected: evidence.name, scripted: hasScript },
     );
     assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, path(evidence));
-    if (hasScript) {
-        await page.locator('#workspace-tabs a[aria-current="true"]').click();
+    const openSessionManage = async () => {
+        const activeTab = page.locator('#workspace-tabs a[aria-current="true"]');
+        if (await activeTab.isVisible()) {
+            await activeTab.click();
+        } else {
+            await page.locator('[aria-label="Session controls"] button[data-open-sessions]').click();
+            const switcher = page.locator("#dialog-workspace-switcher");
+            await switcher.waitFor({ state: "visible" });
+            await switcher.getByRole("button", { name: "Session options…", exact: true }).click();
+        }
         await page.locator("#dialog-session-manage").waitFor({ state: "visible" });
+    };
+    if (hasScript) {
+        await openSessionManage();
         const parentLink = page.locator("#dialog-session-manage [data-session-parent-line]");
         assert.equal((await parentLink.innerText()).trim(), "Parent: review");
         assert.equal(await page.locator("#session-directory").count(), 0);
@@ -144,8 +155,7 @@ export default async function verifySessionDirectory(page, workspace) {
     await link(incoming).click();
     if (hasScript) {
         await page.waitForFunction(() => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "incoming");
-        await page.locator('#workspace-tabs a[aria-current="true"]').click();
-        await page.locator("#dialog-session-manage").waitFor({ state: "visible" });
+        await openSessionManage();
         const parentLink = page.locator("#dialog-session-manage [data-session-parent-line]");
         assert.equal((await parentLink.innerText()).trim(), "Parent: _plurnk");
         assert.equal(await parentLink.locator("a").count(), 0);

@@ -7,16 +7,13 @@ export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.locator("main h1").count(), ["home", "search", "workspace", "session"].includes(kind) ? 0 : 1);
     assert.equal(await page.locator("main").getAttribute("data-page"), kind);
     const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
-    const home = page.getByRole("banner").getByRole("link", { name: "Plurnk", exact: true });
-    assert.equal(await home.getAttribute("href"), "/");
-    assert.equal(await home.getAttribute("title"), "Plurnk");
-    assert.equal(await home.innerText(), "", "the mascot has no duplicate brand text");
-    assert.equal(await home.getByRole("img", { name: "Plurnk", exact: true }).getAttribute("src"), "/icons/plurnk.svg");
-    const searchLink = navigation.getByRole("link", { name: "Search", exact: true });
+    const searchLink = page.getByRole("banner").getByRole("link", { name: "Search", exact: true });
     assert.equal(await searchLink.getAttribute("href"), "/search/");
+    assert.equal(await searchLink.getAttribute("title"), "Search (Ctrl+K)");
     assert.equal(await searchLink.locator("svg").count(), 1);
+    assert.equal(await page.getByRole("banner").locator("img").count(), 0, "top bar carries no mascot image");
     assert.equal(await page.locator("[style], [class]").count(), 0);
-    if (kind === "error" || kind === "account") {
+    if (kind === "error" || kind === "account" || kind === "settings") {
         const card = page.getByRole("article");
         assert.equal(await card.count(), 1);
         if (kind === "error") {
@@ -35,7 +32,6 @@ export default async function verifyPageShell(page, { title, kind }) {
         }
     }
     const place = page.locator("header > #header-place");
-    const createGroup = page.locator("header > [data-header-create]");
     for (const width of [320, 768, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         const bounds = await page.locator("main").evaluate((main) => {
@@ -51,49 +47,44 @@ export default async function verifyPageShell(page, { title, kind }) {
             };
         });
         assert.equal(bounds.overflow, false, `${kind} fits ${width}px without horizontal scrolling`);
-        const expected = ["home", "search", "workspace", "session"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
+        const expected = ["home", "search", "workspace", "session", "settings"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
         assert.ok(Math.abs(bounds.content - expected) < 1, `${kind} main width ${bounds.content} should be ${expected}`);
         assert.ok(Math.abs(bounds.header - bounds.viewport) < 1, `${kind} header spans the full viewport width`);
-        const centers = await navigation.locator("li > a, li > form > button").evaluateAll((elements) => elements.map((element) => {
+        const centers = await navigation.locator("li > a").evaluateAll((elements) => elements.map((element) => {
             const bounds = element.getBoundingClientRect();
             return bounds.y + bounds.height / 2;
         }));
-        const logo = await home.boundingBox();
-        centers.push(logo.y + logo.height / 2);
+        const searchBox = await searchLink.boundingBox();
+        centers.push(searchBox.y + searchBox.height / 2);
         assert.ok(Math.max(...centers) - Math.min(...centers) < 2, `${width}px: header controls share one horizontal row (${centers.join(", ")})`);
         if (await place.count()) {
             const placeBox = await place.boundingBox();
             const menuBox = await navigation.boundingBox();
-            const leftEdge = (await createGroup.count()) ? (await createGroup.boundingBox()).x + (await createGroup.boundingBox()).width : logo.x + logo.width;
-            assert.ok(placeBox.x >= leftEdge - 1 && placeBox.x + placeBox.width <= menuBox.x + 1, "header place stays between left controls and main navigation");
-            assert.ok(Math.abs(placeBox.y + placeBox.height / 2 - logo.y - logo.height / 2) < 2,
+            const leftEdge = searchBox.x + searchBox.width;
+            assert.ok(placeBox.x >= leftEdge - 1 && placeBox.x + placeBox.width <= menuBox.x + 1, "header place stays between far-left Search and main navigation");
+            assert.ok(Math.abs(placeBox.y + placeBox.height / 2 - searchBox.y - searchBox.height / 2) < 2,
                 "header place stays centered on the controls' row, never a second header row");
         }
     }
     await page.setViewportSize({ width: 320, height: 900 });
-    for (const [role, name, expectedTitle] of [["link", "Search", "Search (Ctrl+K)"], ["link", "Profile", "Profile"], ["button", "Sign out", "Sign out"]]) {
-        const control = navigation.getByRole(role, { name, exact: true });
-        if (await control.count() === 0) continue;
-        assert.equal((await control.innerText()).trim(), "", "320px collapses header text labels to icon actions");
-        assert.equal(await control.locator("svg").count(), 1);
-        assert.equal(await control.getAttribute("title"), expectedTitle, "icon actions retain native explanatory titles");
+    assert.equal((await searchLink.innerText()).trim(), "", "320px collapses Search text label to icon action");
+    const accountLink = navigation.getByRole("link", { name: "Account", exact: true });
+    if (await accountLink.count() > 0) {
+        assert.equal((await accountLink.innerText()).trim(), "", "320px collapses Account text label to icon action");
+        assert.equal(await accountLink.locator("svg").count(), 1);
+        assert.equal(await accountLink.getAttribute("title"), "Account", "Account icon retains explanatory title");
     }
     assert.equal(await page.getByRole("link", { name: "Skip to content", exact: true }).count(), 0);
-    await home.focus();
-    if (await createGroup.count() === 0 && await place.locator("a, button").count() === 0) {
+    await searchLink.focus();
+    assert.ok(await searchLink.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
+    }), "Search retains visible keyboard focus");
+    if (await place.locator("a:visible, button:visible").count() === 0 && await accountLink.count() > 0) {
         await page.keyboard.press("Tab");
-        assert.ok(await searchLink.evaluate((element) => {
+        assert.ok(await accountLink.evaluate((element) => {
             const style = getComputedStyle(element);
             return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
-        }), "Search retains native keyboard order and visible focus");
-        if (await navigation.getByRole("link", { name: "Profile", exact: true }).count()) {
-            for (const [role, name] of [["link", "Profile"], ["button", "Sign out"]]) {
-                await page.keyboard.press("Tab");
-                assert.ok(await navigation.getByRole(role, { name, exact: true }).evaluate((element) => {
-                    const style = getComputedStyle(element);
-                    return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
-                }), `${name} retains native keyboard order and visible focus`);
-            }
-        }
+        }), "Account retains native keyboard order and visible focus");
     }
 }

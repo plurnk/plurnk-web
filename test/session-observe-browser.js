@@ -36,7 +36,7 @@ function permissionFrame(id, proposal) {
         id,
         method: "session/request_permission",
         params: {
-            sessionId: "7#user",
+            sessionId: "7#session1",
             title,
             description: "Review the requested action.",
             subject: {
@@ -58,7 +58,7 @@ function permissionFrame(id, proposal) {
     };
 }
 
-// {§web-session-input} {§web-session-status} {§web-session-approval} {§web-session-history} Real observeSession keyboard, status and sticky-tail contracts across engines.
+// {§web-session-input} {§web-session-status} {§web-session-approval} {§web-session-history} Real observeSession keyboard, status and Reading Slate scroll contracts across engines.
 export default async function verifySessionObserve(t) {
     const fixture = await conversationFixture(new URL("../web/app.js", import.meta.url));
     try {
@@ -152,7 +152,7 @@ export default async function verifySessionObserve(t) {
                         fixture.pushFrame(permissionFrame("gate-yolo-1", {
                             logEntryId: 10,
                             sessionId: 9,
-                            session: "user",
+                            session: "session1",
                             loopId: 2,
                             turnId: 1,
                             coordinate: "2/1/2",
@@ -160,7 +160,7 @@ export default async function verifySessionObserve(t) {
                             target: { scheme: "file", authority: null, pathname: "witness.txt" },
                             body: "echo ok\n",
                             attrs: {},
-                            owner: "acp://operator/sessions/user",
+                            owner: "acp://operator/sessions/session1",
                             disposition: { decision: "review" },
                             expiresAt: "2030-01-01T00:00:00Z",
                         }));
@@ -177,10 +177,10 @@ export default async function verifySessionObserve(t) {
                         });
                     });
 
-                    await t.test("{§web-session-history} sticky-tail scroll anchoring pins bottom arrivals without hijacking upward reading", async () => {
+                    await t.test("{§web-session-history} Reading Slate lands initial arrival at bottom, frames submitted turns at top without chasing streaming output, and surfaces jump-to-bottom / pending-review pill", async () => {
                         await page.route("**/history/older-loop", (route) => route.fulfill({
                             json: {
-                                session: "7#user",
+                                session: "7#session1",
                                 history: { older: null },
                                 updates: Array.from({ length: 12 }, (_, idx) => ({
                                     sessionUpdate: idx % 2 === 0 ? "user_message_chunk" : "agent_message_chunk",
@@ -198,6 +198,7 @@ export default async function verifySessionObserve(t) {
                             _meta: { plurnk: { id: 100 + idx, coordinate: `2/${Math.floor(idx / 2) + 1}/1`, loopId: 2, loopSeq: 2 } },
                         }));
 
+                        let nextPromptId = 300;
                         fixture.onAcp((input) => {
                             if (input.method === undefined) {
                                 assert.equal(input.error, undefined);
@@ -221,18 +222,20 @@ export default async function verifySessionObserve(t) {
                                 };
                             }
                             if (input.method === "session/prompt") {
+                                const id = ++nextPromptId;
+                                const replyId = `reply-${id}`;
                                 const turnUpdates = [
                                     {
                                         sessionUpdate: "user_message_chunk",
                                         messageId: input.params.messageId,
                                         content: { type: "text", text: input.params.prompt[0].text },
-                                        _meta: { plurnk: { id: 300, coordinate: "2/10/1", loopId: 2, loopSeq: 2, origin: "operator" } },
+                                        _meta: { plurnk: { id, coordinate: `2/${id}/1`, loopId: 2, loopSeq: 2, origin: "operator" } },
                                     },
                                     {
                                         sessionUpdate: "agent_message_chunk",
-                                        messageId: "reply-after-submit",
-                                        content: { type: "text", text: `Answered prompt.\n\n${"tail line ".repeat(20)}` },
-                                        _meta: { plurnk: { id: 301, coordinate: "2/10/2", loopId: 2, loopSeq: 2 } },
+                                        messageId: replyId,
+                                        content: { type: "text", text: "First line of incoming answer." },
+                                        _meta: { plurnk: { id: id + 100, coordinate: `2/${id}/2`, loopId: 2, loopSeq: 2 } },
                                     },
                                 ];
                                 liveUpdates.push(...turnUpdates);
@@ -265,105 +268,137 @@ export default async function verifySessionObserve(t) {
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                         await page.locator('[data-message-id="live-17"]').waitFor();
 
-                        const metrics = () => page.locator("#main").evaluate((main) => ({
-                            scrollTop: main.scrollTop,
-                            scrollHeight: main.scrollHeight,
-                            clientHeight: main.clientHeight,
-                            gap: main.scrollHeight - main.scrollTop - main.clientHeight,
-                        }));
+                        const metrics = () => page.locator("#main").evaluate((main) => {
+                            const spacer = main.querySelector("svg[data-slate-spacer]");
+                            const spacerHeight = Number(spacer?.getAttribute("height") ?? "0") || 0;
+                            const realHeight = main.scrollHeight - spacerHeight;
+                            return {
+                                scrollTop: main.scrollTop,
+                                scrollHeight: main.scrollHeight,
+                                clientHeight: main.clientHeight,
+                                spacerHeight,
+                                gap: realHeight - main.scrollTop - main.clientHeight,
+                            };
+                        });
 
+                        const jumpBtn = page.locator("[data-jump-bottom]");
+
+                        // 1. Initial arrival lands at the bottom of real content with zero spacer and hidden jump button.
                         const initial = await metrics();
                         assert.ok(initial.scrollHeight > initial.clientHeight * 2, "multi-message session overflows main");
                         assert.ok(initial.gap <= 24, `initial transcript arrival lands at main's bottom edge (gap=${initial.gap})`);
+                        assert.equal(initial.spacerHeight, 0);
+                        assert.equal(await jumpBtn.isVisible(), false);
 
                         const draft = page.getByRole("textbox", { name: "Message", exact: true });
                         await draft.fill("");
                         await draft.focus();
 
-                        // Streaming message chunks, live prompt-top 💭 pills, slash-command results, and review gates keep main pinned without moving focus.
-                        fixture.push({
-                            sessionUpdate: "agent_thought_chunk",
-                            messageId: "live-thought-1",
-                            content: { type: "text", text: "Evaluating edge cases.\n".repeat(12) },
-                            _meta: { plurnk: { sessionName: "user", loopSeq: 2, turnSeq: 9 } },
-                        });
-                        await page.locator('[data-message-id="live-16"] [data-prompt-work] [data-operation-tally="reasoning"]').waitFor();
-                        assert.ok((await metrics()).gap <= 24, "live reasoning pill keeps main pinned at bottom");
-                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", "reasoning stream never moves focus");
+                        // 2. Submitting a short prompt frames the new prompt near the top of <main> using <svg data-slate-spacer> (zero [style] attributes).
+                        await draft.fill("Explain the Reading Slate scroll framing.");
+                        await page.getByRole("button", { name: "Send", exact: true }).click();
+                        await page.locator('[data-message-id="reply-301"]').waitFor();
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                        assert.equal(await page.locator("[style], [class]").count(), 0, "spacer uses native SVG height attribute with zero inline style");
 
+                        const framedShort = await page.evaluate(() => {
+                            const main = document.querySelector("#main");
+                            const prompts = [...main.querySelectorAll('[data-messages] > [data-message-role="user"]')];
+                            const lastPrompt = prompts.at(-1);
+                            const mainRect = main.getBoundingClientRect();
+                            const promptRect = lastPrompt.getBoundingClientRect();
+                            const spacerHeight = Number(main.querySelector("svg[data-slate-spacer]")?.getAttribute("height") ?? "0");
+                            return {
+                                offsetFromMainTop: promptRect.top - mainRect.top,
+                                scrollTop: main.scrollTop,
+                                spacerHeight,
+                            };
+                        });
+                        assert.ok(framedShort.offsetFromMainTop >= -2 && framedShort.offsetFromMainTop <= 36, `short prompt frames near top of <main> (offset=${framedShort.offsetFromMainTop}px)`);
+                        assert.ok(framedShort.spacerHeight > 50, `spacer reserves breathing room below short reply (spacer=${framedShort.spacerHeight}px)`);
+
+                        // 3. Streaming a long multi-screen response shrinks spacer to 0 WITHOUT chasing scrollHeight, and reveals the ↓ Jump to latest button!
                         fixture.push({
                             sessionUpdate: "agent_message_chunk",
-                            messageId: "stream-tail-1",
-                            content: { type: "text", text: `Streaming tail paragraph.\n\n${"more words ".repeat(30)}` },
-                            _meta: { plurnk: { id: 250, coordinate: "2/9/2", loopId: 2, loopSeq: 2 } },
+                            messageId: "reply-301",
+                            content: { type: "text", text: `\n\n${"Long streaming paragraph that extends well past the viewport fold.\n\n".repeat(35)}` },
+                            _meta: { plurnk: { id: 401, coordinate: "2/301/2", loopId: 2, loopSeq: 2 } },
                         });
-                        await page.locator('[data-message-id="stream-tail-1"]').waitFor();
-                        assert.ok((await metrics()).gap <= 24, "streaming assistant message keeps main pinned at bottom");
-                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", "message stream never moves focus");
+                        await page.waitForFunction(() => document.querySelector("[data-jump-bottom]")?.hasAttribute("hidden") === false);
+                        const afterLongStream = await metrics();
+                        assert.ok(Math.abs(afterLongStream.scrollTop - framedShort.scrollTop) <= 4, `streaming never chases scrollHeight (before=${framedShort.scrollTop}, after=${afterLongStream.scrollTop})`);
+                        assert.equal(afterLongStream.spacerHeight, 0, "spacer shrinks to 0 once real response fills viewport");
+                        assert.equal(await jumpBtn.isVisible(), true);
+                        assert.equal(await jumpBtn.getAttribute("aria-label"), "Jump to latest");
+                        assert.equal(await jumpBtn.getAttribute("data-jump-gate"), null);
 
-                        await draft.fill("/help");
-                        await page.getByRole("button", { name: "Send", exact: true }).click();
-                        await page.locator("#session-command-results > ul > li").waitFor();
-                        assert.ok((await metrics()).gap <= 24, "command result presentation keeps main pinned at bottom");
-
+                        // 4. When a permission review gate opens below the fold, the floating button escalates to pending-review state, and clicking it jumps to the review!
                         fixture.pushFrame(permissionFrame("gate-tail-1", {
                             logEntryId: 20,
                             sessionId: 9,
-                            session: "user",
+                            session: "session1",
                             loopId: 2,
                             turnId: 9,
-                            coordinate: "2/9/3",
+                            coordinate: "2/301/3",
                             op: "sh",
                             target: { scheme: "file", authority: null, pathname: "tail.txt" },
-                            body: "ls -la\n".repeat(8),
+                            body: "ls -la\n".repeat(4),
                             attrs: {},
-                            owner: "acp://operator/sessions/user",
+                            owner: "acp://operator/sessions/session1",
                             disposition: { decision: "review" },
                             expiresAt: "2030-01-01T00:00:00Z",
                         }));
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
-                        assert.ok((await metrics()).gap <= 24, "arriving review gate keeps main pinned at bottom");
+                        await page.waitForFunction(() => document.querySelector("[data-jump-bottom]")?.getAttribute("data-jump-gate") === "true");
+                        assert.equal(await jumpBtn.getAttribute("aria-label"), "Jump to pending review");
 
-                        // Settle the gate manually so connection returns to connected before testing upward reading.
+                        await jumpBtn.click();
+                        await page.waitForFunction(() => document.querySelector("[data-jump-bottom]")?.hasAttribute("hidden") === true);
+                        assert.ok((await metrics()).gap <= 24, "clicking jump button lands cleanly at the bottom review gate");
+
                         await page.getByRole("radio", { name: "Accept", exact: true }).check();
                         await page.getByRole("button", { name: "Submit responses", exact: true }).click();
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
 
-                        // Scroll upward to inspect earlier turns: pin releases immediately.
-                        await page.locator("#main").evaluate((main) => {
-                            main.scrollTop = 120;
-                            main.dispatchEvent(new Event("scroll"));
+                        // 5. Tall prompt (>35% of clientHeight) frames the bottom ~30% tail of the prompt + the top of the incoming reply.
+                        const tallPromptText = Array.from({ length: 24 }, (_, idx) => `Tall prompt line ${idx + 1}: context specification details.`).join("\n");
+                        await draft.fill(tallPromptText);
+                        await page.getByRole("button", { name: "Send", exact: true }).click();
+                        await page.locator('[data-message-id="reply-302"]').waitFor();
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                        const framedTall = await page.evaluate(() => {
+                            const main = document.querySelector("#main");
+                            const prompts = [...main.querySelectorAll('[data-messages] > [data-message-role="user"]')];
+                            const lastPrompt = prompts.at(-1);
+                            const reply = main.querySelector('[data-message-id="reply-302"]');
+                            const mainRect = main.getBoundingClientRect();
+                            const promptRect = lastPrompt.getBoundingClientRect();
+                            const replyRect = reply.getBoundingClientRect();
+                            return {
+                                promptTopRel: promptRect.top - mainRect.top,
+                                promptBottomRel: promptRect.bottom - mainRect.top,
+                                replyTopRel: replyRect.top - mainRect.top,
+                                clientHeight: main.clientHeight,
+                            };
                         });
-                        const readingBefore = await metrics();
-                        assert.ok(Math.abs(readingBefore.scrollTop - 120) < 1);
-                        assert.ok(readingBefore.gap > 200);
+                        assert.ok(framedTall.promptTopRel < 0, "tall prompt scrolls its upper body above the top fold");
+                        assert.ok(framedTall.promptBottomRel > 20 && framedTall.promptBottomRel < framedTall.clientHeight * 0.55, "tall prompt keeps its bottom tail visible");
+                        assert.ok(framedTall.replyTopRel > 0 && framedTall.replyTopRel < framedTall.clientHeight * 0.75, "incoming reply top is immediately visible below tall prompt tail");
 
-                        fixture.push({
-                            sessionUpdate: "agent_message_chunk",
-                            messageId: "stream-while-unpinned",
-                            content: { type: "text", text: `Tail output while reader inspects top.\n\n${"more output ".repeat(35)}` },
-                            _meta: { plurnk: { id: 260, coordinate: "2/9/4", loopId: 2, loopSeq: 2 } },
-                        });
-                        await page.locator('[data-message-id="stream-while-unpinned"]').waitFor();
-                        const readingAfterStream = await metrics();
-                        assert.equal(readingAfterStream.scrollTop, readingBefore.scrollTop, "tail streaming while unpinned does not jump scrollTop");
-
-                        // Scroll to top and click Load earlier messages: prepending older messages does not jump back to the bottom.
+                        // 6. Scroll to top and click Load earlier messages: prepending older messages preserves reading position away from bottom.
                         await page.locator("#main").evaluate((main) => {
                             main.scrollTop = 0;
                             main.dispatchEvent(new Event("scroll"));
                         });
                         await page.getByRole("button", { name: "Load earlier messages" }).click();
                         await page.locator('[data-message-id="older-0"]').waitFor();
-                        const afterOlder = await metrics();
-                        assert.ok(afterOlder.gap > 400, "activating Load earlier messages keeps reader away from bottom");
+                        assert.ok((await metrics()).gap > 400, "activating Load earlier messages keeps reader away from bottom");
 
-                        // Explicit prompt submission re-pins to main's bottom edge.
-                        await draft.fill("Resume at the tail.");
+                        // 7. Client /help command reveals #session-command-results at the bottom.
+                        await draft.fill("/help");
                         await page.getByRole("button", { name: "Send", exact: true }).click();
-                        await page.locator('[data-message-id="reply-after-submit"]').waitFor();
-                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-                        assert.ok((await metrics()).gap <= 24, "explicit prompt submission re-pins main to its bottom edge");
+                        await page.locator("#session-command-results > ul > li").waitFor();
+                        assert.ok((await metrics()).gap <= 24, "client command presentation jumps to show command output");
                     });
 
                     await t.test("{§web-onboarding} {§web-session-input} {§web-session-approval} {§web-session-commands} onboarding setup, prompt suggestions, @path openPaths, and ? forced review with e proposal editing", async () => {
@@ -498,7 +533,7 @@ export default async function verifySessionObserve(t) {
                                     fixture.pushFrame(permissionFrame("gate-edit-1", {
                                         logEntryId: 99,
                                         sessionId: 9,
-                                        session: "user",
+                                        session: "session1",
                                         loopId: 2,
                                         turnId: 1,
                                         coordinate: "2/1/2",
@@ -506,7 +541,7 @@ export default async function verifySessionObserve(t) {
                                         target: { scheme: "file", authority: null, pathname: "src/app.js" },
                                         body: "echo initial\n",
                                         attrs: {},
-                                        owner: "acp://operator/sessions/user",
+                                        owner: "acp://operator/sessions/session1",
                                         disposition: { decision: "review" },
                                         expiresAt: "2030-01-01T00:00:00Z",
                                     }));
@@ -563,7 +598,7 @@ export default async function verifySessionObserve(t) {
                         assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "true");
                         await page.getByRole("button", { name: "Send", exact: true }).click();
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
-                        const mainPrompt = promptParams.find((p) => p.sessionId === "7#user");
+                        const mainPrompt = promptParams.find((p) => p.sessionId === "7#session1");
                         assert.ok(mainPrompt);
                         assert.equal(mainPrompt.prompt[0].text, "Inspect @src/app.js carefully");
                         assert.deepEqual(mainPrompt._meta?.plurnk?.openPaths, ["src/app.js"]);

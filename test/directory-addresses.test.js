@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createServer, preview } from "vite";
-import { directoryPath, parseDirectory, parseSessionHash } from "../src/directory-addresses.js";
+import { DEFAULT_SESSION_NAME, directoryPath, nextSequentialName, parseDirectory, parseSessionHash, workspaceSettingsPath } from "../src/directory-addresses.js";
 import createModule from "../src/module.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
@@ -86,7 +86,7 @@ test("{§web-directory-addresses} delimiters precede one decoding pass and parse
 
 test("{§web-directory-addresses} unrepresentable legacy names are not repaired or aliased", () => {
     for (const workspace of ["", ".", "..", "a/./b", "../a", "a/..", "a//../", "\ud800", "a\udfff"]) {
-        for (const directory of /** @type {const} */ ([{ kind: "workspace", workspace }, { kind: "session", workspace, session: "user" }])) {
+        for (const directory of /** @type {const} */ ([{ kind: "workspace", workspace }, { kind: "session", workspace, session: "session1" }])) {
             assert.equal(directoryPath(directory), null, JSON.stringify(directory));
         }
     }
@@ -95,11 +95,24 @@ test("{§web-directory-addresses} unrepresentable legacy names are not repaired 
     }
     for (const path of [
         "/", "/index.html", "/~", "/@/a/", "/~myHome/a/", "https://example.test/~/a",
-        "/~/#user", "/~/a#", "/~/./", "/~/a/..", "/~/a/%2E", "/~/a%2F..%2fb",
+        "/~/#session1", "/~/a#", "/~/./", "/~/a/..", "/~/a/%2E", "/~/a%2F..%2fb",
         "/~/%/", "/~/%GG", "/~/%c0%af", "/~/%ED%A0%80", "/~/a#%GG",
     ]) {
         assert.equal(parseDirectory(path), null, path);
     }
+});
+
+test("{§web-workspace-creation} {§web-session-creation} {§web-workspace-settings} sequential workspaceX/sessionX allocation and workspaceSettingsPath preserve representable names", () => {
+    assert.equal(DEFAULT_SESSION_NAME, "session1");
+    assert.equal(nextSequentialName("workspace", []), "workspace1");
+    assert.equal(nextSequentialName("workspace", ["workspace1", "workspace3"]), "workspace4");
+    assert.equal(nextSequentialName("session", ["session1", "session2", "session0", "session01", "session-1", "custom"]), "session3");
+
+    assert.equal(workspaceSettingsPath("workspace1"), "/settings/?workspace=workspace1");
+    assert.equal(workspaceSettingsPath("~/ptl/project", "session1"), "/settings/?workspace=%7E%2Fptl%2Fproject&session=session1");
+    assert.equal(workspaceSettingsPath("work", "session1", "personas"), "/settings/?workspace=work&session=session1#personas");
+    assert.equal(workspaceSettingsPath(""), null);
+    assert.equal(workspaceSettingsPath("../legacy"), null);
 });
 
 test("{§web-directory-addresses} native links round-trip through production, Vite dev and preview fixtures", { timeout: 90_000 }, async (t) => {

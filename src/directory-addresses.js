@@ -50,6 +50,43 @@ export function parseDirectory(target) {
     }
 }
 
+export const DEFAULT_SESSION_NAME = "session1";
+
+/**
+ * {§web-workspace-creation} {§web-session-creation} Allocate the next `<prefix><N>` (`N >= 1`) across active and archived names.
+ * @param {"workspace" | "session"} prefix
+ * @param {Iterable<string>} existingNames
+ * @returns {string}
+ */
+export function nextSequentialName(prefix, existingNames) {
+    const pattern = new RegExp(`^${prefix}([1-9]\\d*)$`, "u");
+    let max = 0;
+    for (const name of existingNames) {
+        const match = pattern.exec(name);
+        if (!match) continue;
+        const n = Number(match[1]);
+        if (Number.isSafeInteger(n) && n > max) max = n;
+    }
+    return `${prefix}${max + 1}`;
+}
+
+/**
+ * {§web-workspace-settings} Build `/settings/?workspace=<workspace>[&session=<session>][#<section>]` for representable workspace names.
+ * @param {string} workspace
+ * @param {string | null} [session]
+ * @param {string | null} [section]
+ * @returns {string | null}
+ */
+export function workspaceSettingsPath(workspace, session = null, section = null) {
+    if (directoryPath({ kind: "workspace", workspace }) === null) return null;
+    const params = new URLSearchParams({ workspace });
+    if (session !== null && session !== "" && session.isWellFormed()) {
+        params.set("session", session);
+    }
+    const hash = section ? `#${encodeURIComponent(section)}` : "";
+    return `/settings/?${params}${hash}`;
+}
+
 /**
  * {§web-directory-addresses} Extract a session name from a URL hash fragment, ignoring empty fragments and in-message footnote anchors.
  * @param {string} hash `location.hash` or `#<session>` string.

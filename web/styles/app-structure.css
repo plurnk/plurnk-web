@@ -63,14 +63,10 @@
     }
 
     body > header > a {
-        display: flex;
+        display: inline-flex;
         flex: 0 0 auto;
         align-items: center;
-    }
-
-    body > header > a > img {
-        inline-size: 2ch;
-        block-size: 2ch;
+        gap: 0.35ch;
     }
 
     body > header :where(svg) {
@@ -126,7 +122,7 @@
 
     body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
         content: "›" / "";
-        margin-inline-start: var(--otm-spacing);
+        margin-inline-start: calc(var(--otm-spacing) * 0.4);
     }
 
     header nav form {
@@ -141,7 +137,7 @@
         gap: 0.35ch;
     }
 
-    header :where(#header-place button, nav button) {
+    header :where(#header-place a, #header-place button, nav button) {
         --otm-form-element-spacing-block: 0;
         --otm-form-element-spacing-inline: 0;
 
@@ -157,7 +153,7 @@
         white-space: nowrap;
     }
 
-    header :where(#header-place button) {
+    header :where(#header-place a, #header-place button) {
         padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.35);
     }
 
@@ -231,20 +227,20 @@
         content: "✕" / "";
     }
 
-    /* {§web-workspace-tabs} Browser-style stationary intra-workspace tab strip across all viewport widths. */
+    /* {§web-workspace-tabs} Google Sheets-style bottom intra-workspace tab bar. */
     #workspace-tabs {
         display: flex;
         flex-wrap: nowrap;
-        align-items: center;
+        align-items: flex-start;
         justify-content: flex-start;
         gap: calc(var(--otm-spacing) * 0.35);
         min-inline-size: 0;
-        padding-block: calc(var(--otm-spacing) * 0.25) 0;
+        padding-block: 0 max(env(safe-area-inset-bottom, 0px), calc(var(--otm-spacing) * 0.2));
     }
 
     #workspace-tabs > :where(ul) {
         display: flex;
-        flex: 0 1 auto;
+        flex: 1 1 auto;
         flex-wrap: nowrap;
         align-items: stretch;
         gap: calc(var(--otm-spacing) * 0.25);
@@ -270,7 +266,7 @@
         gap: 0.35ch;
         max-inline-size: min(26ch, 58vw);
         margin: 0;
-        padding: calc(var(--otm-spacing) * 0.28) calc(var(--otm-spacing) * 0.55);
+        padding: calc(var(--otm-spacing) * 0.25) calc(var(--otm-spacing) * 0.55);
         overflow: hidden;
     }
 
@@ -280,7 +276,6 @@
         white-space: nowrap;
     }
 
-    #workspace-tabs :where(ul > li > form),
     #workspace-tabs > :where(form) {
         display: inline-flex;
         flex: 0 0 auto;
@@ -288,53 +283,47 @@
         margin: 0;
     }
 
+    #workspace-tabs > :where(button),
     #workspace-tabs :where(form > button) {
         --otm-form-element-spacing-block: 0;
         --otm-form-element-spacing-inline: 0;
 
         display: inline-flex;
+        flex: 0 0 auto;
         align-items: center;
         justify-content: center;
         inline-size: auto;
         block-size: auto;
-        margin: 0;
-        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.45);
+        margin: calc(var(--otm-spacing) * 0.12) 0 0;
+        padding: calc(var(--otm-spacing) * 0.22) calc(var(--otm-spacing) * 0.45);
         border-width: 0;
         line-height: 1;
     }
 
-    #workspace-tabs :where(ul > li > form > button) {
-        padding: calc(var(--otm-spacing) * 0.15) calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.15) calc(var(--otm-spacing) * 0.1);
-    }
-
-    #dialog-workspace-switcher :where(ul) {
+    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul) {
         max-block-size: 50dvh;
         margin: 0;
         padding: 0;
         overflow-y: auto;
     }
 
-    #dialog-workspace-switcher :where(ul > li) {
+    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul > li) {
         list-style: none;
         margin: 0;
         padding: 0;
     }
 
-    #dialog-workspace-switcher :where(ul > li > a) {
+    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul > li > a) {
         display: flex;
         align-items: center;
         gap: 0.5ch;
         padding: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.6);
     }
 
-    /* {§web-workspace-settings} Responsive modal layout for workspace subsystem management. */
-    #dialog-workspace-settings > :where(article) {
-        inline-size: min(100%, 72ch);
-        max-inline-size: 72ch;
-    }
-
-    #dialog-workspace-settings :where(nav[aria-label="Settings sections"] > ul) {
+    /* {§web-workspace-settings} Dedicated workspace settings page layout. */
+    #workspace-settings :where(nav[aria-label="Settings sections"] > ul) {
         display: flex;
+        flex: 1 1 auto;
         flex-wrap: nowrap;
         align-items: center;
         gap: calc(var(--otm-spacing) * 0.25);
@@ -344,34 +333,24 @@
         white-space: nowrap;
     }
 
-    #dialog-workspace-settings :where(nav[aria-label="Settings sections"] > ul > li) {
+    #workspace-settings :where(nav[aria-label="Settings sections"] > ul > li) {
         flex: 0 0 auto;
         list-style: none;
         margin: 0;
         padding: 0;
     }
 
-    #dialog-workspace-settings :where(nav[aria-label="Settings sections"] button) {
-        --otm-form-element-spacing-block: 0;
-        --otm-form-element-spacing-inline: 0;
-
-        inline-size: auto;
-        margin: 0;
-        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.6);
-        border-width: 0;
-    }
-
-    #dialog-workspace-settings > :where(article > footer) {
-        display: flex;
-        flex-wrap: wrap;
+    #workspace-settings :where(nav[aria-label="Settings sections"] a) {
+        display: inline-flex;
         align-items: center;
-        justify-content: flex-end;
-        gap: calc(var(--otm-spacing) * 0.5);
-        margin-block-start: var(--otm-spacing);
-        padding-block-start: calc(var(--otm-spacing) * 0.75);
+        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.6);
     }
 
-    #dialog-workspace-settings > :where(article > footer > button) {
+    #workspace-settings :where(form > footer) {
+        text-align: end;
+    }
+
+    #workspace-settings :where(form > footer > button) {
         inline-size: auto;
         margin: 0;
     }
@@ -641,13 +620,13 @@
     }
 
     /* {§web-content-reflow} Native form content must not force fieldsets beyond the viewport. */
-    :is(#main, #dialog-workspace-settings) fieldset {
+    #main fieldset {
         min-inline-size: 0;
     }
 
     #session-conversation pre,
     #session-command-results pre,
-    #dialog-workspace-settings pre,
+    #workspace-settings pre,
     #main [aria-label="Review requests"] pre {
         max-inline-size: 100%;
         overflow-x: auto;

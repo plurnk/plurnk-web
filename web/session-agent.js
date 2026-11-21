@@ -39,6 +39,8 @@ import {
 
 export { PROTOCOL_VERSION, SessionTranslator, client, createHttpStream, createWebSocketStream, methods, randomUUID };
 
+const GATE_COALESCE_MS = 10;
+
 /** @typedef {import("./session-translator.js").ToolCall} ToolCall */
 /** @typedef {import("./session-translator.js").MessagePart} MessagePart */
 /** @typedef {import("./session-translator.js").Message} Message */
@@ -285,7 +287,7 @@ export default class SessionAgent {
                     this.#emitLiveOutcome({ stopReason: "interrupt" });
                 }
             });
-        });
+        }, GATE_COALESCE_MS);
     }
 
     /** @param {string} gateId */
@@ -763,7 +765,7 @@ export default class SessionAgent {
                 const configId = String(actionParams.configId ?? "");
                 const value = String(actionParams.value ?? "");
                 response = await conn.agent.request(methods.agent.session.setConfigOption, {
-                    sessionId: this.sessionId ?? "user",
+                    sessionId: this.sessionId ?? "session1",
                     type: "id",
                     configId,
                     value,
@@ -776,7 +778,7 @@ export default class SessionAgent {
                 });
             } else if (actionKind === "session/resume") {
                 response = await conn.agent.request(methods.agent.session.resume, {
-                    sessionId: this.sessionId ?? "user",
+                    sessionId: this.sessionId ?? "session1",
                     cwd: "/",
                     ...(actionParams.replayFrom !== undefined
                         ? { replayFrom: /** @type {import("@agentclientprotocol/sdk/experimental/v2/unstable").ReplayFrom | null} */ (actionParams.replayFrom) }
@@ -791,7 +793,7 @@ export default class SessionAgent {
                 });
             } else if (actionKind === "session/fork") {
                 response = await conn.agent.request(methods.agent.session.fork, {
-                    sessionId: this.sessionId ?? "user",
+                    sessionId: this.sessionId ?? "session1",
                     cwd: "/",
                     ...(typeof actionParams.name === "string" ? { title: actionParams.name } : {}),
                     _meta: {
@@ -804,7 +806,7 @@ export default class SessionAgent {
                 });
             } else if (actionKind === "session/cancel") {
                 await conn.agent.notify(methods.agent.session.cancel, {
-                    sessionId: this.sessionId ?? "user",
+                    sessionId: this.sessionId ?? "session1",
                     ...(typeof actionParams.reason === "string"
                         ? { _meta: { plurnk: { reason: actionParams.reason } } }
                         : {}),
@@ -817,7 +819,7 @@ export default class SessionAgent {
                 });
             } else if (actionKind === "session/delete") {
                 response = await conn.agent.request(methods.agent.session.delete, {
-                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "user"),
+                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
                 });
             } else if (actionKind === "providers/list") {
                 response = await conn.agent.request(methods.agent.providers.list, {});
@@ -911,7 +913,7 @@ export default class SessionAgent {
             }
             const openPaths = options.openPaths?.length ? options.openPaths : message.openPaths;
             const params = {
-                sessionId: this.sessionId ?? "user",
+                sessionId: this.sessionId ?? "session1",
                 messageId: message.id,
                 prompt: promptBlocks,
                 _meta: {
@@ -988,7 +990,7 @@ export default class SessionAgent {
             const plurnkState = isRecord(this.state.plurnk) ? this.state.plurnk : undefined;
             const statusState = isRecord(plurnkState?.status) ? plurnkState.status : undefined;
             const rawParts = typeof this.sessionId === "string" ? this.sessionId.split("#") : [];
-            const boundName = typeof statusState?.name === "string" ? statusState.name : (rawParts[1] || "user");
+            const boundName = typeof statusState?.name === "string" ? statusState.name : (rawParts[1] || "session1");
             const boundId = typeof statusState?.id === "number" ? String(statusState.id) : "";
             let resolvedDescendantOnly = resolutions.length > 0;
             for (const res of resolutions) {

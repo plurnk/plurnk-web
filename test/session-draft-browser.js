@@ -86,7 +86,7 @@ export default async function verifySessionDrafts(t) {
                     await field.fill("First line of unsent draft.\nSecond line survives reload.");
                     assert.deepEqual(
                         await page.evaluate(() => [Object.keys(localStorage), Object.entries(sessionStorage)]),
-                        [[], [["plurnk:draft:7#user", "First line of unsent draft.\nSecond line survives reload."]]],
+                        [[], [["plurnk:draft:7#session1", "First line of unsent draft.\nSecond line survives reload."]]],
                     );
 
                     const otherTab = await context.newPage();
@@ -113,7 +113,7 @@ export default async function verifySessionDrafts(t) {
                     assert.deepEqual(await page.evaluate(() => Object.keys(sessionStorage)), [], "blank whitespace removes any stored draft");
 
                     await field.fill("Deliver this confirmed prompt.");
-                    assert.equal(await page.evaluate(() => sessionStorage.getItem("plurnk:draft:7#user")), "Deliver this confirmed prompt.");
+                    assert.equal(await page.evaluate(() => sessionStorage.getItem("plurnk:draft:7#session1")), "Deliver this confirmed prompt.");
                     await send.click();
                     await page.waitForFunction(() => /** @type {HTMLTextAreaElement | null} */ (document.querySelector("#session-message"))?.value === ""
                         && document.querySelector("#session-status")?.dataset.connection === "connected");
@@ -125,15 +125,22 @@ export default async function verifySessionDrafts(t) {
                     await send.click();
                     await page.getByText("Sending…", { exact: true }).waitFor();
                     await field.fill("Newer draft typed while in flight.");
-                    assert.equal(await page.evaluate(() => sessionStorage.getItem("plurnk:draft:7#user")), "Newer draft typed while in flight.");
+                    assert.equal(await page.evaluate(() => sessionStorage.getItem("plurnk:draft:7#session1")), "Newer draft typed while in flight.");
                     holdPrompt.resolve();
                     holdPrompt = null;
                     await page.getByText("In-flight prompt.", { exact: true }).waitFor();
                     await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                     assert.equal(await field.inputValue(), "Newer draft typed while in flight.");
-                    assert.equal(await page.evaluate(() => sessionStorage.getItem("plurnk:draft:7#user")), "Newer draft typed while in flight.");
+                    assert.equal(await page.evaluate(() => sessionStorage.getItem("plurnk:draft:7#session1")), "Newer draft typed while in flight.");
 
-                    // {§web-session-input} ArrowUp / ArrowDown recalls session prompt history while stashing the unsent draft and respecting multi-line cursor movement.
+                    // {§web-session-input} {§web-session-conversation} ArrowUp / ArrowDown recalls operator prompt history (skipping non-operator actor messages) while stashing the unsent draft.
+                    fixture.push({
+                        sessionUpdate: "user_message_chunk",
+                        messageId: "actor-msg-1",
+                        content: { type: "text", text: "Actor ping from scoutproxy." },
+                        _meta: { plurnk: { id: 99, coordinate: "1/3/1", loopId: 1, origin: "_plurnk", voice: "scoutproxy" } },
+                    });
+                    await page.locator('[data-message-id="actor-msg-1"][data-message-voice="scoutproxy"]').waitFor();
                     await field.focus();
                     await page.evaluate(() => {
                         const el = /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"));

@@ -317,7 +317,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.equal(await page.locator('[data-messages] article a[href^="javascript:"]').count(), 0);
                             assert.equal(await page.locator("#session-status").count(), 1);
                             assert.equal(await readHeader(), header);
-                            assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
+                            assert.equal(await page.getByRole("banner").getByRole("link", { name: "Account", exact: true }).count(), 1);
                             assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
                             await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                             assert.equal(await value(page, "lifecycle"), "completed");
@@ -815,7 +815,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                                 await connected();
                                 assert.equal(run.isRunning, true, "refresh does not cancel the controlling request");
                                 assert.equal(await value("lifecycle"), "running");
-                                await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Search", exact: true }).click();
+                                await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
                                 await page.waitForLoadState("load");
                                 assert.equal(run.isRunning, true, "native navigation leaves the session running");
                                 await page.goBack();

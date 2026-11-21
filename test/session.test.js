@@ -57,7 +57,7 @@ test("{§web-session} HTTPS cookie and session lifetime come from the verified g
         writeHead: (status, values) => { assert.equal(status, 303); for (const [key, value] of Object.entries(values)) headers.set(key, value); },
         end() {},
     };
-    await session.login({ headers: {}, url: "/auth/login?return=%2F~%2Ffolderless%23user" }, response);
+    await session.login({ headers: {}, url: "/auth/login?return=%2F~%2Ffolderless%23session1" }, response);
     assert.match(headers.get("set-cookie"), /; Path=\/auth; HttpOnly; SameSite=Lax; Max-Age=600; Secure$/u);
     const binding = headers.get("set-cookie").split(";")[0];
     const state = new URL(headers.get("location")).searchParams.get("state");
@@ -72,7 +72,7 @@ test("{§web-session} HTTPS cookie and session lifetime come from the verified g
     assert.equal(cleared, `__Secure-plurnk_web_login_${state}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0; Secure`, "the transaction is single-use");
     assert.match(issuedCookie, /^__Host-plurnk_web_session=session; Path=\/; HttpOnly; SameSite=Lax; Max-Age=1; Secure$/u,
         "a live subsecond credential must not become a Max-Age=0 deletion; authority verification still enforces exact expiry");
-    assert.equal(headers.get("location"), "/~/folderless#user");
+    assert.equal(headers.get("location"), "/~/folderless#session1");
     assert.equal(headers.get("cache-control"), "no-store");
     await assert.rejects(session.callback({ headers: { cookie: binding }, url: `/auth/callback?code=test&state=${state}` }, response),
         { status: 400, message: "Sign-in was not completed. Start sign-in again." }, "a replayed callback is not a second grant");
@@ -170,6 +170,8 @@ test("{§web-account} sign-in returns to native account pages without treating q
     }
     await session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: "/search/?q=alpha&status=archived" })}` }, response);
     assert.equal(locations.at(-1), "/search/?q=alpha&status=archived");
+    await session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: `/auth/login?${new URLSearchParams({ return: "/settings/?workspace=work&session=session1" })}` }, response);
+    assert.equal(locations.at(-1), "/settings/?workspace=work&session=session1");
     await session.login({ headers: { cookie: "__Host-plurnk_web_session=current" }, url: "/auth/login" }, response);
     assert.equal(locations.at(-1), "/");
     for (const requested of ["https://foreign.example/account/", "//foreign.example/account/", "/account", "/account/../sessions/"]) {

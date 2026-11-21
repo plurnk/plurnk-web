@@ -89,9 +89,9 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
     });
     await t.test("{§web-directory-addresses} the packed codec preserves exact names", async () => {
         const { directoryPath, parseDirectory } = await import(pathToFileURL(join(webPackage, "src", "directory-addresses.js")).href);
-        const directory = { kind: "session", workspace: "~/project @%/index.html", session: "user" };
+        const directory = { kind: "session", workspace: "~/project @%/index.html", session: "session1" };
         const path = directoryPath(directory);
-        assert.equal(path, "/~/~/project%20%40%25/index.html#user");
+        assert.equal(path, "/~/~/project%20%40%25/index.html#session1");
         const parsedUrl = new URL(path, "https://example.test");
         assert.deepEqual(parseDirectory(parsedUrl.pathname + parsedUrl.hash), directory);
     });
@@ -140,11 +140,11 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
             await discovery.test("{§web-asset-encoding} packed assets negotiate exact compressed bytes", () =>
                 verifyStaticAssets(base, pathToFileURL(`${webPackage}/`)));
             const arrival = await fetch(base, { redirect: "manual" });
-            assert.equal(arrival.status, 303, "{§web-arrival} GET / allocates and redirects to a starter #user session");
-            assert.match(arrival.headers.get("location") ?? "", /^\/~\/[^/#]+#user$/u);
+            assert.equal(arrival.status, 303, "{§web-arrival} GET / allocates and redirects to starter workspace1#session1");
+            assert.equal(arrival.headers.get("location"), "/~/workspace1#session1");
             const page = await fetch(base);
             assert.equal(page.status, 200);
-            assert.match(await page.text(), /<main\b[^>]*data-page="session"[^>]*data-session-name="user"[^>]*>/u);
+            assert.match(await page.text(), /<main\b[^>]*data-page="session"[^>]*data-session-name="session1"[^>]*>/u);
             const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
             assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the static root document");
             assert.match(await explicitIndex.text(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
@@ -171,7 +171,7 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                             const tab = await context.newPage();
                             await tab.goto(base);
                             assert.equal(await tab.locator("main").getAttribute("data-page"), "session");
-                            assert.match(await tab.title(), /#user — Plurnk$/u);
+                            assert.match(await tab.title(), /#session1 — Plurnk$/u);
                             for (const [colorScheme, primary] of /** @type {const} */ ([["light", "rgb(20, 136, 0)"], ["dark", "rgb(78, 179, 27)"]])) {
                                 await tab.emulateMedia({ colorScheme });
                                 const rendered = await tab.evaluate(() => {
