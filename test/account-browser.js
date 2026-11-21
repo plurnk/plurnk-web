@@ -23,8 +23,9 @@ export default async function verifyAccount({ t, withDaemon }) {
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await page.waitForURL(new URL(target, base).href);
                         if (target === "/account/") {
-                            await verifyPageShell(page, { title: "Profile — Plurnk", kind: "account" });
-                            assert.equal(await page.locator("main form, main table").count(), 0, "Account offers sections, not an inline session inventory");
+                            await verifyPageShell(page, { title: "Account — Plurnk", kind: "account" });
+                            assert.equal(await page.locator("main table").count(), 0, "Account offers sections and Sign out, not an inline session inventory");
+                            assert.equal(await page.locator('main form[action="/auth/logout"] button', { hasText: "Sign out" }).count(), 1, "Account owns the Sign out action");
                             assert.doesNotMatch(await page.locator("main").innerText(), /Signed in as|Local operator|operator/u);
                             await page.locator("main").getByRole("link", { name: "Sessions", exact: true }).click();
                             await page.waitForURL(new URL("/account/sessions/", base).href);
@@ -54,29 +55,10 @@ export default async function verifyAccount({ t, withDaemon }) {
                     await page.goBack();
                     await page.waitForURL(new URL("/account/sessions/", base).href);
                     const nav = page.getByRole("navigation", { name: "Main navigation", exact: true });
-                    assert.equal(await nav.getByRole("link").count(), 2);
-                    assert.equal(await nav.getByRole("link", { name: "Profile", exact: true }).locator("svg").count(), 1);
-                    assert.equal(await nav.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
+                    assert.equal(await nav.getByRole("link").count(), 1);
+                    assert.equal(await nav.getByRole("link", { name: "Account", exact: true }).locator("svg").count(), 1);
+                    assert.equal(await nav.getByRole("button", { name: "Sign out", exact: true }).count(), 0, "Sign out moved out of header into /account/");
                     assert.equal(await page.locator("body > footer form").count(), 0);
-                    const signOut = nav.getByRole("button", { name: "Sign out", exact: true });
-                    for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
-                        await page.emulateMedia({ colorScheme });
-                        for (const state of ["normal", "hover", "focus"]) {
-                            if (state === "normal") { await page.mouse.move(0, 0); await signOut.blur(); }
-                            if (state === "hover") await signOut.hover();
-                            if (state === "focus") await signOut.focus();
-                            const appearance = await signOut.evaluate((element) => {
-                                const style = getComputedStyle(element);
-                                return { background: style.backgroundColor, padding: style.padding, margin: style.margin, color: style.color,
-                                    height: element.getBoundingClientRect().height, lineHeight: parseFloat(style.lineHeight) };
-                            });
-                            assert.equal(appearance.background, "rgba(0, 0, 0, 0)", `${colorScheme}/${state}: Sign out is an unfilled menu action`);
-                            assert.equal(appearance.padding, "0px", `${colorScheme}/${state}: no primary-button padding`);
-                            assert.equal(appearance.margin, "0px", `${colorScheme}/${state}: the form action aligns with adjacent menu links`);
-                            assert.ok(appearance.height <= appearance.lineHeight + 2, "Sign out occupies a text line, not a large call-to-action");
-                            assert.notEqual(appearance.color, "rgba(0, 0, 0, 0)");
-                        }
-                    }
                     const rows = (tab) => tab.locator("main article table > tbody > tr");
                     const current = (tab) => rows(tab).filter({ has: tab.getByRole("rowheader", { name: /^This session/u }) });
                     assert.equal(await rows(page).count(), 3);
@@ -118,14 +100,15 @@ export default async function verifyAccount({ t, withDaemon }) {
                         assert.equal((await context.request.post(new URL(path, base).href)).status(), 405);
                         assert.equal((await context.request.get(new URL(path.slice(0, -1), base).href)).status(), 404);
                     }
-                    await page.getByRole("banner").getByRole("link", { name: "Plurnk", exact: true }).click();
-                    assert.equal(await nav.getByRole("link", { name: "Profile", exact: true }).count(), 1, "home arrival reflects the live session");
-                    await nav.getByRole("link", { name: "Profile", exact: true }).click();
-                    await page.locator("main").getByRole("link", { name: "Sessions", exact: true }).click();
-                    await page.getByRole("button", { name: "End this session", exact: true }).click();
+                    await page.getByRole("navigation", { name: "breadcrumb", exact: true }).getByRole("link", { name: "Home", exact: true }).click();
+                    await page.waitForLoadState("load");
+                    assert.equal(await nav.getByRole("link", { name: "Account", exact: true }).count(), 1, "home arrival reflects the live session");
+                    await nav.getByRole("link", { name: "Account", exact: true }).click();
+                    await page.waitForURL(new URL("/account/", base).href);
+                    await page.getByRole("button", { name: "Sign out", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
-                    assert.equal(await nav.getByRole("link", { name: "Profile", exact: true }).count(), 0);
-                    assert.equal(await nav.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+                    assert.equal(await nav.getByRole("link", { name: "Account", exact: true }).count(), 0);
+                    assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
                     await page.goto(new URL("/account/sessions/index.html", base).href);
                     assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
                     const replay = await context.request.post(new URL(target, base).href, { headers: { origin: new URL(base).origin } });

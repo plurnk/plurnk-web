@@ -20,7 +20,7 @@ import sessionCommands, {
 import sessionSettings from "./session-settings.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
-import stickyTail from "./sticky-tail.js";
+import readingSlate from "./reading-slate.js";
 import math from "./math.js";
 import mermaid from "./mermaid.js";
 import { readRasterFileAttachment } from "./inline-images.js";
@@ -161,6 +161,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             seenHistoryMessageIds.add(msg.id);
             const plurnk = /** @type {Record<string, unknown> | undefined} */ (msg._meta?.plurnk);
             if (typeof plurnk?.answering === "string") continue;
+            if (typeof plurnk?.voice === "string" && plurnk.voice !== "" && plurnk.voice !== "operator" && plurnk.voice !== "anonymous") continue;
             if (typeof plurnk?.source === "string"
                 && (plurnk.source.startsWith("session://") || plurnk.source.startsWith("schedule://"))) {
                 continue;
@@ -265,7 +266,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             workspaceName: latestWorkspaceName
                 || $('#session-workspace [data-text="workspace-name"]')?.textContent?.trim()
                 || "default",
-            sessionName: element.dataset.sessionName || "user",
+            sessionName: element.dataset.sessionName || "session1",
         }),
         getPendingGates: () => agent.pendingGates,
         resolveGate: async (resolution) => {
@@ -290,7 +291,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         openOnboarding,
     });
     const dismissSettings = sessionSettings(main, element, action, () => resources.signal, { openOnboarding });
-    const tail = stickyTail(main);
+    const slate = readingSlate(main);
 
     function syncAttachments() {
         draft.required = attachments.length === 0;
@@ -320,7 +321,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     async function verifyAttachmentFiles(files) {
         if (!agent.promptImageSupported) {
             the(feedback, { "message-status": "", "command-error": "Image attachments are not supported on this session." });
-            tail.follow();
+            slate.sync();
             return;
         }
         /** @type {string[]} */
@@ -341,7 +342,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             "command-error": errors.join(" "),
         });
         availability();
-        tail.follow();
+        slate.sync();
     }
 
     /** @returns {{ kind: "command" | "skill" | "prompt", items: readonly string[] }} */
@@ -432,7 +433,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         the(element, { connection: current, "connection-label": label });
         the(connectionNotice, "connection-label", label);
         availability();
-        tail.follow();
+        slate.sync();
     }
 
     /** @param {AbortSignal} signal @returns {Promise<Record<string, string>>} */
@@ -469,6 +470,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     async function follow(controller, submission, initialPassiveRetry = false) {
         const { signal } = controller;
         let holding = false;
+        /** @type {string[]} */
+        let presentedGateIds = [];
         let passiveRetry = initialPassiveRetry;
         let forceReview = Boolean(submission?.forceReview);
         const timer = setInterval(() => {
@@ -499,13 +502,13 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     onSessionUpdate: async ({ update }) => {
                         if (signal.aborted) return;
                         await diagnose(update);
-                        tail.follow();
+                        slate.sync();
                     },
                     onMessagesChanged: ({ messages }) => {
                         if (!signal.aborted) {
                             recordMessagesPromptHistory(messages);
                             transcript.present(messages);
-                            tail.follow();
+                            slate.sync();
                         }
                     },
                     onUserMessage: ({ messageId }) => {
@@ -515,7 +518,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                         if (signal.aborted) return;
                         recordMessagesPromptHistory(snapshot.messages);
                         transcript.snapshot(snapshot);
-                        tail.follow();
+                        slate.landInitial();
                         if (!pending) return;
                         if (snapshot.messages.some(({ id, role }) => id === pending?.message.id && role === "user")) acknowledged(pending.message.id);
                         else if (!submission) {
@@ -541,7 +544,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                         }
                         presentState(snapshot, Date.now());
                         syncSuggestions();
-                        tail.follow();
+                        slate.sync();
                         const next = snapshot.plurnk?.status;
                         if (!next) return;
                         status = next;
@@ -574,7 +577,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 const delivered = failing(subscriber, (error) => { intakeFailure = { error }; run.abort(error); });
                 try {
                     if (submission) await agent.send({ abortController: run, message: submission.message, resolutions: submission.resolutions }, delivered);
-                    else await agent.resume(holding ? { abortController: run, gates: agent.pendingGates.map(({ id }) => id) } : { abortController: run }, delivered);
+                    else await agent.resume(holding ? { abortController: run, gates: presentedGateIds } : { abortController: run }, delivered);
                 } catch (error) {
                     if (intakeFailure === undefined) throw error;
                 }
@@ -590,10 +593,12 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     holding = false;
                     passiveRetry = false;
                     reconnect.reset();
-                    const mode = review.present(agent.pendingGates, { forceManual: forceReview });
+                    const presentedGates = [...agent.pendingGates];
+                    presentedGateIds = presentedGates.map(({ id }) => id);
+                    const mode = review.present(presentedGates, { forceManual: forceReview });
                     arriving = false;
                     if (mode === "automatic") {
-                        const resolutions = await review.decisions(agent.pendingGates);
+                        const resolutions = await review.decisions(presentedGates);
                         if (!resolutions) throw new Error("Automatic approval did not resolve its presented set.");
                         submission = { resolutions };
                         continue;
@@ -602,7 +607,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     the(connectionNotice, "connection-detail", mode === "manual" ? "Review the pending requests."
                         : mode === "expired" ? "The decision deadline has passed; the daemon cancels these requests."
                             : "This page cannot answer this interaction. Work remains pending.");
-                    tail.follow();
+                    slate.sync();
                     holding = true;
                     submission = undefined;
                     continue;
@@ -654,10 +659,9 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         if (the(controls, "command-pending") !== null) return;
         the(controls, "command-pending", "");
         availability();
-        tail.pin();
         try {
             await runCommand("/fork", resources.signal);
-            tail.follow();
+            slate.jumpToBottom();
         } finally {
             the(controls, "command-pending", null);
             availability();
@@ -713,9 +717,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             event.preventDefault();
             the(controls, "command-pending", "");
             availability();
-            tail.pin();
             void runCommand.showHelp(resources.signal).then(() => {
-                tail.follow();
+                slate.jumpToBottom();
             }).finally(() => {
                 the(controls, "command-pending", null);
                 availability();
@@ -766,10 +769,10 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         }
     });
     on(main, "click", ':is(#session-conversation, #session-diagnostics) summary, a[href^="#"]', () => {
-        tail.release();
+        slate.release();
     });
     on(main, "submit", "[data-history-boundary] form", () => {
-        tail.release();
+        slate.release();
     });
     on(main, "submit", "#session-reconnect", (event) => {
         event.preventDefault();
@@ -786,7 +789,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const value = draft.value;
         writeStoredDraft(value.trim() !== "" && !isClientDispatch(value) ? value : "");
         availability();
-        tail.follow();
+        slate.sync();
     });
     on(compose, "click", "[data-insert-command]", () => {
         if (the(controls, "send-unavailable") !== null) return;
@@ -815,7 +818,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                         draft.setSelectionRange(0, 0);
                         draft.setCustomValidity("");
                         availability();
-                        tail.follow();
+                        slate.sync();
                     }
                     return;
                 }
@@ -834,7 +837,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     draft.setSelectionRange(draft.value.length, draft.value.length);
                     draft.setCustomValidity("");
                     availability();
-                    tail.follow();
+                    slate.sync();
                     return;
                 }
             }
@@ -927,13 +930,12 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     "message-status": "",
                     "command-error": "Remove queued image attachments before running a client slash command.",
                 });
-                tail.follow();
+                slate.sync();
                 return;
             }
             const text = draft.value;
             the(controls, "command-pending", "");
             availability();
-            tail.pin();
             try {
                 if (await runCommand(text, resources.signal) && draft.value === text) {
                     pushPromptHistory(text);
@@ -942,7 +944,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     draft.value = "";
                     writeStoredDraft("");
                 }
-                tail.follow();
+                slate.jumpToBottom();
             } finally {
                 the(controls, "command-pending", null);
                 availability();
@@ -981,7 +983,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             retryable: false,
         };
         the(feedback, { "message-status": "Sending…", "command-error": "" });
-        tail.pin();
+        slate.frameTurn(message.id);
         connect({ message, ...(prepared.forceReview ? { forceReview: true } : {}) });
     });
 
@@ -1036,12 +1038,11 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     });
 
     let savedScrollTop = main.scrollTop;
-    let wasPinned = true;
 
     const offPageHide = on.target(window, "pagehide", () => {
         if (disposed) return;
         reconnect.reset();
-        tail.pause();
+        slate.pause();
         transcript.pause();
         resources.abort();
         delivery?.controller.abort();
@@ -1058,7 +1059,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 if (draft.value !== savedDraft) draft.value = savedDraft;
             }
             transcript.resume();
-            if (main.isConnected) tail.resume();
+            if (main.isConnected) slate.resume();
             connect();
         }
     });
@@ -1069,18 +1070,17 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         footer: element,
         deactivate() {
             if (disposed) return;
-            wasPinned = tail.isPinned();
             savedScrollTop = main.scrollTop;
-            tail.pause();
+            slate.pause();
             element.hidden = true;
         },
         activate() {
             if (disposed) return;
             element.hidden = false;
             presentState.syncHeader();
-            tail.resume();
-            if (wasPinned) tail.pin();
-            else main.scrollTop = savedScrollTop;
+            slate.resume();
+            main.scrollTop = savedScrollTop;
+            slate.sync();
             void math(main).catch(reportError);
             void mermaid(main).catch(reportError);
         },
@@ -1093,7 +1093,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             offPageHide();
             offPageShow();
             reconnect.dispose();
-            tail.pause();
+            slate.pause();
             transcript.pause();
             resources.abort();
             delivery?.controller.abort();

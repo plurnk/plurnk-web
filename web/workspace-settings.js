@@ -1,12 +1,14 @@
 import { $, $$, on, the } from "on_the_money";
 import { EFFORTS } from "@plurnk/plurnk-contracts";
+import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
 import describeFailure from "./failure.js";
 import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
 import { isRecord } from "./session-translator.js";
+import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
- * @typedef {"mcp" | "skills" | "schedule" | "personas" | "members" | "env"} SettingsSection
+ * @typedef {"general" | "mcp" | "skills" | "schedule" | "personas" | "members" | "env"} SettingsSection
  */
 
 /**
@@ -19,7 +21,7 @@ import { isRecord } from "./session-translator.js";
  * }} WorkspaceSettingsContext
  */
 
-const SECTIONS = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members", "env"]);
+const SECTIONS = /** @type {const} */ (["general", "mcp", "skills", "schedule", "personas", "members", "env"]);
 const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members"]);
 
 /** @param {unknown} value @returns {value is SettingsSection} */
@@ -88,28 +90,26 @@ function formatFamilyDetails(family, item) {
 }
 
 /**
- * {§web-workspace-settings} Creates a lazy modal controller for workspace subsystem management.
+ * {§web-workspace-settings} Mounts workspace subsystem management inside `<article id="workspace-settings">`.
+ * @param {HTMLElement} article
  * @param {() => WorkspaceSettingsContext} getContext
+ * @param {{ updateHash?: boolean }} [options]
  */
-export function createWorkspaceSettingsController(getContext) {
-    /** @type {HTMLDialogElement | null} */
-    let dialog = null;
-    /** @type {HTMLElement | null} */
-    let article = null;
+export function createWorkspaceSettingsController(article, getContext, { updateHash = false } = {}) {
     /** @type {Element | null} */
     let envPanel = null;
     /** @type {SettingsSection} */
-    let activeSection = "mcp";
+    let activeSection = "general";
     /** @type {"workspace" | "session"} */
     let envListScope = "workspace";
     let busy = false;
+    let mounted = false;
     /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas" | "members", alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
 
     /** @param {boolean} nextBusy @param {string} [message] @param {string} [recovery] */
     function setFeedback(nextBusy, message = "", recovery = "") {
         busy = nextBusy;
-        if (!article) return;
         the(article, {
             "ws-settings-busy": nextBusy ? "true" : null,
             "ws-settings-message": message,
@@ -160,8 +160,7 @@ export function createWorkspaceSettingsController(getContext) {
      * @param {unknown} res
      */
     function renderFamilyList(family, res) {
-        if (!dialog) return;
-        const panel = $(dialog, `[data-settings-panel="${family}"]`);
+        const panel = $(article, `[data-settings-panel="${family}"]`);
         const tbody = panel ? $(panel, "[data-family-rows]") : null;
         if (!panel || !tbody) return;
         const rawItems = isRecord(res) && Array.isArray(res.definitions) ? res.definitions
@@ -199,8 +198,7 @@ export function createWorkspaceSettingsController(getContext) {
      * @param {unknown} res
      */
     function renderCandidates(family, res) {
-        if (!dialog) return;
-        const panel = $(dialog, `[data-settings-panel="${family}"]`);
+        const panel = $(article, `[data-settings-panel="${family}"]`);
         const list = panel ? $(panel, "ul[data-candidate-rows]") : null;
         if (!panel || !list) return;
         const rawCandidates = isRecord(res) && Array.isArray(res.candidates) ? res.candidates : [];
@@ -232,8 +230,7 @@ export function createWorkspaceSettingsController(getContext) {
 
     /** @param {unknown} resumeOrSetResult */
     function renderSessionPersonaOptions(resumeOrSetResult) {
-        if (!dialog) return;
-        const form = $(dialog, "form[data-session-persona-form]");
+        const form = $(article, "form[data-session-persona-form]");
         const select = form ? $(form, 'select[name="persona"]') : null;
         if (!(form instanceof HTMLFormElement) || !(select instanceof HTMLSelectElement)) return;
         const optionsList = isRecord(resumeOrSetResult) && Array.isArray(resumeOrSetResult.configOptions)
@@ -263,9 +260,9 @@ export function createWorkspaceSettingsController(getContext) {
     }
 
     function syncEnvScopeControls() {
-        if (!dialog || !envPanel) return;
+        if (!envPanel) return;
         const ctx = getContext();
-        const scopeForm = $(dialog, "form[data-ws-env-scope-form]");
+        const scopeForm = $(article, "form[data-ws-env-scope-form]");
         const listSelect = scopeForm ? $(scopeForm, 'select[name="listScope"]') : null;
         const setSelect = $(envPanel, '[data-env-set-form] select[name="scope"]');
         const sessionOption = setSelect ? $(setSelect, 'option[value="session"]') : null;
@@ -284,6 +281,10 @@ export function createWorkspaceSettingsController(getContext) {
 
     /** @param {SettingsSection} section */
     async function refreshSection(section) {
+        if (section === "general") {
+            setFeedback(false, "", "");
+            return;
+        }
         const ctx = getContext();
         setFeedback(true, "", "");
         try {
@@ -298,7 +299,7 @@ export function createWorkspaceSettingsController(getContext) {
                 return;
             }
             if (section === "personas") {
-                const personaSessionForm = dialog ? $(dialog, "form[data-session-persona-form]") : null;
+                const personaSessionForm = $(article, "form[data-session-persona-form]");
                 if (ctx.sessionName === null && personaSessionForm instanceof HTMLElement) {
                     personaSessionForm.hidden = true;
                 }
@@ -324,19 +325,31 @@ export function createWorkspaceSettingsController(getContext) {
         }
     }
 
-    /** @param {SettingsSection} section */
-    function selectSection(section) {
+    /** @param {SettingsSection} section @param {boolean} [pushHash] */
+    function selectSection(section, pushHash = false) {
+        ensureMounted();
         activeSection = section;
-        if (!dialog) return;
-        for (const btn of $$(dialog, "[data-settings-section]")) {
-            btn.setAttribute("aria-pressed", btn.getAttribute("data-settings-section") === section ? "true" : "false");
+        for (const item of $$(article, "[data-settings-section]")) {
+            if (item.getAttribute("data-settings-section") === section) {
+                item.setAttribute("aria-current", "true");
+            } else {
+                item.removeAttribute("aria-current");
+            }
         }
-        for (const panel of $$(dialog, "[data-settings-panel]")) {
+        for (const panel of $$(article, "[data-settings-panel]")) {
             if (panel instanceof HTMLElement) {
                 panel.hidden = panel.dataset.settingsPanel !== section;
             }
         }
-        const scheduleTarget = $(dialog, '[data-schedule-save-form] input[name="target"]');
+        if (pushHash && updateHash && typeof history === "object") {
+            const nextUrl = section === "general"
+                ? `${location.pathname}${location.search}`
+                : `${location.pathname}${location.search}#${section}`;
+            if (`${location.pathname}${location.search}${location.hash}` !== nextUrl) {
+                history.replaceState(null, "", nextUrl);
+            }
+        }
+        const scheduleTarget = $(article, '[data-schedule-save-form] input[name="target"]');
         const ctx = getContext();
         if (section === "schedule" && scheduleTarget instanceof HTMLInputElement && scheduleTarget.value === "" && ctx.sessionName) {
             scheduleTarget.value = ctx.sessionName;
@@ -344,65 +357,59 @@ export function createWorkspaceSettingsController(getContext) {
         void refreshSection(section);
     }
 
-    function ensureDialog() {
-        if (dialog instanceof HTMLDialogElement) return dialog;
-        const cloned = $.clone(document.body, "#workspace-settings-dialog");
-        if (!(cloned instanceof HTMLDialogElement)) {
-            throw new Error("Workspace settings dialog template is invalid.");
+    function ensureMounted() {
+        if (mounted) return;
+        mounted = true;
+        if (!$(article, '[data-settings-panel="mcp"]')) {
+            const host = $(article, "[data-settings-subsystems]") ?? article;
+            $.clone(host, "#workspace-settings-subsystems");
         }
-        dialog = cloned;
-        article = $(dialog, ":scope > article");
-        const envOutlet = $(dialog, "[data-ws-env-outlet]");
-        if (envOutlet) {
+        const envOutlet = $(article, "[data-ws-env-outlet]");
+        if (envOutlet && !envPanel) {
             envPanel = $.clone(envOutlet, "#command-env");
         }
-        const effortSelect = $(dialog, '[data-personas-save-form] select[name="effort"]');
-        if (effortSelect instanceof HTMLSelectElement) {
+        const effortSelect = $(article, '[data-personas-save-form] select[name="effort"]');
+        if (effortSelect instanceof HTMLSelectElement && effortSelect.options.length <= 1) {
             for (const level of EFFORTS) {
                 const opt = $.clone(effortSelect, "#setting-option");
                 the(opt, { "option-value": level, "option-label": level, "option-disabled": null });
             }
         }
 
-        on(dialog, "click", "[data-dialog-close]", () => {
-            if (dialog?.open) dialog.close();
-        });
-        on(document.body, "click", "#dialog-workspace-settings", (event, modal) => {
-            if (event.target === modal && modal instanceof HTMLDialogElement && modal.open) modal.close();
-        });
-        on(dialog, "click", "[data-settings-section]", (_event, btn) => {
-            const raw = btn.getAttribute("data-settings-section");
+        on(article, "click", "[data-settings-section]", (event, link) => {
+            const raw = link.getAttribute("data-settings-section");
             if (isSettingsSection(raw)) {
-                selectSection(raw);
+                event.preventDefault();
+                selectSection(raw, true);
             }
         });
 
-        on(dialog, "change", '[data-mcp-save-form] select[name="transport"]', (_event, select) => {
+        on(article, "change", '[data-mcp-save-form] select[name="transport"]', (_event, select) => {
             const form = select.closest("form[data-mcp-save-form]");
             if (form instanceof HTMLFormElement && select instanceof HTMLSelectElement) {
                 form.dataset.mcpTransport = select.value;
             }
         });
-        on(dialog, "change", '[data-mcp-save-form] select[name="authMode"]', (_event, select) => {
+        on(article, "change", '[data-mcp-save-form] select[name="authMode"]', (_event, select) => {
             const form = select.closest("form[data-mcp-save-form]");
             if (form instanceof HTMLFormElement && select instanceof HTMLSelectElement) {
                 form.dataset.mcpAuth = select.value;
             }
         });
-        on(dialog, "change", '[data-personas-save-form] select[name="personaMode"]', (_event, select) => {
+        on(article, "change", '[data-personas-save-form] select[name="personaMode"]', (_event, select) => {
             const form = select.closest("form[data-personas-save-form]");
             if (form instanceof HTMLFormElement && select instanceof HTMLSelectElement) {
                 form.dataset.personaMode = select.value;
             }
         });
-        on(dialog, "change", '[data-ws-env-scope-form] select[name="listScope"]', (_event, select) => {
+        on(article, "change", '[data-ws-env-scope-form] select[name="listScope"]', (_event, select) => {
             if (!(select instanceof HTMLSelectElement)) return;
             envListScope = select.value === "session" ? "session" : "workspace";
             syncEnvScopeControls();
             void refreshSection("env");
         });
 
-        on(dialog, "submit", "[data-family-row-form]", (event, form) => {
+        on(article, "submit", "[data-family-row-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const panel = form.closest("[data-settings-panel]");
@@ -426,7 +433,7 @@ export function createWorkspaceSettingsController(getContext) {
                         }
                     }
                     const beginRes = await invoke("workspace.mcp.oauth.begin", { alias, redirectUrl });
-                    const oauthBox = dialog ? $(dialog, "[data-mcp-oauth-box]") : null;
+                    const oauthBox = $(article, "[data-mcp-oauth-box]");
                     if (isRecord(beginRes) && isRecord(beginRes.authorization) && typeof beginRes.authorization.url === "string") {
                         const url = beginRes.authorization.url;
                         if (oauthBox instanceof HTMLElement && /^https?:\/\//iu.test(url)) {
@@ -451,7 +458,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-mcp-oauth-complete-form]", (event, form) => {
+        on(article, "submit", "[data-mcp-oauth-complete-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const data = new FormData(form);
@@ -462,7 +469,7 @@ export function createWorkspaceSettingsController(getContext) {
                 await invoke("workspace.mcp.oauth.complete", { alias, callbackUrl });
                 const fresh = await invoke("workspace.mcp.list", {});
                 renderFamilyList("mcp", fresh);
-                const oauthBox = dialog ? $(dialog, "[data-mcp-oauth-box]") : null;
+                const oauthBox = $(article, "[data-mcp-oauth-box]");
                 if (oauthBox instanceof HTMLElement) oauthBox.hidden = true;
                 const cbInput = $(form, 'input[name="callbackUrl"]');
                 if (cbInput instanceof HTMLInputElement) cbInput.value = "";
@@ -470,7 +477,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-family-discover-form]", (event, form) => {
+        on(article, "submit", "[data-family-discover-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const rawFamily = form.dataset.family ?? "";
@@ -500,7 +507,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-candidate-add-form]", (event, form) => {
+        on(article, "submit", "[data-candidate-add-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const meta = candidateData.get(form);
@@ -524,7 +531,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-mcp-save-form]", (event, form) => {
+        on(article, "submit", "[data-mcp-save-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const data = new FormData(form);
@@ -573,7 +580,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-skills-save-form]", (event, form) => {
+        on(article, "submit", "[data-skills-save-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const data = new FormData(form);
@@ -596,7 +603,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-schedule-save-form]", (event, form) => {
+        on(article, "submit", "[data-schedule-save-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const data = new FormData(form);
@@ -619,7 +626,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-session-persona-form]", (event, form) => {
+        on(article, "submit", "[data-session-persona-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const persona = String(new FormData(form).get("persona") ?? "none");
@@ -633,7 +640,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-personas-save-form]", (event, form) => {
+        on(article, "submit", "[data-personas-save-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const data = new FormData(form);
@@ -686,7 +693,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-members-save-form]", (event, form) => {
+        on(article, "submit", "[data-members-save-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const rawFiles = String(new FormData(form).get("files") ?? "").trim();
@@ -703,7 +710,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-env-row-form]", (event, form) => {
+        on(article, "submit", "[data-env-row-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement) || !envPanel) return;
             const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
@@ -729,7 +736,7 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "submit", "[data-env-set-form]", (event, form) => {
+        on(article, "submit", "[data-env-set-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement) || !envPanel) return;
             const aliasInput = $(form, 'input[name="alias"]');
@@ -760,30 +767,26 @@ export function createWorkspaceSettingsController(getContext) {
             });
         });
 
-        on(dialog, "input", '[data-env-set-form] input[name="alias"]', (_event, target) => {
+        on(article, "input", '[data-env-set-form] input[name="alias"]', (_event, target) => {
             if (target instanceof HTMLInputElement) target.setCustomValidity("");
         });
-
-        return dialog;
     }
+
+    ensureMounted();
 
     return {
         /** @param {SettingsSection} [initialSection] */
         open(initialSection = activeSection) {
-            const modal = ensureDialog();
-            const renameBtn = $(modal, '[data-dialog-target="dialog-workspace-rename"]');
-            if (renameBtn instanceof HTMLElement) renameBtn.hidden = !$("#dialog-workspace-rename");
-            const archiveBtn = $(modal, '[data-dialog-target="dialog-workspace-archive"]');
-            if (archiveBtn instanceof HTMLElement) archiveBtn.hidden = !$("#dialog-workspace-archive");
-            const targetSection = isSettingsSection(initialSection) ? initialSection : "mcp";
-            selectSection(targetSection);
-            if (!modal.open) modal.showModal();
-            const activeTab = $(modal, `[data-settings-section="${targetSection}"]`);
-            if (activeTab instanceof HTMLElement) activeTab.focus();
+            const targetSection = isSettingsSection(initialSection) ? initialSection : "general";
+            selectSection(targetSection, false);
+        },
+        /** @param {SettingsSection} section @param {boolean} [pushHash] */
+        selectSection(section, pushHash = false) {
+            selectSection(section, pushHash);
         },
         /** @param {string} familyOrTopic */
         notifyChanged(familyOrTopic) {
-            if (!dialog?.open || busy) return;
+            if (busy || activeSection === "general") return;
             if (
                 familyOrTopic === "resync"
                 || familyOrTopic === activeSection
@@ -793,4 +796,108 @@ export function createWorkspaceSettingsController(getContext) {
             }
         },
     };
+}
+
+/** @param {string} hash @returns {SettingsSection} */
+function parseSettingsHash(hash) {
+    const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+    try {
+        const decoded = decodeURIComponent(raw);
+        return isSettingsSection(decoded) ? decoded : "general";
+    } catch {
+        return "general";
+    }
+}
+
+/**
+ * {§web-workspace-settings} Dedicated `/settings/?workspace=<name>` page entrypoint.
+ * @param {HTMLElement} main
+ */
+export default function observeWorkspaceSettings(main) {
+    const rawWorkspaceId = main.dataset.workspaceId ?? "";
+    const rawAuth = main.dataset.auth;
+    if (!/^[1-9]\d*$/u.test(rawWorkspaceId) || (rawAuth !== "session" && rawAuth !== "none")) {
+        throw new Error("Workspace settings metadata is incomplete.");
+    }
+    const workspaceId = Number(rawWorkspaceId);
+    const auth = rawAuth;
+    const live = main.dataset.live === "true";
+    let currentWorkspaceName = main.dataset.workspaceName ?? String(workspaceId);
+    const sessionName = main.dataset.sessionName || null;
+    const article = $(main, "#workspace-settings");
+    if (!(article instanceof HTMLElement)) {
+        throw new Error("Workspace settings article is missing.");
+    }
+
+    const pageLifetime = new AbortController();
+    on.target(window, "pagehide", (event) => {
+        if (!(event instanceof PageTransitionEvent) || !event.persisted) {
+            pageLifetime.abort();
+        }
+    });
+
+    const controller = createWorkspaceSettingsController(article, () => ({
+        workspaceId,
+        workspaceName: currentWorkspaceName,
+        sessionName,
+        auth,
+        signal: pageLifetime.signal,
+    }), { updateHash: true });
+
+    controller.selectSection(parseSettingsHash(location.hash), false);
+
+    on.target(window, "hashchange", () => {
+        controller.selectSection(parseSettingsHash(location.hash), false);
+    });
+
+    if (!live) return;
+
+    const notifications = subscribeWorkspaceNotifications({
+        auth,
+        workspaceId,
+        onNotification(raw) {
+            if (!isRecord(raw) || typeof raw.event !== "string" || !isRecord(raw.data)) return;
+            const { event, data } = raw;
+            const notifWorkspaceId = typeof raw.workspaceId === "number" ? raw.workspaceId : null;
+            if (event === "workspace/renamed") {
+                const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
+                const name = typeof data.name === "string" ? data.name : null;
+                if (id !== workspaceId || name === null) return;
+                currentWorkspaceName = name;
+                main.dataset.workspaceName = name;
+                the("page-title", `${name} · Settings — Plurnk`);
+                const backLink = $("[data-settings-back]");
+                const backPath = sessionName !== null
+                    ? directoryPath({ kind: "session", workspace: name, session: sessionName })
+                    : directoryPath({ kind: "workspace", workspace: name });
+                if (backLink && backPath !== null) {
+                    the(backLink, {
+                        "workspace-name": name,
+                        "workspace-back-path": backPath,
+                    });
+                }
+                for (const input of $$('input[name="workspace"]')) {
+                    if (input instanceof HTMLInputElement && input.type === "hidden") {
+                        input.value = name;
+                    }
+                }
+                const nextSettingsPath = workspaceSettingsPath(name, sessionName, location.hash.slice(1) || null);
+                if (nextSettingsPath !== null && typeof history === "object") {
+                    history.replaceState(null, "", nextSettingsPath);
+                }
+                return;
+            }
+            if (notifWorkspaceId !== workspaceId && event !== "notifications/resync") return;
+            if (event === "functionality/changed" && typeof data.family === "string") {
+                controller.notifyChanged(data.family);
+            } else if (event === "session/policy") {
+                controller.notifyChanged("policy");
+            } else if (event === "notifications/resync") {
+                controller.notifyChanged("resync");
+            }
+        },
+    });
+    on(document.body, "submit", 'form[action="/auth/logout"]', () => {
+        notifications.unsubscribe();
+    });
 }

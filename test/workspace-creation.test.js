@@ -71,28 +71,30 @@ async function fixture(t, { auth = false, admitted = true, create = async (/** @
 }
 async function formToken(base, headers = {}) {
     const page = await fetch(new URL("/search/", base), { headers });
-    assert.equal(page.status, 200, "the search page carries the workspace creation forms");
+    assert.equal(page.status, 200, "the search page carries the workspace switcher and creation forms");
     const html = await page.text();
     const token = /name="token" value="([^"]+)"/u.exec(html)?.[1];
     assert.ok(token);
     assert.match(html, /id="workspace-create"/u);
-    assert.match(html, /title="New workspace"/u);
+    assert.match(html, /data-dialog-target="dialog-workspace-create"/u);
+    assert.doesNotMatch(html, /data-action="new-workspace"/u);
     return token;
 }
 
-test("{§web-workspace-creation} the native form creates one folderless workspace with starter user session and converges retries", async (t) => {
+test("{§web-workspace-creation} the native form creates one sequential folderless workspace with starter session1 and converges retries", async (t) => {
     const createdSessions = [];
     const { base, created, post } = await fixture(t, {
-        createSession: async (args) => { createdSessions.push(args); return { sessionId: 10, sessionName: args.name || "user" }; },
+        create: async (args) => envelope(args.name ?? "fresh"),
+        createSession: async (args) => { createdSessions.push(args); return { sessionId: 10, sessionName: args.name || "session1" }; },
     });
     const token = await formToken(base);
     for (const attempt of ["first submission", "retry after the browser lost the response"]) {
         const res = await post(token);
         assert.equal(res.status, 303, attempt);
-        assert.equal(res.headers.get("location"), "/~/fresh#user", attempt);
+        assert.equal(res.headers.get("location"), "/~/workspace1#session1", attempt);
     }
-    assert.deepEqual(created, [{ projectRoot: null }], "the daemon's creation contract is invoked exactly once with no folder, name or settings");
-    assert.deepEqual(createdSessions, [{ workspaceId: 41, name: "user" }], "starter user session is allocated once");
+    assert.deepEqual(created, [{ name: "workspace1", projectRoot: null }], "folderless unnamed creation allocates sequential workspace1");
+    assert.deepEqual(createdSessions, [{ workspaceId: 41, name: "session1" }], "starter session1 is allocated once");
 });
 
 test("{§web-workspace-creation} racing double-clicks converge to one creation", async (t) => {
@@ -104,9 +106,9 @@ test("{§web-workspace-creation} racing double-clicks converge to one creation",
     gate.resolve();
     for (const res of await Promise.all(posts)) {
         assert.equal(res.status, 303);
-        assert.equal(res.headers.get("location"), "/~/raced#user");
+        assert.equal(res.headers.get("location"), "/~/raced#session1");
     }
-    assert.deepEqual(created, [{ projectRoot: null }]);
+    assert.deepEqual(created, [{ name: "workspace1", projectRoot: null }]);
 });
 
 test("{§web-workspace-creation} the fixed creation address admits only the native form", async (t) => {
@@ -156,7 +158,7 @@ test("{§web-workspace-creation} anonymous creation strictly requires matching o
         const res = await post(token, headers);
         assert.equal(res.status, status, name);
     }
-    assert.deepEqual(created, [{ projectRoot: null }]);
+    assert.deepEqual(created, [{ name: "workspace1", projectRoot: null }]);
 });
 
 test("{§web-workspace-creation} authenticated creation enforces admission and origin", async (t) => {
@@ -177,8 +179,8 @@ test("{§web-workspace-creation} authenticated creation enforces admission and o
     // Admitted same-origin POST returns 303 redirect
     const admittedRes = await post(token);
     assert.equal(admittedRes.status, 303);
-    assert.equal(admittedRes.headers.get("location"), "/~/fresh#user");
-    assert.deepEqual(created, [{ projectRoot: null }]);
+    assert.equal(admittedRes.headers.get("location"), "/~/fresh#session1");
+    assert.deepEqual(created, [{ name: "workspace1", projectRoot: null }]);
 });
 
 // The daemon's own refusal of a name, as its operation failure carries it.
@@ -201,7 +203,7 @@ for (const [form, path, fields] of /** @type {const} */ ([
                 rename: async (id, name) => { fail(name); return { id, name }; },
                 createSession: async ({ workspaceId, name }) => {
                     if (form === "session-create") fail(name);
-                    return { sessionId: workspaceId + 10, sessionName: name || "user" };
+                    return { sessionId: workspaceId + 10, sessionName: name || "session1" };
                 },
             });
             const send = (body) => fetch(new URL(path, base), { method: "POST", redirect: "manual",
@@ -238,12 +240,43 @@ function refusalLabel(refused) {
     return refused ? "refusal keeps its status, detail and recovery" : "failure is a 502";
 }
 
-test("{§web-workspace-creation} {§web-session-creation} an empty name is no name, and any other name reaches the daemon verbatim", async (t) => {
+test("{§web-workspace-creation} {§web-session-creation} empty names allocate sequential workspaceX/sessionX, folder-backed workspaces omit empty names, and explicit names reach the daemon verbatim", async (t) => {
     const sessions = [];
+    const workspaceList = [
+        { id: 7, name: "work", project_root: null, project_label: null, archived_at: null },
+        { id: 8, name: "workspace1", project_root: null, project_label: null, archived_at: "2026-11-20T00:00:00Z" },
+    ];
+    const sessionList = [
+        { id: 10, name: "session1", origin: "model", parentSessionId: null, kind: "root", lifecycle: "completed", archived_at: "2026-11-20T00:00:00Z" },
+    ];
+    let racedWsOnce = false;
+    let racedSessionOnce = false;
     const { base, created, post } = await fixture(t, {
+        workspaces: workspaceList,
+        sessions: sessionList,
+        create: async (args) => {
+            if (args.name === "workspace2" && !racedWsOnce) {
+                racedWsOnce = true;
+                workspaceList.push({ id: 9, name: "workspace2", project_root: null, project_label: null, archived_at: null });
+                throw nameConflict("workspace2");
+            }
+            const name = args.name ?? "repo";
+            workspaceList.push({ id: 40 + workspaceList.length, name, project_root: args.projectRoot ?? null, project_label: args.projectRoot ?? null, archived_at: null });
+            return { workspaceId: 41, workspaceName: name, projectRoot: args.projectRoot ?? null, projectLabel: args.projectRoot ?? null };
+        },
         createSession: async (args) => {
-            if (args.workspaceId === 7) sessions.push(args);
-            return { sessionId: 10, sessionName: args.name ?? "a1b2c3d4" };
+            if (args.workspaceId === 7) {
+                sessions.push(args);
+                if (args.name === "session2" && !racedSessionOnce) {
+                    racedSessionOnce = true;
+                    sessionList.push({ id: 11, name: "session2", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null });
+                    throw nameConflict("session2");
+                }
+                const assigned = args.name ?? "a1b2c3d4";
+                sessionList.push({ id: 10 + sessionList.length, name: assigned, origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null });
+                return { sessionId: 10 + sessionList.length, sessionName: assigned };
+            }
+            return { sessionId: 99, sessionName: args.name ?? "session1" };
         },
     });
     const sessionPost = (body) => fetch(new URL("/sessions/new", base), {
@@ -255,9 +288,23 @@ test("{§web-workspace-creation} {§web-session-creation} an empty name is no na
         assert.equal((await post(randomUUID(), {}, named)).status, 303, label);
         assert.equal((await sessionPost({ workspace: "work", token: randomUUID(), ...named })).status, 303, label);
     }
-    const requested = cases.map(([, name]) => name === undefined || name === "" ? {} : { name });
-    assert.deepEqual(created, requested.map((named) => ({ ...named, projectRoot: null })));
-    assert.deepEqual(sessions, requested.map((named) => ({ workspaceId: 7, ...named })));
+    // Folder-backed workspace with empty name omits `name` so the daemon derives folder basename.
+    assert.equal((await post(randomUUID(), {}, { name: "", projectRoot: "/srv/repo" })).status, 303, "folder-backed unnamed");
+    assert.deepEqual(created, [
+        { name: "workspace2", projectRoot: null },
+        { name: "workspace3", projectRoot: null },
+        { name: "workspace4", projectRoot: null },
+        { name: "my-custom", projectRoot: null },
+        { name: "  spaced  ", projectRoot: null },
+        { projectRoot: "/srv/repo" },
+    ]);
+    assert.deepEqual(sessions, [
+        { workspaceId: 7, name: "session2" },
+        { workspaceId: 7, name: "session3" },
+        { workspaceId: 7, name: "session4" },
+        { workspaceId: 7, name: "my-custom" },
+        { workspaceId: 7, name: "  spaced  " },
+    ]);
 });
 
 test("{§web-workspace-creation} optional projectRoot reaches the daemon verbatim and survives retry on refusal", async (t) => {
@@ -272,8 +319,14 @@ test("{§web-workspace-creation} optional projectRoot reaches the daemon verbati
             return { workspaceId: 42, workspaceName: name || "foldered", projectRoot, projectLabel: projectRoot };
         },
     });
+    const blankChecked = await post(randomUUID(), {}, { name: "my-repo", useProjectFolder: "1", projectRoot: "   " });
+    assert.equal(blankChecked.status, 400);
+    const blankPage = await blankChecked.text();
+    assert.match(blankPage, /Enter a project folder path\./u);
+    assert.match(blankPage, /name="useProjectFolder" value="1" data-toggle-project-folder checked/u);
+
     const badToken = await formToken(base);
-    const badRes = await post(badToken, {}, { name: "my-repo", projectRoot: "relative/repo" });
+    const badRes = await post(badToken, {}, { name: "my-repo", useProjectFolder: "1", projectRoot: "relative/repo" });
     assert.equal(badRes.status, 400);
     const badPage = await badRes.text();
     assert.match(badPage, /Project root &#39;relative\/repo&#39; must be an absolute path\./u);
@@ -281,17 +334,46 @@ test("{§web-workspace-creation} optional projectRoot reaches the daemon verbati
     const retry = /<form id="workspace-create"[^>]*>[\s\S]*?<\/form>/u.exec(badPage)?.[0];
     assert.ok(retry, "refusal offers the workspace creation form again");
     assert.match(retry, /name="name" value="my-repo"/u, "holding the workspace name draft");
+    assert.match(retry, /name="useProjectFolder" value="1" data-toggle-project-folder checked/u, "preserving checked project-folder state");
     assert.match(retry, /name="projectRoot" value="relative\/repo"/u, "holding the projectRoot draft");
     const retryToken = /name="token" value="([^"]+)"/u.exec(retry)?.[1];
     assert.ok(retryToken && retryToken !== badToken, "with a fresh token");
 
-    const okRes = await post(retryToken, {}, { name: "my-repo", projectRoot: "/srv/my-repo" });
+    const okRes = await post(retryToken, {}, { name: "my-repo", useProjectFolder: "1", projectRoot: "/srv/my-repo" });
     assert.equal(okRes.status, 303);
-    assert.equal(okRes.headers.get("location"), "/~/my-repo#user");
+    assert.equal(okRes.headers.get("location"), "/~/my-repo#session1");
     assert.deepEqual(created, [
         { name: "my-repo", projectRoot: "relative/repo" },
         { name: "my-repo", projectRoot: "/srv/my-repo" },
     ]);
+});
+
+test("{§web-workspace-creation} PLURNK_WEB_ALLOW_PROJECT_FOLDER=0 omits project folder controls and refuses folder-bound workspace creation", async (t) => {
+    const original = process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER;
+    process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = "0";
+    t.after(() => {
+        if (original === undefined) delete process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER;
+        else process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = original;
+    });
+    const { base, created, post } = await fixture(t);
+    const searchRes = await fetch(new URL("/search/", base));
+    assert.equal(searchRes.status, 200);
+    const html = await searchRes.text();
+    const createForm = /<form id="workspace-create"[^>]*>[\s\S]*?<\/form>/u.exec(html)?.[0] ?? "";
+    assert.ok(createForm, "#workspace-create remains available for folderless workspaces");
+    assert.doesNotMatch(createForm, /useProjectFolder|projectRoot/u, "project folder toggle and path field are omitted");
+
+    const refusedRoot = await post(randomUUID(), {}, { name: "repo", projectRoot: "/srv/repo" });
+    assert.equal(refusedRoot.status, 403);
+    assert.match(await refusedRoot.text(), /Project folder workspaces are disabled on this web interface\./u);
+
+    const refusedFlag = await post(randomUUID(), {}, { name: "repo", useProjectFolder: "1" });
+    assert.equal(refusedFlag.status, 403);
+    assert.deepEqual(created, []);
+
+    const folderlessRes = await post(randomUUID(), {}, { name: "cloud-only" });
+    assert.equal(folderlessRes.status, 303);
+    assert.deepEqual(created, [{ name: "cloud-only", projectRoot: null }]);
 });
 
 test("{§web-workspace-rename} workspace rename updates name and redirects to new canonical path", async (t) => {
@@ -375,17 +457,17 @@ test("{§web-session-creation} session creation creates independent session and 
     assert.equal(namedRes.headers.get("location"), "/~/my-workspace#alice");
     assert.deepEqual(createdSessions[0], { workspaceId: 7, name: "alice" });
 
-    // Create unnamed session (daemon generates name)
+    // Create unnamed session (client allocates sequential session1)
     const unnamedToken = randomUUID();
     const unnamedRes = await sessionPost({ workspace: "my-workspace", token: unnamedToken });
     assert.equal(unnamedRes.status, 303);
-    assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace#bob");
-    assert.deepEqual(createdSessions[1], { workspaceId: 7 });
+    assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace#session1");
+    assert.deepEqual(createdSessions[1], { workspaceId: 7, name: "session1" });
 
     // Idempotent retry converges to same session
     const retryRes = await sessionPost({ workspace: "my-workspace", token: unnamedToken });
     assert.equal(retryRes.status, 303);
-    assert.equal(retryRes.headers.get("location"), "/~/my-workspace#bob");
+    assert.equal(retryRes.headers.get("location"), "/~/my-workspace#session1");
     assert.equal(createdSessions.length, 2);
 });
 
@@ -508,11 +590,11 @@ test("{§web-session-archive} {§web-search} session archive prefers remaining s
     assert.equal(firstArchive.status, 303);
     assert.equal(firstArchive.headers.get("location"), "/~/target-ws#sibling");
 
-    // Archiving the last unarchived session allocates a fresh starter session in the same workspace
+    // Archiving the last unarchived session allocates a fresh sequential session1 in the same workspace
     const lastArchive = await archivePost({ workspace: "target-ws", session: "sibling" });
     assert.equal(lastArchive.status, 303);
     assert.equal(lastArchive.headers.get("location"), "/~/target-ws#fresh-starter");
-    assert.deepEqual(allocated, [{ workspaceId: 7, name: "user" }]);
+    assert.deepEqual(allocated, [{ workspaceId: 7, name: "session1" }]);
 
     // Unarchiving restores /~/target-ws#target-session
     const unarchiveRes = await archivePost({ workspace: "target-ws", session: "target-session" }, {}, "/sessions/unarchive");

@@ -255,19 +255,21 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         }
                     });
 
-                    await page.goto(fixture.url);
-                    await page.waitForFunction(() => typeof window.openSettings === "function");
+                    // 1. Workspace-only mode on /settings/?workspace=conversation (sessionName = null): workspace-only actions with workspaceId: 7 and omitted sessionId
+                    await page.goto(new URL("/settings/?workspace=conversation", fixture.url).href);
+                    const settingsArticle = page.locator("#workspace-settings");
+                    await settingsArticle.waitFor({ state: "visible" });
+                    assert.equal(await settingsArticle.getByRole("link", { name: "General", exact: true }).getAttribute("aria-current"), "true");
+                    assert.equal(await settingsArticle.locator("#workspace-rename").isVisible(), true);
+                    assert.equal(await settingsArticle.locator("#workspace-archive").isVisible(), true);
 
-                    // 1. Overview mode (sessionName = null): workspace-only actions with workspaceId: 7 and omitted sessionId
-                    await page.locator("#session-workspace").click();
-                    const dialog = page.locator("#dialog-workspace-settings");
-                    await dialog.waitFor({ state: "visible" });
-                    await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings > article")?.getAttribute("aria-busy") === null);
+                    await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null && document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 2);
 
                     assert.equal(requests.at(-1).params.kind, "workspace.mcp.list");
                     assert.equal(requests.at(-1).params.workspaceId, 7);
-                    assert.equal("sessionId" in requests.at(-1).params, false, "Overview mode sends workspaceId without session attachment");
-                    assert.equal(await dialog.getByRole("button", { name: "MCP", exact: true }).getAttribute("aria-pressed"), "true");
+                    assert.equal("sessionId" in requests.at(-1).params, false, "Workspace-only /settings/ sends workspaceId without session attachment");
+                    assert.equal(await settingsArticle.getByRole("link", { name: "MCP", exact: true }).getAttribute("aria-current"), "true");
 
                     for (const width of [320, 1280]) {
                         await page.setViewportSize({ width, height: 740 });
@@ -275,10 +277,9 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     }
                     await page.setViewportSize({ width: 320, height: 740 });
 
-                    // MCP (initial tab): list, service-vs-workspace buttons, OAuth begin+complete, discover+Add, 409 active-work refusal preserving draft, streamable-http save + remove
-                    const mcpPanel = dialog.locator('[data-settings-panel="mcp"]');
+                    // MCP: list, service-vs-workspace buttons, OAuth begin+complete, discover+Add, 409 active-work refusal preserving draft, streamable-http save + remove
+                    const mcpPanel = settingsArticle.locator('[data-settings-panel="mcp"]');
                     assert.equal(await mcpPanel.isVisible(), true);
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 2);
                     const svcRow = mcpPanel.locator("[data-family-rows] tr").nth(0);
                     const oauthRow = mcpPanel.locator("[data-family-rows] tr").nth(1);
                     assert.equal(await svcRow.getByRole("button", { name: "Remove", exact: true, includeHidden: true }).isVisible(), false, "service-origin MCP server has no Remove button");
@@ -297,7 +298,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await mcpPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
                     await mcpPanel.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
                     await mcpPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
 
                     await mcpPanel.getByRole("combobox", { name: "MCP transport", exact: true }).selectOption("streamable-http");
                     await mcpPanel.getByRole("combobox", { name: "Endpoint authentication", exact: true }).selectOption("bearer");
@@ -306,35 +307,35 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await mcpPanel.getByRole("textbox", { name: "Bearer token reference", exact: true }).fill("${EDGE_TOKEN}");
                     activeWork = true;
                     await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings [data-text='ws-settings-message']")?.textContent === "Workspace has active loop work.");
-                    assert.equal(await dialog.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Workspace has active loop work.");
+                    assert.equal(await settingsArticle.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
                     assert.equal(await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "edge-api", "409 refusal preserves unsaved MCP server input");
                     assert.equal(await mcpPanel.getByLabel("Endpoint URL", { exact: true }).inputValue(), "https://edge.example/mcp");
                     assert.equal(await mcpPanel.getByRole("textbox", { name: "Bearer token reference", exact: true }).inputValue(), "${EDGE_TOKEN}");
 
                     activeWork = false;
                     await mcpPanel.getByRole("button", { name: "Save server", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 4);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 4);
                     assert.match(await mcpPanel.locator("[data-family-rows] tr").last().textContent(), /edge-api[\s\S]*https:\/\/edge\.example\/mcp \(bearer\)/u);
                     assert.equal(await mcpPanel.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "");
                     assert.equal(await mcpPanel.getByLabel("Endpoint URL", { exact: true }).inputValue(), "");
                     await mcpPanel.locator("[data-family-rows] tr").last().getByRole("button", { name: "Remove", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
 
                     // Skills: discover + candidate Add (stripping commit)
-                    await dialog.getByRole("button", { name: "Skills", exact: true }).click();
-                    const skillsPanel = dialog.locator('[data-settings-panel="skills"]');
+                    await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
+                    const skillsPanel = settingsArticle.locator('[data-settings-panel="skills"]');
                     await skillsPanel.getByRole("textbox", { name: "Skill discovery source", exact: true }).fill("https://git.example/skills.git");
                     await skillsPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
                     await skillsPanel.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
                     await skillsPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="skills"] [data-family-rows] tr').length === 1);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="skills"] [data-family-rows] tr').length === 1);
                     const skillReplaceReq = requests.find((r) => r.params?.kind === "workspace.skills.replace");
                     assert.equal("commit" in skillReplaceReq.params.params, false, "client strips service-owned commit field when adding discovered skill");
 
                     // Schedule: rule preview + save normalizing bare session name to session://
-                    await dialog.getByRole("button", { name: "Schedule", exact: true }).click();
-                    const schedulePanel = dialog.locator('[data-settings-panel="schedule"]');
+                    await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();
+                    const schedulePanel = settingsArticle.locator('[data-settings-panel="schedule"]');
                     await schedulePanel.getByRole("textbox", { name: "Preview schedule rule", exact: true }).fill("FREQ=DAILY");
                     await schedulePanel.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
                     await schedulePanel.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
@@ -344,53 +345,53 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await schedulePanel.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 9 * * 1-5");
                     await schedulePanel.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Check status.");
                     await schedulePanel.getByRole("button", { name: "Save schedule", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
                     assert.equal(requests.find((r) => r.params?.kind === "workspace.schedule.replace").params.params.target, "session://user");
 
                     // Members: preview + candidate Add + batch add + row Remove ({ file })
-                    await dialog.getByRole("button", { name: "Members", exact: true }).click();
-                    const membersPanel = dialog.locator('[data-settings-panel="members"]');
+                    await settingsArticle.getByRole("link", { name: "Members", exact: true }).click();
+                    const membersPanel = settingsArticle.locator('[data-settings-panel="members"]');
                     await membersPanel.getByRole("textbox", { name: "Inspect file or glob", exact: true }).fill("docs/**");
                     await membersPanel.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
                     await membersPanel.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     await membersPanel.getByRole("textbox", { name: "Member globs", exact: true }).fill("!docs/drafts/**");
                     await membersPanel.getByRole("button", { name: "Add rules", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 2);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 2);
                     await membersPanel.locator("[data-family-rows] tr").first().getByRole("button", { name: "Remove", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     assert.deepEqual(requests.find((r) => r.params?.kind === "workspace.members.remove").params.params, { file: "docs/**" });
 
-                    // Overview Environment: locked to workspace scope, hides session scope selector, never leaks secret values
-                    await dialog.getByRole("button", { name: "Environment", exact: true }).click();
-                    const envSection = dialog.locator('[data-settings-panel="env"]');
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="env"] tbody tr').length === 1);
-                    assert.equal(await envSection.locator("[data-ws-env-scope-form]").isVisible(), false, "Overview mode hides session env scope switcher");
+                    // Workspace-only Environment: locked to workspace scope, hides session scope selector, never leaks secret values
+                    await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();
+                    const envSection = settingsArticle.locator('[data-settings-panel="env"]');
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="env"] tbody tr').length === 1);
+                    assert.equal(await envSection.locator("[data-ws-env-scope-form]").isVisible(), false, "Workspace-only mode hides session env scope switcher");
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value/u);
 
-                    await dialog.getByRole("button", { name: "Close", exact: true }).click();
-                    await dialog.waitFor({ state: "hidden" });
-
-                    // 2. Session mode (sessionName = "user"): slash-command Settings jump + per-session persona configOption + session env scope
+                    // 2. Session mode (sessionName = "user"): slash-command Settings link navigates to /settings/?workspace=conversation&session=user#personas
+                    await page.goto(fixture.url);
+                    await page.waitForFunction(() => typeof window.runCommand === "function");
                     await page.evaluate(() => window.setSessionContext("user"));
                     assert.equal(await page.evaluate(() => window.runCommand("/personas list")), true);
                     const cmdCard = page.locator("#session-command-results > ul > li").last();
-                    await cmdCard.getByRole("button", { name: "Settings", exact: true }).click();
-                    await dialog.waitFor({ state: "visible" });
-                    const personasPanel = dialog.locator('[data-settings-panel="personas"]');
+                    await cmdCard.getByRole("link", { name: "Settings", exact: true }).click();
+                    await settingsArticle.waitFor({ state: "visible" });
+                    const personasPanel = settingsArticle.locator('[data-settings-panel="personas"]');
                     await personasPanel.waitFor({ state: "visible" });
+                    assert.equal(await settingsArticle.getByRole("link", { name: "Personas", exact: true }).getAttribute("aria-current"), "true");
                     const sessionPersonaForm = personasPanel.locator("[data-session-persona-form]");
                     await sessionPersonaForm.waitFor({ state: "visible" });
                     await sessionPersonaForm.getByRole("combobox", { name: "Active session persona", exact: true }).selectOption("auditor");
                     await sessionPersonaForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#dialog-workspace-settings [data-text='ws-settings-message']")?.textContent === "Session persona: auditor.");
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Session persona: auditor.");
                     assert.equal(activeSessionPersona, "auditor");
 
                     // Switch to Environment in Session mode and verify session listing scope
-                    await dialog.getByRole("button", { name: "Environment", exact: true }).click();
+                    await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();
                     await envSection.locator("[data-ws-env-scope-form]").waitFor({ state: "visible" });
                     await envSection.getByRole("combobox", { name: "Environment listing scope", exact: true }).selectOption("session");
-                    await page.waitForFunction(() => document.querySelectorAll('#dialog-workspace-settings [data-settings-panel="env"] tbody tr').length === 2);
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="env"] tbody tr').length === 2);
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value|sess-secret-value/u);
 
                     checkBrowser();

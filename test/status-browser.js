@@ -157,13 +157,13 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#session-status > [data-status-line] [aria-live], #session-status > [data-status-line] [role=status]").count(), 0, "ticking gauges do not announce every second");
                     assert.equal(await page.locator("#session-workspace [data-text=workspace-name]").textContent(), active.plurnk.workspace.name);
                     assert.equal(await page.locator('#session-directory').count(), 0);
-                    assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "user");
-                    assert.equal(await page.locator("#session-reconnect").getAttribute("action"), "/~/review%20%3Cscript%3E%26%40%25#user");
-                    assert.equal(new URL(await page.locator("[data-sign-in]").getAttribute("href"), url).searchParams.get("return"), "/~/review%20%3Cscript%3E%26%40%25#user");
-                    assert.equal(await page.title(), `${active.plurnk.workspace.name}#user — Plurnk`);
+                    assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "session1");
+                    assert.equal(await page.locator("#session-reconnect").getAttribute("action"), "/~/review%20%3Cscript%3E%26%40%25#session1");
+                    assert.equal(new URL(await page.locator("[data-sign-in]").getAttribute("href"), url).searchParams.get("return"), "/~/review%20%3Cscript%3E%26%40%25#session1");
+                    assert.equal(await page.title(), `${active.plurnk.workspace.name}#session1 — Plurnk`);
                     assert.equal(await page.locator("#session-folder").isVisible(), true);
                     assert.equal(await page.locator("#session-folder [data-text=project-label]").textContent(), "~/project");
-                    assert.equal(await page.locator("#session-status").getAttribute("data-session-id"), "7#user");
+                    assert.equal(await page.locator("#session-status").getAttribute("data-session-id"), "7#session1");
                     assert.equal(page.url(), url, "names update navigation, not browser history or attachment");
 
                     const family = page.locator("#session-descendants");

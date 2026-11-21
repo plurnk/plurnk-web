@@ -159,28 +159,42 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             const branchPath = directoryPath({ kind: "session", workspace, session: "branch" });
             assert.ok(userPath && branchPath);
 
-            // Single-session draft workspace renders visible browser-style tab strip with + immediately beside the tab and hides lone draft ×
+            // Single-session draft workspace renders visible Google Sheets-style bottom tab bar with leading + and ☰ preceding <ul>
             await page.goto(new URL(userPath, base).href);
             await waitConnectedSession(page, "user");
             const tabs = page.locator("#workspace-tabs");
             assert.equal(await tabs.getAttribute("data-tab-count"), "1");
-            assert.equal(await tabs.isVisible(), true, "tab strip defends its row even with 1 tab");
-            assert.equal(await tabs.locator('li[data-tab-draft="true"] [data-tab-archive]').isVisible(), false, "lone untouched draft tab hides × archive button");
+            assert.equal(await tabs.isVisible(), true, "tab strip defends its bottom row even with 1 tab");
             const plusBtn = tabs.locator('form[data-tab-new] > button');
+            const archivesBtn = tabs.locator("button[data-open-sessions]");
             assert.equal(await plusBtn.isVisible(), true);
-            const tabGeometry = await page.evaluate(() => {
-                const tabBox = document.querySelector('#workspace-tabs > ul > li')?.getBoundingClientRect();
+            assert.equal(await archivesBtn.isVisible(), true);
+            const barGeometry = await page.evaluate(() => {
+                const statusBox = document.querySelector("#session-status")?.getBoundingClientRect();
+                const barBox = document.querySelector("#workspace-tabs")?.getBoundingClientRect();
                 const plusBox = document.querySelector('#workspace-tabs > form[data-tab-new] > button')?.getBoundingClientRect();
-                return tabBox && plusBox ? plusBox.left - tabBox.right : Infinity;
+                const archivesBox = document.querySelector("#workspace-tabs > button[data-open-sessions]")?.getBoundingClientRect();
+                const tabBox = document.querySelector("#workspace-tabs > ul > li")?.getBoundingClientRect();
+                return statusBox && barBox && plusBox && archivesBox && tabBox
+                    ? {
+                        belowStatus: barBox.top >= statusBox.bottom - 1,
+                        bottomGap: Math.abs(innerHeight - barBox.bottom),
+                        leadingOrder: plusBox.left < archivesBox.left && archivesBox.right <= tabBox.left + 1,
+                    }
+                    : null;
             });
-            assert.ok(tabGeometry >= 0 && tabGeometry < 32, `trailing + sits immediately beside rightmost tab (gap=${tabGeometry}px)`);
+            assert.deepEqual(barGeometry && {
+                belowStatus: barGeometry.belowStatus,
+                atBottom: barGeometry.bottomGap <= 1,
+                leadingOrder: barGeometry.leadingOrder,
+            }, { belowStatus: true, atBottom: true, leadingOrder: true }, `Google Sheets bottom tab bar geometry: ${JSON.stringify(barGeometry)}`);
 
             // Clicking the already-active tab opens #dialog-session-manage; saving a title updates the tab label via ACP session/set_title
             await tabs.locator('a[data-tab-session="user"]').click();
             const manageDialog = page.locator("#dialog-session-manage");
             await manageDialog.waitFor({ state: "visible" });
             await manageDialog.locator('#session-title input[name="title"]').fill("Main chat");
-            await manageDialog.getByRole("button", { name: "Save title", exact: true }).click();
+            await manageDialog.getByRole("button", { name: "Change title", exact: true }).click();
             await page.waitForFunction(() => !document.querySelector("#dialog-session-manage")?.hasAttribute("open"));
             await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="user"] [data-tab-label]')?.textContent === "Main chat");
 
@@ -233,7 +247,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await page.keyboard.press("Control+KeyK");
             const switcher = page.locator("#dialog-workspace-switcher");
             await switcher.waitFor({ state: "visible" });
-            assert.equal(await switcher.getByRole("link", { name: "Search all workspaces…", exact: true }).getAttribute("href"), "/search/");
+            assert.equal(await switcher.getByRole("link", { name: "Search workspaces and sessions…", exact: true }).getAttribute("href"), "/search/");
             const search = switcher.getByRole("searchbox", { name: "Jump to session", exact: true });
             await search.fill("worker");
             const visibleItems = switcher.locator("ul > li:not([hidden]) a");
@@ -284,15 +298,22 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await waitConnectedSession(page, "chord-session");
             assert.equal(await tabs.locator('a[data-tab-session="chord-session"]').getAttribute("aria-current"), "true");
 
-            // Inline × button on chord-session tab archives it in 1 click over ACP and switches cleanly back to #user!
-            await tabs.locator('li:has(> a[data-tab-session="chord-session"]) form[data-tab-archive] > button').click();
+            // Clicking active chord-session tab opens #dialog-session-manage -> Archive session over ACP, switches cleanly back to #user, and surfaces Archived sessions (1) in ☰!
+            await tabs.locator('a[data-tab-session="chord-session"]').click();
+            await manageDialog.waitFor({ state: "visible" });
+            await manageDialog.locator('#session-archive button[type="submit"]').click();
             await waitConnectedSession(page, "user");
             await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="chord-session"]') === null);
+            await archivesBtn.click();
+            await switcher.waitFor({ state: "visible" });
+            assert.match(await switcher.locator("[data-switcher-archived] summary").innerText(), /Archived sessions \(1\)/u);
+            await switcher.locator("button[data-dialog-close]").click();
+            await switcher.waitFor({ state: "hidden" });
 
             checkBrowser();
             await context.close();
 
-            // 320px mobile viewport renders the same horizontally scrollable browser tab strip with zero desktop/mobile parallax!
+            // Below 768px (320px mobile), #workspace-tabs hides and #session-controls ☰ opens the session switcher without horizontal overflow!
             const mobileContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
             const checkMobile = browserDiagnostics(mobileContext);
             const mobilePage = await mobileContext.newPage();
@@ -300,14 +321,18 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await mobilePage.goto(new URL(userPath, base).href);
             await waitConnectedSession(mobilePage, "user");
             const mobileTabs = mobilePage.locator("#workspace-tabs");
-            assert.equal(await mobileTabs.locator(":scope > ul").isVisible(), true, "320px keeps the browser-style tab strip visible");
-            assert.equal(await mobileTabs.locator('form[data-tab-new] > button').isVisible(), true, "320px keeps trailing + button visible");
+            assert.equal(await mobileTabs.isVisible(), false, "below 768px hides the bottom tab bar");
+            const mobileMenuBtn = mobilePage.locator('[aria-label="Session controls"] button[data-open-sessions]');
+            assert.equal(await mobileMenuBtn.isVisible(), true, "below 768px renders ☰ in #session-controls");
             assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px session view has no horizontal overflow");
-            await mobileTabs.locator('a[data-tab-session="branch"]').click();
+            await mobileMenuBtn.click();
+            const mobileSwitcher = mobilePage.locator("#dialog-workspace-switcher");
+            await mobileSwitcher.waitFor({ state: "visible" });
+            await mobileSwitcher.locator('a[href="#branch"]').click();
             await waitConnectedSession(mobilePage, "branch");
-            assert.equal(await mobileTabs.locator('a[data-tab-session="branch"]').getAttribute("aria-current"), "true");
-            // Active tab click on mobile opens #dialog-session-manage without right-click
-            await mobileTabs.locator('a[data-tab-session="branch"]').click();
+            await mobileMenuBtn.click();
+            await mobileSwitcher.waitFor({ state: "visible" });
+            await mobileSwitcher.getByRole("button", { name: "Session options…", exact: true }).click();
             const mobileManage = mobilePage.locator("#dialog-session-manage");
             await mobileManage.waitFor({ state: "visible" });
             assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px session manage dialog has no horizontal overflow");

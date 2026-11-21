@@ -1,6 +1,6 @@
 @layer state {
-    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat and search pages. */
-    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"])) {
+    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat, search, and settings pages. */
+    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"])) {
         block-size: 100dvh;
         display: grid;
         grid-template-columns: minmax(0, 1fr);
@@ -8,11 +8,17 @@
         overflow: hidden;
     }
 
-    body:has(> #workspace-tabs:not([data-tab-count="0"])):has(> main:is([data-page="workspace"], [data-page="session"])) {
-        grid-template-rows: auto auto minmax(0, 1fr) auto;
+    @media (width >= 48rem), (scripting: none) {
+        body:has(> #session-status):has(> #workspace-tabs:not([data-tab-count="0"])):has(> main:is([data-page="workspace"], [data-page="session"])) {
+            grid-template-rows: auto minmax(0, 1fr) auto auto;
+        }
+
+        body:has(> #workspace-tabs:not([data-tab-count="0"])) > #session-status {
+            padding-block-end: calc(var(--otm-spacing) * 0.65);
+        }
     }
 
-    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"]) {
+    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"]) {
         max-inline-size: none;
         min-block-size: 0;
         padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2));
@@ -24,11 +30,17 @@
     }
 
     [data-session-manage-actions],
+    [data-workspaces-actions],
+    [data-switcher-actions],
     [data-alias-choices] {
         display: grid;
         gap: calc(var(--otm-spacing) * 0.4);
         margin: 0 0 var(--otm-spacing);
         padding: 0;
+    }
+
+    [data-switcher-actions] {
+        grid-template-columns: repeat(auto-fit, minmax(14ch, 1fr));
     }
 
     [data-alias-choices] > li {
@@ -38,6 +50,8 @@
     }
 
     [data-alias-choices] button,
+    [data-workspaces-actions] button,
+    [data-switcher-actions] button,
     [data-session-manage-actions] button {
         --otm-primary-background: var(--plurnk-working-surface);
         --otm-primary-hover-background: var(--plurnk-user-surface);
@@ -54,37 +68,8 @@
         cursor: pointer;
     }
 
-    body > header > [data-header-create] {
-        display: inline-flex;
-        flex: 0 0 auto;
-        align-items: center;
-        gap: calc(var(--otm-spacing) * 0.4);
-    }
-
-    header [data-header-form] {
-        display: inline-flex;
-        align-items: center;
+    [data-workspaces-actions] > form {
         margin: 0;
-    }
-
-    header [data-header-create] button {
-        --otm-form-element-spacing-block: 0;
-        --otm-form-element-spacing-inline: 0;
-        --otm-primary-background: transparent;
-        --otm-primary-hover-background: transparent;
-        --otm-primary-inverse: var(--otm-primary);
-
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35ch;
-        inline-size: auto;
-        block-size: auto;
-        margin: 0;
-        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.35);
-        border-width: 0;
-        line-height: inherit;
-        white-space: nowrap;
-        cursor: pointer;
     }
 
     [data-session-manage-actions] > form[data-management-action] {
@@ -101,8 +86,12 @@
         display: inline-block;
     }
 
-    header :is([data-header-create] button, #header-place button, nav button, nav a):is(:hover, :focus-visible) {
+    header :is(#header-place a, #header-place button, nav button, nav a, > a):is(:hover, :focus-visible) {
         text-decoration: underline;
+    }
+
+    #workspace-create:not(:has(input[data-toggle-project-folder]:checked)) input[data-project-folder-input] {
+        display: none;
     }
 
     form[data-inline-unarchive],
@@ -116,7 +105,7 @@
 
     ul:has(> [data-directory-entry]),
     #session-conversation [data-prompt-replies],
-    #dialog-workspace-settings :where([data-candidate-rows]) {
+    #workspace-settings :where([data-candidate-rows]) {
         padding: 0;
     }
 
@@ -125,12 +114,22 @@
         list-style: none;
     }
 
-    /* {§web-workspace-tabs} Empty tab bars hide; draft singletons and archived tabs omit inline archive controls. */
+    /* {§web-workspace-tabs} Empty tab bars hide; <768px moves session switching to #session-controls. */
     #workspace-tabs[data-tab-count="0"],
-    #workspace-tabs[data-workspace-archived="true"] :is([data-tab-archive], [data-tab-new]),
-    #workspace-tabs li[data-archived="true"] [data-tab-archive],
-    #workspace-tabs[data-tab-count="1"] li[data-tab-draft="true"] [data-tab-archive] {
+    #workspace-tabs[data-workspace-archived="true"] [data-tab-new] {
         display: none;
+    }
+
+    @media (scripting: enabled) and (width < 48rem) {
+        #workspace-tabs[data-tab-count] {
+            display: none;
+        }
+    }
+
+    @media (width >= 48rem) {
+        [aria-label="Session controls"] button[data-open-sessions] {
+            display: none;
+        }
     }
 
     @media (scripting: enabled) {
@@ -148,19 +147,39 @@
         white-space: nowrap;
     }
 
+    #dialog-workspace-switcher [data-switcher-archived] {
+        margin-block-start: calc(var(--otm-spacing) * 0.65);
+    }
+
+    #dialog-workspace-switcher [data-switcher-archived-list] > li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.4);
+    }
+
     #workspace-tabs > ul > li:has(> a[aria-current="true"]) {
         border-color: var(--otm-primary);
-        border-block-end-color: var(--otm-primary);
+        border-block-start-color: var(--otm-primary);
         background-color: var(--otm-card-background-color);
     }
 
+    #workspace-tabs > ul > li > a[aria-current="true"]::after {
+        content: "▾" / "";
+        margin-inline-start: 0.25ch;
+        font-size: 0.8em;
+        color: var(--otm-muted-color);
+    }
+
     #workspace-tabs > ul > li > a[aria-current="true"],
-    #dialog-workspace-settings [data-settings-nav] button[aria-pressed="true"] {
+    #workspace-settings [data-settings-nav] a[aria-current="true"] {
         border-block-end-color: var(--otm-primary);
         font-weight: 700;
     }
 
-    #dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"] {
+    #dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"],
+    #dialog-workspaces [data-workspaces-list] > li > a[aria-current="page"] {
         background-color: var(--plurnk-user-surface);
         font-weight: 700;
     }
@@ -177,7 +196,7 @@
         box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
     }
 
-    #dialog-workspace-settings :where([data-candidate-rows] > li) {
+    #workspace-settings :where([data-candidate-rows] > li) {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -218,7 +237,9 @@
             opacity: 1;
         }
 
-        button[data-dialog-target] {
+        button[data-dialog-target],
+        #workspace-tabs button[data-open-sessions],
+        #workspace-settings [data-settings-nav] > li:not(:first-child) {
             display: none;
         }
     }
@@ -360,6 +381,59 @@
         box-shadow: none;
     }
 
+    /* {§web-session-history} Reading Slate trailing spacer and floating jump-to-latest pill. */
+    svg[data-slate-spacer] {
+        display: block;
+        inline-size: 1px;
+        pointer-events: none;
+    }
+
+    [data-jump-slot] {
+        position: sticky;
+        inset-block-end: 0.65rem;
+        z-index: 2;
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-end;
+        block-size: 0;
+        overflow: visible;
+        pointer-events: none;
+    }
+
+    svg[data-slate-spacer][height="0"],
+    [data-jump-slot]:has(> button[hidden]) {
+        display: none;
+    }
+
+    button[data-jump-bottom] {
+        --otm-primary-background: var(--otm-card-background-color);
+        --otm-primary-hover-background: var(--plurnk-working-surface);
+        --otm-primary-inverse: var(--otm-primary);
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        inline-size: auto;
+        margin: 0;
+        padding: 0.3rem 0.7rem;
+        border: var(--otm-border-width) solid var(--otm-primary);
+        border-radius: 999px;
+        box-shadow: var(--otm-card-box-shadow);
+        font-size: 0.85em;
+        font-weight: 700;
+        line-height: 1.2;
+        pointer-events: auto;
+        cursor: pointer;
+    }
+
+    button[data-jump-bottom]:not([data-jump-gate])::before {
+        content: "↓" / "";
+    }
+
+    button[data-jump-bottom][data-jump-gate="true"]::before {
+        content: "↓ Review waiting";
+    }
+
     /* {§web-session-input} Native controls and document state own their presentation. */
     #session-message:focus {
         box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
@@ -378,6 +452,7 @@
 
     button[data-attach-image],
     button[data-insert-command],
+    [aria-label="Session controls"] button[data-open-sessions],
     button[data-accept-suggestion],
     button[data-cancel-settings]:not([rel="prev"]),
     dialog button[data-dialog-close]:not([rel="prev"]) {
@@ -393,6 +468,11 @@
 
     button[data-insert-command]::before {
         content: "/" / "";
+        font-weight: 700;
+    }
+
+    [aria-label="Session controls"] button[data-open-sessions]::before {
+        content: "☰" / "";
         font-weight: 700;
     }
 
@@ -464,6 +544,7 @@
 
     #session-command-results [data-open-workspace-settings] {
         margin-inline-start: auto;
+        text-decoration: none;
     }
 
     #session-status [data-status-telemetry] {
@@ -525,13 +606,18 @@
         text-decoration: none;
     }
 
-    #workspace-tabs :is([data-tab-archive], [data-tab-new]) > button:is(:hover, :focus-visible) {
+    #workspace-tabs :is([data-tab-new] > button, > button):is(:hover, :focus-visible) {
         --otm-primary-inverse: var(--otm-color);
     }
 
-    #dialog-workspace-settings [data-settings-nav] button:is(:hover, :focus-visible),
+    #session-conversation [data-message-actor] > a {
+        color: inherit;
+        text-decoration: underline;
+    }
+
+    #workspace-settings [data-settings-nav] a:is(:hover, :focus-visible),
     #session-command-results [data-open-workspace-settings]:is(:hover, :focus-visible),
-    #dialog-workspace-switcher [data-switcher-list] > li > a:is(:hover, :focus-visible),
+    :is(#dialog-workspace-switcher, #dialog-workspaces) :is([data-switcher-list], [data-workspaces-list]) > li > a:is(:hover, :focus-visible),
     [data-session-link]:is(:hover, :focus-visible),
     [data-directory-entry="workspace"] > article > header > a[data-text="name"]:is(:hover, :focus-visible) {
         text-decoration: underline;
@@ -542,6 +628,49 @@
     #session-conversation [data-prompt-work] > [data-work-items],
     #session-conversation [data-prompt-replies] > li:last-child > article {
         margin-block-end: 0;
+    }
+
+    /* {§web-session-conversation} {§web-conversation-surfaces} Warm amber surfaces and directional attribution for non-operator actors. */
+    #session-conversation [data-message-role="user"][data-message-voice] {
+        --otm-card-background-color: var(--plurnk-actor-surface);
+    }
+
+    #session-conversation [data-voice-direction="outbound"][data-message-voice] {
+        --otm-card-background-color: var(--plurnk-actor-reply-surface);
+    }
+
+    #session-conversation :is([data-message-role="user"][data-message-voice]:not(:has(> [data-prompt-work])), [data-voice-direction="outbound"][data-message-voice]) > article {
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-actor-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"][data-message-voice]:has(> [data-prompt-work]) {
+        background-color: var(--plurnk-actor-surface);
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-actor-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"][data-message-voice] > [data-prompt-work][open] {
+        border-block-end-color: var(--plurnk-actor-border);
+    }
+
+    #session-conversation [data-message-actor] {
+        display: flex;
+        align-items: center;
+        gap: 0.35ch;
+        margin-block-end: calc(var(--otm-spacing) * 0.35);
+        color: var(--plurnk-actor-ink);
+        font-weight: 700;
+    }
+
+    #session-conversation [data-voice-direction="inbound"] [data-message-actor]::before {
+        content: "✉️ " / "";
+    }
+
+    #session-conversation [data-voice-direction="inbound"] [data-message-actor]::after {
+        content: " →" / "";
+    }
+
+    #session-conversation [data-voice-direction="outbound"] [data-message-actor]::before {
+        content: "✉️ → " / "";
     }
 
     #session-conversation [data-message-id] > article > header:only-child {
@@ -742,23 +871,23 @@
     /* {§web-session-commands} {§web-workspace-settings} Results and settings controls reflect explicit state. */
     #session-command-results article[aria-busy="true"] :is([data-dismiss-command], [data-open-workspace-settings]),
     #session-command-results section:not([data-alias-count="0"]) > [data-no-aliases],
-    :is(#session-command-results, #dialog-workspace-settings) [data-env-panel][data-env-count="0"] > figure,
-    :is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="true"] [data-env-enable],
-    :is(#session-command-results, #dialog-workspace-settings) [data-env-enabled="false"] [data-env-disable],
-    :is(#session-command-results, #dialog-workspace-settings) [data-env-removable="false"] [data-env-unset],
-    #dialog-workspace-settings [data-family-count="0"] > [data-family-table-wrap],
-    #dialog-workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
-    #dialog-workspace-settings [data-candidate-count="0"] > [data-candidate-rows],
-    #dialog-workspace-settings [data-family-enabled="true"] [data-family-enable],
-    #dialog-workspace-settings [data-family-enabled="false"] [data-family-disable],
-    #dialog-workspace-settings [data-family-removable="false"] [data-family-remove],
-    #dialog-workspace-settings [data-family-auth="false"] [data-family-authorize],
-    #dialog-workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
-    #dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
-    #dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
-    #dialog-workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],
-    #dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="inline"]) [data-persona-inline-fields],
-    #dialog-workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields] {
+    :is(#session-command-results, #workspace-settings) [data-env-panel][data-env-count="0"] > figure,
+    :is(#session-command-results, #workspace-settings) [data-env-enabled="true"] [data-env-enable],
+    :is(#session-command-results, #workspace-settings) [data-env-enabled="false"] [data-env-disable],
+    :is(#session-command-results, #workspace-settings) [data-env-removable="false"] [data-env-unset],
+    #workspace-settings [data-family-count="0"] > [data-family-table-wrap],
+    #workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
+    #workspace-settings [data-candidate-count="0"] > [data-candidate-rows],
+    #workspace-settings [data-family-enabled="true"] [data-family-enable],
+    #workspace-settings [data-family-enabled="false"] [data-family-disable],
+    #workspace-settings [data-family-removable="false"] [data-family-remove],
+    #workspace-settings [data-family-auth="false"] [data-family-authorize],
+    #workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],
+    #workspace-settings [data-personas-save-form]:not([data-persona-mode="inline"]) [data-persona-inline-fields],
+    #workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields] {
         display: none;
     }
 
@@ -768,7 +897,7 @@
     }
 
     /* {§web-session-settings} {§web-workspace-settings} {§web-onboarding} Empty feedback occupies no page space. */
-    :is(#session-model-settings, #session-effort-settings, #session-command-results article, #dialog-workspace-settings > article, #dialog-session-manage > article, #dialog-onboarding > article) > p:empty,
+    :is(#session-model-settings, #session-effort-settings, #session-command-results article, #workspace-settings, #dialog-session-manage > article, #dialog-onboarding > article) > p:empty,
     #dialog-onboarding [data-onboarding-form]:not([data-onboarding-mode="hosted"]) [data-onboarding-hosted-fields],
     #dialog-onboarding [data-onboarding-form] small:empty,
     #session-command-results [data-command-output]:empty {

@@ -93,7 +93,7 @@ export default async function verifySessionCards(t) {
                                 const main = dialog.parentElement.getBoundingClientRect();
                                 return [dialog.id, Math.abs(box.height - card.height) < 1, box.left >= main.left && box.right <= main.right];
                             }));
-                            assert.deepEqual(boxes, [["dialog-workspace-create", true, true]]);
+                            assert.deepEqual(boxes, [["dialog-workspaces", true, true], ["dialog-workspace-create", true, true]]);
                         }
                         const wsArticle = page.locator('#search-workspaces > ul > li[data-directory-entry="workspace"][data-workspace-id="7"] > article');
                         assert.equal(await wsArticle.getAttribute("aria-label"), project_root === null ? "Folderless workspace" : "Project workspace");

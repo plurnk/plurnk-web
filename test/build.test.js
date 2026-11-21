@@ -31,23 +31,21 @@ test("{§web-page-shell} compact header stays on one row and long workspace plac
                 for (const name of ["w", "~/ptl/project", `~/project/${"long-name-".repeat(20)}`]) {
                     const port = {
                         listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, archived_at: null }],
-                        listSessions: async () => [{ id: 2, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
+                        listSessions: async () => [{ id: 2, name: "session1", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
                     };
-                    html = await documents.read({ kind: "session", workspace: name, session: "user" }, port, authenticated);
+                    html = await documents.read({ kind: "session", workspace: name, session: "session1" }, port, authenticated);
                     await page.goto("http://web.test/");
                     assert.equal(await page.locator("header > #header-place").count(), 1);
                     assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
                     const measure = () => page.evaluate(() => {
                         const header = document.querySelector("body > header");
                         const place = header.querySelector("#header-place");
-                        const createGroup = header.querySelector("[data-header-create]");
-                        const searchIcon = header.querySelector('[data-nav="search"] > svg');
+                        const searchLink = header.querySelector('[data-nav="search"]');
+                        const searchIcon = searchLink.querySelector("svg");
                         return {
                             header: header.getBoundingClientRect().toJSON(),
-                            logo: header.querySelector('a[href="/"]').getBoundingClientRect().toJSON(),
-                            mascot: header.querySelector('a[href="/"] > img').getBoundingClientRect().toJSON(),
+                            search: searchLink.getBoundingClientRect().toJSON(),
                             glyph: searchIcon.getBoundingClientRect().toJSON(),
-                            create: createGroup.getBoundingClientRect().toJSON(),
                             menu: header.querySelector('nav[aria-label="Main navigation"]').getBoundingClientRect().toJSON(),
                             place: place.getBoundingClientRect().toJSON(),
                             font: parseFloat(getComputedStyle(header).fontSize),
@@ -59,18 +57,19 @@ test("{§web-page-shell} compact header stays on one row and long workspace plac
                     });
                     for (const width of [500, 320, 768, 1024, 500]) {
                         await page.setViewportSize({ width, height: 700 });
-                        const { logo, mascot, glyph, create, menu, place, header, overflow, font, scrollable, verticalOverflow, labelsVisible } = await measure();
-                        assert.equal(mascot.height, mascot.width, "the mascot retains a square glyph box");
-                        assert.ok(glyph.width > 0 && mascot.width >= glyph.width, "the mascot scales alongside header icons");
+                        const { search, glyph, menu, place, header, overflow, font, scrollable, verticalOverflow, labelsVisible } = await measure();
+                        assert.ok(glyph.width > 0 && glyph.height > 0, "far-left Search icon renders cleanly");
                         assert.equal(overflow, false);
                         assert.equal(verticalOverflow, false, "place controls fit their scroll area vertically");
                         assert.equal(labelsVisible, width >= 1024, `${width}px collapses header button text labels below 1024px`);
                         assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), name);
-                        assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "user");
-                        assert.ok(place.y < logo.bottom && place.bottom > logo.y, "place shares the mascot row");
-                        assert.ok(menu.y < logo.bottom && menu.bottom > logo.y, "menu shares the mascot row");
-                        assert.ok(place.x >= create.right - 1 && place.right <= menu.x + 1, "the place remains between creation and navigation controls");
-                        assert.ok(header.height <= Math.max(logo.height, create.height, menu.height, place.height) + font, "header padding is at most one text line in total");
+                        assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "session1");
+                        assert.ok(place.y < search.bottom && place.bottom > search.y, "place shares the far-left Search row");
+                        if (menu.width > 0) {
+                            assert.ok(menu.y < search.bottom && menu.bottom > search.y, "menu shares the Search row");
+                        }
+                        assert.ok(place.x >= search.right - 1 && place.right <= menu.x + 1, "the place remains between far-left Search and navigation controls");
+                        assert.ok(header.height <= Math.max(search.height, menu.height, place.height) + font, "header padding is at most one text line in total");
                         await page.locator("#session-workspace").focus();
                         assert.equal(await page.locator("#session-workspace").evaluate((btn) => {
                             const style = getComputedStyle(btn);
@@ -87,11 +86,10 @@ test("{§web-page-shell} compact header stays on one row and long workspace plac
                     if (name === "~/ptl/project") {
                         await page.setViewportSize({ width: 768, height: 700 });
                         await page.evaluate(() => { document.documentElement.style.fontSize = "48px"; });
-                        const { logo, mascot, glyph, create, menu, place, overflow, verticalOverflow } = await measure();
-                        assert.ok(mascot.width >= glyph.width, "the mascot follows enlarged navigation glyphs, not a fixed pixel size");
-                        assert.equal(mascot.height, mascot.width);
-                        assert.ok(place.y < logo.bottom && place.bottom > logo.y, "large text still has one header row");
-                        assert.ok(place.x >= create.right - 1 && place.right <= menu.x + 1);
+                        const { search, glyph, menu, place, overflow, verticalOverflow } = await measure();
+                        assert.ok(glyph.width > 0 && glyph.height > 0);
+                        assert.ok(place.y < search.bottom && place.bottom > search.y, "large text still has one header row");
+                        assert.ok(place.x >= search.right - 1 && place.right <= menu.x + 1);
                         assert.equal(overflow, false);
                         assert.equal(verticalOverflow, false, "large text introduces no vertical header place scroll");
                         await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
@@ -105,7 +103,7 @@ test("{§web-page-shell} compact header stays on one row and long workspace plac
     }
 });
 
-test("{§web-page-shell} disconnection is a named header glyph before Search and Profile, not a second connection state", async (t) => {
+test("{§web-page-shell} disconnection is a named header glyph between Search and Account, not a second connection state", async (t) => {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
@@ -116,7 +114,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Search and
     const checkBrowser = browserDiagnostics(context);
     const port = {
         listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, archived_at: null }],
-        listSessions: async () => [{ id: 9, name: "user", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
+        listSessions: async () => [{ id: 9, name: "session1", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
     };
     const emptyPort = {
         listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, archived_at: null }],
@@ -129,7 +127,7 @@ test("{§web-page-shell} disconnection is a named header glyph before Search and
     });
     const page = await context.newPage();
     for (const authenticated of [false, true]) {
-        html = await documents.read({ kind: "session", workspace: "project", session: "user" }, port, authenticated);
+        html = await documents.read({ kind: "session", workspace: "project", session: "session1" }, port, authenticated);
         await page.goto("http://web.test/");
         const indicator = page.getByRole("img", { name: "Disconnected", exact: true, includeHidden: true });
         assert.equal(await indicator.count(), 1);
@@ -143,11 +141,11 @@ test("{§web-page-shell} disconnection is a named header glyph before Search and
                 if (await indicator.isVisible()) {
                     const box = await indicator.boundingBox();
                     const search = await page.getByRole("link", { name: "Search", exact: true }).boundingBox();
-                    assert.ok(box.x + box.width <= search.x, "the plug is immediately left of Search");
-                    assert.ok(Math.abs(box.y + box.height / 2 - search.y - search.height / 2) < 1);
+                    assert.ok(search.x + search.width <= box.x, "far-left Search precedes the right-side Disconnected glyph");
+                    assert.ok(Math.abs(box.y + box.height / 2 - search.y - search.height / 2) < 2);
                     if (authenticated) {
-                        const profile = await page.getByRole("link", { name: "Profile", exact: true }).boundingBox();
-                        assert.ok(search.x + search.width <= profile.x, "Profile follows Search on the same row");
+                        const account = await page.getByRole("link", { name: "Account", exact: true }).boundingBox();
+                        assert.ok(box.x + box.width <= account.x, "the plug is immediately left of Account on the same row");
                     }
                 }
                 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

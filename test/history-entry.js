@@ -9,7 +9,7 @@ const resources = new AbortController();
 const history = sessionHistory(document.querySelector("#session-conversation"),
     (address) => readBody(address, "session", resources.signal),
     (address, signal) => readHistory(address, "session", AbortSignal.any([signal, resources.signal])));
-window.agent = new SessionAgent({ url: "/acp", sessionId: "7#user" });
+window.agent = new SessionAgent({ url: "/acp", sessionId: "7#session1" });
 window.run = () => window.agent.resume({}, {
     onMessagesSnapshot: ({ snapshot }) => history.snapshot(snapshot),
     onMessagesChanged: ({ messages }) => history.present(messages),

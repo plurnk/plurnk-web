@@ -159,7 +159,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                                 sessionUpdate: "agent_thought_chunk",
                                 messageId: "reasoning-1",
                                 content: { type: "resource_link", uri: "/reasoning/1", name: "reasoning", mimeType: "text/plain" },
-                                _meta: { plurnk: { id: 2, sessionName: "user", loopSeq: 1, turnSeq: 1, coordinate: "1/1" } },
+                                _meta: { plurnk: { id: 2, sessionName: "session1", loopSeq: 1, turnSeq: 1, coordinate: "1/1" } },
                             },
                             {
                                 sessionUpdate: "tool_call",
@@ -707,6 +707,140 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         assert.equal(await item.locator("article").textContent(), "");
                         assert.equal(await item.getByRole("article", { name: "note", exact: true }).count(), 1);
                     });
+
+                    await t.test("{§web-session-conversation} {§web-conversation-surfaces} non-operator actor messages render directional attribution strips, intra-workspace #session links, and top-level replies without misclassifying operator prompts", async () => {
+                        await present([
+                            {
+                                id: "op-prompt",
+                                role: "user",
+                                content: "Coordinate with scoutproxy and #worker.",
+                                _meta: {
+                                    plurnk: {
+                                        op: "send",
+                                        coordinate: "1/1/1",
+                                        origin: "_plurnk",
+                                        target: "session://session1",
+                                        receipt: { status: 200, resource: "message://session1/operator_00" },
+                                    },
+                                },
+                            },
+                            {
+                                id: "outbound-peer",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [{
+                                    toolCallId: "send-peer-1",
+                                    name: "send",
+                                    rawInput: { body: "Please check the schema.", target: { raw: "session://worker" } },
+                                    _meta: { plurnk: { op: "send", coordinate: "1/1/2", receipt: { status: 200 } } },
+                                }],
+                            },
+                            {
+                                id: "inbound-peer",
+                                role: "user",
+                                content: "Schema looks clean.",
+                                _meta: {
+                                    plurnk: {
+                                        op: "send",
+                                        coordinate: "1/2/1",
+                                        origin: "_plurnk",
+                                        source: "session://worker",
+                                        target: "session://session1",
+                                        receipt: { status: 200, resource: "message://session1/worker_01" },
+                                    },
+                                },
+                            },
+                            {
+                                id: "inbound-actor",
+                                role: "user",
+                                content: "Can you confirm the webhook signature?",
+                                _meta: {
+                                    plurnk: {
+                                        op: "send",
+                                        coordinate: "1/3/1",
+                                        origin: "_plurnk",
+                                        voice: "scoutproxy",
+                                        source: "acp://scoutproxy/threads/7",
+                                        receipt: { status: 200, resource: "message://session1/scoutproxy_02" },
+                                    },
+                                },
+                            },
+                            {
+                                id: "outbound-actor-done",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [{
+                                    toolCallId: "done-actor-1",
+                                    name: "done",
+                                    rawInput: { body: { raw: "Signature verified with HMAC-SHA256." }, target: { raw: "message://session1/scoutproxy_02" } },
+                                    _meta: {
+                                        plurnk: {
+                                            op: "done",
+                                            coordinate: "1/3/2",
+                                            receipt: {
+                                                status: 200,
+                                                completion: 200,
+                                                repliedTo: ["message://session1/scoutproxy_02"],
+                                                repliedToSources: ["acp://scoutproxy/threads/7"],
+                                            },
+                                        },
+                                    },
+                                }],
+                            },
+                            {
+                                id: "inbound-schedule",
+                                role: "user",
+                                content: "Nightly audit tick.",
+                                _meta: {
+                                    plurnk: {
+                                        op: "send",
+                                        coordinate: "2/1/1",
+                                        origin: "_plurnk",
+                                        source: "schedule:///nightly-audit",
+                                        receipt: { status: 200, resource: "message://session1/_plurnk_03" },
+                                    },
+                                },
+                            },
+                        ]);
+
+                        // Operator prompt targeting session://session1 stays a plain green operator prompt with no actor strip.
+                        assert.equal(await row("op-prompt").getAttribute("data-message-voice"), null);
+                        assert.equal(await row("op-prompt").locator("[data-message-actor]").count(), 0);
+
+                        // Outbound send to intra-workspace session://worker renders top attribution link "✉️ → #worker".
+                        assert.equal(await row("outbound-peer").getAttribute("data-message-voice"), "#worker");
+                        assert.equal(await row("outbound-peer").getAttribute("data-voice-direction"), "outbound");
+                        assert.equal(await row("outbound-peer").locator("[data-message-actor]").textContent(), "#worker");
+                        assert.match(await row("outbound-peer").locator("[data-message-actor]").evaluate((el) => getComputedStyle(el, "::before").content), /✉️ →/u);
+                        assert.equal(await row("outbound-peer").locator('[data-message-actor] a[data-workspace-route="session"]').getAttribute("href"), "#worker");
+                        assert.equal(await row("outbound-peer").locator('[data-message-actor] a[data-workspace-route="session"]').getAttribute("data-tab-session"), "worker");
+
+                        // Inbound message from session://worker renders top attribution link "✉️ #worker →".
+                        assert.equal(await row("inbound-peer").getAttribute("data-message-voice"), "#worker");
+                        assert.equal(await row("inbound-peer").getAttribute("data-voice-direction"), "inbound");
+                        assert.equal(await row("inbound-peer").locator("[data-message-actor]").textContent(), "#worker");
+                        assert.match(await row("inbound-peer").locator("[data-message-actor]").evaluate((el) => getComputedStyle(el, "::before").content), /✉️/u);
+                        assert.match(await row("inbound-peer").locator("[data-message-actor]").evaluate((el) => getComputedStyle(el, "::after").content), /→/u);
+                        assert.equal(await row("inbound-peer").locator('[data-message-actor] a[data-workspace-route="session"]').getAttribute("href"), "#worker");
+
+                        // Inbound message from external ACP actor scoutproxy renders plain text attribution "✉️ scoutproxy →".
+                        assert.equal(await row("inbound-actor").getAttribute("data-message-voice"), "scoutproxy");
+                        assert.equal(await row("inbound-actor").getAttribute("data-voice-direction"), "inbound");
+                        assert.equal(await row("inbound-actor").locator("[data-message-actor]").textContent(), "scoutproxy");
+                        assert.equal(await row("inbound-actor").locator("[data-message-actor] a").count(), 0);
+                        assert.equal(await row("inbound-actor").getByRole("article", { name: "User · From scoutproxy", exact: true }).count(), 1);
+
+                        // Outbound done replying to scoutproxy stays top-level (not nested in [data-prompt-replies]) with "✉️ → scoutproxy".
+                        assert.equal(await page.locator('[data-messages] > li[data-message-id="outbound-actor-done"]').count(), 1);
+                        assert.equal(await row("outbound-actor-done").getAttribute("data-message-voice"), "scoutproxy");
+                        assert.equal(await row("outbound-actor-done").getAttribute("data-voice-direction"), "outbound");
+                        assert.equal(await row("outbound-actor-done").locator("[data-message-actor]").textContent(), "scoutproxy");
+                        assert.equal(await row("outbound-actor-done").getByRole("article", { name: "done · To scoutproxy", exact: true }).count(), 1);
+
+                        // Schedule trigger renders "✉️ schedule:nightly-audit →".
+                        assert.equal(await row("inbound-schedule").getAttribute("data-message-voice"), "schedule:nightly-audit");
+                        assert.equal(await row("inbound-schedule").locator("[data-message-actor]").textContent(), "schedule:nightly-audit");
+                    });
                     checkBrowser();
                 } finally { await browser.close(); }
             });
@@ -740,6 +874,6 @@ test("{§web-session-questions} native and JSON answers preserve the full respon
 test("{§web-session-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifySessionCards);
 test("{§web-session-input} {§web-document} unsent prompt drafts survive reload in tab-ephemeral sessionStorage", { timeout: 60_000 }, verifySessionDrafts);
 test("{§web-session-observer} {§web-page-shell} passive observation streams auto-recover without retrying mutations or 4xx refusals", { timeout: 90_000 }, verifySessionReconnect);
-test("{§web-session-input} {§web-session-status} {§web-session-history} composer YOLO toggle, active YOLO visibility and sticky-tail scroll anchoring", { timeout: 90_000 }, verifySessionObserve);
+test("{§web-session-input} {§web-session-status} {§web-session-history} composer YOLO toggle, active YOLO visibility and Reading Slate scroll framing", { timeout: 90_000 }, verifySessionObserve);
 test("{§web-workspace-settings} workspace subsystem settings modal manages families, OAuth, session personas, and masked env", { timeout: 90_000 }, verifyWorkspaceSettingsUnit);
 test("{§web-inline-images} {§web-session-input} {§web-card-disclosure} {§web-operation-summary} {§web-result-bodies} verified raster images across transcript, lazy operation disclosures, and composer attachments", { timeout: 90_000 }, verifyInlineImages);

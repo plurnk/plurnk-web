@@ -39,6 +39,7 @@ export default async function managementAction(kind, params, sessionId, auth, si
         || kind === "session/new"
         || kind === "session/fork"
         || kind === "session/archive"
+        || kind === "session/unarchive"
         || kind === "session/set_title"
         || kind === "session/delete"
         || kind === "session/list"
@@ -160,6 +161,10 @@ export default async function managementAction(kind, params, sessionId, auth, si
             });
         } else if (kind === "session/archive") {
             outcome = await conn.agent.request(methods.agent.session.archive, {
+                sessionId: typeof params.sessionId === "string" && params.sessionId ? params.sessionId : sessionId,
+            });
+        } else if (kind === "session/unarchive") {
+            outcome = await conn.agent.request(methods.agent.session.unarchive, {
                 sessionId: typeof params.sessionId === "string" && params.sessionId ? params.sessionId : sessionId,
             });
         } else if (kind === "session/set_title") {

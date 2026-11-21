@@ -40,6 +40,73 @@ import operationSummary, { GLYPH_OPS, argumentsOf, bodyOf, receiptOf, record } f
 /** @param {unknown} value */
 const isReplyOp = (value) => value === "send" || value === "done" || value === "fail";
 
+/**
+ * {§web-session-conversation} Extract non-operator actor voice and intra-workspace session target from ACP metadata.
+ * @param {boolean} inbound
+ * @param {Record<string, unknown> | null} facts
+ * @param {Record<string, unknown> | null} receipt
+ * @param {Record<string, unknown> | null} args
+ * @returns {{ readonly voice: string, readonly sessionTarget: string | null } | null}
+ */
+function extractActorInfo(inbound, facts, receipt, args) {
+    /** @type {unknown[]} */
+    const candidates = [];
+    if (inbound) {
+        candidates.push(facts?.source);
+    } else {
+        if (Array.isArray(receipt?.repliedToSources)) candidates.push(...receipt.repliedToSources);
+        if (Array.isArray(receipt?.repliedTo)) candidates.push(...receipt.repliedTo);
+        candidates.push(facts?.target, facts?.address, record(args?.target)?.raw);
+    }
+    for (const candidate of candidates) {
+        if (typeof candidate !== "string" || candidate.length === 0) continue;
+        const sessionMatch = /^session:\/\/([^/?#]+)/u.exec(candidate);
+        if (sessionMatch !== null) {
+            try {
+                const peer = decodeURIComponent(sessionMatch[1] ?? "").trim();
+                if (peer.length > 0 && peer !== "_plurnk") {
+                    return { voice: `#${peer}`, sessionTarget: peer };
+                }
+            } catch { /* fall through */ }
+            continue;
+        }
+        const acpMatch = /^acp:\/\/([^/?#]+)/u.exec(candidate);
+        if (acpMatch !== null) {
+            try {
+                const principal = decodeURIComponent(acpMatch[1] ?? "").trim();
+                if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+                    return { voice: principal, sessionTarget: null };
+                }
+            } catch { /* fall through */ }
+            continue;
+        }
+        const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
+        if (messageMatch !== null) {
+            const principal = (messageMatch[1] ?? "").trim();
+            if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
+                return { voice: principal, sessionTarget: null };
+            }
+            continue;
+        }
+        const scheduleMatch = /^schedule:\/\/\/([^/?#]+)/u.exec(candidate);
+        if (scheduleMatch !== null) {
+            try {
+                const alias = decodeURIComponent(scheduleMatch[1] ?? "").trim();
+                if (alias.length > 0) {
+                    return { voice: `schedule:${alias}`, sessionTarget: null };
+                }
+            } catch { /* fall through */ }
+        }
+    }
+    if (typeof facts?.voice === "string") {
+        const direct = facts.voice.trim();
+        if (direct.length > 0 && direct !== "operator" && direct !== "anonymous") {
+            return { voice: direct, sessionTarget: null };
+        }
+    }
+    return null;
+}
+
 /** @param {Record<string, unknown> | null} facts */
 function explicitLoopSeq(facts) {
     if (typeof facts?.loopSeq === "number" && Number.isSafeInteger(facts.loopSeq) && facts.loopSeq >= 1) {
@@ -460,15 +527,23 @@ export default function conversation(root, readBody) {
         const reasoning = message.role === "reasoning" ? formatReasoningHeading(facts) : null;
         const labels = { user: "User", assistant: "Assistant", reasoning: reasoning?.text ?? "Thinking", tool: "Result", activity: "Activity", system: "System", developer: "Developer" };
         const label = call ? call.name
+            : message.role === "user" ? labels.user
             : summarized ? operationName
             : message.role === "tool" ? `Result · ${answered?.name ?? message.toolCallId}`
             : message.role === "activity" ? message.activityType : labels[message.role];
         const author = "name" in message ? message.name : undefined;
+        const actor = conversational ? extractActorInfo(message.role === "user", facts, receipt, args) : null;
+        const voiceDirection = actor ? (message.role === "user" ? "inbound" : "outbound") : null;
+        const actorDescription = actor
+            ? (voiceDirection === "inbound" ? `From ${actor.voice}` : `To ${actor.voice}`)
+            : null;
         the(row, {
             "message-id": message.id,
             "message-role": message.role,
-            "message-label": [label, author, message.subagentRunId ? `Subagent ${message.subagentRunId}` : null].filter(Boolean).join(" · "),
+            "message-label": [label, author, actorDescription, message.subagentRunId ? `Subagent ${message.subagentRunId}` : null].filter(Boolean).join(" · "),
             "message-author": author ?? null,
+            "message-voice": actor?.voice ?? null,
+            "voice-direction": voiceDirection,
             "subagent-run-id": message.subagentRunId ?? null,
             "message-error": error ? true : null,
             "tool-call-id": message.role === "tool" ? message.toolCallId : null,
@@ -535,6 +610,42 @@ export default function conversation(root, readBody) {
         if (frame.header.isConnected) nameCard(frame.header);
 
         const article = $(row, ":scope > article");
+        if (article) {
+            let actorBadge = $(article, ":scope > [data-message-actor]");
+            if (actor) {
+                const wantLink = actor.sessionTarget !== null;
+                const templateId = wantLink ? "#message-actor-link" : "#message-actor-text";
+                const hasLink = actorBadge ? $(actorBadge, "a[data-workspace-route]") !== null : false;
+                if (actorBadge && hasLink !== wantLink) {
+                    actorBadge.remove();
+                    actorBadge = null;
+                }
+                if (!actorBadge && $(templateId)) {
+                    const cloned = wantLink
+                        ? $.clone(article, "#message-actor-link", { position: "afterbegin" })
+                        : $.clone(article, "#message-actor-text", { position: "afterbegin" });
+                    if (cloned instanceof HTMLElement) actorBadge = cloned;
+                } else if (actorBadge && article.firstElementChild !== actorBadge) {
+                    article.prepend(actorBadge);
+                }
+                if (actorBadge) {
+                    if (wantLink && actor.sessionTarget !== null) {
+                        const link = $(actorBadge, "a[data-workspace-route]");
+                        if (link instanceof HTMLAnchorElement) {
+                            link.dataset.tabSession = actor.sessionTarget;
+                        }
+                        the(actorBadge, {
+                            "actor-href": `#${encodeURIComponent(actor.sessionTarget)}`,
+                            "actor-name": actor.voice,
+                        });
+                    } else {
+                        the(actorBadge, { "actor-name": actor.voice });
+                    }
+                }
+            } else if (actorBadge) {
+                actorBadge.remove();
+            }
+        }
         let workDetails = $(row, ":scope > [data-prompt-work]");
         if (item.workItems.length > 0) {
             if (!workDetails) {
@@ -670,7 +781,9 @@ export default function conversation(root, readBody) {
                 if (item.message.role === "user" && !item.call) {
                     const addresses = promptAddresses(item);
                     if (openingAddresses === null) openingAddresses = addresses;
-                    else midLoopPrompts.push({ prompt: item, addresses });
+                    else if (extractActorInfo(true, item.facts, item.receipt, item.args) === null) {
+                        midLoopPrompts.push({ prompt: item, addresses });
+                    }
                     continue;
                 }
                 const targets = repliedAddresses(item);

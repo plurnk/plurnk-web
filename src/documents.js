@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
-import { directoryPath } from "./directory-addresses.js";
+import { directoryPath, workspaceSettingsPath } from "./directory-addresses.js";
 import { escapeHtml, RequestError } from "./http.js";
 
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
-const FOLDER_PLUS_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8Z"/><path d="M8 7.25v3.5M6.25 9h3.5"/></svg>';
+const WORKSPACES_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>';
 
 /** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
 /** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499, readonly at?: number, readonly excerpt?: string, readonly continued?: boolean }} DirectoryReply */
@@ -196,6 +196,7 @@ export default class Documents {
     #yolo;
     #overviewSessions;
     #overviewExcerptChars;
+    #allowProjectFolder;
 
     /** {§web-authorization-style} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -208,18 +209,19 @@ export default class Documents {
         return path;
     }
 
-    /** @param {string} document @param {boolean | null} yolo @param {number | null} [overviewSessions] @param {number | null} [overviewExcerptChars] */
-    constructor(document, yolo, overviewSessions = 200, overviewExcerptChars = 160) {
+    /** @param {string} document @param {boolean | null} yolo @param {number | null} [overviewSessions] @param {number | null} [overviewExcerptChars] @param {boolean | null} [allowProjectFolder] */
+    constructor(document, yolo, overviewSessions = 200, overviewExcerptChars = 160, allowProjectFolder = true) {
         this.#yolo = yolo;
         this.#overviewSessions = overviewSessions;
         this.#overviewExcerptChars = overviewExcerptChars;
+        this.#allowProjectFolder = allowProjectFolder;
         this.#template = compileDocumentSlots(document);
     }
 
     /**
      * @param {string} title
      * @param {string} body
-     * @param {"home" | "search" | "workspace" | "session" | "error" | "account"} kind
+     * @param {"home" | "search" | "workspace" | "session" | "settings" | "error" | "account"} kind
      * @param {boolean} [authenticated]
      * @param {{ headerLead?: string, headerTail?: string, beforeMain?: string, footer?: string, dialogs?: string, mainAttributes?: string }} [slots]
      */
@@ -237,16 +239,51 @@ export default class Documents {
     }
 
     /**
-     * {§web-page-shell} {§web-workspace-creation} Header workspace creation form and center place display.
-     * @param {{ canCreate?: boolean, placeHtml?: string }} [options]
+     * {§web-page-shell} Center place display in header.
+     * @param {{ placeHtml?: string }} [options]
      */
-    #headerLead({ canCreate = false, placeHtml = "" } = {}) {
-        const newWorkspace = canCreate
-            ? `<form method="post" action="/workspaces/new" data-header-form><input type="hidden" name="token" value="${randomUUID()}">`
-                + `<button type="submit" data-action="new-workspace" aria-label="New workspace" title="New workspace">${FOLDER_PLUS_ICON} <span data-header-label data-i18n="new-workspace">New workspace</span></button></form>`
+    #headerLead({ placeHtml = "" } = {}) {
+        return placeHtml;
+    }
+
+    /**
+     * {§web-page-shell} {§web-workspace-creation} Workspace switcher modal listing unarchived workspaces and creation actions.
+     * @param {readonly DirectoryWorkspace[]} allWorkspaces
+     * @param {string | null} currentWorkspaceName
+     * @param {boolean} creationsAvailable
+     */
+    #workspacesDialog(allWorkspaces, currentWorkspaceName, creationsAvailable) {
+        const items = allWorkspaces
+            .filter(({ archived_at }) => archived_at === null)
+            .map((ws) => {
+                const path = directoryPath({ kind: "workspace", workspace: ws.name });
+                const effectiveProject = ws.project_label ?? ws.project_root;
+                const separateFolder = ws.project_label !== null && ws.project_label !== ws.name;
+                const glyph = effectiveProject !== null && !separateFolder ? "🗂️" : "☁️";
+                const folderNote = separateFolder ? ` <small>${escapeHtml(ws.project_label ?? "")}</small>` : "";
+                const current = ws.name === currentWorkspaceName ? ' aria-current="page"' : "";
+                const label = `${glyph} <span>${escapeHtml(ws.name)}</span>${folderNote}`;
+                return path === null
+                    ? `<li><span>${label}</span></li>`
+                    : `<li><a href="${escapeHtml(path)}"${current}>${label}</a></li>`;
+            })
+            .join("");
+        const listHtml = items
+            ? `<ul data-workspaces-list>${items}</ul>`
+            : '<p data-i18n="no-workspaces">No matching workspaces.</p>';
+        const archivedCount = allWorkspaces.filter(({ archived_at }) => archived_at !== null).length;
+        const actionsHtml = creationsAvailable && this.#allowProjectFolder !== null
+            ? '<div data-workspaces-actions>'
+                + '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="new-workspace">New workspace…</button>'
+                + "</div>"
             : "";
-        const actions = newWorkspace ? `<div data-header-create>${newWorkspace}</div>` : "";
-        return actions + placeHtml;
+        return '<dialog id="dialog-workspaces" aria-label="Workspaces"><article>'
+            + '<header><p><strong data-i18n="workspaces">Workspaces</strong></p>'
+            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
+            + listHtml
+            + actionsHtml
+            + `<footer><a href="/search/?status=archived"><span data-i18n="archived-workspaces">Archived workspaces</span> (${archivedCount})</a></footer>`
+            + "</article></dialog>";
     }
 
     /** @param {boolean} [authenticated] */
@@ -270,8 +307,8 @@ export default class Documents {
             + '<footer><a href="/" data-i18n="home">Home</a></footer></article>', "error", authenticated);
     }
 
-    /** {§web-workspace-creation} The creation form a refused submission offers again, with its draft and a fresh token. @param {string} name @param {string} [projectRoot] */
-    retryCreation(name, projectRoot = "") { return this.#creationFields(name, projectRoot, ""); }
+    /** {§web-workspace-creation} The creation form a refused submission offers again, with its draft and a fresh token. @param {string} name @param {string} [projectRoot] @param {boolean} [checkProject] */
+    retryCreation(name, projectRoot = "", checkProject = projectRoot !== "") { return this.#creationFields(name, projectRoot, "", checkProject); }
 
     /** {§web-workspace-rename} @param {string} workspace @param {string} name @param {string} [session] */
     retryRename(workspace, name, session = "") { return this.#renameFields(workspace, name, "", session); }
@@ -279,11 +316,15 @@ export default class Documents {
     /** {§web-session-creation} @param {string} workspace @param {string} name */
     retrySession(workspace, name) { return this.#sessionFields(workspace, name, ""); }
 
-    /** {§web-account} Account navigation stays separate from session management. */
+    /** {§web-account} Account navigation bundles active sign-ins and Sign out. */
     account() {
-        const headerLead = this.#headerLead({ placeHtml: '<div id="header-place"><span aria-current="page" data-i18n="profile">Profile</span></div>' });
-        return this.#render("Profile", '<article aria-labelledby="account-title"><header><h1 id="account-title" data-i18n="account">Account</h1></header>'
-            + '<nav aria-label="Account"><ul><li><a href="/account/sessions/" data-i18n="sessions">Sessions</a></li></ul></nav></article>', "account", true, { headerLead });
+        const placeHtml = '<nav id="header-place" aria-label="breadcrumb"><ul>'
+            + '<li><a href="/" data-i18n="home">Home</a></li>'
+            + '<li><span aria-current="page" data-i18n="account">Account</span></li></ul></nav>';
+        const headerLead = this.#headerLead({ placeHtml });
+        return this.#render("Account", '<article aria-labelledby="account-title"><header><h1 id="account-title" data-i18n="account">Account</h1></header>'
+            + '<nav aria-label="Account"><ul><li><a href="/account/sessions/" data-i18n="sessions">Sessions</a></li></ul></nav>'
+            + '<footer><form method="post" action="/auth/logout"><button type="submit" data-i18n="sign-out">Sign out</button></form></footer></article>', "account", true, { headerLead });
     }
 
     /** {§web-account} Only authority-supplied facts are presented as session information.
@@ -305,6 +346,7 @@ export default class Documents {
         const others = sessions.some((entry) => entry.family !== family)
             ? '<form method="post" action="/account/sessions/revoke-others"><button type="submit" data-i18n="revoke-others">Revoke other sessions</button></form>' : "";
         const placeHtml = '<nav id="header-place" aria-label="breadcrumb"><ul>'
+            + '<li><a href="/" data-i18n="home">Home</a></li>'
             + '<li><a href="/account/" data-i18n="account">Account</a></li>'
             + '<li><span aria-current="page" data-i18n="sessions">Sessions</span></li></ul></nav>';
         return this.#render("Sessions", '<article aria-labelledby="sessions-title"><header><h1 id="sessions-title" data-i18n="sessions">Sessions</h1></header>'
@@ -320,37 +362,27 @@ export default class Documents {
             : `<a href="${escapeHtml(path)}" data-text="name"${directory.kind === "session" ? ` data-session-name="${escapeHtml(directory.session)}" data-bind="href:session-path"` : ""}>${escapeHtml(label)}</a>`;
     }
 
-    /** {§web-workspace-creation} Native dialog modal for workspace creation (including local project folder binding). */
+    /** {§web-workspace-creation} Native dialog modal for workspace creation (including optional project folder binding when allowed). */
     #creationForm() {
-        return '<dialog id="dialog-workspace-create"><article>'
-            + '<header><p><strong data-i18n="new-workspace">New workspace</strong></p>'
+        if (this.#allowProjectFolder === null) return "";
+        return '<dialog id="dialog-workspace-create" aria-label="New workspace"><article>'
+            + '<header><p><strong data-i18n="new-workspace-title">New workspace</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#creationFields("", "", CANCEL)
+            + this.#creationFields("", "", CANCEL, false)
             + "</article></dialog>";
     }
 
-    /** @param {string} name @param {string} projectRoot @param {string} cancel */
-    #creationFields(name, projectRoot, cancel) {
+    /** @param {string} name @param {string} projectRoot @param {string} cancel @param {boolean} [checkProject] */
+    #creationFields(name, projectRoot, cancel, checkProject = projectRoot !== "") {
+        const projectControls = this.#allowProjectFolder === true
+            ? `<label data-project-folder-toggle><input type="checkbox" name="useProjectFolder" value="1" data-toggle-project-folder${checkProject ? " checked" : ""}> <span data-i18n="project-folder">Project folder</span></label>`
+                + `<input type="text" name="projectRoot" value="${escapeHtml(projectRoot)}" placeholder="/path/to/project" aria-label="Project path" data-project-folder-input>`
+            : "";
         return '<form id="workspace-create" method="post" action="/workspaces/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
-            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Workspace name (optional)" aria-label="Workspace name" aria-describedby="workspace-name-hint">`
-            + '<small id="workspace-name-hint" data-i18n="workspace-name-hint">Leave it empty and the daemon names the workspace.</small>'
-            + `<input type="text" name="projectRoot" value="${escapeHtml(projectRoot)}" placeholder="/path/to/project (optional)" aria-label="Project path" aria-describedby="workspace-project-hint">`
-            + '<small id="workspace-project-hint" data-i18n="workspace-project-hint">Leave it empty for a folderless workspace, or enter a local directory path on the daemon host.</small>'
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Workspace name (optional)" aria-label="Workspace name">`
+            + projectControls
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
-    }
-
-    /**
-     * {§web-workspace-rename} Native dialog modal for workspace rename with pre-populated current name.
-     * @param {{name: string}} workspace
-     * @param {string} [sessionName]
-     */
-    #renameForm(workspace, sessionName = "") {
-        return '<dialog id="dialog-workspace-rename"><article>'
-            + '<header><p><strong data-i18n="rename-workspace">Rename workspace</strong></p>'
-            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#renameFields(workspace.name, workspace.name, CANCEL, sessionName)
-            + "</article></dialog>";
     }
 
     /** @param {string} workspace @param {string} name @param {string} cancel @param {string} [session] */
@@ -379,24 +411,8 @@ export default class Documents {
         return '<form id="session-create" method="post" action="/sessions/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}" data-bind="value:workspace-name">`
-            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Session name (optional)" aria-label="Session name" aria-describedby="session-name-hint">`
-            + '<small id="session-name-hint" data-i18n="session-name-hint">Leave it empty and the daemon names the session.</small>'
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Session name (optional)" aria-label="Session name">`
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
-    }
-
-    /**
-     * {§web-workspace-archive} Native dialog modal to archive the workspace.
-     * @param {{name: string}} workspace
-     */
-    #workspaceArchiveForm(workspace) {
-        return '<dialog id="dialog-workspace-archive"><article>'
-            + '<header><p><strong data-i18n="archive-workspace">Archive workspace</strong></p>'
-            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<form id="workspace-archive" method="post" action="/workspaces/archive">'
-            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}" data-bind="value:workspace-name">`
-            + '<p data-i18n="archive-workspace-detail">Archiving removes the workspace from active views while keeping its files and history intact.</p>'
-            + `<footer>${CANCEL}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`
-            + "</article></dialog>";
     }
 
     /**
@@ -416,7 +432,7 @@ export default class Documents {
             + `<input type="hidden" name="session" value="${escapeHtml(session.name)}" data-bind="value:active-session-name">`
             + '<fieldset role="group">'
             + `<input type="text" name="title" value="${escapeHtml(currentTitle)}" placeholder="Session title" aria-label="Session title" autocomplete="off" required>`
-            + '<button type="submit" data-i18n="save-title">Save title</button>'
+            + '<button type="submit" data-i18n="change-title">Change title</button>'
             + "</fieldset></form>"
             + '<p role="alert" data-text="session-manage-error"></p>'
             + '<div data-session-manage-actions>'
@@ -554,7 +570,7 @@ export default class Documents {
         const qLower = q.toLowerCase();
         const wsFilter = query.workspace ?? "";
         const statusFilter = ["all", "active", "gated", "failed", "archived"].includes(query.status ?? "") ? (query.status ?? "all") : "all";
-        const kindFilter = ["all", "chats", "work"].includes(query.kind ?? "") ? (query.kind ?? "all") : "all";
+        const kindFilter = ["all", "root", "work"].includes(query.kind ?? "") ? (query.kind ?? "all") : "all";
         const showArchived = statusFilter === "archived";
         const isNarrowing = Boolean(qLower || wsFilter || statusFilter !== "all" || kindFilter !== "all");
 
@@ -720,7 +736,7 @@ export default class Documents {
             if (statusFilter === "gated" && (s.gates ?? 0) === 0) continue;
             if (statusFilter === "failed" && s.lifecycle !== "failed") continue;
             const kind = s.kind ?? (s.parentSessionId === null ? "root" : "work");
-            if (kindFilter === "chats" && kind === "work") continue;
+            if (kindFilter === "root" && kind === "work") continue;
             if (kindFilter === "work" && kind !== "work") continue;
             /** @type {string | undefined} */
             let matchedExcerpt;
@@ -783,14 +799,13 @@ export default class Documents {
         const datalistOptions = [...suggestionTerms].slice(0, 100)
             .map((term) => `<option value="${escapeHtml(term)}"></option>`).join("");
 
-        const controlsHtml = '<form id="search-controls" method="get" action="/search/" aria-label="Search chats and workspaces">'
-            + `<input type="search" name="q" list="search-suggestions" data-overview-search value="${escapeHtml(q)}" placeholder="Search chats, prompts, and workspaces…" aria-label="Search chats, prompts, and workspaces" autocomplete="off">`
+        const controlsHtml = '<form id="search-controls" method="get" action="/search/" aria-label="Search workspaces and sessions">'
+            + `<input type="search" name="q" list="search-suggestions" data-overview-search value="${escapeHtml(q)}" placeholder="Search workspaces and sessions…" aria-label="Search workspaces and sessions" autocomplete="off">`
             + `<datalist id="search-suggestions">${datalistOptions}</datalist>`
             + (wsFilter ? `<input type="hidden" name="workspace" value="${escapeHtml(wsFilter)}" data-search-workspace>` : "")
             + (kindFilter !== "all" ? `<input type="hidden" name="kind" value="${escapeHtml(kindFilter)}" data-search-kind>` : "")
             + `<select name="status" data-overview-scope aria-label="Status filter">${statusOption("all", "All statuses")}${statusOption("active", "Active")}${statusOption("gated", "Needs input")}${statusOption("failed", "Failed")}${statusOption("archived", "Archived")}</select>`
             + '<button type="submit" data-search-submit data-i18n="filter">Filter</button>'
-            + (creationsAvailable ? '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="open-project-folder">Open project folder…</button>' : "")
             + "</form>";
 
         const workspaceItems = orderedWorkspaces.map((ws) => {
@@ -819,15 +834,17 @@ export default class Documents {
         const workspacesSection = `<section id="search-workspaces" aria-label="Workspaces">${workspaceItems ? `<ul>${workspaceItems}</ul>` : emptyDirectoryHtml}${omitted}</section>`;
 
         const needsOnboarding = detectNeedsOnboarding(port);
+        const switcherTrigger = `<button type="button" data-dialog-target="dialog-workspaces" aria-label="Change workspace" title="Change workspace">${WORKSPACES_ICON}</button>`;
         const headerLead = this.#headerLead({
-            canCreate: creationsAvailable,
-            placeHtml: '<div id="header-place"><span aria-current="page" data-i18n="search">Search</span></div>',
+            placeHtml: `<div id="header-place">${switcherTrigger}<span aria-current="page" data-i18n="search">Search</span></div>`,
         });
         const live = typeof port.readSessionOverview === "function";
         const mainAttributes = `${live ? ` data-auth="${authenticated ? "session" : "none"}" data-connection="initial"` : ""}${needsOnboarding ? ' data-needs-onboarding="true"' : ""}`;
+        const dialogs = this.#workspacesDialog(allWorkspaces, null, creationsAvailable)
+            + (creationsAvailable ? this.#creationForm() : "");
         return this.#render("Search", controlsHtml + workspacesSection, "search", authenticated, {
             headerLead,
-            dialogs: creationsAvailable ? this.#creationForm() : "",
+            dialogs,
             mainAttributes,
         });
     }
@@ -915,7 +932,7 @@ export default class Documents {
                 cursor = parent;
             }
             return true;
-        }).toSorted(orderByReply);
+        }).toSorted((a, b) => a.id - b.id);
         const unarchivedIds = new Set(unarchived.map(({ id }) => id));
         const childrenByParent = Map.groupBy(
             unarchived,
@@ -969,19 +986,17 @@ export default class Documents {
                 : `#${entry.name} (${entry.lifecycle})`;
             const replyAttr = entry.reply !== null ? ` data-reply-id="${entry.reply.id}"` : "";
             const archivedAttr = entry.archived_at !== null ? ' data-archived="true"' : "";
-            const archiveForm = `<form method="post" action="/sessions/archive" data-tab-archive>`
-                + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}">`
-                + `<input type="hidden" name="session" value="${name}">`
-                + `<button type="submit" aria-label="Archive #${name}" title="Archive #${name}">×</button></form>`;
             return [`<li data-tab-id="${workspace.id}:${entry.id}" data-session-kind="${kind}"${draftAttr}${titleAttr}${parentAttr}${replyAttr}${archivedAttr}>`
                 + `<a href="#${encodeURIComponent(entry.name)}" data-workspace-route="session" data-tab-session="${name}" title="${escapeHtml(hoverTitle)}"${current}>`
                 + `<span data-lifecycle="${lifecycle}" aria-hidden="true"></span>`
-                + `<span data-tab-label>${escapeHtml(tabLabel)}</span>${gatesBadge}</a>${archiveForm}</li>`];
+                + `<span data-tab-label>${escapeHtml(tabLabel)}</span>${gatesBadge}</a></li>`];
         };
         const visibleSet = new Set(visible.map(({ id }) => id));
         const items = visible.flatMap(renderTabItem);
-        const folded = ordered.filter(({ id }) => !visibleSet.has(id)).map((entry) => {
+        const archivedEntries = enriched.filter(({ id }) => !unarchivedIds.has(id) && !visibleSet.has(id));
+        const folded = [...ordered.filter(({ id }) => !visibleSet.has(id)), ...archivedEntries].map((entry) => {
             const parent = this.#parent(entry, byId);
+            const isArchived = !unarchivedIds.has(entry.id) || entry.archived_at !== null;
             return {
                 id: entry.id,
                 name: entry.name,
@@ -993,6 +1008,7 @@ export default class Documents {
                 gates: entry.gates ?? 0,
                 ...(typeof entry.title === "string" && entry.title.trim() !== "" ? { title: entry.title.trim() } : {}),
                 replyId: entry.reply?.id ?? null,
+                ...(isArchived ? { archived: true } : {}),
             };
         });
         const foldedAttr = folded.length > 0 ? ` data-folded-sessions="${escapeHtml(JSON.stringify(folded))}"` : "";
@@ -1000,8 +1016,9 @@ export default class Documents {
         const newTabForm = creationsAvailable && workspace.archived_at === null
             ? `<form method="post" action="/sessions/new" data-tab-new><input type="hidden" name="token" value="${randomUUID()}"><input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}"><button type="submit" data-action="new-session" aria-label="New session" title="New session">+</button></form>`
             : "";
+        const archivesButton = '<button type="button" data-open-sessions aria-label="Sessions and archives" title="Sessions and archives (Ctrl+K)">☰</button>';
         return `<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-id="${workspace.id}" data-workspace-name="${escapeHtml(workspace.name)}" data-auth="${authenticated ? "session" : "none"}" data-tab-count="${items.length}" data-initial-yolo="${automatic}"${needsOnboarding ? ' data-needs-onboarding="true"' : ""}${live ? ' data-live="true"' : ""}${wsArchivedAttr}${foldedAttr}>`
-            + `<ul>${items.join("")}</ul>${newTabForm}`
+            + `${newTabForm}${archivesButton}<ul>${items.join("")}</ul>`
             + "</nav>";
     }
 
@@ -1077,13 +1094,13 @@ export default class Documents {
                 const childParents = new Set(unarchivedModel.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
                 const unarchivedRoots = unarchivedModel
                     .filter(({ parentSessionId }) => parentSessionId === null)
-                    .toSorted(orderByReply);
+                    .toSorted((a, b) => orderByReply(a, b) || a.id - b.id);
                 const nonDraftRoots = unarchivedRoots.filter((entry) => !isUntouchedDraftSession(entry, childParents.has(entry.id)));
                 const candidateRoots = nonDraftRoots.length > 0 ? nonDraftRoots : unarchivedRoots;
                 selected = candidateRoots.find(({ reply }) => reply != null)
-                    ?? candidateRoots.find(({ name }) => name === "user")
+                    ?? candidateRoots.find(({ name }) => name === "session1")
                     ?? candidateRoots[0]
-                    ?? unarchivedModel.toSorted(orderByReply)[0]
+                    ?? unarchivedModel.toSorted((a, b) => orderByReply(a, b) || a.id - b.id)[0]
                     ?? modelSessions[0];
             }
         }
@@ -1094,24 +1111,28 @@ export default class Documents {
         const iconLabel = effectiveProject === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
         const iconGlyph = effectiveProject !== null && !folder ? "🗂️" : "☁️";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${iconGlyph}</span>`;
+        const switcherTrigger = `<button type="button" data-dialog-target="dialog-workspaces" aria-label="Change workspace" title="Change workspace">${WORKSPACES_ICON}</button>`;
+        const settingsHref = workspaceSettingsPath(workspace.name, selected?.name ?? null);
+        const workspaceSettingsTrigger = settingsHref !== null
+            ? `<a id="session-workspace" href="${escapeHtml(settingsHref)}" data-bind="href:workspace-settings-path" aria-label="Workspace settings" title="Workspace settings">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></a>`
+            : `<span id="session-workspace">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></span>`;
+        const placeHtml = `<div id="header-place">${switcherTrigger}${workspaceSettingsTrigger}</div>`;
+        const headerLead = this.#headerLead({ placeHtml });
+        const sharedWsDialogs = this.#workspacesDialog(workspaces, workspace.name, creationsAvailable)
+            + (creationsAvailable ? this.#creationForm() : "");
         const needsOnboarding = detectNeedsOnboarding(port);
         const automatic = Boolean(this.#yolo && own);
 
         if (selected === undefined) {
             const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, null, authenticated, live, automatic, needsOnboarding, creationsAvailable);
-            const placeHtml = `<div id="header-place"><button type="button" id="session-workspace" data-workspace-settings aria-label="Workspace settings" title="Workspace settings">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></button></div>`;
-            const headerLead = this.#headerLead({
-                canCreate: creationsAvailable,
-                placeHtml,
-            });
             const startForm = creationsAvailable && workspace.archived_at === null
                 ? `<form method="post" action="/sessions/new"><input type="hidden" name="token" value="${randomUUID()}"><input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}"><button type="submit" data-i18n="start-conversation">New session</button></form>`
                 : "";
             const body = `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
                 + `<article id="workspace-empty"><p data-i18n="no-sessions">No sessions in this workspace yet.</p>${startForm}</article>`;
-            const dialogs = this.#renameForm(workspace) + this.#workspaceArchiveForm(workspace) + this.#sessionCreationForm(workspace);
+            const dialogs = sharedWsDialogs + (creationsAvailable ? this.#sessionCreationForm(workspace) : "");
             onSelected?.(workspace, null);
-            return this.#render(workspace.name, body, "workspace", authenticated, { headerLead, beforeMain: tabs, dialogs });
+            return this.#render(workspace.name, body, "workspace", authenticated, { headerLead, footer: tabs, dialogs });
         }
 
         const parent = this.#parent(selected, byId);
@@ -1123,25 +1144,110 @@ export default class Documents {
         const sessionDir = /** @type {const} */ ({ kind: "session", workspace: workspace.name, session: selected.name });
         const status = this.#sessionStatus(sessionDir, workspace.id, authenticated, automatic, needsOnboarding);
         const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, selected.name, authenticated, live, automatic, needsOnboarding, creationsAvailable);
-        const placeHtml = `<div id="header-place">`
-            + `<button type="button" id="session-workspace" data-workspace-settings aria-label="Workspace settings" title="Workspace settings">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></button></div>`;
-        const headerLead = this.#headerLead({
-            canCreate: creationsAvailable,
-            placeHtml,
-        });
-        const dialogs = this.#sessionManageDialog(workspace, selected, parentLine)
-            + this.#renameForm(workspace, selected.name)
-            + this.#workspaceArchiveForm(workspace)
-            + this.#sessionCreationForm(workspace);
+        const dialogs = sharedWsDialogs
+            + this.#sessionManageDialog(workspace, selected, parentLine)
+            + (creationsAvailable ? this.#sessionCreationForm(workspace) : "");
         const body = `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + status.content;
         onSelected?.(workspace, selected);
         return this.#render(title, body, "session", authenticated, {
             headerLead,
-            beforeMain: tabs,
-            footer: status.footer,
+            footer: status.footer + tabs,
             dialogs,
             mainAttributes: ` data-session-name="${escapeHtml(selected.name)}"`,
+        });
+    }
+
+    /**
+     * {§web-workspace-settings} {§web-workspace-rename} {§web-workspace-archive} Dedicated workspace settings page (`GET /settings/?workspace=<name>`).
+     * @param {string} workspaceName
+     * @param {string | null} requestedSessionName
+     * @param {{
+     *   listWorkspaces(): Promise<readonly DirectoryWorkspace[]>,
+     *   listSessions(workspaceId: number): Promise<readonly DirectorySession[]>,
+     *   readSessionOverview?: unknown,
+     * }} port
+     * @param {boolean} authenticated
+     * @returns {Promise<Buffer | null>}
+     */
+    async settings(workspaceName, requestedSessionName, port, authenticated) {
+        const workspaces = await port.listWorkspaces();
+        const workspace = workspaces.find(({ name }) => name === workspaceName);
+        if (workspace === undefined) return null;
+        if (directoryPath({ kind: "workspace", workspace: workspace.name }) === null) return null;
+        const sessions = await port.listSessions(workspace.id);
+        const activeSession = requestedSessionName
+            ? (sessions.find(({ name, origin }) => name === requestedSessionName && origin === "model") ?? null)
+            : null;
+        const effectiveProject = workspace.project_label ?? workspace.project_root;
+        const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
+        const iconLabel = effectiveProject === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
+        const iconGlyph = effectiveProject !== null && !folder ? "🗂️" : "☁️";
+        const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${iconGlyph}</span>`;
+        const backPath = activeSession !== null
+            ? directoryPath({ kind: "session", workspace: workspace.name, session: activeSession.name })
+            : directoryPath({ kind: "workspace", workspace: workspace.name });
+        const backItem = backPath !== null
+            ? `<a href="${escapeHtml(backPath)}" data-settings-back data-bind="href:workspace-back-path">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></a>`
+            : `<span>${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></span>`;
+        const placeHtml = '<nav id="header-place" aria-label="breadcrumb"><ul>'
+            + `<li>${backItem}</li>`
+            + '<li><span aria-current="page" data-i18n="settings">Settings</span></li></ul></nav>';
+        const headerLead = this.#headerLead({ placeHtml });
+
+        const folderLine = workspace.project_label !== null
+            ? `<p data-settings-folder><span role="img" aria-label="Project folder">🗂️</span> <code data-text="project-label">${escapeHtml(workspace.project_label)}</code></p>`
+            : "";
+        const archiveSection = workspace.archived_at === null
+            ? '<section aria-labelledby="settings-archive-heading">'
+                + '<h2 id="settings-archive-heading" data-i18n="archive-workspace">Archive workspace</h2>'
+                + '<form id="workspace-archive" method="post" action="/workspaces/archive">'
+                + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}" data-bind="value:workspace-name">`
+                + '<p data-i18n="archive-workspace-detail">Archiving removes the workspace from active views while keeping its files and history intact.</p>'
+                + '<footer><button type="submit" data-i18n="archive-workspace">Archive workspace</button></footer></form></section>'
+            : '<section aria-labelledby="settings-unarchive-heading">'
+                + '<h2 id="settings-unarchive-heading" data-i18n="unarchive-workspace">Unarchive workspace</h2>'
+                + '<form id="workspace-unarchive" method="post" action="/workspaces/unarchive">'
+                + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}" data-bind="value:workspace-name">`
+                + '<footer><button type="submit" data-i18n="unarchive">Unarchive</button></footer></form></section>';
+
+        const navHtml = '<nav aria-label="Settings sections"><ul data-settings-nav>'
+            + '<li><a href="#general" data-settings-section="general" aria-current="true" data-i18n="ws-settings-tab-general">General</a></li>'
+            + '<li><a href="#mcp" data-settings-section="mcp" data-i18n="ws-settings-tab-mcp">MCP</a></li>'
+            + '<li><a href="#skills" data-settings-section="skills" data-i18n="ws-settings-tab-skills">Skills</a></li>'
+            + '<li><a href="#schedule" data-settings-section="schedule" data-i18n="ws-settings-tab-schedule">Schedule</a></li>'
+            + '<li><a href="#personas" data-settings-section="personas" data-i18n="ws-settings-tab-personas">Personas</a></li>'
+            + '<li><a href="#members" data-settings-section="members" data-i18n="ws-settings-tab-members">Members</a></li>'
+            + '<li><a href="#env" data-settings-section="env" data-i18n="ws-settings-tab-env">Environment</a></li>'
+            + "</ul></nav>";
+
+        const generalPanel = '<section data-settings-panel="general" aria-label="General">'
+            + folderLine
+            + '<section aria-labelledby="settings-rename-heading">'
+            + '<h2 id="settings-rename-heading" data-i18n="rename-workspace">Rename workspace</h2>'
+            + this.#renameFields(workspace.name, workspace.name, "", activeSession?.name ?? "")
+            + "</section>"
+            + archiveSection
+            + "</section>";
+
+        const body = '<article id="workspace-settings" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-busy">'
+            + '<header><h1 id="workspace-settings-title" data-i18n="ws-settings-title">Workspace settings</h1></header>'
+            + navHtml
+            + '<p role="status" data-text="ws-settings-message"></p>'
+            + '<p data-text="ws-settings-recovery"></p>'
+            + generalPanel
+            + '<div data-settings-subsystems></div>'
+            + "</article>";
+
+        const live = typeof port.readSessionOverview === "function";
+        const mainAttributes = ` data-workspace-id="${workspace.id}" data-workspace-name="${escapeHtml(workspace.name)}"`
+            + (activeSession !== null ? ` data-session-name="${escapeHtml(activeSession.name)}"` : "")
+            + ` data-auth="${authenticated ? "session" : "none"}"`
+            + (live ? ' data-live="true"' : "");
+
+        return this.#render(`${workspace.name} · Settings`, body, "settings", authenticated, {
+            headerLead,
+            mainAttributes,
         });
     }
 }

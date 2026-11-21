@@ -197,7 +197,7 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
             listSessions: async () => [],
             createWorkspace: async () => ({ workspaceId: 1, workspaceName: "alpha", projectRoot: null, projectLabel: null }),
             renameWorkspace: async () => ({ name: "alpha" }),
-            createSession: async () => ({ sessionId: 1, sessionName: "user" }),
+            createSession: async () => ({ sessionId: 1, sessionName: "session1" }),
             setWorkspaceArchived: async () => ({}),
             setSessionArchived: async () => ({}),
         });
@@ -218,16 +218,16 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
         assert.equal(initialCss.status(), 200);
 
         const htmlFile = join(root, "index.html");
-        await writeFile(htmlFile, (await readFile(htmlFile, "utf8")).replace('title="Plurnk"', 'title="Live home"'));
+        await writeFile(htmlFile, (await readFile(htmlFile, "utf8")).replace('title="Search (Ctrl+K)"', 'title="Live search"'));
         const stylesFile = join(root, "styles", "app-style.css");
         await writeFile(
             stylesFile,
             (await readFile(stylesFile, "utf8")).replace(/\}\s*$/u, "    :root { --dev-live-probe: 17px; }\n}\n"),
         );
-        await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replace("No matching workspaces.", "Zero workspaces yet."));
+        await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replaceAll("No matching workspaces.", "Zero workspaces yet."));
 
         await page.reload();
-        assert.equal(await page.locator('header a[title="Live home"]').count(), 1);
+        assert.equal(await page.locator('header a[title="Live search"]').count(), 1);
         assert.equal(
             await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--dev-live-probe").trim()),
             "17px",

@@ -150,8 +150,11 @@ export default class Session {
         const directory = parseDirectory(requested);
         const rawPathname = requested.split(/[?#]/u)[0];
         const document = indexDocument(rawPathname);
-        const searchQuery = document === "/search/index.html" ? new URL(requested, "http://return.local").search : "";
-        const target = document === "/search/index.html" ? `/search/${searchQuery}`
+        const query = document === "/search/index.html" || document === "/settings/index.html"
+            ? new URL(requested, "http://return.local").search
+            : "";
+        const target = document === "/search/index.html" ? `/search/${query}`
+            : document === "/settings/index.html" ? `/settings/${query}`
             : ["/index.html", "/account/index.html", "/account/sessions/index.html"].includes(document) ? document.slice(0, -"index.html".length)
             : directory === null ? null
             : directory.kind === "daemon" ? "/search/"

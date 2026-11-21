@@ -43,29 +43,35 @@ test("{§web-configuration} missing and invalid limits never select code default
     }
 });
 
-test("{§web-configuration} browser YOLO uses the assembled floor and validates its switch", (t) => {
-    const original = process.env.PLURNK_WEB_YOLO;
-    t.after(() => {
-        if (original === undefined) delete process.env.PLURNK_WEB_YOLO;
-        else process.env.PLURNK_WEB_YOLO = original;
-    });
-    assert.equal(original, "0", "explicit review is the package default, not a browser fallback");
-    for (const value of ["0", "1"]) {
-        process.env.PLURNK_WEB_YOLO = value;
-        const mod = createModule();
-        assert.deepEqual(mod.mounts, ["/"]);
-        assert.deepEqual(mod.contained, []);
+test("{§web-configuration} {§web-workspace-creation} browser YOLO and PLURNK_WEB_ALLOW_PROJECT_FOLDER use the assembled floor and validate their switches", (t) => {
+    for (const [key, expectedDefault] of /** @type {const} */ ([
+        ["PLURNK_WEB_YOLO", "0"],
+        ["PLURNK_WEB_ALLOW_PROJECT_FOLDER", "1"],
+    ])) {
+        const original = process.env[key];
+        t.after(() => {
+            if (original === undefined) delete process.env[key];
+            else process.env[key] = original;
+        });
+        assert.equal(original, expectedDefault, `${key} default comes from .env.defaults`);
+        for (const value of ["0", "1"]) {
+            process.env[key] = value;
+            const mod = createModule();
+            assert.deepEqual(mod.mounts, ["/"]);
+            assert.deepEqual(mod.contained, []);
+        }
+        for (const value of ["", "true", "2"]) {
+            process.env[key] = value;
+            const mod = createModule();
+            assert.deepEqual(mod.mounts, ["/"]);
+            assert.equal(mod.contained?.length, 1);
+            assert.equal(mod.contained?.[0]?.key, key);
+            assert.match(mod.contained?.[0]?.message ?? "", /must be 0 or 1/u);
+        }
+        delete process.env[key];
+        assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
+        process.env[key] = original;
     }
-    for (const value of ["", "true", "2"]) {
-        process.env.PLURNK_WEB_YOLO = value;
-        const mod = createModule();
-        assert.deepEqual(mod.mounts, ["/"]);
-        assert.equal(mod.contained?.length, 1);
-        assert.equal(mod.contained?.[0]?.key, "PLURNK_WEB_YOLO");
-        assert.match(mod.contained?.[0]?.message ?? "", /must be 0 or 1/u);
-    }
-    delete process.env.PLURNK_WEB_YOLO;
-    assert.throws(createModule, { message: "PLURNK_WEB_YOLO is missing from the assembled environment floor." });
 });
 
 test("{§web-configuration} diagram deadlines cannot overflow Node's timer range", (t) => {
@@ -106,7 +112,7 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
         credentials: { face: () => null },
         registerHttpRoute(_prefix, serve) { handler = serve; },
         listWorkspaces: async () => [{ id: 1, name: "work", project_root: null, project_label: null, archived_at: null }],
-        listSessions: async () => [{ id: 2, name: "user", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null }],
+        listSessions: async () => [{ id: 2, name: "session1", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null }],
         renameWorkspace: async (id, name) => ({ id, name }),
     }));
     const server = createServer(handler);
@@ -140,6 +146,10 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
     });
     assert.equal(renameRes.status, 303, "rename does not depend on creation tokens and stays live");
     assert.equal(renameRes.headers.get("location"), "/~/renamed");
+    assert.equal((await fetch(`${base}/settings/?workspace=work`)).status, 200, "/settings/ stays live when unrelated knobs are contained");
+    assert.equal((await fetch(`${base}/settings/?workspace=work`, { method: "HEAD" })).status, 200);
+    assert.equal((await fetch(`${base}/settings/?workspace=missing`)).status, 404);
+    assert.equal((await fetch(`${base}/settings/`)).status, 404);
 });
 
 test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session arrival, converges empty-daemon allocation, and records POST /place", async (t) => {
@@ -158,10 +168,10 @@ test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session ar
         registerHttpRoute(_prefix, serve) { handler = serve; },
         listWorkspaces: async () => workspaces,
         listSessions: async (wsId) => sessionsByWs.get(wsId) ?? [],
-        createWorkspace: async ({ projectRoot }) => {
+        createWorkspace: async ({ name, projectRoot }) => {
             if (holdStarter) await starterGate.promise;
             wsAllocated += 1;
-            const ws = { id: 10 + wsAllocated, name: `amber-brook-${wsAllocated}`, project_root: projectRoot ?? null, project_label: projectRoot ?? null, archived_at: null };
+            const ws = { id: 10 + wsAllocated, name: name ?? `amber-brook-${wsAllocated}`, project_root: projectRoot ?? null, project_label: projectRoot ?? null, archived_at: null };
             workspaces = [...workspaces, ws];
             return { workspaceId: ws.id, workspaceName: ws.name, projectRoot: ws.project_root, projectLabel: ws.project_label };
         },
@@ -182,7 +192,7 @@ test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session ar
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
 
-    // Tier 3: racing GET / requests on an empty daemon converge on one starter <ws>#user allocation.
+    // Tier 3: racing GET / requests on an empty daemon converge on one starter workspace1#session1 allocation.
     const racing = [
         fetch(`${base}/`, { redirect: "manual" }),
         fetch(`${base}/`, { redirect: "manual" }),
@@ -193,29 +203,29 @@ test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session ar
     const [firstArrival, secondArrival] = await Promise.all(racing);
     assert.equal(firstArrival.status, 303);
     assert.equal(secondArrival.status, 303);
-    assert.equal(firstArrival.headers.get("location"), "/~/amber-brook-1#user");
-    assert.equal(secondArrival.headers.get("location"), "/~/amber-brook-1#user");
+    assert.equal(firstArrival.headers.get("location"), "/~/workspace1#session1");
+    assert.equal(secondArrival.headers.get("location"), "/~/workspace1#session1");
     assert.equal(wsAllocated, 1, "starterFlight allocates one workspace across concurrent GET / requests");
-    assert.equal(sessAllocated, 1, "starterFlight allocates one user session across concurrent GET / requests");
+    assert.equal(sessAllocated, 1, "starterFlight allocates one session1 session across concurrent GET / requests");
     assert.match(firstArrival.headers.get("set-cookie") ?? "", /^plurnk_web_place=11:101;/u);
 
     // Add a second workspace with a newer session and an older remembered session in workspace 11.
     workspaces.push({ id: 12, name: "cobalt-pine", project_root: null, project_label: null, archived_at: null });
     sessionsByWs.set(11, [
-        { id: 101, name: "user", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 1, at: 1000, coordinate: "1/1/1", excerpt: "Earlier", continued: false } },
+        { id: 101, name: "session1", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 1, at: 1000, coordinate: "1/1/1", excerpt: "Earlier", continued: false } },
         { id: 102, name: "review", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 2, at: 2000, coordinate: "1/1/1", excerpt: "Review", continued: false } },
     ]);
     sessionsByWs.set(12, [
         { id: 201, name: "latest", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 9, at: 9000, coordinate: "1/1/1", excerpt: "Newest", continued: false } },
     ]);
 
-    // Tier 1: browser with plurnk_web_place=11:102 returns to /~/amber-brook-1#review instead of cobalt-pine#latest.
+    // Tier 1: browser with plurnk_web_place=11:102 returns to /~/workspace1#review instead of cobalt-pine#latest.
     const rememberedRes = await fetch(`${base}/`, {
         headers: { cookie: "plurnk_web_place=11:102" },
         redirect: "manual",
     });
     assert.equal(rememberedRes.status, 303);
-    assert.equal(rememberedRes.headers.get("location"), "/~/amber-brook-1#review");
+    assert.equal(rememberedRes.headers.get("location"), "/~/workspace1#review");
 
     // Tier 2: stale/archived cookie falls through to the most recently active unarchived root session.
     sessionsByWs.get(11)[1].archived_at = "2026-11-20T00:00:00Z";
@@ -231,14 +241,14 @@ test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session ar
     const placeRes = await fetch(`${base}/place`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
-        body: new URLSearchParams({ workspace: "amber-brook-1", session: "user" }),
+        body: new URLSearchParams({ workspace: "workspace1", session: "session1" }),
     });
     assert.equal(placeRes.status, 204);
     assert.match(placeRes.headers.get("set-cookie") ?? "", /^plurnk_web_place=11:101;/u);
     assert.equal((await fetch(`${base}/place`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example" },
-        body: "workspace=amber-brook-1&session=user",
+        body: "workspace=workspace1&session=session1",
     })).status, 403);
 });
 

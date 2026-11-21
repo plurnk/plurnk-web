@@ -218,7 +218,7 @@ export default function observeOverview(main) {
             if (filterStatus === "active" && !isActiveSession(session)) return false;
             if (filterStatus === "gated" && session.gates <= 0) return false;
             if (filterStatus === "failed" && session.lifecycle !== "failed") return false;
-            if (filterKind === "chats" && session.kind === "work") return false;
+            if (filterKind === "root" && session.kind === "work") return false;
             if (filterKind === "work" && session.kind !== "work") return false;
             if (query === "") return true;
             if (session.matchedQuery === query) return true;
@@ -255,7 +255,7 @@ export default function observeOverview(main) {
             let childMatch = false;
             const childList = $(row, ":scope > article > details > ul");
             if (childList instanceof HTMLUListElement) {
-                if (filterKind === "chats") {
+                if (filterKind === "root") {
                     childList.hidden = true;
                 } else {
                     childList.hidden = false;
@@ -266,7 +266,7 @@ export default function observeOverview(main) {
                     }
                 }
             }
-            const visible = (session ? matchesSelf(session, ws) : true) || (filterKind !== "chats" && childMatch);
+            const visible = (session ? matchesSelf(session, ws) : true) || (filterKind !== "root" && childMatch);
             row.hidden = !visible;
             return visible;
         };
@@ -297,7 +297,7 @@ export default function observeOverview(main) {
                 }
                 const bgDetails = $(wsItem, ":scope > article > details[data-workspace-background]");
                 if (bgDetails instanceof HTMLDetailsElement) {
-                    if (filterKind === "chats") {
+                    if (filterKind === "root") {
                         bgDetails.hidden = true;
                     } else {
                         let visibleBg = 0;

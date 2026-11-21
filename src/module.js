@@ -3,7 +3,7 @@ import { MIMEType } from "node:util";
 import { ConfigurationError, Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
 import indexDocument from "./index-document.js";
-import { directoryPath, parseDirectory } from "./directory-addresses.js";
+import { DEFAULT_SESSION_NAME, directoryPath, nextSequentialName, parseDirectory } from "./directory-addresses.js";
 import Documents, { isUntouchedDraftSession, orderByReply } from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
 import {
@@ -47,6 +47,7 @@ import Diagrams from "./diagrams.js";
  *   yolo: boolean | null,
  *   overviewSessions: number | null,
  *   overviewExcerptChars: number | null,
+ *   allowProjectFolder?: boolean | null,
  * }} DocumentKnobs
  */
 /**
@@ -73,7 +74,7 @@ function productionAssets() {
             if (!inventory.some(([path, , type]) => path === stylesheetPath && type === "text/css")) throw new Error("The application stylesheet is absent from the web asset inventory.");
             return stylesheetPath;
         },
-        async start({ yolo, overviewSessions, overviewExcerptChars }) {
+        async start({ yolo, overviewSessions, overviewExcerptChars, allowProjectFolder = true }) {
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
@@ -83,7 +84,7 @@ function productionAssets() {
             ]))));
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), yolo, overviewSessions, overviewExcerptChars);
+            const documents = new Documents(root.body.toString("utf8"), yolo, overviewSessions, overviewExcerptChars, allowProjectFolder);
             loaded = { documents, resources };
         },
         async snapshot() {
@@ -110,6 +111,7 @@ export default function createModule(assets = productionAssets()) {
         }
     };
     const yolo = contain(() => Knob.flag("PLURNK_WEB_YOLO"));
+    const allowProjectFolder = contain(() => Knob.flag("PLURNK_WEB_ALLOW_PROJECT_FOLDER"));
     const overviewSessions = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_SESSIONS", 1));
     const overviewExcerptChars = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", 1));
     const limits = { ttl: contain(() => Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1)) };
@@ -144,18 +146,70 @@ export default function createModule(assets = productionAssets()) {
                 if (registration === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
                 session = new Session(credentials, registration, face, limits);
             }
-            await assets.start({ yolo, overviewSessions, overviewExcerptChars });
+            await assets.start({ yolo, overviewSessions, overviewExcerptChars, allowProjectFolder });
 
             /** @param {import("node:http").IncomingMessage} req */
             const isSecureRequest = (req) => session !== null
                 ? session.secure(req)
                 : Boolean(req.socket && "encrypted" in req.socket && req.socket.encrypted);
 
+            /** @param {unknown} cause */
+            const isConflictError = (cause) => Problems.fromError(cause)?.status === 409;
+
+            /**
+             * {§web-workspace-creation} Allocate a sequential `workspaceX` across all active and archived workspaces, retrying on 409.
+             * @param {readonly { readonly name: string }[]} [initialWorkspaces]
+             */
+            const createSequentialWorkspace = async (initialWorkspaces) => {
+                if (typeof seam.listWorkspaces !== "function") {
+                    return seam.createWorkspace({ name: "workspace1", projectRoot: null });
+                }
+                const seen = new Set((initialWorkspaces ?? await seam.listWorkspaces()).map(({ name }) => name));
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    const candidate = nextSequentialName("workspace", seen);
+                    try {
+                        return await seam.createWorkspace({ name: candidate, projectRoot: null });
+                    } catch (cause) {
+                        if (isConflictError(cause) && attempt < 7) {
+                            seen.add(candidate);
+                            continue;
+                        }
+                        throw cause;
+                    }
+                }
+                return seam.createWorkspace({ projectRoot: null });
+            };
+
+            /**
+             * {§web-session-creation} Allocate a sequential `sessionX` across all active and archived sessions in the workspace, retrying on 409.
+             * @param {number} workspaceId
+             * @param {readonly { readonly name: string }[]} [initialSessions]
+             */
+            const createSequentialSession = async (workspaceId, initialSessions) => {
+                if (typeof seam.listSessions !== "function") {
+                    return seam.createSession({ workspaceId, name: DEFAULT_SESSION_NAME });
+                }
+                const seen = new Set((initialSessions ?? await seam.listSessions(workspaceId)).map(({ name }) => name));
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    const candidate = nextSequentialName("session", seen);
+                    try {
+                        return await seam.createSession({ workspaceId, name: candidate });
+                    } catch (cause) {
+                        if (isConflictError(cause) && attempt < 7) {
+                            seen.add(candidate);
+                            continue;
+                        }
+                        throw cause;
+                    }
+                }
+                return seam.createSession({ workspaceId });
+            };
+
             /**
              * {§web-arrival} Resolve `GET /` in three tiers:
              * 1. This browser's remembered unarchived `<workspaceId>:<sessionId>` cookie;
              * 2. Most recently active unarchived root model session on the daemon;
-             * 3. Allocate a single starter `<random-ws>#user` when the daemon holds zero unarchived model sessions.
+             * 3. Allocate a single starter `<workspaceX>#session1` when the daemon holds zero unarchived model sessions.
              * Returns `null` only when `seam` has no workspace creation seam and zero sessions exist (static asset fixture).
              * @param {import("node:http").IncomingMessage} req
              */
@@ -236,7 +290,7 @@ export default function createModule(assets = productionAssets()) {
                         wsName = existingWs.name;
                         existing = await seam.listSessions(wsId);
                     } else {
-                        const created = await seam.createWorkspace({ projectRoot: null });
+                        const created = await createSequentialWorkspace(latestWorkspaces);
                         wsId = created.workspaceId;
                         wsName = created.workspaceName;
                     }
@@ -246,11 +300,7 @@ export default function createModule(assets = productionAssets()) {
                         if (loc === null) throw new Error("Starter session has no directory address.");
                         return { location: loc, workspaceId: wsId, sessionId: unarchivedModel.id };
                     }
-                    const userNameTaken = existing.some(({ name }) => name === "user");
-                    const createdSess = await seam.createSession({
-                        workspaceId: wsId,
-                        ...(userNameTaken ? {} : { name: "user" }),
-                    });
+                    const createdSess = await createSequentialSession(wsId, existing);
                     const loc = directoryPath({ kind: "session", workspace: wsName, session: createdSess.sessionName });
                     if (loc === null) throw new Error("Starter session has no directory address.");
                     return { location: loc, workspaceId: wsId, sessionId: createdSess.sessionId };
@@ -271,6 +321,7 @@ export default function createModule(assets = productionAssets()) {
                 const directory = parseDirectory(pathname);
                 const home = indexDocument(pathname) === "/index.html";
                 const search = indexDocument(pathname) === "/search/index.html";
+                const settings = indexDocument(pathname) === "/settings/index.html";
                 const account = indexDocument(pathname) === "/account/index.html";
                 const sessions = indexDocument(pathname) === "/account/sessions/index.html";
                 const revoke = /^\/account\/sessions\/([^/]+)\/revoke$/u.exec(pathname);
@@ -351,6 +402,10 @@ export default function createModule(assets = productionAssets()) {
                             req.resume();
                             throw new RequestError(503, "Creation forms are unavailable because their configuration is invalid.");
                         }
+                        if (creation && allowProjectFolder === null) {
+                            req.resume();
+                            throw new RequestError(503, "Workspace creation is unavailable because PLURNK_WEB_ALLOW_PROJECT_FOLDER is invalid.");
+                        }
                         let size = 0;
                         const chunks = [];
                         for await (const chunk of req.iterator({ destroyOnReturn: false })) {
@@ -382,14 +437,28 @@ export default function createModule(assets = productionAssets()) {
                             const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
                             if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
                             const name = fields.get("name") ?? "";
+                            const rawUseProject = fields.get("useProjectFolder") ?? "";
                             const rawProjectRoot = fields.get("projectRoot") ?? "";
+                            if (!allowProjectFolder && (rawUseProject !== "" || rawProjectRoot !== "")) {
+                                throw new RequestError(403, "Project folder workspaces are disabled on this web interface.");
+                            }
+                            if (rawUseProject === "1" && rawProjectRoot.trim() === "") {
+                                throw new RequestError(400, "Enter a project folder path.", {
+                                    retry: documents.retryCreation(name, rawProjectRoot, true),
+                                });
+                            }
                             const projectRoot = rawProjectRoot === "" ? null : rawProjectRoot;
                             /** @type {string | undefined} */
                             let placeCookie;
                             const targetLocation = await creations.submit(formToken, async () => {
                                 let created;
-                                try { created = await seam.createWorkspace({ ...(name === "" ? {} : { name }), projectRoot }); }
-                                catch (cause) { throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(name, rawProjectRoot)); }
+                                try {
+                                    created = name === "" && projectRoot === null
+                                        ? await createSequentialWorkspace()
+                                        : await seam.createWorkspace({ ...(name === "" ? {} : { name }), projectRoot });
+                                } catch (cause) {
+                                    throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(name, rawProjectRoot, projectRoot !== null));
+                                }
                                 const wsName = created.workspaceName;
                                 const wsRoot = created.projectRoot;
                                 if (projectRoot === null && wsRoot !== null) {
@@ -399,7 +468,7 @@ export default function createModule(assets = productionAssets()) {
                                     throw new Error("The daemon created a folderless workspace when a project folder was requested.");
                                 }
                                 if (typeof seam.createSession === "function" && typeof created.workspaceId === "number") {
-                                    const sess = await seam.createSession({ workspaceId: created.workspaceId, name: "user" });
+                                    const sess = await createSequentialSession(created.workspaceId, []);
                                     placeCookie = formatPlaceCookie(created.workspaceId, sess.sessionId, secure);
                                     return { workspaceName: wsName, projectRoot: wsRoot, sessionName: sess.sessionName };
                                 }
@@ -438,8 +507,13 @@ export default function createModule(assets = productionAssets()) {
                             let placeCookie;
                             const targetLocation = await creations.submit(formToken, async () => {
                                 let createdSession;
-                                try { createdSession = await seam.createSession({ workspaceId: ws.id, ...(sessionName === "" ? {} : { name: sessionName }) }); }
-                                catch (cause) { throw refusal(cause, "The daemon could not create the session.", documents.retrySession(ws.name, sessionName)); }
+                                try {
+                                    createdSession = sessionName === ""
+                                        ? await createSequentialSession(ws.id)
+                                        : await seam.createSession({ workspaceId: ws.id, name: sessionName });
+                                } catch (cause) {
+                                    throw refusal(cause, "The daemon could not create the session.", documents.retrySession(ws.name, sessionName));
+                                }
                                 placeCookie = formatPlaceCookie(ws.id, createdSession.sessionId, secure);
                                 const path = directoryPath({ kind: "session", workspace: ws.name, session: createdSession.sessionName });
                                 if (path === null) throw new Error("The daemon returned a session name without a directory address.");
@@ -501,11 +575,7 @@ export default function createModule(assets = productionAssets()) {
                                 }
                             }
                             if (ws.archived_at === null && typeof seam.createSession === "function") {
-                                const userNameTaken = afterSessions.some(({ name }) => name === "user");
-                                const fresh = await seam.createSession({
-                                    workspaceId: ws.id,
-                                    ...(userNameTaken ? {} : { name: "user" }),
-                                });
+                                const fresh = await createSequentialSession(ws.id, afterSessions);
                                 const freshPath = directoryPath({ kind: "session", workspace: ws.name, session: fresh.sessionName });
                                 if (freshPath !== null) {
                                     redirect(res, freshPath, formatPlaceCookie(ws.id, fresh.sessionId, secure));
@@ -574,7 +644,7 @@ export default function createModule(assets = productionAssets()) {
                             return;
                         }
                     }
-                    if (directory !== null || home || search || account || sessions) {
+                    if (directory !== null || home || search || settings || account || sessions) {
                         if (req.method !== "GET" && req.method !== "HEAD") {
                             res.setHeader("allow", "GET, HEAD");
                             throw new RequestError(405, "Method not allowed.");
@@ -595,6 +665,20 @@ export default function createModule(assets = productionAssets()) {
                             }
                         }
                         const secure = isSecureRequest(req);
+                        if (settings) {
+                            if (typeof seam.listWorkspaces !== "function" || typeof seam.listSessions !== "function") {
+                                throw new RequestError(404, "Workspace settings are unavailable without a daemon workspace directory.");
+                            }
+                            const params = new URL(rawUrl, "http://settings.local").searchParams;
+                            const wsName = params.get("workspace") ?? "";
+                            const sessName = params.get("session");
+                            if (!wsName) throw new RequestError(404, "Workspace not found.");
+                            const body = await documents.settings(wsName, sessName, /** @type {any} */ (seam), admitted);
+                            if (body === null) throw new RequestError(404, "Workspace not found.");
+                            res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
+                            res.end(req.method === "HEAD" ? undefined : body);
+                            return;
+                        }
                         if (search) {
                             if (typeof seam.listWorkspaces !== "function" || typeof seam.listSessions !== "function") {
                                 throw new RequestError(404, "Search is unavailable without a daemon workspace directory.");

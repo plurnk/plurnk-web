@@ -69,6 +69,7 @@ export default async function verifyCommands(t) {
                         ["Stop", "⏹️", "Stop"],
                         ["Attach image", "📎", "Attach image"],
                         ["Commands and skills", "/", "Commands and skills (/)"],
+                        ["Sessions", "☰", "Sessions"],
                     ]) {
                         const button = page.getByRole("button", { name, exact: true, includeHidden: true });
                         assert.equal(await button.getAttribute("title"), expectedTitle);
@@ -83,7 +84,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await attach.isVisible(), false, "no Attach image is presented without prompt.image capability");
                     assert.equal(await insertCmd.isVisible(), true);
                     const actions = page.getByRole("group", { name: "Session actions", exact: true });
-                    assert.equal(await actions.locator("button").count(), 4);
+                    assert.equal(await actions.locator("button").count(), 5);
                     assert.equal(await send.evaluate((button) => button.form.id), "session-compose");
                     assert.equal(await stop.evaluate((button) => button.form.id), "session-stop", "Stop has independent native submission, not reset semantics");
                     assert.equal(await stop.getAttribute("type"), "submit");
@@ -429,7 +430,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await command("/model"), true, "a later explicit command can recover");
                     for (const input of requests) {
                         if (input.method !== "providers/list") {
-                            assert.equal(input.params.sessionId, "7#user");
+                            assert.equal(input.params.sessionId, "7#session1");
                         }
                         assert.equal(input.params.messages, undefined);
                         assert.equal(input.params._meta?.plurnk?.interactive, undefined);

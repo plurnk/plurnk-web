@@ -17,8 +17,8 @@ test("{§web-workspace-creation} one token settles once and converges racing and
 
     const sessionToken = randomUUID();
     assert.equal(await creations.submit(sessionToken, async () => ({
-        workspaceId: 41, workspaceName: "fresh", projectRoot: null, projectLabel: null, sessionName: "user",
-    })), "/~/fresh#user");
+        workspaceId: 41, workspaceName: "fresh", projectRoot: null, projectLabel: null, sessionName: "session1",
+    })), "/~/fresh#session1");
 });
 
 test("{§web-workspace-creation} racing posts share one in-flight creation", async () => {

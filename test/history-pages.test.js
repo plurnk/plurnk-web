@@ -293,7 +293,7 @@ test("{§web-session-observer} {§web-session-reasoning} replay_complete transit
                             sessionUpdate: "agent_thought_chunk",
                             messageId: "hist-thought-1",
                             content: { type: "text", text: "Historical thought during replay" },
-                            _meta: { plurnk: { sessionName: "user", loopSeq: 1, turnSeq: 1 } },
+                            _meta: { plurnk: { sessionName: "session1", loopSeq: 1, turnSeq: 1 } },
                         },
                         {
                             sessionUpdate: "notice",
@@ -315,7 +315,7 @@ test("{§web-session-observer} {§web-session-reasoning} replay_complete transit
                             sessionUpdate: "agent_thought_chunk",
                             messageId: "live-thought-2",
                             content: { type: "text", text: "Live held thought after replay_complete" },
-                            _meta: { plurnk: { sessionName: "user", loopSeq: 2, turnSeq: 1 } },
+                            _meta: { plurnk: { sessionName: "session1", loopSeq: 2, turnSeq: 1 } },
                         },
                         {
                             sessionUpdate: "notice",
@@ -346,7 +346,7 @@ test("{§web-session-observer} {§web-session-reasoning} replay_complete transit
     const errors = [];
     const agent = new SessionAgent({
         url: "http://127.0.0.1:1066/acp",
-        sessionId: "7#user",
+        sessionId: "7#session1",
         fetch: transport.fetch,
     });
     const outcome = await agent.resume({}, {
@@ -413,7 +413,7 @@ test("{§web-session-observer} {§web-session-reasoning} replay_complete transit
     const fallbackErrors = [];
     const fallbackAgent = new SessionAgent({
         url: "http://127.0.0.1:1066/acp",
-        sessionId: "7#user",
+        sessionId: "7#session1",
         fetch: fallbackTransport.fetch,
     });
     const fallbackOutcome = await fallbackAgent.resume({}, {
@@ -493,7 +493,7 @@ test("{§web-session-observer} {§web-session-input} {§web-session-conversation
         });
         const agent = new SessionAgent({
             url: "http://127.0.0.1:1066/acp",
-            sessionId: "7#user",
+            sessionId: "7#session1",
             state: { plurnk: { availableCommands } },
             fetch: transport.fetch,
         });

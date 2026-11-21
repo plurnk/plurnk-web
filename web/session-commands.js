@@ -1,5 +1,5 @@
 import { $, $$, on, the } from "on_the_money";
-import { directoryPath } from "../src/directory-addresses.js";
+import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
 import { isRecord } from "./session-translator.js";
 import { listModels, sessionConfigOption, sessionEffort, sessionModel, modelLabel } from "./session-models.js";
 import { allowOptionId, rejectOptionId } from "./session-review.js";
@@ -486,7 +486,7 @@ export default function sessionCommands(controls, actions) {
         const workspaceName = $('#session-workspace [data-text="workspace-name"]')?.textContent?.trim()
             || $("#session-workspace")?.textContent?.trim()
             || "default";
-        const sessionName = $("#session-status")?.getAttribute("data-session-name") || "user";
+        const sessionName = $("#session-status")?.getAttribute("data-session-name") || "session1";
         return { workspaceName, sessionName };
     };
 
@@ -526,13 +526,16 @@ export default function sessionCommands(controls, actions) {
                 return true;
             }
             const { name, rest, args } = parseCommand(text);
-            if (familyCommands.has(name) && $('#workspace-tabs[data-live="true"]')) {
+            if (familyCommands.has(name)) {
+                const { workspaceName, sessionName } = readIdentity();
+                const settingsUrl = workspaceSettingsPath(workspaceName, sessionName, name);
                 const header = $(row, "header");
                 const dismiss = header ? $(header, "[data-dismiss-command]") : null;
-                if (header && dismiss) {
-                    const openBtn = $.clone(header, "#workspace-open-settings");
-                    openBtn.setAttribute("data-open-workspace-settings", name);
-                    header.insertBefore(openBtn, dismiss);
+                if (settingsUrl !== null && header && dismiss) {
+                    const openLink = $.clone(header, "#workspace-open-settings");
+                    openLink.setAttribute("href", settingsUrl);
+                    openLink.setAttribute("data-open-workspace-settings", name);
+                    header.insertBefore(openLink, dismiss);
                 }
             }
             /** @type {string} */

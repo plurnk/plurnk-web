@@ -26,6 +26,7 @@ export default function sessionState(element, main = $("#main")) {
             the(wsControl, {
                 "workspace-name": latestIdentity.workspaceName,
                 "workspace-path": latestIdentity.workspacePath,
+                "workspace-settings-path": latestIdentity.workspaceSettingsPath,
                 "workspace-icon": latestIdentity.workspaceIcon,
                 "workspace-icon-label": latestIdentity.workspaceIconLabel,
             });
@@ -34,12 +35,12 @@ export default function sessionState(element, main = $("#main")) {
             if (el.textContent !== sessionName) el.textContent = sessionName;
         }
         for (const input of $$('input[name="workspace"]')) {
-            if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-tab-archive], [data-tab-new]")) {
+            if (input instanceof HTMLInputElement && input.type === "hidden") {
                 input.value = latestIdentity.workspaceName;
             }
         }
         for (const input of $$('input[name="session"]')) {
-            if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-tab-archive]")) {
+            if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-inline-unarchive]")) {
                 input.value = sessionName;
             }
         }

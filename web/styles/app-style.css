@@ -17,6 +17,11 @@
         /* {§web-conversation-surfaces} Resolve theme surfaces before per-entry overrides. */
         --plurnk-user-surface: color-mix(in srgb, var(--otm-primary) 12%, var(--otm-card-background-color));
         --plurnk-user-border: color-mix(in srgb, var(--otm-primary) 28%, var(--otm-muted-border-color));
+        --plurnk-actor: light-dark(#9a3412, #f59e0b);
+        --plurnk-actor-ink: light-dark(#9a3412, #fbbf24);
+        --plurnk-actor-surface: color-mix(in srgb, var(--plurnk-actor) 13%, var(--otm-card-background-color));
+        --plurnk-actor-reply-surface: color-mix(in srgb, var(--plurnk-actor) 4%, var(--otm-card-background-color));
+        --plurnk-actor-border: color-mix(in srgb, var(--plurnk-actor) 36%, var(--otm-muted-border-color));
         --plurnk-reply-surface: var(--otm-card-background-color);
         --plurnk-working-surface: color-mix(in srgb, var(--otm-color) 6%, var(--otm-card-background-color));
         --plurnk-pill-surface: color-mix(in srgb, var(--otm-background-color) 68%, var(--otm-card-background-color));
@@ -41,14 +46,18 @@
         border-block-end: var(--otm-border-width) solid var(--otm-muted-border-color);
     }
 
+    body > header > a,
+    header #header-place a {
+        text-decoration: none;
+    }
+
     body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
         color: var(--otm-muted-color);
     }
 
     header :where(#header-place button, nav button),
     #session-usage > summary,
-    #dialog-session-model > article > footer > button,
-    #dialog-workspace-settings nav[aria-label="Settings sections"] button {
+    #dialog-session-model > article > footer > button {
         --otm-primary-background: transparent;
         --otm-primary-hover-background: transparent;
         --otm-primary-inverse: var(--otm-primary);
@@ -56,19 +65,15 @@
         cursor: pointer;
     }
 
+    #workspace-tabs > :where(button),
     #workspace-tabs :where(form > button) {
         --otm-primary-background: transparent;
         --otm-primary-hover-background: var(--plurnk-working-surface);
-        --otm-primary-inverse: var(--otm-muted-color);
-
-        border-radius: var(--otm-border-radius);
-        cursor: pointer;
-    }
-
-    #workspace-tabs > :where(form > button) {
         --otm-primary-inverse: var(--otm-primary);
 
+        border-radius: var(--otm-border-radius);
         font-weight: 700;
+        cursor: pointer;
     }
 
     dialog article > header button[rel="prev"] {
@@ -79,8 +84,7 @@
 
     /* {§web-session-input} Cancellation and secondary controls use the secondary control palette. */
     button[form="session-stop"],
-    #search-controls > button[type="button"],
-    #dialog-workspace-settings > :where(article > footer > button) {
+    #workspace-archive :where(button) {
         --otm-primary-background: var(--otm-secondary-background);
         --otm-primary-hover-background: var(--otm-secondary-hover-background);
         --otm-primary-inverse: var(--otm-secondary-inverse);
@@ -97,16 +101,19 @@
         border-end-end-radius: 0;
     }
 
-    #workspace-tabs,
-    #dialog-workspace-settings nav[aria-label="Settings sections"] > ul {
+    #workspace-tabs {
+        border-block-start: var(--otm-border-width) solid var(--otm-muted-border-color);
+    }
+
+    #workspace-settings nav[aria-label="Settings sections"] > ul {
         border-block-end: var(--otm-border-width) solid var(--otm-muted-border-color);
     }
 
     #workspace-tabs :where(ul > li) {
         border: var(--otm-border-width) solid var(--otm-muted-border-color);
-        border-block-end: calc(var(--otm-border-width) * 2) solid transparent;
-        border-start-start-radius: var(--otm-border-radius);
-        border-start-end-radius: var(--otm-border-radius);
+        border-block-start: calc(var(--otm-border-width) * 2) solid transparent;
+        border-end-start-radius: var(--otm-border-radius);
+        border-end-end-radius: var(--otm-border-radius);
         background-color: var(--plurnk-working-surface);
     }
 
@@ -115,16 +122,12 @@
         text-decoration: none;
     }
 
-    #dialog-workspace-settings > :where(article > footer) {
-        border-block-start: var(--otm-border-width) solid var(--otm-muted-border-color);
-    }
-
-    #dialog-workspace-settings nav[aria-label="Settings sections"] button {
-        border-radius: 0;
+    #workspace-settings :where(nav[aria-label="Settings sections"] a) {
         border-block-end: calc(var(--otm-border-width) * 2) solid transparent;
+        text-decoration: none;
     }
 
-    #dialog-workspace-switcher :where(ul > li > a) {
+    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul > li > a) {
         border-radius: var(--otm-border-radius);
         text-decoration: none;
     }

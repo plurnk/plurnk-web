@@ -1,4 +1,4 @@
-import { directoryPath } from "../src/directory-addresses.js";
+import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
 
 /** @typedef {Omit<import("@plurnk/plurnk-acp/client").AcpDescendantState, "gates"> & {gates: import("@plurnk/plurnk-acp/client").AcpDescendantState["gates"] | number}} DescendantItem */
 /** @typedef {{session: DescendantItem, children: DescendantNode[]}} DescendantNode */
@@ -204,7 +204,11 @@ export function workspaceIdentity({ name, projectLabel }, session) {
     if (workspacePath === null || sessionPath === null) throw new Error("Workspace has no directory address.");
     const namedFolder = projectLabel !== null && projectLabel !== name;
     return {
-        workspaceName: name, workspacePath, sessionPath, projectLabel: namedFolder ? projectLabel : "",
+        workspaceName: name,
+        workspacePath,
+        sessionPath,
+        workspaceSettingsPath: workspaceSettingsPath(name, session) ?? workspacePath,
+        projectLabel: namedFolder ? projectLabel : "",
         workspaceIcon: projectLabel !== null && !namedFolder ? "🗂️" : "☁️",
         workspaceIconLabel: projectLabel === null ? "Folderless workspace" : namedFolder ? "Workspace" : "Project workspace",
         pageTitle: `${name}#${session} — Plurnk`,

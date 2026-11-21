@@ -29,8 +29,11 @@ on.target(window, "keydown", (event) => {
 });
 
 try {
+    const settingsMain = $('#main[data-page="settings"]');
     const tabs = $("#workspace-tabs");
-    if (tabs instanceof HTMLElement) {
+    if (settingsMain instanceof HTMLElement) {
+        (await import("./workspace-settings.js")).default(settingsMain);
+    } else if (tabs instanceof HTMLElement) {
         await (await import("./workspace-workbench.js")).default(tabs);
     } else {
         const session = $("#session-status");
