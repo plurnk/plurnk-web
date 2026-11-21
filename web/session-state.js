@@ -30,20 +30,16 @@ export default function sessionState(element, main = $("#main")) {
                 "workspace-icon-label": latestIdentity.workspaceIconLabel,
             });
         }
-        const sessionControl = $("#header-session");
-        if (sessionControl) {
-            the(sessionControl, "active-session-name", sessionName);
-        }
         for (const el of $$('[data-text="active-session-name"]')) {
             if (el.textContent !== sessionName) el.textContent = sessionName;
         }
         for (const input of $$('input[name="workspace"]')) {
-            if (input instanceof HTMLInputElement && input.type === "hidden") {
+            if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-tab-archive], [data-tab-new]")) {
                 input.value = latestIdentity.workspaceName;
             }
         }
         for (const input of $$('input[name="session"]')) {
-            if (input instanceof HTMLInputElement && input.type === "hidden") {
+            if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-tab-archive]")) {
                 input.value = sessionName;
             }
         }

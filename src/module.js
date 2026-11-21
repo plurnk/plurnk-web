@@ -4,7 +4,7 @@ import { ConfigurationError, Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
 import indexDocument from "./index-document.js";
 import { directoryPath, parseDirectory } from "./directory-addresses.js";
-import Documents, { orderByReply } from "./documents.js";
+import Documents, { isUntouchedDraftSession, orderByReply } from "./documents.js";
 import Session, { CALLBACK, CLIENT } from "./session.js";
 import {
     clearPlaceCookie,
@@ -29,6 +29,8 @@ import Diagrams from "./diagrams.js";
  *   listWorkspaces: () => Promise<readonly import("./documents.js").DirectoryWorkspace[]>,
  *   listSessions: (workspaceId: number) => Promise<readonly import("./documents.js").DirectorySession[]>,
  *   readSessionOverview?: import("@plurnk/plurnk-contracts/port").ApplicationPort["readSessionOverview"],
+ *   listSessionLoops?: import("@plurnk/plurnk-contracts/port").ApplicationPort["listSessionLoops"],
+ *   setSessionTitle?: import("@plurnk/plurnk-contracts/port").ApplicationPort["setSessionTitle"],
  *   listProviders?: import("@plurnk/plurnk-contracts/port").ApplicationPort["listProviders"],
  *   listModels?: import("@plurnk/plurnk-contracts/port").ApplicationPort["listModels"],
  *   readOperatorEnvironment?: () => Promise<unknown>,
@@ -178,10 +180,13 @@ export default function createModule(assets = productionAssets()) {
                 }
 
                 if (typeof seam.readSessionOverview === "function" && overviewSessions !== null && overviewExcerptChars !== null) {
-                    const overview = await seam.readSessionOverview({ limit: overviewSessions, excerptChars: overviewExcerptChars });
+                    const overview = await seam.readSessionOverview({ limit: Number.MAX_SAFE_INTEGER, excerptChars: overviewExcerptChars });
                     const unarchivedOverview = overview.sessions.filter((entry) => wsById.has(entry.workspaceId));
-                    const roots = unarchivedOverview.filter(({ parentSessionId }) => parentSessionId === null).toSorted(orderByReply);
-                    const chosen = roots[0] ?? unarchivedOverview.toSorted(orderByReply)[0];
+                    const childParents = new Set(unarchivedOverview.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+                    const nonDraft = unarchivedOverview.filter((entry) => !isUntouchedDraftSession(entry, childParents.has(entry.id)));
+                    const pool = nonDraft.length > 0 ? nonDraft : unarchivedOverview;
+                    const roots = pool.filter(({ parentSessionId }) => parentSessionId === null).toSorted(orderByReply);
+                    const chosen = roots[0] ?? pool.toSorted(orderByReply)[0];
                     if (chosen !== undefined) {
                         const ws = wsById.get(chosen.workspaceId);
                         if (ws !== undefined) {
@@ -191,19 +196,21 @@ export default function createModule(assets = productionAssets()) {
                     }
                 }
 
-                /** @type {Array<{ readonly ws: (typeof unarchivedWorkspaces)[number], readonly session: Awaited<ReturnType<NonNullable<typeof seam.listSessions>>>[number] }>} */
+                /** @type {Array<{ readonly ws: (typeof unarchivedWorkspaces)[number], readonly session: Awaited<ReturnType<NonNullable<typeof seam.listSessions>>>[number], readonly hasChildren: boolean }>} */
                 const allCandidates = [];
                 for (const ws of unarchivedWorkspaces) {
                     const sessions = await seam.listSessions(ws.id);
-                    for (const session of sessions) {
-                        if (session.origin === "model" && session.archived_at === null) {
-                            allCandidates.push({ ws, session });
-                        }
+                    const modelUnarchived = sessions.filter((s) => s.origin === "model" && s.archived_at === null);
+                    const childParents = new Set(modelUnarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+                    for (const session of modelUnarchived) {
+                        allCandidates.push({ ws, session, hasChildren: childParents.has(session.id) });
                     }
                 }
                 if (allCandidates.length > 0) {
                     allCandidates.sort((a, b) => orderByReply(a.session, b.session));
-                    const picked = allCandidates.find(({ session }) => session.parentSessionId === null) ?? allCandidates[0];
+                    const nonDraft = allCandidates.filter(({ session, hasChildren }) => !isUntouchedDraftSession(session, hasChildren));
+                    const candidatePool = nonDraft.length > 0 ? nonDraft : allCandidates;
+                    const picked = candidatePool.find(({ session }) => session.parentSessionId === null) ?? candidatePool[0];
                     if (picked !== undefined) {
                         const loc = directoryPath({ kind: "session", workspace: picked.ws.name, session: picked.session.name });
                         if (loc !== null) return { location: loc, cookie: formatPlaceCookie(picked.ws.id, picked.session.id, secure) };
@@ -276,6 +283,7 @@ export default function createModule(assets = productionAssets()) {
                 const workspaceUnarchive = pathname === "/workspaces/unarchive";
                 const sessionArchive = pathname === "/sessions/archive";
                 const sessionUnarchive = pathname === "/sessions/unarchive";
+                const sessionTitle = pathname === "/sessions/title";
                 const placeUpdate = pathname === "/place";
                 const diagram = pathname === "/render/mermaid";
                 const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
@@ -302,7 +310,7 @@ export default function createModule(assets = productionAssets()) {
                         else session.logout(req, res);
                         return;
                     }
-                    const isFormMutation = creation || rename || sessionCreation || workspaceArchive || workspaceUnarchive || sessionArchive || sessionUnarchive || placeUpdate;
+                    const isFormMutation = creation || rename || sessionCreation || workspaceArchive || workspaceUnarchive || sessionArchive || sessionUnarchive || sessionTitle || placeUpdate;
                     if (isFormMutation) {
                         const actionName = creation ? "create a workspace"
                             : rename ? "rename a workspace"
@@ -311,6 +319,7 @@ export default function createModule(assets = productionAssets()) {
                             : workspaceUnarchive ? "unarchive a workspace"
                             : sessionArchive ? "archive a session"
                             : sessionUnarchive ? "unarchive a session"
+                            : sessionTitle ? "title a session"
                             : "record the active session";
                         if (req.method !== "POST") {
                             res.setHeader("allow", "POST");
@@ -476,9 +485,13 @@ export default function createModule(assets = productionAssets()) {
                             if (!target) throw new RequestError(404, "Session not found.");
                             try { await seam.setSessionArchived({ workspaceId: ws.id, sessionId: target.id, archived: true }); }
                             catch (cause) { throw refusal(cause, "The daemon could not archive the session."); }
-                            const remaining = (await seam.listSessions(ws.id))
+                            const afterSessions = await seam.listSessions(ws.id);
+                            const unarchived = afterSessions
                                 .filter(({ origin, archived_at }) => origin === "model" && archived_at === null)
                                 .toSorted(orderByReply);
+                            const childParents = new Set(unarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+                            const nonDraft = unarchived.filter((entry) => !isUntouchedDraftSession(entry, childParents.has(entry.id)));
+                            const remaining = nonDraft.length > 0 ? nonDraft : unarchived;
                             if (remaining.length > 0) {
                                 const next = remaining[0];
                                 const path = directoryPath({ kind: "session", workspace: ws.name, session: next.name });
@@ -487,7 +500,41 @@ export default function createModule(assets = productionAssets()) {
                                     return;
                                 }
                             }
+                            if (ws.archived_at === null && typeof seam.createSession === "function") {
+                                const userNameTaken = afterSessions.some(({ name }) => name === "user");
+                                const fresh = await seam.createSession({
+                                    workspaceId: ws.id,
+                                    ...(userNameTaken ? {} : { name: "user" }),
+                                });
+                                const freshPath = directoryPath({ kind: "session", workspace: ws.name, session: fresh.sessionName });
+                                if (freshPath !== null) {
+                                    redirect(res, freshPath, formatPlaceCookie(ws.id, fresh.sessionId, secure));
+                                    return;
+                                }
+                            }
                             redirect(res, "/", clearPlaceCookie(secure));
+                            return;
+                        }
+                        if (sessionTitle) {
+                            const targetName = fields.get("workspace");
+                            const targetSession = fields.get("session");
+                            const rawTitle = (fields.get("title") ?? "").trim();
+                            if (!targetName || !targetSession || !rawTitle) {
+                                throw new RequestError(400, "Expected workspace, session name, and non-empty title.");
+                            }
+                            if (typeof seam.setSessionTitle !== "function") {
+                                throw new RequestError(501, "Session titling is unavailable.");
+                            }
+                            const workspaces = await seam.listWorkspaces();
+                            const ws = workspaces.find(({ name }) => name === targetName);
+                            if (!ws) throw new RequestError(404, "Workspace not found.");
+                            const workspaceSessions = await seam.listSessions(ws.id);
+                            const target = workspaceSessions.find(({ name }) => name === targetSession);
+                            if (!target) throw new RequestError(404, "Session not found.");
+                            try { await seam.setSessionTitle({ workspaceId: ws.id, sessionId: target.id, title: rawTitle }); }
+                            catch (cause) { throw refusal(cause, "The daemon could not title the session."); }
+                            const path = directoryPath({ kind: "session", workspace: ws.name, session: target.name });
+                            redirect(res, path ?? "/search/", formatPlaceCookie(ws.id, target.id, secure));
                             return;
                         }
                         if (sessionUnarchive) {

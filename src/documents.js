@@ -6,12 +6,10 @@ import { escapeHtml, RequestError } from "./http.js";
 // A dialog's dismissal; a form offered again on an error page has none.
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
 const FOLDER_PLUS_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8Z"/><path d="M8 7.25v3.5M6.25 9h3.5"/></svg>';
-const CHAT_PLUS_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H6l-3.5 2.5v-10Z"/><path d="M8 5v3.5M6.25 6.75h3.5"/></svg>';
-const SWITCHER_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h10M3 8h10M3 11h6"/></svg>';
 
 /** @typedef {{ readonly id: number, readonly name: string, readonly project_root: string | null, readonly project_label: string | null, readonly archived_at: string | null }} DirectoryWorkspace */
 /** @typedef {{ readonly id: number, readonly coordinate: string, readonly completion: 200 | 499, readonly at?: number, readonly excerpt?: string, readonly continued?: boolean }} DirectoryReply */
-/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
+/** @typedef {{ readonly id: number, readonly name: string, readonly parentSessionId: number | null, readonly origin: string, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly openingPrompt?: string, readonly matchedExcerpt?: string, readonly archived_at: string | null, readonly reply?: DirectoryReply | null, readonly workspaceId?: number }} DirectorySession */
 /** @typedef {{ readonly id: number, readonly name: string, readonly projectRoot: string | null }} DirectoryOverviewWorkspace */
 /** @typedef {{ readonly id: number, readonly workspaceId: number, readonly name: string, readonly parentSessionId: number | null, readonly kind?: string, readonly lifecycle: string, readonly gates?: number, readonly title?: string | null, readonly reply: DirectoryReply | null }} DirectoryOverviewSession */
 /** @typedef {{ readonly workspaces: readonly DirectoryOverviewWorkspace[], readonly sessions: readonly DirectoryOverviewSession[], readonly omitted?: number }} DirectoryOverview */
@@ -24,6 +22,48 @@ export const orderByReply = (a, b) => {
     return aReply !== null && bReply !== null ? bReply.id - aReply.id
         : aReply !== null ? -1 : bReply !== null ? 1 : 0;
 };
+
+/**
+ * {§web-workspace-tabs} {§web-search} Untouched 0-loop root leaf sessions are ephemeral drafts.
+ * @param {{ readonly parentSessionId: number | null, readonly kind?: string, readonly lifecycle: string, readonly reply?: unknown, readonly title?: string | null, readonly gates?: number }} entry
+ * @param {boolean} [hasModelChildren]
+ */
+export function isUntouchedDraftSession(entry, hasModelChildren = false) {
+    const kind = entry.kind ?? (entry.parentSessionId === null ? "root" : "work");
+    return entry.parentSessionId === null
+        && kind === "root"
+        && entry.lifecycle === "idle"
+        && (entry.reply ?? null) === null
+        && !(typeof entry.title === "string" && entry.title.trim() !== "")
+        && (entry.gates ?? 0) === 0
+        && !hasModelChildren;
+}
+
+/**
+ * @param {string} raw
+ * @param {number} maxChars
+ */
+function truncateSingleLine(raw, maxChars) {
+    const clean = raw.replaceAll(/\s+/gu, " ").trim();
+    if (clean.length <= maxChars) return clean;
+    return `${clean.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
+/**
+ * @param {string} raw
+ * @param {string} qLower
+ * @param {number} maxChars
+ */
+function matchSnippet(raw, qLower, maxChars) {
+    const clean = raw.replaceAll(/\s+/gu, " ").trim();
+    if (clean.length <= maxChars) return clean;
+    const idx = clean.toLowerCase().indexOf(qLower);
+    if (idx <= 0) return truncateSingleLine(clean, maxChars);
+    const half = Math.max(0, Math.floor((maxChars - qLower.length) / 2));
+    const start = Math.max(0, idx - half);
+    const slice = clean.slice(start, start + maxChars).trim();
+    return `${start > 0 ? "…" : ""}${slice}${start + maxChars < clean.length ? "…" : ""}`;
+}
 
 /** @typedef {"title" | "headerLead" | "sessionNavigation" | "headerTail" | "beforeMain" | "main" | "afterMain"} DocumentSlotName */
 /** @typedef {{ readonly literal: string } | { readonly slot: DocumentSlotName }} DocumentToken */
@@ -197,20 +237,15 @@ export default class Documents {
     }
 
     /**
-     * {§web-page-shell} {§web-workspace-creation} {§web-session-creation} Header creation forms and center place display.
-     * @param {{ canCreate?: boolean, workspaceName?: string | null, placeHtml?: string }} [options]
+     * {§web-page-shell} {§web-workspace-creation} Header workspace creation form and center place display.
+     * @param {{ canCreate?: boolean, placeHtml?: string }} [options]
      */
-    #headerLead({ canCreate = false, workspaceName = null, placeHtml = "" } = {}) {
+    #headerLead({ canCreate = false, placeHtml = "" } = {}) {
         const newWorkspace = canCreate
             ? `<form method="post" action="/workspaces/new" data-header-form><input type="hidden" name="token" value="${randomUUID()}">`
                 + `<button type="submit" data-action="new-workspace" aria-label="New workspace" title="New workspace">${FOLDER_PLUS_ICON} <span data-header-label data-i18n="new-workspace">New workspace</span></button></form>`
             : "";
-        const newSession = canCreate && workspaceName !== null
-            ? `<form method="post" action="/sessions/new" data-header-form data-new-session-form><input type="hidden" name="token" value="${randomUUID()}">`
-                + `<input type="hidden" name="workspace" value="${escapeHtml(workspaceName)}" data-bind="value:workspace-name">`
-                + `<button type="submit" data-action="new-session" aria-label="New session" title="New session">${CHAT_PLUS_ICON} <span data-header-label data-i18n="new-session">New session</span></button></form>`
-            : "";
-        const actions = newWorkspace || newSession ? `<div data-header-create>${newWorkspace}${newSession}</div>` : "";
+        const actions = newWorkspace ? `<div data-header-create>${newWorkspace}</div>` : "";
         return actions + placeHtml;
     }
 
@@ -365,39 +400,32 @@ export default class Documents {
     }
 
     /**
-     * {§web-session-archive} Native dialog modal to archive the session and its subtree.
+     * {§web-workspace-tabs} {§web-session-archive} Session management dialog opened by clicking the active session tab.
      * @param {{name: string}} workspace
-     * @param {{name: string}} session
-     */
-    #sessionArchiveForm(workspace, session) {
-        return '<dialog id="dialog-session-archive"><article>'
-            + '<header><p><strong data-i18n="archive-session">Archive session</strong></p>'
-            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<form id="session-archive" method="post" action="/sessions/archive">'
-            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}" data-bind="value:workspace-name">`
-            + `<input type="hidden" name="session" value="${escapeHtml(session.name)}" data-bind="value:active-session-name">`
-            + '<p data-i18n="archive-session-detail">Archiving removes the session and its descendants from active views without destroying history.</p>'
-            + `<footer>${CANCEL}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`
-            + "</article></dialog>";
-    }
-
-    /**
-     * {§web-page-shell} Session management dialog opened by clicking `#<session>` in the header.
-     * @param {{name: string}} workspace
-     * @param {{name: string}} session
+     * @param {DirectorySession} session
      * @param {string} parentLine
      */
     #sessionManageDialog(workspace, session, parentLine) {
+        const currentTitle = typeof session.title === "string" ? session.title : "";
         return '<dialog id="dialog-session-manage" aria-label="Session actions"><article>'
             + `<header><p><strong>#<span data-text="active-session-name">${escapeHtml(session.name)}</span></strong></p>`
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
             + (parentLine ? `<p data-session-parent-line>${parentLine}</p>` : '<p data-session-parent-line hidden></p>')
+            + '<form id="session-title" method="post" action="/sessions/title" data-session-title-form>'
+            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}" data-bind="value:workspace-name">`
+            + `<input type="hidden" name="session" value="${escapeHtml(session.name)}" data-bind="value:active-session-name">`
+            + '<fieldset role="group">'
+            + `<input type="text" name="title" value="${escapeHtml(currentTitle)}" placeholder="Session title" aria-label="Session title" autocomplete="off" required>`
+            + '<button type="submit" data-i18n="save-title">Save title</button>'
+            + "</fieldset></form>"
+            + '<p role="alert" data-text="session-manage-error"></p>'
             + '<div data-session-manage-actions>'
             + '<button type="button" data-session-fork data-i18n="fork-session">Fork session</button>'
             + '<button type="button" data-dialog-target="dialog-session-create" data-i18n="named-session">New named session…</button>'
-            + '<button type="button" data-dialog-target="dialog-workspace-rename" data-i18n="rename-workspace">Rename workspace…</button>'
-            + '<button type="button" data-dialog-target="dialog-session-archive" data-i18n="archive-session">Archive session…</button>'
-            + '<button type="button" data-dialog-target="dialog-workspace-archive" data-i18n="archive-workspace">Archive workspace…</button>'
+            + '<form id="session-archive" method="post" action="/sessions/archive" data-session-archive-form>'
+            + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}" data-bind="value:workspace-name">`
+            + `<input type="hidden" name="session" value="${escapeHtml(session.name)}" data-bind="value:active-session-name">`
+            + '<button type="submit" data-i18n="archive-session">Archive session</button></form>'
             + "</div></article></dialog>";
     }
 
@@ -412,7 +440,7 @@ export default class Documents {
         return parent;
     }
 
-    /** {§web-session-directory} The same identity is a leaf header or a native disclosure summary.
+    /** {§web-session-directory} {§web-search} Session row identity inside a workspace card.
      * @param {{name: string, project_root: string | null}} workspace
      * @param {DirectorySession} session
      * @param {DirectorySession | null} parent
@@ -421,103 +449,95 @@ export default class Documents {
     #sessionIdentity(workspace, session, parent, childrenCount = 0) {
         const path = directoryPath({ kind: "session", workspace: workspace.name, session: session.name });
         const name = escapeHtml(session.name);
-        const ant = path === null ? '<span data-session-link role="img" aria-label="Session"></span>'
-            : `<a data-session-link href="${escapeHtml(path)}" aria-label="${name}" title="Open #${name}"></a>`;
+        const rawTitle = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
+        const rawPrompt = typeof session.openingPrompt === "string" && session.openingPrompt.trim() !== "" ? session.openingPrompt.trim() : null;
+        const headline = rawTitle ?? rawPrompt ?? `#${session.name}`;
+        const showHandle = headline !== `#${session.name}`;
+        const titleAttr = rawTitle !== null ? ` data-session-title="${escapeHtml(rawTitle)}"` : "";
+        const promptAttr = rawPrompt !== null ? ` data-session-prompt="${escapeHtml(rawPrompt)}"` : "";
+        const link = path === null
+            ? `<span data-session-link role="img" aria-label="Session"><span data-session-headline>${escapeHtml(headline)}</span></span>`
+            : `<a data-session-link href="${escapeHtml(path)}" aria-label="${name}" title="Open #${name}"${titleAttr}${promptAttr}><span data-session-headline>${escapeHtml(headline)}</span></a>`;
+        const handleBadge = showHandle ? `<small data-session-handle>#${name}</small>` : "";
         const parentName = parent === null ? "" : parent.origin === "model"
             ? this.#link(parent.name, { kind: "session", workspace: workspace.name, session: parent.name })
             : `<span>${escapeHtml(parent.name)}</span>`;
         const lineage = parent === null ? "" : `<span data-session-parent>${parentName} &gt; </span>`;
         const lifecycle = escapeHtml(session.lifecycle);
-        const title = typeof session.title === "string" && session.title !== ""
-            ? `<small data-session-title>${escapeHtml(session.title)}</small>` : "";
         const gates = (session.gates ?? 0) > 0
             ? `<small data-session-gates="${session.gates}" aria-label="${session.gates} awaiting input" title="${session.gates} awaiting input">${session.gates}</small>` : "";
         const children = childrenCount > 0
             ? `<small data-session-children="${childrenCount}" aria-label="${childrenCount} ${childrenCount === 1 ? "child" : "children"}" title="${childrenCount} ${childrenCount === 1 ? "child" : "children"}">${childrenCount}</small>` : "";
-        const folder = workspace.project_root !== null;
         const replyAt = typeof session.reply?.at === "number" && Number.isFinite(session.reply.at) ? new Date(session.reply.at).toISOString() : null;
         const time = replyAt === null ? "" : `<time data-session-time datetime="${replyAt}" title="${replyAt}">${replyAt.slice(0, 16).replace("T", " ")} UTC</time>`;
-        const excerptText = typeof session.reply?.excerpt === "string" && session.reply.excerpt !== ""
+        const defaultExcerpt = typeof session.reply?.excerpt === "string" && session.reply.excerpt !== ""
             ? `${session.reply.excerpt}${session.reply.continued ? "…" : ""}` : "";
+        const excerptText = typeof session.matchedExcerpt === "string" && session.matchedExcerpt !== ""
+            ? session.matchedExcerpt
+            : defaultExcerpt;
         const excerpt = excerptText === "" ? "" : `<small data-session-excerpt>${escapeHtml(excerptText)}</small>`;
         const unarchive = session.archived_at !== null
             ? `<form method="post" action="/sessions/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}"><input type="hidden" name="session" value="${name}"><button type="submit" data-i18n="unarchive">Unarchive</button></form>`
             : "";
-        return `<span data-session-identity>${ant} <span data-lifecycle="${lifecycle}" role="img" aria-label="${lifecycle}" title="${lifecycle}"></span> `
-            + `${lineage}<span>#${name}</span>${title}${gates}${children}</span>`
-            + `<span data-session-workspace><span data-folder="${folder}" role="img" aria-label="${folder ? "Project workspace" : "Folderless workspace"}"></span> `
-            + `${this.#link(workspace.name, { kind: "workspace", workspace: workspace.name })}${time}${unarchive}</span>`
+        const meta = time || unarchive ? `<span data-session-meta>${time}${unarchive}</span>` : "";
+        return `<span data-session-identity><span data-lifecycle="${lifecycle}" role="img" aria-label="${lifecycle}" title="${lifecycle}"></span> `
+            + `${lineage}${link}${handleBadge}${gates}${children}${meta}</span>`
             + excerpt;
     }
 
-    /** {§web-session-directory} A finished reply adds a disclosure body outlet addressed at its ACP entry resource.
-     * @param {number} workspaceId
-     * @param {DirectorySession} session
+    /** {§web-session-directory} {§web-search} Render one workspace's non-draft model session hierarchy.
+     * @param {{ readonly id: number, readonly name: string, readonly project_root: string | null }} workspace
+     * @param {readonly (DirectorySession & { readonly workspaceId: number })[]} models
+     * @param {ReadonlyMap<number, DirectorySession & { readonly workspaceId: number }>} allSessions
      */
-    #replyOutlet(workspaceId, session) {
-        const reply = session.reply ?? null;
-        if (reply === null) return "";
-        const target = encodeURIComponent(`log:///${reply.coordinate}`);
-        return `<div data-session-reply="/acp/${workspaceId}/${session.id}/entry?target=${escapeHtml(target)}"></div>`;
-    }
-
-    /** {§web-session-directory}
-     * @param {ReadonlyMap<number, { readonly id: number, readonly name: string, readonly project_root: string | null }>} workspaces
-     * @param {ReadonlyMap<number, DirectorySession & { readonly workspaceId: number }>} sessions
-     * @param {{ includeArchived?: boolean }} [options]
-     */
-    #sessionTree(workspaces, sessions, { includeArchived = false } = {}) {
-        const models = [...sessions.values()]
-            .filter(({ origin, archived_at }) => origin === "model" && (includeArchived ? archived_at !== null : archived_at === null))
-            .toSorted(orderByReply);
-        if (models.length === 0) return '<p data-i18n="no-sessions">No matching sessions.</p>';
-        const visibleIds = new Set(models.map(({ id }) => id));
+    #workspaceSessionTree(workspace, models, allSessions) {
+        if (models.length === 0) return "";
+        const sorted = models.toSorted(orderByReply);
+        const visibleIds = new Set(sorted.map(({ id }) => id));
         const children = Map.groupBy(
-            models,
+            sorted,
             ({ parentSessionId }) => parentSessionId !== null && visibleIds.has(parentSessionId) ? parentSessionId : null,
         );
-        const background = models.filter((session) => {
+        const background = sorted.filter((session) => {
             if (session.parentSessionId === null || visibleIds.has(session.parentSessionId)) return false;
-            const parent = sessions.get(session.parentSessionId) ?? null;
+            const parent = allSessions.get(session.parentSessionId) ?? null;
             return parent !== null && parent.origin !== "model";
         });
         const backgroundIds = new Set(background.map(({ id }) => id));
         const seenInTree = new Set();
-        /** @param {readonly (DirectorySession & { readonly workspaceId: number })[]} entries @returns {string} */
-        const list = (entries) => entries.length === 0 ? ""
-            : `<ul>${entries.map((session) => {
+        /** @param {readonly (DirectorySession & { readonly workspaceId: number })[]} entries @param {boolean} [isRootList] @returns {string} */
+        const list = (entries, isRootList = false) => entries.length === 0 ? ""
+            : `<ul${isRootList ? " data-workspace-sessions" : ""}>${entries.map((session) => {
                 if (seenInTree.has(session.id)) throw new Error("Session directory holds shown model sessions that no shown root reaches.");
                 seenInTree.add(session.id);
-                const workspace = workspaces.get(session.workspaceId);
-                if (workspace === undefined) throw new Error(`Session ${session.id} belongs to an absent workspace ${session.workspaceId}.`);
                 const descendants = children.get(session.id) ?? [];
-                const parent = session.parentSessionId !== null ? (sessions.get(session.parentSessionId) ?? null) : null;
+                const parent = session.parentSessionId !== null ? (allSessions.get(session.parentSessionId) ?? null) : null;
                 const identity = this.#sessionIdentity(workspace, session, parent, descendants.length);
-                const reply = this.#replyOutlet(workspace.id, session);
                 const kind = escapeHtml(session.kind ?? (session.parentSessionId === null ? "root" : "work"));
                 const replyAttr = session.reply ? ` data-reply-id="${session.reply.id}"` : "";
                 const archivedAttr = session.archived_at !== null ? ' data-archived="true"' : "";
-                const content = descendants.length === 0 && reply === "" ? `<header>${identity}</header>`
-                    : `<details><summary>${identity}</summary>${list(descendants)}${reply}</details>`;
+                const content = descendants.length === 0 ? `<header>${identity}</header>`
+                    : `<details><summary>${identity}</summary>${list(descendants)}</details>`;
                 return `<li data-directory-entry="session" data-session-key="${workspace.id}:${session.id}" data-session-kind="${kind}" data-workspace-name="${escapeHtml(workspace.name)}" data-lifecycle-state="${escapeHtml(session.lifecycle)}" data-gate-count="${session.gates ?? 0}"${replyAttr}${archivedAttr}><article aria-label="Session">${content}</article></li>`;
             }).join("")}</ul>`;
         const rootEntries = (children.get(null) ?? []).filter(({ id }) => !backgroundIds.has(id));
-        const roots = list(rootEntries);
-        const other = background.length === 0 ? "" : '<details><summary data-i18n="background-work">Background work</summary>'
+        const roots = list(rootEntries, true);
+        const other = background.length === 0 ? "" : '<details data-workspace-background><summary data-i18n="background-work">Background work</summary>'
             + `${list(background)}</details>`;
-        if (seenInTree.size !== models.length) {
+        if (seenInTree.size !== sorted.length) {
             throw new Error("Session directory holds shown model sessions that no shown root reaches.");
         }
         return roots + other;
     }
 
     /**
-     * {§web-search} Full-page Search & Directory document (`/search/`).
+     * {§web-search} Full-page workspace-grouped Search & Directory document (`/search/`).
      * @param {boolean} authenticated
      * @param {{
      *   listWorkspaces(): Promise<readonly DirectoryWorkspace[]>,
      *   listSessions(workspaceId: number): Promise<readonly DirectorySession[]>,
      *   readSessionOverview?: (args: { workspaceId?: number, limit: number, excerptChars: number }) => Promise<DirectoryOverview>,
+     *   listSessionLoops?: (args: { workspaceId: number, sessionId: number }) => Promise<readonly { readonly prompt: string }[]>,
      *   listProviders?: () => { readonly aliases: readonly unknown[] },
      *   listModels?: (args: { limit?: number }) => { readonly total: number },
      *   readOperatorEnvironment?: () => Promise<unknown>,
@@ -529,22 +549,28 @@ export default class Documents {
         if (this.#overviewSessions === null || this.#overviewExcerptChars === null) {
             throw new RequestError(503, "Search is unavailable because its configuration is invalid.");
         }
+        const excerptChars = this.#overviewExcerptChars;
         const q = (query.q ?? "").trim();
         const qLower = q.toLowerCase();
         const wsFilter = query.workspace ?? "";
         const statusFilter = ["all", "active", "gated", "failed", "archived"].includes(query.status ?? "") ? (query.status ?? "all") : "all";
         const kindFilter = ["all", "chats", "work"].includes(query.kind ?? "") ? (query.kind ?? "all") : "all";
         const showArchived = statusFilter === "archived";
+        const isNarrowing = Boolean(qLower || wsFilter || statusFilter !== "all" || kindFilter !== "all");
 
+        const overviewLimit = this.#overviewSessions;
         const allWorkspaces = await port.listWorkspaces();
         const wsById = new Map(allWorkspaces.map((ws) => [ws.id, ws]));
-        const overview = typeof port.readSessionOverview === "function" && !showArchived
-            ? await port.readSessionOverview({ limit: this.#overviewSessions, excerptChars: this.#overviewExcerptChars })
+        const overview = typeof port.readSessionOverview === "function" && !showArchived && wsFilter === ""
+            ? await port.readSessionOverview({
+                limit: Number.MAX_SAFE_INTEGER,
+                excerptChars,
+            })
             : null;
 
         /** @type {Map<number, DirectorySession & { readonly workspaceId: number }>} */
         const sessionById = new Map();
-        if (overview !== null && wsFilter === "") {
+        if (overview !== null) {
             for (const s of overview.sessions) {
                 if (sessionById.has(s.id)) throw new Error("Session directory contains duplicate identities.");
                 sessionById.set(s.id, {
@@ -580,7 +606,7 @@ export default class Documents {
                 : allWorkspaces;
             for (const ws of targetWorkspaces) {
                 const wsOverview = typeof port.readSessionOverview === "function" && ws.archived_at === null
-                    ? await port.readSessionOverview({ workspaceId: ws.id, limit: Number.MAX_SAFE_INTEGER, excerptChars: this.#overviewExcerptChars })
+                    ? await port.readSessionOverview({ workspaceId: ws.id, limit: Number.MAX_SAFE_INTEGER, excerptChars })
                     : null;
                 const ovMap = new Map(wsOverview?.sessions.map((entry) => [entry.id, entry]) ?? []);
                 const list = await port.listSessions(ws.id);
@@ -604,93 +630,193 @@ export default class Documents {
             }
         }
 
+        // Count shown-posture model children per parent so root sessions with child workers are never mistaken for empty drafts.
+        const childParentsInPosture = new Set();
+        for (const s of sessionById.values()) {
+            if (s.origin !== "model" || s.parentSessionId === null) continue;
+            const ws = wsById.get(s.workspaceId);
+            if (!ws) continue;
+            const isArchived = s.archived_at !== null || ws.archived_at !== null;
+            if (showArchived ? !isArchived : isArchived) continue;
+            childParentsInPosture.add(s.parentSessionId);
+        }
+
+        // Bound unfiltered overview after filtering untouched 0-loop drafts so empty drafts never consume overview slots or skew omitted counts.
+        /** @type {Set<number> | null} */
+        let heldNonDraftIds = null;
+        let omittedCount = overview?.omitted ?? 0;
+        if (overview !== null && !isNarrowing) {
+            const rankedNonDraft = [...sessionById.values()]
+                .filter((s) => {
+                    if (s.origin !== "model") return false;
+                    const ws = wsById.get(s.workspaceId);
+                    if (!ws || ws.archived_at !== null || s.archived_at !== null) return false;
+                    return !isUntouchedDraftSession(s, childParentsInPosture.has(s.id));
+                })
+                .toSorted((a, b) => a.reply != null && b.reply != null ? b.reply.id - a.reply.id
+                    : a.reply != null ? -1 : b.reply != null ? 1 : b.id - a.id);
+            const held = rankedNonDraft.filter((s, index) => index < overviewLimit || (s.gates ?? 0) > 0);
+            heldNonDraftIds = new Set(held.map(({ id }) => id));
+            omittedCount += rankedNonDraft.length - held.length;
+        }
+
+        /** @type {Map<number, readonly string[]>} */
+        const promptsBySessionId = new Map();
+        if (typeof port.listSessionLoops === "function") {
+            const loopTargets = [...sessionById.values()].filter((s) => {
+                if (s.origin !== "model" || s.lifecycle === "idle") return false;
+                if (heldNonDraftIds !== null && !heldNonDraftIds.has(s.id)) return false;
+                const ws = wsById.get(s.workspaceId);
+                if (!ws || (wsFilter && ws.name !== wsFilter)) return false;
+                const isArchived = s.archived_at !== null || ws.archived_at !== null;
+                return showArchived ? isArchived : !isArchived;
+            });
+            const loopLists = await Promise.all(
+                loopTargets.map(async (s) => {
+                    try {
+                        const loops = await port.listSessionLoops?.({ workspaceId: s.workspaceId, sessionId: s.id }) ?? [];
+                        return /** @type {const} */ ([s.id, loops.map((l) => l.prompt).filter((p) => typeof p === "string" && p.trim() !== "")]);
+                    } catch {
+                        return /** @type {const} */ ([s.id, /** @type {readonly string[]} */ ([])]);
+                    }
+                }),
+            );
+            for (const [sid, prompts] of loopLists) {
+                promptsBySessionId.set(sid, prompts);
+                const first = prompts[0];
+                const cur = sessionById.get(sid);
+                if (first && cur) {
+                    sessionById.set(sid, { ...cur, openingPrompt: truncateSingleLine(first, excerptChars) });
+                }
+            }
+        }
+
         const suggestionTerms = new Set();
         for (const ws of allWorkspaces) {
             if (showArchived ? ws.archived_at !== null : ws.archived_at === null) suggestionTerms.add(ws.name);
         }
         for (const s of sessionById.values()) {
             if (s.origin !== "model") continue;
-            if (showArchived ? s.archived_at === null : s.archived_at !== null) continue;
+            const ws = wsById.get(s.workspaceId);
+            const isArchived = s.archived_at !== null || ws?.archived_at !== null;
+            if (showArchived ? !isArchived : isArchived) continue;
+            if (isUntouchedDraftSession(s, childParentsInPosture.has(s.id))) continue;
             suggestionTerms.add(s.name);
             if (typeof s.title === "string" && s.title) suggestionTerms.add(s.title);
         }
 
-        /** @type {Map<number, DirectorySession & { readonly workspaceId: number }>} */
-        const filteredSessions = new Map();
-        for (const [id, s] of sessionById) {
-            if (s.origin !== "model") {
-                filteredSessions.set(id, s);
-                continue;
-            }
+        /** @type {Map<number, (DirectorySession & { readonly workspaceId: number })[]>} */
+        const sessionsByWorkspace = new Map();
+        for (const s of sessionById.values()) {
+            if (s.origin !== "model") continue;
+            if (heldNonDraftIds !== null && !heldNonDraftIds.has(s.id)) continue;
             const ws = wsById.get(s.workspaceId);
             if (!ws) continue;
             if (wsFilter && ws.name !== wsFilter) continue;
             const isArchived = s.archived_at !== null || ws.archived_at !== null;
             if (showArchived ? !isArchived : isArchived) continue;
+            if (isUntouchedDraftSession(s, childParentsInPosture.has(s.id))) continue;
             if (statusFilter === "active" && !["queued", "running", "parked"].includes(s.lifecycle)) continue;
             if (statusFilter === "gated" && (s.gates ?? 0) === 0) continue;
             if (statusFilter === "failed" && s.lifecycle !== "failed") continue;
             const kind = s.kind ?? (s.parentSessionId === null ? "root" : "work");
             if (kindFilter === "chats" && kind === "work") continue;
             if (kindFilter === "work" && kind !== "work") continue;
+            /** @type {string | undefined} */
+            let matchedExcerpt;
             if (qLower) {
-                const hay = [ws.name, ws.project_label ?? "", s.name, s.title ?? "", s.reply?.excerpt ?? ""].join("\n").toLowerCase();
-                if (!hay.includes(qLower)) continue;
+                const prompts = promptsBySessionId.get(s.id) ?? [];
+                const baseHay = [ws.name, ws.project_label ?? "", s.name, s.title ?? "", s.openingPrompt ?? "", s.reply?.excerpt ?? ""].join("\n").toLowerCase();
+                const matchedPrompt = prompts.find((p) => p.toLowerCase().includes(qLower));
+                if (!baseHay.includes(qLower) && !matchedPrompt) continue;
+                if (matchedPrompt && !(s.reply?.excerpt ?? "").toLowerCase().includes(qLower)) {
+                    matchedExcerpt = matchSnippet(matchedPrompt, qLower, excerptChars);
+                }
             }
-            filteredSessions.set(id, { ...s, archived_at: isArchived ? (s.archived_at ?? ws.archived_at ?? "archived") : null });
+            const bucket = sessionsByWorkspace.get(ws.id) ?? [];
+            bucket.push({
+                ...s,
+                ...(matchedExcerpt ? { matchedExcerpt } : {}),
+                archived_at: isArchived ? (s.archived_at ?? ws.archived_at ?? "archived") : null,
+            });
+            sessionsByWorkspace.set(ws.id, bucket);
         }
 
-        const filteredWorkspaces = allWorkspaces.filter((ws) => {
+        const candidateWorkspaces = allWorkspaces.filter((ws) => {
             if (wsFilter && ws.name !== wsFilter) return false;
-            const isArchived = ws.archived_at !== null;
-            if (showArchived ? !isArchived : isArchived) return false;
+            const wsSessions = sessionsByWorkspace.get(ws.id) ?? [];
+            if (showArchived) {
+                if (ws.archived_at === null && wsSessions.length === 0) return false;
+            } else if (ws.archived_at !== null) {
+                return false;
+            }
+            if (statusFilter !== "all" && statusFilter !== "archived" && wsSessions.length === 0) return false;
+            if (kindFilter !== "all" && wsSessions.length === 0) return false;
             if (qLower) {
-                const hay = `${ws.name}\n${ws.project_label ?? ""}`.toLowerCase();
-                if (!hay.includes(qLower)) return false;
+                const wsHay = `${ws.name}\n${ws.project_label ?? ""}`.toLowerCase();
+                if (!wsHay.includes(qLower) && wsSessions.length === 0) return false;
             }
             return true;
         });
 
-        const wsOptions = [
-            '<option value="" data-i18n="all-workspaces">All workspaces</option>',
-            ...allWorkspaces
-                .filter((ws) => showArchived || ws.archived_at === null || ws.name === wsFilter)
-                .map((ws) => `<option value="${escapeHtml(ws.name)}"${ws.name === wsFilter ? " selected" : ""}>${escapeHtml(ws.name)}</option>`),
-        ].join("");
+        // Order workspaces by most recent session reply, then active sessions, then daemon order.
+        const maxReplyByWs = new Map(candidateWorkspaces.map((ws) => {
+            const wsSessions = sessionsByWorkspace.get(ws.id) ?? [];
+            let maxReply = -1;
+            for (const s of wsSessions) {
+                if (s.reply && s.reply.id > maxReply) maxReply = s.reply.id;
+            }
+            return [ws.id, maxReply];
+        }));
+        const orderedWorkspaces = candidateWorkspaces.toSorted((a, b) => {
+            const aMax = maxReplyByWs.get(a.id) ?? -1;
+            const bMax = maxReplyByWs.get(b.id) ?? -1;
+            if (aMax !== bMax) return bMax - aMax;
+            const aCount = sessionsByWorkspace.get(a.id)?.length ?? 0;
+            const bCount = sessionsByWorkspace.get(b.id)?.length ?? 0;
+            if ((aCount > 0) !== (bCount > 0)) return aCount > 0 ? -1 : 1;
+            return 0;
+        });
+
         const statusOption = (/** @type {string} */ val, /** @type {string} */ label) =>
             `<option value="${val}"${statusFilter === val ? " selected" : ""}>${label}</option>`;
-        const kindOption = (/** @type {string} */ val, /** @type {string} */ label) =>
-            `<option value="${val}"${kindFilter === val ? " selected" : ""}>${label}</option>`;
         const datalistOptions = [...suggestionTerms].slice(0, 100)
             .map((term) => `<option value="${escapeHtml(term)}"></option>`).join("");
 
-        const controlsHtml = '<form id="search-controls" method="get" action="/search/" aria-label="Search workspaces and sessions">'
-            + `<input type="search" name="q" list="search-suggestions" data-overview-search value="${escapeHtml(q)}" placeholder="Search workspaces, sessions, titles, or replies…" aria-label="Search workspaces and sessions" autocomplete="off">`
+        const controlsHtml = '<form id="search-controls" method="get" action="/search/" aria-label="Search chats and workspaces">'
+            + `<input type="search" name="q" list="search-suggestions" data-overview-search value="${escapeHtml(q)}" placeholder="Search chats, prompts, and workspaces…" aria-label="Search chats, prompts, and workspaces" autocomplete="off">`
             + `<datalist id="search-suggestions">${datalistOptions}</datalist>`
-            + `<select name="workspace" data-search-workspace aria-label="Workspace filter">${wsOptions}</select>`
+            + (wsFilter ? `<input type="hidden" name="workspace" value="${escapeHtml(wsFilter)}" data-search-workspace>` : "")
+            + (kindFilter !== "all" ? `<input type="hidden" name="kind" value="${escapeHtml(kindFilter)}" data-search-kind>` : "")
             + `<select name="status" data-overview-scope aria-label="Status filter">${statusOption("all", "All statuses")}${statusOption("active", "Active")}${statusOption("gated", "Needs input")}${statusOption("failed", "Failed")}${statusOption("archived", "Archived")}</select>`
-            + `<select name="kind" data-search-kind aria-label="Kind filter">${kindOption("all", "All kinds")}${kindOption("chats", "Chats")}${kindOption("work", "Subagents")}</select>`
             + '<button type="submit" data-search-submit data-i18n="filter">Filter</button>'
             + (creationsAvailable ? '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="open-project-folder">Open project folder…</button>' : "")
             + "</form>";
 
-        const workspaceItems = filteredWorkspaces.map((ws) => {
+        const workspaceItems = orderedWorkspaces.map((ws) => {
             // {§web-workspace-folder}
             const separateFolder = ws.project_label !== null && ws.project_label !== ws.name;
             const folderNote = separateFolder ? ` <small data-text="project-label">${escapeHtml(ws.project_label)}</small>` : "";
             const unarchive = ws.archived_at !== null
                 ? `<form method="post" action="/workspaces/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value="${escapeHtml(ws.name)}"><button type="submit" data-i18n="unarchive">Unarchive</button></form>`
                 : "";
-            return `<li data-directory-entry="workspace" data-workspace-name="${escapeHtml(ws.name)}" data-folder="${ws.project_root !== null}"${ws.archived_at !== null ? ' data-archived="true"' : ""}>`
+            const wsSessions = sessionsByWorkspace.get(ws.id) ?? [];
+            const treeHtml = this.#workspaceSessionTree(ws, wsSessions, sessionById);
+            return `<li data-directory-entry="workspace" data-workspace-id="${ws.id}" data-workspace-name="${escapeHtml(ws.name)}" data-folder="${ws.project_root !== null}"${ws.archived_at !== null ? ' data-archived="true"' : ""}>`
                 + `<article aria-label="${ws.project_root === null ? "Folderless workspace" : "Project workspace"}">`
-                + `<header>${this.#link(ws.name, { kind: "workspace", workspace: ws.name })}${folderNote}${unarchive}</header></article></li>`;
+                + `<header>${this.#link(ws.name, { kind: "workspace", workspace: ws.name })}${folderNote}${unarchive}</header>`
+                + `${treeHtml}</article></li>`;
         }).join("");
-        const workspacesSection = `<section id="search-workspaces" aria-label="Workspaces">${workspaceItems ? `<ul>${workspaceItems}</ul>` : '<p data-i18n="no-workspaces">No matching workspaces.</p>'}</section>`;
 
-        const omitted = (overview?.omitted ?? 0) > 0 && !qLower && !wsFilter && statusFilter === "all" && kindFilter === "all"
-            ? `<p data-overview-omitted><small><span data-text="overview-omitted">${overview?.omitted}</span> <span data-i18n="older-sessions-omitted">older sessions omitted — filter by workspace or search to narrow.</span></small></p>`
+        const omitted = omittedCount > 0 && !isNarrowing
+            ? `<p data-overview-omitted><small><span data-text="overview-omitted">${omittedCount}</span> <span data-i18n="older-sessions-omitted">older sessions omitted — search to narrow.</span></small></p>`
             : "";
-        const sessionsSection = `<section id="search-sessions" aria-label="Sessions">${this.#sessionTree(wsById, filteredSessions, { includeArchived: showArchived })}${omitted}</section>`;
+
+        const hasAnyWorkspaceInPosture = allWorkspaces.some((ws) => showArchived ? ws.archived_at !== null : ws.archived_at === null);
+        const emptyDirectoryHtml = !hasAnyWorkspaceInPosture && !isNarrowing
+            ? '<p data-i18n="no-workspaces">No matching workspaces.</p>'
+            : '<p data-i18n="no-sessions">No matching sessions.</p>';
+        const workspacesSection = `<section id="search-workspaces" aria-label="Workspaces">${workspaceItems ? `<ul>${workspaceItems}</ul>` : emptyDirectoryHtml}${omitted}</section>`;
 
         const needsOnboarding = detectNeedsOnboarding(port);
         const headerLead = this.#headerLead({
@@ -699,7 +825,7 @@ export default class Documents {
         });
         const live = typeof port.readSessionOverview === "function";
         const mainAttributes = `${live ? ` data-auth="${authenticated ? "session" : "none"}" data-connection="initial"` : ""}${needsOnboarding ? ' data-needs-onboarding="true"' : ""}`;
-        return this.#render("Search", controlsHtml + workspacesSection + sessionsSection, "search", authenticated, {
+        return this.#render("Search", controlsHtml + workspacesSection, "search", authenticated, {
             headerLead,
             dialogs: creationsAvailable ? this.#creationForm() : "",
             mainAttributes,
@@ -748,7 +874,7 @@ export default class Documents {
         return { content, footer };
     }
 
-    /** {§web-workspace-tabs} Progressive-disclosure desktop session tabs (hidden when only 1 session is visible).
+    /** {§web-workspace-tabs} Unified browser-style session tab strip across mobile, tablet, and desktop.
      * @param {DirectoryWorkspace} workspace
      * @param {readonly DirectorySession[]} sessions
      * @param {ReadonlyMap<number, DirectorySession>} byId
@@ -758,18 +884,21 @@ export default class Documents {
      * @param {boolean} live
      * @param {boolean} automatic
      * @param {boolean} needsOnboarding
+     * @param {boolean} creationsAvailable
      */
-    #workspaceTabs(workspace, sessions, byId, overviewById, selectedSession, authenticated, live, automatic, needsOnboarding) {
+    #workspaceTabs(workspace, sessions, byId, overviewById, selectedSession, authenticated, live, automatic, needsOnboarding, creationsAvailable) {
         const workspacePath = directoryPath({ kind: "workspace", workspace: workspace.name });
         if (workspacePath === null) return "";
         const enriched = sessions
             .filter(({ origin }) => origin === "model")
             .map((entry) => {
                 const info = overviewById.get(entry.id);
+                const resolvedTitle = info?.title ?? entry.title;
                 return {
                     ...entry,
                     kind: info?.kind ?? entry.kind ?? (entry.parentSessionId === null ? "root" : "work"),
                     gates: info?.gates ?? entry.gates ?? 0,
+                    ...(typeof resolvedTitle === "string" ? { title: resolvedTitle } : {}),
                     reply: info?.reply ?? entry.reply ?? null,
                 };
             });
@@ -802,20 +931,16 @@ export default class Documents {
             }
         };
         visit(null);
+        const hasChildrenSet = new Set(unarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
         const visible = ordered.filter((entry) => {
             if (entry.name === selectedSession) return true;
+            if (isUntouchedDraftSession(entry, hasChildrenSet.has(entry.id))) return false;
             if (entry.parentSessionId === null || entry.kind === "root" || entry.kind === "fork") return true;
             return ["queued", "running", "parked", "failed"].includes(entry.lifecycle) || (entry.gates ?? 0) > 0;
         });
         if (selectedSession !== null && !visible.some(({ name }) => name === selectedSession)) {
             const direct = enriched.find(({ name }) => name === selectedSession);
             if (direct) visible.push(direct);
-        }
-        let activeCount = 0;
-        let gatedCount = 0;
-        for (const entry of unarchived) {
-            if (["queued", "running", "parked"].includes(entry.lifecycle)) activeCount++;
-            if ((entry.gates ?? 0) > 0) gatedCount += entry.gates ?? 0;
         }
         /** @param {(typeof ordered)[number]} entry */
         const renderTabItem = (entry) => {
@@ -834,12 +959,24 @@ export default class Documents {
                 ? ` data-parent-id="${entry.parentSessionId}"`
                     + (parent ? ` data-parent-name="${escapeHtml(parent.name)}" data-parent-origin="${escapeHtml(parent.origin)}"` : "")
                 : "";
+            const isDraft = isUntouchedDraftSession(entry, hasChildrenSet.has(entry.id));
+            const draftAttr = isDraft ? ' data-tab-draft="true"' : "";
+            const sessionTitle = typeof entry.title === "string" && entry.title.trim() !== "" ? entry.title.trim() : null;
+            const titleAttr = sessionTitle !== null ? ` data-session-title="${escapeHtml(sessionTitle)}"` : "";
+            const tabLabel = sessionTitle ?? `#${entry.name}`;
+            const hoverTitle = sessionTitle !== null
+                ? `${sessionTitle} (#${entry.name} · ${entry.lifecycle})`
+                : `#${entry.name} (${entry.lifecycle})`;
             const replyAttr = entry.reply !== null ? ` data-reply-id="${entry.reply.id}"` : "";
             const archivedAttr = entry.archived_at !== null ? ' data-archived="true"' : "";
-            return [`<li data-tab-id="${workspace.id}:${entry.id}" data-session-kind="${kind}"${parentAttr}${replyAttr}${archivedAttr}>`
-                + `<a href="#${encodeURIComponent(entry.name)}" data-workspace-route="session" data-tab-session="${name}" title="#${name} (${lifecycle})"${current}>`
+            const archiveForm = `<form method="post" action="/sessions/archive" data-tab-archive>`
+                + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}">`
+                + `<input type="hidden" name="session" value="${name}">`
+                + `<button type="submit" aria-label="Archive #${name}" title="Archive #${name}">×</button></form>`;
+            return [`<li data-tab-id="${workspace.id}:${entry.id}" data-session-kind="${kind}"${draftAttr}${titleAttr}${parentAttr}${replyAttr}${archivedAttr}>`
+                + `<a href="#${encodeURIComponent(entry.name)}" data-workspace-route="session" data-tab-session="${name}" title="${escapeHtml(hoverTitle)}"${current}>`
                 + `<span data-lifecycle="${lifecycle}" aria-hidden="true"></span>`
-                + `<span data-tab-label>#${name}</span>${gatesBadge}</a></li>`];
+                + `<span data-tab-label>${escapeHtml(tabLabel)}</span>${gatesBadge}</a>${archiveForm}</li>`];
         };
         const visibleSet = new Set(visible.map(({ id }) => id));
         const items = visible.flatMap(renderTabItem);
@@ -854,16 +991,17 @@ export default class Documents {
                 kind: entry.kind,
                 lifecycle: entry.lifecycle,
                 gates: entry.gates ?? 0,
+                ...(typeof entry.title === "string" && entry.title.trim() !== "" ? { title: entry.title.trim() } : {}),
                 replyId: entry.reply?.id ?? null,
             };
         });
         const foldedAttr = folded.length > 0 ? ` data-folded-sessions="${escapeHtml(JSON.stringify(folded))}"` : "";
-        const currentLabel = selectedSession === null ? workspace.name : `#${selectedSession}`;
-        const switcherBadges = (gatedCount > 0 ? `<small data-session-gates="${gatedCount}" aria-label="${gatedCount} awaiting input">${gatedCount}</small>` : "")
-            + (activeCount > 0 ? `<small data-switcher-active="${activeCount}" aria-label="${activeCount} active">${activeCount}</small>` : "");
-        return `<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-id="${workspace.id}" data-workspace-name="${escapeHtml(workspace.name)}" data-auth="${authenticated ? "session" : "none"}" data-tab-count="${items.length}" data-initial-yolo="${automatic}"${needsOnboarding ? ' data-needs-onboarding="true"' : ""}${live ? ' data-live="true"' : ""}${foldedAttr}>`
-            + `<button type="button" data-workspace-switcher aria-label="Switch session" title="Switch session">${SWITCHER_ICON}<span data-switcher-current>${escapeHtml(currentLabel)}</span>${switcherBadges}</button>`
-            + `<ul>${items.join("")}</ul>`
+        const wsArchivedAttr = workspace.archived_at !== null ? ' data-workspace-archived="true"' : "";
+        const newTabForm = creationsAvailable && workspace.archived_at === null
+            ? `<form method="post" action="/sessions/new" data-tab-new><input type="hidden" name="token" value="${randomUUID()}"><input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}"><button type="submit" data-action="new-session" aria-label="New session" title="New session">+</button></form>`
+            : "";
+        return `<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-id="${workspace.id}" data-workspace-name="${escapeHtml(workspace.name)}" data-auth="${authenticated ? "session" : "none"}" data-tab-count="${items.length}" data-initial-yolo="${automatic}"${needsOnboarding ? ' data-needs-onboarding="true"' : ""}${live ? ' data-live="true"' : ""}${wsArchivedAttr}${foldedAttr}>`
+            + `<ul>${items.join("")}</ul>${newTabForm}`
             + "</nav>";
     }
 
@@ -915,10 +1053,12 @@ export default class Documents {
             .filter(({ origin }) => origin === "model")
             .map((entry) => {
                 const info = overviewById.get(entry.id);
+                const resolvedTitle = info?.title ?? entry.title;
                 return {
                     ...entry,
                     kind: info?.kind ?? entry.kind ?? (entry.parentSessionId === null ? "root" : "work"),
                     gates: info?.gates ?? entry.gates ?? 0,
+                    ...(typeof resolvedTitle === "string" ? { title: resolvedTitle } : {}),
                     reply: info?.reply ?? entry.reply ?? null,
                 };
             });
@@ -933,13 +1073,17 @@ export default class Documents {
                 selected = modelSessions.find(({ id, archived_at }) => id === preferredSessionId && archived_at === null);
             }
             if (selected === undefined) {
-                const unarchivedRoots = modelSessions
-                    .filter(({ archived_at, parentSessionId }) => archived_at === null && parentSessionId === null)
+                const unarchivedModel = modelSessions.filter(({ archived_at }) => archived_at === null);
+                const childParents = new Set(unarchivedModel.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+                const unarchivedRoots = unarchivedModel
+                    .filter(({ parentSessionId }) => parentSessionId === null)
                     .toSorted(orderByReply);
-                selected = unarchivedRoots.find(({ reply }) => reply !== null)
-                    ?? unarchivedRoots.find(({ name }) => name === "user")
-                    ?? unarchivedRoots[0]
-                    ?? modelSessions.filter(({ archived_at }) => archived_at === null).toSorted(orderByReply)[0]
+                const nonDraftRoots = unarchivedRoots.filter((entry) => !isUntouchedDraftSession(entry, childParents.has(entry.id)));
+                const candidateRoots = nonDraftRoots.length > 0 ? nonDraftRoots : unarchivedRoots;
+                selected = candidateRoots.find(({ reply }) => reply != null)
+                    ?? candidateRoots.find(({ name }) => name === "user")
+                    ?? candidateRoots[0]
+                    ?? unarchivedModel.toSorted(orderByReply)[0]
                     ?? modelSessions[0];
             }
         }
@@ -954,11 +1098,10 @@ export default class Documents {
         const automatic = Boolean(this.#yolo && own);
 
         if (selected === undefined) {
-            const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, null, authenticated, live, automatic, needsOnboarding);
+            const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, null, authenticated, live, automatic, needsOnboarding, creationsAvailable);
             const placeHtml = `<div id="header-place"><button type="button" id="session-workspace" data-workspace-settings aria-label="Workspace settings" title="Workspace settings">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></button></div>`;
             const headerLead = this.#headerLead({
                 canCreate: creationsAvailable,
-                workspaceName: workspace.archived_at === null ? workspace.name : null,
                 placeHtml,
             });
             const startForm = creationsAvailable && workspace.archived_at === null
@@ -979,21 +1122,16 @@ export default class Documents {
         const title = `${workspace.name}#${selected.name}`;
         const sessionDir = /** @type {const} */ ({ kind: "session", workspace: workspace.name, session: selected.name });
         const status = this.#sessionStatus(sessionDir, workspace.id, authenticated, automatic, needsOnboarding);
-        const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, selected.name, authenticated, live, automatic, needsOnboarding);
+        const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, selected.name, authenticated, live, automatic, needsOnboarding, creationsAvailable);
         const placeHtml = `<div id="header-place">`
-            + `<button type="button" id="session-workspace" data-workspace-settings aria-label="Workspace settings" title="Workspace settings">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></button>`
-            + `<span data-place-hash aria-hidden="true">#</span>`
-            + `<button type="button" id="header-session" data-dialog-target="dialog-session-manage" aria-label="Session actions" title="Session actions"><span data-text="active-session-name">${escapeHtml(selected.name)}</span></button>`
-            + `<small data-header-gates="" hidden></small></div>`;
+            + `<button type="button" id="session-workspace" data-workspace-settings aria-label="Workspace settings" title="Workspace settings">${marker} <span data-text="workspace-name">${escapeHtml(workspace.name)}</span></button></div>`;
         const headerLead = this.#headerLead({
             canCreate: creationsAvailable,
-            workspaceName: workspace.archived_at === null ? workspace.name : null,
             placeHtml,
         });
         const dialogs = this.#sessionManageDialog(workspace, selected, parentLine)
             + this.#renameForm(workspace, selected.name)
             + this.#workspaceArchiveForm(workspace)
-            + this.#sessionArchiveForm(workspace, selected)
             + this.#sessionCreationForm(workspace);
         const body = `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
             + status.content;

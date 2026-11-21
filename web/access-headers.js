@@ -1,10 +1,31 @@
+import { on } from "on_the_money";
+
+let logoutAbort = new AbortController();
+let listenersBound = false;
+
+function ensureLogoutGuard() {
+    if (listenersBound || typeof document === "undefined" || !document.body) return;
+    listenersBound = true;
+    on(document.body, "submit", 'form[action="/auth/logout"]', () => {
+        logoutAbort.abort(new DOMException("Signing out", "AbortError"));
+    });
+    on.target(window, "pageshow", (event) => {
+        if (event instanceof PageTransitionEvent && event.persisted && logoutAbort.signal.aborted) {
+            logoutAbort = new AbortController();
+        }
+    });
+}
+
 /** {§web-access-token} A browser request acquires its own bearer; none enters document state.
  * @param {"session" | "none"} auth @param {AbortSignal} signal
  * @returns {Promise<Record<string, string>>}
  */
 export default async function accessHeaders(auth, signal) {
     if (auth === "none") return {};
-    const response = await fetch("/auth/token", { method: "POST", signal });
+    ensureLogoutGuard();
+    const effectiveSignal = AbortSignal.any([signal, logoutAbort.signal]);
+    effectiveSignal.throwIfAborted();
+    const response = await fetch("/auth/token", { method: "POST", signal: effectiveSignal });
     if (!response.ok) throw Object.assign(new Error(`Access credential request failed (${response.status}).`), { status: response.status });
     let token;
     try {

@@ -136,23 +136,23 @@ test("{§web-session-directory} {§web-search} model lineage is complete, collap
         const lineage = parent === null ? "" : `<span data-session-parent>${parent === "_plurnk" ? "<span>_plurnk</span>" : link(parent)} &gt; </span>`;
         const childrenBadge = childCount > 0
             ? `<small data-session-children="${childCount}" aria-label="${childCount} ${childCount === 1 ? "child" : "children"}" title="${childCount} ${childCount === 1 ? "child" : "children"}">${childCount}</small>` : "";
-        const identity = `<span data-session-identity><a data-session-link href="/~/work#${name}" aria-label="${name}" title="Open #${name}"></a> `
-            + '<span data-lifecycle="completed" role="img" aria-label="completed" title="completed"></span> '
-            + `${lineage}<span>#${name}</span>${childrenBadge}</span>`
-            + '<span data-session-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a href="/~/work" data-text="name">work</a></span>';
+        const identity = `<span data-session-identity><span data-lifecycle="completed" role="img" aria-label="completed" title="completed"></span> `
+            + `${lineage}<a data-session-link href="/~/work#${name}" aria-label="${name}" title="Open #${name}"><span data-session-headline>#${name}</span></a>${childrenBadge}</span>`;
         const content = children ? `<details><summary>${identity}</summary><ul>${children}</ul></details>` : `<header>${identity}</header>`;
         const kind = parent === null ? "root" : "work";
         return `<li data-directory-entry="session" data-session-key="7:${id}" data-session-kind="${kind}" data-workspace-name="work" data-lifecycle-state="completed" data-gate-count="0"><article aria-label="Session">${content}</article></li>`;
     };
     assert.ok(html.includes([
-        '<section id="search-sessions" aria-label="Sessions"><ul>',
+        '<section id="search-workspaces" aria-label="Workspaces"><ul>',
+        '<li data-directory-entry="workspace" data-workspace-id="7" data-workspace-name="work" data-folder="false"><article aria-label="Folderless workspace"><header><a href="/~/work" data-text="name">work</a></header>',
+        "<ul data-workspace-sessions>",
         entry(3, "2bb6a400-7106-4299-ae47-66daea5d6077"),
         entry(4, "user", null, entry(6, "review", "user", entry(7, "evidence", "review"), 1) + entry(5, "research", "user"), 2),
         "</ul>",
-        '<details><summary data-i18n="background-work">Background work</summary><ul>',
+        '<details data-workspace-background><summary data-i18n="background-work">Background work</summary><ul>',
         entry(8, "incoming", "_plurnk", entry(10, "incoming-child", "incoming"), 1),
         entry(9, "other", "_plurnk"),
-        "</ul></details></section>",
+        "</ul></details></article></li></ul></section>",
     ].join("")), html);
     const names = [...html.matchAll(/data-session-link href="\/~\/work#([^"]+)"/gu)].map((match) => match[1]);
     assert.deepEqual(names.toSorted(), sessions.filter(({ origin }) => origin === "model").map(({ name }) => name).toSorted());
@@ -183,7 +183,7 @@ test("{§web-session-directory} session pages keep header place and parent navig
         const html = (await document.read({ kind: "session", workspace: "work", session: selected }, port, false)).toString();
         assert.doesNotMatch(html, /session-directory|sessions-at-page-load|Sessions at page load|<nav aria-label="Sessions">/u);
         assert.ok(html.includes('<span data-text="workspace-name">work</span>'));
-        assert.ok(html.includes(`<button type="button" id="header-session" data-dialog-target="dialog-session-manage" aria-label="Session actions" title="Session actions"><span data-text="active-session-name">${selected}</span></button>`));
+        assert.match(html, new RegExp(`href="#${selected}" data-workspace-route="session" data-tab-session="${selected}"[^>]*aria-current="true"`, "u"));
         assert.match(html, /<details id="session-descendants">/u, "live descendant navigation keeps its own statusline home");
     }
     assert.equal(reads, 4, "one authoritative directory read per document; no second client-side directory");
@@ -199,16 +199,18 @@ test("{§web-session-diagnostics} the session page renders an empty diagnostics 
     assert.match(html, /id="session-conversation"/u);
 });
 
-test("{§web-session-directory} {§web-search} empty and internal-only workspaces have no empty navigation controls", async () => {
+test("{§web-session-directory} {§web-search} empty, internal-only, and untouched-draft workspaces have no empty navigation controls", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main>Home</main>`, false, 128, 128);
-    for (const sessions of [[], [session(1, "_plurnk", null, "_plurnk")], [session(3, "user")]]) {
+    const untouchedDraft = { ...session(2, "draft"), lifecycle: "idle" };
+    for (const sessions of [[], [session(1, "_plurnk", null, "_plurnk")], [untouchedDraft], [untouchedDraft, session(3, "user")]]) {
         const html = (await document.search(false, {
             listWorkspaces: async () => [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }],
             listSessions: async () => sessions,
         })).toString();
-        assert.doesNotMatch(html, /Background work|<ul><\/ul>/u);
-        if (sessions.some(({ origin }) => origin === "model")) assert.match(html, /href="\/~\/work#user"/u);
-        else assert.match(html, /<p[^>]*>No matching sessions\.<\/p>/u);
+        assert.doesNotMatch(html, /Background work|<ul><\/ul>|<ul data-workspace-sessions><\/ul>|#draft/u);
+        assert.match(html, /href="\/~\/work"/u, "workspace card remains browsable even when sessions are empty or untouched drafts");
+        if (sessions.some(({ name }) => name === "user")) assert.match(html, /href="\/~\/work#user"/u);
+        else assert.doesNotMatch(html, /data-directory-entry="session"/u);
     }
 });
 
@@ -239,8 +241,8 @@ test("{§web-directory-documents} {§web-search} workspace markers describe fold
         ],
         listSessions: async () => [],
     })).toString();
-    assert.match(html, /<li data-directory-entry="workspace" data-workspace-name="~\/looks-like-a-folder" data-folder="false"><article aria-label="Folderless workspace"><header><a href="\/~\/~\/looks-like-a-folder" data-text="name">~\/looks-like-a-folder<\/a><\/header><\/article><\/li>/u);
-    assert.match(html, /<li data-directory-entry="workspace" data-workspace-name="research" data-folder="true"><article aria-label="Project workspace"><header><a href="\/~\/research" data-text="name">research<\/a> <small data-text="project-label">~\/project<\/small><\/header><\/article><\/li>/u);
+    assert.match(html, /<li data-directory-entry="workspace" data-workspace-id="1" data-workspace-name="~\/looks-like-a-folder" data-folder="false"><article aria-label="Folderless workspace"><header><a href="\/~\/~\/looks-like-a-folder" data-text="name">~\/looks-like-a-folder<\/a><\/header><\/article><\/li>/u);
+    assert.match(html, /<li data-directory-entry="workspace" data-workspace-id="2" data-workspace-name="research" data-folder="true"><article aria-label="Project workspace"><header><a href="\/~\/research" data-text="name">research<\/a> <small data-text="project-label">~\/project<\/small><\/header><\/article><\/li>/u);
     assert.match(html, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header><\/article>/u);
     assert.doesNotMatch(html, /\/home\/daemon\/project/u, "search shows the daemon project_label, never raw filesystem paths");
 });
@@ -258,7 +260,7 @@ test("{§web-directory-documents} {§web-search} read-only lookup escapes names 
     const searchPage = (await document.search(true, port)).toString();
     assert.match(searchPage, /<li data-directory-entry="workspace"[^>]*><article aria-label="Folderless workspace"><header><a href="\/~\/~\/a%26%3Cscript%3E%40%22b"/u);
     assert.match(searchPage, /~\/a&amp;&lt;script&gt;@&quot;b/u);
-    assert.match(searchPage, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header><\/article>/u);
+    assert.match(searchPage, /<article aria-label="Folderless workspace"><header><span data-text="name">\.\.\/legacy<\/span><\/header>/u);
     assert.match(searchPage, /<form method="post" action="\/auth\/logout">/u);
     assert.match(searchPage, /<dialog id="dialog-workspace-create">[\s\S]*<form id="workspace-create" method="post" action="\/workspaces\/new">[\s\S]*<button type="submit"[^>]*>Confirm<\/button>/u,
         "{§web-workspace-creation} search carries the native project-folder creation dialog");
@@ -268,13 +270,12 @@ test("{§web-directory-documents} {§web-search} read-only lookup escapes names 
     const workspace = /** @type {const} */ ({ kind: "workspace", workspace: '~/a&<script>@"b' });
     const sessions = (await document.read(workspace, port, false)).toString();
     assert.match(sessions, /href="#user"/u);
-    assert.match(sessions, /<dialog id="dialog-session-manage"[\s\S]*data-session-fork/u, "workspace workbench carries the session manage dialog");
+    assert.match(sessions, /<dialog id="dialog-session-manage"[\s\S]*id="session-title"[\s\S]*data-session-fork[\s\S]*id="session-archive"/u, "workspace workbench carries session title, fork, and 1-click archive in session manage dialog");
     assert.match(sessions, /<dialog id="dialog-workspace-rename">[\s\S]*<form id="workspace-rename" method="post" action="\/workspaces\/rename">/u);
     assert.match(sessions, /<dialog id="dialog-workspace-archive">[\s\S]*<form id="workspace-archive" method="post" action="\/workspaces\/archive">/u);
-    assert.match(sessions, /<dialog id="dialog-session-archive">[\s\S]*<form id="session-archive" method="post" action="\/sessions\/archive">/u);
     assert.match(sessions, /<dialog id="dialog-session-create">[\s\S]*<form id="session-create" method="post" action="\/sessions\/new">/u);
     assert.match(sessions, /action="\/workspaces\/new"/u, "header carries 1-click New workspace form");
-    assert.match(sessions, /action="\/sessions\/new"/u, "header carries 1-click New session form");
+    assert.match(sessions, /id="workspace-tabs"[\s\S]*action="\/sessions\/new" data-tab-new/u, "tab strip carries trailing + New session form");
     assert.doesNotMatch(sessions, /<form method="post" action="\/auth\/logout"/u);
 });
 
@@ -314,7 +315,7 @@ test("{§web-page-shell} titles and header place preserve whole identities, not 
     assert.match(html, /<title[^>]*>~\/project\/a&amp;b&lt;script&gt;#user — Plurnk<\/title>/u);
     assert.match(html, /<header>Shared navigation[\s\S]*href="\/account\/"[\s\S]*<\/header>/u);
     assert.match(html, /<main id="main" data-page="session" data-session-name="user">/u);
-    assert.match(html, /<div id="header-place"><button type="button" id="session-workspace" data-workspace-settings[^>]*><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <span data-text="workspace-name">~\/project\/a&amp;b&lt;script&gt;<\/span><\/button><span data-place-hash aria-hidden="true">#<\/span><button type="button" id="header-session" data-dialog-target="dialog-session-manage"[^>]*><span data-text="active-session-name">user<\/span><\/button>/u);
+    assert.match(html, /<div id="header-place"><button type="button" id="session-workspace" data-workspace-settings[^>]*><span role="img" aria-label="Folderless workspace"[^>]*>☁️<\/span> <span data-text="workspace-name">~\/project\/a&amp;b&lt;script&gt;<\/span><\/button><\/div>/u);
     assert.doesNotMatch(html, /<script>|<template/iu);
     assert.equal(html.replace(/<dialog\b[\s\S]*?<\/dialog>/gu, "").match(/<footer\b/gu).length, 1, "the session status footer is the only document-level footer");
     assert.equal(html.match(/<main\b/gu).length, 1);
@@ -327,7 +328,6 @@ test("{§web-page-shell} {§web-search} empty lists and request failures are use
     const empty = (await document.search(false, port)).toString();
     assert.match(empty, /<title[^>]*>Search — Plurnk<\/title>/u);
     assert.match(empty, /<p[^>]*>No matching workspaces\.<\/p>/u);
-    assert.match(empty, /<p[^>]*>No matching sessions\.<\/p>/u);
     assert.doesNotMatch(empty, /<ul><\/ul>/u);
     const sessions = (await document.read({ kind: "workspace", workspace: "empty" }, {
         ...port, listWorkspaces: async () => [{ id: 7, name: "empty", project_root: null, project_label: null, archived_at: null }],
@@ -437,7 +437,7 @@ test("{§web-directory-documents} {§web-search} archived places leave default l
     assert.ok(await document.read({ kind: "session", workspace: "work", session: "gone" }, port, false), "an archived session's page opens by its address");
 });
 
-test("{§web-session-directory} {§web-search} search orders by delivered reply recency, filters by query/status/kind, and exposes reply disclosures", async () => {
+test("{§web-session-directory} {§web-search} workspace-grouped search orders workspaces and sessions by reply recency, shows opening-prompt headlines, and matches loop prompts", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main id="main" data-page="home"></main>`, false, 128, 128);
     assert.match(document.home(false).toString(), /<main id="main" data-page="home"><\/main>/u);
     const workspaces = [
@@ -457,6 +457,7 @@ test("{§web-session-directory} {§web-search} search orders by delivered reply 
         { ...session(8, "no-reply-second"), workspaceId: 8, reply: null },
         { ...session(9, "bg-older", 1), workspaceId: 7, reply: reply(10, "1/5/1/send:10") },
         { ...session(10, "bg-newer", 1), workspaceId: 7, reply: reply(60, "1/6/1/send:60") },
+        { ...session(11, "untouched-draft"), workspaceId: 8, lifecycle: "idle", reply: null },
     ];
     const modelOverviewSessions = overviewSessions.filter(({ origin }) => origin === "model");
     const port = {
@@ -466,51 +467,67 @@ test("{§web-session-directory} {§web-search} search orders by delivered reply 
             workspaces: workspaceId === undefined ? workspaces : workspaces.filter((ws) => ws.id === workspaceId),
             sessions: workspaceId === undefined ? modelOverviewSessions : modelOverviewSessions.filter((item) => item.workspaceId === workspaceId),
         }),
+        listSessionLoops: async ({ sessionId }) => sessionId === 4
+            ? [{ prompt: "Audit production Postgres replication lag" }, { prompt: "Check wal_sender timeout" }]
+            : [],
     };
     const searchHtml = (await document.search(true, port)).toString();
     assert.match(searchHtml, /<main id="main" data-page="search" data-auth="session" data-connection="initial">/u);
     assert.match(searchHtml, /<form id="search-controls" method="get" action="\/search\/"/u);
-    const rootOrder = [...searchHtml.split('<details><summary data-i18n="background-work">')[0].matchAll(/data-session-link href="\/~\/[^#]+#([^"]+)"/gu)].map((match) => match[1]);
-    assert.deepEqual(rootOrder, ["newer-reply", "older-reply", "child-newer", "child-older", "child-silent", "no-reply-first", "no-reply-second"]);
-    const bgOrder = [...searchHtml.split('<details><summary data-i18n="background-work">')[1].matchAll(/data-session-link href="\/~\/[^#]+#([^"]+)"/gu)].map((match) => match[1]);
+    assert.doesNotMatch(searchHtml, /untouched-draft/u, "untouched 0-loop draft sessions stay hidden from search");
+    const wsOrder = [...searchHtml.matchAll(/data-directory-entry="workspace" data-workspace-id="\d+" data-workspace-name="([^"]+)"/gu)].map((match) => match[1]);
+    assert.deepEqual(wsOrder, ["beta", "alpha"], "workspace with newest session reply orders first");
+    const rootOrder = [...searchHtml.split('<details data-workspace-background><summary data-i18n="background-work">')[0].matchAll(/data-session-link href="\/~\/[^#]+#([^"]+)"/gu)].map((match) => match[1]);
+    assert.deepEqual(rootOrder, ["newer-reply", "no-reply-second", "older-reply", "child-newer", "child-older", "child-silent", "no-reply-first"]);
+    const bgOrder = [...searchHtml.split('<details data-workspace-background><summary data-i18n="background-work">')[1].matchAll(/data-session-link href="\/~\/[^#]+#([^"]+)"/gu)].map((match) => match[1]);
     assert.deepEqual(bgOrder, ["bg-newer", "bg-older"]);
-    assert.ok(searchHtml.includes('data-session-reply="/acp/8/4/entry?target=log%3A%2F%2F%2F2%2F1%2F1%2Fdone%3A95"'), "leaf with delivered reply renders reply disclosure outlet");
-    assert.ok(searchHtml.includes('</ul><div data-session-reply="/acp/7/3/entry?target=log%3A%2F%2F%2F1%2F2%2F3%2Fsend%3A40"></div></details>'), "branch with children and reply renders both child list and reply outlet");
+    assert.ok(searchHtml.includes('<span data-session-headline>Audit production Postgres replication lag</span></a><small data-session-handle>#newer-reply</small>'), "opening prompt becomes headline when session has no custom title");
+
+    // Full-text loop-prompt query matches later loop prompt and renders snippet
+    const promptMatch = (await document.search(true, port, { q: "wal_sender" })).toString();
+    const promptMatchedNames = [...promptMatch.matchAll(/data-session-link href="\/~\/[^#]+#([^"]+)"/gu)].map((match) => match[1]);
+    assert.deepEqual(promptMatchedNames, ["newer-reply"]);
+    assert.match(promptMatch, /<small data-session-excerpt>Check wal_sender timeout<\/small>/u);
 
     // Server-side status & kind filtering on /search/
     const failedOnly = (await document.search(true, port, { status: "failed", kind: "work" })).toString();
     const failedNames = [...failedOnly.matchAll(/data-session-link href="\/~\/[^#]+#([^"]+)"/gu)].map((match) => match[1]);
     assert.deepEqual(failedNames, ["child-newer"]);
 
-    const boundedSearch = (await document.search(true, {
+    const boundedDoc = new Documents(`<title>Plurnk</title><header>${navigation}</header><main id="main" data-page="home"></main>`, false, 1, 128);
+    const boundedSearch = (await boundedDoc.search(true, {
         listWorkspaces: async () => [workspaces[0]],
         listSessions: async () => [],
         readSessionOverview: async ({ limit, excerptChars }) => {
-            assert.equal(limit, 128);
+            assert.equal(limit, Number.MAX_SAFE_INTEGER);
             assert.equal(excerptChars, 128);
             return {
                 workspaces: [workspaces[0]],
-                sessions: [{
-                    ...session(3, "older-reply"),
-                    workspaceId: 7,
-                    kind: /** @type {const} */ ("fork"),
-                    gates: 2,
-                    title: "Investigation #1",
-                    reply: { id: 40, coordinate: "1/2/3/send:40", completion: /** @type {const} */ (200), at: Date.UTC(2026, 10, 10, 2, 15), excerpt: "Resolved root cause", continued: true },
-                }],
-                omitted: 12,
+                sessions: [
+                    {
+                        ...session(3, "older-reply"),
+                        workspaceId: 7,
+                        kind: /** @type {const} */ ("fork"),
+                        gates: 2,
+                        title: "Investigation #1",
+                        reply: { id: 40, coordinate: "1/2/3/send:40", completion: /** @type {const} */ (200), at: Date.UTC(2026, 10, 10, 2, 15), excerpt: "Resolved root cause", continued: true },
+                    },
+                    { ...session(12, "older-omitted"), workspaceId: 7, reply: null },
+                    { ...session(13, "draft-ignored"), workspaceId: 7, lifecycle: "idle", reply: null },
+                ],
+                omitted: 11,
             };
         },
     })).toString();
     assert.ok(boundedSearch.includes('data-session-kind="fork"'));
-    assert.ok(boundedSearch.includes('<small data-session-title>Investigation #1</small>'));
+    assert.ok(boundedSearch.includes('data-session-title="Investigation #1"><span data-session-headline>Investigation #1</span></a><small data-session-handle>#older-reply</small>'));
     assert.ok(boundedSearch.includes('<small data-session-gates="2" aria-label="2 awaiting input" title="2 awaiting input">2</small>'));
     assert.ok(boundedSearch.includes('<time data-session-time datetime="2026-11-10T02:15:00.000Z" title="2026-11-10T02:15:00.000Z">2026-11-10 02:15 UTC</time>'));
     assert.ok(boundedSearch.includes('<small data-session-excerpt>Resolved root cause…</small>'));
     assert.ok(boundedSearch.includes('<p data-overview-omitted><small><span data-text="overview-omitted">12</span>'));
 });
 
-test("{§web-workspace-tabs} {§web-workspace-settings} workspace session documents render progressive-disclosure #session tabs, fold settled child workers unless selected, and omit tabs outside workspaces", async () => {
+test("{§web-workspace-tabs} {§web-workspace-settings} workspace session documents render browser-style tabs, fold settled workers and unselected drafts, and omit tabs outside workspaces", async () => {
     const document = new Documents(`<title>Plurnk</title><header>${navigation}</header><main></main>`, false, 128, 128);
     assert.doesNotMatch(document.home(false).toString(), /id="workspace-tabs"/u);
     assert.doesNotMatch(document.account().toString(), /id="workspace-tabs"/u);
@@ -523,13 +540,14 @@ test("{§web-workspace-tabs} {§web-workspace-settings} workspace session docume
     const sessions = [
         { ...session(1, "_plurnk", null, "_plurnk"), workspaceId: 7, reply: null },
         { ...session(2, "older-root"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "completed", reply: reply(20, "1/1/1/done:20") },
-        { ...session(3, "newer-root"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "running", reply: reply(90, "1/2/1/send:90") },
+        { ...session(3, "newer-root"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "running", title: "Release audit", reply: reply(90, "1/2/1/send:90") },
         { ...session(4, "fork-branch", 3), workspaceId: 7, kind: /** @type {const} */ ("fork"), lifecycle: "completed", reply: reply(50, "1/1/1/done:50") },
         { ...session(5, "active-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "running", reply: null },
         { ...session(6, "gated-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "parked", gates: 2, reply: reply(70, "1/1/1/send:70") },
         { ...session(8, "failed-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "failed", reply: reply(60, "1/1/1/fail:60", 499) },
         { ...session(9, "settled-worker", 3), workspaceId: 7, kind: /** @type {const} */ ("work"), lifecycle: "completed", reply: reply(95, "1/1/1/done:95") },
         { ...session(10, "archived-root"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "completed", archived_at: archived, reply: reply(99, "1/1/1/done:99") },
+        { ...session(11, "empty-draft"), workspaceId: 7, kind: /** @type {const} */ ("root"), lifecycle: "idle", reply: null },
     ];
     const modelSessions = sessions.filter(({ origin, archived_at }) => origin === "model" && archived_at === null);
     const port = {
@@ -548,19 +566,19 @@ test("{§web-workspace-tabs} {§web-workspace-settings} workspace session docume
     const extractTabRoutes = (/** @type {string} */ navHtml) =>
         [...navHtml.matchAll(/<a href="([^"]+)" data-workspace-route="[^"]+"/gu)].map((match) => match[1]);
 
-    // Single-session workspace sets data-tab-count="1" so CSS hides #workspace-tabs until 2+ sessions exist.
+    // Single draft session workspace renders data-tab-count="1" and data-tab-draft="true".
     const singleSessionHtml = (await document.read({ kind: "workspace", workspace: "alpha" }, {
         listWorkspaces: async () => workspaces,
-        listSessions: async () => [session(3, "user")],
-        readSessionOverview: async () => ({ workspaces, sessions: [{ ...session(3, "user"), workspaceId: 7, reply: null }] }),
+        listSessions: async () => [{ ...session(3, "user"), lifecycle: "idle" }],
+        readSessionOverview: async () => ({ workspaces, sessions: [{ ...session(3, "user"), lifecycle: "idle", workspaceId: 7, reply: null }] }),
     }, false)).toString();
-    assert.match(extractTabs(singleSessionHtml), /data-tab-count="1"/u);
+    assert.match(extractTabs(singleSessionHtml), /data-tab-count="1"[\s\S]*data-tab-draft="true"/u);
 
-    // Multi-session workspace selects the most recent unarchived root session (`newer-root`) and renders `data-tab-count="6"`.
+    // Multi-session workspace selects the most recent non-draft root session (`newer-root`) and folds unselected `empty-draft` + `settled-worker`.
     const wsHtml = (await document.read({ kind: "workspace", workspace: "alpha" }, port, false)).toString();
     const wsNav = extractTabs(wsHtml);
     assert.match(wsNav, /data-workspace-id="7" data-workspace-name="alpha" data-auth="none" data-tab-count="6" data-initial-yolo="false" data-live="true"/u);
-    assert.match(wsNav, /href="#newer-root"[^>]*aria-current="true"/u);
+    assert.match(wsNav, /href="#newer-root"[^>]*aria-current="true"[\s\S]*<span data-tab-label>Release audit<\/span>/u);
     assert.deepEqual(extractTabRoutes(wsNav), [
         "#newer-root",
         "#gated-worker",
@@ -568,19 +586,18 @@ test("{§web-workspace-tabs} {§web-workspace-settings} workspace session docume
         "#fork-branch",
         "#active-worker",
         "#older-root",
-    ], "roots order by reply.id descending, active/gated/failed/fork children group beneath parent by reply.id, settled worker and archived root omit");
-    assert.match(wsNav, /data-switcher-current>#newer-root<\/span>/u);
-    assert.match(wsNav, /data-session-gates="2" aria-label="2 awaiting input">2<\/small>/u);
-    assert.match(wsNav, /data-switcher-active="3" aria-label="3 active">3<\/small>/u);
+    ], "roots order by reply.id descending, active/gated/failed/fork children group beneath parent by reply.id, settled worker, unselected draft, and archived root omit");
+    assert.match(wsNav, /data-session-gates="2" aria-label="2 awaiting input" title="2 awaiting input">2<\/small>/u);
+    assert.match(wsNav, /data-tab-archive/u);
+    assert.match(wsNav, /data-tab-new/u);
     assert.match(wsHtml, /id="session-workspace" data-workspace-settings/u, "header workspace button triggers workspace settings");
 
     const settledWorkerHtml = (await document.read({ kind: "session", workspace: "alpha", session: "settled-worker" }, port, true)).toString();
     const settledNav = extractTabs(settledWorkerHtml);
     assert.match(settledNav, /data-auth="session" data-tab-count="7" data-initial-yolo="false" data-live="true"/u);
     assert.match(settledNav, /href="#settled-worker"[^>]*aria-current="true"/u, "selected settled child worker stays in the strip while viewed");
-    assert.match(settledNav, /data-switcher-current>#settled-worker<\/span>/u);
     assert.match(settledWorkerHtml, /id="dialog-session-create"/u);
-    assert.match(settledWorkerHtml, /id="dialog-session-archive"/u);
+    assert.match(settledWorkerHtml, /id="dialog-session-manage"/u);
 
     const archivedHtml = (await document.read({ kind: "session", workspace: "alpha", session: "archived-root" }, port, false)).toString();
     const archivedNav = extractTabs(archivedHtml);

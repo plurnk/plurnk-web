@@ -71,6 +71,17 @@ export async function verifyMermaid(t) {
                         await present(diagrams.map(fenced).join("\n\n"));
                         assert.equal(await body.locator("img").first().evaluate((image) => image === window.savedDiagram), true);
                         assert.equal(await body.locator("figure[data-diagram] details").first().evaluate((element) => element.open), true);
+
+                        await page.setViewportSize({ width: 1024, height: 640 });
+                        const centered = await body.locator("figure[data-diagram]").first().evaluate((fig) => {
+                            const vp = fig.querySelector("[data-diagram-viewport]")?.getBoundingClientRect();
+                            const img = fig.querySelector("img")?.getBoundingClientRect();
+                            return vp && img && img.width < vp.width
+                                ? Math.abs((img.left - vp.left) - (vp.right - img.right))
+                                : 0;
+                        });
+                        assert.ok(centered <= 2, `narrow diagram centers inside wide viewport (delta=${centered}px)`);
+                        await page.setViewportSize({ width: 320, height: 640 });
                     });
 
                     await t.test("untrusted labels and renderer styles never become application markup or requests", async () => {

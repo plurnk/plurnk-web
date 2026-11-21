@@ -139,6 +139,50 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const savedDraft = readStoredDraft();
         if (savedDraft !== null && savedDraft !== "") draft.value = savedDraft;
     }
+    /** @type {Set<string>} */
+    const seenHistoryMessageIds = new Set();
+    /** @type {string[]} */
+    const promptHistory = [];
+    let historyIndex = -1;
+    /** @type {string | null} */
+    let historyDraft = null;
+
+    /** @param {string} raw */
+    function pushPromptHistory(raw) {
+        const trimmed = raw.trim();
+        if (!trimmed || promptHistory.at(-1) === trimmed) return;
+        promptHistory.push(trimmed);
+    }
+
+    /** @param {readonly import("./session-agent.js").Message[]} messages */
+    function recordMessagesPromptHistory(messages) {
+        for (const msg of messages) {
+            if (msg.role !== "user" || seenHistoryMessageIds.has(msg.id)) continue;
+            seenHistoryMessageIds.add(msg.id);
+            const plurnk = /** @type {Record<string, unknown> | undefined} */ (msg._meta?.plurnk);
+            if (typeof plurnk?.answering === "string") continue;
+            if (typeof plurnk?.source === "string"
+                && (plurnk.source.startsWith("session://") || plurnk.source.startsWith("schedule://"))) {
+                continue;
+            }
+            const rawText = typeof msg.content === "string"
+                ? msg.content
+                : Array.isArray(msg.content)
+                    ? msg.content.map((part) => {
+                        if (part.type === "text" && typeof part.text === "string") return part.text;
+                        if (part.type === "skill" && typeof part.name === "string") return `$${part.name}`;
+                        return "";
+                    }).join("")
+                    : "";
+            const cleaned = rawText
+                .split("\n")
+                .filter((line) => !/^<session:\/\/[^\s>]+\/attachments\/[0-9a-f]+\/[^\s>]+>$/u.test(line.trim()))
+                .join("\n")
+                .trim();
+            if (cleaned) pushPromptHistory(cleaned);
+        }
+    }
+
     the(feedback, "message-status", "");
     let resources = new AbortController();
     const transcript = sessionHistory(history, (address) => readBody(address, auth, resources.signal),
@@ -397,6 +441,10 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     /** @param {string} id */
     function acknowledged(id) {
         if (pending?.message.id !== id) return;
+        seenHistoryMessageIds.add(id);
+        pushPromptHistory(pending.source);
+        historyIndex = -1;
+        historyDraft = null;
         if (draft.value === pending.source) {
             draft.value = "";
             writeStoredDraft("");
@@ -455,6 +503,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     },
                     onMessagesChanged: ({ messages }) => {
                         if (!signal.aborted) {
+                            recordMessagesPromptHistory(messages);
                             transcript.present(messages);
                             tail.follow();
                         }
@@ -464,6 +513,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     },
                     onMessagesSnapshot: ({ snapshot }) => {
                         if (signal.aborted) return;
+                        recordMessagesPromptHistory(snapshot.messages);
                         transcript.snapshot(snapshot);
                         tail.follow();
                         if (!pending) return;
@@ -730,6 +780,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         }
     });
     on(compose, "input", "textarea", () => {
+        historyIndex = -1;
+        historyDraft = null;
         draft.setCustomValidity("");
         const value = draft.value;
         writeStoredDraft(value.trim() !== "" && !isClientDispatch(value) ? value : "");
@@ -747,7 +799,47 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         acceptComposeSuggestion(button.textContent ?? "");
     });
     on(compose, "keydown", "textarea", (event) => {
-        if (!(event instanceof KeyboardEvent) || event.isComposing || event.repeat) return;
+        if (!(event instanceof KeyboardEvent) || event.isComposing) return;
+        if (!event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+            && (event.key === "ArrowUp" || event.key === "ArrowDown")
+            && draft.selectionStart === draft.selectionEnd) {
+            if (event.key === "ArrowUp") {
+                const isFirstLine = !draft.value.slice(0, draft.selectionStart).includes("\n");
+                if (isFirstLine && (draft.value === "" || historyIndex > -1 || draft.selectionStart === 0)) {
+                    const newestFirst = promptHistory.toReversed();
+                    if (historyIndex + 1 < newestFirst.length) {
+                        event.preventDefault();
+                        if (historyIndex === -1) historyDraft = draft.value;
+                        historyIndex += 1;
+                        draft.value = newestFirst[historyIndex] ?? "";
+                        draft.setSelectionRange(0, 0);
+                        draft.setCustomValidity("");
+                        availability();
+                        tail.follow();
+                    }
+                    return;
+                }
+            } else if (historyIndex > -1) {
+                const isLastLine = !draft.value.slice(draft.selectionEnd).includes("\n");
+                if (isLastLine) {
+                    event.preventDefault();
+                    historyIndex -= 1;
+                    if (historyIndex === -1) {
+                        draft.value = historyDraft ?? "";
+                        historyDraft = null;
+                    } else {
+                        const newestFirst = promptHistory.toReversed();
+                        draft.value = newestFirst[historyIndex] ?? "";
+                    }
+                    draft.setSelectionRange(draft.value.length, draft.value.length);
+                    draft.setCustomValidity("");
+                    availability();
+                    tail.follow();
+                    return;
+                }
+            }
+        }
+        if (event.repeat) return;
         if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
             const { kind, items } = computeComposeSuggestions();
             const lead = items[0];
@@ -844,6 +936,9 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             tail.pin();
             try {
                 if (await runCommand(text, resources.signal) && draft.value === text) {
+                    pushPromptHistory(text);
+                    historyIndex = -1;
+                    historyDraft = null;
                     draft.value = "";
                     writeStoredDraft("");
                 }

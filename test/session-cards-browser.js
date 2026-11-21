@@ -5,21 +5,20 @@ import { engines } from "./engines.js";
 import Documents from "../src/documents.js";
 import { directoryPath } from "../src/directory-addresses.js";
 import { privateHeaders } from "../src/http.js";
-import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
+import browserDiagnostics from "./browser-diagnostics.js";
 
 export default async function verifySessionCards(t) {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
     const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
-    let html;
+    /** @type {((url: URL) => Promise<Buffer>) | null} */
+    let renderSearch = null;
     const requests = [];
     /** @type {{ path: string, search: string, authorization: string | null }[]} */
     const notificationRequests = [];
     /** @type {Set<import("node:http").ServerResponse>} */
     const sseStreams = new Set();
-    /** @type {Map<string, (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void>} */
-    const entryHandlers = new Map();
     const server = createServer(async (request, response) => {
         const url = new URL(request.url, "http://fixture.invalid");
         const path = url.pathname;
@@ -45,16 +44,10 @@ export default async function verifySessionCards(t) {
             request.on("close", () => sseStreams.delete(response));
             return;
         }
-        if (path.startsWith("/acp/") && path.endsWith("/entry")) {
-            const handler = entryHandlers.get(path + url.search);
-            if (handler) {
-                handler(request, response);
-                return;
-            }
-        }
-        const isDocument = (path === "/" || path === "/search/") && Boolean(html) || path.startsWith("/~/");
-        const asset = isDocument ? { body: html, contentType: "text/html" } : assets.get(path);
-        const headers = isDocument
+        const isDocument = ((path === "/" || path === "/search/") && renderSearch !== null) || path.startsWith("/~/");
+        const docBody = isDocument && renderSearch ? await renderSearch(url) : null;
+        const asset = docBody ? { body: docBody, contentType: "text/html" } : assets.get(path);
+        const headers = docBody
             ? { ...privateHeaders, "content-type": asset?.contentType ?? "text/plain" }
             : { "content-type": asset?.contentType ?? "text/plain", ...(asset ? { "cache-control": "public, max-age=31536000, immutable" } : privateHeaders) };
         response.writeHead(asset ? 200 : 404, headers);
@@ -71,7 +64,8 @@ export default async function verifySessionCards(t) {
         { id: 5, name: "background", parentSessionId: 1, origin: "model", kind: "work", lifecycle: "queued", archived_at: null },
         { id: 6, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", archived_at: null },
         { id: 7, name: "cancelled", parentSessionId: null, origin: "model", kind: "root", lifecycle: "cancelled", archived_at: null },
-        { id: 8, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null },
+        { id: 8, name: "untouched-draft", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null },
+        { id: 9, name: "planned", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", title: "Planned task", archived_at: null },
     ];
     for (const engine of engines) await t.test(engine.name(), async () => {
         const browser = await engine.launch();
@@ -85,9 +79,12 @@ export default async function verifySessionCards(t) {
                     for (const project_root of [null, "/srv/project"]) {
                         const name = `~/research/<script>&"${"long-".repeat(12)}`;
                         const workspacePath = directoryPath({ kind: "workspace", workspace: name });
-                        html = await documents.search(false, {
+                        renderSearch = (url) => documents.search(false, {
                             listWorkspaces: async () => [{ id: 7, name, project_root, project_label: project_root, archived_at: null }],
                             listSessions: async () => sessions,
+                        }, {
+                            q: url.searchParams.get("q") ?? undefined,
+                            status: url.searchParams.get("status") ?? undefined,
                         });
                         await page.goto(new URL("/search/", base).href);
                         if (!javaScriptEnabled) {
@@ -98,29 +95,34 @@ export default async function verifySessionCards(t) {
                             }));
                             assert.deepEqual(boxes, [["dialog-workspace-create", true, true]]);
                         }
-                        const link = (name) => page.locator(`#search-sessions a[data-session-link][aria-label=${JSON.stringify(name)}]`);
-                        const card = (name) => link(name).locator("xpath=ancestor::article[1]");
+                        const wsArticle = page.locator('#search-workspaces > ul > li[data-directory-entry="workspace"][data-workspace-id="7"] > article');
+                        assert.equal(await wsArticle.getAttribute("aria-label"), project_root === null ? "Folderless workspace" : "Project workspace");
+                        assert.match(
+                            await wsArticle.locator(":scope > header").evaluate((el) => getComputedStyle(el, "::before").content),
+                            project_root === null ? /☁️/u : /🗂️/u,
+                        );
+                        assert.equal(await wsArticle.locator(':scope > header > a[data-text="name"]').textContent(), name);
+                        assert.equal(await wsArticle.locator(':scope > header > a[data-text="name"]').getAttribute("href"), workspacePath);
+
+                        const link = (sName) => wsArticle.locator(`a[data-session-link][aria-label=${JSON.stringify(sName)}]`);
+                        const card = (sName) => link(sName).locator("xpath=ancestor::article[1]");
                         const parent = card("parent");
                         const summary = parent.locator(":scope > details > summary");
-                        assert.equal(await summary.count(), 1, "the identity is the native disclosure, not a child-count teaser");
+                        assert.equal(await summary.count(), 1, "the identity is the native disclosure for child subagents");
                         assert.equal(await link("_plurnk").count(), 0);
-                        assert.equal(await page.locator('#search-sessions a[data-session-link]').count(), sessions.length - 1);
-                        assert.equal(await parent.locator(':scope > details > summary [data-session-workspace] a').textContent(), name);
-                        assert.equal(await parent.locator(':scope > details > summary [data-session-workspace] a').getAttribute("href"), workspacePath);
-                        const folder = parent.locator(':scope > details > summary [data-session-workspace] [role="img"]');
-                        assert.equal(await folder.getAttribute("aria-label"), project_root === null ? "Folderless workspace" : "Project workspace");
-                        assert.match(await folder.evaluate((element) => getComputedStyle(element, "::before").content), project_root === null ? /☁️/u : /🗂️/u);
+                        assert.equal(await link("untouched-draft").count(), 0, "untouched 0-loop draft stays hidden");
+                        assert.equal(await wsArticle.locator("a[data-session-link]").count(), 7);
                         assert.equal(await link("child").isVisible(), false);
-                        assert.equal(await card("done").locator(":scope > details").count(), 0, "a leaf has no fabricated answer or empty disclosure");
+                        assert.equal(await card("done").locator(":scope > details").count(), 0, "a leaf has no empty or reply-fetch disclosure");
                         assert.equal(await card("done").locator(":scope > header").count(), 1);
                         await summary.focus();
                         await page.keyboard.press("Enter");
                         assert.equal(await link("child").isVisible(), true);
                         assert.equal(await link("leaf").isVisible(), false);
                         assert.equal(await card("child").locator(':scope > details > summary [data-session-parent] a').textContent(), "parent");
-                        for (const [session, glyph] of [["parent", "⌛"], ["child", "💤"], ["done", "✓"], ["cancelled", "🛑"], ["idle", "○"]]) {
-                            const status = card(session).locator(':scope > header, :scope > details > summary').locator('[data-lifecycle]');
-                            const expected = sessions.find(({ name }) => name === session).lifecycle;
+                        for (const [sessionName, glyph] of [["parent", "⌛"], ["child", "💤"], ["done", "✓"], ["cancelled", "🛑"], ["planned", "○"]]) {
+                            const status = card(sessionName).locator(":scope > header, :scope > details > summary").locator("[data-lifecycle]");
+                            const expected = sessions.find((s) => s.name === sessionName).lifecycle;
                             assert.equal(await status.getAttribute("aria-label"), expected);
                             assert.equal(await status.getAttribute("title"), expected);
                             assert.ok((await status.evaluate((element) => getComputedStyle(element, "::before").content)).includes(glyph));
@@ -148,16 +150,13 @@ export default async function verifySessionCards(t) {
                         await link("parent").click();
                         assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, sessionPath);
                         if (javaScriptEnabled) {
-                            assert.equal(await page.evaluate(() => window.name), "true", "a real ant link does not toggle its enclosing summary");
+                            assert.equal(await page.evaluate(() => window.name), "true", "a real session link does not toggle its enclosing summary");
                         }
                         await page.goBack();
-                        if (!(await parent.locator(":scope > details").evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open))) {
-                            await summary.press("Enter");
-                        }
-                        await parent.locator(':scope > details > summary [data-session-workspace] a').click();
+                        await wsArticle.locator(':scope > header > a[data-text="name"]').click();
                         assert.equal(new URL(page.url()).pathname, workspacePath);
                         assert.equal(await page.locator('main [data-connection-indicator], main [role="tree"], main [data-text="session-kind"]').count(), 0);
-                        assert.equal(requests.some((path) => path.startsWith("/acp")), false, "directory browsing does not start conversation observation");
+                        assert.equal(requests.some((reqPath) => reqPath.startsWith("/acp")), false, "directory browsing does not start conversation observation");
                     }
                     checkBrowser();
                 } finally { await context.close(); }
@@ -172,7 +171,6 @@ export default async function verifySessionCards(t) {
                         { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", gates: 1, title: "Root task", archived_at: null, reply: { id: 10, coordinate: "1/1/1/send:10", completion: /** @type {const} */ (200), at: Date.now() - 120_000, excerpt: "Parent preview line", continued: false } },
                         { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", gates: 0, archived_at: null, reply: null },
                         { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "fork", lifecycle: "completed", gates: 0, archived_at: null, reply: { id: 20, coordinate: "1/2/1/done:20", completion: /** @type {const} */ (200), at: Date.now() - 30_000, excerpt: "Delivered reply preview", continued: true } },
-                        { id: 8, workspaceId: 7, name: "idle", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", gates: 0, archived_at: null, reply: null },
                     ],
                 };
                 let nextEventId = 0;
@@ -184,35 +182,16 @@ export default async function verifySessionCards(t) {
                     }
                 };
                 notificationRequests.length = 0;
-                entryHandlers.clear();
-                let doneReads = 0;
-                const doneTarget = "/acp/7/6/entry?target=log%3A%2F%2F%2F1%2F2%2F1%2Fdone%3A20";
-                entryHandlers.set(doneTarget, (req, res) => {
-                    doneReads++;
-                    assert.equal(req.headers.authorization, "Bearer overview-token");
-                    res.writeHead(200, { ...privateHeaders, "content-type": "text/plain; charset=utf-8" });
-                    res.end("**Delivered reply** <script>window.pwned = true</script>");
-                });
-                let parentFail = true;
-                const parentTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F1%2Fsend%3A10";
-                entryHandlers.set(parentTarget, (_req, res) => {
-                    if (parentFail) {
-                        res.writeHead(500, { ...privateHeaders, "content-type": "application/problem+json" });
-                        res.end(JSON.stringify({
-                            type: "https://problems.plurnk.xyz/acp/entry/storage-fault",
-                            title: "Internal Server Error",
-                            status: 500,
-                            detail: "Temporary storage fault.",
-                        }));
-                        return;
-                    }
-                    res.writeHead(200, { ...privateHeaders, "content-type": "text/plain; charset=utf-8" });
-                    res.end("Parent initial reply");
-                });
-                html = await documents.search(true, {
+                renderSearch = (url) => documents.search(true, {
                     listWorkspaces: async () => overviewData.workspaces,
                     listSessions: async () => overviewData.sessions,
                     readSessionOverview: async () => overviewData,
+                    listSessionLoops: async ({ sessionId }) => sessionId === 6
+                        ? [{ prompt: "Compare fork benchmark latency" }, { prompt: "Inspect p99 tail spike in WebSocket pool" }]
+                        : [],
+                }, {
+                    q: url.searchParams.get("q") ?? undefined,
+                    status: url.searchParams.get("status") ?? undefined,
                 });
                 requests.length = 0;
                 await page.goto(new URL("/search/", base).href);
@@ -223,96 +202,72 @@ export default async function verifySessionCards(t) {
                 assert.equal(notificationRequests[0].search, "");
                 assert.equal(await page.locator("header [data-connection-indicator]").isVisible(), false);
 
-                const rootNames = () => page.locator("#search-sessions > ul > li > article > header [data-session-link], #search-sessions > ul > li > article > details > summary [data-session-link]")
+                const rootNames = () => page.locator("#search-workspaces ul[data-workspace-sessions] > li > article > header [data-session-link], #search-workspaces ul[data-workspace-sessions] > li > article > details > summary [data-session-link]")
                     .evaluateAll((links) => links.map((el) => el.getAttribute("aria-label")));
-                assert.deepEqual(await rootNames(), ["done", "parent", "idle"]);
+                assert.deepEqual(await rootNames(), ["done", "parent"]);
 
-                const card = (name) => page.locator(`#search-sessions a[data-session-link][aria-label=${JSON.stringify(name)}]`).locator("xpath=ancestor::article[1]");
-                assert.equal(await card("done").locator(":scope > details > [data-session-reply]").count(), 1, "completed leaf has reply disclosure");
-                assert.equal(await card("idle").locator(":scope > details").count(), 0, "silent leaf has no disclosure");
-                assert.equal(doneReads, 0, "closed reply disclosure does not fetch entry body at load");
+                const card = (sName) => page.locator(`#search-workspaces a[data-session-link][aria-label=${JSON.stringify(sName)}]`).locator("xpath=ancestor::article[1]");
+                const cardHead = (sName) => card(sName).locator(":scope > header, :scope > details > summary");
+                assert.equal(await card("done").locator(":scope > details").count(), 0, "completed leaf has no reply-fetch disclosure");
+                assert.equal(await card("parent").locator(":scope > details").count(), 1, "parent with child subagent keeps disclosure");
 
-                // Session kind glyphs, badges, relative timestamps, excerpts, and filter controls
-                assert.match(await page.locator('#search-sessions a[data-session-link][aria-label="parent"]').evaluate((el) => getComputedStyle(el, "::before").content), /💬/u);
-                assert.match(await page.locator('#search-sessions a[data-session-link][aria-label="child"]').evaluate((el) => getComputedStyle(el, "::before").content), /🐜/u);
-                assert.match(await page.locator('#search-sessions a[data-session-link][aria-label="done"]').evaluate((el) => getComputedStyle(el, "::before").content), /🔱/u);
-                assert.equal(await card("parent").locator("[data-session-title]").textContent(), "Root task");
-                assert.equal(await card("parent").locator("[data-session-gates]").textContent(), "1");
-                assert.equal(await card("parent").locator("[data-session-children]").textContent(), "1");
-                assert.equal(await card("parent").locator("time[data-session-time]").textContent(), "2m ago");
-                assert.equal(await card("done").locator("time[data-session-time]").textContent(), "just now");
-                assert.equal(await card("done").locator("[data-session-excerpt]").textContent(), "Delivered reply preview…");
-                assert.equal(await card("done").locator("[data-session-excerpt]").isVisible(), true);
+                // Session kind glyphs, headlines, handle badges, relative timestamps, excerpts, and filter controls
+                assert.match(await page.locator('#search-workspaces a[data-session-link][aria-label="parent"]').evaluate((el) => getComputedStyle(el, "::before").content), /💬/u);
+                assert.match(await page.locator('#search-workspaces a[data-session-link][aria-label="child"]').evaluate((el) => getComputedStyle(el, "::before").content), /🐜/u);
+                assert.match(await page.locator('#search-workspaces a[data-session-link][aria-label="done"]').evaluate((el) => getComputedStyle(el, "::before").content), /🔱/u);
+                assert.equal(await cardHead("parent").locator("[data-session-headline]").textContent(), "Root task");
+                assert.equal(await cardHead("parent").locator("[data-session-handle]").textContent(), "#parent");
+                assert.equal(await cardHead("done").locator("[data-session-headline]").textContent(), "Compare fork benchmark latency");
+                assert.equal(await cardHead("done").locator("[data-session-handle]").textContent(), "#done");
+                assert.equal(await cardHead("parent").locator("[data-session-gates]").textContent(), "1");
+                assert.equal(await cardHead("parent").locator("[data-session-children]").textContent(), "1");
+                assert.equal(await cardHead("parent").locator("time[data-session-time]").textContent(), "2m ago");
+                assert.equal(await cardHead("done").locator("time[data-session-time]").textContent(), "just now");
+                assert.equal(await cardHead("done").locator("[data-session-excerpt]").textContent(), "Delivered reply preview…");
 
-                // Filter controls: scope, kind, and search
+                // Filter controls: status + live server-backed loop-prompt search
                 await page.locator('#search-controls select[data-overview-scope]').selectOption("active");
                 assert.equal(await card("parent").isVisible(), true);
                 assert.equal(await card("done").isVisible(), false);
-                assert.equal(await card("idle").isVisible(), false);
                 await page.locator('#search-controls select[data-overview-scope]').selectOption("all");
                 assert.equal(await card("done").isVisible(), true);
-                await page.locator('#search-controls input[data-overview-search]').fill("Root task");
+                const searchBox = page.locator('#search-controls input[data-overview-search]');
+                await searchBox.fill("p99 tail spike");
+                await page.waitForFunction(() => {
+                    const doneRow = document.querySelector('#search-workspaces a[data-session-link][aria-label="done"]')?.closest("li");
+                    const excerpt = doneRow?.querySelector("[data-session-excerpt]")?.textContent ?? "";
+                    return doneRow && !doneRow.hidden && excerpt.includes("p99 tail spike");
+                });
+                assert.equal(await card("parent").isVisible(), false);
+                await searchBox.fill("");
                 assert.equal(await card("parent").isVisible(), true);
-                assert.equal(await card("done").isVisible(), false);
-                await page.locator('#search-controls input[data-overview-search]').fill("");
-                assert.equal(await card("done").isVisible(), true);
 
-                // Open "done" card: fetches once on demand and renders sanitized Markdown, hiding the collapsed excerpt
-                const doneSummary = card("done").locator(":scope > details > summary");
-                await doneSummary.press("Enter");
-                assert.equal(await card("done").locator("[data-session-excerpt]").isVisible(), false);
-                const doneOutlet = card("done").locator(":scope > details > [data-session-reply]");
-                await doneOutlet.locator("strong", { hasText: "Delivered reply" }).waitFor();
-                assert.equal(await page.evaluate(() => Boolean(window.pwned)), false);
-                assert.equal(doneReads, 1);
-
-                // Close and reopen "done": does not re-fetch
-                await doneSummary.press("Enter");
-                await doneSummary.press("Enter");
-                assert.equal(doneReads, 1);
-
-                // Open "parent" card: initial 500 error offers Retry form, which recovers
+                // Open parent child disclosure; verify live SSE updates preserve open disclosure & focus, and untouched draft stays hidden until promoted
                 const parentSummary = card("parent").locator(":scope > details > summary");
                 await parentSummary.press("Enter");
-                const parentOutlet = card("parent").locator(":scope > details > [data-session-reply]");
-                await parentOutlet.locator('[role="alert"]', { hasText: "Temporary storage fault." }).waitFor();
-                parentFail = false;
-                await parentOutlet.getByRole("button", { name: "Retry", exact: true }).click();
-                await parentOutlet.locator("p", { hasText: "Parent initial reply" }).waitFor();
+                assert.equal(await card("parent").locator(":scope > details").evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
+                await parentSummary.focus();
 
-                // Stale in-flight read protection + live /notifications reordering & workspace rename while preserving open state & focus
-                const staleGate = Promise.withResolvers();
-                const midTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F2%2Fsend%3A30";
-                entryHandlers.set(midTarget, async (_req, res) => {
-                    await staleGate.promise;
-                    res.writeHead(200, { ...privateHeaders, "content-type": "text/plain; charset=utf-8" });
-                    res.end("Stale intermediate reply");
+                emitNotification("session/created", 7, 8, {
+                    id: 8,
+                    workspaceId: 7,
+                    workspaceName: "work",
+                    projectRoot: null,
+                    projectLabel: null,
+                    name: "fresh-draft",
+                    parentSessionId: null,
+                    origin: "model",
+                    kind: "root",
+                    lifecycle: "idle",
                 });
-                const newestTarget = "/acp/7/2/entry?target=log%3A%2F%2F%2F1%2F1%2F3%2Fsend%3A40";
-                entryHandlers.set(newestTarget, (_req, res) => {
-                    res.writeHead(200, { ...privateHeaders, "content-type": "text/plain; charset=utf-8" });
-                    res.end("Newest live reply");
-                });
+                assert.equal(await page.locator('#search-workspaces a[data-session-link][aria-label="fresh-draft"]').count(), 0, "untouched SSE-created draft stays hidden");
 
-                await doneSummary.focus();
-                emitNotification("log/entry", 7, 2, {
-                    entry: {
-                        id: 30,
-                        session_id: 2,
-                        loop_seq: 1,
-                        turn_seq: 1,
-                        sequence: 2,
-                        coordinate: "1/1/2/send:30",
-                        origin: "model",
-                        op: "send",
-                        state: "resolved",
-                        status_rx: 200,
-                        rx: { completion: 200 },
-                    },
-                });
-                await page.locator(`main [data-session-reply="${midTarget}"][aria-busy="true"]`).waitFor();
+                // Promoting fresh-draft via loop/started + log/entry materializes it live!
+                emitNotification("loop/started", 7, 8, { sessionId: 8, prompt: "Investigate live draft promotion" });
+                await page.locator('#search-workspaces a[data-session-link][aria-label="fresh-draft"]').waitFor();
+                assert.equal(await card("fresh-draft").locator("[data-session-headline]").textContent(), "Investigate live draft promotion");
 
-                // Before midTarget finishes, push a newer reply (id: 40), terminate parent loop, start idle loop, and rename workspace to "renamed-work"
+                // Push newer reply to parent (id: 40) + rename workspace to "renamed-work"
                 emitNotification("log/entry", 7, 2, {
                     entry: {
                         id: 40,
@@ -325,6 +280,7 @@ export default async function verifySessionCards(t) {
                         op: "send",
                         state: "resolved",
                         status_rx: 200,
+                        tx: { body: "Newest live reply excerpt" },
                         rx: { completion: 200 },
                     },
                 });
@@ -333,41 +289,21 @@ export default async function verifySessionCards(t) {
                     loopId: 1,
                     result: { status: 200 },
                 });
-                emitNotification("log/entry", 7, 8, {
-                    entry: {
-                        id: 41,
-                        session_id: 8,
-                        loop_seq: 1,
-                        turn_seq: 1,
-                        sequence: 1,
-                        origin: "model",
-                        op: "read",
-                        state: "resolved",
-                        status_rx: 200,
-                    },
-                });
                 emitNotification("workspace/renamed", 7, null, { id: 7, name: "renamed-work" });
-                staleGate.resolve(undefined);
-                await parentOutlet.locator("p", { hasText: "Newest live reply" }).waitFor();
-                assert.equal((await parentOutlet.textContent())?.includes("Stale intermediate reply"), false, "stale in-flight reply read is ignored");
-                assert.deepEqual(await rootNames(), ["parent", "done", "idle"], "live overview reorders cards by latest reply");
-                assert.equal(await card("parent").locator(":scope > details").evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true, "open disclosure state is preserved across reorder");
-                assert.equal(await card("done").locator(":scope > details").evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true, "done disclosure remains open");
-                assert.equal(await doneOutlet.locator("strong").textContent(), "Delivered reply", "unchanged reply body remains rendered without refetch");
-                assert.equal(doneReads, 1);
-                assert.equal(await doneSummary.evaluate((el) => document.activeElement === el), true, "keyboard focus is preserved across live reconciliation");
-                assert.equal(await page.title(), "Search — Plurnk");
-                assert.equal(await card("parent").locator(':scope > details > summary [data-session-workspace] a').textContent(), "renamed-work");
-                assert.equal(await card("idle").locator("[data-lifecycle]").getAttribute("aria-label"), "running");
+                await page.locator('#search-workspaces > ul > li[data-workspace-id="7"] > article > header > a[data-text="name"]', { hasText: "renamed-work" }).waitFor();
+                assert.deepEqual(await rootNames(), ["parent", "done", "fresh-draft"], "live overview reorders cards by latest reply");
+                assert.equal(await card("parent").locator(":scope > details").evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true, "open child disclosure state is preserved across reorder");
+                assert.equal(await parentSummary.evaluate((el) => document.activeElement === el), true, "keyboard focus is preserved across live reconciliation");
+                assert.equal(await cardHead("parent").locator("[data-session-excerpt]").textContent(), "Newest live reply excerpt");
 
-                // Live gate open + loop/gate-settled + session/titled updates on the default discrete stream
+                // Live gate open + loop/gate-settled + session/titled updates on the discrete stream
                 emitNotification("loop/proposal", 7, 8, {
                     logEntryId: 91,
                     sessionId: 8,
                     loopId: 1,
                     disposition: { decision: "review" },
                 });
-                await card("idle").locator('[data-session-gates="1"]').waitFor();
+                await card("fresh-draft").locator('[data-session-gates="1"]').waitFor();
                 emitNotification("loop/gate-settled", 7, 8, {
                     kind: "proposal",
                     sessionId: 8,
@@ -378,10 +314,10 @@ export default async function verifySessionCards(t) {
                 });
                 emitNotification("session/titled", 7, 8, {
                     id: 8,
-                    title: "Live titled idle",
+                    title: "Live titled draft",
                 });
-                await card("idle").locator("[data-session-title]", { hasText: "Live titled idle" }).waitFor();
-                assert.equal(await card("idle").locator("[data-session-gates]").count(), 0, "loop/gate-settled clears the gate badge without waiting for a resolved log/entry");
+                await card("fresh-draft").locator("[data-session-headline]", { hasText: "Live titled draft" }).waitFor();
+                assert.equal(await card("fresh-draft").locator("[data-session-gates]").count(), 0);
 
                 // Ending SSE stream transitions #main[data-connection] to disconnected, then passive backoff and online events recover it
                 for (const stream of sseStreams) stream.end();
@@ -397,9 +333,9 @@ export default async function verifySessionCards(t) {
                 await page.locator('main[data-connection="connected"]').waitFor({ timeout: 1000 });
                 assert.equal(notificationRequests.length, 3, "online event triggers immediate SSE recovery without waiting for backoff");
                 emitNotification("loop/terminated", 7, 8, { sessionId: 8, loopId: 1, result: { status: 200 } });
-                await page.waitForFunction(() => document.querySelector('main a[data-session-link][aria-label="idle"]')?.closest("[data-session-identity]")?.querySelector("[data-lifecycle]")?.getAttribute("aria-label") === "completed");
+                await page.waitForFunction(() => document.querySelector('main a[data-session-link][aria-label="fresh-draft"]')?.closest("[data-session-identity]")?.querySelector("[data-lifecycle]")?.getAttribute("aria-label") === "completed");
 
-                checkLive([httpFailure("/acp/7/2/entry", 500)]);
+                checkLive();
             } finally { await liveContext.close(); }
         } finally { await browser.close(); }
     });

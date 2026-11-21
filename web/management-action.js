@@ -38,6 +38,8 @@ export default async function managementAction(kind, params, sessionId, auth, si
         || kind === "providers/list"
         || kind === "session/new"
         || kind === "session/fork"
+        || kind === "session/archive"
+        || kind === "session/set_title"
         || kind === "session/delete"
         || kind === "session/list"
         || DAEMON_SCOPED_ACTIONS.has(kind);
@@ -155,6 +157,15 @@ export default async function managementAction(kind, params, sessionId, auth, si
                 ...(typeof params.name === "string" && params.name
                     ? { _meta: { plurnk: { sessionName: params.name } } }
                     : {}),
+            });
+        } else if (kind === "session/archive") {
+            outcome = await conn.agent.request(methods.agent.session.archive, {
+                sessionId: typeof params.sessionId === "string" && params.sessionId ? params.sessionId : sessionId,
+            });
+        } else if (kind === "session/set_title") {
+            outcome = await conn.agent.request(methods.agent.session.setTitle, {
+                sessionId: typeof params.sessionId === "string" && params.sessionId ? params.sessionId : sessionId,
+                title: String(params.title ?? ""),
             });
         } else if (kind === "session/delete") {
             outcome = await conn.agent.request(methods.agent.session.delete, {

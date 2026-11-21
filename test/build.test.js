@@ -66,7 +66,7 @@ test("{§web-page-shell} compact header stays on one row and long workspace plac
                         assert.equal(verticalOverflow, false, "place controls fit their scroll area vertically");
                         assert.equal(labelsVisible, width >= 1024, `${width}px collapses header button text labels below 1024px`);
                         assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), name);
-                        assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), "user");
+                        assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "user");
                         assert.ok(place.y < logo.bottom && place.bottom > logo.y, "place shares the mascot row");
                         assert.ok(menu.y < logo.bottom && menu.bottom > logo.y, "menu shares the mascot row");
                         assert.ok(place.x >= create.right - 1 && place.right <= menu.x + 1, "the place remains between creation and navigation controls");

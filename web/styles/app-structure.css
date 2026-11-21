@@ -231,41 +231,22 @@
         content: "✕" / "";
     }
 
-    /* {§web-workspace-tabs} Stationary intra-workspace tab strip above the scroller; compact switcher below 768px. */
+    /* {§web-workspace-tabs} Browser-style stationary intra-workspace tab strip across all viewport widths. */
     #workspace-tabs {
         display: flex;
         flex-wrap: nowrap;
         align-items: center;
         justify-content: flex-start;
-        gap: calc(var(--otm-spacing) * 0.5);
+        gap: calc(var(--otm-spacing) * 0.35);
         min-inline-size: 0;
-        padding-block: calc(var(--otm-spacing) * 0.2);
-    }
-
-    #workspace-tabs :where(svg) {
-        display: inline-block;
-        inline-size: 2ch;
-        block-size: 2ch;
-        vertical-align: middle;
-    }
-
-    #workspace-tabs > :where(button) {
-        --otm-form-element-spacing-block: 0;
-        --otm-form-element-spacing-inline: 0;
-
-        flex: 0 0 auto;
-        inline-size: auto;
-        block-size: auto;
-        margin: 0;
-        padding: calc(var(--otm-spacing) * 0.25);
-        border-width: 0;
+        padding-block: calc(var(--otm-spacing) * 0.25) 0;
     }
 
     #workspace-tabs > :where(ul) {
         display: flex;
-        flex: 1 1 auto;
+        flex: 0 1 auto;
         flex-wrap: nowrap;
-        align-items: center;
+        align-items: stretch;
         gap: calc(var(--otm-spacing) * 0.25);
         min-inline-size: 0;
         margin: 0;
@@ -275,7 +256,9 @@
     }
 
     #workspace-tabs :where(ul > li) {
+        display: inline-flex;
         flex: 0 0 auto;
+        align-items: center;
         max-inline-size: none;
         margin: 0;
         padding: 0;
@@ -285,8 +268,43 @@
         display: inline-flex;
         align-items: center;
         gap: 0.35ch;
+        max-inline-size: min(26ch, 58vw);
         margin: 0;
-        padding: calc(var(--otm-spacing) * 0.25) calc(var(--otm-spacing) * 0.6);
+        padding: calc(var(--otm-spacing) * 0.28) calc(var(--otm-spacing) * 0.55);
+        overflow: hidden;
+    }
+
+    #workspace-tabs :where(ul > li > a > span:last-child) {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #workspace-tabs :where(ul > li > form),
+    #workspace-tabs > :where(form) {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        margin: 0;
+    }
+
+    #workspace-tabs :where(form > button) {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        inline-size: auto;
+        block-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.45);
+        border-width: 0;
+        line-height: 1;
+    }
+
+    #workspace-tabs :where(ul > li > form > button) {
+        padding: calc(var(--otm-spacing) * 0.15) calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.15) calc(var(--otm-spacing) * 0.1);
     }
 
     #dialog-workspace-switcher :where(ul) {
@@ -343,10 +361,19 @@
         border-width: 0;
     }
 
-    @media (scripting: enabled) and (width < 48rem) {
-        #workspace-tabs > :where(ul) {
-            display: none;
-        }
+    #dialog-workspace-settings > :where(article > footer) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block-start: var(--otm-spacing);
+        padding-block-start: calc(var(--otm-spacing) * 0.75);
+    }
+
+    #dialog-workspace-settings > :where(article > footer > button) {
+        inline-size: auto;
+        margin: 0;
     }
 
     figure:has(> table) {
@@ -522,23 +549,21 @@
     }
 
     #search-workspaces > ul {
-        display: flex;
-        flex-wrap: wrap;
-        gap: calc(var(--otm-spacing) * 0.5);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--otm-spacing) * 0.85);
         margin-block: 0 var(--otm-spacing);
         padding: 0;
     }
 
     #search-workspaces > ul > li {
-        flex: 0 1 auto;
         min-inline-size: 0;
-        max-inline-size: 100%;
         margin: 0;
     }
 
     #search-workspaces > ul > li > article {
         margin: 0;
-        padding: calc(var(--otm-spacing) * 0.35) calc(var(--otm-spacing) * 0.65);
+        padding: calc(var(--otm-spacing) * 0.65) calc(var(--otm-spacing) * 0.85);
     }
 
     #search-workspaces > ul > li > article > header {
@@ -548,6 +573,36 @@
         gap: 0.5ch;
         min-inline-size: 0;
         max-inline-size: 100%;
+        margin: 0;
+        padding: 0;
+    }
+
+    #search-workspaces > ul > li > article > :is(ul, details) {
+        margin-block: calc(var(--otm-spacing) * 0.55) 0;
+        padding: 0;
+    }
+
+    #search-workspaces li > article > details > ul {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin-block: calc(var(--otm-spacing) * 0.4) 0;
+        padding-inline-start: var(--otm-spacing);
+    }
+
+    #search-workspaces > ul > li > article > ul,
+    #search-workspaces > ul > li > article > details > ul {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--otm-spacing) * 0.4);
+    }
+
+    #search-workspaces li li > article {
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.45) calc(var(--otm-spacing) * 0.65);
+    }
+
+    #search-workspaces li li > article > header {
         margin: 0;
         padding: 0;
     }

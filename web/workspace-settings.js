@@ -771,6 +771,10 @@ export function createWorkspaceSettingsController(getContext) {
         /** @param {SettingsSection} [initialSection] */
         open(initialSection = activeSection) {
             const modal = ensureDialog();
+            const renameBtn = $(modal, '[data-dialog-target="dialog-workspace-rename"]');
+            if (renameBtn instanceof HTMLElement) renameBtn.hidden = !$("#dialog-workspace-rename");
+            const archiveBtn = $(modal, '[data-dialog-target="dialog-workspace-archive"]');
+            if (archiveBtn instanceof HTMLElement) archiveBtn.hidden = !$("#dialog-workspace-archive");
             const targetSection = isSettingsSection(initialSection) ? initialSection : "mcp";
             selectSection(targetSection);
             if (!modal.open) modal.showModal();
