@@ -9,7 +9,7 @@ import createModule from "../src/module.js";
 const envelope = (name) => ({ workspaceId: 41, workspaceName: name, projectRoot: null, projectLabel: null });
 
 // {§web-workspace-creation} Tests both anonymous and authenticated postures without global env pollution.
-async function fixture(t, { auth = false, admitted = true, create = async (/** @type {any} */ _args) => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceArchived = async ({ workspaceId, archived }) => ({ id: workspaceId, archived_at: archived ? new Date().toISOString() : null }), setSessionArchived = async ({ sessionId, archived }) => ({ id: sessionId, archived_at: archived ? new Date().toISOString() : null, sessionIds: [sessionId] }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", archived_at: null }] } = {}) {
+async function fixture(t, { auth = false, admitted = true, create = async (/** @type {any} */ _args) => envelope("fresh"), rename = async (id, name) => ({ id, name }), createSession = async (args) => ({ sessionId: 10, sessionName: args.name || "bob" }), setWorkspaceArchived = async ({ workspaceId, archived }) => ({ id: workspaceId, archived_at: archived ? new Date().toISOString() : null }), setSessionArchived = async ({ sessionId, archived }) => ({ id: sessionId, archived_at: archived ? new Date().toISOString() : null, sessionIds: [sessionId] }), setSessionTitle = async ({ sessionId, title }) => ({ id: sessionId, title }), workspaces = [{ id: 7, name: "work", project_root: null, project_label: null, archived_at: null }], sessions = [{ id: 10, name: "bob", origin: "model", parentSessionId: null, kind: "work", lifecycle: "completed", archived_at: null }] } = {}) {
     const created = [];
     let handler;
     const module = createModule();
@@ -39,6 +39,7 @@ async function fixture(t, { auth = false, admitted = true, create = async (/** @
         createSession,
         setWorkspaceArchived,
         setSessionArchived,
+        setSessionTitle,
     };
     await module.start(/** @type {any} */ (seam));
     const server = createServer(handler);
@@ -433,8 +434,10 @@ test("{§web-workspace-archive} {§web-search} workspace archive and unarchive c
     assert.deepEqual(archived, [{ workspaceId: 7, archived: true }, { workspaceId: 7, archived: false }]);
 });
 
-test("{§web-session-archive} {§web-search} session archive redirects to remaining session or / and unarchive restores #session", async (t) => {
+test("{§web-session-archive} {§web-search} session archive prefers remaining sessions, allocates a starter tab on last unarchived session, and sets session titles", async (t) => {
     const archived = [];
+    const titled = [];
+    const allocated = [];
     const sessionRows = [
         { id: 10, name: "target-session", origin: "model", parentSessionId: null, kind: "root", lifecycle: "completed", archived_at: null },
         { id: 11, name: "sibling", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null },
@@ -442,11 +445,21 @@ test("{§web-session-archive} {§web-search} session archive redirects to remain
     const { base } = await fixture(t, {
         workspaces: [{ id: 7, name: "target-ws", project_root: null, project_label: null, archived_at: null }],
         sessions: sessionRows,
+        createSession: async (args) => {
+            allocated.push(args);
+            const row = { id: 12, name: "fresh-starter", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null };
+            sessionRows.push(row);
+            return { sessionId: row.id, sessionName: row.name };
+        },
         setSessionArchived: async (args) => {
             archived.push(args);
             const row = sessionRows.find((s) => s.id === args.sessionId);
             if (row) row.archived_at = args.archived ? "2026-10-23T00:00:00Z" : null;
             return { id: args.sessionId, archived_at: row?.archived_at ?? null, sessionIds: [args.sessionId] };
+        },
+        setSessionTitle: async (args) => {
+            titled.push(args);
+            return { id: args.sessionId, title: args.title };
         },
     });
 
@@ -480,15 +493,26 @@ test("{§web-session-archive} {§web-search} session archive redirects to remain
     const empty = await archivePost({ workspace: "target-ws", session: "" });
     assert.equal(empty.status, 400);
 
+    // Setting session title via POST /sessions/title (blank title answers 400)
+    const setTitleRes = await archivePost({ workspace: "target-ws", session: "target-session", title: "  Bug bash  " }, {}, "/sessions/title");
+    assert.equal(setTitleRes.status, 303);
+    assert.equal(setTitleRes.headers.get("location"), "/~/target-ws#target-session");
+    const blankTitleRes = await archivePost({ workspace: "target-ws", session: "target-session", title: "   " }, {}, "/sessions/title");
+    assert.equal(blankTitleRes.status, 400);
+    assert.deepEqual(titled, [
+        { workspaceId: 7, sessionId: 10, title: "Bug bash" },
+    ]);
+
     // Archiving when a sibling remains redirects to /~/target-ws#sibling
     const firstArchive = await archivePost({ workspace: "target-ws", session: "target-session" });
     assert.equal(firstArchive.status, 303);
     assert.equal(firstArchive.headers.get("location"), "/~/target-ws#sibling");
 
-    // Archiving the last unarchived session redirects to /
+    // Archiving the last unarchived session allocates a fresh starter session in the same workspace
     const lastArchive = await archivePost({ workspace: "target-ws", session: "sibling" });
     assert.equal(lastArchive.status, 303);
-    assert.equal(lastArchive.headers.get("location"), "/");
+    assert.equal(lastArchive.headers.get("location"), "/~/target-ws#fresh-starter");
+    assert.deepEqual(allocated, [{ workspaceId: 7, name: "user" }]);
 
     // Unarchiving restores /~/target-ws#target-session
     const unarchiveRes = await archivePost({ workspace: "target-ws", session: "target-session" }, {}, "/sessions/unarchive");

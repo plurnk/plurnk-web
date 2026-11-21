@@ -132,6 +132,30 @@ export default async function verifySessionDrafts(t) {
                     await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                     assert.equal(await field.inputValue(), "Newer draft typed while in flight.");
                     assert.equal(await page.evaluate(() => sessionStorage.getItem("plurnk:draft:7#user")), "Newer draft typed while in flight.");
+
+                    // {§web-session-input} ArrowUp / ArrowDown recalls session prompt history while stashing the unsent draft and respecting multi-line cursor movement.
+                    await field.focus();
+                    await page.evaluate(() => {
+                        const el = /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"));
+                        el.value = "Draft line 1\nDraft line 2";
+                        el.dispatchEvent(new Event("input", { bubbles: true }));
+                        el.setSelectionRange(el.value.length, el.value.length);
+                    });
+                    await page.keyboard.press("ArrowUp");
+                    assert.equal(await field.inputValue(), "Draft line 1\nDraft line 2", "ArrowUp from line 2 moves cursor within multi-line draft without hijacking");
+                    await page.evaluate(() => {
+                        const el = /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"));
+                        el.setSelectionRange(0, 0);
+                    });
+                    await page.keyboard.press("ArrowUp");
+                    assert.equal(await field.inputValue(), "In-flight prompt.", "ArrowUp at column 0 recalls most recent submitted prompt");
+                    await page.keyboard.press("ArrowUp");
+                    assert.equal(await field.inputValue(), "Deliver this confirmed prompt.", "second ArrowUp recalls earlier submitted prompt even when cursor is at end of recalled single-line prompt");
+                    await page.keyboard.press("ArrowDown");
+                    assert.equal(await field.inputValue(), "In-flight prompt.");
+                    await page.keyboard.press("ArrowDown");
+                    assert.equal(await field.inputValue(), "Draft line 1\nDraft line 2", "ArrowDown past newest history entry restores the stashed multi-line draft");
+
                     await field.fill("");
                     assert.deepEqual(await page.evaluate(() => Object.keys(sessionStorage)), []);
                     checkBrowser();

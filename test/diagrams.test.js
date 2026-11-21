@@ -65,6 +65,7 @@ test("{§web-diagram-service} the module compiles JSON source to a private stand
     assert.match(image.headers.get("content-security-policy"), /^sandbox; default-src 'none';/u);
     const svg = await image.text();
     assert.match(svg, /^<svg\b/u);
+    assert.match(svg, /@media\(prefers-color-scheme:dark\)\{:root\{--ondine-bg:#181c25;[^}]*--ondine-line:#c2cfe0;/u, "compiled SVG embeds dark-mode --ondine-* contrast variables");
     assert.match(svg, /Client/u);
     assert.match(svg, /Daemon/u);
     assert.equal(Buffer.byteLength(svg), Number(image.headers.get("content-length")));

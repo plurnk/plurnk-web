@@ -1,5 +1,7 @@
 import { $, $$, on, the } from "on_the_money";
 import { directoryPath, parseDirectory, parseSessionHash } from "../src/directory-addresses.js";
+import describeFailure from "./failure.js";
+import managementAction from "./management-action.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
@@ -12,6 +14,7 @@ import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
  *   readonly kind: "root" | "work" | "fork",
  *   readonly lifecycle: string,
  *   readonly gates: number,
+ *   readonly title?: string | null,
  *   readonly replyId: number | null,
  *   readonly archived: boolean,
  * }} WorkbenchSession
@@ -44,16 +47,27 @@ const asSessionKind = (value) => value === "root" || value === "work" || value =
 const orderByReply = (a, b) => a.replyId !== null && b.replyId !== null ? b.replyId - a.replyId
     : a.replyId !== null ? -1 : b.replyId !== null ? 1 : 0;
 
-/** @param {WorkbenchSession} session @param {string | null} selectedSession */
-function isVisibleInTabStrip(session, selectedSession) {
+/** @param {WorkbenchSession} session @param {boolean} hasModelChildren */
+function isUntouchedDraftWorkbenchSession(session, hasModelChildren) {
+    return session.parentSessionId === null
+        && session.kind === "root"
+        && session.lifecycle === "idle"
+        && session.replyId === null
+        && !(typeof session.title === "string" && session.title.trim() !== "")
+        && session.gates === 0
+        && !hasModelChildren;
+}
+
+/** @param {WorkbenchSession} session @param {string | null} selectedSession @param {boolean} isDraft */
+function isVisibleInTabStrip(session, selectedSession, isDraft) {
     if (session.name === selectedSession) return true;
-    if (session.archived) return false;
+    if (session.archived || isDraft) return false;
     if (session.parentSessionId === null || session.kind === "root" || session.kind === "fork") return true;
     return ["queued", "running", "parked", "failed"].includes(session.lifecycle) || session.gates > 0;
 }
 
 /**
- * {§web-workspace-tabs} Progressive-disclosure desktop session tabs, `#<session>` hash routing, quick-switcher modal, and resident WebSocket `/acp` panes.
+ * {§web-workspace-tabs} Unified browser-style session tab strip, `#<session>` hash routing, quick-switcher modal, and resident WebSocket `/acp` panes.
  * @param {HTMLElement} tabs
  */
 export default async function observeWorkspaceWorkbench(tabs) {
@@ -71,13 +85,11 @@ export default async function observeWorkspaceWorkbench(tabs) {
     const knownWorkspaceNames = new Set([currentWorkspaceName]);
 
     const rawTabsList = $(tabs, ":scope > ul");
-    const rawSwitcherButton = $(tabs, ":scope > button[data-workspace-switcher]");
     const initialMain = $("#main");
-    if (!(rawTabsList instanceof HTMLUListElement) || !(rawSwitcherButton instanceof HTMLButtonElement) || !(initialMain instanceof HTMLElement)) {
+    if (!(rawTabsList instanceof HTMLUListElement) || !(initialMain instanceof HTMLElement)) {
         throw new Error("Workspace workbench shell is incomplete.");
     }
     const tabsList = rawTabsList;
-    const switcherButton = rawSwitcherButton;
 
     // Hoist workspace-level management dialogs to document.body so they survive pane swaps.
     for (const dialog of $$(initialMain, ":scope > dialog")) {
@@ -144,17 +156,19 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const lifecycle = $(item, "[data-lifecycle]")?.getAttribute("data-lifecycle") ?? "idle";
             const rawGates = $(item, "[data-session-gates]")?.getAttribute("data-session-gates");
             const gates = rawGates && /^\d+$/u.test(rawGates) ? Number(rawGates) : 0;
+            const title = item.dataset.sessionTitle ?? null;
             const rawReply = item.dataset.replyId;
             const replyId = rawReply && /^\d+$/u.test(rawReply) ? Number(rawReply) : null;
             const archived = item.dataset.archived === "true";
-            sessionsById.set(id, { id, name, parentSessionId, parentName, parentOrigin, kind, lifecycle, gates, replyId, archived });
+            sessionsById.set(id, { id, name, parentSessionId, parentName, parentOrigin, kind, lifecycle, gates, title, replyId, archived });
         }
     }
 
-    hydrateSessionsFromTabList(tabsList, true);
-    if (tabs.dataset.foldedSessions) {
+    /** @param {string | undefined} rawFolded */
+    function hydrateFoldedSessions(rawFolded) {
+        if (!rawFolded) return;
         try {
-            const parsed = JSON.parse(tabs.dataset.foldedSessions);
+            const parsed = JSON.parse(rawFolded);
             if (Array.isArray(parsed)) {
                 for (const raw of parsed) {
                     if (!isRecord(raw) || typeof raw.id !== "number" || typeof raw.name !== "string") continue;
@@ -168,6 +182,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                         kind: asSessionKind(raw.kind) ?? (parentSessionId === null ? "root" : "work"),
                         lifecycle: typeof raw.lifecycle === "string" ? raw.lifecycle : "idle",
                         gates: typeof raw.gates === "number" ? raw.gates : 0,
+                        title: typeof raw.title === "string" ? raw.title : null,
                         replyId: typeof raw.replyId === "number" ? raw.replyId : null,
                         archived: false,
                     });
@@ -175,6 +190,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
             }
         } catch { /* ignore malformed metadata */ }
     }
+
+    hydrateSessionsFromTabList(tabsList, true);
+    hydrateFoldedSessions(tabs.dataset.foldedSessions);
 
     /** @returns {WorkbenchSession[]} */
     function computeOrderedUnarchived() {
@@ -229,8 +247,16 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 if (el.textContent !== selectedSessionName) el.textContent = selectedSessionName;
             }
             for (const input of $$('input[name="session"]')) {
-                if (input instanceof HTMLInputElement && input.type === "hidden") {
+                if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-tab-archive]")) {
                     input.value = selectedSessionName;
+                }
+            }
+            const manageDialog = $("#dialog-session-manage");
+            if (!(manageDialog instanceof HTMLDialogElement) || !manageDialog.open) {
+                const titleInput = $('#session-title input[name="title"]');
+                const currentEntry = [...sessionsById.values()].find(({ name }) => name === selectedSessionName);
+                if (titleInput instanceof HTMLInputElement) {
+                    titleInput.value = currentEntry?.title ?? "";
                 }
             }
         }
@@ -291,7 +317,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
     /** @param {readonly WorkbenchSession[]} orderedUnarchived */
     function renderSwitcherItems(orderedUnarchived) {
         if (!switcherList) return;
-        const switcherSessions = [...orderedUnarchived];
+        const childParents = new Set(orderedUnarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+        const switcherSessions = orderedUnarchived.filter((entry) =>
+            entry.name === selectedSessionName || !isUntouchedDraftWorkbenchSession(entry, childParents.has(entry.id)));
         if (selectedSessionName !== null && !switcherSessions.some(({ name }) => name === selectedSessionName)) {
             const direct = [...sessionsById.values()].find(({ name }) => name === selectedSessionName);
             if (direct) switcherSessions.push(direct);
@@ -299,9 +327,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
         switcherList.replaceChildren();
         for (const session of switcherSessions) {
             const item = /** @type {HTMLLIElement} */ ($.clone(switcherList, "#workspace-switcher-item"));
+            const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
             item.dataset.switcherEntry = `${workspaceId}:${session.id}`;
             item.dataset.sessionKind = session.kind;
-            item.dataset.switcherSearchText = `#${session.name} ${session.name} ${session.kind} ${session.lifecycle}`;
+            item.dataset.switcherSearchText = `#${session.name} ${session.name} ${titleText ?? ""} ${session.kind} ${session.lifecycle}`;
             const link = $(item, "a[data-workspace-route]");
             const lifecycleEl = $(item, "[data-lifecycle]");
             const labelEl = $(item, "[data-switcher-label]");
@@ -321,7 +350,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
             }
             if (lifecycleEl) lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
-            if (labelEl) labelEl.textContent = `#${session.name}`;
+            if (labelEl) labelEl.textContent = titleText ? `${titleText} (#${session.name})` : `#${session.name}`;
         }
         applySwitcherFilter();
     }
@@ -331,7 +360,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
         syncHeaderPlace();
 
         const orderedUnarchived = computeOrderedUnarchived();
-        const visible = orderedUnarchived.filter((entry) => isVisibleInTabStrip(entry, selectedSessionName));
+        const childParents = new Set(orderedUnarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+        const visible = orderedUnarchived.filter((entry) =>
+            isVisibleInTabStrip(entry, selectedSessionName, isUntouchedDraftWorkbenchSession(entry, childParents.has(entry.id))));
         if (selectedSessionName !== null && !visible.some(({ name }) => name === selectedSessionName)) {
             const direct = [...sessionsById.values()].find(({ name }) => name === selectedSessionName);
             if (direct) visible.push(direct);
@@ -344,8 +375,14 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 row = /** @type {HTMLLIElement} */ ($.clone(tabsList, "#workspace-tab-item"));
                 tabRowsById.set(session.id, row);
             }
+            const isDraft = isUntouchedDraftWorkbenchSession(session, childParents.has(session.id));
+            const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
             row.dataset.tabId = `${workspaceId}:${session.id}`;
             row.dataset.sessionKind = session.kind;
+            if (isDraft) row.dataset.tabDraft = "true";
+            else delete row.dataset.tabDraft;
+            if (titleText !== null) row.dataset.sessionTitle = titleText;
+            else delete row.dataset.sessionTitle;
             if (session.parentSessionId !== null) row.dataset.parentId = String(session.parentSessionId);
             else delete row.dataset.parentId;
             if (session.replyId !== null) row.dataset.replyId = String(session.replyId);
@@ -357,8 +394,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
             if (link instanceof HTMLAnchorElement) {
                 link.dataset.tabSession = session.name;
                 if (link.getAttribute("href") !== sessionHash) link.setAttribute("href", sessionHash);
-                const title = `#${session.name} (${session.lifecycle})`;
-                if (link.getAttribute("title") !== title) link.setAttribute("title", title);
+                const hoverTitle = titleText !== null
+                    ? `${titleText} (#${session.name} · ${session.lifecycle})`
+                    : `#${session.name} (${session.lifecycle})`;
+                if (link.getAttribute("title") !== hoverTitle) link.setAttribute("title", hoverTitle);
                 if (session.name === selectedSessionName) link.setAttribute("aria-current", "true");
                 else link.removeAttribute("aria-current");
 
@@ -367,7 +406,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
                 }
                 const labelEl = $(link, "[data-tab-label]");
-                const tabText = `#${session.name}`;
+                const tabText = titleText ?? `#${session.name}`;
                 if (labelEl && labelEl.textContent !== tabText) labelEl.textContent = tabText;
 
                 let gatesBadge = $(link, "[data-session-gates]");
@@ -383,6 +422,20 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
             }
 
+            const archiveForm = $(row, "form[data-tab-archive]");
+            if (archiveForm instanceof HTMLFormElement) {
+                const wsInput = $(archiveForm, 'input[name="workspace"]');
+                if (wsInput instanceof HTMLInputElement && wsInput.value !== currentWorkspaceName) wsInput.value = currentWorkspaceName;
+                const sessInput = $(archiveForm, 'input[name="session"]');
+                if (sessInput instanceof HTMLInputElement && sessInput.value !== session.name) sessInput.value = session.name;
+                const archiveBtn = $(archiveForm, 'button[type="submit"]');
+                const archiveLabel = `Archive #${session.name}`;
+                if (archiveBtn instanceof HTMLButtonElement) {
+                    if (archiveBtn.getAttribute("aria-label") !== archiveLabel) archiveBtn.setAttribute("aria-label", archiveLabel);
+                    if (archiveBtn.getAttribute("title") !== archiveLabel) archiveBtn.setAttribute("title", archiveLabel);
+                }
+            }
+
             if (tabsList.children[index] !== row) {
                 tabsList.insertBefore(row, tabsList.children[index] ?? null);
             }
@@ -393,59 +446,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
 
         tabs.dataset.tabCount = String(visible.length);
-
-        let activeCount = 0;
-        let gatedCount = 0;
-        let backgroundGatedCount = 0;
-        for (const entry of orderedUnarchived) {
-            if (["queued", "running", "parked"].includes(entry.lifecycle)) activeCount++;
-            if (entry.gates > 0) {
-                gatedCount += entry.gates;
-                if (entry.name !== selectedSessionName) backgroundGatedCount += entry.gates;
-            }
-        }
-
-        const headerGates = $("[data-header-gates]");
-        if (headerGates instanceof HTMLElement) {
-            if (backgroundGatedCount > 0) {
-                const label = `${backgroundGatedCount} awaiting input in other sessions`;
-                headerGates.hidden = false;
-                headerGates.dataset.sessionGates = String(backgroundGatedCount);
-                headerGates.setAttribute("aria-label", label);
-                headerGates.setAttribute("title", label);
-                headerGates.textContent = String(backgroundGatedCount);
-            } else {
-                headerGates.hidden = true;
-                headerGates.removeAttribute("data-session-gates");
-                headerGates.textContent = "";
-            }
-        }
-
-        const currentEl = $(switcherButton, "[data-switcher-current]");
-        const currentText = selectedSessionName === null ? currentWorkspaceName : `#${selectedSessionName}`;
-        if (currentEl && currentEl.textContent !== currentText) currentEl.textContent = currentText;
-
-        let switcherGates = $(switcherButton, "[data-session-gates]");
-        if (gatedCount > 0) {
-            switcherGates ??= $.clone(switcherButton, "#session-gates-badge");
-            const label = `${gatedCount} awaiting input`;
-            switcherGates.setAttribute("data-session-gates", String(gatedCount));
-            switcherGates.setAttribute("aria-label", label);
-            if (switcherGates.textContent !== String(gatedCount)) switcherGates.textContent = String(gatedCount);
-        } else {
-            switcherGates?.remove();
-        }
-
-        let switcherActive = $(switcherButton, "[data-switcher-active]");
-        if (activeCount > 0) {
-            switcherActive ??= $.clone(switcherButton, "#workspace-switcher-active-badge");
-            const label = `${activeCount} active`;
-            switcherActive.setAttribute("data-switcher-active", String(activeCount));
-            switcherActive.setAttribute("aria-label", label);
-            if (switcherActive.textContent !== String(activeCount)) switcherActive.textContent = String(activeCount);
-        } else {
-            switcherActive?.remove();
-        }
 
         if (switcherDialog?.open) {
             renderSwitcherItems(orderedUnarchived);
@@ -483,15 +483,32 @@ export default async function observeWorkspaceWorkbench(tabs) {
         switcherSearch?.focus();
     }
 
-    on(tabs, "click", "[data-workspace-switcher]", () => {
-        openSwitcherDialog();
-    });
+    function openSessionManageDialog() {
+        const dialog = $("#dialog-session-manage");
+        if (!(dialog instanceof HTMLDialogElement)) return;
+        syncHeaderPlace();
+        const currentEntry = [...sessionsById.values()].find(({ name }) => name === selectedSessionName);
+        const titleInput = $(dialog, '#session-title input[name="title"]');
+        if (titleInput instanceof HTMLInputElement) {
+            titleInput.value = currentEntry?.title ?? "";
+        }
+        the(dialog, "session-manage-error", "");
+        if (!dialog.open) dialog.showModal();
+    }
 
     const pageLifetime = new AbortController();
     on.target(window, "pagehide", (event) => {
         if (!(event instanceof PageTransitionEvent) || !event.persisted) {
             pageLifetime.abort();
         }
+    });
+    on(document.body, "submit", 'form[action="/auth/logout"]', () => {
+        pageLifetime.abort();
+        for (const pane of panesBySession.values()) {
+            pane.controller.dispose();
+        }
+        panesBySession.clear();
+        activePane = null;
     });
 
     /** @param {string} sessionName */
@@ -658,6 +675,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const target = link.dataset.tabSession ?? parseSessionHash(rawHref);
             if (target) {
                 event.preventDefault();
+                if (link.closest("#workspace-tabs") && target === selectedSessionName) {
+                    openSessionManageDialog();
+                    return;
+                }
                 const openDialog = link.closest("dialog");
                 if (openDialog instanceof HTMLDialogElement && openDialog.open) openDialog.close();
                 void selectSession(target, { updateHistory: "push", recordPlace: true });
@@ -671,6 +692,129 @@ export default async function observeWorkspaceWorkbench(tabs) {
             if (openDialog instanceof HTMLDialogElement && openDialog.open) openDialog.close();
             void selectSession(dir.session, { updateHistory: "push", recordPlace: true });
         }
+    });
+
+    let titleMutationBusy = false;
+    on(document.body, "submit", "form[data-session-title-form]", (event, form) => {
+        if (!live || !(form instanceof HTMLFormElement)) return;
+        event.preventDefault();
+        if (titleMutationBusy || !selectedSessionName) return;
+        const rawTitle = String(new FormData(form).get("title") ?? "").trim();
+        if (!rawTitle) return;
+        const targetSessionName = selectedSessionName;
+        const manageDialog = $("#dialog-session-manage");
+        titleMutationBusy = true;
+        if (manageDialog instanceof HTMLElement) the(manageDialog, "session-manage-error", "");
+        void (async () => {
+            try {
+                await managementAction("session/set_title", { title: rawTitle }, `${workspaceId}#${targetSessionName}`, auth, pageLifetime.signal);
+                const cur = [...sessionsById.values()].find(({ name }) => name === targetSessionName);
+                if (cur) sessionsById.set(cur.id, { ...cur, title: rawTitle });
+                reconcileTabs();
+                if (manageDialog instanceof HTMLDialogElement && manageDialog.open) manageDialog.close();
+            } catch (error) {
+                const { message, recovery } = await describeFailure(error);
+                if (manageDialog instanceof HTMLElement) {
+                    the(manageDialog, "session-manage-error", [message, recovery].filter(Boolean).join(" "));
+                }
+            } finally {
+                titleMutationBusy = false;
+            }
+        })();
+    });
+
+    let archiveMutationBusy = false;
+    on(document.body, "submit", "form[data-tab-archive], form[data-session-archive-form]", (event, form) => {
+        if (!live || !(form instanceof HTMLFormElement)) return;
+        event.preventDefault();
+        if (archiveMutationBusy) return;
+        const targetSession = String(new FormData(form).get("session") ?? "").trim();
+        if (!targetSession) return;
+        archiveMutationBusy = true;
+        const manageDialog = $("#dialog-session-manage");
+        if (manageDialog instanceof HTMLElement) the(manageDialog, "session-manage-error", "");
+        void (async () => {
+            try {
+                await managementAction("session/archive", {}, `${workspaceId}#${targetSession}`, auth, pageLifetime.signal);
+                if (manageDialog instanceof HTMLDialogElement && manageDialog.open) manageDialog.close();
+                const targetEntry = [...sessionsById.values()].find(({ name }) => name === targetSession);
+                /** @type {Set<number>} */
+                const archivedSubtree = new Set();
+                if (targetEntry) {
+                    archivedSubtree.add(targetEntry.id);
+                    let added = true;
+                    while (added) {
+                        added = false;
+                        for (const entry of sessionsById.values()) {
+                            if (!archivedSubtree.has(entry.id) && entry.parentSessionId !== null && archivedSubtree.has(entry.parentSessionId)) {
+                                archivedSubtree.add(entry.id);
+                                added = true;
+                            }
+                        }
+                    }
+                }
+                let archivedActivePane = targetSession === selectedSessionName;
+                for (const sid of archivedSubtree) {
+                    const cur = sessionsById.get(sid);
+                    if (!cur) continue;
+                    sessionsById.set(sid, { ...cur, archived: true });
+                    if (cur.name === selectedSessionName) archivedActivePane = true;
+                    const pane = panesBySession.get(cur.name);
+                    if (pane) {
+                        pane.controller.dispose();
+                        if (pane === activePane) {
+                            pane.main.remove();
+                            pane.footer.remove();
+                            activePane = null;
+                        }
+                        panesBySession.delete(cur.name);
+                    }
+                }
+                if (archivedActivePane) {
+                    const remaining = computeOrderedUnarchived();
+                    const childParents = new Set(remaining.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+                    const nextSession = remaining.find((entry) => !isUntouchedDraftWorkbenchSession(entry, childParents.has(entry.id)))
+                        ?? remaining[0];
+                    if (nextSession) {
+                        await selectSession(nextSession.name, { updateHistory: "replace", recordPlace: true });
+                    } else {
+                        const created = await managementAction("session/new", {
+                            _meta: { plurnk: { workspace: currentWorkspaceName } },
+                        }, "", auth, pageLifetime.signal);
+                        const rawSessionId = isRecord(created) && typeof created.sessionId === "string" ? created.sessionId : "";
+                        const freshName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : "";
+                        if (freshName) {
+                            if (![...sessionsById.values()].some(({ name }) => name === freshName)) {
+                                const maxId = Math.max(0, ...sessionsById.keys());
+                                sessionsById.set(maxId + 1, {
+                                    id: maxId + 1,
+                                    name: freshName,
+                                    parentSessionId: null,
+                                    kind: "root",
+                                    lifecycle: "idle",
+                                    gates: 0,
+                                    title: null,
+                                    replyId: null,
+                                    archived: false,
+                                });
+                            }
+                            await selectSession(freshName, { updateHistory: "replace", recordPlace: true });
+                        } else {
+                            location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/");
+                        }
+                    }
+                } else {
+                    reconcileTabs();
+                }
+            } catch (error) {
+                const { message, recovery } = await describeFailure(error);
+                if (manageDialog instanceof HTMLDialogElement && manageDialog.open) {
+                    the(manageDialog, "session-manage-error", [message, recovery].filter(Boolean).join(" "));
+                }
+            } finally {
+                archiveMutationBusy = false;
+            }
+        })();
     });
 
     /** @type {Map<string, PaneEntry>} */
@@ -869,6 +1013,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 const parentSessionId = typeof data.parentSessionId === "number" ? data.parentSessionId : null;
                 const kind = asSessionKind(data.kind) ?? (parentSessionId === null ? "root" : "work");
                 const lifecycle = typeof data.lifecycle === "string" ? data.lifecycle : "idle";
+                const title = typeof data.title === "string" && data.title.trim() !== "" ? data.title.trim() : null;
                 sessionsById.set(id, {
                     id,
                     name: data.name,
@@ -876,10 +1021,24 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     kind,
                     lifecycle,
                     gates: 0,
+                    title,
                     replyId: null,
                     archived: false,
                 });
                 reconcileTabs();
+                return;
+            }
+            case "session/titled": {
+                if (notifWorkspaceId !== workspaceId) return;
+                const sid = typeof data.id === "number" ? data.id : notifSessionId;
+                if (sid === null) return;
+                const cur = sessionsById.get(sid);
+                if (!cur) return;
+                const nextTitle = typeof data.title === "string" && data.title.trim() !== "" ? data.title.trim() : null;
+                if ((cur.title ?? null) === nextTitle) return;
+                sessionsById.set(sid, { ...cur, title: nextTitle });
+                reconcileTabs();
+                syncHeaderPlace();
                 return;
             }
             case "session/archived": {
@@ -966,10 +1125,12 @@ export default async function observeWorkspaceWorkbench(tabs) {
                         });
                         if (!res.ok) return;
                         const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+                        const parsedTabs = $(doc, "#workspace-tabs");
                         const parsedTabsList = $(doc, "#workspace-tabs > ul");
                         if (parsedTabsList) {
                             sessionsById.clear();
                             hydrateSessionsFromTabList(parsedTabsList, false);
+                            hydrateFoldedSessions(parsedTabs instanceof HTMLElement ? parsedTabs.dataset.foldedSessions : undefined);
                             reconcileTabs();
                         }
                         if (settingsControllerPromise) {
@@ -1055,10 +1216,19 @@ export default async function observeWorkspaceWorkbench(tabs) {
             the(tabs, "notifications", state);
         },
     });
+    on(document.body, "submit", 'form[action="/auth/logout"]', () => {
+        notifications.unsubscribe();
+    });
+
+    const initialHashSession = parseSessionHash(location.hash);
+    if (initialHashSession !== null && initialHashSession !== serverSessionName) {
+        selectedSessionName = initialHashSession;
+        reconcileTabs();
+    }
 
     await notifications.initialAuthSettled;
+    if (pageLifetime.signal.aborted) return;
     const statusFooter = $("#session-status");
-    const initialHashSession = parseSessionHash(location.hash);
 
     if (initialHashSession !== null && initialHashSession !== serverSessionName) {
         await selectSession(initialHashSession, { updateHistory: "none", recordPlace: true });
@@ -1070,6 +1240,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             history.replaceState(null, "", `#${encodeURIComponent(serverSessionName)}`);
         }
         const observeSession = await getObserveSession();
+        if (pageLifetime.signal.aborted) return;
         const controller = observeSession(statusFooter, {
             main: initialMain,
             transport: "ws",

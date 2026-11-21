@@ -37,7 +37,10 @@ export default function createFixtureModule() {
                 const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
                 const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
                 if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
-                    await port.createSession({ workspaceId, name: "user" });
+                    const createdUser = await port.createSession({ workspaceId, name: "user" });
+                    if (name !== "folderless") {
+                        await port.setSessionTitle({ workspaceId, sessionId: createdUser.sessionId, title: "Workspace chat" });
+                    }
                 }
                 if (name === ${JSON.stringify(names[0])} && !(await port.listSessions(workspaceId)).some((session) => session.name === "primary")) {
                     const owner = "acp://fixture/threads/primary";
@@ -46,7 +49,8 @@ export default function createFixtureModule() {
                     const review = await port.forkSession({ workspaceId, sessionId: parent.sessionId, name: "review" });
                     await port.createSession({ workspaceId, name: "research", parentSessionId: parent.sessionId });
                     await port.createSession({ workspaceId, name: "evidence", parentSessionId: review.sessionId });
-                    await port.createSession({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
+                    const uuidSess = await port.createSession({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
+                    await port.setSessionTitle({ workspaceId, sessionId: uuidSess.sessionId, title: "UUID audit" });
                     const runtime = await port.ensureRuntimeSession(workspaceId);
                     const incoming = await port.createSession({ workspaceId, name: "incoming", parentSessionId: runtime });
                     await port.createSession({ workspaceId, name: "incoming-child", parentSessionId: incoming.sessionId });
@@ -60,7 +64,8 @@ export default function createFixtureModule() {
                 const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
                 if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
                 if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
-                    await port.createSession({ workspaceId, name: "user" });
+                    const createdUser = await port.createSession({ workspaceId, name: "user" });
+                    await port.setSessionTitle({ workspaceId, sessionId: createdUser.sessionId, title: "Workspace chat" });
                 }
             }
             port.registerHttpRoute("/__fixture", async (req, res) => {
@@ -156,19 +161,30 @@ registerHooks({
                             await page.waitForURL(new URL("/search/", base).href);
                             await verifyPageShell(page, { title: "Search — Plurnk", kind: "search" });
                             assert.equal(await page.locator("main h1").count(), 0);
-                            const totalSessions = initial.reduce((sum, ws) => sum + ws.sessions.filter(({ origin }) => origin === "model").length, 0);
+                            const totalSessions = initial.reduce((sum, ws) => sum + ws.sessions.filter((s) => {
+                                if (s.origin !== "model") return false;
+                                const kind = s.kind ?? (s.parentSessionId === null ? "root" : "work");
+                                const hasChildren = ws.sessions.some((c) => c.origin === "model" && c.parentSessionId === s.id);
+                                const isDraft = s.parentSessionId === null && kind === "root" && s.lifecycle === "idle" && !s.title && s.loops.length === 0 && !hasChildren;
+                                return !isDraft;
+                            }).length, 0);
                             assert.equal(
-                                await page.locator("#search-sessions a[data-session-link]").count(),
+                                await page.locator("#search-workspaces :is(a, span)[data-session-link]").count(),
                                 Math.min(12, totalSessions),
-                                "unfiltered /search/ renders the bounded daemon-wide model session overview",
+                                "unfiltered /search/ renders the bounded daemon-wide non-draft model session overview",
                             );
                             assert.equal(await page.locator('main [data-text="overview-omitted"]').innerText(), String(totalSessions - 12));
 
-                            assert.deepEqual(await page.locator("#search-workspaces > ul > li > article > header > a").allTextContents(), initial.map(({ name }) => name));
-                            const entries = page.locator("#search-workspaces > ul > li > article");
-                            assert.deepEqual(await entries.locator("header").evaluateAll((elements) => elements.map((element) => getComputedStyle(element, "::before").content.match(/☁️|🗂️/u)?.[0])), initial.map(({ project_root }) => project_root === null ? "☁️" : "🗂️"));
-                            assert.deepEqual(await entries.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
-                                initial.map(({ project_root }) => project_root === null ? "Folderless workspace" : "Project workspace"));
+                            const renderedWsNames = await page.locator("#search-workspaces > ul > li > article > header > :is(a, span)[data-text='name']").allTextContents();
+                            assert.deepEqual([...renderedWsNames].toSorted(), initial.map(({ name }) => name).toSorted());
+                            for (const ws of initial) {
+                                const wsEntry = page.locator(`#search-workspaces > ul > li[data-workspace-id="${ws.id}"] > article`);
+                                assert.equal(
+                                    await wsEntry.locator(":scope > header").evaluate((el) => getComputedStyle(el, "::before").content.match(/☁️|🗂️/u)?.[0]),
+                                    ws.project_root === null ? "☁️" : "🗂️",
+                                );
+                                assert.equal(await wsEntry.getAttribute("aria-label"), ws.project_root === null ? "Folderless workspace" : "Project workspace");
+                            }
 
                             const cookie = (await context.cookies()).find(({ name }) => name === "plurnk_web_session");
                             assert.ok(cookie);
@@ -189,7 +205,7 @@ registerHooks({
                                 assert.ok(session);
                                 await verifyPageShell(page, { title: `${workspace.name}#${session.name} — Plurnk`, kind: "session" });
                                 assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), workspace.name);
-                                assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), session.name);
+                                assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), session.name);
                                 // {§web-workspace-folder} Render the daemon's label, including after a rename.
                                 const sameFolder = workspace.name === workspace.project_label;
                                 const marker = page.locator("#session-workspace").getByRole("img", {
@@ -268,10 +284,11 @@ registerHooks({
                         try {
                             const page = await context.newPage();
                             await page.goto(new URL("/search/", base).href);
-                            assert.deepEqual(await page.locator("#search-workspaces > ul > li > article > header > a").allTextContents(),
-                                census.filter(({ id }) => id !== shelved.id).map(({ name }) => name), "an archived workspace leaves the active search list");
+                            const activeSearchWs = await page.locator("#search-workspaces > ul > li > article > header > :is(a, span)[data-text='name']").allTextContents();
+                            assert.deepEqual([...activeSearchWs].toSorted(),
+                                census.filter(({ id }) => id !== shelved.id).map(({ name }) => name).toSorted(), "an archived workspace leaves the active search list");
                             await page.goto(new URL(`/search/?${new URLSearchParams({ workspace: project.name })}`, base).href);
-                            const tree = await page.locator("#search-sessions a[data-session-link]").evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
+                            const tree = await page.locator("#search-workspaces a[data-session-link]").evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
                             assert.ok(tree.includes("primary") && tree.includes("research"), "shown sessions stay in the tree");
                             assert.ok(!tree.includes("review") && !tree.includes("evidence"), "an archived session leaves the tree with the sessions beneath it");
                             const opened = await page.goto(new URL(directoryPath({ kind: "session", workspace: project.name, session: "review" }), base).href);
@@ -373,29 +390,43 @@ registerHooks({
                             const secondCreatedPath = new URL(page.url()).pathname;
                             assert.ok(secondCreatedPath.startsWith("/~/"));
 
-                            // 4. {§web-workspace-rename} and {§web-session-creation} via #header-session -> #dialog-session-manage (or inline when no-JS)
-                            const openSessionDialog = async (dialog, formId) => {
-                                const target = page.locator(`#${formId}`);
+                            // 4. {§web-workspace-rename} via #session-workspace -> #dialog-workspace-settings and {§web-session-creation} via active tab -> #dialog-session-manage (or inline when no-JS)
+                            const openWorkspaceRename = async () => {
+                                const target = page.locator("#workspace-rename");
                                 if (javaScriptEnabled) {
-                                    await page.locator("#header-session").click();
-                                    await page.locator("#dialog-session-manage").waitFor({ state: "visible" });
-                                    await page.locator(`#dialog-session-manage button[data-dialog-target="${dialog}"]`).click();
-                                    assert.equal(await page.locator(`#${dialog}[open]`).count(), 1, `${dialog} opened`);
+                                    await page.locator("#session-workspace").click();
+                                    await page.locator("#dialog-workspace-settings").waitFor({ state: "visible" });
+                                    await page.locator('#dialog-workspace-settings button[data-dialog-target="dialog-workspace-rename"]').click();
+                                    assert.equal(await page.locator("#dialog-workspace-rename[open]").count(), 1, "dialog-workspace-rename opened without stacking");
+                                    assert.equal(await page.locator("#dialog-workspace-settings[open]").count(), 0, "enclosing settings dialog closed");
                                 } else {
-                                    assert.ok(await target.isVisible() && await target.evaluate((element) => element.closest("main") !== null), `without JavaScript ${formId} renders in the page content`);
+                                    assert.ok(await target.isVisible() && await target.evaluate((element) => element.closest("main") !== null), "without JavaScript workspace-rename renders in the page content");
+                                }
+                                return target;
+                            };
+                            const openSessionCreate = async () => {
+                                const target = page.locator("#session-create");
+                                if (javaScriptEnabled) {
+                                    await page.locator('#workspace-tabs a[aria-current="true"]').click();
+                                    await page.locator("#dialog-session-manage").waitFor({ state: "visible" });
+                                    await page.locator('#dialog-session-manage button[data-dialog-target="dialog-session-create"]').click();
+                                    assert.equal(await page.locator("#dialog-session-create[open]").count(), 1, "dialog-session-create opened");
+                                    assert.equal(await page.locator("#dialog-session-manage[open]").count(), 0, "enclosing session manage dialog closed");
+                                } else {
+                                    assert.ok(await target.isVisible() && await target.evaluate((element) => element.closest("main") !== null), "without JavaScript session-create renders in the page content");
                                 }
                                 return target;
                             };
                             await page.goto(new URL(createdPath, base).href);
                             const renamedName = `renamed-${javaScriptEnabled ? "scripted" : "unscripted"}`;
-                            const renameForm = await openSessionDialog("dialog-workspace-rename", "workspace-rename");
+                            const renameForm = await openWorkspaceRename();
                             await renameForm.locator('input[name="name"]').fill(renamedName);
                             await renameForm.getByRole("button", { name: "Confirm", exact: true }).click();
                             const renamedPath = directoryPath({ kind: "workspace", workspace: renamedName });
                             await page.waitForURL((url) => new URL(url).pathname === renamedPath);
 
                             const sessionName = `added-${javaScriptEnabled ? "scripted" : "unscripted"}`;
-                            const sessionForm = await openSessionDialog("dialog-session-create", "session-create");
+                            const sessionForm = await openSessionCreate();
                             await sessionForm.locator('input[name="name"]').fill(sessionName);
                             await sessionForm.getByRole("button", { name: "Confirm", exact: true }).click();
                             await page.waitForLoadState("load");
@@ -405,9 +436,14 @@ registerHooks({
                             assert.ok(added, "the daemon holds the new session");
                             assert.deepEqual([added.parentSessionId, added.loops.length], [null, 0], "an independent session with no loop");
 
-                            // 1-click header "New session" creates an unnamed daemon-named session!
-                            await page.locator('header [data-action="new-session"]').click();
-                            await page.waitForLoadState("load");
+                            // 1-click trailing "+" in #workspace-tabs creates an unnamed daemon-named session!
+                            await page.locator('#workspace-tabs [data-action="new-session"]').click();
+                            if (!javaScriptEnabled) await page.waitForLoadState("load");
+                            await page.waitForFunction(async (wsId) => {
+                                const list = await (await fetch("/__fixture")).json();
+                                const ws = list.find((item) => item.id === wsId);
+                                return ws ? ws.sessions.filter((s) => s.origin === "model").length >= 3 : false;
+                            }, newlyCreated.id);
                             const named = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id)
                                 .sessions.filter(({ name, origin }) => origin === "model" && name !== "user" && name !== sessionName);
                             assert.equal(named.length, 1, "one session the daemon named");
@@ -431,10 +467,10 @@ registerHooks({
                             };
                             const suffix = javaScriptEnabled ? "scripted" : "unscripted";
                             await page.goto(new URL(renamedPath, base).href);
-                            await correct(await refusal(() => openSessionDialog("dialog-session-create", "session-create"), "session-create", sessionName, /already in use/u),
+                            await correct(await refusal(openSessionCreate, "session-create", sessionName, /already in use/u),
                                 `again-${suffix}`, renamedPath);
                             await page.goto(new URL(renamedPath, base).href);
-                            await correct(await refusal(() => openSessionDialog("dialog-workspace-rename", "workspace-rename"), "workspace-rename", "folderless", /already in use/u),
+                            await correct(await refusal(openWorkspaceRename, "workspace-rename", "folderless", /already in use/u),
                                 `${renamedName}-final`, directoryPath({ kind: "workspace", workspace: `${renamedName}-final` }));
                             await page.goto(new URL("/search/", base).href);
                             const openSearchCreate = async () => {

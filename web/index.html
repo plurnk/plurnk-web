@@ -35,6 +35,9 @@
     <template id="overview-list">
         <ul></ul>
     </template>
+    <template id="overview-workspace-list">
+        <ul data-workspace-sessions></ul>
+    </template>
     <template id="overview-empty">
         <p data-i18n="no-sessions">No matching sessions.</p>
     </template>
@@ -42,13 +45,26 @@
         <p data-i18n="no-workspaces">No matching workspaces.</p>
     </template>
     <template id="overview-background">
-        <details><summary data-i18n="background-work">Background work</summary><ul></ul></details>
+        <details data-workspace-background><summary data-i18n="background-work">Background work</summary><ul></ul></details>
+    </template>
+    <template id="workspace-card">
+        <li data-directory-entry="workspace" data-workspace-id="" data-workspace-name="" data-folder="false">
+            <article aria-label="Folderless workspace">
+                <header><a data-text="name"></a></header>
+            </article>
+        </li>
+    </template>
+    <template id="workspace-project-note">
+        <small data-text="project-label"></small>
+    </template>
+    <template id="workspace-unarchive-form">
+        <form method="post" action="/workspaces/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
     </template>
     <template id="session-card">
         <li data-directory-entry="session" data-session-key="" data-session-kind="root">
             <article aria-label="Session">
                 <header>
-                    <span data-session-identity><a data-session-link></a> <span data-lifecycle="idle" role="img" aria-label="idle" title="idle"></span> <span></span></span><span data-session-workspace><span data-folder="false" role="img" aria-label="Folderless workspace"></span> <a data-text="name"></a></span>
+                    <span data-session-identity><span data-lifecycle="idle" role="img" aria-label="idle" title="idle"></span> <a data-session-link><span data-session-headline></span></a></span>
                 </header>
             </article>
         </li>
@@ -59,8 +75,8 @@
     <template id="session-parent-text">
         <span data-session-parent><span></span> &gt; </span>
     </template>
-    <template id="session-title-badge">
-        <small data-session-title></small>
+    <template id="session-handle-badge">
+        <small data-session-handle></small>
     </template>
     <template id="session-gates-badge">
         <small data-session-gates=""></small>
@@ -68,21 +84,21 @@
     <template id="session-children-badge">
         <small data-session-children=""></small>
     </template>
+    <template id="session-meta-group">
+        <span data-session-meta></span>
+    </template>
     <template id="session-time-badge">
         <time data-session-time datetime=""></time>
+    </template>
+    <template id="session-unarchive-form">
+        <form method="post" action="/sessions/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
     </template>
     <template id="session-excerpt-line">
         <small data-session-excerpt></small>
     </template>
-    <template id="session-reply">
-        <div data-session-reply=""></div>
-    </template>
     <!-- {§web-workspace-tabs} Inert tab, pane, and quick-switcher templates reconciled by workspace-workbench. -->
     <template id="workspace-tab-item">
-        <li data-tab-id="" data-session-kind="root"><a data-workspace-route="session" data-tab-session=""><span data-lifecycle="idle" aria-hidden="true"></span><span data-tab-label></span></a></li>
-    </template>
-    <template id="workspace-switcher-active-badge">
-        <small data-switcher-active=""></small>
+        <li data-tab-id="" data-session-kind="root"><a data-workspace-route="session" data-tab-session=""><span data-lifecycle="idle" aria-hidden="true"></span><span data-tab-label></span></a><form method="post" action="/sessions/archive" data-tab-archive><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" aria-label="Archive session" title="Archive session">×</button></form></li>
     </template>
     <template id="session-manage-parent-link">
         <span><span data-i18n="parent-session">Parent:</span> <a data-workspace-route="session" data-text="parent-name"></a></span>
@@ -380,6 +396,10 @@
                     </form>
                     <div data-ws-env-outlet></div>
                 </section>
+                <footer data-workspace-settings-actions>
+                    <button type="button" data-dialog-target="dialog-workspace-rename" data-i18n="rename-workspace">Rename workspace…</button>
+                    <button type="button" data-dialog-target="dialog-workspace-archive" data-i18n="archive-workspace">Archive workspace…</button>
+                </footer>
             </article>
         </dialog>
     </template>
@@ -654,6 +674,7 @@
         <dl aria-label="Keyboard shortcuts">
             <dt><kbd>Enter</kbd> · <kbd><span data-text="shortcut-mod">Ctrl</span>+Enter</kbd></dt><dd data-i18n="shortcut-send">Send message (touch keyboards keep Enter as a newline).</dd>
             <dt><kbd>Shift+Enter</kbd> · <kbd>Ctrl+J</kbd></dt><dd data-i18n="shortcut-newline">Insert a newline in the message field.</dd>
+            <dt><kbd>↑</kbd> / <kbd>↓</kbd></dt><dd data-i18n="shortcut-history">Cycle previous prompts and commands in the message field.</dd>
             <dt><kbd>Tab</kbd></dt><dd data-i18n="shortcut-suggestion">Accept the lead prompt suggestion when the message field is empty.</dd>
             <dt><kbd>Shift+Tab</kbd></dt><dd data-i18n="shortcut-yolo">Toggle automatic approval on this page.</dd>
             <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open selector or command results, or request Stop.</dd>

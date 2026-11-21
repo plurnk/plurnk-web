@@ -157,7 +157,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator("#session-status > [data-status-line] [aria-live], #session-status > [data-status-line] [role=status]").count(), 0, "ticking gauges do not announce every second");
                     assert.equal(await page.locator("#session-workspace [data-text=workspace-name]").textContent(), active.plurnk.workspace.name);
                     assert.equal(await page.locator('#session-directory').count(), 0);
-                    assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), "user");
+                    assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "user");
                     assert.equal(await page.locator("#session-reconnect").getAttribute("action"), "/~/review%20%3Cscript%3E%26%40%25#user");
                     assert.equal(new URL(await page.locator("[data-sign-in]").getAttribute("href"), url).searchParams.get("return"), "/~/review%20%3Cscript%3E%26%40%25#user");
                     assert.equal(await page.title(), `${active.plurnk.workspace.name}#user — Plurnk`);

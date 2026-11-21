@@ -10,11 +10,17 @@ export default function initDialogs(root = document.body) {
         const id = openButton.dataset.dialogTarget;
         const dialog = id ? $(`#${id}`) : null;
         if (dialog instanceof HTMLDialogElement) {
+            const enclosing = openButton.closest("dialog");
+            if (enclosing instanceof HTMLDialogElement && enclosing !== dialog && enclosing.open) {
+                enclosing.close();
+            }
             dialog.showModal();
-            const input = $(dialog, 'input[type="text"]');
-            if (input instanceof HTMLInputElement) {
-                input.focus();
-                input.select();
+            if (dialog.id !== "dialog-session-manage") {
+                const input = $(dialog, 'input[type="text"]');
+                if (input instanceof HTMLInputElement) {
+                    input.focus();
+                    input.select();
+                }
             }
         }
     });

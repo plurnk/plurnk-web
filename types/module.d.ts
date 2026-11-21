@@ -22,6 +22,8 @@ export type WebStartPort = Pick<
         "verify" | "issue" | "revokeFamily" | "sessions" | "onRevoked" | "face"
     > | null;
     readonly readSessionOverview?: ApplicationPort["readSessionOverview"];
+    readonly listSessionLoops?: ApplicationPort["listSessionLoops"];
+    readonly setSessionTitle?: ApplicationPort["setSessionTitle"];
 };
 
 export default function createModule(): DaemonModule<WebSetupPort, WebStartPort>;

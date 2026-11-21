@@ -29,7 +29,7 @@ async function waitConnectedSession(page, sessionName) {
     );
 }
 
-// {§web-workspace-tabs} End-to-end progressive-disclosure tabs, simultaneous WebSocket /acp panes, live worker folding, keyboard chords, and 320px/no-JS behavior.
+// {§web-workspace-tabs} {§web-session-archive} Browser-style session tabs across desktop and 320px mobile, active-tab management dialog, inline × archive, trailing + draft hygiene, simultaneous WebSocket /acp panes, live worker folding, and keyboard chords.
 export default async function verifyWorkspaceTabs({ t, withDaemon }) {
     await t.test("{§web-workspace-tabs} intra-workspace #session tabs keep all visited WebSocket /acp panes live without LRU eviction and preserve drafts and streams", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
@@ -45,6 +45,13 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.equal(result.ok, true, JSON.stringify(result));
             workspaceId = /** @type {any} */ (setup.state.plurnk).workspace.id;
             setup.close();
+            const titleRes = await fetch(new URL("/sessions/title", base), {
+                method: "POST",
+                headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
+                body: new URLSearchParams({ workspace, session: name, title: `Session ${name}` }),
+                redirect: "manual",
+            });
+            assert.equal(titleRes.status, 303);
         }
 
         const browser = await launchBrowser(chromium);
@@ -77,7 +84,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await waitConnectedSession(page, "user");
             assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, directoryPath({ kind: "session", workspace, session: "user" }));
             assert.equal(await page.title(), `${workspace}#user — Plurnk`);
-            assert.equal(await page.locator('#header-session [data-text="active-session-name"]').textContent(), "user");
+            assert.equal(await tabs.locator('a[aria-current="true"]').getAttribute("data-tab-session"), "user");
             assert.equal(resumes.get(`${workspaceId}#user`), 1);
 
             const messageBox = page.getByRole("textbox", { name: "Message", exact: true });
@@ -128,7 +135,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
         }
     });
 
-    await t.test("{§web-workspace-tabs} single-session progressive disclosure, live child workers, folding, switcher chords, and mobile/no-JS layouts", { timeout: 60_000 }, async () => {
+    await t.test("{§web-workspace-tabs} {§web-session-archive} browser-style tab strip, active-tab manage dialog, inline × archive, trailing + draft folding, live child workers, chords, and 320px/no-JS parity", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         model.reset();
         const workspace = `tabs-live-${crypto.randomUUID()}`;
@@ -152,22 +159,50 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             const branchPath = directoryPath({ kind: "session", workspace, session: "branch" });
             assert.ok(userPath && branchPath);
 
-            // Progressive disclosure: 1 session hides #workspace-tabs completely!
+            // Single-session draft workspace renders visible browser-style tab strip with + immediately beside the tab and hides lone draft ×
             await page.goto(new URL(userPath, base).href);
             await waitConnectedSession(page, "user");
             const tabs = page.locator("#workspace-tabs");
             assert.equal(await tabs.getAttribute("data-tab-count"), "1");
-            assert.equal(await tabs.isVisible(), false, "single-session chat hides tab chrome completely");
+            assert.equal(await tabs.isVisible(), true, "tab strip defends its row even with 1 tab");
+            assert.equal(await tabs.locator('li[data-tab-draft="true"] [data-tab-archive]').isVisible(), false, "lone untouched draft tab hides × archive button");
+            const plusBtn = tabs.locator('form[data-tab-new] > button');
+            assert.equal(await plusBtn.isVisible(), true);
+            const tabGeometry = await page.evaluate(() => {
+                const tabBox = document.querySelector('#workspace-tabs > ul > li')?.getBoundingClientRect();
+                const plusBox = document.querySelector('#workspace-tabs > form[data-tab-new] > button')?.getBoundingClientRect();
+                return tabBox && plusBox ? plusBox.left - tabBox.right : Infinity;
+            });
+            assert.ok(tabGeometry >= 0 && tabGeometry < 32, `trailing + sits immediately beside rightmost tab (gap=${tabGeometry}px)`);
 
-            // Forking a 2nd session reveals #workspace-tabs live via notifications!
+            // Clicking the already-active tab opens #dialog-session-manage; saving a title updates the tab label via ACP session/set_title
+            await tabs.locator('a[data-tab-session="user"]').click();
+            const manageDialog = page.locator("#dialog-session-manage");
+            await manageDialog.waitFor({ state: "visible" });
+            await manageDialog.locator('#session-title input[name="title"]').fill("Main chat");
+            await manageDialog.getByRole("button", { name: "Save title", exact: true }).click();
+            await page.waitForFunction(() => !document.querySelector("#dialog-session-manage")?.hasAttribute("open"));
+            await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="user"] [data-tab-label]')?.textContent === "Main chat");
+
+            // Clicking + creates an untouched draft tab and switches to it; switching back to Main chat folds the untouched draft out!
+            await plusBtn.click();
+            await page.waitForFunction(() => {
+                const active = document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session");
+                return active !== null && active !== "user";
+            });
+            assert.equal(await tabs.locator("a[data-tab-session]").count(), 2, "selected draft tab appears while active");
+            await tabs.locator('a[data-tab-session="user"]').click();
+            await waitConnectedSession(page, "user");
+            await page.waitForFunction(() => document.querySelectorAll("#workspace-tabs a[data-tab-session]").length === 1);
+
+            // Forking a 2nd session reveals it in #workspace-tabs live via notifications!
             const forker = createAgent(base, `${workspaceId}#user`);
             const forked = await forker.send({ action: { kind: "session/fork", name: "branch" } });
             assert.equal(forked.result.ok, true, JSON.stringify(forked.result));
             forker.close();
 
-            await tabs.waitFor({ state: "visible" });
+            await tabs.locator('li[data-session-kind="fork"] a[data-tab-session="branch"]').waitFor({ state: "visible" });
             assert.equal(await tabs.locator('li[data-session-kind="root"] a[data-tab-session="user"]').getAttribute("aria-current"), "true");
-            assert.equal(await tabs.locator('li[data-session-kind="fork"] a[data-tab-session="branch"]').count(), 1);
             assert.equal(await tabs.locator('a[data-tab-session="worker"]').count(), 0);
 
             const composer = page.getByRole("textbox", { name: "Message", exact: true });
@@ -249,27 +284,34 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await waitConnectedSession(page, "chord-session");
             assert.equal(await tabs.locator('a[data-tab-session="chord-session"]').getAttribute("aria-current"), "true");
 
+            // Inline × button on chord-session tab archives it in 1 click over ACP and switches cleanly back to #user!
+            await tabs.locator('li:has(> a[data-tab-session="chord-session"]) form[data-tab-archive] > button').click();
+            await waitConnectedSession(page, "user");
+            await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="chord-session"]') === null);
+
             checkBrowser();
             await context.close();
 
+            // 320px mobile viewport renders the same horizontally scrollable browser tab strip with zero desktop/mobile parallax!
             const mobileContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
             const checkMobile = browserDiagnostics(mobileContext);
             const mobilePage = await mobileContext.newPage();
             mobilePage.setDefaultTimeout(10_000);
             await mobilePage.goto(new URL(userPath, base).href);
             await waitConnectedSession(mobilePage, "user");
-            assert.equal(await mobilePage.locator("#workspace-tabs > ul").isVisible(), false, "320px collapses desktop strip");
-            const mobileSwitcherBtn = mobilePage.locator("#workspace-tabs > button[data-workspace-switcher]");
-            assert.equal(await mobileSwitcherBtn.isVisible(), true, "320px reveals compact switcher button");
-            assert.equal(await mobileSwitcherBtn.locator("[data-switcher-current]").textContent(), "#user");
+            const mobileTabs = mobilePage.locator("#workspace-tabs");
+            assert.equal(await mobileTabs.locator(":scope > ul").isVisible(), true, "320px keeps the browser-style tab strip visible");
+            assert.equal(await mobileTabs.locator('form[data-tab-new] > button').isVisible(), true, "320px keeps trailing + button visible");
             assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px session view has no horizontal overflow");
-            await mobileSwitcherBtn.click();
-            const mobileDialog = mobilePage.locator("#dialog-workspace-switcher");
-            await mobileDialog.waitFor({ state: "visible" });
-            assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px switcher dialog has no horizontal overflow");
-            await mobileDialog.locator('a[data-workspace-route="session"]').filter({ hasText: "#branch" }).click();
+            await mobileTabs.locator('a[data-tab-session="branch"]').click();
             await waitConnectedSession(mobilePage, "branch");
-            assert.equal(await mobileSwitcherBtn.locator("[data-switcher-current]").textContent(), "#branch");
+            assert.equal(await mobileTabs.locator('a[data-tab-session="branch"]').getAttribute("aria-current"), "true");
+            // Active tab click on mobile opens #dialog-session-manage without right-click
+            await mobileTabs.locator('a[data-tab-session="branch"]').click();
+            const mobileManage = mobilePage.locator("#dialog-session-manage");
+            await mobileManage.waitFor({ state: "visible" });
+            assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px session manage dialog has no horizontal overflow");
+            await mobileManage.locator("button[data-dialog-close]").click();
             checkMobile();
             await mobileContext.close();
 
@@ -278,7 +320,6 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             const noJsPage = await noJsContext.newPage();
             noJsPage.setDefaultTimeout(10_000);
             await noJsPage.goto(new URL(userPath, base).href);
-            assert.equal(await noJsPage.locator("#workspace-tabs > button[data-workspace-switcher]").isVisible(), false, "no-JS hides scripted switcher button");
             assert.equal(await noJsPage.locator("#workspace-tabs > ul").isVisible(), true, "no-JS retains native scrollable tab strip");
             assert.ok((await noJsPage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "no-JS 320px tab strip scrolls internally without page overflow");
             checkNoJs();
