@@ -41,7 +41,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
                     assert.equal(await page.locator('label[for="session-message"]').count(), 0, "the textarea keeps its name without a visible title");
                     for (const [name, glyph, expectedTitle] of [
-                        ["Send", "▶️", "Send (Enter · Ctrl+Enter)"],
+                        ["Send", "🐹", "Send (Enter · Ctrl+Enter)"],
                         ["Stop", "⏹️", "Stop"],
                         ["Attach image", "📎", "Attach image"],
                         ["Commands and skills", "/", "Commands and skills (/)"],
@@ -163,8 +163,9 @@ export default async function verifyCommands(t) {
                     const autocompleteSources = {
                         models: ["local", "fast"],
                         efforts: ["low", "high"],
+                        effortsByModel: { local: ["low", "high"], fast: [] },
                         personas: ["none", "reviewer"],
-                        modes: ["default", "architect"],
+                        modes: ["review", "accept", "reject"],
                         workspaces: ["conversation", "ops"],
                         sessions: ["session1", "user"],
                         gateIds: ["@gate-42"],
@@ -177,10 +178,10 @@ export default async function verifyCommands(t) {
                             env: ["API_TOKEN"],
                         },
                     };
-                    const suggest = (draft, availableCommands = []) =>
+                    const suggest = (draft, availableCommands = [], extra = {}) =>
                         page.evaluate(({ draft, sources }) => window.computeCommandSuggestions(draft, sources), {
                             draft,
-                            sources: { ...autocompleteSources, availableCommands },
+                            sources: { ...autocompleteSources, ...extra, availableCommands },
                         });
                     const accept = (draft, suggestion) =>
                         page.evaluate(({ draft, suggestion, sources }) => window.acceptCommandSuggestion(draft, suggestion, sources), {
@@ -195,6 +196,8 @@ export default async function verifyCommands(t) {
                     const modelArgs = await suggest("/model ");
                     assert.deepEqual(modelArgs.items, ["local", "fast"]);
                     assert.equal(await accept("/model ", modelArgs.items[0]), "/model local ");
+                    assert.equal(await accept("/model ", "fast"), "/model fast", "non-reasoning model skips trailing effort space");
+                    assert.deepEqual((await suggest("/model fast ")).items, [], "non-reasoning model offers zero effort candidates");
                     const modelEfforts = await suggest("/model local ");
                     assert.deepEqual(modelEfforts.items, ["low", "high"]);
                     assert.equal(await accept("/model local ", modelEfforts.items[1]), "/model local high");
@@ -210,6 +213,7 @@ export default async function verifyCommands(t) {
                     assert.deepEqual((await suggest("/accept ")).items, ["@gate-42"]);
                     assert.deepEqual((await suggest("/learn ")).items, ["--scope"]);
                     assert.deepEqual((await suggest("/learn --scope ")).items, ["project", "plurnk"]);
+                    assert.deepEqual((await suggest("/learn --scope ", [], { projectRoot: null })).items, ["plurnk"], "folderless workspace omits project scope");
 
                     // {§web-session-commands} {§web-workspace-settings} Inspection and list commands route directly to unified /settings/ tabs.
                     const feedback = page.locator('[aria-label="Message feedback"]');
@@ -221,14 +225,13 @@ export default async function verifyCommands(t) {
                         ["/", "/settings/?workspace=conversation&session=session1#help"],
                         ["  /help /model \n", "/settings/?workspace=conversation&session=session1&cmd=model#help"],
                         ["/help learn", "/settings/?workspace=conversation&session=session1&cmd=learn#help"],
-                        ["/onboard", "/settings/?workspace=conversation&session=session1&setup=1#models"],
                         ["/models", "/settings/?workspace=conversation&session=session1#models"],
                         ["/models fixture", "/settings/?workspace=conversation&session=session1&q=fixture#models"],
-                        ["/model", "/settings/?workspace=conversation&session=session1#models"],
-                        ["/effort", "/settings/?workspace=conversation&session=session1#models"],
-                        ["/child", "/settings/?workspace=conversation&session=session1#models"],
-                        ["/persona", "/settings/?workspace=conversation&session=session1#personas"],
-                        ["/mode", "/settings/?workspace=conversation&session=session1#general"],
+                        ["/model", "/settings/?workspace=conversation&session=session1#session"],
+                        ["/effort", "/settings/?workspace=conversation&session=session1#session"],
+                        ["/child", "/settings/?workspace=conversation&session=session1#session"],
+                        ["/persona", "/settings/?workspace=conversation&session=session1#session"],
+                        ["/mode", "/settings/?workspace=conversation&session=session1#session"],
                         ["/mcp", "/settings/?workspace=conversation&session=session1#mcp"],
                         ["/mcp list", "/settings/?workspace=conversation&session=session1#mcp"],
                         ["/skills list", "/settings/?workspace=conversation&session=session1#skills"],

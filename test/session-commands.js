@@ -38,7 +38,7 @@ const reasoning = {
 
 // {§web-session-commands} {§web-workspace-settings} Real shipped composer, multi-token autocomplete, and unified Settings tabs.
 export default async function verifySessionCommands({ t, withDaemon }) {
-    await t.test("{§web-workspace-settings} {§web-session-commands} status model links open Settings #models without inference and composer pills complete multi-token /model commands", () =>
+    await t.test("{§web-workspace-settings} {§web-session-commands} status model links open Settings #session when configured without inference and composer pills complete multi-token /model commands", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             page.setDefaultTimeout(5000);
             const draft = page.getByRole("textbox", { name: "Message", exact: true });
@@ -46,23 +46,23 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await statusLine.isVisible(), true, "connected session exposes steady status bar without jump");
             const modelLink = page.getByRole("link", { name: "Model", exact: true });
             const effortLink = page.getByRole("link", { name: "Effort", exact: true });
-            assert.match((await modelLink.getAttribute("href")) ?? "", /^\/settings\/\?workspace=.*#models$/u);
+            assert.match((await modelLink.getAttribute("href")) ?? "", /^\/settings\/\?workspace=.*#session$/u);
             assert.equal(await effortLink.getAttribute("href"), await modelLink.getAttribute("href"));
 
             await modelLink.click();
-            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#models");
-            const modelsPanel = page.locator('#workspace-settings [data-settings-panel="models"]');
-            await modelsPanel.waitFor({ state: "visible" });
-            await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length >= 1);
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
+            const sessionConfigForm = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-config-form]');
+            await sessionConfigForm.waitFor({ state: "visible" });
             assert.equal(model.requests.length, 0);
 
-            const sessionModelForm = modelsPanel.locator("[data-session-model-form]");
-            await sessionModelForm.waitFor({ state: "visible" });
-            await sessionModelForm.getByRole("combobox", { name: "Active session model", exact: true }).selectOption("browser");
-            await sessionModelForm.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("low");
-            await sessionModelForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-            await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("(low)"));
+            await sessionConfigForm.getByRole("combobox", { name: "Active session model", exact: true }).selectOption("browser");
+            await sessionConfigForm.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("low");
+            await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
+            await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("low"));
             assert.equal(model.requests.length, 0);
+
+            await page.locator('#workspace-settings').getByRole("link", { name: "Models", exact: true }).click();
+            await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length >= 1);
 
             await page.locator("[data-settings-back]").click();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
@@ -83,7 +83,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "high");
             assert.equal(model.requests.length, 0);
             checkBrowser();
-        }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
+        }, { env: { ...reasoning, PLURNK_SERVICE_PROPOSALS: "review" } }));
 
     await t.test("{§web-workspace-settings} {§web-session-commands} live effort selection applies during active work and refused model selection preserves the draft and active work", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
@@ -109,85 +109,66 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             checkBrowser();
         }, { env: reasoning }));
 
-    await t.test("{§web-session-approval} native status toggle shares /yolo without submitting a draft or inventing command history", () =>
+    await t.test("{§web-session-approval} {§web-session-commands} Send posture reflects Shift+Tab, /yolo, and durable session Approval policy across reloads and settles pending proposals", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { field, submit, send } = composer(page);
-            const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
-            const sent = [];
-            onAcpSent(page, (body) => {
-                if (
-                    body !== null
-                    && body.method !== "initialize"
-                    && body.params?._meta?.plurnk?.control !== false
-                ) {
-                    sent.push(body);
-                }
-            });
+            const statusFooter = page.locator("#session-status");
+            const sendBtn = page.getByRole("button", { name: "Send", exact: true });
             await field.focus();
-            assert.equal(await approval.getAttribute("aria-pressed"), "false");
-            assert.equal(await approval.getAttribute("title"), "Manual Approval (Shift+Tab · /yolo)");
-            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Review");
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "review");
+            assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🐹/u);
             await field.fill("Keep my unsent draft.");
-            await approval.click();
-            assert.equal(await approval.getAttribute("aria-pressed"), "true");
-            assert.equal(await approval.getAttribute("title"), "Auto Approval (Shift+Tab · /yolo)");
-            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Auto-approve");
-            await approval.press("Space");
-            assert.equal(await approval.getAttribute("aria-pressed"), "false");
-            await approval.press("Enter");
-            assert.equal(await approval.getAttribute("aria-pressed"), "true");
+            await field.press("Shift+Tab");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "accept");
+            assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🔥/u);
             assert.equal(await field.inputValue(), "Keep my unsent draft.");
             assert.equal(await page.locator("[data-messages] > li").count(), 0);
-            assert.equal(sent.length, 0);
             assert.equal(model.requests.length, 0);
+            await field.fill("");
             await submit("/yolo");
-            assert.equal(await approval.getAttribute("aria-pressed"), "false", "the command sees the same native toggle state");
-            assert.equal(await approval.getAttribute("title"), "Manual Approval (Shift+Tab · /yolo)");
-            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Review");
-            await approval.click();
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "review", "/yolo toggles durable session approval mode");
+            assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🐹/u);
+            await submit("/yolo");
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "accept");
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             await field.focus();
-            assert.equal(await approval.getAttribute("aria-pressed"), "false", "reload restores configured policy");
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "accept", "reload preserves durable session policy");
+            assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🔥/u);
+            await submit("/yolo");
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "review");
             await send("Lifecycle fixture: approval-toggle.");
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
-            await field.fill("Keep this draft during approval.");
-            await approval.click();
+            await submit("/yolo");
             await page.getByText("Completed approval-toggle.", { exact: true }).waitFor();
-            assert.equal(await field.inputValue(), "Keep this draft during approval.");
-            assert.equal(sent.length, 2, "one authored prompt and its standard approval response");
-            assert.deepEqual(sent[1].result?.outcome, { outcome: "selected", optionId: "allow_once" });
-            assert.equal(sent[1].result?._meta?.plurnk?.outcome, "client_yolo");
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "accept");
             assert.equal(model.requests.length, 2);
 
+            await submit("/yolo");
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "review");
             await field.focus();
-            await approval.click();
-            assert.equal(await approval.getAttribute("aria-pressed"), "false");
             await field.fill("Idle Shift+Tab draft.");
             await field.press("Shift+Tab");
-            assert.equal(await approval.getAttribute("aria-pressed"), "true", "Shift+Tab in composer toggles YOLO while idle");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "accept");
             assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", "composer retains focus");
             assert.equal(await field.inputValue(), "Idle Shift+Tab draft.");
             await field.press("Escape");
             assert.notEqual(await page.evaluate(() => document.activeElement?.id), "session-message", "Escape leaves composer");
-            assert.equal(await page.locator("#session-status > [data-status-line]").isVisible(), true, "active YOLO remains visible when unfocused");
+            assert.equal(await page.locator("#session-status > [data-status-line]").isVisible(), true);
             await field.focus();
             await field.press("Shift+Tab");
-            assert.equal(await approval.getAttribute("aria-pressed"), "false");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "review");
             await send("Lifecycle fixture: approval-shortcut.");
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
             await field.fill("Keep this draft during Shift+Tab.");
             await field.press("Shift+Tab");
             await page.getByText("Completed approval-shortcut.", { exact: true }).waitFor();
-            assert.equal(await approval.getAttribute("aria-pressed"), "true");
-            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Auto-approve");
+            assert.equal(await statusFooter.getAttribute("data-approval-mode"), "accept");
+            assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🔥/u);
             assert.equal(await field.inputValue(), "Keep this draft during Shift+Tab.");
-            assert.equal(sent.length, 4);
-            assert.deepEqual(sent[3].result?.outcome, { outcome: "selected", optionId: "allow_once" });
-            assert.equal(sent[3].result?._meta?.plurnk?.outcome, "client_yolo");
             assert.equal(model.requests.length, 4);
             checkBrowser();
-        }, { env: { PLURNK_WEB_YOLO: "0" } }));
+        }, { env: { PLURNK_SERVICE_PROPOSALS: "review" } }));
 
     await t.test("{§web-session-commands} {§web-workspace-settings} slash commands remain outside model messages, route inspections to Settings tabs, and preserve daemon truth", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
@@ -210,7 +191,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await helpPanel.waitFor({ state: "visible" });
             const names = await helpPanel.locator("[data-command-name]").evaluateAll((items) => items.map((item) => item.dataset.commandName));
             assert.deepEqual(names, [
-                "help", "onboard", "models", "model", "effort", "persona", "child", "mode",
+                "help", "models", "model", "effort", "persona", "child", "mode",
                 "workspaces", "workspace", "rename", "sessions", "session", "fork", "parent",
                 "enter", "older", "newer", "loops", "loop", "rollback", "share", "update",
                 "script", "review", "accept", "approve", "reject", "cancel", "edit", "answer",
@@ -311,7 +292,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             checkBrowser();
         }, { env: reasoning }));
 
-    await t.test("{§web-session-commands} pending review accepts page-local YOLO and active work retains daemon restrictions", () =>
+    await t.test("{§web-session-commands} pending review settles via durable session /yolo and active work retains daemon restrictions", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             const { submit, send, field } = composer(page);
             await send("Lifecycle fixture: approval-command.");
@@ -326,13 +307,13 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await form.isVisible(), true, "an informational command never settles review");
             await submit("/yolo");
             await page.getByText("Completed approval-command.", { exact: true }).waitFor();
-            await field.focus();
-            assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "true");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "accept");
             assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"));
             await page.reload();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-            await field.focus();
-            assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "false", "reload restores configured client policy");
+            assert.equal(await page.locator("#session-status").getAttribute("data-approval-mode"), "accept", "reload preserves durable session approval policy");
+            await submit("/yolo");
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "review");
             await send("Lifecycle fixture: held-command.");
             await page.locator('[data-prompt-work][data-work-running="true"] [data-operation-tally="reasoning"]').last().waitFor({ state: "attached" });
             const applied = await submit("/effort low");
@@ -369,7 +350,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.lifecycle === "cancelled");
             assert.equal(model.requests.length, 3, "commands did not start another inference");
             checkBrowser();
-        }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
+        }, { env: { ...reasoning, PLURNK_SERVICE_PROPOSALS: "review" } }));
 
     await t.test("{§web-session-commands} {§web-workspace-settings} a refusal before the stream opens or as an ACP stream error shows the daemon's Problem and recovery", () =>
         inputPage(withDaemon, async ({ page, checkBrowser }) => {
@@ -439,5 +420,5 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(await field.inputValue(), "typing y and n inside composer stays literal!");
             assert.equal(model.requests.length, 3);
             checkBrowser();
-        }, { env: { ...reasoning, PLURNK_WEB_YOLO: "0" } }));
+        }, { env: { ...reasoning, PLURNK_SERVICE_PROPOSALS: "review" } }));
 }

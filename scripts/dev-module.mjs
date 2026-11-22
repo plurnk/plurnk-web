@@ -144,10 +144,9 @@ export default function createDevModule(options = {}) {
             if (registeredStylesheetPath !== null && registeredStylesheetPath !== stylesheetPath) {
                 resources.set(registeredStylesheetPath, stylesheetAsset);
             }
-            const activeKnobs = knobs ?? { yolo: null, overviewSessions: null, overviewExcerptChars: null, allowProjectFolder: true };
+            const activeKnobs = knobs ?? { overviewSessions: null, overviewExcerptChars: null, allowProjectFolder: true };
             const documents = new DocumentsClass(
                 root.body.toString("utf8"),
-                activeKnobs.yolo,
                 activeKnobs.overviewSessions,
                 activeKnobs.overviewExcerptChars,
                 activeKnobs.allowProjectFolder ?? true,
@@ -188,7 +187,6 @@ export default function createDevModule(options = {}) {
                 ...compiled,
                 documents: new DocumentsClass(
                     root.body.toString("utf8"),
-                    initialKnobs.yolo,
                     initialKnobs.overviewSessions,
                     initialKnobs.overviewExcerptChars,
                     initialKnobs.allowProjectFolder ?? true,

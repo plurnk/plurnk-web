@@ -3,7 +3,7 @@ import { engines } from "./engines.js";
 import conversationFixture from "./conversation-fixture.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
-// {§web-workspace-settings} Multi-engine verification of workspace subsystem management across Overview and Session scopes.
+// {§web-workspace-settings} Multi-engine verification of workspace and session management across Workspace-only and Session scopes.
 export default async function verifyWorkspaceSettingsUnit(t) {
     const fixture = await conversationFixture(new URL("./workspace-settings-entry.js", import.meta.url));
     try {
@@ -19,6 +19,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     /** @type {any[]} */
                     const requests = [];
                     let activeWork = false;
+                    let failNextSessionOptions = false;
                     /** @type {any[]} */
                     let mcpDefs = [
                         {
@@ -52,6 +53,9 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     let activeSessionPersona = "none";
                     let activeSessionModel = "local";
                     let activeSessionEffort = "low";
+                    let activeSpawnModel = "inherit";
+                    let activeSessionMode = "review";
+                    let activeSessionTitle = "";
                     /** @type {any[]} */
                     let memberDefs = [];
                     /** @type {any[]} */
@@ -69,6 +73,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
 
                     fixture.onAcp(async (input, headers) => {
                         assert.equal(headers.authorization, "Bearer ws-settings-token");
+                        assert.notEqual(input.method, "session/resume", "/settings/ must use side-effect-free session/options, never session/resume");
                         requests.push(input);
                         if (activeWork && input.method === "_plurnk/action" && !input.params.kind.endsWith(".list")) {
                             return {
@@ -91,11 +96,52 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                     providers: [
                                         { providerId: "local", supported: ["fixture"], required: false, _meta: { plurnk: { alias: "local", provider: "fixture", model: "small", effort: "low", effortSource: "default", active: true } } },
                                         { providerId: "fast", supported: ["fixture"], required: false, _meta: { plurnk: { alias: "fast", provider: "fixture", model: "fast", effort: "high", effortSource: "default", active: false } } },
+                                        { providerId: "uncataloged", supported: ["custom"], required: false, _meta: { plurnk: { alias: "uncataloged", provider: "custom", model: "plain", effortSource: "default", active: false } } },
                                     ],
                                 },
                             };
                         }
+                        const currentEfforts = activeSessionModel === "fast"
+                            ? ["medium", "high"]
+                            : activeSessionModel === "uncataloged"
+                                ? []
+                                : activeSessionModel === "fixture/plain"
+                                    ? ["off", "adaptive"]
+                                    : ["low", "high"];
                         const sessionConfigOptions = () => [
+                            {
+                                configId: "model",
+                                name: "Model",
+                                type: "select",
+                                currentValue: activeSessionModel,
+                                options: [
+                                    { value: "local", name: "local — fixture/small", description: null },
+                                    { value: "fast", name: "fast — fixture/fast", description: null },
+                                    { value: "uncataloged", name: "uncataloged — custom/plain", description: null },
+                                ],
+                            },
+                            {
+                                configId: "mode",
+                                name: "Approval Policy",
+                                type: "select",
+                                currentValue: activeSessionMode,
+                                options: [
+                                    { value: "review", name: "Ask before external mutations", description: null },
+                                    { value: "accept", name: "Auto-approve all operations", description: null },
+                                    { value: "reject", name: "Deny gated operations", description: null },
+                                ],
+                            },
+                            {
+                                configId: "spawn_model",
+                                name: "Child Session Model",
+                                type: "select",
+                                currentValue: activeSpawnModel,
+                                options: [
+                                    { value: "inherit", name: "Inherit session model", description: null },
+                                    { value: "local", name: "local — fixture/small", description: null },
+                                    { value: "fast", name: "fast — fixture/fast", description: null },
+                                ],
+                            },
                             {
                                 configId: "persona",
                                 name: "Persona",
@@ -110,41 +156,60 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                     })),
                                 ],
                             },
-                            {
-                                configId: "thought_level",
-                                name: "Reasoning Effort",
-                                type: "select",
-                                currentValue: activeSessionEffort,
-                                options: [
-                                    { value: "low", name: "low" },
-                                    { value: "high", name: "high" },
-                                ],
-                            },
+                            ...(currentEfforts.length > 0
+                                ? [{
+                                    configId: "thought_level",
+                                    name: "Reasoning Effort",
+                                    type: "select",
+                                    currentValue: activeSessionEffort,
+                                    options: currentEfforts.map((v) => ({ value: v, name: v })),
+                                }]
+                                : []),
                         ];
                         const sessionStatusMeta = () => ({
                             status: {
                                 model: {
-                                    alias: activeSessionModel,
+                                    ...(activeSessionModel.includes("/") ? {} : { alias: activeSessionModel }),
                                     provider: "fixture",
-                                    model: activeSessionModel === "fast" ? "fast" : "small",
-                                    effort: activeSessionEffort,
-                                    effortSource: "explicit",
+                                    model: activeSessionModel === "fast" ? "fast" : activeSessionModel === "fixture/plain" ? "plain" : "small",
+                                    ...(currentEfforts.length > 0 ? { effort: activeSessionEffort, effortSource: "explicit" } : {}),
                                 },
                             },
                         });
-                        if (input.method === "session/resume") {
+                        if (input.method === "session/options") {
+                            if (failNextSessionOptions) {
+                                failNextSessionOptions = false;
+                                return {
+                                    error: {
+                                        code: -32000,
+                                        message: "Session options temporarily unavailable.",
+                                        data: {
+                                            type: "https://problems.plurnk.xyz/session/unavailable",
+                                            title: "Service Unavailable",
+                                            status: 503,
+                                            detail: "Session options temporarily unavailable.",
+                                            recovery: "Retry opening the Session tab.",
+                                        },
+                                    },
+                                };
+                            }
                             return {
                                 result: {
                                     configOptions: sessionConfigOptions(),
                                     availableCommands: [],
-                                    _meta: { plurnk: sessionStatusMeta() },
                                 },
                             };
+                        }
+                        if (input.method === "session/set_title") {
+                            activeSessionTitle = input.params.title;
+                            return { result: { title: activeSessionTitle } };
                         }
                         if (input.method === "session/set_config_option") {
                             if (input.params.configId === "persona") activeSessionPersona = input.params.value;
                             if (input.params.configId === "model") activeSessionModel = input.params.value;
                             if (input.params.configId === "thought_level") activeSessionEffort = input.params.value;
+                            if (input.params.configId === "spawn_model") activeSpawnModel = input.params.value;
+                            if (input.params.configId === "mode") activeSessionMode = input.params.value;
                             return {
                                 result: {
                                     configOptions: sessionConfigOptions(),
@@ -155,34 +220,72 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         assert.equal(input.method, "_plurnk/action");
                         const { kind, params } = input.params;
                         switch (kind) {
-                            case "models.list":
+                            case "models.list": {
+                                assert.equal(params?.limit, 100, "models.list honors schema maximum limit of 100");
+                                const allCatalog = [
+                                    {
+                                        selector: "fixture/small",
+                                        provider: "fixture",
+                                        providerName: "Fixture",
+                                        model: "small",
+                                        modelName: params?.search ? `Small (${params.search})` : "Fixture Small",
+                                        limits: { contextTokens: 32768 },
+                                        capabilities: {
+                                            attachment: false,
+                                            reasoning: true,
+                                            efforts: ["low", "high"],
+                                            toolCall: true,
+                                            inputModalities: ["text"],
+                                            outputModalities: ["text"],
+                                        },
+                                        readiness: { ready: true, causes: [] },
+                                    },
+                                    {
+                                        selector: "fixture/fast",
+                                        provider: "fixture",
+                                        providerName: "Fixture",
+                                        model: "fast",
+                                        modelName: "Fixture Fast",
+                                        limits: { contextTokens: 65536 },
+                                        capabilities: {
+                                            attachment: false,
+                                            reasoning: true,
+                                            efforts: ["medium", "high"],
+                                            toolCall: true,
+                                            inputModalities: ["text"],
+                                            outputModalities: ["text"],
+                                        },
+                                        readiness: { ready: true, causes: [] },
+                                    },
+                                    {
+                                        selector: "fixture/plain",
+                                        provider: "fixture",
+                                        providerName: "Fixture",
+                                        model: "plain",
+                                        modelName: "Fixture Plain",
+                                        limits: { contextTokens: 16384 },
+                                        capabilities: {
+                                            attachment: false,
+                                            reasoning: false,
+                                            efforts: ["off", "adaptive"],
+                                            toolCall: true,
+                                            inputModalities: ["text"],
+                                            outputModalities: ["text"],
+                                        },
+                                        readiness: { ready: true, causes: [] },
+                                    },
+                                ];
+                                const filtered = params?.search
+                                    ? allCatalog.filter((m) => m.selector.includes(params.search) || m.modelName.toLowerCase().includes(String(params.search).toLowerCase()))
+                                    : allCatalog;
                                 return {
                                     result: {
-                                        items: [{
-                                            selector: "fixture/small",
-                                            provider: "fixture",
-                                            providerName: "Fixture",
-                                            model: "small",
-                                            modelName: params?.search ? `Small (${params.search})` : "Fixture Small",
-                                            limits: { contextTokens: 32768 },
-                                            capabilities: {
-                                                attachment: false,
-                                                reasoning: true,
-                                                efforts: ["low", "high"],
-                                                toolCall: true,
-                                                inputModalities: ["text"],
-                                                outputModalities: ["text"],
-                                            },
-                                            readiness: { ready: true, causes: [] },
-                                        }],
+                                        items: filtered,
                                         offset: 0,
-                                        total: 1,
+                                        total: filtered.length,
                                     },
                                 };
-                            case "models.local":
-                                return { result: { candidates: [] } };
-                            case "service.env.list":
-                                return { result: { configFile: "/tmp/.env", entries: [] } };
+                            }
                             case "workspace.mcp.list":
                                 return { result: { family: "mcp", definitions: mcpDefs } };
                             case "workspace.mcp.enable":
@@ -310,13 +413,16 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         }
                     });
 
-                    // 1. Workspace-only mode on /settings/?workspace=conversation (sessionName = null): workspace-only actions with workspaceId: 7 and omitted sessionId
+                    // 1. Workspace-only mode on /settings/?workspace=conversation (sessionName = null): zero stacked settings modals, zero initial ACP calls
                     await page.goto(new URL("/settings/?workspace=conversation", fixture.url).href);
                     const settingsArticle = page.locator("#workspace-settings");
                     await settingsArticle.waitFor({ state: "visible" });
-                    assert.equal(await settingsArticle.getByRole("link", { name: "General", exact: true }).getAttribute("aria-current"), "true");
+                    assert.equal(await page.locator('#workspace-settings dialog').count(), 0, "subsystem tabs mount zero stacked <dialog> modals");
+                    assert.equal(await settingsArticle.getByRole("link", { name: "Workspace", exact: true }).getAttribute("aria-current"), "true");
                     assert.equal(await settingsArticle.locator("#workspace-rename").isVisible(), true);
-                    assert.equal(await settingsArticle.locator("#workspace-archive").isVisible(), true);
+                    assert.equal(await settingsArticle.locator('button[form="workspace-archive"]').isVisible(), true);
+                    assert.equal(await settingsArticle.getByRole("button", { name: "+ Add workspace", exact: true }).isVisible(), true);
+                    assert.equal(requests.length, 0, "Workspace-only /settings/ issues zero ACP calls on initial #workspace render");
 
                     await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
                     await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null && document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 2);
@@ -342,11 +448,11 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     );
                     await page.setViewportSize({ width: 320, height: 740 });
 
-                    // MCP: list, Retry on unavailable row, service-vs-workspace buttons, OAuth begin+complete, + Add server dialog (discover+Add, 409 refusal keeping dialog open, save + remove)
+                    // MCP: list, Retry on unavailable row, service-vs-workspace buttons, OAuth begin+complete, inline <details data-family-disclosure="mcp">
                     const mcpPanel = settingsArticle.locator('[data-settings-panel="mcp"]');
-                    const mcpDialog = page.locator("#dialog-settings-mcp");
+                    const mcpDisclosure = mcpPanel.locator('details[data-family-disclosure="mcp"]');
                     assert.equal(await mcpPanel.isVisible(), true);
-                    assert.equal(await mcpDialog.isVisible(), false, "creation forms live inside closed <dialog> until opened");
+                    assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false, "creation forms start collapsed in inline disclosure");
                     const svcRow = mcpPanel.locator("[data-family-rows] tr").nth(0);
                     const oauthRow = mcpPanel.locator("[data-family-rows] tr").nth(1);
                     assert.equal(await svcRow.getByRole("button", { name: "Remove", exact: true, includeHidden: true }).isVisible(), false, "service-origin MCP server has no Remove button");
@@ -367,91 +473,87 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await oauthBox.waitFor({ state: "hidden" });
                     assert.equal(await oauthRow.locator('[data-text="family-status"]').textContent(), "active");
 
-                    await mcpPanel.getByRole("button", { name: "+ Add server", exact: true }).click();
-                    await mcpDialog.waitFor({ state: "visible" });
-                    await mcpDialog.getByRole("searchbox", { name: "Search MCP registry", exact: true }).fill("sqlite");
-                    await mcpDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
-                    await mcpDialog.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
-                    await mcpDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    await mcpDisclosure.locator("> summary").click();
+                    assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
+                    await mcpDisclosure.getByRole("searchbox", { name: "Search MCP registry", exact: true }).fill("sqlite");
+                    await mcpDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
+                    await mcpDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    await mcpDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
-                    assert.equal(await mcpDialog.isVisible(), false, "adding a candidate closes the dialog");
+                    assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false, "adding a candidate collapses the inline disclosure");
 
-                    await mcpPanel.getByRole("button", { name: "+ Add server", exact: true }).click();
-                    await mcpDialog.waitFor({ state: "visible" });
-                    await mcpDialog.getByRole("combobox", { name: "MCP transport", exact: true }).selectOption("streamable-http");
-                    await mcpDialog.getByRole("combobox", { name: "Endpoint authentication", exact: true }).selectOption("bearer");
-                    await mcpDialog.getByRole("textbox", { name: "Server alias", exact: true }).fill("edge-api");
-                    await mcpDialog.getByLabel("Endpoint URL", { exact: true }).fill("https://edge.example/mcp");
-                    await mcpDialog.getByRole("textbox", { name: "Bearer token reference", exact: true }).fill("${EDGE_TOKEN}");
+                    await mcpDisclosure.locator("> summary").click();
+                    await mcpDisclosure.getByRole("combobox", { name: "MCP transport", exact: true }).selectOption("streamable-http");
+                    await mcpDisclosure.getByRole("combobox", { name: "Endpoint authentication", exact: true }).selectOption("bearer");
+                    await mcpDisclosure.getByRole("textbox", { name: "Server alias", exact: true }).fill("edge-api");
+                    await mcpDisclosure.getByLabel("Endpoint URL", { exact: true }).fill("https://edge.example/mcp");
+                    await mcpDisclosure.getByRole("textbox", { name: "Bearer token reference", exact: true }).fill("${EDGE_TOKEN}");
                     activeWork = true;
-                    await mcpDialog.getByRole("button", { name: "Save server", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector('#dialog-settings-mcp [data-text="ws-settings-message"]')?.textContent === "Workspace has active loop work.");
-                    assert.equal(await mcpDialog.isVisible(), true, "409 refusal keeps the dialog open");
-                    assert.equal(await mcpDialog.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
-                    assert.equal(await mcpDialog.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "edge-api", "409 refusal preserves unsaved MCP server input");
-                    assert.equal(await mcpDialog.getByLabel("Endpoint URL", { exact: true }).inputValue(), "https://edge.example/mcp");
-                    assert.equal(await mcpDialog.getByRole("textbox", { name: "Bearer token reference", exact: true }).inputValue(), "${EDGE_TOKEN}");
+                    await mcpDisclosure.getByRole("button", { name: "Save server", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent === "Workspace has active loop work.");
+                    assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true, "409 refusal keeps the disclosure open");
+                    assert.equal(await settingsArticle.locator('> [data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
+                    assert.equal(await mcpDisclosure.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "edge-api", "409 refusal preserves unsaved MCP server input");
+                    assert.equal(await mcpDisclosure.getByLabel("Endpoint URL", { exact: true }).inputValue(), "https://edge.example/mcp");
+                    assert.equal(await mcpDisclosure.getByRole("textbox", { name: "Bearer token reference", exact: true }).inputValue(), "${EDGE_TOKEN}");
 
                     activeWork = false;
-                    await mcpDialog.getByRole("button", { name: "Save server", exact: true }).click();
+                    await mcpDisclosure.getByRole("button", { name: "Save server", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 4);
-                    assert.equal(await mcpDialog.isVisible(), false, "successful save closes the dialog");
+                    assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false, "successful save collapses the disclosure");
                     assert.match(await mcpPanel.locator("[data-family-rows] tr").last().textContent(), /edge-api[\s\S]*https:\/\/edge\.example\/mcp \(bearer\)/u);
-                    assert.equal(await mcpDialog.locator('input[name="alias"]').inputValue(), "");
-                    assert.equal(await mcpDialog.locator('input[name="url"]').inputValue(), "");
+                    assert.equal(await mcpDisclosure.locator('input[name="alias"]').inputValue(), "");
+                    assert.equal(await mcpDisclosure.locator('input[name="url"]').inputValue(), "");
                     await mcpPanel.locator("[data-family-rows] tr").last().getByRole("button", { name: "Remove", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
 
-                    // Skills: + Add skill dialog -> discover + candidate Add (stripping commit)
+                    // Skills: inline disclosure -> discover + candidate Add (stripping commit)
                     await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
                     const skillsPanel = settingsArticle.locator('[data-settings-panel="skills"]');
-                    const skillsDialog = page.locator("#dialog-settings-skills");
-                    await skillsPanel.getByRole("button", { name: "+ Add skill", exact: true }).click();
-                    await skillsDialog.waitFor({ state: "visible" });
-                    await skillsDialog.getByRole("textbox", { name: "Skill discovery source", exact: true }).fill("https://git.example/skills.git");
-                    await skillsDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
-                    await skillsDialog.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
-                    await skillsDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    const skillsDisclosure = skillsPanel.locator('details[data-family-disclosure="skills"]');
+                    await skillsDisclosure.locator("> summary").click();
+                    await skillsDisclosure.getByRole("textbox", { name: "Skill discovery source", exact: true }).fill("https://git.example/skills.git");
+                    await skillsDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
+                    await skillsDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    await skillsDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="skills"] [data-family-rows] tr').length === 1);
+                    assert.equal(await skillsDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
                     const skillReplaceReq = requests.find((r) => r.params?.kind === "workspace.skills.replace");
                     assert.equal("commit" in skillReplaceReq.params.params, false, "client strips service-owned commit field when adding discovered skill");
 
-                    // Schedule: + Add schedule dialog -> rule preview + save normalizing bare session name to session://
+                    // Schedule: inline disclosure -> rule preview + save normalizing bare session name to session://
                     await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();
                     const schedulePanel = settingsArticle.locator('[data-settings-panel="schedule"]');
-                    const scheduleDialog = page.locator("#dialog-settings-schedule");
-                    await schedulePanel.getByRole("button", { name: "+ Add schedule", exact: true }).click();
-                    await scheduleDialog.waitFor({ state: "visible" });
-                    await scheduleDialog.getByRole("textbox", { name: "Preview schedule rule", exact: true }).fill("FREQ=DAILY");
-                    await scheduleDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
-                    await scheduleDialog.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
-                    assert.equal(await scheduleDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true, includeHidden: true }).isVisible(), false);
-                    await scheduleDialog.getByRole("textbox", { name: "Schedule name", exact: true }).fill("daily-audit");
-                    await scheduleDialog.getByRole("textbox", { name: "Target session", exact: true }).fill("user");
-                    await scheduleDialog.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 9 * * 1-5");
-                    await scheduleDialog.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Check status.");
-                    await scheduleDialog.getByRole("button", { name: "Save schedule", exact: true }).click();
+                    const scheduleDisclosure = schedulePanel.locator('details[data-family-disclosure="schedule"]');
+                    await scheduleDisclosure.locator("> summary").click();
+                    await scheduleDisclosure.getByRole("textbox", { name: "Preview schedule rule", exact: true }).fill("FREQ=DAILY");
+                    await scheduleDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
+                    await scheduleDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    assert.equal(await scheduleDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true, includeHidden: true }).isVisible(), false);
+                    await scheduleDisclosure.getByRole("textbox", { name: "Schedule name", exact: true }).fill("daily-audit");
+                    await scheduleDisclosure.getByRole("textbox", { name: "Target session", exact: true }).fill("user");
+                    await scheduleDisclosure.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 9 * * 1-5");
+                    await scheduleDisclosure.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Check status.");
+                    await scheduleDisclosure.getByRole("button", { name: "Save schedule", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
-                    assert.equal(await scheduleDialog.isVisible(), false);
+                    assert.equal(await scheduleDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
                     assert.equal(requests.find((r) => r.params?.kind === "workspace.schedule.replace").params.params.target, "session://user");
 
-                    // Members: + Add rules dialog -> preview + candidate Add + batch add + row Remove ({ file })
+                    // Members: inline disclosure -> preview + candidate Add + batch add + row Remove ({ file })
                     await settingsArticle.getByRole("link", { name: "Members", exact: true }).click();
                     const membersPanel = settingsArticle.locator('[data-settings-panel="members"]');
-                    const membersDialog = page.locator("#dialog-settings-members");
-                    await membersPanel.getByRole("button", { name: "+ Add rules", exact: true }).click();
-                    await membersDialog.waitFor({ state: "visible" });
-                    await membersDialog.getByRole("textbox", { name: "Inspect file or glob", exact: true }).fill("docs/**");
-                    await membersDialog.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
-                    await membersDialog.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    const membersDisclosure = membersPanel.locator('details[data-family-disclosure="members"]');
+                    await membersDisclosure.locator("> summary").click();
+                    await membersDisclosure.getByRole("textbox", { name: "Inspect file or glob", exact: true }).fill("docs/**");
+                    await membersDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
+                    await membersDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
-                    assert.equal(await membersDialog.isVisible(), false);
-                    await membersPanel.getByRole("button", { name: "+ Add rules", exact: true }).click();
-                    await membersDialog.waitFor({ state: "visible" });
-                    await membersDialog.getByRole("textbox", { name: "Member globs", exact: true }).fill("!docs/drafts/**");
-                    await membersDialog.getByRole("button", { name: "Add rules", exact: true }).click();
+                    assert.equal(await membersDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
+                    await membersDisclosure.locator("> summary").click();
+                    await membersDisclosure.getByRole("textbox", { name: "Member globs", exact: true }).fill("!docs/drafts/**");
+                    await membersDisclosure.getByRole("button", { name: "Add rules", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 2);
-                    assert.equal(await membersDialog.isVisible(), false);
+                    assert.equal(await membersDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
                     await membersPanel.locator("[data-family-rows] tr").first().getByRole("button", { name: "Remove", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     assert.deepEqual(requests.find((r) => r.params?.kind === "workspace.members.remove").params.params, { file: "docs/**" });
@@ -485,19 +587,83 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     const personasPanel = settingsArticle.locator('[data-settings-panel="personas"]');
                     await personasPanel.waitFor({ state: "visible" });
                     assert.equal(await settingsArticle.getByRole("link", { name: "Personas", exact: true }).getAttribute("aria-current"), "true");
-                    const sessionPersonaForm = personasPanel.locator("[data-session-persona-form]");
-                    await sessionPersonaForm.waitFor({ state: "visible" });
-                    await sessionPersonaForm.getByRole("combobox", { name: "Active session persona", exact: true }).selectOption("auditor");
-                    await sessionPersonaForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Session persona: auditor.");
-                    assert.equal(activeSessionPersona, "auditor");
+                    assert.equal(await personasPanel.locator("[data-session-persona-form]").count(), 0, "session persona selector lives on #session tab");
 
-                    // Models tab in Session mode: shows aliases, catalog search (preserving focus across sequential keystrokes and superseded lookups), + Add model onboarding dialog, and session model + effort apply
+                    // Rejected session/options surfaces Problem detail & recovery instead of silently swallowing
+                    failNextSessionOptions = true;
+                    await settingsArticle.getByRole("link", { name: "Session", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent === "Session options temporarily unavailable.");
+                    assert.equal(await settingsArticle.locator('> [data-text="ws-settings-recovery"]').textContent(), "Retry opening the Session tab.");
+
+                    // Re-select Session tab: hydrates via session/options with dynamic model-driven efforts and session Approval policy
+                    await settingsArticle.getByRole("link", { name: "Workspace", exact: true }).click();
+                    assert.equal(await settingsArticle.locator('[data-settings-panel="workspace"] [data-workspace-mode-form]').count(), 0, "Approval policy moved off #workspace onto #session");
+                    await settingsArticle.getByRole("link", { name: "Session", exact: true }).click();
+                    const sessionPanel = settingsArticle.locator('[data-settings-panel="session"]');
+                    await sessionPanel.waitFor({ state: "visible" });
+                    await sessionPanel.getByRole("textbox", { name: "Session title", exact: true }).fill("Security audit");
+                    await sessionPanel.getByRole("button", { name: "Save title", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent === "Title: Security audit.");
+                    assert.equal(activeSessionTitle, "Security audit");
+
+                    const sessionConfigForm = sessionPanel.locator("[data-session-config-form]");
+                    await sessionConfigForm.waitFor({ state: "visible" });
+                    await page.setViewportSize({ width: 1280, height: 740 });
+                    const applyRightAligned = await page.evaluate(() => {
+                        const fs = document.querySelector('#workspace-settings [data-session-config-form] > fieldset')?.getBoundingClientRect();
+                        const btn = document.querySelector('#workspace-settings [data-session-config-form] footer > button')?.getBoundingClientRect();
+                        return Boolean(fs && btn && Math.abs(fs.right - btn.right) <= 4);
+                    });
+                    assert.equal(applyRightAligned, true, "Apply to session button aligns to the right edge of the form footer");
+                    await page.setViewportSize({ width: 320, height: 740 });
+
+                    const modelSelect = sessionConfigForm.getByRole("combobox", { name: "Active session model", exact: true });
+                    const effortSelect = sessionConfigForm.getByRole("combobox", { name: "Reasoning effort", exact: true });
+                    assert.deepEqual(
+                        await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
+                        ["low", "high"],
+                        "initial model populates exact supported efforts without fake placeholder",
+                    );
+                    await modelSelect.selectOption("uncataloged");
+                    assert.equal(await effortSelect.isDisabled(), true, "uncataloged route with no advertised efforts disables effort select");
+                    await modelSelect.selectOption("fixture/plain");
+                    assert.equal(await effortSelect.isDisabled(), false);
+                    assert.deepEqual(
+                        await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
+                        ["off", "adaptive"],
+                    );
+                    await modelSelect.selectOption("fast");
+                    assert.equal(await effortSelect.isDisabled(), false);
+                    assert.deepEqual(
+                        await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
+                        ["medium", "high"],
+                        "switching model dynamically recomputes supported efforts from catalog",
+                    );
+                    assert.equal(await effortSelect.inputValue(), "high", "alias default effort is selected automatically");
+                    await effortSelect.selectOption("medium");
+                    await sessionConfigForm.getByRole("combobox", { name: "Child session model", exact: true }).selectOption("fast");
+                    await sessionConfigForm.getByRole("combobox", { name: "Active session persona", exact: true }).selectOption("auditor");
+                    await sessionConfigForm.getByRole("combobox", { name: "Approval policy", exact: true }).selectOption("accept");
+                    await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Approval policy: accept"));
+                    assert.equal(activeSessionModel, "fast");
+                    assert.equal(activeSessionEffort, "medium");
+                    assert.equal(activeSpawnModel, "fast");
+                    assert.equal(activeSessionPersona, "auditor");
+                    assert.equal(activeSessionMode, "accept");
+
+                    await sessionPanel.getByRole("button", { name: "+ Add session", exact: true }).click();
+                    await page.locator("#dialog-session-create").waitFor({ state: "visible" });
+                    await page.locator("#dialog-session-create [data-dialog-close]").first().click();
+                    await page.locator("#dialog-session-create").waitFor({ state: "hidden" });
+
+                    // Models tab in Session mode: shows aliases (with 1-click Use in session) and catalog search (preserving focus across sequential keystrokes and superseded lookups)
                     await settingsArticle.getByRole("link", { name: "Models", exact: true }).click();
                     const modelsPanel = settingsArticle.locator('[data-settings-panel="models"]');
                     await modelsPanel.waitFor({ state: "visible" });
-                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 2);
-                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 1);
+                    assert.equal(await modelsPanel.locator("[data-session-model-form]").count(), 0, "session model selector moved to #session tab");
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 3);
+                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 3);
                     const catalogSearch = modelsPanel.getByRole("searchbox", { name: "Search model catalog", exact: true });
                     await catalogSearch.focus();
                     await catalogSearch.pressSequentially("small", { delay: 15 });
@@ -519,20 +685,11 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await catalogSearch.fill("");
                     await page.waitForFunction(() =>
                         document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null
-                        && document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 2,
+                        && document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 3,
                     );
-                    const sessionModelForm = modelsPanel.locator("[data-session-model-form]");
-                    await sessionModelForm.waitFor({ state: "visible" });
-                    await sessionModelForm.getByRole("combobox", { name: "Active session model", exact: true }).selectOption("fast");
-                    await sessionModelForm.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("high");
-                    await sessionModelForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/fast"));
-                    assert.equal(activeSessionModel, "fast");
-                    assert.equal(activeSessionEffort, "high");
-                    await modelsPanel.getByRole("button", { name: "+ Add model", exact: true }).click();
-                    await page.locator("#dialog-onboarding").waitFor({ state: "visible" });
-                    await page.locator("#dialog-onboarding [data-dialog-close]").first().click();
-                    await page.locator("#dialog-onboarding").waitFor({ state: "hidden" });
+                    await modelsPanel.locator("[data-models-alias-rows] tr").first().getByRole("button", { name: "Use in session", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/small"));
+                    assert.equal(activeSessionModel, "local");
 
                     // Switch to Environment in Session mode and verify session listing scope
                     await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();

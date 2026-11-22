@@ -11,7 +11,7 @@ export default async function verifySessionCards(t) {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
-    const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
+    const documents = new Documents(assets.get("/index.html").body.toString(), 128);
     /** @type {((url: URL) => Promise<Buffer>) | null} */
     let renderSearch = null;
     const requests = [];

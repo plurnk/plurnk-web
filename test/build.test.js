@@ -14,7 +14,7 @@ test("{§web-page-shell} compact header stays on one row and long workspace plac
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
-    const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
+    const documents = new Documents(assets.get("/index.html").body.toString(), 128);
     const browser = await chromium.launch();
     t.after(() => browser.close());
     for (const javaScriptEnabled of [false, true]) {
@@ -107,7 +107,7 @@ test("{§web-page-shell} disconnection is a named header glyph between Search an
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
-    const documents = new Documents(assets.get("/index.html").body.toString(), false, 128);
+    const documents = new Documents(assets.get("/index.html").body.toString(), 128);
     const browser = await chromium.launch();
     t.after(() => browser.close());
     const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 320, height: 700 } });

@@ -10,6 +10,7 @@ import accessHeaders from "./access-headers.js";
 import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import managementAction from "./management-action.js";
+import { sessionConfigOption } from "./session-models.js";
 import sessionCommands, {
     acceptCommandSuggestion,
     computeCommandSuggestions,
@@ -61,15 +62,16 @@ function failing(subscriber, fail) {
 
 /** {§web-session-observer} {§web-session-input} Delivery changes never own the session's lifetime.
  * @param {HTMLElement} element
- * @param {{ main?: Element | null, transport?: "http" | "ws", onNavigate?: (targetPath: string) => void }} [options]
+ * @param {{
+ *   main?: Element | null,
+ *   transport?: "http" | "ws",
+ *   onNavigate?: (targetPath: string) => void,
+ *   getWorkbenchSnapshot?: () => { readonly workspaces: readonly string[], readonly sessions: readonly string[], readonly projectRoot: string | null },
+ * }} [options]
  */
-export default function observeSession(element, { main: suppliedMain = $("#main"), transport, onNavigate } = {}) {
+export default function observeSession(element, { main: suppliedMain = $("#main"), transport, onNavigate, getWorkbenchSnapshot } = {}) {
     const { sessionId, auth } = element.dataset;
     if (!sessionId || (auth !== "session" && auth !== "none")) throw new Error("Session document metadata is incomplete.");
-    const approval = $(element, "#session-yolo");
-    if (!(approval instanceof HTMLButtonElement) || !["true", "false"].includes(approval.getAttribute("aria-pressed") ?? "")) {
-        throw new Error("Session document has no approval mode.");
-    }
     if (!(suppliedMain instanceof HTMLElement)) throw new Error("Session document has no main region.");
     const main = suppliedMain;
     const history = $(main, "#session-conversation");
@@ -80,7 +82,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const notice = $(main, "#session-connection");
     if (!notice) throw new Error("Session document has no connection notice.");
     const connectionNotice = notice;
-    const review = reviewRequests(main, approval.getAttribute("aria-pressed") === "true");
+    const review = reviewRequests(main);
     const compose = $(controls, "#session-compose");
     const stop = $(controls, "#session-stop");
     const attachInput = $(controls, "[data-attach-input]");
@@ -101,9 +103,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const fileInput = attachInput;
     const suggestionOutlet = suggestionList;
     const attachmentOutlet = attachmentList;
-    if (element.dataset.needsOnboarding === "true" && !$(main, "#session-onboarding-banner")) {
-        $.clone(history, "#session-onboarding-banner", { position: "beforebegin" });
-    }
     const coarseMedia = window.matchMedia("(pointer: coarse)");
     const syncSendShortcuts = () => {
         const mod = primaryModifierLabel();
@@ -225,35 +224,18 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const isClientDispatch = (/** @type {string} */ value) => isCommand(value, availableCommands()) || isLocalExec(value);
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
     const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, sessionId, auth, signal);
-    /** @type {Promise<{ open: () => Promise<void> }> | null} */
-    let onboardingPromise = null;
-    const openOnboarding = async () => {
-        onboardingPromise ??= import("./onboarding.js").then(({ createOnboardingController }) =>
-            createOnboardingController(() => ({
-                auth,
-                signal: resources.signal,
-                onConfigured: async (alias) => {
-                    delete element.dataset.needsOnboarding;
-                    $(main, "#session-onboarding-banner")?.remove();
-                    await action("session/set_config_option", { configId: "model", value: alias }, resources.signal);
-                },
-            })),
-        );
-        const controller = await onboardingPromise;
-        await controller.open();
-    };
     const toggleYolo = async () => {
-        const enabled = approval.getAttribute("aria-pressed") !== "true";
-        approval.setAttribute("aria-pressed", String(enabled));
-        approval.title = `${enabled ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)`;
-        the(approval, "yolo-label", enabled ? "Auto-approve" : "Review");
-        const mode = review.automatic(enabled);
-        if (mode === "automatic" && the(element, "connection") === "interrupted" && !cancellation) {
-            const resolutions = await review.decisions(agent.pendingGates);
-            if (resolutions && the(element, "connection") === "interrupted" && !cancellation) connect({ resolutions });
-        }
+        const currentMode = the(element, "approval-mode") ?? "review";
+        const nextMode = currentMode === "accept" ? "review" : "accept";
+        const { currentValue } = await sessionConfigOption(
+            (kind, params = {}) => action(kind, params, resources.signal),
+            "mode",
+            nextMode,
+        );
+        const resolvedMode = currentValue || nextMode;
+        the(element, "approval-mode", resolvedMode);
         availability();
-        return enabled;
+        return resolvedMode === "accept";
     };
     const runCommand = sessionCommands(main, {
         call: action,
@@ -285,7 +267,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 location.assign(targetPath);
             }
         },
-        openOnboarding,
+        ...(getWorkbenchSnapshot ? { hasSession: (target) => getWorkbenchSnapshot().sessions.includes(target) } : {}),
     });
     const slate = readingSlate(main);
     /** @type {ReturnType<typeof setTimeout> | null} */
@@ -379,27 +361,18 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             : ["none", ...(familyAliases.personas ?? [])];
         const childModels = [...readOptionValues("spawn_model"), ...models];
         const modes = readOptionValues("mode");
-        const workspaces = $$("#dialog-workspaces [data-workspaces-list] > li > a > span")
-            .map((el) => el.textContent?.trim() ?? "")
-            .filter(Boolean);
-        const tabSessions = $$("#workspace-tabs a[data-tab-session]")
-            .map((el) => el.getAttribute("data-tab-session") ?? "")
-            .filter(Boolean);
-        let foldedSessions = /** @type {string[]} */ ([]);
-        const rawFolded = $("#workspace-tabs")?.getAttribute("data-folded-sessions") ?? "";
-        if (rawFolded) {
-            try {
-                const parsed = JSON.parse(rawFolded);
-                if (Array.isArray(parsed)) {
-                    foldedSessions = parsed
-                        .filter((s) => isRecord(s) && !s.archived && typeof s.name === "string" && s.name.length > 0)
-                        .map((s) => String(s.name));
-                }
-            } catch {
-                // Ignore malformed attribute.
-            }
-        }
-        const sessions = [...tabSessions, ...foldedSessions];
+        const wb = getWorkbenchSnapshot?.();
+        const workspaces = wb
+            ? wb.workspaces
+            : (latestWorkspaceName ? [latestWorkspaceName] : []);
+        const currentSessionName = element.dataset.sessionName || "";
+        const descendantNames = Array.isArray(status?.descendants)
+            ? status.descendants.flatMap((d) => typeof d?.name === "string" && d.name ? [d.name] : [])
+            : [];
+        const sessions = wb
+            ? wb.sessions
+            : [...new Set([currentSessionName, ...descendantNames].filter(Boolean))];
+        const effectiveProjectRoot = workspaceProjectRoot !== undefined ? workspaceProjectRoot : wb?.projectRoot;
         const latestLoopId = status?.loopId;
         const loops = typeof latestLoopId === "number" && latestLoopId > 0
             ? Array.from({ length: latestLoopId }, (_, idx) => String(latestLoopId - idx))
@@ -417,6 +390,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             loops,
             gateIds: agent.pendingGates.map((g) => `@${g.id}`),
             familyAliases,
+            ...(effectiveProjectRoot !== undefined ? { projectRoot: effectiveProjectRoot } : {}),
         };
     }
 
@@ -515,7 +489,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         /** @type {string[]} */
         let presentedGateIds = [];
         let passiveRetry = initialPassiveRetry;
-        let forceReview = Boolean(submission?.forceReview);
         const timer = setInterval(() => {
             if (["connected", "interrupted"].includes(the(element, "connection") ?? "") && status) the(element, clocks(status, Date.now()));
         }, CLOCK_TICK_MS);
@@ -582,10 +555,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                                 latestWorkspaceName = snapshot.plurnk.workspace.name;
                             }
                         }
-                        if (snapshot.plurnk?.status?.model) {
-                            delete element.dataset.needsOnboarding;
-                            $(main, "#session-onboarding-banner")?.remove();
-                        }
                         presentState(snapshot, Date.now());
                         syncSuggestions();
                         slate.sync();
@@ -621,8 +590,16 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 };
                 const delivered = failing(subscriber, (error) => { intakeFailure = { error }; run.abort(error); });
                 try {
-                    if (submission) await agent.send({ abortController: run, message: submission.message, resolutions: submission.resolutions }, delivered);
-                    else await agent.resume(holding ? { abortController: run, gates: presentedGateIds } : { abortController: run }, delivered);
+                    if (submission) {
+                        await agent.send({
+                            abortController: run,
+                            message: submission.message,
+                            resolutions: submission.resolutions,
+                            ...(submission.forceReview ? { proposalPolicy: "review" } : {}),
+                        }, delivered);
+                    } else {
+                        await agent.resume(holding ? { abortController: run, gates: presentedGateIds } : { abortController: run }, delivered);
+                    }
                 } catch (error) {
                     if (intakeFailure === undefined) throw error;
                 }
@@ -640,14 +617,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     reconnect.reset();
                     const presentedGates = [...agent.pendingGates];
                     presentedGateIds = presentedGates.map(({ id }) => id);
-                    const mode = review.present(presentedGates, { forceManual: forceReview });
+                    const mode = review.present(presentedGates);
                     arriving = false;
-                    if (mode === "automatic") {
-                        const resolutions = await review.decisions(presentedGates);
-                        if (!resolutions) throw new Error("Automatic approval did not resolve its presented set.");
-                        submission = { resolutions };
-                        continue;
-                    }
                     connection("interrupted", "Input required");
                     the(connectionNotice, "connection-detail", mode === "manual" ? "Review the pending requests."
                         : mode === "expired" ? "The decision deadline has passed; the daemon cancels these requests."
@@ -661,7 +632,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 else if (!terminal) throw Object.assign(new Error(refusal ?? "Delivery ended without a session outcome."), { status: problem });
                 holding = false;
                 passiveRetry = false;
-                forceReview = false;
                 submission = undefined;
             }
         } catch (error) {
@@ -705,31 +675,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         })() };
     }
 
-    const forkCurrentSession = async () => {
-        if (the(controls, "command-pending") !== null) return;
-        the(controls, "command-pending", "");
-        availability();
-        try {
-            await runCommand("/fork", resources.signal);
-            slate.jumpToBottom();
-        } finally {
-            the(controls, "command-pending", null);
-            availability();
-        }
-    };
-
-    on(element, "click", "#session-yolo", async () => {
-        try { await toggleYolo(); }
-        catch (error) {
-            if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
-        }
-    });
-    const offFork = on(document, "click", "[data-session-fork]", (_event, button) => {
-        if (!main.isConnected || element.hidden) return;
-        const dialog = button.closest("dialog");
-        if (dialog instanceof HTMLDialogElement && dialog.open) dialog.close();
-        void forkCurrentSession();
-    });
     const offKeydown = on(document, "keydown", "body", (event) => {
         if (!main.isConnected || element.hidden) return;
         if (!(event instanceof KeyboardEvent) || event.defaultPrevented || event.isComposing || event.repeat) return;
@@ -740,9 +685,19 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 && agent.pendingGates.some(({ method }) => method === "session/request_permission");
             if (cancellation || (!inDraft && !pendingProposal)) return;
             event.preventDefault();
-            void toggleYolo().catch((error) => {
-                if (!resources.signal.aborted) the(feedback, "command-error", error instanceof Error ? error.message : String(error));
-            });
+            void toggleYolo().then(
+                (enabled) => {
+                    if (!resources.signal.aborted) {
+                        the(feedback, { "message-status": `Approvals: ${enabled ? "Automatic" : "Manual"}.`, "command-error": "" });
+                    }
+                },
+                async (error) => {
+                    if (!resources.signal.aborted) {
+                        const { message, recovery } = await describeFailure(error);
+                        the(feedback, { "message-status": "", "command-error": [message, recovery].filter(Boolean).join(" ") });
+                    }
+                },
+            );
             return;
         }
         if (isTextEntry(event.target) || event.ctrlKey || event.altKey || event.metaKey) return;
@@ -795,13 +750,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 }
             }
         }
-    });
-    on(main, "click", "[data-open-onboarding]", () => {
-        void openOnboarding();
-    });
-    on(main, "click", "[data-dismiss-onboarding]", (_event, button) => {
-        delete element.dataset.needsOnboarding;
-        button.closest("#session-onboarding-banner")?.remove();
     });
     on(review.form, "keydown", "[data-proposal-edit-body]", (event) => {
         if (!(event instanceof KeyboardEvent) || event.isComposing || event.repeat) return;
@@ -1138,7 +1086,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             if (disposed) return;
             disposed = true;
             clearSendingTimer();
-            offFork();
             offKeydown();
             offCoarseMedia();
             offPageHide();

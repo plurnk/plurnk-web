@@ -189,13 +189,16 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
                 leadingOrder: barGeometry.leadingOrder,
             }, { belowStatus: true, atBottom: true, leadingOrder: true }, `Google Sheets bottom tab bar geometry: ${JSON.stringify(barGeometry)}`);
 
-            // Clicking the already-active tab opens #dialog-session-manage; saving a title updates the tab label via ACP session/set_title
+            // Clicking the already-active tab navigates to /settings/#session; saving a title updates the tab label on return
             await tabs.locator('a[data-tab-session="user"]').click();
-            const manageDialog = page.locator("#dialog-session-manage");
-            await manageDialog.waitFor({ state: "visible" });
-            await manageDialog.locator('#session-title input[name="title"]').fill("Main chat");
-            await manageDialog.getByRole("button", { name: "Change title", exact: true }).click();
-            await page.waitForFunction(() => !document.querySelector("#dialog-session-manage")?.hasAttribute("open"));
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
+            const sessionPanel = page.locator('#workspace-settings [data-settings-panel="session"]');
+            await sessionPanel.waitFor({ state: "visible" });
+            await sessionPanel.locator('#session-title input[name="title"]').fill("Main chat");
+            await sessionPanel.getByRole("button", { name: "Save title", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent === "Title: Main chat.");
+            await page.locator("[data-settings-back]").click();
+            await waitConnectedSession(page, "user");
             await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="user"] [data-tab-label]')?.textContent === "Main chat");
 
             // Clicking + opens #dialog-session-create; confirming empty creates an untouched sequential draft tab and switches to it; switching back to Main chat folds the untouched draft out!
@@ -305,10 +308,10 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.equal(await tabs.locator('a[data-tab-session="chord-session"]').getAttribute("aria-current"), "true");
             assert.equal(await tabs.locator('a[data-tab-session="chord-session"] [data-tab-label]').textContent(), "Chord title");
 
-            // Clicking active chord-session tab opens #dialog-session-manage -> Archive session over ACP, switches cleanly back to #user, and surfaces Archived sessions (1) in ☰!
+            // Clicking active chord-session tab opens /settings/#session -> Archive redirects cleanly back to #user and surfaces Archived sessions (1) in ☰!
             await tabs.locator('a[data-tab-session="chord-session"]').click();
-            await manageDialog.waitFor({ state: "visible" });
-            await manageDialog.locator('#session-archive button[type="submit"]').click();
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
+            await page.locator('#workspace-settings [data-settings-panel="session"] button[form="session-archive"]').click();
             await waitConnectedSession(page, "user");
             await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="chord-session"]') === null);
             await archivesBtn.click();
@@ -320,7 +323,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             checkBrowser();
             await context.close();
 
-            // Below 768px (320px mobile), #workspace-tabs hides and #session-controls ☰ opens the session switcher without horizontal overflow!
+            // Below 768px (320px mobile), #workspace-tabs hides, #session-current appears in #session-status linking to /settings/#session, and #session-controls ☰ opens the session switcher without horizontal overflow!
             const mobileContext = await browser.newContext({ viewport: { width: 320, height: 640 } });
             const checkMobile = browserDiagnostics(mobileContext);
             const mobilePage = await mobileContext.newPage();
@@ -329,21 +332,23 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await waitConnectedSession(mobilePage, "user");
             const mobileTabs = mobilePage.locator("#workspace-tabs");
             assert.equal(await mobileTabs.isVisible(), false, "below 768px hides the bottom tab bar");
+            const mobileCurrentSession = mobilePage.locator("#session-current");
+            assert.equal(await mobileCurrentSession.isVisible(), true, "below 768px shows #session in status strip");
+            assert.equal(await mobileCurrentSession.textContent(), "#user");
             const mobileMenuBtn = mobilePage.locator('[aria-label="Session controls"] button[data-open-sessions]');
             assert.equal(await mobileMenuBtn.isVisible(), true, "below 768px renders ☰ in #session-controls");
             assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px session view has no horizontal overflow");
             await mobileMenuBtn.click();
             const mobileSwitcher = mobilePage.locator("#dialog-workspace-switcher");
             await mobileSwitcher.waitFor({ state: "visible" });
+            assert.equal(await mobileSwitcher.locator("[data-switcher-actions] button").count(), 1, "quick switcher exposes New session without secondary config buttons");
             await mobileSwitcher.locator('a[href="#branch"]').click();
             await waitConnectedSession(mobilePage, "branch");
-            await mobileMenuBtn.click();
-            await mobileSwitcher.waitFor({ state: "visible" });
-            await mobileSwitcher.getByRole("button", { name: "Session options…", exact: true }).click();
-            const mobileManage = mobilePage.locator("#dialog-session-manage");
-            await mobileManage.waitFor({ state: "visible" });
-            assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px session manage dialog has no horizontal overflow");
-            await mobileManage.locator("button[data-dialog-close]").click();
+            assert.equal(await mobileCurrentSession.textContent(), "#branch");
+            await mobileCurrentSession.click();
+            await mobilePage.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
+            await mobilePage.locator('#workspace-settings [data-settings-panel="session"]').waitFor({ state: "visible" });
+            assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px #session settings tab has no horizontal overflow");
             checkMobile();
             await mobileContext.close();
 

@@ -39,7 +39,7 @@ async function compileEntry(entryURL) {
                 // The component entry has its own module graph, not the production entry's preloads.
                 .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
                 .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" crossorigin src="/${entry.fileName}"></script>${preloads}`);
-            const documents = new Documents(template, false, 64);
+            const documents = new Documents(template, 64);
             const fixturePort = {
                 listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null, archived_at: null }],
                 listSessions: async () => [
@@ -144,8 +144,12 @@ export default async function conversationFixture(entryURL = new URL("./conversa
             return;
         }
         const connId = request.headers["acp-connection-id"] ?? "";
-        const sessionId = request.headers["acp-session-id"] ?? input.params?.sessionId ?? "";
-        const key = `${connId}:${sessionId}`;
+        const headerSessionId = request.headers["acp-session-id"] ?? "";
+        const sessionId = headerSessionId || (input.params?.sessionId ?? "");
+        const candidateKey = `${connId}:${sessionId}`;
+        const key = headerSessionId === "" && sseStreams.has(`${connId}:`) && !sseStreams.has(candidateKey)
+            ? `${connId}:`
+            : candidateKey;
         response.writeHead(202, privateHeaders);
         response.end();
         if (input.method === undefined) {

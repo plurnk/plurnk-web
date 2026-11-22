@@ -43,35 +43,31 @@ test("{§web-configuration} missing and invalid limits never select code default
     }
 });
 
-test("{§web-configuration} {§web-workspace-creation} browser YOLO and PLURNK_WEB_ALLOW_PROJECT_FOLDER use the assembled floor and validate their switches", (t) => {
-    for (const [key, expectedDefault] of /** @type {const} */ ([
-        ["PLURNK_WEB_YOLO", "0"],
-        ["PLURNK_WEB_ALLOW_PROJECT_FOLDER", "1"],
-    ])) {
-        const original = process.env[key];
-        t.after(() => {
-            if (original === undefined) delete process.env[key];
-            else process.env[key] = original;
-        });
-        assert.equal(original, expectedDefault, `${key} default comes from .env.defaults`);
-        for (const value of ["0", "1"]) {
-            process.env[key] = value;
-            const mod = createModule();
-            assert.deepEqual(mod.mounts, ["/"]);
-            assert.deepEqual(mod.contained, []);
-        }
-        for (const value of ["", "true", "2"]) {
-            process.env[key] = value;
-            const mod = createModule();
-            assert.deepEqual(mod.mounts, ["/"]);
-            assert.equal(mod.contained?.length, 1);
-            assert.equal(mod.contained?.[0]?.key, key);
-            assert.match(mod.contained?.[0]?.message ?? "", /must be 0 or 1/u);
-        }
-        delete process.env[key];
-        assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
-        process.env[key] = original;
+test("{§web-configuration} {§web-workspace-creation} PLURNK_WEB_ALLOW_PROJECT_FOLDER uses the assembled floor and validates its switch", (t) => {
+    const key = "PLURNK_WEB_ALLOW_PROJECT_FOLDER";
+    const original = process.env[key];
+    t.after(() => {
+        if (original === undefined) delete process.env[key];
+        else process.env[key] = original;
+    });
+    assert.equal(original, "1", `${key} default comes from .env.defaults`);
+    for (const value of ["0", "1"]) {
+        process.env[key] = value;
+        const mod = createModule();
+        assert.deepEqual(mod.mounts, ["/"]);
+        assert.deepEqual(mod.contained, []);
     }
+    for (const value of ["", "true", "2"]) {
+        process.env[key] = value;
+        const mod = createModule();
+        assert.deepEqual(mod.mounts, ["/"]);
+        assert.equal(mod.contained?.length, 1);
+        assert.equal(mod.contained?.[0]?.key, key);
+        assert.match(mod.contained?.[0]?.message ?? "", /must be 0 or 1/u);
+    }
+    delete process.env[key];
+    assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
+    process.env[key] = original;
 });
 
 test("{§web-configuration} diagram deadlines cannot overflow Node's timer range", (t) => {
@@ -87,7 +83,7 @@ test("{§web-configuration} diagram deadlines cannot overflow Node's timer range
 });
 
 test("{§web-configuration} {§web-session} contained settings withhold only their own part and posture follows credentials.face()", async (t) => {
-    const keys = ["PLURNK_AUTH", "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_FORM_BYTES", "PLURNK_WEB_YOLO", "PLURNK_WEB_LOGIN_TTL_SEC"];
+    const keys = ["PLURNK_AUTH", "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_FORM_BYTES", "PLURNK_WEB_LOGIN_TTL_SEC"];
     const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
     t.after(() => {
         for (const [key, value] of Object.entries(original)) {
@@ -97,12 +93,12 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
     });
     // Even with PLURNK_AUTH=1 in env, a null credentials.face() means anonymous posture.
     process.env.PLURNK_AUTH = "1";
+    process.env.PLURNK_WEB_OVERVIEW_SESSIONS = "0";
     process.env.PLURNK_WEB_DIAGRAM_THREADS = "0";
     process.env.PLURNK_WEB_CREATE_TTL_SEC = "0";
-    process.env.PLURNK_WEB_YOLO = "invalid";
     const mod = createModule();
     assert.deepEqual(mod.contained?.map(({ key }) => key), [
-        "PLURNK_WEB_YOLO",
+        "PLURNK_WEB_OVERVIEW_SESSIONS",
         "PLURNK_WEB_CREATE_TTL_SEC",
         "PLURNK_WEB_DIAGRAM_THREADS",
     ]);
@@ -126,8 +122,8 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
     const daemonDir = await fetch(`${base}/~/`, { redirect: "manual" });
     assert.equal(daemonDir.status, 303, "{§web-search} /~/ redirects to /search/");
     assert.equal(daemonDir.headers.get("location"), "/search/");
-    assert.equal((await fetch(`${base}/search/`)).status, 200, "search stays live when other parts are contained and face() is null");
-    assert.equal((await fetch(`${base}/~/work`)).status, 503, "workspace session page is withheld when PLURNK_WEB_YOLO is invalid");
+    assert.equal((await fetch(`${base}/search/`)).status, 503, "search is withheld when PLURNK_WEB_OVERVIEW_SESSIONS is invalid");
+    assert.equal((await fetch(`${base}/~/work`)).status, 200, "workspace session page stays live when other parts are contained and face() is null");
     assert.equal((await fetch(`${base}/render/mermaid`, {
         method: "POST",
         headers: { "content-type": "application/json" },

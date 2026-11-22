@@ -973,7 +973,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             for (const engine of [chromium]) {
                 model.reset();
-                await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_YOLO: "0" }, async (base, daemon) => {
+                await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_SERVICE_PROPOSALS: "review" }, async (base, daemon) => {
                     const run = await controller(base);
                     const parameters = { workspace: "observer-approval" };
                     await run.send({ ...parameters, message: prompt("approval") });

@@ -9,7 +9,6 @@ import Session, { CALLBACK, CLIENT } from "./session.js";
 import {
     clearPlaceCookie,
     formatPlaceCookie,
-    ownNavigation,
     privateHeaders,
     readPlaceCookie,
     redirect,
@@ -32,9 +31,6 @@ import Diagrams from "./diagrams.js";
  *   readSessionOverview?: import("@plurnk/plurnk-contracts/port").ApplicationPort["readSessionOverview"],
  *   listSessionLoops?: import("@plurnk/plurnk-contracts/port").ApplicationPort["listSessionLoops"],
  *   setSessionTitle?: import("@plurnk/plurnk-contracts/port").ApplicationPort["setSessionTitle"],
- *   listProviders?: import("@plurnk/plurnk-contracts/port").ApplicationPort["listProviders"],
- *   listModels?: import("@plurnk/plurnk-contracts/port").ApplicationPort["listModels"],
- *   readOperatorEnvironment?: () => Promise<unknown>,
  *   createWorkspace: (args: { name?: string, projectRoot: string | null }) => Promise<{ workspaceId: number, workspaceName: string, projectRoot: string | null }>,
  *   renameWorkspace: (workspaceId: number, name: string) => Promise<{ name: string }>,
  *   createSession: (args: { workspaceId: number, name?: string }) => Promise<{ sessionId: number, sessionName: string }>,
@@ -45,7 +41,6 @@ import Diagrams from "./diagrams.js";
 /** @typedef {Awaited<ReturnType<typeof readAsset>>} LoadedAsset */
 /**
  * @typedef {{
- *   yolo: boolean | null,
  *   overviewSessions: number | null,
  *   overviewExcerptChars: number | null,
  *   allowProjectFolder?: boolean | null,
@@ -75,7 +70,7 @@ function productionAssets() {
             if (!inventory.some(([path, , type]) => path === stylesheetPath && type === "text/css")) throw new Error("The application stylesheet is absent from the web asset inventory.");
             return stylesheetPath;
         },
-        async start({ yolo, overviewSessions, overviewExcerptChars, allowProjectFolder = true }) {
+        async start({ overviewSessions, overviewExcerptChars, allowProjectFolder = true }) {
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
@@ -85,7 +80,7 @@ function productionAssets() {
             ]))));
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), yolo, overviewSessions, overviewExcerptChars, allowProjectFolder);
+            const documents = new Documents(root.body.toString("utf8"), overviewSessions, overviewExcerptChars, allowProjectFolder);
             loaded = { documents, resources };
         },
         async snapshot() {
@@ -111,7 +106,6 @@ export default function createModule(assets = productionAssets()) {
             return null;
         }
     };
-    const yolo = contain(() => Knob.flag("PLURNK_WEB_YOLO"));
     const allowProjectFolder = contain(() => Knob.flag("PLURNK_WEB_ALLOW_PROJECT_FOLDER"));
     const overviewSessions = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_SESSIONS", 1));
     const overviewExcerptChars = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", 1));
@@ -147,7 +141,7 @@ export default function createModule(assets = productionAssets()) {
                 if (registration === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
                 session = new Session(credentials, registration, face, limits);
             }
-            await assets.start({ yolo, overviewSessions, overviewExcerptChars, allowProjectFolder });
+            await assets.start({ overviewSessions, overviewExcerptChars, allowProjectFolder });
 
             /** @param {import("node:http").IncomingMessage} req */
             const isSecureRequest = (req) => session !== null
@@ -564,12 +558,28 @@ export default function createModule(assets = productionAssets()) {
                             try { await seam.setSessionArchived({ workspaceId: ws.id, sessionId: target.id, archived: true }); }
                             catch (cause) { throw refusal(cause, "The daemon could not archive the session."); }
                             const afterSessions = await seam.listSessions(ws.id);
+                            const overview = typeof seam.readSessionOverview === "function" && overviewExcerptChars !== null
+                                ? await seam.readSessionOverview({ workspaceId: ws.id, limit: Number.MAX_SAFE_INTEGER, excerptChars: overviewExcerptChars })
+                                : null;
+                            const overviewById = new Map(overview?.sessions.map((entry) => [entry.id, entry]) ?? []);
                             const unarchived = afterSessions
                                 .filter(({ origin, archived_at }) => origin === "model" && archived_at === null)
-                                .toSorted(orderByReply);
+                                .map((entry) => {
+                                    const info = overviewById.get(entry.id);
+                                    const resolvedTitle = info?.title ?? entry.title;
+                                    return {
+                                        ...entry,
+                                        kind: info?.kind ?? entry.kind ?? (entry.parentSessionId === null ? "root" : "work"),
+                                        gates: info?.gates ?? entry.gates ?? 0,
+                                        ...(typeof resolvedTitle === "string" ? { title: resolvedTitle } : {}),
+                                        reply: info?.reply ?? entry.reply ?? null,
+                                    };
+                                })
+                                .toSorted((a, b) => orderByReply(a, b) || a.id - b.id);
                             const childParents = new Set(unarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
                             const nonDraft = unarchived.filter((entry) => !isUntouchedDraftSession(entry, childParents.has(entry.id)));
-                            const remaining = nonDraft.length > 0 ? nonDraft : unarchived;
+                            const topLevelNonDraft = nonDraft.filter((entry) => entry.parentSessionId === null || entry.kind === "fork");
+                            const remaining = topLevelNonDraft.length > 0 ? topLevelNonDraft : nonDraft.length > 0 ? nonDraft : unarchived;
                             if (remaining.length > 0) {
                                 const next = remaining[0];
                                 const path = directoryPath({ kind: "session", workspace: ws.name, session: next.name });
@@ -677,7 +687,9 @@ export default function createModule(assets = productionAssets()) {
                             const wsName = params.get("workspace") ?? "";
                             const sessName = params.get("session");
                             if (!wsName) throw new RequestError(404, "Workspace not found.");
-                            const body = await documents.settings(wsName, sessName, /** @type {any} */ (seam), admitted);
+                            const body = await documents.settings(wsName, sessName, /** @type {any} */ (seam), admitted, {
+                                creationsAvailable: creations !== null,
+                            });
                             if (body === null) throw new RequestError(404, "Workspace not found.");
                             res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
                             res.end(req.method === "HEAD" ? undefined : body);
@@ -706,7 +718,6 @@ export default function createModule(assets = productionAssets()) {
                             /** @type {Record<string, string>} */
                             let setCookie = {};
                             const body = await documents.read(directory, /** @type {any} */ (seam), admitted, {
-                                own: ownNavigation(req),
                                 preferredSessionId: remembered?.sessionId ?? null,
                                 creationsAvailable: creations !== null,
                                 onSelected: (ws, selected) => {

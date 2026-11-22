@@ -55,6 +55,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         await t.test(`{§web-session-questions} ${cancelled ? "cancellation" : "typed native input"} resumes a real question without another prompt`, { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, base, headers, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 800 });
             const requests = requestsFrom(page);
+            const gateAnswers = () => requests.filter((r) => r.method === undefined);
             const name = cancelled ? "question-cancel" : "question-answer";
             await ask(page, name);
             assert.deepEqual(JSON.parse(await review(page).locator('[data-request-schema]').textContent()), answerSchema);
@@ -63,21 +64,23 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
             if (cancelled) await cancel(page);
             else {
                 await submit(page);
-                assert.equal(requests.length, 1, "unanswered native required controls prevent a resume");
+                assert.equal(gateAnswers().length, 0, "unanswered native required controls prevent a resume");
                 await answer(page);
-                const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
-                const original = await approval.getAttribute("aria-pressed");
-                await approval.click();
-                assert.notEqual(await approval.getAttribute("aria-pressed"), original);
-                await approval.click();
-                assert.equal(await approval.getAttribute("aria-pressed"), original);
+                const composerField = page.getByRole("textbox", { name: "Message", exact: true });
+                const statusFooter = page.locator("#session-status");
+                const original = await statusFooter.getAttribute("data-approval-mode");
+                await composerField.focus();
+                await composerField.press("Shift+Tab");
+                await page.waitForFunction((prev) => document.querySelector("#session-status")?.dataset.approvalMode !== prev, original);
+                await composerField.press("Shift+Tab");
+                await page.waitForFunction((prev) => document.querySelector("#session-status")?.dataset.approvalMode === prev, original);
                 assert.equal(await review(page).getByRole("textbox", { name: "Exact answer", exact: true }).inputValue(), exactAnswer.content,
                     "approval mode changes do not clear question answers");
-                assert.equal(requests.length, 1, "toggling YOLO never submits an answered question");
+                assert.equal(gateAnswers().length, 0, "toggling session approval mode never submits an answered question");
                 await review(page).getByRole("spinbutton", { name: "count", exact: true }).fill("1.5");
                 await submit(page);
                 await review(page).getByRole("alert").filter({ hasText: /does not satisfy/u }).waitFor();
-                assert.equal(requests.length, 1, "JSON Schema validation refuses an integer fraction");
+                assert.equal(gateAnswers().length, 0, "JSON Schema validation refuses an integer fraction");
                 assert.equal(await review(page).getByRole("textbox", { name: "Exact answer", exact: true }).inputValue(), exactAnswer.content);
                 await review(page).getByRole("spinbutton", { name: "count", exact: true }).fill("0");
             }
@@ -86,8 +89,8 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
             await page.getByText(`Completed ${name}.`, { exact: true }).waitFor();
             await connected(page);
             assert.equal(model.requests.length, 2);
-            assert.equal(requests.length, 2);
-            assert.deepEqual(requests[1].result, cancelled ? { action: "cancel" } : { action: "accept", content: exactAnswer });
+            assert.equal(gateAnswers().length, 1);
+            assert.deepEqual(gateAnswers()[0].result, cancelled ? { action: "cancel" } : { action: "accept", content: exactAnswer });
             assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Keep this next message.");
             const receipt = await questionResult(page, base, headers);

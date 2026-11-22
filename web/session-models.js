@@ -19,7 +19,10 @@ export async function listModels(call, search = "") {
             ...(alias.effort === undefined ? {} : { effort: alias.effort, effortSource: alias.effortSource }),
         }), alias: alias.alias };
     }).filter((alias) => modelLabel(alias).toLowerCase().includes(search.toLowerCase()));
-    const catalog = Validator.assertModelCatalogPage(await call("models.list", search ? { search } : {}));
+    const catalog = Validator.assertModelCatalogPage(await call("models.list", {
+        ...(search ? { search } : {}),
+        limit: 100,
+    }));
     return { aliases, catalog };
 }
 
@@ -100,8 +103,8 @@ export async function sessionEffort(call, selection) {
 export async function sessionConfigOption(call, configId, selection) {
     const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: Array<{value?: unknown}>}>}} */ (
         await call(
-            selection === undefined ? "session/resume" : "session/set_config_option",
-            selection === undefined ? { replayFrom: null } : { configId, value: selection },
+            selection === undefined ? "session/options" : "session/set_config_option",
+            selection === undefined ? {} : { configId, value: selection },
         )
     );
     if (!Array.isArray(response?.configOptions)) {

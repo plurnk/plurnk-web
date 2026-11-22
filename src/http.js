@@ -94,12 +94,6 @@ export function sameOriginFetch(req) {
     if (site !== undefined && site !== "same-origin") throw new RequestError(403, "Same-origin form required.");
 }
 
-/** {§web-session-approval} The person reached this page from this origin or through the browser itself (address bar, bookmark),
- * by its Fetch Metadata; another site, a sibling site or no metadata is not their own navigation.
- * @param {import("@plurnk/plurnk-contracts").RequestHeaders} req
- */
-export const ownNavigation = (req) => req.headers["sec-fetch-site"] === "same-origin" || req.headers["sec-fetch-site"] === "none";
-
 /** @typedef {{ setHeader(name: string, value: string | readonly string[]): unknown, writeHead(statusCode: number, headers?: import("node:http").OutgoingHttpHeaders): unknown, end(chunk?: unknown): unknown }} HttpResponse */
 
 /** @param {Pick<HttpResponse, "writeHead" | "end">} res @param {string} location @param {string | string[]} [cookies] */

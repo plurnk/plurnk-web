@@ -48,6 +48,7 @@
 
     body > header > a,
     header #header-place a,
+    #session-current,
     #session-model,
     #session-effort {
         text-decoration: none;
@@ -85,7 +86,8 @@
 
     /* {§web-session-input} Cancellation and secondary controls use the secondary control palette. */
     button[form="session-stop"],
-    #workspace-archive :where(button) {
+    button[form="workspace-archive"],
+    button[form="session-archive"] {
         --otm-primary-background: var(--otm-secondary-background);
         --otm-primary-hover-background: var(--otm-secondary-hover-background);
         --otm-primary-inverse: var(--otm-secondary-inverse);

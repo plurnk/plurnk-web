@@ -154,32 +154,6 @@ export default function observeOverview(main) {
         || $(workspacesOutlet, ":scope > p[data-overview-omitted]") !== null,
     );
 
-    if (main.dataset.needsOnboarding === "true" && !$(main, "#session-onboarding-banner")) {
-        const anchor = controlsForm ?? main.firstElementChild;
-        if (anchor) $.clone(anchor, "#session-onboarding-banner", { position: "beforebegin" });
-        else $.clone(main, "#session-onboarding-banner");
-    }
-
-    /** @type {Promise<{ open: () => Promise<void> }> | null} */
-    let onboardingPromise = null;
-    on(main, "click", "[data-open-onboarding]", () => {
-        onboardingPromise ??= import("./onboarding.js").then(({ createOnboardingController }) =>
-            createOnboardingController(() => ({
-                auth,
-                signal: resources.signal,
-                onConfigured: () => {
-                    delete main.dataset.needsOnboarding;
-                    $(main, "#session-onboarding-banner")?.remove();
-                },
-            })),
-        );
-        void onboardingPromise.then((ctrl) => ctrl.open());
-    });
-    on(main, "click", "[data-dismiss-onboarding]", (_event, button) => {
-        delete main.dataset.needsOnboarding;
-        button.closest("#session-onboarding-banner")?.remove();
-    });
-
     function syncUrlQuery() {
         if (!location.pathname.startsWith("/search")) return;
         const params = new URLSearchParams();

@@ -174,8 +174,15 @@ export function gauges(status, budget, defaults) {
         && (budget.contextTokens / budget.contextCapacity) >= 0.75
         ? ctxText
         : "";
+    const modeOption = Array.isArray(defaults?.configOptions)
+        ? defaults.configOptions.find((entry) => entry?.configId === "mode")
+        : undefined;
+    const approvalMode = typeof modeOption?.currentValue === "string" && modeOption.currentValue.length > 0
+        ? modeOption.currentValue
+        : null;
     return {
         lifecycle: status.lifecycle,
+        "approval-mode": approvalMode,
         input: input.text, output: output.text, cost: price.text === "?" ? "$?" : price.text,
         "usage-label": `Cumulative tokens, session and descendants. Input: ${input.exact}. Output: ${output.exact}.`,
         "cost-label": `Cumulative USD, session and descendants: ${price.exact}.`,
@@ -208,6 +215,7 @@ export function workspaceIdentity({ name, projectLabel }, session) {
         workspacePath,
         sessionPath,
         workspaceSettingsPath: workspaceSettingsPath(name, session) ?? workspacePath,
+        sessionSettingsPath: workspaceSettingsPath(name, session, "session") ?? workspacePath,
         modelsSettingsPath: workspaceSettingsPath(name, session, "models") ?? workspacePath,
         projectLabel: namedFolder ? projectLabel : "",
         workspaceIcon: projectLabel !== null ? "🗂️" : "☁️",
