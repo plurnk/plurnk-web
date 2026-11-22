@@ -1257,7 +1257,7 @@ export default class Documents {
             + archiveSection
             + "</section>";
 
-        const body = '<article id="workspace-settings" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-busy">'
+        const body = '<article id="workspace-settings" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">'
             + '<header><h1 id="workspace-settings-title" data-i18n="settings">Settings</h1></header>'
             + navHtml
             + '<p role="status" data-text="ws-settings-message"></p>'

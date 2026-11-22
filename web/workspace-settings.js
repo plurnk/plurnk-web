@@ -108,6 +108,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     let modelsSearchQuery = initialQuery;
     let helpFilterQuery = initialHelpFilter;
     let busy = false;
+    let refreshDepth = 0;
     let mounted = false;
     /** @type {AbortController | null} */
     let modelsLookup = null;
@@ -125,10 +126,15 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         },
     }));
 
+    function syncLoadingState() {
+        the(article, "ws-settings-loading", busy || refreshDepth > 0 ? "true" : null);
+    }
+
     /** @param {boolean} nextBusy @param {string} [message] @param {string} [recovery] */
     function setFeedback(nextBusy, message = "", recovery = "") {
         busy = nextBusy;
         the(article, {
+            "ws-settings-loading": nextBusy || refreshDepth > 0 ? "true" : null,
             "ws-settings-busy": nextBusy ? "true" : null,
             "ws-settings-message": message,
             "ws-settings-recovery": recovery,
@@ -378,19 +384,29 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         }
     }
 
-    /** @param {SettingsSection} section */
-    async function refreshSection(section) {
+    /**
+     * @param {SettingsSection} section
+     * @param {{ catalogOnly?: boolean }} [opts]
+     */
+    async function refreshSection(section, opts = {}) {
         if (section === "general" || section === "help") {
             if (section === "help") applyHelpFilter();
-            setFeedback(false, "", "");
+            if (!busy) setFeedback(false, "", "");
             return;
         }
         const ctx = getContext();
-        setFeedback(true, "", "");
+        if (!busy) {
+            the(article, { "ws-settings-message": "", "ws-settings-recovery": "" });
+        }
+        refreshDepth += 1;
+        syncLoadingState();
+        /** @type {AbortController | null} */
+        let currentModelsReq = null;
         try {
             if (section === "models") {
                 modelsLookup?.abort();
                 const req = modelsLookup = new AbortController();
+                currentModelsReq = req;
                 const signal = AbortSignal.any([ctx.signal, req.signal]);
                 const callModels = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
                     managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", ctx.auth, signal, {
@@ -398,7 +414,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     });
                 const [{ aliases, catalog }, sessionRes] = await Promise.all([
                     listModels(callModels, modelsSearchQuery),
-                    ctx.sessionName !== null
+                    ctx.sessionName !== null && !opts.catalogOnly
                         ? callModels("session/resume", { replayFrom: null }).catch(() => null)
                         : Promise.resolve(null),
                 ]);
@@ -434,8 +450,9 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                         "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search.",
                     });
                 }
-                renderSessionModelControls(sessionRes, aliases, catalog.items);
-                setFeedback(false, "", "");
+                if (!opts.catalogOnly) {
+                    renderSessionModelControls(sessionRes, aliases, catalog.items);
+                }
                 return;
             }
             if (section === "env") {
@@ -445,7 +462,6 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 });
                 ctx.signal.throwIfAborted();
                 if (envPanel) populateEnvPanel(envPanel, res, envListScope);
-                setFeedback(false, "", "");
                 return;
             }
             if (section === "personas") {
@@ -462,17 +478,20 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 ctx.signal.throwIfAborted();
                 renderFamilyList("personas", listRes);
                 if (sessionRes !== null) renderSessionPersonaOptions(sessionRes);
-                setFeedback(false, "", "");
                 return;
             }
             const res = await invoke(`workspace.${section}.list`, {});
             ctx.signal.throwIfAborted();
             renderFamilyList(section, res);
-            setFeedback(false, "", "");
         } catch (error) {
-            if (modelsLookup?.signal.aborted && section === "models") return;
+            if (currentModelsReq?.signal.aborted && !ctx.signal.aborted) return;
             const { message, recovery } = await describeFailure(error);
-            setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery);
+            if (!busy) {
+                setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery);
+            }
+        } finally {
+            refreshDepth = Math.max(0, refreshDepth - 1);
+            syncLoadingState();
         }
     }
 
@@ -560,13 +579,13 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             modelsSearchQuery = String(new FormData(form).get("q") ?? "").trim();
-            void refreshSection("models");
+            void refreshSection("models", { catalogOnly: true });
         });
 
         on(article, "input", '[data-models-search-form] input[name="q"]', (_event, input) => {
             if (!(input instanceof HTMLInputElement)) return;
             modelsSearchQuery = input.value.trim();
-            void refreshSection("models");
+            void refreshSection("models", { catalogOnly: true });
         });
 
         on(article, "submit", "[data-model-alias-row-form]", (event, form) => {
