@@ -176,53 +176,51 @@ test("{§web-directory-addresses} native links round-trip through production, Vi
     for (const server of [production, development.httpServer, built.httpServer]) {
         const address = /** @type {import("node:net").AddressInfo} */ (server.address());
         const base = `http://127.0.0.1:${address.port}`;
-        for (const javaScriptEnabled of [false, true]) {
-            const context = await browser.newContext({ javaScriptEnabled });
-            const checkBrowser = browserDiagnostics(context);
-            try {
-                const page = await context.newPage();
-                const navigations = [];
-                page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
-                await page.goto(`${base}/~/`);
-                for (const [index, [directory, path]] of browserCases.entries()) {
-                    const previousPathname = new URL(page.url()).pathname;
-                    const expectedUrl = new URL(base + path);
-                    if (javaScriptEnabled && previousPathname !== expectedUrl.pathname) {
-                        await page.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
-                    }
-                    const before = navigations.length;
-                    await page.getByRole("link", { name: `Case ${index}`, exact: true }).click();
-                    assert.equal(page.url(), base + path);
-                    if (previousPathname === expectedUrl.pathname && expectedUrl.hash !== "") {
-                        assert.equal(navigations.length, before, "same-workspace #session transition stays in-document");
-                    } else {
-                        assert.equal(navigations.length, before + 1, "changing workspace path issues a real document request");
-                    }
-                    const serverSeen = directory.kind === "session"
-                        ? { kind: "workspace", workspace: directory.workspace }
-                        : directory;
-                    assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
-                    assert.deepEqual(parseDirectory(expectedUrl.pathname + expectedUrl.search + expectedUrl.hash), directory);
+        const context = await browser.newContext();
+        const checkBrowser = browserDiagnostics(context);
+        try {
+            const page = await context.newPage();
+            const navigations = [];
+            page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
+            await page.goto(`${base}/~/`);
+            for (const [index, [directory, path]] of browserCases.entries()) {
+                const previousPathname = new URL(page.url()).pathname;
+                const expectedUrl = new URL(base + path);
+                if (previousPathname !== expectedUrl.pathname) {
+                    await page.evaluate(() => import(/** @type {HTMLScriptElement} */ (document.querySelector('script[type="module"]')).src));
                 }
-                const [directory, path] = browserCases.at(-1);
+                const before = navigations.length;
+                await page.getByRole("link", { name: `Case ${index}`, exact: true }).click();
+                assert.equal(page.url(), base + path);
+                if (previousPathname === expectedUrl.pathname && expectedUrl.hash !== "") {
+                    assert.equal(navigations.length, before, "same-workspace #session transition stays in-document");
+                } else {
+                    assert.equal(navigations.length, before + 1, "changing workspace path issues a real document request");
+                }
                 const serverSeen = directory.kind === "session"
                     ? { kind: "workspace", workspace: directory.workspace }
                     : directory;
-                await page.reload();
-                assert.equal(page.url(), base + path);
                 assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
-                const wsOnlyPath = path.split("#", 1)[0];
-                await page.getByRole("link", { name: "Query and fragment", exact: true }).click();
-                assert.equal(page.url(), `${base}${wsOnlyPath}?query=%2F%40#user_2`);
-                assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
-                await page.goBack();
-                assert.equal(page.url(), base + path);
-                await page.goForward();
-                assert.equal(page.url(), `${base}${wsOnlyPath}?query=%2F%40#user_2`);
-                checkBrowser();
-            } finally {
-                await context.close();
+                assert.deepEqual(parseDirectory(expectedUrl.pathname + expectedUrl.search + expectedUrl.hash), directory);
             }
+            const [directory, path] = browserCases.at(-1);
+            const serverSeen = directory.kind === "session"
+                ? { kind: "workspace", workspace: directory.workspace }
+                : directory;
+            await page.reload();
+            assert.equal(page.url(), base + path);
+            assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
+            const wsOnlyPath = path.split("#", 1)[0];
+            await page.getByRole("link", { name: "Query and fragment", exact: true }).click();
+            assert.equal(page.url(), `${base}${wsOnlyPath}?query=%2F%40#user_2`);
+            assert.deepEqual(JSON.parse(await page.locator("#address").innerText()), serverSeen);
+            await page.goBack();
+            assert.equal(page.url(), base + path);
+            await page.goForward();
+            assert.equal(page.url(), `${base}${wsOnlyPath}?query=%2F%40#user_2`);
+            checkBrowser();
+        } finally {
+            await context.close();
         }
     }
 });

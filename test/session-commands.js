@@ -238,7 +238,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.equal(model.requests.length, 0);
             assert.equal(await page.locator("[data-messages] > li").count(), 0);
             for (const input of sent) {
-                assert.ok(["_plurnk/action", "session/resume", "session/set_config_option", "session/cancel", "providers/list"].includes(input.method));
+                assert.ok(["_plurnk/action", "session/resume", "session/set_config_option", "session/options", "session/cancel", "providers/list"].includes(input.method));
             }
             await field.fill("Lifecycle fixture: command-followup.");
             await page.getByRole("button", { name: "Send", exact: true }).click();

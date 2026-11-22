@@ -50,17 +50,23 @@ export default async function verifyHistory(t) {
                 try {
                     const context = await browser.newContext({ viewport: { width: 390, height: 700 } });
                     const check = browserDiagnostics(context);
+                    const origin = new URL(fixture.url).origin;
+                    await context.addInitScript((acpOrigin) => {
+                        if (location.protocol === "about:") return;
+                        localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                            acpOrigin,
+                            issuer: "http://idp.test",
+                            clientId: "plurnk-web",
+                            tokenEndpoint: "http://idp.test/token",
+                            accessToken: "history-test",
+                        }));
+                    }, origin);
                     const page = await context.newPage();
                     const requests = [];
                     const reads = [];
                     const pages = new Map();
                     /** @type {any} */
                     let events = [];
-                    let credentials = 0;
-                    await page.route("**/auth/token", (route) => {
-                        credentials++;
-                        return route.fulfill({ json: { token_type: "Bearer", access_token: "history-test" } });
-                    });
                     await page.route("**/history/**", async (route) => {
                         const address = new URL(route.request().url());
                         reads.push(address.pathname + address.search);
@@ -97,7 +103,6 @@ export default async function verifyHistory(t) {
                     await settled();
                     assert.deepEqual(await ids(), ["old", "current", "tail"]);
                     assert.deepEqual(reads, [older], "opaque URL including escaped query is followed unchanged");
-                    assert.equal(credentials, 1);
                     assert.equal(await page.evaluate(() => window.saved === document.querySelector('[data-message-id="current"] article p')), true);
                     assert.equal(await page.evaluate(() => getSelection().toString()), "Current text.");
                     await run();

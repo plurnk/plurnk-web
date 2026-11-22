@@ -1,6 +1,6 @@
 {
     "name": "@plurnk/plurnk-web",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "description": "Plurnk daemon module serving an OTM document.",
     "type": "module",
     "license": "MIT",
@@ -31,9 +31,7 @@
         "src/module.js",
         "src/index-document.js",
         "src/directory-addresses.js",
-        "src/creations.js",
         "src/documents.js",
-        "src/session.js",
         "src/http.js",
         "src/static-assets.js",
         "src/diagrams.js",
@@ -44,17 +42,15 @@
         "LICENSE"
     ],
     "dependencies": {
-        "@plurnk/plurnk-meta": "^3.0.0",
+        "@plurnk/plurnk-meta": "^3.0.0 || ^4.0.0",
         "negotiator": "1.1.0",
-        "oauth4webapi": "3.8.8",
         "ondine": "0.0.2",
         "piscina": "5.3.2"
     },
     "peerDependencies": {
-        "@plurnk/plurnk-acp": "^3.0.0",
-        "@plurnk/plurnk-auth": "^1.1.2",
-        "@plurnk/plurnk-contracts": "^9.0.0",
-        "@plurnk/plurnk-modules": "^4.3.0"
+        "@plurnk/plurnk-acp": "^3.0.0 || ^4.0.0",
+        "@plurnk/plurnk-contracts": "^9.0.0 || ^10.0.0",
+        "@plurnk/plurnk-modules": "^4.3.0 || ^5.0.0"
     },
     "devDependencies": {
         "@agentclientprotocol/sdk": "2.9.1",
@@ -88,7 +84,7 @@
         "build": "node scripts/build.mjs",
         "preview": "vite preview",
         "test:lint": "plurnk-spec-check && tsc && tsc -p tsconfig.browser.json && tsc -p tsconfig.test.json && eslint . && otm-lint --check web && stylelint 'web/styles/*.css'",
-        "test:unit": "node --env-file=.env.defaults --test test/module.test.js test/creations.test.js test/workspace-creation.test.js test/route-settlement.test.js test/diagrams.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js test/session.test.js test/token.test.js test/documents.test.js test/session-status.test.js test/reading-slate.test.js test/history-pages.test.js test/conversation.test.js test/package.test.js",
+        "test:unit": "node --env-file=.env.defaults --test test/module.test.js test/route-settlement.test.js test/diagrams.test.js test/build.test.js test/development.test.js test/authoring.test.js test/directory-addresses.test.js test/oidc.test.js test/documents.test.js test/session-status.test.js test/reading-slate.test.js test/history-pages.test.js test/conversation.test.js test/package.test.js",
         "test:installation": "node --test test/installation.test.js",
         "test:candidate": "node scripts/test-candidate.mjs",
         "test": "npm run build && npm run test:lint && npm run test:unit",

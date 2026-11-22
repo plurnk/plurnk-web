@@ -21,14 +21,13 @@
         <nav aria-label="Main navigation">
             <ul>
                 <li data-connection-indicator><span role="img" aria-label="Disconnected" title="Disconnected"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5v3M10 2.5v3M4 5.5h8v2a4 4 0 0 1-8 0v-2ZM8 11.5v2M2.5 2.5l11 11"/></svg></span></li>
-                <!-- {§web-page-shell} Instantiated by the document server, not browser JavaScript. -->
-                <template id="session-navigation" data-otm-dynamic>
-                    <li><a href="/account/" data-nav="account" aria-label="Account" title="Account"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="2.75"/><path d="M3 13.5c0-2.5 2.2-4.25 5-4.25s5 1.75 5 4.25"/></svg> <span data-header-label data-i18n="account">Account</span></a></li>
-                </template>
             </ul>
         </nav>
     </header>
     <main id="main" data-page="home"></main>
+    <template id="oidc-sign-out-item">
+        <li data-oidc-sign-out><button type="button" data-action="sign-out" aria-label="Sign out" title="Sign out"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 2.75H3.75A1.25 1.25 0 0 0 2.5 4v8a1.25 1.25 0 0 0 1.25 1.25H6.5M10.5 11.25 13.75 8 10.5 4.75M13.5 8H6.5"/></svg> <span data-header-label data-i18n="sign-out">Sign out</span></button></li>
+    </template>
     <!-- {§web-session-directory} Inert directory card templates; the overview subscription reconciles them in place. -->
     <template id="overview-list">
         <ul></ul>
@@ -56,7 +55,7 @@
         <small data-text="project-label"></small>
     </template>
     <template id="workspace-unarchive-form">
-        <form method="post" action="/workspaces/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
+        <form data-inline-unarchive="workspace"><input type="hidden" name="workspace" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
     </template>
     <template id="session-card">
         <li data-directory-entry="session" data-session-key="" data-session-kind="root">
@@ -89,10 +88,28 @@
         <time data-session-time datetime=""></time>
     </template>
     <template id="session-unarchive-form">
-        <form method="post" action="/sessions/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
+        <form data-inline-unarchive="session"><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
     </template>
     <template id="session-excerpt-line">
         <small data-session-excerpt></small>
+    </template>
+    <template id="overview-omitted-note">
+        <p data-overview-omitted><small><span data-text="overview-omitted">0</span> <span data-i18n="older-sessions-omitted">older sessions omitted — search to narrow.</span></small></p>
+    </template>
+    <template id="search-suggestion-option">
+        <option value=""></option>
+    </template>
+    <template id="workspace-list-item">
+        <li><a><span data-workspace-item-glyph></span> <span data-workspace-item-name></span></a></li>
+    </template>
+    <template id="workspace-project-tag">
+        <small data-workspace-item-project></small>
+    </template>
+    <template id="workspace-empty-card">
+        <article id="workspace-empty"><p data-i18n="no-sessions">No sessions in this workspace yet.</p><button type="button" data-action="new-session" data-workspace-empty-new data-i18n="start-conversation">New session</button></article>
+    </template>
+    <template id="error-view">
+        <article aria-labelledby="error-title"><header><h1 id="error-title"><span aria-hidden="true">⚠️</span> <span data-text="error-title">404 Not Found</span></h1></header><p data-text="error-message"></p><p data-text="error-recovery" hidden></p><footer><a href="/" data-i18n="home">Home</a></footer></article>
     </template>
     <!-- {§web-workspace-tabs} Inert tab, pane, and quick-switcher templates reconciled by workspace-workbench. -->
     <template id="workspace-tab-item">
@@ -101,13 +118,13 @@
     <template id="workspace-session-main">
         <main id="main" data-page="session" data-session-name="">
             <p id="session-folder" data-project-label=""><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label"></span></p>
-            <article id="session-connection" role="alert"><header><span><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></span><form id="session-reconnect" action="/" data-bind="action:session-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><a data-sign-in href="/auth/login" data-bind="href:sign-in-path" data-i18n="sign-in">Sign in</a></header><p data-text="connection-detail">Displayed values are no longer live.</p></article>
+            <article id="session-connection" role="alert"><header><span><span aria-hidden="true">⚠️</span> <span data-text="connection-label">Not connected.</span></span><form id="session-reconnect" action="/" data-bind="action:session-path" data-reconnect><button type="submit" data-i18n="reconnect">Reconnect</button></form><button type="button" data-sign-in data-action="sign-in" data-bind="data-return-path:session-path" data-i18n="sign-in">Sign in</button></header><p data-text="connection-detail">Displayed values are no longer live.</p></article>
             <section id="session-diagnostics" aria-label="Diagnostics"><ul></ul></section>
             <section id="session-conversation" aria-label="Conversation"><p data-empty-conversation data-i18n="no-messages">No messages.</p><ul data-messages></ul></section>
         </main>
     </template>
     <template id="workspace-session-footer">
-        <footer id="session-status" aria-label="Session status" data-workspace-id="" data-session-id="" data-session-name="" data-auth="none" data-connection="initial">
+        <footer id="session-status" aria-label="Session status" data-workspace-id="" data-session-id="" data-session-name="" data-connection="initial">
             <p role="status" data-text="connection-label">Not connected.</p>
             <div data-status-line>
                 <ul aria-label="Model controls">
@@ -163,7 +180,7 @@
         <li data-switcher-entry=""><a data-workspace-route="session"><span data-lifecycle="idle" aria-hidden="true"></span><span data-switcher-label></span></a></li>
     </template>
     <template id="workspace-switcher-archived-item">
-        <li data-switcher-archived-entry=""><span data-switcher-archived-label></span><form method="post" action="/sessions/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form></li>
+        <li data-switcher-archived-entry=""><span data-switcher-archived-label></span><form data-inline-unarchive="session"><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form></li>
     </template>
     <!-- {§web-workspace-settings} Dedicated settings page templates for session policy, models, MCP, skills, schedules, personas, members, env, and help. -->
     <template id="session-config-controls">

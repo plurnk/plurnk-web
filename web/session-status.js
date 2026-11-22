@@ -201,7 +201,7 @@ export function gauges(status, budget, defaults) {
     };
 }
 
-/** {§web-session-identity} One directory codec for server and browser navigation.
+/** {§web-session-identity} {§web-workspace-folder} One directory codec and folder-label projection for session navigation.
  * @param {Pick<import("@plurnk/plurnk-acp/client").AcpWorkspaceState, "name" | "projectLabel">} workspace
  * @param {string} session
  */

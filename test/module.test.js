@@ -15,11 +15,16 @@ test("{§web-host} {§web-configuration} installed module claims root on the ass
 });
 
 test("{§web-configuration} missing and invalid limits never select code defaults", (t) => {
-    const keys = ["PLURNK_WEB_LOGIN_TTL_SEC",
-        "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_OVERVIEW_EXCERPT_CHARS",
-        "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_CREATE_TOKENS", "PLURNK_WEB_FORM_BYTES",
-        "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_DIAGRAM_PENDING", "PLURNK_WEB_DIAGRAM_TIMEOUT_MS",
-        "PLURNK_WEB_DIAGRAM_INPUT_BYTES", "PLURNK_WEB_DIAGRAM_OUTPUT_BYTES", "PLURNK_WEB_DIAGRAM_EDGES"];
+    const keys = [
+        "PLURNK_WEB_OVERVIEW_SESSIONS",
+        "PLURNK_WEB_OVERVIEW_EXCERPT_CHARS",
+        "PLURNK_WEB_DIAGRAM_THREADS",
+        "PLURNK_WEB_DIAGRAM_PENDING",
+        "PLURNK_WEB_DIAGRAM_TIMEOUT_MS",
+        "PLURNK_WEB_DIAGRAM_INPUT_BYTES",
+        "PLURNK_WEB_DIAGRAM_OUTPUT_BYTES",
+        "PLURNK_WEB_DIAGRAM_EDGES",
+    ];
     const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
     t.after(() => {
         for (const [key, value] of Object.entries(original)) {
@@ -28,7 +33,7 @@ test("{§web-configuration} missing and invalid limits never select code default
         }
     });
     for (const key of keys) {
-        assert.ok(original[key], "the package test runs on the real environment floor");
+        assert.ok(original[key], `${key} runs on the real environment floor`);
         delete process.env[key];
         assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
         for (const value of ["", "0", "-1", "1.5", "unbounded"]) {
@@ -43,31 +48,43 @@ test("{§web-configuration} missing and invalid limits never select code default
     }
 });
 
-test("{§web-configuration} {§web-workspace-creation} PLURNK_WEB_ALLOW_PROJECT_FOLDER uses the assembled floor and validates its switch", (t) => {
-    const key = "PLURNK_WEB_ALLOW_PROJECT_FOLDER";
-    const original = process.env[key];
+test("{§web-configuration} {§web-workspace-creation} PLURNK_WEB_ALLOW_PROJECT_FOLDER and PLURNK_ACP_URL validate at startup", (t) => {
+    const keys = ["PLURNK_WEB_ALLOW_PROJECT_FOLDER", "PLURNK_ACP_URL"];
+    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
     t.after(() => {
-        if (original === undefined) delete process.env[key];
-        else process.env[key] = original;
+        for (const [key, value] of Object.entries(original)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
     });
-    assert.equal(original, "1", `${key} default comes from .env.defaults`);
+    assert.equal(original.PLURNK_WEB_ALLOW_PROJECT_FOLDER, "1");
     for (const value of ["0", "1"]) {
-        process.env[key] = value;
+        process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = value;
         const mod = createModule();
         assert.deepEqual(mod.mounts, ["/"]);
         assert.deepEqual(mod.contained, []);
     }
     for (const value of ["", "true", "2"]) {
-        process.env[key] = value;
+        process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = value;
         const mod = createModule();
-        assert.deepEqual(mod.mounts, ["/"]);
         assert.equal(mod.contained?.length, 1);
-        assert.equal(mod.contained?.[0]?.key, key);
+        assert.equal(mod.contained?.[0]?.key, "PLURNK_WEB_ALLOW_PROJECT_FOLDER");
         assert.match(mod.contained?.[0]?.message ?? "", /must be 0 or 1/u);
     }
-    delete process.env[key];
-    assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
-    process.env[key] = original;
+    delete process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER;
+    assert.throws(createModule, { message: "PLURNK_WEB_ALLOW_PROJECT_FOLDER is missing from the assembled environment floor." });
+    process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = "1";
+
+    for (const validUrl of ["", "/acp", "http://127.0.0.1:4321/acp", "https://acp.example/acp"]) {
+        process.env.PLURNK_ACP_URL = validUrl;
+        assert.deepEqual(createModule().contained, []);
+    }
+    for (const invalidUrl of ["ws://127.0.0.1:4321/acp", "//evil.example/acp", "acp", "https://user:pass@acp.example/acp"]) {
+        process.env.PLURNK_ACP_URL = invalidUrl;
+        const mod = createModule();
+        assert.equal(mod.contained?.length, 1, invalidUrl);
+        assert.equal(mod.contained?.[0]?.key, "PLURNK_ACP_URL");
+    }
 });
 
 test("{§web-configuration} diagram deadlines cannot overflow Node's timer range", (t) => {
@@ -82,8 +99,8 @@ test("{§web-configuration} diagram deadlines cannot overflow Node's timer range
     assert.match(mod.contained?.[0]?.message ?? "", /must not exceed 2147483647 milliseconds/u);
 });
 
-test("{§web-configuration} {§web-session} contained settings withhold only their own part and posture follows credentials.face()", async (t) => {
-    const keys = ["PLURNK_AUTH", "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_DIAGRAM_THREADS", "PLURNK_WEB_CREATE_TTL_SEC", "PLURNK_WEB_FORM_BYTES", "PLURNK_WEB_LOGIN_TTL_SEC"];
+test("{§web-configuration} {§web-browser-security} PLURNK_ACP_URL stamps boot data-* attributes and expands CSP connect-src/img-src without inline scripts", async (t) => {
+    const keys = ["PLURNK_ACP_URL", "PLURNK_WEB_ALLOW_PROJECT_FOLDER", "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", "PLURNK_WEB_DIAGRAM_THREADS"];
     const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
     t.after(() => {
         for (const [key, value] of Object.entries(original)) {
@@ -91,26 +108,23 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
             else process.env[key] = value;
         }
     });
-    // Even with PLURNK_AUTH=1 in env, a null credentials.face() means anonymous posture.
-    process.env.PLURNK_AUTH = "1";
-    process.env.PLURNK_WEB_OVERVIEW_SESSIONS = "0";
+    process.env.PLURNK_ACP_URL = "https://acp.example:8443/acp";
+    process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = "0";
+    process.env.PLURNK_WEB_OVERVIEW_SESSIONS = "42";
+    process.env.PLURNK_WEB_OVERVIEW_EXCERPT_CHARS = "96";
     process.env.PLURNK_WEB_DIAGRAM_THREADS = "0";
-    process.env.PLURNK_WEB_CREATE_TTL_SEC = "0";
+
     const mod = createModule();
-    assert.deepEqual(mod.contained?.map(({ key }) => key), [
-        "PLURNK_WEB_OVERVIEW_SESSIONS",
-        "PLURNK_WEB_CREATE_TTL_SEC",
-        "PLURNK_WEB_DIAGRAM_THREADS",
-    ]);
+    assert.deepEqual(mod.contained?.map(({ key }) => key), ["PLURNK_WEB_DIAGRAM_THREADS"]);
+
     let handler;
-    await mod.setup({ credentials: { registerClient: () => ({ clientId: "plurnk-web", clientSecret: "sec" }) } });
-    await mod.start(/** @type {any} */ ({
-        credentials: { face: () => null },
+    await mod.start({
+        credentials: {
+            face: () => ({ issuer: () => "https://idp.example/oauth" }),
+            verify: () => null,
+        },
         registerHttpRoute(_prefix, serve) { handler = serve; },
-        listWorkspaces: async () => [{ id: 1, name: "work", project_root: null, project_label: null, archived_at: null }],
-        listSessions: async () => [{ id: 2, name: "session1", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null }],
-        renameWorkspace: async (id, name) => ({ id, name }),
-    }));
+    });
     const server = createServer(handler);
     t.after(async () => {
         await mod.close();
@@ -119,66 +133,60 @@ test("{§web-configuration} {§web-session} contained settings withhold only the
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
+
     const daemonDir = await fetch(`${base}/~/`, { redirect: "manual" });
-    assert.equal(daemonDir.status, 303, "{§web-search} /~/ redirects to /search/");
+    assert.equal(daemonDir.status, 303, "{§web-search} GET /~/ redirects to /search/");
     assert.equal(daemonDir.headers.get("location"), "/search/");
-    assert.equal((await fetch(`${base}/search/`)).status, 503, "search is withheld when PLURNK_WEB_OVERVIEW_SESSIONS is invalid");
-    assert.equal((await fetch(`${base}/~/work`)).status, 200, "workspace session page stays live when other parts are contained and face() is null");
+
+    for (const [path, expectedPage] of /** @type {const} */ ([
+        ["/", "home"],
+        ["/index.html", "home"],
+        ["/~/work", "session"],
+        ["/~/team/project", "session"],
+        ["/search/", "search"],
+        ["/search/index.html", "search"],
+        ["/settings/?workspace=work", "settings"],
+        ["/settings/", "settings"],
+        ["/auth/callback", "callback"],
+    ])) {
+        const res = await fetch(`${base}${path}`);
+        assert.equal(res.status, 200, path);
+        assert.equal(res.headers.get("cache-control"), "no-store");
+        assert.equal(
+            res.headers.get("content-security-policy"),
+            "default-src 'self'; script-src 'self'; connect-src 'self' https://acp.example:8443 wss://acp.example:8443 https://idp.example; img-src 'self' https://acp.example:8443 data: blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+        );
+        const html = await res.text();
+        assert.match(html, /<html\b[^>]*\bdata-acp-url="https:\/\/acp\.example:8443\/acp"/u);
+        assert.match(html, /\bdata-allow-project-folder="0"/u);
+        assert.match(html, /\bdata-overview-sessions="42"/u);
+        assert.match(html, /\bdata-overview-excerpt-chars="96"/u);
+        assert.match(html, /\bdata-web-version="\d+\.\d+\.\d+"/u);
+        assert.match(html, new RegExp(`<main id="main" data-page="${expectedPage}"`, "u"));
+        assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)/iu, "strict script-src 'self' forbids inline script blocks");
+    }
+
     assert.equal((await fetch(`${base}/render/mermaid`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+            "content-type": "application/json",
+            origin: base,
+            authorization: "Bearer test",
+        },
         body: JSON.stringify({ source: "flowchart LR\n A-->B" }),
     })).status, 503, "diagram compilation is withheld when PLURNK_WEB_DIAGRAM_THREADS is invalid");
-    assert.equal((await fetch(`${base}/workspaces/new`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", origin: base, "sec-fetch-site": "same-origin" },
-        body: "token=00000000-0000-4000-8000-000000000000",
-    })).status, 503, "workspace creation is withheld when PLURNK_WEB_CREATE_TTL_SEC is invalid");
-    const renameRes = await fetch(`${base}/workspaces/rename`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", origin: base, "sec-fetch-site": "same-origin" },
-        body: "workspace=work&name=renamed",
-        redirect: "manual",
-    });
-    assert.equal(renameRes.status, 303, "rename does not depend on creation tokens and stays live");
-    assert.equal(renameRes.headers.get("location"), "/~/renamed");
-    assert.equal((await fetch(`${base}/settings/?workspace=work`)).status, 200, "/settings/ stays live when unrelated knobs are contained");
-    assert.equal((await fetch(`${base}/settings/?workspace=work`, { method: "HEAD" })).status, 200);
-    assert.equal((await fetch(`${base}/settings/?workspace=missing`)).status, 404);
-    assert.equal((await fetch(`${base}/settings/`)).status, 404);
 });
 
-test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session arrival, converges empty-daemon allocation, and records POST /place", async (t) => {
-    /** @type {Array<{ id: number, name: string, project_root: string | null, project_label: string | null, archived_at: string | null }>} */
-    let workspaces = [];
-    /** @type {Map<number, Array<{ id: number, name: string, origin: string, parentSessionId: number | null, kind: string, lifecycle: string, archived_at: string | null, reply?: { id: number, at: number, coordinate: string, excerpt: string, continued: boolean } | null }>>} */
-    const sessionsByWs = new Map();
-    let wsAllocated = 0;
-    let sessAllocated = 0;
-    const starterGate = Promise.withResolvers();
-    let holdStarter = true;
-
+test("{§web-assets} {§web-directory-documents} exact public resources, pure static shells without seam backdoors, and HTTP method matrix", async (t) => {
     let handler;
+    // Start with ONLY { registerHttpRoute } to prove zero seam.* workspace/session methods are required.
     const mod = createModule();
-    await mod.start(/** @type {any} */ ({
-        registerHttpRoute(_prefix, serve) { handler = serve; },
-        listWorkspaces: async () => workspaces,
-        listSessions: async (wsId) => sessionsByWs.get(wsId) ?? [],
-        createWorkspace: async ({ name, projectRoot }) => {
-            if (holdStarter) await starterGate.promise;
-            wsAllocated += 1;
-            const ws = { id: 10 + wsAllocated, name: name ?? `amber-brook-${wsAllocated}`, project_root: projectRoot ?? null, project_label: projectRoot ?? null, archived_at: null };
-            workspaces = [...workspaces, ws];
-            return { workspaceId: ws.id, workspaceName: ws.name, projectRoot: ws.project_root, projectLabel: ws.project_label };
+    await mod.start({
+        registerHttpRoute(prefix, serve) {
+            assert.equal(prefix, "/");
+            handler = serve;
         },
-        createSession: async ({ workspaceId, name }) => {
-            sessAllocated += 1;
-            const sessionName = name ?? `s-${sessAllocated}`;
-            const row = { id: 100 + sessAllocated, name: sessionName, origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: null };
-            sessionsByWs.set(workspaceId, [...(sessionsByWs.get(workspaceId) ?? []), row]);
-            return { sessionId: row.id, sessionName };
-        },
-    }));
+    });
     const server = createServer(handler);
     t.after(async () => {
         await mod.close();
@@ -188,103 +196,13 @@ test("{§web-arrival} {§web-search} GET / resolves 3-tier remembered session ar
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
 
-    // Tier 3: racing GET / requests on an empty daemon converge on one starter workspace1#session1 allocation.
-    const racing = [
-        fetch(`${base}/`, { redirect: "manual" }),
-        fetch(`${base}/`, { redirect: "manual" }),
-    ];
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    starterGate.resolve();
-    holdStarter = false;
-    const [firstArrival, secondArrival] = await Promise.all(racing);
-    assert.equal(firstArrival.status, 303);
-    assert.equal(secondArrival.status, 303);
-    assert.equal(firstArrival.headers.get("location"), "/~/workspace1#session1");
-    assert.equal(secondArrival.headers.get("location"), "/~/workspace1#session1");
-    assert.equal(wsAllocated, 1, "starterFlight allocates one workspace across concurrent GET / requests");
-    assert.equal(sessAllocated, 1, "starterFlight allocates one session1 session across concurrent GET / requests");
-    assert.match(firstArrival.headers.get("set-cookie") ?? "", /^plurnk_web_place=11:101;/u);
-
-    // Add a second workspace with a newer session and an older remembered session in workspace 11.
-    workspaces.push({ id: 12, name: "cobalt-pine", project_root: null, project_label: null, archived_at: null });
-    sessionsByWs.set(11, [
-        { id: 101, name: "session1", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 1, at: 1000, coordinate: "1/1/1", excerpt: "Earlier", continued: false } },
-        { id: 102, name: "review", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 2, at: 2000, coordinate: "1/1/1", excerpt: "Review", continued: false } },
-    ]);
-    sessionsByWs.set(12, [
-        { id: 201, name: "latest", origin: "model", parentSessionId: null, kind: "root", lifecycle: "idle", archived_at: null, reply: { id: 9, at: 9000, coordinate: "1/1/1", excerpt: "Newest", continued: false } },
-    ]);
-
-    // Tier 1: browser with plurnk_web_place=11:102 returns to /~/workspace1#review instead of cobalt-pine#latest.
-    const rememberedRes = await fetch(`${base}/`, {
-        headers: { cookie: "plurnk_web_place=11:102" },
-        redirect: "manual",
-    });
-    assert.equal(rememberedRes.status, 303);
-    assert.equal(rememberedRes.headers.get("location"), "/~/workspace1#review");
-
-    // Tier 2: stale/archived cookie falls through to the most recently active unarchived root session.
-    sessionsByWs.get(11)[1].archived_at = "2026-11-20T00:00:00Z";
-    const fallbackRes = await fetch(`${base}/`, {
-        headers: { cookie: "plurnk_web_place=11:102" },
-        redirect: "manual",
-    });
-    assert.equal(fallbackRes.status, 303);
-    assert.equal(fallbackRes.headers.get("location"), "/~/cobalt-pine#latest");
-    assert.match(fallbackRes.headers.get("set-cookie") ?? "", /^plurnk_web_place=12:201;/u);
-
-    // POST /place records active tab switch in plurnk_web_place and enforces same-origin POST.
-    const placeRes = await fetch(`${base}/place`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
-        body: new URLSearchParams({ workspace: "workspace1", session: "session1" }),
-    });
-    assert.equal(placeRes.status, 204);
-    assert.match(placeRes.headers.get("set-cookie") ?? "", /^plurnk_web_place=11:101;/u);
-    assert.equal((await fetch(`${base}/place`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example" },
-        body: "workspace=workspace1&session=session1",
-    })).status, 403);
-});
-
-test("{§web-authorization-style} the registered browser client uses the packaged application stylesheet", async () => {
-    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
-    const stylesheets = inventory.filter(([, , type]) => type === "text/css");
-    assert.ok(stylesheets.some(([path]) => /\/math-renderer-[^/]+\.css$/u.test(path)), "the inventory also contains independently loaded renderer CSS");
-    assert.ok(stylesheets.some(([path]) => /\/code-highlight-renderer-[^/]+\.css$/u.test(path)), "the inventory also contains the highlighter palette");
-    const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
-    const stylesheet = /<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/u.exec(html)?.[1];
-    assert.ok(stylesheet);
-    assert.doesNotMatch(stylesheet, /math-renderer|code-highlight-renderer/u);
-    const registrations = [];
-    await createModule().setup({ credentials: { registerClient(options) {
-        registrations.push(options);
-        return { clientId: options.id, clientSecret: "test-only" };
-    } } });
-    assert.deepEqual(registrations, [{ id: "plurnk-web", redirectPaths: ["/auth/callback"], scopes: ["acp"], stylesheetPath: stylesheet }]);
-});
-
-test("{§web-assets} exact public resources and HTTP method matrix", async (t) => {
-    let handler;
-    await createModule().start(/** @type {any} */ ({ registerHttpRoute(prefix, serve) {
-        assert.equal(prefix, "/");
-        handler = serve;
-    }, listWorkspaces: async () => [], listSessions: async () => [] }));
-    const server = createServer(handler);
-    t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
-    server.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    const base = `http://127.0.0.1:${server.address().port}`;
-    const token = await fetch(`${base}/auth/token`, { method: "POST" });
-    assert.equal(token.status, 404, "{§web-access-token} disabled authentication issues no browser credential");
-    assert.equal((await token.json()).status, 404);
     const index = await fetch(`${base}/index.html`);
     assert.equal(index.status, 200, "{§web-index-documents} explicit root index is served");
     const indexBody = await index.text();
     assert.equal(indexBody, await (await fetch(`${base}/`)).text());
     const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
     assert.equal(manifestResponse.status, 200, "{§web-installation} manifest is available on the module route");
+
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     for (const [path, file, type] of inventory) {
         const expected = path === "/index.html" ? Buffer.from(indexBody) : await readFile(new URL(`../dist/${file}`, import.meta.url));
@@ -298,23 +216,25 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             if (method === "HEAD") assert.deepEqual(body, Buffer.alloc(0));
             else if (path === "/index.html") {
                 assert.match(body.toString(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
-                assert.doesNotMatch(body.toString(), /id="session-navigation"|href="\/account\/"|action="\/auth\/logout"/u);
                 assert.match(body.toString(), /<template id="conversation-message">/u,
-                    "{§web-session-conversation} the shared HTML owns inert message structure, not authenticated navigation");
+                    "{§web-session-conversation} the shared HTML owns inert message structure");
                 assert.equal(body.byteLength, Number(res.headers.get("content-length")));
             } else assert.deepEqual(body, expected);
         }
     }
-    for (const path of ["/missing", "/~/workspace/extra", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
+
+    for (const path of ["/missing", "/~", "/~/%GG", "/.env.defaults", "/module.js", "/package.json", "/assets.json", "/@vite/client", "/app.js", "/vendor/otm.js", "/vendor/", "/%2e%2e/.env.defaults", "/vendor/%2fetc/passwd", "/%00"]) {
         for (const method of ["GET", "HEAD"]) {
             const res = await fetch(`${base}${path}`, { method });
             assert.equal(res.status, 404, `${method} ${path}`);
             assert.equal(res.headers.get("content-type"), "text/html; charset=utf-8");
             assert.equal(res.headers.get("cache-control"), "no-store");
             assert.equal(res.headers.get("referrer-policy"), "no-referrer");
-            assert.equal(res.headers.get("content-security-policy"),
-                "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-                "{§web-browser-security} image sources do not broaden script or connection permissions");
+            assert.equal(
+                res.headers.get("content-security-policy"),
+                "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+                "{§web-browser-security} default same-origin CSP locks down script-src and connect-src",
+            );
             if (method === "HEAD") assert.equal(await res.text(), "");
             else {
                 const body = await res.text();
@@ -324,20 +244,23 @@ test("{§web-assets} exact public resources and HTTP method matrix", async (t) =
             }
         }
     }
+
     for (const method of ["POST", "PUT", "DELETE", "OPTIONS"]) {
         const res = await fetch(base, { method });
         assert.equal(res.status, 405, method);
         assert.equal(res.headers.get("allow"), "GET, HEAD");
         assert.match(await res.text(), /<h1 id="error-title"><span aria-hidden="true">⚠️<\/span> <span data-text="error-title">405 Method Not Allowed<\/span><\/h1>/u);
     }
-    // Send the raw path: fetch normalizes dot segments before making its request.
-    const raw = await new Promise((resolve, reject) => {
-        request(`${base}/`, { path: "/../../package.json" }, (res) => {
-            res.resume();
-            res.on("end", () => resolve(res.statusCode));
-        }).on("error", reject).end();
-    });
-    assert.equal(raw, 404);
+
+    for (const rawPath of ["/../../package.json", "/~/a/..", "/~/a/%2e%2e"]) {
+        const raw = await new Promise((resolve, reject) => {
+            request(`${base}/`, { path: rawPath }, (res) => {
+                res.resume();
+                res.on("end", () => resolve(res.statusCode));
+            }).on("error", reject).end();
+        });
+        assert.equal(raw, 404, rawPath);
+    }
 });
 
 test("{§web-index-documents} production resolves only admitted directory indexes", async (t) => {
@@ -346,29 +269,35 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const base = pathToFileURL(`${directory}/`);
     await copyFile(new URL("../package.json", import.meta.url), new URL("package.json", base));
     await mkdir(new URL("src/", base));
-    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "creations.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
+    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
         await copyFile(new URL(`../src/${file}`, import.meta.url), new URL(`src/${file}`, base));
     }
     await mkdir(new URL("dist/", base));
     const inventory = [
         ["/index.html", "root.html", "text/html", {}],
+        ["/app.css", "app.css", "text/css", {}],
         ["/nested/index.html", "nested.html", "text/html", {}],
         ["/nested/child.txt", "child.txt", "text/plain", {}],
     ];
     await writeFile(new URL("dist/assets.json", base), JSON.stringify(inventory));
-    await writeFile(new URL("dist/root.html", base), '<title>Plurnk</title><header><template id="session-navigation"></template></header><main><h1>Plurnk</h1></main>');
+    await writeFile(new URL("dist/root.html", base), '<!doctype html><html><head><link rel="stylesheet" href="/app.css"><title>Plurnk</title></head><body><header><nav></nav></header><main><h1>Plurnk</h1></main></body></html>');
+    await writeFile(new URL("dist/app.css", base), "body { margin: 0; }\n");
     await writeFile(new URL("dist/nested.html", base), "<h1>Nested document</h1>");
     await writeFile(new URL("dist/child.txt", base), "Child resource\n");
     const { default: fixtureModule } = await import(new URL("src/module.js", base).href);
     let handler;
-    await fixtureModule().start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
+    const instance = fixtureModule();
+    await instance.start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
     const server = createServer(handler);
-    t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+    t.after(async () => {
+        await instance.close();
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     await verifyDirectories(`http://127.0.0.1:${server.address().port}`);
     await t.test("{§web-asset-encoding} missing declared bytes fail before route registration", async () => {
-        inventory[2][3] = { br: "missing.txt.br" };
+        inventory[3][3] = { br: "missing.txt.br" };
         await writeFile(new URL("dist/assets.json", base), JSON.stringify(inventory));
         let registered = false;
         await assert.rejects(fixtureModule().start({ registerHttpRoute() { registered = true; } }),
@@ -379,9 +308,13 @@ test("{§web-index-documents} production resolves only admitted directory indexe
 
 test("{§web-asset-encoding} static negotiation preserves exact bytes and HTTP semantics", async (t) => {
     let handler;
-    await createModule().start(/** @type {any} */ ({ registerHttpRoute(_prefix, serve) { handler = serve; } }));
+    const mod = createModule();
+    await mod.start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
     const server = createServer(handler);
-    t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+    t.after(async () => {
+        await mod.close();
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;

@@ -1,4 +1,6 @@
 import { $ } from "on_the_money";
+import { acpOrigin } from "./endpoints.js";
+import { withAccessTokenQuery } from "./oidc.js";
 
 // {§web-inline-images} Only verified raster formats decode into data-URI images; SVG and non-image payloads are rejected.
 export const SAFE_RASTER_IMAGE_MIMES = new Set([
@@ -226,22 +228,23 @@ export async function mountRasterImage(outlet, encodedBase64, label) {
 }
 
 /**
- * Derive a same-origin `/acp/<workspaceId>/<sessionId>/entry?target=...` URL from a message/call `_meta.plurnk.body.url`.
+ * Derive an `acpOrigin()` `/acp/<workspaceId>/<sessionId>/entry?target=...` URL from a message/call `_meta.plurnk.body.url`.
  * @param {unknown} baseEntryUrl
  * @param {string} targetUri
  * @returns {string | null}
  */
 export function entryUrlForTarget(baseEntryUrl, targetUri) {
     if (typeof baseEntryUrl !== "string" || !baseEntryUrl.trim() || !targetUri.trim()) return null;
+    const daemonOrigin = acpOrigin();
     let url;
     try {
-        url = new URL(baseEntryUrl, location.href);
+        url = new URL(baseEntryUrl, daemonOrigin);
     } catch {
         return null;
     }
     if (
         !["http:", "https:"].includes(url.protocol)
-        || url.origin !== location.origin
+        || url.origin !== daemonOrigin
         || url.username
         || url.password
         || !/\/acp\/\d+\/\d+\/entry$/u.test(url.pathname)
@@ -251,6 +254,15 @@ export function entryUrlForTarget(baseEntryUrl, targetUri) {
     url.search = "";
     url.searchParams.set("target", targetUri);
     return url.href;
+}
+
+/**
+ * Append `?access_token=<encodeURIComponent(accessToken)>` for `<img src="/acp/.../entry">` when an active OIDC grant exists.
+ * @param {string} entryUrl
+ * @returns {string}
+ */
+export function entryImageUrl(entryUrl) {
+    return withAccessTokenQuery(entryUrl);
 }
 
 /**

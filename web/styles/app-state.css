@@ -1,6 +1,6 @@
 @layer state {
-    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat, search, settings, and account pages. */
-    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="account"])) {
+    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat, search, settings, and callback pages. */
+    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="callback"])) {
         block-size: 100dvh;
         display: grid;
         grid-template-columns: minmax(0, 1fr);
@@ -18,14 +18,14 @@
         }
     }
 
-    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="account"]) {
+    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="callback"]) {
         max-inline-size: none;
         min-block-size: 0;
         padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2));
         overflow: auto;
     }
 
-    body > main:is([data-page="search"], [data-page="settings"], [data-page="account"]) {
+    body > main:is([data-page="search"], [data-page="settings"], [data-page="callback"]) {
         padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-search-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-search-measure)) / 2));
     }
 
@@ -158,14 +158,9 @@
     }
 
     #workspace-tabs > ul > li > a[aria-current="true"],
-    :is(#workspace-settings, #account-settings) [data-settings-nav] a[aria-current="true"] {
+    #workspace-settings [data-settings-nav] a[aria-current="true"] {
         border-block-end-color: var(--otm-primary);
         font-weight: 700;
-    }
-
-    #account-settings:not(:has(> #about:target)) > #about,
-    #account-settings:has(> #about:target) > #sign-ins {
-        display: none;
     }
 
     #dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"],
@@ -311,7 +306,7 @@
         padding-block: calc(var(--otm-spacing) * 0.25);
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form], #account-settings [data-session] form) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) {
         margin: 0;
     }
 
@@ -324,8 +319,7 @@
         padding: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) :where(fieldset > button),
-    #account-settings [data-session] :where(form > button) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) :where(fieldset > button) {
         flex: 0 0 auto;
         inline-size: auto;
         margin: 0;
@@ -370,14 +364,12 @@
             display: none;
         }
 
-        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="workspace"],
-        #account-settings:has(> #about:target) [data-settings-nav] a[data-account-section="sign-ins"] {
+        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="workspace"] {
             border-block-end-color: transparent;
             font-weight: 400;
         }
 
-        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="session"],
-        #account-settings:has(> #about:target) [data-settings-nav] a[data-account-section="about"] {
+        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="session"] {
             border-block-end-color: var(--otm-primary);
             font-weight: 700;
         }
@@ -753,7 +745,7 @@
         text-decoration: underline;
     }
 
-    :is(#workspace-settings, #account-settings) [data-settings-nav] a:is(:hover, :focus-visible),
+    #workspace-settings [data-settings-nav] a:is(:hover, :focus-visible),
     :is(#session-model, #session-effort):is(:hover, :focus-visible),
     :is(#dialog-workspace-switcher, #dialog-workspaces) :is([data-switcher-list], [data-workspaces-list]) > li > a:is(:hover, :focus-visible),
     [data-session-link]:is(:hover, :focus-visible),
@@ -1048,7 +1040,7 @@
     }
 
     /* {§web-workspace-settings} {§web-session-commands} Empty feedback occupies no page space. */
-    :is(#workspace-settings, [data-settings-panel], #dialog-session-create > article, #dialog-command-output > article) > p:empty {
+    :is(#workspace-settings, [data-settings-panel], #dialog-workspace-create > article, #dialog-session-create > article, #dialog-command-output > article) > p:empty {
         display: none;
     }
 

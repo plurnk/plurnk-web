@@ -6,22 +6,25 @@ import { setImmediate } from "node:timers/promises";
 import { Piscina } from "piscina";
 import createModule from "../src/module.js";
 
-async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
-    const { PLURNK_AUTH = "0", ...env } = overrides;
-    const original = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
-    Object.assign(process.env, env);
+async function fixture(t, overrides = {}, { requireAuth = false } = {}) {
+    const original = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, overrides);
     const module = createModule();
     for (const [key, value] of Object.entries(original)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
     }
-    const claims = /** @type {const} */ ({ kind: "session", clientId: "plurnk-web", scopes: ["acp"] });
-    const credentials = { registerClient: () => ({ clientId: "plurnk-web", clientSecret: "test-only" }),
-        face: () => PLURNK_AUTH === "1" ? { issuer: () => "http://test.invalid" } : null, onRevoked: () => unsubscribe,
-        verify: (token) => token === "valid" ? claims : null };
+    const claims = /** @type {const} */ ({ sub: "operator", clientId: "plurnk-web", scopes: ["openid"] });
+    const credentials = {
+        face: () => requireAuth ? { issuer: () => "http://test.invalid" } : null,
+        verify: async (token) => token === "valid" ? claims : null,
+    };
     let handler;
     await module.setup({ credentials });
-    await module.start(/** @type {any} */ ({ credentials, ...port, registerHttpRoute(_prefix, serve) { handler = serve; } }));
+    await module.start({
+        credentials,
+        registerHttpRoute(_prefix, serve) { handler = serve; },
+    });
     const errors = [];
     const server = createServer((req, res) => {
         void handler(req, res).catch((error) => { errors.push(error); res.writeHead(500); res.end(); });
@@ -34,10 +37,16 @@ async function fixture(t, overrides = {}, unsubscribe = () => {}, port = {}) {
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
-    const post = (source, init = {}) => fetch(`${base}/render/mermaid`, {
-        method: "POST", body: JSON.stringify({ source }), ...init,
-        headers: { "content-type": "application/json", ...init.headers },
-    });
+    const post = (source, init = {}) => {
+        const headers = { "content-type": "application/json", origin: base, ...init.headers };
+        if (init.omitOrigin) delete headers.origin;
+        return fetch(`${base}/render/mermaid`, {
+            method: "POST",
+            body: JSON.stringify({ source }),
+            ...init,
+            headers,
+        });
+    };
     return { base, module, post, errors };
 }
 
@@ -82,7 +91,7 @@ test("{§web-diagram-service} the module compiles JSON source to a private stand
     }
 });
 
-test("{§web-diagram-service} HTTP admission rejects forms, cross-origin requests and malformed input", async (t) => {
+test("{§web-diagram-service} HTTP admission enforces same-origin Origin + Sec-Fetch-Site and rejects forms and malformed input", async (t) => {
     const { base, post } = await fixture(t);
     for (const method of ["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]) {
         const response = await fetch(`${base}/render/mermaid`, { method });
@@ -92,11 +101,19 @@ test("{§web-diagram-service} HTTP admission rejects forms, cross-origin request
         if (method === "HEAD") assert.equal(await response.text(), "");
         else await problem(response, 405, /Use POST/u);
     }
+    // Missing or mismatched Origin is rejected with 403
+    await problem(await post(simple, { omitOrigin: true }), 403, /Same-origin/u);
+    await problem(await post(simple, { headers: { origin: "https://evil.example" } }), 403, /Same-origin/u);
+    for (const site of ["cross-site", "same-site"]) {
+        await problem(await post(simple, { headers: { "sec-fetch-site": site } }), 403, /Same-origin/u);
+    }
+    for (const allowedSite of ["same-origin", "none"]) {
+        const ok = await post(simple, { headers: { "sec-fetch-site": allowedSite } });
+        assert.equal(ok.status, 200, allowedSite);
+        await ok.text();
+    }
     for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data", "application/json; charset=latin1"]) {
         await problem(await post(simple, { headers: { "content-type": type } }), 415, /UTF-8 application\/json/u);
-    }
-    for (const site of ["cross-site", "same-site", "none"]) {
-        await problem(await post(simple, { headers: { "sec-fetch-site": site } }), 403, /Same-origin/u);
     }
     for (const body of ["{", Buffer.from([0xff])]) await problem(await post(simple, { body }), 400, /Invalid diagram JSON/u);
     for (const body of ["null", "[]", '"a"', "{}", '{"source":2}', '{"source":"a","other":1}']) {
@@ -108,13 +125,14 @@ test("{§web-diagram-service} HTTP admission rejects forms, cross-origin request
     await valid.text();
 });
 
-test("{§web-diagram-service} existing session authority admits compilation and invalid sessions cannot render", async (t) => {
-    const { post } = await fixture(t, { PLURNK_AUTH: "1" });
-    for (const cookie of ["", "plurnk_web_session=invalid", "plurnk_web_session=valid; plurnk_web_session=valid"]) {
-        const response = await problem(await post(simple, { headers: { cookie } }), 401, /Sign in/u);
+test("{§web-diagram-service} {§web-oidc} published credential authority requires a verified Authorization Bearer token", async (t) => {
+    const { post } = await fixture(t, {}, { requireAuth: true });
+    for (const authorization of ["", "Basic dXNlcjpwYXNz", "Bearer ", "Bearer invalid"]) {
+        const headers = authorization ? { authorization } : {};
+        const response = await problem(await post(simple, { headers }), 401, /Sign in/u);
         assert.equal(response.headers.get("location"), null);
     }
-    const response = await post(simple, { headers: { cookie: "plurnk_web_session=valid" } });
+    const response = await post(simple, { headers: { authorization: "Bearer valid" } });
     assert.equal(response.status, 200);
     assert.match(await response.text(), /<svg/u);
 });
@@ -210,34 +228,68 @@ test("{§web-diagram-service} unexpected compiler failures retain their cause an
     await next.text();
 });
 
-test("{§web-diagram-service} another module cleanup failure cannot leave the compiler running", async (t) => {
-    const failure = new Error("credential observer cleanup failed");
-    let throws = true;
-    const { post, module } = await fixture(t, { PLURNK_AUTH: "1" }, () => { if (throws) throw failure; });
-    await assert.rejects(async () => { await module.close(); }, (error) => error === failure);
-    throws = false;
-    await problem(await post(simple, { headers: { cookie: "plurnk_web_session=valid" } }), 503, /The PLURNK service is shutting down\./u);
-});
-
-test("{§web-route-settlement} compiler cleanup failure still joins requests before releasing observers", async (t) => {
+test("{§web-route-settlement} compiler cleanup failure still drains in-flight bearer verification first", async (t) => {
     const entered = Promise.withResolvers();
     const release = Promise.withResolvers();
     const order = [];
-    const { base, post, module } = await fixture(t, { PLURNK_AUTH: "1" }, () => order.push("observer closed"), {
-        async listWorkspaces() { entered.resolve(); await release.promise; order.push("read settled"); return []; },
-        async listSessions() { return []; },
+    const module = createModule();
+    let handler;
+    await module.start({
+        credentials: {
+            face: () => ({ issuer: () => "http://test.invalid" }),
+            async verify(token) {
+                if (token === "warmup") return { sub: "operator" };
+                entered.resolve();
+                await release.promise;
+                order.push("verify.settled");
+                return null;
+            },
+        },
+        registerHttpRoute(_prefix, serve) { handler = serve; },
     });
-    const headers = { cookie: "plurnk_web_session=valid" };
-    assert.equal((await post(simple, { headers })).status, 200);
-    const response = fetch(`${base}/search/`, { headers });
+    const server = createServer((req, res) => { void handler(req, res); });
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const warmup = await fetch(`${base}/render/mermaid`, {
+        method: "POST",
+        headers: {
+            "content-type": "application/json",
+            origin: base,
+            authorization: "Bearer warmup",
+        },
+        body: JSON.stringify({ source: simple }),
+    });
+    assert.equal(warmup.status, 200);
+    await warmup.text();
+    const response = fetch(`${base}/render/mermaid`, {
+        method: "POST",
+        headers: {
+            "content-type": "application/json",
+            origin: base,
+            authorization: "Bearer probe",
+        },
+        body: JSON.stringify({ source: simple }),
+    });
     await entered.promise;
-    const failure = new Error("compiler cleanup failed", { cause: new Error("compiler fixture failure") });
+    const failure = new Error("compiler cleanup failed");
     const destroy = Piscina.prototype.destroy;
-    t.mock.method(Piscina.prototype, "destroy", /** @this {any} */ async function () { await destroy.call(this); throw failure; }, { times: 1 });
-    const closed = assert.rejects(async () => { await module.close(); }, (error) => error === failure);
-    try { await setImmediate(); assert.deepEqual(order, [], "cleanup must not bypass a held request"); }
-    finally { release.resolve(); }
-    assert.equal((await response).status, 200);
+    t.mock.method(Piscina.prototype, "destroy", /** @this {any} */ async function () {
+        await destroy.call(this);
+        throw failure;
+    }, { times: 1 });
+    let closedSettled = false;
+    const closed = assert.rejects(async () => { await module.close(); }, (error) => error === failure)
+        .then(() => { closedSettled = true; });
+    try {
+        await setImmediate();
+        assert.equal(closedSettled, false, "module.close must wait for admitted verify even after compiler cleanup throws");
+        assert.deepEqual(order, []);
+    } finally {
+        release.resolve();
+    }
+    assert.equal((await response).status, 401);
     await closed;
-    assert.deepEqual(order, ["read settled", "observer closed"]);
+    assert.deepEqual(order, ["verify.settled"]);
 });

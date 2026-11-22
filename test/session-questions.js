@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import SessionAgent from "../web/session-agent.js";
+import { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { inputPage, onAcpSent, routeAcpWebSocket } from "./session-input.js";
 import { answerSchema, exactAnswer } from "./question-fixture.js";
 import startMcp from "./mcp-fixture.js";
@@ -233,24 +234,31 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         checkBrowser();
     }, { authenticated: true }));
 
-    await t.test("{§web-session-questions} revoked authority cannot answer and fresh sign-in retains the question", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, model, checkBrowser }) => {
+    await t.test("{§web-session-questions} {§web-oidc} cleared sign-in cannot answer and fresh sign-in retains the question", { timeout: 60_000 }, () => inputPage(withDaemon, async ({ page, context, base, path, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await ask(page, "question-revoked");
         await answer(page);
-        const logout = await context.request.post(new URL("/auth/logout", base).href, { headers: { Origin: new URL(base).origin }, maxRedirects: 0 });
-        assert.equal(logout.status(), 303);
+        const otherTab = await context.newPage();
+        await otherTab.goto(new URL("/search/", base).href);
+        await otherTab.getByRole("button", { name: "Sign out", exact: true }).click();
+        await otherTab.close();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
-        assert.match(await page.locator('[data-text="connection-detail"]').textContent(), /credential.*revoked/iu);
+        assert.match(await page.locator('[data-text="connection-detail"]').textContent(), /Sign-in was cleared/iu);
         assert.equal(await review(page).getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
         assert.equal(requests.length, 1, "no unauthenticated resume is sent");
         assert.equal(model.requests.length, 1);
-        checkBrowser();
-        await page.getByRole("link", { name: "Sign in", exact: true }).click();
-        await page.waitForLoadState("load");
-        await page.getByLabel("Password", { exact: true }).fill("compose-password");
-        await page.getByRole("button", { name: "Continue", exact: true }).click();
+        checkBrowser([
+            Object.assign(httpFailure("/acp", 401), { optional: true }),
+            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+        ]);
+        await page.getByRole("button", { name: "Sign in", exact: true }).click();
         await page.waitForURL((url) => new URL(url).pathname === new URL(path).pathname);
         await interrupted(page);
+        checkBrowser([
+            Object.assign(httpFailure("/acp", 401), { optional: true }),
+            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+            Object.assign(networkFailure("/acp"), { optional: true }),
+        ]);
         await cancel(page);
         await submit(page);
         await page.getByText("Completed question-revoked.", { exact: true }).waitFor();

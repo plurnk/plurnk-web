@@ -47,6 +47,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             });
 
             await page.goto(new URL(directoryPath({ kind: "workspace", workspace }), base).href);
+            await page.locator("#workspace-empty").waitFor({ state: "visible" });
             assert.equal(await page.locator("#workspace-empty").count(), 1, "zero-session workspace renders #workspace-empty");
 
             // Navigate to dedicated /settings/?workspace=... page from #session-workspace link in header on zero-session workspace

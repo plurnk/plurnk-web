@@ -1,6 +1,10 @@
-import { $, $$, on, the } from "on_the_money";
+import { $, on, the } from "on_the_money";
 import { directoryPath } from "../src/directory-addresses.js";
 import card from "./card.js";
+import { overviewExcerptCharsLimit, overviewSessionsLimit } from "./endpoints.js";
+import managementAction from "./management-action.js";
+import { matchSnippet, truncateSingleLine } from "./session-selection.js";
+import { parseWorkspaceList, renderWorkspacesDialog, wireWorkspaceCreateDialog } from "./workspace-dialogs.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
@@ -65,6 +69,28 @@ function formatRelativeAge(timestampMs) {
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
+/**
+ * Bound concurrent HTTP/1.1 SSE actions so browser per-origin socket pools (6 sockets) never deadlock.
+ * @template T, R
+ * @param {readonly T[]} items
+ * @param {number} concurrency
+ * @param {(item: T) => Promise<R>} worker
+ * @returns {Promise<R[]>}
+ */
+async function mapWithConcurrency(items, concurrency, worker) {
+    /** @type {R[]} */
+    const results = new Array(items.length);
+    let cursor = 0;
+    const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+        while (cursor < items.length) {
+            const idx = cursor++;
+            results[idx] = await worker(items[idx]);
+        }
+    });
+    await Promise.all(runners);
+    return results;
+}
+
 /** @param {unknown} value @returns {"root" | "work" | "fork" | null} */
 const asSessionKind = (value) => value === "root" || value === "work" || value === "fork" ? value : null;
 
@@ -76,7 +102,7 @@ const orderSessions = (a, b) => a.reply !== null && b.reply !== null ? b.reply.i
     : a.reply !== null ? -1 : b.reply !== null ? 1 : 0;
 
 /**
- * Move or insert `node` before `ref` inside `parent` while preserving focus and iframe/details state.
+ * Move or insert `node` before `ref` inside `parent` while preserving focus and details state.
  * @param {Element} parent
  * @param {HTMLElement} node
  * @param {Node | null} ref
@@ -98,7 +124,8 @@ function placeBefore(parent, node, ref) {
 const isActiveSession = (session) =>
     session.lifecycle === "running" || session.lifecycle === "queued" || session.lifecycle === "parked";
 
-/** {§web-search} {§web-session-directory}
+/**
+ * {§web-search} {§web-session-directory}
  * @param {OverviewSession} session
  * @param {boolean} hasModelChildren
  */
@@ -113,16 +140,15 @@ function isUntouchedDraftOverviewSession(session, hasModelChildren) {
         && !hasModelChildren;
 }
 
-/** {§web-search} {§web-session-directory} Live workspace-grouped Search & Directory page (`/search/`).
+/**
+ * {§web-search} {§web-session-directory} Live workspace-grouped Search & Directory page (`/search/`) powered exclusively by `/acp` + `/notifications`.
  * @param {HTMLElement} main
  */
 export default function observeOverview(main) {
-    const { auth: rawAuth } = main.dataset;
-    if (rawAuth !== "session" && rawAuth !== "none") throw new Error("Search document metadata is incomplete.");
-    const auth = rawAuth;
     const workspacesOutlet = $(main, "#search-workspaces") ?? main;
     const controlsForm = $(main, "#search-controls");
     const searchInput = controlsForm ? $(controlsForm, "input[data-overview-search]") : null;
+    const suggestionsList = controlsForm ? $(controlsForm, "#search-suggestions") : null;
     const wsField = controlsForm ? $(controlsForm, "[data-search-workspace]") : null;
     const statusSelect = controlsForm ? $(controlsForm, "select[data-overview-scope]") : null;
     const kindField = controlsForm ? $(controlsForm, "[data-search-kind]") : null;
@@ -130,6 +156,8 @@ export default function observeOverview(main) {
     let resources = new AbortController();
     /** @type {AbortController | null} */
     let searchAbort = null;
+    /** @type {unknown[]} */
+    const inFlightNotifications = [];
     /** @type {Map<number, HTMLLIElement>} */
     const workspaceRowsById = new Map();
     /** @type {Map<string, HTMLLIElement>} */
@@ -138,7 +166,11 @@ export default function observeOverview(main) {
     const workspacesById = new Map();
     /** @type {Map<string, OverviewSession>} */
     const sessionsByKey = new Map();
+    /** @type {Map<string, readonly string[]>} */
+    const loopPromptsCache = new Map();
     let nextWorkspaceOrder = 0;
+    let omittedCount = 0;
+    let initialLoadDone = false;
 
     const readFieldValue = (/** @type {Element | null} */ el, /** @type {string} */ fallback = "") =>
         el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el.value : fallback;
@@ -147,12 +179,11 @@ export default function observeOverview(main) {
     let filterWorkspace = readFieldValue(wsField, "");
     let filterStatus = readFieldValue(statusSelect, "all");
     let filterKind = readFieldValue(kindField, "all");
-    const initialArchivedMode = filterStatus === "archived";
-    let needsUnfilteredHydration = Boolean(
-        filterQuery.trim()
-        || (filterStatus !== "all" && filterStatus !== "archived")
-        || $(workspacesOutlet, ":scope > p[data-overview-omitted]") !== null,
-    );
+
+    wireWorkspaceCreateDialog({
+        signal: resources.signal,
+        getKnownWorkspaceNames: () => [...workspacesById.values()].map(({ name }) => name),
+    });
 
     function syncUrlQuery() {
         if (!location.pathname.startsWith("/search")) return;
@@ -176,7 +207,42 @@ export default function observeOverview(main) {
         return session.reply?.excerpt ?? "";
     }
 
+    function updateSuggestionsDatalist() {
+        if (!(suggestionsList instanceof HTMLDataListElement)) return;
+        const showArchived = filterStatus === "archived";
+        /** @type {Set<string>} */
+        const terms = new Set();
+        for (const ws of workspacesById.values()) {
+            if (showArchived ? ws.archived : !ws.archived) terms.add(ws.name);
+        }
+        const childParents = new Set();
+        for (const s of sessionsByKey.values()) {
+            if (s.origin !== "model" || s.parentSessionId === null) continue;
+            const ws = workspacesById.get(s.workspaceId);
+            const isArchived = s.archived || Boolean(ws?.archived);
+            if (showArchived ? !isArchived : isArchived) continue;
+            childParents.add(`${s.workspaceId}:${s.parentSessionId}`);
+        }
+        for (const s of sessionsByKey.values()) {
+            if (s.origin !== "model") continue;
+            const ws = workspacesById.get(s.workspaceId);
+            const isArchived = s.archived || Boolean(ws?.archived);
+            if (showArchived ? !isArchived : isArchived) continue;
+            if (isUntouchedDraftOverviewSession(s, childParents.has(`${s.workspaceId}:${s.id}`))) continue;
+            terms.add(s.name);
+            if (typeof s.title === "string" && s.title !== "") terms.add(s.title);
+        }
+        const list = [...terms].slice(0, 100);
+        $.cloneEach(suggestionsList, "#search-suggestion-option", list, (opt, term) => {
+            if (opt instanceof HTMLOptionElement) {
+                opt.value = term;
+                opt.setAttribute("value", term);
+            }
+        });
+    }
+
     function applyFilter() {
+        const showArchived = filterStatus === "archived";
         const query = filterQuery.trim().toLowerCase();
         const isNarrowing = Boolean(
             query
@@ -263,7 +329,7 @@ export default function observeOverview(main) {
                     let visibleRoots = 0;
                     for (const sRow of rootList.children) {
                         if (sRow instanceof HTMLLIElement && filterSessionRow(sRow, ws)) {
-                            visibleRoots++;
+                            visibleRoots += 1;
                         }
                     }
                     rootList.hidden = visibleRoots === 0;
@@ -279,7 +345,7 @@ export default function observeOverview(main) {
                         if (bgList instanceof HTMLUListElement) {
                             for (const sRow of bgList.children) {
                                 if (sRow instanceof HTMLLIElement && filterSessionRow(sRow, ws)) {
-                                    visibleBg++;
+                                    visibleBg += 1;
                                 }
                             }
                         }
@@ -288,7 +354,7 @@ export default function observeOverview(main) {
                     }
                 }
                 let showWs = true;
-                if (initialArchivedMode && !(ws?.archived ?? wsItem.dataset.archived === "true") && visibleSessionsInWs === 0) {
+                if (showArchived && !(ws?.archived ?? wsItem.dataset.archived === "true") && visibleSessionsInWs === 0) {
                     showWs = false;
                 } else if (filterStatus !== "all" && filterStatus !== "archived" && visibleSessionsInWs === 0) {
                     showWs = false;
@@ -299,20 +365,31 @@ export default function observeOverview(main) {
                     if (!wsHay.includes(query)) showWs = false;
                 }
                 wsItem.hidden = !showWs;
-                if (showWs) visibleWsCount++;
+                if (showWs) visibleWsCount += 1;
             }
             wsList.hidden = visibleWsCount === 0;
         }
 
-        const omittedEl = $(workspacesOutlet, ":scope > p[data-overview-omitted]");
-        if (omittedEl instanceof HTMLElement) {
-            omittedEl.hidden = isNarrowing;
+        let omittedEl = $(workspacesOutlet, ":scope > p[data-overview-omitted]");
+        if (omittedCount > 0 && !isNarrowing && !showArchived) {
+            omittedEl ??= $.clone(workspacesOutlet, "#overview-omitted-note");
+            the(omittedEl, "overview-omitted", String(omittedCount));
+            if (omittedEl instanceof HTMLElement) omittedEl.hidden = false;
+        } else {
+            omittedEl?.remove();
+            omittedEl = null;
         }
 
         const emptyWs = $(workspacesOutlet, ':scope > p[data-i18n="no-workspaces"]');
         const emptySess = $(workspacesOutlet, ':scope > p[data-i18n="no-sessions"]');
+        if (!initialLoadDone) {
+            emptyWs?.remove();
+            emptySess?.remove();
+            return;
+        }
         if (visibleWsCount === 0) {
-            const preferNoWorkspaces = workspacesById.size === 0 && !isNarrowing;
+            const hasAnyWorkspaceInPosture = [...workspacesById.values()].some((ws) => showArchived ? ws.archived : !ws.archived);
+            const preferNoWorkspaces = !hasAnyWorkspaceInPosture && !isNarrowing;
             if (preferNoWorkspaces) {
                 emptySess?.remove();
                 if (!emptyWs) {
@@ -332,157 +409,9 @@ export default function observeOverview(main) {
         }
     }
 
-    /**
-     * @param {ParentNode} [sourceRoot]
-     * @param {{ bindLiveRows?: boolean, queryLower?: string }} [options]
-     */
-    function hydrateFromDom(sourceRoot = main, { bindLiveRows = true, queryLower = "" } = {}) {
-        for (const wsRow of $$(sourceRoot, 'li[data-directory-entry="workspace"]')) {
-            if (!(wsRow instanceof HTMLLIElement)) continue;
-            const rawId = wsRow.dataset.workspaceId ?? "";
-            if (!/^\d+$/u.test(rawId)) continue;
-            const wsId = Number(rawId);
-            if (bindLiveRows) workspaceRowsById.set(wsId, wsRow);
-            const existing = workspacesById.get(wsId);
-            const name = wsRow.dataset.workspaceName
-                ?? $(wsRow, ':scope > article > header > a[data-text="name"]')?.textContent
-                ?? existing?.name
-                ?? String(wsId);
-            const hasFolder = wsRow.dataset.folder === "true";
-            const archived = wsRow.dataset.archived === "true";
-            const labelText = $(wsRow, ':scope > article > header > [data-text="project-label"]')?.textContent ?? null;
-            const projectLabel = labelText ?? existing?.projectLabel ?? (hasFolder ? name : null);
-            const projectRoot = hasFolder ? (existing?.projectRoot ?? projectLabel ?? "/") : null;
-            workspacesById.set(wsId, {
-                id: wsId,
-                name,
-                projectRoot,
-                projectLabel,
-                archived,
-                order: existing?.order ?? nextWorkspaceOrder++,
-            });
-        }
-
-        for (const row of $$(sourceRoot, 'li[data-directory-entry="session"]')) {
-            if (!(row instanceof HTMLLIElement)) continue;
-            const rawKey = row.dataset.sessionKey ?? "";
-            const keyMatch = /^(\d+):(\d+)$/u.exec(rawKey);
-            if (!keyMatch) continue;
-            const wsId = Number(keyMatch[1]);
-            const id = Number(keyMatch[2]);
-            const key = `${wsId}:${id}`;
-            if (bindLiveRows) sessionRowsByKey.set(key, row);
-
-            const prev = sessionsByKey.get(key);
-            const parentRow = row.parentElement?.closest('li[data-directory-entry="session"]');
-            const parentKeyMatch = parentRow instanceof HTMLLIElement && parentRow.dataset.sessionKey
-                ? /^(\d+):(\d+)$/u.exec(parentRow.dataset.sessionKey)
-                : null;
-            const enclosingDetails = row.closest("details");
-            const isBackground = parentKeyMatch === null
-                && enclosingDetails instanceof HTMLDetailsElement
-                && enclosingDetails.hasAttribute("data-workspace-background");
-            const parentSessionId = parentKeyMatch ? Number(parentKeyMatch[2]) : isBackground ? 0 : null;
-            const kind = asSessionKind(row.dataset.sessionKind) ?? (parentSessionId === null ? "root" : "work");
-            const archived = row.dataset.archived === "true";
-
-            const article = $(row, ":scope > article");
-            const headerOrSummary = article ? $(article, ":scope > header, :scope > details > summary") : null;
-            const identity = headerOrSummary ? $(headerOrSummary, "[data-session-identity]") : null;
-            const linkEl = identity ? $(identity, "[data-session-link]") : null;
-            const handleText = identity ? $(identity, "[data-session-handle]")?.textContent : null;
-            const headlineText = linkEl ? $(linkEl, "[data-session-headline]")?.textContent : null;
-            const rawName = (linkEl instanceof HTMLAnchorElement ? linkEl.getAttribute("aria-label") : null)
-                ?? (handleText?.startsWith("#") ? handleText.slice(1) : handleText)
-                ?? (headlineText?.startsWith("#") ? headlineText.slice(1) : headlineText)
-                ?? prev?.name
-                ?? String(id);
-            const name = rawName.startsWith("#") ? rawName.slice(1) : rawName;
-
-            const parentSpan = identity ? $(identity, "[data-session-parent]") : null;
-            const parentLink = parentSpan ? $(parentSpan, "a") : null;
-            const parentTextEl = parentSpan && !parentLink ? $(parentSpan, "span") : null;
-            const parentName = parentLink?.textContent ?? parentTextEl?.textContent ?? prev?.parentName ?? (isBackground ? "_plurnk" : null);
-            /** @type {"model" | "_plurnk" | null} */
-            const parentOrigin = parentLink ? "model" : parentTextEl || isBackground ? "_plurnk" : prev?.parentOrigin ?? null;
-
-            const lifecycle = (identity ? $(identity, "[data-lifecycle]")?.getAttribute("data-lifecycle") : null)
-                ?? row.dataset.lifecycleState
-                ?? "idle";
-            const rawTitle = linkEl?.getAttribute("data-session-title") ?? prev?.title ?? undefined;
-            const titleText = typeof rawTitle === "string" && rawTitle.trim() !== "" ? rawTitle.trim() : undefined;
-            const rawPrompt = linkEl?.getAttribute("data-session-prompt") ?? prev?.openingPrompt ?? undefined;
-            const openingPrompt = typeof rawPrompt === "string" && rawPrompt.trim() !== "" ? rawPrompt.trim() : undefined;
-            const rawGates = row.dataset.gateCount ?? (identity ? $(identity, "[data-session-gates]")?.getAttribute("data-session-gates") : null);
-            const gates = rawGates && /^\d+$/u.test(rawGates) ? Number(rawGates) : 0;
-
-            const wsInfo = workspacesById.get(wsId);
-            const workspaceName = row.dataset.workspaceName ?? wsInfo?.name ?? prev?.workspaceName ?? String(wsId);
-            const projectRoot = wsInfo?.projectRoot ?? prev?.projectRoot ?? null;
-            if (!wsInfo) {
-                workspacesById.set(wsId, {
-                    id: wsId,
-                    name: workspaceName,
-                    projectRoot,
-                    projectLabel: projectRoot,
-                    archived: false,
-                    order: nextWorkspaceOrder++,
-                });
-            }
-
-            const timeEl = identity ? $(identity, "time[data-session-time]") : null;
-            const rawDatetime = timeEl?.getAttribute("datetime") ?? null;
-            const parsedTime = rawDatetime ? Date.parse(rawDatetime) : NaN;
-            if (bindLiveRows && timeEl && Number.isFinite(parsedTime)) {
-                timeEl.textContent = formatRelativeAge(parsedTime);
-            }
-            const excerptEl = headerOrSummary ? $(headerOrSummary, "[data-session-excerpt]") : null;
-            const excerptText = excerptEl?.textContent ?? undefined;
-
-            const rawReplyId = row.dataset.replyId;
-            const replyId = rawReplyId && /^\d+$/u.test(rawReplyId) ? Number(rawReplyId) : prev?.reply?.id ?? null;
-            /** @type {OverviewReply | null} */
-            let reply = null;
-            if (replyId !== null) {
-                const replyAt = Number.isFinite(parsedTime) ? parsedTime : prev?.reply?.at;
-                const replyExcerpt = queryLower === ""
-                    ? (excerptText ?? prev?.reply?.excerpt)
-                    : (prev?.reply?.excerpt ?? excerptText);
-                reply = {
-                    id: replyId,
-                    ...(replyAt !== undefined ? { at: replyAt } : {}),
-                    ...(replyExcerpt ? { excerpt: replyExcerpt } : {}),
-                };
-            }
-
-            sessionsByKey.set(key, {
-                id,
-                workspaceId: wsId,
-                workspaceName,
-                projectRoot,
-                name,
-                parentSessionId,
-                parentName,
-                parentOrigin,
-                origin: "model",
-                kind,
-                lifecycle,
-                gates,
-                archived,
-                ...(titleText ? { title: titleText } : {}),
-                ...(openingPrompt ? { openingPrompt } : {}),
-                ...(queryLower !== ""
-                    ? { matchedQuery: queryLower, ...(excerptText ? { matchedExcerpt: excerptText } : {}) }
-                    : prev?.matchedQuery
-                        ? { matchedQuery: prev.matchedQuery, ...(prev.matchedExcerpt ? { matchedExcerpt: prev.matchedExcerpt } : {}) }
-                        : {}),
-                reply,
-            });
-        }
-    }
-
     function reconcileDom() {
-        const showArchived = initialArchivedMode;
+        updateSuggestionsDatalist();
+        const showArchived = filterStatus === "archived";
         const childParents = new Set();
         for (const s of sessionsByKey.values()) {
             if (s.origin !== "model" || s.parentSessionId === null) continue;
@@ -695,7 +624,7 @@ export default function observeOverview(main) {
                     } else {
                         timeBadge?.remove();
                     }
-                    let unarchiveForm = $(metaEl, 'form[action="/sessions/unarchive"]');
+                    let unarchiveForm = $(metaEl, 'form[data-inline-unarchive="session"]');
                     if (isSessArchived) {
                         unarchiveForm ??= $.clone(metaEl, "#session-unarchive-form");
                         const wsInput = $(unarchiveForm, 'input[name="workspace"]');
@@ -809,7 +738,7 @@ export default function observeOverview(main) {
                     } else {
                         projNote?.remove();
                     }
-                    let wsUnarchive = $(wsHeader, 'form[action="/workspaces/unarchive"]');
+                    let wsUnarchive = $(wsHeader, 'form[data-inline-unarchive="workspace"]');
                     if (ws.archived) {
                         wsUnarchive ??= $.clone(wsHeader, "#workspace-unarchive-form");
                         const wsInput = $(wsUnarchive, 'input[name="workspace"]');
@@ -862,38 +791,254 @@ export default function observeOverview(main) {
         applyFilter();
     }
 
-    async function fetchServerSearch() {
+    /**
+     * Fetch prompts from `session.loops` for a session (cached per `workspaceId:sessionId:replyId`).
+     * @param {number} wsId
+     * @param {string} sessName
+     * @param {number | null} replyId
+     * @param {AbortSignal} signal
+     * @returns {Promise<readonly string[]>}
+     */
+    async function loadSessionLoopPrompts(wsId, sessName, replyId, signal) {
+        const cacheKey = `${wsId}:${sessName}:${replyId ?? "none"}`;
+        const cached = loopPromptsCache.get(cacheKey);
+        if (cached !== undefined) return cached;
+        const loopsRes = await managementAction(
+            "session.loops",
+            { workspaceId: wsId, session: sessName },
+            `${wsId}#${sessName}`,
+            signal,
+            { workspaceId: wsId },
+        ).catch(() => null);
+        const items = isRecord(loopsRes) && Array.isArray(loopsRes.items) ? loopsRes.items : [];
+        /** @type {string[]} */
+        const prompts = [];
+        for (const item of items) {
+            if (!isRecord(item)) continue;
+            if (typeof item.opening === "string" && item.opening.trim() !== "") {
+                prompts.push(item.opening.trim());
+            }
+        }
+        loopPromptsCache.set(cacheKey, prompts);
+        return prompts;
+    }
+
+    async function fetchAcpSearch() {
         searchAbort?.abort();
         searchAbort = null;
-        const qTrim = filterQuery.trim();
-        const qLower = qTrim.toLowerCase();
-        const hasOmitted = $(workspacesOutlet, ":scope > p[data-overview-omitted]") !== null;
-        const narrowingNonQuery = (filterStatus !== "all" && filterStatus !== "archived") || filterKind !== "all" || filterWorkspace !== "";
-        if (qTrim === "" && !needsUnfilteredHydration && !(hasOmitted && narrowingNonQuery)) {
-            return;
-        }
+        inFlightNotifications.length = 0;
         const controller = new AbortController();
         searchAbort = controller;
         const signal = AbortSignal.any([resources.signal, controller.signal]);
+        const qTrim = filterQuery.trim();
+        const qLower = qTrim.toLowerCase();
+        const showArchived = filterStatus === "archived";
+        const isNarrowing = Boolean(
+            qTrim
+            || filterWorkspace
+            || (filterStatus !== "all" && filterStatus !== "archived")
+            || filterKind !== "all",
+        );
+        const overviewLimit = overviewSessionsLimit();
+        const excerptChars = overviewExcerptCharsLimit();
+
         try {
-            const params = new URLSearchParams();
-            if (qTrim) params.set("q", qTrim);
-            if (filterWorkspace) params.set("workspace", filterWorkspace);
-            if (filterStatus && filterStatus !== "all") params.set("status", filterStatus);
-            if (filterKind && filterKind !== "all") params.set("kind", filterKind);
-            const targetUrl = `/search/${params.toString() ? `?${params}` : ""}`;
-            const res = await fetch(targetUrl, {
-                headers: { accept: "text/html" },
-                cache: "no-store",
-                signal,
+            const [rawWsList, overviewRes] = await Promise.all([
+                managementAction("workspace.list", { includeArchived: true }, "", signal),
+                managementAction("session/list", {
+                    archived: showArchived ? "only" : "exclude",
+                    _meta: {
+                        plurnk: {
+                            limit: isNarrowing ? 10_000 : overviewLimit,
+                            excerptChars,
+                            ...(filterWorkspace ? { workspaceName: filterWorkspace } : {}),
+                        },
+                    },
+                }, "", signal).catch(() => null),
+            ]);
+            if (signal.aborted || disposed) return;
+
+            const listedWorkspaces = parseWorkspaceList(rawWsList);
+            renderWorkspacesDialog(listedWorkspaces, null);
+
+            /** @type {Map<number, OverviewWorkspace>} */
+            const nextWorkspaces = new Map();
+            let nextOrder = 0;
+            for (const ws of listedWorkspaces) {
+                nextWorkspaces.set(ws.id, {
+                    id: ws.id,
+                    name: ws.name,
+                    projectRoot: ws.project_root,
+                    projectLabel: ws.project_label,
+                    archived: ws.archived_at !== null,
+                    order: nextOrder++,
+                });
+            }
+
+            const overviewMeta = isRecord(overviewRes) && isRecord(overviewRes._meta) && isRecord(overviewRes._meta.plurnk)
+                ? overviewRes._meta.plurnk
+                : null;
+            omittedCount = typeof overviewMeta?.omitted === "number" ? overviewMeta.omitted : 0;
+
+            /** @type {Map<string, { kind?: string, gates: number, title?: string, reply: OverviewReply | null }>} */
+            const overviewByKey = new Map();
+            /** @type {Set<string>} */
+            const overviewOrderedKeys = new Set();
+            const rawOverviewSessions = isRecord(overviewRes) && Array.isArray(overviewRes.sessions) ? overviewRes.sessions : [];
+            for (const item of rawOverviewSessions) {
+                if (!isRecord(item)) continue;
+                const meta = isRecord(item._meta) && isRecord(item._meta.plurnk) ? item._meta.plurnk : null;
+                if (!meta || typeof meta.workspaceId !== "number" || typeof meta.id !== "number") continue;
+                const key = `${meta.workspaceId}:${meta.id}`;
+                overviewOrderedKeys.add(key);
+                const rawReply = isRecord(meta.reply) ? meta.reply : null;
+                const rawExcerpt = typeof rawReply?.excerpt === "string" && rawReply.excerpt.trim() !== ""
+                    ? truncateSingleLine(rawReply.excerpt, excerptChars)
+                    : "";
+                const excerpt = rawExcerpt !== "" && rawReply?.continued === true && !rawExcerpt.endsWith("…")
+                    ? `${rawExcerpt}…`
+                    : rawExcerpt;
+                /** @type {OverviewReply | null} */
+                const reply = rawReply && typeof rawReply.id === "number"
+                    ? {
+                        id: rawReply.id,
+                        ...(typeof rawReply.at === "number" ? { at: rawReply.at } : {}),
+                        ...(excerpt !== "" ? { excerpt } : {}),
+                    }
+                    : null;
+                overviewByKey.set(key, {
+                    ...(typeof meta.kind === "string" ? { kind: meta.kind } : {}),
+                    gates: typeof meta.gates === "number" ? meta.gates : 0,
+                    ...(typeof meta.title === "string" ? { title: meta.title } : {}),
+                    reply,
+                });
+            }
+
+            const targetWorkspaces = listedWorkspaces.filter((ws) => {
+                if (filterWorkspace && ws.name !== filterWorkspace) return false;
+                return showArchived ? true : ws.archived_at === null;
             });
-            if (!res.ok || signal.aborted || disposed) return;
-            const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-            const parsedMain = $(doc, "main#main");
-            if (!parsedMain) return;
-            hydrateFromDom(parsedMain, { bindLiveRows: false, queryLower: qLower });
-            if (qTrim === "" && (filterStatus === "all" || filterStatus === "archived") && filterKind === "all" && !filterWorkspace) {
-                needsUnfilteredHydration = false;
+
+            const perWsSessions = await mapWithConcurrency(
+                targetWorkspaces,
+                2,
+                async (ws) => {
+                    const res = await managementAction(
+                        "workspace.sessions",
+                        { workspaceId: ws.id, includeArchived: true },
+                        "",
+                        signal,
+                        { workspaceId: ws.id },
+                    ).catch(() => null);
+                    const rows = isRecord(res) && Array.isArray(res.sessions) ? res.sessions : [];
+                    return { ws, rows };
+                },
+            );
+            if (signal.aborted || disposed) return;
+
+            /** @type {Map<string, OverviewSession>} */
+            const nextSessions = new Map();
+            for (const { ws, rows } of perWsSessions) {
+                /** @type {Map<number, Record<string, unknown>>} */
+                const rowById = new Map();
+                for (const row of rows) {
+                    if (isRecord(row) && typeof row.id === "number") rowById.set(row.id, row);
+                }
+                for (const row of rows) {
+                    if (!isRecord(row) || typeof row.id !== "number" || typeof row.name !== "string") continue;
+                    if (row.origin !== "model") continue;
+                    const key = `${ws.id}:${row.id}`;
+                    const isRowArchived = (row.archived_at !== null && row.archived_at !== undefined) || ws.archived_at !== null;
+                    if (showArchived ? !isRowArchived : isRowArchived) continue;
+                    if (!showArchived && !isNarrowing && omittedCount > 0 && !overviewOrderedKeys.has(key)) continue;
+
+                    const info = overviewByKey.get(key);
+                    const prev = sessionsByKey.get(key);
+                    const parentSessionId = typeof row.parentSessionId === "number" ? row.parentSessionId : null;
+                    const parentRow = parentSessionId !== null ? rowById.get(parentSessionId) : undefined;
+                    const parentOrigin = parentRow?.origin === "model"
+                        ? "model"
+                        : parentRow?.origin === "_plurnk" || parentSessionId !== null
+                            ? "_plurnk"
+                            : null;
+                    const parentName = typeof parentRow?.name === "string"
+                        ? parentRow.name
+                        : parentSessionId !== null
+                            ? "_plurnk"
+                            : null;
+                    const resolvedTitle = typeof info?.title === "string" && info.title.trim() !== ""
+                        ? info.title.trim()
+                        : typeof row.title === "string" && row.title.trim() !== ""
+                            ? row.title.trim()
+                            : undefined;
+                    nextSessions.set(key, {
+                        id: row.id,
+                        workspaceId: ws.id,
+                        workspaceName: ws.name,
+                        projectRoot: ws.project_root,
+                        name: row.name,
+                        parentSessionId,
+                        parentName,
+                        parentOrigin,
+                        origin: "model",
+                        kind: asSessionKind(info?.kind ?? row.kind) ?? (parentSessionId === null ? "root" : "work"),
+                        lifecycle: typeof row.lifecycle === "string" ? row.lifecycle : "idle",
+                        gates: info?.gates ?? 0,
+                        archived: isRowArchived,
+                        ...(resolvedTitle ? { title: resolvedTitle } : {}),
+                        ...(prev?.openingPrompt ? { openingPrompt: prev.openingPrompt } : {}),
+                        reply: info?.reply ?? null,
+                    });
+                }
+            }
+
+            const needLoopInspection = [...nextSessions.values()].filter((s) =>
+                qLower !== "" || (!s.title && !s.openingPrompt && (s.reply !== null || s.lifecycle !== "idle")),
+            );
+            if (needLoopInspection.length > 0) {
+                await mapWithConcurrency(
+                    needLoopInspection,
+                    2,
+                    async (s) => {
+                        const prompts = await loadSessionLoopPrompts(s.workspaceId, s.name, s.reply?.id ?? null, signal);
+                        if (prompts.length === 0) return;
+                        const opening = truncateSingleLine(prompts[0], excerptChars);
+                        const key = `${s.workspaceId}:${s.id}`;
+                        const cur = nextSessions.get(key);
+                        if (!cur) return;
+                        /** @type {string | undefined} */
+                        let matchedExcerpt;
+                        let matchedQuery;
+                        if (qLower !== "") {
+                            const hit = prompts.find((p) => p.toLowerCase().includes(qLower));
+                            if (hit) {
+                                matchedQuery = qLower;
+                                if (!(cur.reply?.excerpt ?? "").toLowerCase().includes(qLower)) {
+                                    matchedExcerpt = matchSnippet(hit, qLower, excerptChars);
+                                }
+                            }
+                        }
+                        nextSessions.set(key, {
+                            ...cur,
+                            ...(opening ? { openingPrompt: opening } : {}),
+                            ...(matchedQuery ? { matchedQuery } : {}),
+                            ...(matchedExcerpt ? { matchedExcerpt } : {}),
+                        });
+                    },
+                );
+            }
+            if (signal.aborted || disposed) return;
+
+            workspacesById.clear();
+            for (const [id, ws] of nextWorkspaces) workspacesById.set(id, ws);
+            nextWorkspaceOrder = nextOrder;
+            sessionsByKey.clear();
+            for (const [k, v] of nextSessions) sessionsByKey.set(k, v);
+            initialLoadDone = true;
+            const buffered = inFlightNotifications.splice(0);
+            if (searchAbort === controller) searchAbort = null;
+            for (const payload of buffered) {
+                applyNotification(payload);
             }
             reconcileDom();
         } catch (error) {
@@ -903,47 +1048,88 @@ export default function observeOverview(main) {
         }
     }
 
+    let unarchiveBusy = false;
+    on(main, "submit", "form[data-inline-unarchive]", (event, form) => {
+        if (!(form instanceof HTMLFormElement)) return;
+        event.preventDefault();
+        if (unarchiveBusy) return;
+        const kind = form.dataset.inlineUnarchive;
+        const data = new FormData(form);
+        const wsName = String(data.get("workspace") ?? "").trim();
+        const sessName = String(data.get("session") ?? "").trim();
+        if (!wsName) return;
+        const wsEntry = [...workspacesById.values()].find(({ name }) => name === wsName);
+        unarchiveBusy = true;
+        void (async () => {
+            try {
+                if (kind === "workspace") {
+                    await managementAction(
+                        "workspace.archive",
+                        { workspace: wsName, ...(wsEntry ? { workspaceId: wsEntry.id } : {}), archived: false },
+                        "",
+                        resources.signal,
+                        { workspace: wsName, ...(wsEntry ? { workspaceId: wsEntry.id } : {}) },
+                    );
+                    location.assign(directoryPath({ kind: "workspace", workspace: wsName }) ?? "/search/");
+                    return;
+                }
+                if (kind === "session" && sessName && wsEntry) {
+                    if (wsEntry.archived) {
+                        await managementAction(
+                            "workspace.archive",
+                            { workspaceId: wsEntry.id, archived: false },
+                            "",
+                            resources.signal,
+                            { workspaceId: wsEntry.id },
+                        );
+                    }
+                    await managementAction(
+                        "session/unarchive",
+                        {},
+                        `${wsEntry.id}#${sessName}`,
+                        resources.signal,
+                    );
+                    location.assign(directoryPath({ kind: "session", workspace: wsName, session: sessName }) ?? "/search/");
+                }
+            } finally {
+                unarchiveBusy = false;
+            }
+        })();
+    });
+
     if (controlsForm instanceof HTMLFormElement) {
         on(controlsForm, "submit", "form", (event) => {
-            const nextStatus = readFieldValue(statusSelect, "all");
-            const switchingArchived = (nextStatus === "archived") !== initialArchivedMode;
-            if (switchingArchived) return;
             event.preventDefault();
             filterQuery = searchInput instanceof HTMLInputElement ? searchInput.value : "";
             filterWorkspace = readFieldValue(wsField, "");
-            filterStatus = nextStatus;
+            filterStatus = readFieldValue(statusSelect, "all");
             filterKind = readFieldValue(kindField, "all");
             syncUrlQuery();
             applyFilter();
-            void fetchServerSearch();
+            void fetchAcpSearch();
         });
         on(controlsForm, "input", "input[data-overview-search]", (_event, input) => {
             if (input instanceof HTMLInputElement) {
                 filterQuery = input.value;
                 syncUrlQuery();
                 applyFilter();
-                void fetchServerSearch();
+                void fetchAcpSearch();
             }
         });
         on(controlsForm, "change", "select", (_event, select) => {
             if (!(select instanceof HTMLSelectElement)) return;
-            const nextStatus = readFieldValue(statusSelect, "all");
-            if ((nextStatus === "archived") !== initialArchivedMode) {
-                controlsForm.requestSubmit();
-                return;
-            }
             filterWorkspace = readFieldValue(wsField, "");
-            filterStatus = nextStatus;
+            filterStatus = readFieldValue(statusSelect, "all");
             filterKind = readFieldValue(kindField, "all");
             syncUrlQuery();
             applyFilter();
-            void fetchServerSearch();
+            void fetchAcpSearch();
         });
     }
 
     /** @param {unknown} raw */
     function applyNotification(raw) {
-        if (initialArchivedMode) return;
+        if (filterStatus === "archived") return;
         if (!isRecord(raw) || typeof raw.event !== "string" || !isRecord(raw.data)) return;
         const { event, data } = raw;
         const notifWorkspaceId = typeof raw.workspaceId === "number" ? raw.workspaceId : null;
@@ -951,6 +1137,32 @@ export default function observeOverview(main) {
         const notifTimestamp = typeof raw.timestamp === "number" ? raw.timestamp : Date.now();
 
         switch (event) {
+            case "workspace/created": {
+                const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
+                const name = typeof data.name === "string" ? data.name : null;
+                if (id === null || name === null) return;
+                const prev = workspacesById.get(id);
+                const projRoot = typeof data.project_root === "string"
+                    ? data.project_root
+                    : typeof data.projectRoot === "string"
+                        ? data.projectRoot
+                        : null;
+                const projLabel = typeof data.project_label === "string"
+                    ? data.project_label
+                    : typeof data.projectLabel === "string"
+                        ? data.projectLabel
+                        : projRoot;
+                workspacesById.set(id, {
+                    id,
+                    name,
+                    projectRoot: projRoot,
+                    projectLabel: projLabel,
+                    archived: false,
+                    order: prev?.order ?? nextWorkspaceOrder++,
+                });
+                reconcileDom();
+                return;
+            }
             case "workspace/renamed": {
                 const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
                 const name = typeof data.name === "string" ? data.name : null;
@@ -1184,26 +1396,7 @@ export default function observeOverview(main) {
                 return;
             }
             case "notifications/resync": {
-                void (async () => {
-                    try {
-                        const targetPath = `${location.pathname}${location.search}`;
-                        const res = await fetch(targetPath, {
-                            headers: { accept: "text/html" },
-                            cache: "no-store",
-                        });
-                        if (!res.ok || disposed) return;
-                        const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-                        const parsedMain = $(doc, "main#main");
-                        if (!parsedMain) return;
-                        workspacesById.clear();
-                        sessionsByKey.clear();
-                        nextWorkspaceOrder = 0;
-                        hydrateFromDom(parsedMain, { bindLiveRows: false, queryLower: filterQuery.trim().toLowerCase() });
-                        reconcileDom();
-                    } catch {
-                        // Ignore transient resync fetch errors; passive reconnect will retry.
-                    }
-                })();
+                void fetchAcpSearch();
                 return;
             }
             default:
@@ -1211,18 +1404,19 @@ export default function observeOverview(main) {
         }
     }
 
-    hydrateFromDom();
-    applyFilter();
-
     let disposed = false;
+    void fetchAcpSearch();
 
     const notifications = subscribeWorkspaceNotifications({
-        auth,
         onStateChange: (state) => {
             if (!disposed) the(main, "connection", state);
         },
         onNotification: (payload) => {
-            if (!disposed) applyNotification(payload);
+            if (disposed) return;
+            if (searchAbort !== null && isRecord(payload) && payload.event !== "notifications/resync") {
+                inFlightNotifications.push(payload);
+            }
+            applyNotification(payload);
         },
     });
 
@@ -1235,6 +1429,7 @@ export default function observeOverview(main) {
         if (disposed) return;
         if (event instanceof PageTransitionEvent && event.persisted) {
             resources = new AbortController();
+            void fetchAcpSearch();
         }
     });
 

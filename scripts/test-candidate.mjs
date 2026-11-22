@@ -35,7 +35,7 @@ try {
         .filter((name) => /^on_the_money-[^/]*\.tgz$/u.test(name))
         .map((name) => join(resolve(directory), name));
     const peerArchives = [
-        ...archives.filter((path) => /\/plurnk-plurnk-(?:acp|auth|contracts|meta|modules|parser|spec-check)-/u.test(path)),
+        ...archives.filter((path) => /\/plurnk-plurnk-(?:acp|contracts|meta|modules|parser|spec-check)-/u.test(path)),
         ...substrateArchives,
     ];
     await npm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", ...peerArchives], clone);

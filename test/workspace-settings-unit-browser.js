@@ -67,9 +67,16 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         { alias: "SESS_TOKEN", origin: "session", state: "active", definition: { value: "sess-secret-value" } },
                     ];
 
-                    await page.route("**/auth/token", (route) =>
-                        route.fulfill({ status: 200, json: { token_type: "Bearer", access_token: "ws-settings-token" } }),
-                    );
+                    await context.addInitScript((acpOrigin) => {
+                        if (location.protocol === "about:") return;
+                        localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                            acpOrigin,
+                            issuer: "http://idp.test",
+                            clientId: "plurnk-web",
+                            tokenEndpoint: "http://idp.test/token",
+                            accessToken: "ws-settings-token",
+                        }));
+                    }, new URL(fixture.url).origin);
 
                     fixture.onAcp(async (input, headers) => {
                         assert.equal(headers.authorization, "Bearer ws-settings-token");
@@ -576,6 +583,17 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         await helpPanel.locator("[data-command-name]:not([hidden])").evaluateAll((els) => els.map((el) => el.getAttribute("data-command-name"))),
                         ["rollback"],
                     );
+
+                    // About tab folded into /settings/ hydrates @plurnk/plurnk-service version from /acp initialize + @plurnk/plurnk-web version + MIT + issues link
+                    await settingsArticle.getByRole("link", { name: "About", exact: true }).click();
+                    const aboutPanel = settingsArticle.locator('[data-settings-panel="about"]');
+                    await aboutPanel.waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-text="about-service-version"]')?.textContent === "1.0.0");
+                    assert.equal(await aboutPanel.locator("[data-about-service-term]").isVisible(), true);
+                    assert.match(await aboutPanel.locator('[data-text="about-web-version"]').textContent(), /^\d+\.\d+\.\d+$/u);
+                    assert.equal(await aboutPanel.locator("[data-about-desktop-term]").isVisible(), false, "ordinary browser hides plurnk-desktop row");
+                    assert.match(await aboutPanel.textContent(), /MIT/u);
+                    assert.equal(await aboutPanel.locator('a[href="https://github.com/plurnk/plurnk-service/issues"]').count(), 1);
 
                     // 2. Session mode (sessionName = "user"): `/personas list` navigates directly to /settings/?workspace=conversation&session=user#personas
                     await page.goto(fixture.url);

@@ -17,11 +17,9 @@ test("{§web-route-settlement} module close drains admitted HTTP requests before
     let inFlight = 0;
     let assetsClosed = false;
     const documents = new Documents(
-        '<head><link rel="stylesheet" href="/app.css"></head><title>Plurnk</title><header><template id="session-navigation"><a href="/account/">Account</a></template></header><main></main>',
-        128,
+        '<!doctype html><html><head><link rel="stylesheet" href="/app.css"><title>Plurnk</title></head><body><header><nav></nav></header><main></main></body></html>',
     );
     const module = createModule({
-        async setupStylesheet() { return "/app.css"; },
         async start() {},
         async snapshot() {
             inFlight++;
@@ -43,10 +41,9 @@ test("{§web-route-settlement} module close drains admitted HTTP requests before
     });
     let handler;
     await module.setup({});
-    await module.start(/** @type {any} */ ({
-        readSessionOverview: async () => ({ workspaces: [], sessions: [] }),
+    await module.start({
         registerHttpRoute(_prefix, serve) { handler = serve; },
-    }));
+    });
     const server = createServer((req, res) => { void handler(req, res); });
     t.after(() => new Promise((resolve) => server.close(resolve)));
     server.listen(0, "127.0.0.1");

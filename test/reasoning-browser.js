@@ -13,14 +13,20 @@ export default async function verifyReasoning(t) {
                 try {
                     const context = await browser.newContext({ viewport: { width: 320, height: 700 } });
                     const checkBrowser = browserDiagnostics(context);
+                    const origin = new URL(url).origin;
+                    await context.addInitScript((acpOrigin) => {
+                        if (location.protocol === "about:") return;
+                        localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                            acpOrigin,
+                            issuer: "http://idp.test",
+                            clientId: "plurnk-web",
+                            tokenEndpoint: "http://idp.test/token",
+                            accessToken: "reasoning-test",
+                        }));
+                    }, origin);
                     const page = await context.newPage();
-                    let credentials = 0;
                     const reads = [];
                     const body = '<form data-text="reasoning-text">Full **reasoning** 🐹</form>';
-                    await page.route("**/auth/token", (route) => {
-                        credentials++;
-                        return route.fulfill({ json: { token_type: "Bearer", access_token: "reasoning-test" } });
-                    });
                     await page.route("**/acp/7/9/entry?target=*", (route) => {
                         reads.push(route.request().headers().authorization);
                         return route.fulfill({ contentType: "text/plain", body });
@@ -77,7 +83,6 @@ export default async function verifyReasoning(t) {
                     assert.equal(await row.locator(":scope > article > details > summary").textContent(), "Thinking");
                     assert.equal(await row.getByRole("article", { name: "Thinking", exact: true }).count(), 1);
                     assert.equal(await row.locator("details").getAttribute("open"), null);
-                    assert.equal(credentials, 0);
                     assert.deepEqual(reads, [], "closed reasoning does not fetch");
 
                     await row.locator("summary").click();
@@ -86,7 +91,6 @@ export default async function verifyReasoning(t) {
                     assert.equal(await row.locator("[data-body-reference]").textContent(), body);
                     assert.equal(await row.locator("[data-body-reference] form, [data-body-reference] strong").count(), 0,
                         "fetched Markdown and HTML stay literal");
-                    assert.equal(credentials, 1);
                     assert.deepEqual(reads, ["Bearer reasoning-test"]);
                     assert.deepEqual(await page.evaluate(() => window.messages), [prompt, linked], "reading never writes reasoning into SDK-owned messages");
 

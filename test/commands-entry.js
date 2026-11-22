@@ -17,7 +17,8 @@ $.clone("#session-status", "#session-controls");
 const lifetime = new AbortController();
 let automatic = false;
 window.lastNavigated = null;
-const call = (kind, params = {}, signal = lifetime.signal) => managementAction(kind, params, "7#session1", "session", signal);
+const call = (kind, params = {}, signal = lifetime.signal) =>
+    managementAction(kind, params, "7#session1", signal, { redirectOn401: false });
 const command = sessionCommands($("#main"), {
     call,
     toggleYolo: async () => { automatic = !automatic; return automatic; },

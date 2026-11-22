@@ -1,4 +1,7 @@
 import { $, $$, on, the } from "on_the_money";
+import accessHeaders from "./access-headers.js";
+import { mermaidUrl } from "./endpoints.js";
+import { recoverFromUnauthorized } from "./oidc.js";
 
 // {§web-diagram-content} One compilation at a time from this page: bodies full of diagrams wait their turn rather than
 // exceed the service's admission.
@@ -10,10 +13,26 @@ class Busy extends Error {}
 /** @param {string} source @returns {Promise<string>} */
 function compile(source) {
     const result = turn.then(async () => {
+        const endpoint = mermaidUrl();
+        const postOnce = async () => {
+            const auth = await accessHeaders();
+            return await fetch(endpoint, {
+                method: "POST",
+                credentials: "same-origin",
+                mode: "same-origin",
+                headers: { ...auth, "content-type": "application/json", accept: "image/svg+xml" },
+                body: JSON.stringify({ source }),
+            });
+        };
         let response;
         try {
-            response = await fetch("/render/mermaid", { method: "POST", credentials: "same-origin", mode: "same-origin",
-                headers: { "content-type": "application/json", accept: "image/svg+xml" }, body: JSON.stringify({ source }) });
+            response = await postOnce();
+            if (response.status === 401) {
+                const recovery = await recoverFromUnauthorized({ redirectOnDiscovery: false });
+                if (recovery.status === "refreshed") {
+                    response = await postOnce();
+                }
+            }
         } catch (cause) {
             throw new Busy("The diagram request did not complete.", { cause });
         }

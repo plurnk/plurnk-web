@@ -42,7 +42,7 @@ export default async function verifyApproval(t) {
                     const form = page.getByRole("form", { name: "Review requests", exact: true });
                     assert.equal(await form.isVisible(), false);
                     const gates = [gate("id[0]#one"), gate("quote\"<two>", "edit")];
-                    gates[1]._meta.plurnk.proposal.body = '<form action="/auth/logout"><button data-text="proposal-session">Injected</button></form>\n' + "x".repeat(400);
+                    gates[1]._meta.plurnk.proposal.body = '<form action="/render/mermaid"><button data-text="proposal-session">Injected</button></form>\n' + "x".repeat(400);
                     assert.equal(await page.evaluate((values) => window.review(values), gates), true);
                     const groups = form.locator("[data-requests] > fieldset");
                     assert.equal(await groups.count(), 2);
@@ -90,7 +90,7 @@ export default async function verifyApproval(t) {
                         "+++ b/src/app.js",
                         "@@ -1,3 +1,3 @@",
                         " const ready = true;",
-                        '-<form action="/auth/logout"><button>Old</button></form>',
+                        '-<form action="/render/mermaid"><button>Old</button></form>',
                         `+<script>window.pwned = true;</script>${"x".repeat(200)}`,
                     ].join("\n");
                     const diffGate = gate("diff-target", "edit");

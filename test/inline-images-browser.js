@@ -45,15 +45,20 @@ export default async function verifyInlineImages(t) {
                     await t.test("{§web-inline-images} {§web-card-disclosure} {§web-operation-summary} {§web-result-bodies} transcript raster parts, user attachment links, lazy read/MCP disclosures, and SVG/corrupt refusals", async () => {
                         const context = await browser.newContext({ viewport: { width: 420, height: 640 } });
                         const checkBrowser = browserDiagnostics(context);
+                        await context.addInitScript((acpOrigin) => {
+                            if (location.protocol === "about:") return;
+                            localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                                acpOrigin,
+                                issuer: "http://idp.test",
+                                clientId: "plurnk-web",
+                                tokenEndpoint: "http://idp.test/token",
+                                accessToken: "image-fixture-token",
+                            }));
+                        }, new URL(bodyFixture.url).origin);
                         const page = await context.newPage();
                         const unasked = [];
                         page.on("request", (req) => {
                             if (req.url().includes("/unasked")) unasked.push(req.url());
-                        });
-                        let tokenRequests = 0;
-                        await page.route("**/auth/token", async (route) => {
-                            tokenRequests += 1;
-                            await route.fulfill({ json: { token_type: "Bearer", access_token: "image-fixture-token" } });
                         });
                         const entryReads = [];
                         let failMissingOnce = true;
@@ -172,7 +177,6 @@ export default async function verifyInlineImages(t) {
                         const userRow = page.locator('[data-message-id="user-attached"]');
                         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                         assert.equal(entryReads.length, 0, "off-screen user image attachments do not fetch eagerly");
-                        assert.equal(tokenRequests, 0, "off-screen user image attachments do not request bearer tokens");
 
                         await userRow.scrollIntoViewIfNeeded();
                         await userRow.locator('[data-image-reference][data-body-state="loaded"]').nth(1).waitFor();
@@ -420,7 +424,16 @@ export default async function verifyInlineImages(t) {
                             return { result: {} };
                         });
 
-                        await page.route("**/auth/token", (route) => route.fulfill({ json: { token_type: "Bearer", access_token: "app-token" } }));
+                        await context.addInitScript((acpOrigin) => {
+                            if (location.protocol === "about:") return;
+                            localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                                acpOrigin,
+                                issuer: "http://idp.test",
+                                clientId: "plurnk-web",
+                                tokenEndpoint: "http://idp.test/token",
+                                accessToken: "app-token",
+                            }));
+                        }, new URL(appFixture.url).origin);
                         await page.route("**/acp/7/9/entry**", (route) => route.fulfill({
                             status: 200,
                             contentType: "image/png; charset=utf-8",

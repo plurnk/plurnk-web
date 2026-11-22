@@ -37,7 +37,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
             assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).inputValue(), "Preserve this unsent draft.");
             assert.equal(model.requests.length, 1, "cancellation produces no answer or further inference");
             checkBrowser();
-        }, { authenticated: true, env: { PLURNK_SERVICE_PROPOSALS: "review" } }));
+        }, { env: { PLURNK_SERVICE_PROPOSALS: "review" } }));
     }
 
     for (const scenario of /** @type {const} */ ([
@@ -51,7 +51,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
             journey.after(() => rm(directory, { recursive: true, force: true }));
             const witness = join(directory, "executions.txt");
             const quoted = `'${witness.replaceAll("'", "'\\''")}'`;
-            await inputPage(withDaemon, async ({ page, model, checkBrowser, base, workspace, secret }) => {
+            await inputPage(withDaemon, async ({ page, model, checkBrowser, base, workspace }) => {
                 await rm(witness, { force: true });
                 const wsErrors = [];
                 page.on("websocket", (ws) => {
@@ -67,7 +67,7 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                         }
                     });
                 });
-                const terminal = await startTerminal({ consumer, base, workspace, secret, yolo: scenario.terminalYolo });
+                const terminal = await startTerminal({ consumer, base, workspace, yolo: scenario.terminalYolo });
                 const name = `held-approval-shared-${scenario.label.replaceAll("/", "-")}`;
                 try {
                     await terminal.waitFor(new RegExp(`workspace: ${RegExp.escape(workspace)}`, "u"));
@@ -116,7 +116,6 @@ export default async function verifySharedReview({ t, withDaemon, consumer }) {
                     throw new Error(`Shared client journey failed. Terminal tail:\n${terminal.output().slice(-4000)}`, { cause });
                 } finally { await terminal.close(); }
             }, {
-                authenticated: true,
                 env: { PLURNK_SERVICE_PROPOSALS: "review" },
                 modelOptions: { approvalCommand: `printf 'approved\\n' >> ${quoted}; printf approved` },
             });

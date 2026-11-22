@@ -13,7 +13,7 @@ export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await searchLink.locator("svg").count(), 1);
     assert.equal(await page.getByRole("banner").locator("img").count(), 0, "top bar carries no mascot image");
     assert.equal(await page.locator("[style], [class]").count(), 0);
-    if (kind === "error" || kind === "account" || kind === "settings") {
+    if (kind === "error" || kind === "callback" || kind === "settings") {
         const card = page.getByRole("article");
         assert.equal(await card.count(), 1);
         if (kind === "error") {
@@ -47,10 +47,10 @@ export default async function verifyPageShell(page, { title, kind }) {
             };
         });
         assert.equal(bounds.overflow, false, `${kind} fits ${width}px without horizontal scrolling`);
-        const expected = ["home", "search", "workspace", "session", "settings", "account"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
+        const expected = ["home", "search", "workspace", "session", "settings", "callback"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
         assert.ok(Math.abs(bounds.content - expected) < 1, `${kind} main width ${bounds.content} should be ${expected}`);
         assert.ok(Math.abs(bounds.header - bounds.viewport) < 1, `${kind} header spans the full viewport width`);
-        const centers = await navigation.locator("li > a").evaluateAll((elements) => elements.map((element) => {
+        const centers = await navigation.locator("li > a:visible, li > button:visible").evaluateAll((elements) => elements.map((element) => {
             const bounds = element.getBoundingClientRect();
             return bounds.y + bounds.height / 2;
         }));
@@ -68,11 +68,11 @@ export default async function verifyPageShell(page, { title, kind }) {
     }
     await page.setViewportSize({ width: 320, height: 900 });
     assert.equal((await searchLink.innerText()).trim(), "", "320px collapses Search text label to icon action");
-    const accountLink = navigation.getByRole("link", { name: "Account", exact: true });
-    if (await accountLink.count() > 0) {
-        assert.equal((await accountLink.innerText()).trim(), "", "320px collapses Account text label to icon action");
-        assert.equal(await accountLink.locator("svg").count(), 1);
-        assert.equal(await accountLink.getAttribute("title"), "Account", "Account icon retains explanatory title");
+    const signOutButton = navigation.getByRole("button", { name: "Sign out", exact: true });
+    if (await signOutButton.count() > 0) {
+        assert.equal((await signOutButton.innerText()).trim(), "", "320px collapses Sign out text label to icon action");
+        assert.equal(await signOutButton.locator("svg").count(), 1);
+        assert.equal(await signOutButton.getAttribute("title"), "Sign out", "Sign out icon retains explanatory title");
     }
     assert.equal(await page.getByRole("link", { name: "Skip to content", exact: true }).count(), 0);
     await searchLink.focus();
@@ -80,11 +80,11 @@ export default async function verifyPageShell(page, { title, kind }) {
         const style = getComputedStyle(element);
         return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
     }), "Search retains visible keyboard focus");
-    if (await place.locator("a:visible, button:visible").count() === 0 && await accountLink.count() > 0) {
+    if (await place.locator("a:visible, button:visible").count() === 0 && await signOutButton.count() > 0) {
         await page.keyboard.press("Tab");
-        assert.ok(await accountLink.evaluate((element) => {
+        assert.ok(await signOutButton.evaluate((element) => {
             const style = getComputedStyle(element);
             return document.activeElement === element && (style.boxShadow !== "none" || style.outlineStyle !== "none");
-        }), "Account retains native keyboard order and visible focus");
+        }), "Sign out retains native keyboard order and visible focus");
     }
 }
