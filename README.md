@@ -29,7 +29,7 @@ Closing or reloading a page never cancels running work. Passive `/notifications`
 
 | Concern | Configuration |
 | --- | --- |
-| Operator sign-in | Shared daemon `PLURNK_AUTH=1` (default) and `PLURNK_PASS` (`Account → Sign-ins` revokes one or all other sign-ins and signs out; `Account → About` reports package versions and issue reporting). |
+| Operator sign-in | Shared daemon `PLURNK_AUTH=1` (default): local `plurnk web` handoff or `PLURNK_AUTH_PASSWORD_HASH` (`plurnk-service hash-password`); `Account → Sign-ins` revokes one or all other sign-ins and signs out; `Account → About` reports package versions and issue reporting. |
 | Reverse proxy | Set `PLURNK_AUTH_ISSUER` to the public HTTPS origin. Run `PLURNK_AUTH=0` only on trusted isolated listeners. |
 | Installable app | Browser **Install app** / **Add to Home Screen** uses the bundled web manifest (requires localhost HTTP or proxy HTTPS; online-only, no offline service-worker cache). |
 

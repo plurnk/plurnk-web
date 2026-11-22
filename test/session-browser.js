@@ -12,6 +12,7 @@ import { engines, launchBrowser } from "./engines.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { inspectResult } from "./result-body.js";
 import { acquireSharedDaemon, onAcpSent } from "./session-input.js";
+import testPasswordHash from "./password-hash.js";
 
 async function controller(base, secret) {
     const headers = {};
@@ -266,7 +267,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         const secret = crypto.randomUUID();
         try {
-            await withDaemon({ ...model.env, PLURNK_PASS: "content-password", PLURNK_SECRET: secret }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("content-password"), PLURNK_SECRET: secret }, async (base) => {
                 for (const engine of engines) {
                     model.reset();
                     const workspace = `content-security-${engine.name()}`;
@@ -480,7 +481,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         const secret = crypto.randomUUID();
         try {
-            await withDaemon({ ...model.env, PLURNK_PASS: "diagram-password", PLURNK_SECRET: secret }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("diagram-password"), PLURNK_SECRET: secret }, async (base) => {
                 const denied = await fetch(new URL("/render/mermaid", base), { method: "POST",
                     headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "flowchart LR\n A-->B" }) });
                 assert.equal(denied.status, 401, "the packed compiler uses web session admission");
@@ -729,7 +730,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         const secret = crypto.randomUUID();
         try {
-            await withDaemon({ ...model.env, PLURNK_PASS: "session-password", PLURNK_SECRET: secret, PLURNK_AUTH_ACCESS_TTL_SEC: "1" }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("session-password"), PLURNK_SECRET: secret, PLURNK_AUTH_ACCESS_TTL_SEC: "1" }, async (base) => {
                 for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `~/observer-${engine.name()} @%/<draft>&"`;
@@ -915,7 +916,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         const secret = crypto.randomUUID();
         try {
-            await withDaemon({ ...model.env, PLURNK_PASS: "revocation-password", PLURNK_SECRET: secret }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("revocation-password"), PLURNK_SECRET: secret }, async (base) => {
                 for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `observer-revocation-${engine.name()}`;

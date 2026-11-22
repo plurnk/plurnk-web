@@ -10,6 +10,7 @@ import verifyPageShell from "./page-shell.js";
 import verifyAuthorizationPage from "./authorization-page.js";
 import verifySessionDirectory from "./session-directory-browser.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
+import testPasswordHash from "./password-hash.js";
 
 export default async function verifySessions({ t, consumer, withDaemon: baseWithDaemon }) {
     // {§web-directory-documents} Fixture seeding and censuses use the same public application port,
@@ -122,7 +123,7 @@ registerHooks({
     }, verify);
     try {
         await t.test("{§web-session} {§web-arrival} {§web-search} native sign-in, remembered arrival, /search/ directory, logout and independent browsers", async () => {
-            await withDaemon({ PLURNK_PASS: "browser-password", PLURNK_WEB_OVERVIEW_SESSIONS: "12" }, async (base) => {
+            await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password"), PLURNK_WEB_OVERVIEW_SESSIONS: "12" }, async (base) => {
                 const initial = await (await fetch(new URL("/__fixture", base))).json();
                 assert.equal(initial.find(({ name }) => name === '~/project @<draft>&"')?.project_label, '~/project @<draft>&"');
                 assert.equal(initial.find(({ name }) => name === "renamed workspace")?.project_label, "~/renamed-project");
@@ -139,13 +140,14 @@ registerHooks({
                                 const response = await page.goto(new URL(path, base).href);
                                 assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
                                 assert.match(await page.locator("h1").innerText(), /Sign in/u);
+                                assert.doesNotMatch(await page.locator("body").innerText(), /asks to use this daemon/u);
                                 await verifyAuthorizationPage(page, response, { password: true });
                                 await page.getByLabel("Password", { exact: true }).fill("wrong");
                                 const failure = page.waitForResponse((reply) => reply.request().isNavigationRequest() && reply.request().method() === "POST");
                                 await page.getByRole("button", { name: "Continue", exact: true }).click();
                                 const failedResponse = await failure;
                                 assert.equal(failedResponse.status(), 401);
-                                assert.match(await page.getByRole("alert").innerText(), /password is wrong/u);
+                                assert.match(await page.getByRole("alert").innerText(), /Invalid password\./u);
                                 await verifyAuthorizationPage(page, failedResponse, { password: true, warning: true });
                                 await page.getByLabel("Password", { exact: true }).fill("browser-password");
                                 await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -269,7 +271,7 @@ registerHooks({
             });
         });
         await t.test("{§web-directory-documents} {§web-search} archived places leave active views, open by direct address, and unarchive cleanly", async () => {
-            await withDaemon({ PLURNK_AUTH: "0", PLURNK_PASS: "" }, async (base) => {
+            await withDaemon({ PLURNK_AUTH: "0", PLURNK_AUTH_PASSWORD_HASH: "" }, async (base) => {
                 const census = await (await fetch(new URL("/__fixture", base))).json();
                 const shelved = census.find(({ name }) => name === "folderless");
                 const project = census.find(({ name }) => name === names[0]);
@@ -310,8 +312,8 @@ registerHooks({
                 assert.match(shown, new RegExp(`href="${directoryPath({ kind: "workspace", workspace: shelved.name })}"`, "u"), "a shown workspace returns to /search/");
             });
         });
-        await t.test("{§web-session} an empty password explains setup without admitting a localhost browser", async () => {
-            await withDaemon({ PLURNK_AUTH: "1", PLURNK_PASS: "" }, async (base) => {
+        await t.test("{§web-session} an empty password hash renders generic unavailability without leaking configuration or admitting a localhost browser", async () => {
+            await withDaemon({ PLURNK_AUTH: "1", PLURNK_AUTH_PASSWORD_HASH: "" }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -320,11 +322,14 @@ registerHooks({
                         try {
                             const page = await context.newPage();
                             const response = await page.goto(base);
-                            assert.equal(response.status(), 503, "unconfigured sign-in explains the missing configuration, never grants localhost access");
-                            assert.match(await page.locator("body").innerText(), /PLURNK_PASS/u);
+                            assert.equal(response.status(), 503, "unconfigured sign-in answers 503 without granting localhost access");
+                            const bodyText = await page.locator("body").innerText();
+                            assert.match(bodyText, /Sign-in unavailable/u);
+                            assert.match(bodyText, /Password sign-in is not enabled\./u);
+                            assert.doesNotMatch(bodyText, /PLURNK_|\.env|XDG|plurnk web|secret/iu);
                             await verifyAuthorizationPage(page, response, { warning: true });
                             assert.equal((await context.cookies()).some(({ name }) => ["plurnk_session", "plurnk_web_session"].includes(name)), false,
-                                "an empty password issued no sign-in");
+                                "an empty password hash issued no sign-in");
                             assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
                             checkBrowser([httpFailure("/oauth/authorize", 503)]);
                         } finally { await context.close(); }
@@ -333,7 +338,7 @@ registerHooks({
             });
         });
         await t.test("{§web-workspace-creation} {§web-session-creation} {§web-workspace-rename} native 1-click header and modal workspace/session creation, rename, and refusal recovery", async () => {
-            await withDaemon({ PLURNK_PASS: "browser-password" }, async (base) => {
+            await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password") }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -496,7 +501,7 @@ registerHooks({
             });
         });
         await t.test("{§web-session} explicitly anonymous access offers no fictional account or sign-out", async () => {
-            await withDaemon({ PLURNK_AUTH: "0", PLURNK_PASS: "" }, async (base) => {
+            await withDaemon({ PLURNK_AUTH: "0", PLURNK_AUTH_PASSWORD_HASH: "" }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -521,7 +526,7 @@ registerHooks({
             });
         });
         await t.test("{§web-session} sign-out stays signed out on a fresh visit, with another browser unaffected", async (journeys) => {
-            await withDaemon({ PLURNK_PASS: "browser-password" }, async (base) => {
+            await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password") }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     for (const javaScriptEnabled of [true, false]) {
@@ -560,7 +565,7 @@ registerHooks({
             });
         });
         await t.test("{§web-session} browser-bound single-use callbacks, expiry, host and return validation", async () => {
-            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_PASS: "browser-password" }, async (base) => {
+            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password") }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();
@@ -635,7 +640,7 @@ registerHooks({
             await once(proxy, "listening");
             const issuer = `http://127.0.0.1:${proxy.address().port}`;
             try {
-                await withDaemon({ PLURNK_AUTH_ISSUER: issuer, PLURNK_PASS: "proxy-pass" }, async (base) => {
+                await withDaemon({ PLURNK_AUTH_ISSUER: issuer, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("proxy-pass") }, async (base) => {
                     upstream = base;
                     const browser = await chromium.launch();
                     try {
