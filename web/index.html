@@ -98,12 +98,6 @@
     <template id="workspace-tab-item">
         <li data-tab-id="" data-session-kind="root"><a data-workspace-route="session" data-tab-session=""><span data-lifecycle="idle" aria-hidden="true"></span><span data-tab-label></span></a></li>
     </template>
-    <template id="session-manage-parent-link">
-        <span><span data-i18n="parent-session">Parent:</span> <a data-workspace-route="session" data-text="parent-name"></a></span>
-    </template>
-    <template id="session-manage-parent-text">
-        <span><span data-i18n="parent-session">Parent:</span> <span data-text="parent-name"></span></span>
-    </template>
     <template id="workspace-session-main">
         <main id="main" data-page="session" data-session-name="">
             <p id="session-folder" data-project-label=""><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label"></span></p>
@@ -117,7 +111,7 @@
             <p role="status" data-text="connection-label">Not connected.</p>
             <div data-status-line>
                 <ul aria-label="Model controls">
-                    <li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="false" aria-label="Automatic approval" title="Manual Approval (Shift+Tab · /yolo)"><span data-text="yolo-label">Review</span></button></li>
+                    <li data-status-field="session"><a id="session-current" href="/settings/" data-bind="href:session-settings-path" aria-label="Session">#<span data-text="session-name"></span></a></li>
                     <li data-status-field="model" data-bind="aria-label:model-label title:model-label"><a id="session-model" href="/settings/" data-bind="href:models-settings-path" aria-label="Model"><span data-text="model">No model</span></a><a id="session-effort" href="/settings/" data-bind="href:models-settings-path" aria-label="Effort"><span data-text="effort"></span></a></li>
                 </ul>
                 <div data-status-telemetry>
@@ -152,7 +146,6 @@
                 </header>
                 <div data-switcher-actions>
                     <button type="button" data-switcher-new-session data-i18n="new-session">New session</button>
-                    <button type="button" data-switcher-manage-active data-i18n="session-options">Session options…</button>
                 </div>
                 <input type="search" data-switcher-search placeholder="Jump to session…" aria-label="Jump to session" autocomplete="off" spellcheck="false">
                 <ul data-switcher-list></ul>
@@ -172,27 +165,48 @@
     <template id="workspace-switcher-archived-item">
         <li data-switcher-archived-entry=""><span data-switcher-archived-label></span><form method="post" action="/sessions/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form></li>
     </template>
-    <!-- {§web-workspace-settings} Dedicated settings page templates for models, MCP, skills, schedules, personas, members, env, and help. -->
+    <!-- {§web-workspace-settings} Dedicated settings page templates for session policy, models, MCP, skills, schedules, personas, members, env, and help. -->
+    <template id="session-config-controls">
+        <form data-session-config-form hidden>
+            <fieldset data-bind="disabled:ws-settings-busy">
+                <label>
+                    <span data-i18n="model-label">Model</span>
+                    <select name="model" aria-label="Active session model"></select>
+                </label>
+                <label>
+                    <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
+                    <select name="effort" aria-label="Reasoning effort"></select>
+                </label>
+                <label>
+                    <span data-i18n="child-session-model">Child session model</span>
+                    <select name="spawnModel" aria-label="Child session model"></select>
+                </label>
+                <label>
+                    <span data-i18n="persona-label">Persona</span>
+                    <select name="persona" aria-label="Active session persona"></select>
+                </label>
+                <label>
+                    <span data-i18n="approval-policy">Approval policy</span>
+                    <select name="mode" aria-label="Approval policy"></select>
+                </label>
+                <footer>
+                    <button type="submit" data-i18n="ws-settings-apply-persona">Apply to session</button>
+                </footer>
+            </fieldset>
+        </form>
+    </template>
     <template id="workspace-settings-subsystems">
         <div data-settings-panels>
             <section data-settings-panel="models" aria-label="Models" data-alias-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-tab-models">Models</h2>
-                    <form data-session-model-form hidden>
-                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                            <select name="model" aria-label="Active session model"></select>
-                            <select name="effort" aria-label="Reasoning effort"></select>
-                            <button type="submit" data-i18n="ws-settings-apply-persona">Apply to session</button>
-                        </fieldset>
-                    </form>
-                    <button type="button" data-open-model-setup data-i18n="ws-settings-add-model">+ Add model</button>
                 </header>
                 <p data-models-aliases-empty data-i18n="no-aliases">No matching aliases.</p>
                 <figure data-models-aliases-wrap>
                     <table>
                         <thead><tr>
                             <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
-                            <th scope="col" data-i18n="onboarding-model-label">Model</th>
+                            <th scope="col" data-i18n="model-label">Model</th>
                             <th scope="col" data-i18n="model-efforts">Efforts</th>
                             <th scope="col" data-i18n="ws-settings-col-state">State</th>
                             <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
@@ -229,8 +243,43 @@
             <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-mcp-heading">MCP servers</h2>
-                    <button type="button" data-dialog-target="dialog-settings-mcp" data-i18n="ws-settings-add-mcp">+ Add server</button>
                 </header>
+                <details data-family-disclosure="mcp">
+                    <summary data-i18n="ws-settings-add-mcp">+ Add server</summary>
+                    <form data-family-discover-form data-family="mcp">
+                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                            <input type="search" name="query" aria-label="Search MCP registry" placeholder="Search MCP registry…" autocomplete="off" required>
+                            <button type="submit" data-i18n="ws-settings-discover">Discover</button>
+                        </fieldset>
+                    </form>
+                    <ul data-candidate-rows></ul>
+                    <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none">
+                        <fieldset data-bind="disabled:ws-settings-busy">
+                            <select name="transport" aria-label="MCP transport">
+                                <option value="stdio" data-i18n="ws-settings-mcp-stdio">Local command (stdio)</option>
+                                <option value="streamable-http" data-i18n="ws-settings-mcp-http">Remote endpoint (Streamable HTTP)</option>
+                            </select>
+                            <input type="text" name="alias" aria-label="Server alias" placeholder="server-alias" autocomplete="off" spellcheck="false" required>
+                            <div data-mcp-stdio-fields>
+                                <input type="text" name="command" aria-label="Server command" placeholder="Command (e.g. npx)" autocomplete="off" spellcheck="false">
+                                <input type="text" name="args" aria-label="Server arguments" placeholder="Arguments (space-separated)" autocomplete="off" spellcheck="false">
+                                <input type="text" name="cwd" aria-label="Working directory" placeholder="Working directory (optional)" autocomplete="off" spellcheck="false">
+                            </div>
+                            <div data-mcp-http-fields>
+                                <input type="url" name="url" aria-label="Endpoint URL" placeholder="https://mcp.example.com/mcp" autocomplete="off" spellcheck="false">
+                                <select name="authMode" aria-label="Endpoint authentication">
+                                    <option value="none" data-i18n="ws-settings-auth-none">No authorization</option>
+                                    <option value="bearer" data-i18n="ws-settings-auth-bearer">Bearer token reference</option>
+                                    <option value="oauth" data-i18n="ws-settings-auth-oauth">OAuth 2.1</option>
+                                </select>
+                                <input type="text" name="bearerToken" data-mcp-bearer-field aria-label="Bearer token reference" placeholder="${MCP_TOKEN}" autocomplete="off" spellcheck="false">
+                            </div>
+                            <footer>
+                                <button type="submit" data-i18n="ws-settings-save-server">Save server</button>
+                            </footer>
+                        </fieldset>
+                    </form>
+                </details>
                 <p data-family-empty data-i18n="ws-settings-mcp-empty">No MCP servers configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -254,56 +303,31 @@
                         </fieldset>
                     </form>
                 </section>
-                <dialog id="dialog-settings-mcp" data-settings-dialog="mcp" aria-label="Add MCP server">
-                    <article>
-                        <header>
-                            <p><strong data-i18n="ws-settings-save-mcp">Add or update MCP server</strong></p>
-                            <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-                        </header>
-                        <p role="status" data-text="ws-settings-message"></p>
-                        <p data-text="ws-settings-recovery"></p>
-                        <form data-family-discover-form data-family="mcp">
-                            <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                                <input type="search" name="query" aria-label="Search MCP registry" placeholder="Search MCP registry…" autocomplete="off" required>
-                                <button type="submit" data-i18n="ws-settings-discover">Discover</button>
-                            </fieldset>
-                        </form>
-                        <ul data-candidate-rows></ul>
-                        <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none">
-                            <fieldset data-bind="disabled:ws-settings-busy">
-                                <select name="transport" aria-label="MCP transport">
-                                    <option value="stdio" data-i18n="ws-settings-mcp-stdio">Local command (stdio)</option>
-                                    <option value="streamable-http" data-i18n="ws-settings-mcp-http">Remote endpoint (Streamable HTTP)</option>
-                                </select>
-                                <input type="text" name="alias" aria-label="Server alias" placeholder="server-alias" autocomplete="off" spellcheck="false" required>
-                                <div data-mcp-stdio-fields>
-                                    <input type="text" name="command" aria-label="Server command" placeholder="Command (e.g. npx)" autocomplete="off" spellcheck="false">
-                                    <input type="text" name="args" aria-label="Server arguments" placeholder="Arguments (space-separated)" autocomplete="off" spellcheck="false">
-                                    <input type="text" name="cwd" aria-label="Working directory" placeholder="Working directory (optional)" autocomplete="off" spellcheck="false">
-                                </div>
-                                <div data-mcp-http-fields>
-                                    <input type="url" name="url" aria-label="Endpoint URL" placeholder="https://mcp.example.com/mcp" autocomplete="off" spellcheck="false">
-                                    <select name="authMode" aria-label="Endpoint authentication">
-                                        <option value="none" data-i18n="ws-settings-auth-none">No authorization</option>
-                                        <option value="bearer" data-i18n="ws-settings-auth-bearer">Bearer token reference</option>
-                                        <option value="oauth" data-i18n="ws-settings-auth-oauth">OAuth 2.1</option>
-                                    </select>
-                                    <input type="text" name="bearerToken" data-mcp-bearer-field aria-label="Bearer token reference" placeholder="${MCP_TOKEN}" autocomplete="off" spellcheck="false">
-                                </div>
-                                <footer>
-                                    <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
-                                    <button type="submit" data-i18n="ws-settings-save-server">Save server</button>
-                                </footer>
-                            </fieldset>
-                        </form>
-                    </article>
-                </dialog>
             </section>
             <section data-settings-panel="skills" aria-label="Skills" data-family-count="0" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-tab-skills">Skills</h2>
-                    <button type="button" data-dialog-target="dialog-settings-skills" data-i18n="ws-settings-add-skill">+ Add skill</button>
                 </header>
+                <details data-family-disclosure="skills">
+                    <summary data-i18n="ws-settings-add-skill">+ Add skill</summary>
+                    <form data-family-discover-form data-family="skills">
+                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                            <input type="text" name="source" aria-label="Skill discovery source" placeholder="Git URL, folder, archive, or server:///skills" autocomplete="off" spellcheck="false" required>
+                            <button type="submit" data-i18n="ws-settings-discover">Discover</button>
+                        </fieldset>
+                    </form>
+                    <ul data-candidate-rows></ul>
+                    <form data-skills-save-form>
+                        <fieldset data-bind="disabled:ws-settings-busy">
+                            <input type="text" name="alias" aria-label="Skill name" placeholder="skill-name" autocomplete="off" spellcheck="false" required>
+                            <input type="text" name="source" aria-label="Skill source" placeholder="https://git.example/skills.git or /path/to/skill" autocomplete="off" spellcheck="false" required>
+                            <input type="text" name="ref" aria-label="Git ref" placeholder="Branch or tag (optional)" autocomplete="off" spellcheck="false">
+                            <footer>
+                                <button type="submit" data-i18n="ws-settings-save-skill">Save skill</button>
+                            </footer>
+                        </fieldset>
+                    </form>
+                </details>
                 <p data-family-empty data-i18n="ws-settings-skills-empty">No skills configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -317,40 +341,32 @@
                         <tbody data-family-rows></tbody>
                     </table>
                 </figure>
-                <dialog id="dialog-settings-skills" data-settings-dialog="skills" aria-label="Add skill">
-                    <article>
-                        <header>
-                            <p><strong data-i18n="ws-settings-save-skill-heading">Add or update skill</strong></p>
-                            <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-                        </header>
-                        <p role="status" data-text="ws-settings-message"></p>
-                        <p data-text="ws-settings-recovery"></p>
-                        <form data-family-discover-form data-family="skills">
-                            <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                                <input type="text" name="source" aria-label="Skill discovery source" placeholder="Git URL, folder, archive, or server:///skills" autocomplete="off" spellcheck="false" required>
-                                <button type="submit" data-i18n="ws-settings-discover">Discover</button>
-                            </fieldset>
-                        </form>
-                        <ul data-candidate-rows></ul>
-                        <form data-skills-save-form>
-                            <fieldset data-bind="disabled:ws-settings-busy">
-                                <input type="text" name="alias" aria-label="Skill name" placeholder="skill-name" autocomplete="off" spellcheck="false" required>
-                                <input type="text" name="source" aria-label="Skill source" placeholder="https://git.example/skills.git or /path/to/skill" autocomplete="off" spellcheck="false" required>
-                                <input type="text" name="ref" aria-label="Git ref" placeholder="Branch or tag (optional)" autocomplete="off" spellcheck="false">
-                                <footer>
-                                    <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
-                                    <button type="submit" data-i18n="ws-settings-save-skill">Save skill</button>
-                                </footer>
-                            </fieldset>
-                        </form>
-                    </article>
-                </dialog>
             </section>
             <section data-settings-panel="schedule" aria-label="Schedules" data-family-count="0" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-schedules-heading">Schedules</h2>
-                    <button type="button" data-dialog-target="dialog-settings-schedule" data-i18n="ws-settings-add-schedule">+ Add schedule</button>
                 </header>
+                <details data-family-disclosure="schedule">
+                    <summary data-i18n="ws-settings-add-schedule">+ Add schedule</summary>
+                    <form data-family-discover-form data-family="schedule">
+                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                            <input type="text" name="rule" aria-label="Preview schedule rule" placeholder="0 9 * * 1-5 or FREQ=DAILY;BYHOUR=9" autocomplete="off" spellcheck="false" required>
+                            <button type="submit" data-i18n="ws-settings-preview-rule">Preview</button>
+                        </fieldset>
+                    </form>
+                    <ul data-candidate-rows></ul>
+                    <form data-schedule-save-form>
+                        <fieldset data-bind="disabled:ws-settings-busy">
+                            <input type="text" name="alias" aria-label="Schedule name" placeholder="nightly-check" autocomplete="off" spellcheck="false" required>
+                            <input type="text" name="target" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false" required>
+                            <input type="text" name="rule" aria-label="Schedule rule" placeholder="0 9 * * 1-5 or FREQ=DAILY" autocomplete="off" spellcheck="false" required>
+                            <textarea name="prompt" aria-label="Scheduled prompt" placeholder="Message delivered at each occurrence" rows="2" required></textarea>
+                            <footer>
+                                <button type="submit" data-i18n="ws-settings-save-schedule">Save schedule</button>
+                            </footer>
+                        </fieldset>
+                    </form>
+                </details>
                 <p data-family-empty data-i18n="ws-settings-schedule-empty">No schedules configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -364,47 +380,44 @@
                         <tbody data-family-rows></tbody>
                     </table>
                 </figure>
-                <dialog id="dialog-settings-schedule" data-settings-dialog="schedule" aria-label="Add schedule">
-                    <article>
-                        <header>
-                            <p><strong data-i18n="ws-settings-save-schedule-heading">Add or update schedule</strong></p>
-                            <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-                        </header>
-                        <p role="status" data-text="ws-settings-message"></p>
-                        <p data-text="ws-settings-recovery"></p>
-                        <form data-family-discover-form data-family="schedule">
-                            <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                                <input type="text" name="rule" aria-label="Preview schedule rule" placeholder="0 9 * * 1-5 or FREQ=DAILY;BYHOUR=9" autocomplete="off" spellcheck="false" required>
-                                <button type="submit" data-i18n="ws-settings-preview-rule">Preview</button>
-                            </fieldset>
-                        </form>
-                        <ul data-candidate-rows></ul>
-                        <form data-schedule-save-form>
-                            <fieldset data-bind="disabled:ws-settings-busy">
-                                <input type="text" name="alias" aria-label="Schedule name" placeholder="nightly-check" autocomplete="off" spellcheck="false" required>
-                                <input type="text" name="target" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false" required>
-                                <input type="text" name="rule" aria-label="Schedule rule" placeholder="0 9 * * 1-5 or FREQ=DAILY" autocomplete="off" spellcheck="false" required>
-                                <textarea name="prompt" aria-label="Scheduled prompt" placeholder="Message delivered at each occurrence" rows="2" required></textarea>
-                                <footer>
-                                    <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
-                                    <button type="submit" data-i18n="ws-settings-save-schedule">Save schedule</button>
-                                </footer>
-                            </fieldset>
-                        </form>
-                    </article>
-                </dialog>
             </section>
             <section data-settings-panel="personas" aria-label="Personas" data-family-count="0" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-tab-personas">Personas</h2>
-                    <form data-session-persona-form hidden>
+                </header>
+                <details data-family-disclosure="personas">
+                    <summary data-i18n="ws-settings-add-persona">+ Add persona</summary>
+                    <form data-family-discover-form data-family="personas">
                         <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                            <select name="persona" aria-label="Active session persona"></select>
-                            <button type="submit" data-i18n="ws-settings-apply-persona">Apply to session</button>
+                            <input type="text" name="source" aria-label="Persona discovery path" placeholder="Directory or file path (optional)" autocomplete="off" spellcheck="false">
+                            <button type="submit" data-i18n="ws-settings-discover">Discover</button>
                         </fieldset>
                     </form>
-                    <button type="button" data-dialog-target="dialog-settings-personas" data-i18n="ws-settings-add-persona">+ Add persona</button>
-                </header>
+                    <ul data-candidate-rows></ul>
+                    <form data-personas-save-form data-persona-mode="inline">
+                        <fieldset data-bind="disabled:ws-settings-busy">
+                            <select name="personaMode" aria-label="Persona mode">
+                                <option value="inline" data-i18n="ws-settings-persona-inline">Inline instructions</option>
+                                <option value="source" data-i18n="ws-settings-persona-source">Markdown file path</option>
+                            </select>
+                            <input type="text" name="alias" aria-label="Persona name" placeholder="reviewer" autocomplete="off" spellcheck="false" required>
+                            <div data-persona-inline-fields>
+                                <input type="text" name="description" aria-label="Persona description" placeholder="Concise role summary" autocomplete="off">
+                                <textarea name="body" aria-label="Persona instructions" placeholder="System instructions for this persona" rows="3"></textarea>
+                            </div>
+                            <div data-persona-source-fields>
+                                <input type="text" name="source" aria-label="Persona file path" placeholder="./personas/reviewer.md" autocomplete="off" spellcheck="false">
+                            </div>
+                            <input type="text" name="model" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
+                            <select name="effort" aria-label="Persona default effort">
+                                <option value="" data-i18n="ws-settings-default-effort">Default effort (optional)</option>
+                            </select>
+                            <footer>
+                                <button type="submit" data-i18n="ws-settings-save-persona">Save persona</button>
+                            </footer>
+                        </fieldset>
+                    </form>
+                </details>
                 <p data-family-empty data-i18n="ws-settings-personas-empty">No personas configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -418,53 +431,29 @@
                         <tbody data-family-rows></tbody>
                     </table>
                 </figure>
-                <dialog id="dialog-settings-personas" data-settings-dialog="personas" aria-label="Add persona">
-                    <article>
-                        <header>
-                            <p><strong data-i18n="ws-settings-save-persona-heading">Add or update persona</strong></p>
-                            <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-                        </header>
-                        <p role="status" data-text="ws-settings-message"></p>
-                        <p data-text="ws-settings-recovery"></p>
-                        <form data-family-discover-form data-family="personas">
-                            <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                                <input type="text" name="source" aria-label="Persona discovery path" placeholder="Directory or file path (optional)" autocomplete="off" spellcheck="false">
-                                <button type="submit" data-i18n="ws-settings-discover">Discover</button>
-                            </fieldset>
-                        </form>
-                        <ul data-candidate-rows></ul>
-                        <form data-personas-save-form data-persona-mode="inline">
-                            <fieldset data-bind="disabled:ws-settings-busy">
-                                <select name="personaMode" aria-label="Persona mode">
-                                    <option value="inline" data-i18n="ws-settings-persona-inline">Inline instructions</option>
-                                    <option value="source" data-i18n="ws-settings-persona-source">Markdown file path</option>
-                                </select>
-                                <input type="text" name="alias" aria-label="Persona name" placeholder="reviewer" autocomplete="off" spellcheck="false" required>
-                                <div data-persona-inline-fields>
-                                    <input type="text" name="description" aria-label="Persona description" placeholder="Concise role summary" autocomplete="off">
-                                    <textarea name="body" aria-label="Persona instructions" placeholder="System instructions for this persona" rows="3"></textarea>
-                                </div>
-                                <div data-persona-source-fields>
-                                    <input type="text" name="source" aria-label="Persona file path" placeholder="./personas/reviewer.md" autocomplete="off" spellcheck="false">
-                                </div>
-                                <input type="text" name="model" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
-                                <select name="effort" aria-label="Persona default effort">
-                                    <option value="" data-i18n="ws-settings-default-effort">Default effort (optional)</option>
-                                </select>
-                                <footer>
-                                    <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
-                                    <button type="submit" data-i18n="ws-settings-save-persona">Save persona</button>
-                                </footer>
-                            </fieldset>
-                        </form>
-                    </article>
-                </dialog>
             </section>
             <section data-settings-panel="members" aria-label="Members" data-family-count="0" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-tab-members">Members</h2>
-                    <button type="button" data-dialog-target="dialog-settings-members" data-i18n="ws-settings-add-members">+ Add rules</button>
                 </header>
+                <details data-family-disclosure="members">
+                    <summary data-i18n="ws-settings-add-members">+ Add rules</summary>
+                    <form data-family-discover-form data-family="members">
+                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                            <input type="text" name="query" aria-label="Inspect file or glob" placeholder="Path or glob (e.g. src/** or !dist/**)" autocomplete="off" spellcheck="false" required>
+                            <button type="submit" data-i18n="ws-settings-preview-rule">Preview</button>
+                        </fieldset>
+                    </form>
+                    <ul data-candidate-rows></ul>
+                    <form data-members-save-form>
+                        <fieldset data-bind="disabled:ws-settings-busy">
+                            <input type="text" name="files" aria-label="Member globs" placeholder="docs/** !docs/drafts/**" autocomplete="off" spellcheck="false" required>
+                            <footer>
+                                <button type="submit" data-i18n="ws-settings-save-members">Add rules</button>
+                            </footer>
+                        </fieldset>
+                    </form>
+                </details>
                 <p data-family-empty data-i18n="ws-settings-members-empty">No custom file member rules configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -478,32 +467,6 @@
                         <tbody data-family-rows></tbody>
                     </table>
                 </figure>
-                <dialog id="dialog-settings-members" data-settings-dialog="members" aria-label="Add file member rules">
-                    <article>
-                        <header>
-                            <p><strong data-i18n="ws-settings-save-members-heading">Add file member rules</strong></p>
-                            <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-                        </header>
-                        <p role="status" data-text="ws-settings-message"></p>
-                        <p data-text="ws-settings-recovery"></p>
-                        <form data-family-discover-form data-family="members">
-                            <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                                <input type="text" name="query" aria-label="Inspect file or glob" placeholder="Path or glob (e.g. src/** or !dist/**)" autocomplete="off" spellcheck="false" required>
-                                <button type="submit" data-i18n="ws-settings-preview-rule">Preview</button>
-                            </fieldset>
-                        </form>
-                        <ul data-candidate-rows></ul>
-                        <form data-members-save-form>
-                            <fieldset data-bind="disabled:ws-settings-busy">
-                                <input type="text" name="files" aria-label="Member globs" placeholder="docs/** !docs/drafts/**" autocomplete="off" spellcheck="false" required>
-                                <footer>
-                                    <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
-                                    <button type="submit" data-i18n="ws-settings-save-members">Add rules</button>
-                                </footer>
-                            </fieldset>
-                        </form>
-                    </article>
-                </dialog>
             </section>
             <section data-settings-panel="env" aria-label="Environment" hidden>
                 <header data-panel-toolbar>
@@ -516,21 +479,13 @@
                             </select>
                         </fieldset>
                     </form>
-                    <button type="button" data-dialog-target="dialog-settings-env" data-i18n="ws-settings-add-env">+ Set variable</button>
                 </header>
+                <details data-family-disclosure="env">
+                    <summary data-i18n="ws-settings-add-env">+ Set variable</summary>
+                    <div data-ws-env-form-outlet></div>
+                </details>
                 <p data-env-empty data-i18n="ws-settings-env-empty">No environment variables configured.</p>
                 <div data-ws-env-outlet></div>
-                <dialog id="dialog-settings-env" data-settings-dialog="env" aria-label="Set environment variable">
-                    <article>
-                        <header>
-                            <p><strong data-i18n="ws-settings-save-env-heading">Set environment variable</strong></p>
-                            <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-                        </header>
-                        <p role="status" data-text="ws-settings-message"></p>
-                        <p data-text="ws-settings-recovery"></p>
-                        <div data-ws-env-form-outlet></div>
-                    </article>
-                </dialog>
             </section>
             <section data-settings-panel="help" aria-label="Help" hidden>
                 <header data-panel-toolbar>
@@ -648,62 +603,6 @@
             <button type="button" data-accept-suggestion data-text="suggestion-text"></button>
         </li>
     </template>
-    <template id="session-onboarding-banner">
-        <article id="session-onboarding-banner" aria-label="Model setup">
-            <header>
-                <strong data-i18n="onboarding-banner-title">No model configured</strong>
-                <button type="button" data-dismiss-onboarding aria-label="Dismiss setup notice" title="Dismiss"></button>
-            </header>
-            <p data-i18n="onboarding-banner-copy">Connect a local inference server or hosted provider API key to start a conversation.</p>
-            <footer>
-                <button type="button" data-open-onboarding data-i18n="onboarding-open">Set up model</button>
-            </footer>
-        </article>
-    </template>
-    <template id="onboarding-dialog">
-        <dialog id="dialog-onboarding" aria-label="Model setup">
-            <article data-bind="aria-busy:onboarding-busy">
-                <header>
-                    <p><strong data-i18n="onboarding-title">Set up a model</strong></p>
-                    <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-                </header>
-                <p data-text="onboarding-config-path"></p>
-                <p role="status" data-text="onboarding-status"></p>
-                <p role="alert" data-text="onboarding-error"></p>
-                <p data-text="onboarding-recovery"></p>
-                <p role="status" data-text="onboarding-shadowed"></p>
-                <form data-onboarding-form data-onboarding-mode="hosted">
-                    <fieldset data-bind="disabled:onboarding-busy">
-                        <label>
-                            <span data-i18n="onboarding-source-label">Model source</span>
-                            <select name="source" aria-label="Model source"></select>
-                        </label>
-                        <div data-onboarding-hosted-fields>
-                            <label>
-                                <span data-i18n="onboarding-model-label">Model</span>
-                                <select name="selector" aria-label="Provider model"></select>
-                            </label>
-                            <label>
-                                <span data-i18n="onboarding-key-label">API key</span>
-                                <input type="password" name="apiKey" aria-label="Provider API key" autocomplete="off" spellcheck="false">
-                            </label>
-                        </div>
-                        <small data-text="onboarding-key-hint"></small>
-                        <label>
-                            <span data-i18n="onboarding-alias-label">Model alias</span>
-                            <input type="text" name="alias" aria-label="Model alias" autocomplete="off" spellcheck="false" required>
-                        </label>
-                        <footer>
-                            <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
-                            <button type="submit" data-i18n="onboarding-save-verify">Save and verify</button>
-                        </footer>
-                    </fieldset>
-                </form>
-            </article>
-        </dialog>
-    </template>
-    <template id="onboarding-source-option"><option data-bind="value:option-value" data-text="option-label"></option></template>
-    <template id="onboarding-model-option"><option data-bind="value:option-value" data-text="option-label"></option></template>
     <template id="compose-attachment">
         <li data-attachment-item>
             <span data-text="attachment-name"></span> <small data-text="attachment-size"></small>
@@ -736,13 +635,12 @@
     <template id="command-help">
         <ul aria-label="Supported commands">
             <li data-command-name="help"><code data-i18n="command-help-usage">/help [command]</code> <span data-i18n="command-help-summary">Show these commands or one command's usage.</span></li>
-            <li data-command-name="onboard"><code data-i18n="command-onboard-usage">/onboard</code> <span data-i18n="command-onboard-summary">Set up a local or hosted model and verify a live reply.</span></li>
             <li data-command-name="models"><code data-i18n="command-models-usage">/models [search]</code> <span data-i18n="command-models-summary">List aliases and search the available model catalog.</span></li>
             <li data-command-name="model"><code data-i18n="command-model-usage">/model [selector] [effort]</code> <span data-i18n="command-model-summary">Inspect or select this session's model.</span></li>
             <li data-command-name="effort"><code data-i18n="command-effort-usage">/effort [policy]</code> <span data-i18n="command-effort-summary">Inspect or select this session's reasoning effort.</span></li>
             <li data-command-name="persona"><code data-i18n="command-persona-usage">/persona [name|none]</code> <span data-i18n="command-persona-summary">Inspect or select this session's persona.</span></li>
             <li data-command-name="child"><code data-i18n="command-child-usage">/child [selector|inherit]</code> <span data-i18n="command-child-summary">Inspect or select this session's child-session model.</span></li>
-            <li data-command-name="mode"><code data-i18n="command-mode-usage">/mode [review|accept|reject]</code> <span data-i18n="command-mode-summary">Inspect or select the workspace approval policy.</span></li>
+            <li data-command-name="mode"><code data-i18n="command-mode-usage">/mode [review|accept|reject]</code> <span data-i18n="command-mode-summary">Inspect or select this session's approval policy.</span></li>
             <li data-command-name="workspaces"><code data-i18n="command-workspaces-usage">/workspaces</code> <span data-i18n="command-workspaces-summary">List workspaces on this daemon.</span></li>
             <li data-command-name="workspace"><code data-i18n="command-workspace-usage">/workspace [name]</code> <span data-i18n="command-workspace-summary">Inspect or switch the current workspace.</span></li>
             <li data-command-name="rename"><code data-i18n="command-rename-usage">/rename &lt;name&gt;</code> <span data-i18n="command-rename-summary">Rename the current workspace.</span></li>
@@ -773,7 +671,7 @@
             <li data-command-name="members"><code data-i18n="command-members-usage">/members [list|discover|add|enable|disable|remove] …</code> <span data-i18n="command-members-summary">Inspect or manage workspace file membership.</span></li>
             <li data-command-name="env"><code data-i18n="command-env-usage">/env [--scope session|workspace] [list|set|unset] …</code> <span data-i18n="command-env-summary">Inspect or manage session or workspace environment variables.</span></li>
             <li data-command-name="learn"><code data-i18n="command-learn-usage">/learn [--scope project|plurnk] [instructions]</code> <span data-i18n="command-learn-summary">Ask the session to distill reusable work into a project or Plurnk skill.</span></li>
-            <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle automatic approval on this page.</span></li>
+            <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle session automatic approval (review / accept).</span></li>
             <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this session's active work.</span></li>
         </ul>
     </template>
@@ -783,7 +681,7 @@
             <dt><kbd>Shift+Enter</kbd> · <kbd>Ctrl+J</kbd></dt><dd data-i18n="shortcut-newline">Insert a newline in the message field.</dd>
             <dt><kbd>↑</kbd> / <kbd>↓</kbd></dt><dd data-i18n="shortcut-history">Cycle previous prompts and commands in the message field.</dd>
             <dt><kbd>Tab</kbd></dt><dd data-i18n="shortcut-suggestion">Accept the lead prompt suggestion or command completion in the message field.</dd>
-            <dt><kbd>Shift+Tab</kbd></dt><dd data-i18n="shortcut-yolo">Toggle automatic approval on this page.</dd>
+            <dt><kbd>Shift+Tab</kbd></dt><dd data-i18n="shortcut-yolo">Toggle session automatic approval (review / accept).</dd>
             <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open dialog, or request Stop.</dd>
             <dt><kbd>/</kbd> · <kbd>?</kbd></dt><dd data-i18n="shortcut-focus-help">Focus the message field or open this command and shortcut reference.</dd>
             <dt><kbd>Y</kbd> / <kbd>N</kbd> / <kbd>E</kbd> (<kbd>A</kbd> / <kbd>R</kbd>)</dt><dd data-i18n="shortcut-review">Select Accept, Reject, or Edit on a pending proposal; confirm with Enter.</dd>

@@ -160,10 +160,10 @@ function elicitationSchema(toolName, gate) {
     return requested;
 }
 
-/** {§web-session-approval} {§web-session-questions} Apply the configured client choice to the complete pending gate set.
- * @param {Element} controls @param {boolean} yolo
+/** {§web-session-approval} {§web-session-questions} Present and submit decisions for the complete pending gate set.
+ * @param {Element} controls
  */
-export default function reviewRequests(controls, yolo) {
+export default function reviewRequests(controls) {
     const form = $.clone(controls, "#session-review");
     const outlet = $(form, "[data-requests]");
     if (!(form instanceof HTMLFormElement) || !outlet) throw new Error("Review template is incomplete.");
@@ -173,23 +173,17 @@ export default function reviewRequests(controls, yolo) {
     /** @type {readonly SessionGate[]} */
     let current = [];
     let supported = false;
-    let forceManual = false;
-    /** @type {Map<string, Element>} */
-    const rows = new Map();
-    const effectiveYolo = () => yolo && !forceManual;
     function mode() {
         const late = supported && current.some(expired);
-        const auto = effectiveYolo();
-        const manual = !supported ? 0 : late ? current.length : current.filter((gate) => !auto || proposal(gate) === undefined).length;
+        const manual = !supported ? 0 : current.length;
         the(form, { "request-count": manual, "deadline-passed": late ? "" : null });
-        return !supported ? "unsupported" : late ? "expired" : manual > 0 ? "manual" : "automatic";
+        return !supported ? "unsupported" : late ? "expired" : "manual";
     }
     /** @param {SessionGate} gate @param {number} index @param {Element} [before] */
     function presentProposal(gate, index, before) {
         const facts = proposal(gate);
         if (!facts) throw new Error("Proposal presentation has no facts.");
         const row = before ? $.clone(before, "#session-proposal", { position: "beforebegin" }) : $.clone(list, "#session-proposal");
-        rows.set(gate.id, row);
         const targetText = formatProposalTarget(facts);
         const patchText = facts.subject?.type === "tool_call" && typeof facts.subject.diff?.patch === "string" && facts.subject.diff.patch.length > 0
             ? facts.subject.diff.patch
@@ -221,32 +215,9 @@ export default function reviewRequests(controls, yolo) {
     the(form, { "request-count": 0, "review-unavailable": "" });
     return {
         form,
-        /** {§web-session-commands} Change only proposal controls; question answers remain in their original nodes.
-          * @param {boolean} value
-          */
-        automatic(value) {
-            yolo = value;
-            if (value) forceManual = false;
-            const auto = effectiveYolo();
-            if (supported) {
-                for (let index = current.length - 1; index >= 0; index--) {
-                    const gate = current[index];
-                    if (!proposal(gate)) continue;
-                    if (auto) {
-                        rows.get(gate.id)?.remove();
-                        rows.delete(gate.id);
-                    } else if (!rows.has(gate.id)) {
-                        const next = current.slice(index + 1).map(({ id }) => rows.get(id)).find(Boolean);
-                        presentProposal(gate, index, next);
-                    }
-                }
-            }
-            return mode();
-        },
-        /** @param {readonly SessionGate[]} gates @param {{ forceManual?: boolean }} [options] */
-        present(gates, options = {}) {
+        /** @param {readonly SessionGate[]} gates */
+        present(gates) {
             current = gates;
-            forceManual = Boolean(options.forceManual);
             supported = gates.length > 0 && gates.every((gate) => {
                 if (gate.method === "session/request_permission") {
                     const facts = proposal(gate);
@@ -262,7 +233,6 @@ export default function reviewRequests(controls, yolo) {
                 return false;
             });
             list.replaceChildren();
-            rows.clear();
             responses = (supported ? gates : []).map((gate, index) => {
                 if (gate.method === "elicitation/create") {
                     const interaction = gate._meta?.plurnk?.interaction;
@@ -272,7 +242,6 @@ export default function reviewRequests(controls, yolo) {
                     const responseSchema = elicitationSchema(toolName, gate);
                     if (!responseSchema) throw new Error("Elicitation gate has no request schema.");
                     const row = $.clone(list, "#session-question");
-                    rows.set(gate.id, row);
                     the(row, {
                         "interrupt-id": gate.id,
                         "request-session": interaction?.sessionId ?? "",
@@ -334,16 +303,8 @@ export default function reviewRequests(controls, yolo) {
                     };
                 }
                 const facts = proposal(gate);
-                if (!effectiveYolo() || gates.some(expired)) presentProposal(gate, index);
+                presentProposal(gate, index);
                 return async () => {
-                    if (effectiveYolo()) return {
-                        id: gate.id,
-                        method: /** @type {const} */ ("session/request_permission"),
-                        response: {
-                            outcome: { outcome: /** @type {const} */ ("selected"), optionId: allowOptionId(gate) },
-                            _meta: { plurnk: { outcome: /** @type {const} */ ("client_yolo") } },
-                        },
-                    };
                     const values = new FormData(form);
                     const decision = values.get(`decision-${index}`);
                     if (decision !== "accept" && decision !== "edit" && decision !== "reject") {

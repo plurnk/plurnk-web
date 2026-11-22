@@ -18,7 +18,6 @@ test("{§web-route-settlement} module close drains admitted HTTP requests before
     let assetsClosed = false;
     const documents = new Documents(
         '<head><link rel="stylesheet" href="/app.css"></head><title>Plurnk</title><header><template id="session-navigation"><a href="/account/">Account</a></template></header><main></main>',
-        false,
         128,
     );
     const module = createModule({

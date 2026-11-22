@@ -127,38 +127,46 @@ export default async function verifySessionDirectory(page, workspace) {
         { expected: evidence.name, scripted: hasScript },
     );
     assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, path(evidence));
-    const openSessionManage = async () => {
+    const openSessionSettings = async (targetSession) => {
+        if (!hasScript) {
+            const directUrl = new URL(`/settings/?${new URLSearchParams({ workspace: workspace.name, session: targetSession.name })}#session`, page.url()).href;
+            await page.goto(directUrl);
+            return;
+        }
         const activeTab = page.locator('#workspace-tabs a[aria-current="true"]');
         if (await activeTab.isVisible()) {
             await activeTab.click();
         } else {
-            await page.locator('[aria-label="Session controls"] button[data-open-sessions]').click();
-            const switcher = page.locator("#dialog-workspace-switcher");
-            await switcher.waitFor({ state: "visible" });
-            await switcher.getByRole("button", { name: "Session options…", exact: true }).click();
+            await page.locator("#session-current").click();
         }
-        await page.locator("#dialog-session-manage").waitFor({ state: "visible" });
+        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
     };
-    if (hasScript) {
-        await openSessionManage();
-        const parentLink = page.locator("#dialog-session-manage [data-session-parent-line]");
-        assert.equal((await parentLink.innerText()).trim(), "Parent: review");
-        assert.equal(await page.locator("#session-directory").count(), 0);
-        await parentLink.getByRole("link", { name: "review", exact: true }).click();
-        await page.waitForFunction(() => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "review");
-        assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, path(review));
-    }
+    await openSessionSettings(evidence);
+    const parentLink = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-parent-line]');
+    assert.equal((await parentLink.innerText()).trim(), "Parent: review");
+    assert.equal(await page.locator("#session-directory").count(), 0);
+    await parentLink.getByRole("link", { name: "review", exact: true }).click();
+    await page.waitForFunction(
+        ({ scripted }) => scripted
+            ? document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "review"
+            : location.hash === "#review",
+        { scripted: hasScript },
+    );
+    assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, path(review));
     await page.goto(directory);
     await backgroundSection.locator(":scope > summary").click();
     const incoming = models.find(({ name }) => name === "incoming");
     assert.equal(await link(incoming).isVisible(), true);
     await link(incoming).click();
-    if (hasScript) {
-        await page.waitForFunction(() => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "incoming");
-        await openSessionManage();
-        const parentLink = page.locator("#dialog-session-manage [data-session-parent-line]");
-        assert.equal((await parentLink.innerText()).trim(), "Parent: _plurnk");
-        assert.equal(await parentLink.locator("a").count(), 0);
-    }
+    await page.waitForFunction(
+        ({ scripted }) => scripted
+            ? document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "incoming"
+            : location.hash === "#incoming",
+        { scripted: hasScript },
+    );
+    await openSessionSettings(incoming);
+    const incomingParentLink = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-parent-line]');
+    assert.equal((await incomingParentLink.innerText()).trim(), "Parent: _plurnk");
+    assert.equal(await incomingParentLink.locator("a").count(), 0);
     await page.goto(directory);
 }

@@ -404,7 +404,7 @@ registerHooks({
                             const secondCreatedPath = new URL(page.url()).pathname;
                             assert.ok(secondCreatedPath.startsWith("/~/"));
 
-                            // 4. {§web-workspace-rename} via #session-workspace -> /settings/?workspace=... and {§web-session-creation} via active tab -> #dialog-session-manage (or inline when no-JS)
+                            // 4. {§web-workspace-rename} via #session-workspace -> /settings/?workspace=... and {§web-session-creation} via [+] -> #dialog-session-create (or inline when no-JS)
                             const openWorkspaceRename = async () => {
                                 await page.locator("#session-workspace").click();
                                 await page.waitForURL((url) => new URL(url).pathname === "/settings/");
@@ -427,7 +427,7 @@ registerHooks({
                             const renamedName = `renamed-${javaScriptEnabled ? "scripted" : "unscripted"}`;
                             const renameForm = await openWorkspaceRename();
                             await renameForm.locator('input[name="name"]').fill(renamedName);
-                            await renameForm.getByRole("button", { name: "Confirm", exact: true }).click();
+                            await renameForm.getByRole("button", { name: "Rename", exact: true }).click();
                             const renamedPath = directoryPath({ kind: "workspace", workspace: renamedName });
                             await page.waitForURL((url) => new URL(url).pathname === renamedPath);
 
@@ -461,9 +461,10 @@ registerHooks({
 
                             // 5. Daemon 409 refusal retains draft and recovers on retry
                             const refusal = async (openFn, formId, name, detail) => {
+                                const submitLabel = formId === "workspace-rename" ? "Rename" : "Confirm";
                                 const target = await openFn();
                                 await target.locator('input[name="name"]').fill(name);
-                                await target.getByRole("button", { name: "Confirm", exact: true }).click();
+                                await target.getByRole("button", { name: submitLabel, exact: true }).click();
                                 await page.waitForLoadState("domcontentloaded");
                                 assert.equal(await page.locator('[data-text="error-title"]').innerText(), "409 Conflict", `${formId} keeps the daemon's status`);
                                 assert.match(await page.locator('[data-text="error-message"]').innerText(), detail, `${formId} shows the daemon's detail`);
@@ -471,21 +472,22 @@ registerHooks({
                                 assert.equal(await retry.locator('input[name="name"]').inputValue(), name, `${formId} offers the draft again`);
                                 return retry;
                             };
-                            const correct = async (retry, name, expectedPathname) => {
+                            const correct = async (retry, formId, name, expectedPathname) => {
+                                const submitLabel = formId === "workspace-rename" ? "Rename" : "Confirm";
                                 await retry.locator('input[name="name"]').fill(name);
-                                await retry.getByRole("button", { name: "Confirm", exact: true }).click();
+                                await retry.getByRole("button", { name: submitLabel, exact: true }).click();
                                 await page.waitForURL((url) => new URL(url).pathname === expectedPathname);
                             };
                             const suffix = javaScriptEnabled ? "scripted" : "unscripted";
                             await page.goto(new URL(renamedPath, base).href);
                             await correct(await refusal(openSessionCreate, "session-create", sessionName, /already in use/u),
-                                `again-${suffix}`, renamedPath);
+                                "session-create", `again-${suffix}`, renamedPath);
                             await page.goto(new URL(renamedPath, base).href);
                             await correct(await refusal(openWorkspaceRename, "workspace-rename", "folderless", /already in use/u),
-                                `${renamedName}-final`, directoryPath({ kind: "workspace", workspace: `${renamedName}-final` }));
+                                "workspace-rename", `${renamedName}-final`, directoryPath({ kind: "workspace", workspace: `${renamedName}-final` }));
                             await page.goto(new URL("/search/", base).href);
                             await correct(await refusal(openWorkspaceCreate, "workspace-create", "folderless", /already in use/u),
-                                `corrected-${suffix}`, directoryPath({ kind: "workspace", workspace: `corrected-${suffix}` }));
+                                "workspace-create", `corrected-${suffix}`, directoryPath({ kind: "workspace", workspace: `corrected-${suffix}` }));
 
                             checkBrowser([httpFailure("/sessions/new", 409), httpFailure("/workspaces/rename", 409), httpFailure("/workspaces/new", 409)]);
                         } finally { await context.close(); }

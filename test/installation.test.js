@@ -106,9 +106,9 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
             XDG_STATE_HOME: join(userHome, ".local", "state"),
             XDG_CACHE_HOME: join(userHome, ".cache"),
             XDG_RUNTIME_DIR: join(userHome, "run"),
-            // {§web-session-approval} Journeys that are not about review settle proposals automatically; the shipped
-            // default is explicit review, and each approval journey sets the mode it exercises.
-            PLURNK_WEB_YOLO: "1",
+            // {§web-session-approval} Journeys that are not about review settle proposals automatically on the daemon;
+            // the shipped service default is explicit review, and each review journey sets PLURNK_SERVICE_PROPOSALS=review.
+            PLURNK_SERVICE_PROPOSALS: "accept",
             ...overrides,
         },
         host: "127.0.0.1",

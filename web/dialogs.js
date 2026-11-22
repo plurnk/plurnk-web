@@ -46,12 +46,10 @@ export default function initDialogs(root = document.body) {
                 syncProjectFolderField(form);
             }
             dialog.showModal();
-            if (dialog.id !== "dialog-session-manage") {
-                const input = $(dialog, 'input[type="text"]:not(:disabled)');
-                if (input instanceof HTMLInputElement) {
-                    input.focus();
-                    input.select();
-                }
+            const input = $(dialog, 'input[type="text"]:not(:disabled)');
+            if (input instanceof HTMLInputElement) {
+                input.focus();
+                input.select();
             }
         }
     });

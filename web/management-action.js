@@ -6,9 +6,7 @@ import problemFromResponse from "./problem-response.js";
 const SSE_HEADERS_FLUSH_MS = 25;
 
 const DAEMON_SCOPED_ACTIONS = new Set([
-    "models.local",
-    "service.env.list",
-    "service.env.set",
+    "models.list",
     "service.update",
     "workspace.list",
     "workspace.create",
@@ -34,20 +32,17 @@ export default async function managementAction(kind, params, sessionId, auth, si
     /** @type {Error | undefined} */
     let httpFailure;
     let connected = false;
+    let deleteSent = false;
     const needsConnSse = !sessionId
         || kind === "providers/list"
         || kind === "session/new"
-        || kind === "session/fork"
-        || kind === "session/archive"
-        || kind === "session/unarchive"
-        || kind === "session/set_title"
-        || kind === "session/delete"
         || kind === "session/list"
         || DAEMON_SCOPED_ACTIONS.has(kind);
     /** @type {typeof fetch} */
     const acpFetch = async (input, init) => {
         if (init?.method === "DELETE") {
-            if (connected && !signal.aborted && httpFailure === undefined && kind !== "session/cancel") {
+            if (connected && !deleteSent && !signal.aborted && httpFailure === undefined && kind !== "session/cancel") {
+                deleteSent = true;
                 await fetch(input, init).catch(() => {});
             }
             return new Response(null, { status: 204 });
@@ -143,6 +138,14 @@ export default async function managementAction(kind, params, sessionId, auth, si
         let outcome;
         if (kind === "providers/list") {
             outcome = await conn.agent.request(methods.agent.providers.list, {});
+        } else if (kind === "session/options") {
+            outcome = await conn.agent.request(methods.agent.session.options, {
+                cwd: typeof params.cwd === "string" && params.cwd ? params.cwd : "/",
+                ...(sessionId ? { sessionId } : {}),
+                ...(typeof options.workspaceId === "number"
+                    ? { _meta: { plurnk: { workspaceId: options.workspaceId } } }
+                    : {}),
+            });
         } else if (kind === "session/new") {
             const rawMeta = typeof params._meta === "object" && params._meta !== null && !Array.isArray(params._meta)
                 ? /** @type {Record<string, unknown>} */ (params._meta)

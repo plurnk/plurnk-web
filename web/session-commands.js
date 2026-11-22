@@ -45,7 +45,6 @@ const commands = new Set([
     "cancel",
     "edit",
     "answer",
-    "onboard",
 ]);
 const helpCommands = new Set([...commands, "learn"]);
 
@@ -81,7 +80,6 @@ export const SLASH_COMMAND_NAMES = Object.freeze([
     "/rollback",
     "/share",
     "/update",
-    "/onboard",
     "/persona",
     "/child",
     "/mode",
@@ -95,7 +93,6 @@ export const SLASH_COMMAND_NAMES = Object.freeze([
 const ZERO_ARG_COMMANDS = new Set([
     "/yolo",
     "/stop",
-    "/onboard",
     "/update",
     "/workspaces",
     "/sessions",
@@ -124,6 +121,7 @@ const FAMILY_ALIAS_SUBS = new Set(["enable", "disable", "remove", "oauth", "run"
  *   readonly promptSuggestions?: readonly string[],
  *   readonly models?: readonly string[],
  *   readonly efforts?: readonly string[],
+ *   readonly effortsByModel?: Readonly<Record<string, readonly string[]>>,
  *   readonly personas?: readonly string[],
  *   readonly childModels?: readonly string[],
  *   readonly modes?: readonly string[],
@@ -132,6 +130,7 @@ const FAMILY_ALIAS_SUBS = new Set(["enable", "disable", "remove", "oauth", "run"
  *   readonly loops?: readonly string[],
  *   readonly gateIds?: readonly string[],
  *   readonly familyAliases?: Partial<Record<"mcp" | "skills" | "schedule" | "personas" | "members" | "env", readonly string[]>>,
+ *   readonly projectRoot?: string | null,
  * }} SuggestionSources
  */
 
@@ -170,10 +169,16 @@ function filterCandidates(candidates, partial, terminal) {
 function resolveArgumentStage(cmd, completedArgs, sources) {
     if (cmd === "model") {
         if (completedArgs.length === 0) {
-            return { candidates: sources.models ?? [], advances: (sources.efforts?.length ?? 0) > 0 };
+            const anyModelEfforts = (sources.efforts?.length ?? 0) > 0
+                || Boolean(sources.effortsByModel && Object.values(sources.effortsByModel).some((list) => list.length > 0));
+            return { candidates: sources.models ?? [], advances: anyModelEfforts };
         }
         if (completedArgs.length === 1) {
-            return { candidates: sources.efforts ?? [], advances: false };
+            const selected = completedArgs[0] ?? "";
+            const candidates = sources.effortsByModel && Object.hasOwn(sources.effortsByModel, selected)
+                ? (sources.effortsByModel[selected] ?? [])
+                : (sources.efforts ?? []);
+            return { candidates, advances: false };
         }
         return { candidates: [], advances: false };
     }
@@ -222,7 +227,7 @@ function resolveArgumentStage(cmd, completedArgs, sources) {
             return { candidates: ["--scope"], advances: true };
         }
         if (completedArgs.length === 1 && completedArgs[0] === "--scope") {
-            return { candidates: ["project", "plurnk"], advances: true };
+            return { candidates: sources.projectRoot === null ? ["plurnk"] : ["project", "plurnk"], advances: true };
         }
         return { candidates: [], advances: false };
     }
@@ -365,7 +370,9 @@ export function acceptCommandSuggestion(rawInput, suggestion, sources = {}) {
             const nextSubAdvances = (cmd === "mcp" || cmd === "skills" || cmd === "schedule" || cmd === "personas" || cmd === "members" || cmd === "env")
                 && completedArgs.length === 0
                 ? text !== "list"
-                : advances;
+                : cmd === "model" && completedArgs.length === 0 && sources.effortsByModel && Object.hasOwn(sources.effortsByModel, text)
+                    ? (sources.effortsByModel[text]?.length ?? 0) > 0
+                    : advances;
             const prefixTokens = [`/${argMatch[1]}`, ...completedArgs, text].join(" ");
             return nextSubAdvances ? `${prefixTokens} ` : prefixTokens;
         }
@@ -530,7 +537,7 @@ export function parseCommand(text) {
     const args = rest ? rest.split(/\s+/u) : [];
     const zeroArg = new Set([
         "yolo", "stop", "update", "workspaces", "sessions", "loops",
-        "parent", "enter", "older", "newer", "review", "onboard",
+        "parent", "enter", "older", "newer", "review",
     ]);
     const singleOptionalArg = new Set([
         "help", "effort", "persona", "child", "mode", "fork", "session", "loop",
@@ -658,7 +665,7 @@ function selectGate(gates, rawTarget, cmdName) {
  *   getPendingGates?: () => readonly SessionGate[],
  *   resolveGate?: (resolution: GateResolution) => Promise<void> | void,
  *   navigate?: (path: string) => void,
- *   openOnboarding?: () => Promise<void> | void,
+ *   hasSession?: (name: string) => boolean,
  * }} actions
  */
 export default function sessionCommands(main, actions) {
@@ -774,14 +781,6 @@ export default function sessionCommands(main, actions) {
                 navigateToSettings("help", selected ? { cmd: selected } : undefined);
                 return true;
             }
-            if (name === "onboard") {
-                if (actions.openOnboarding) {
-                    await actions.openOnboarding();
-                } else {
-                    navigateToSettings("models", { setup: "1" });
-                }
-                return true;
-            }
             if (name === "models") {
                 navigateToSettings("models", rest ? { q: rest } : undefined);
                 return true;
@@ -804,7 +803,7 @@ export default function sessionCommands(main, actions) {
                 let params = parsed.params;
                 if (parsed.actionName === "workspace.mcp.oauth.begin") {
                     const alias = typeof params.alias === "string" ? params.alias : "";
-                    const listed = await call("workspace.mcp.list", {}).catch(() => null);
+                    const listed = await call("workspace.mcp.list", {});
                     if (isRecord(listed)) {
                         const defs = Array.isArray(listed.definitions) ? listed.definitions
                             : Array.isArray(listed.items) ? listed.items : [];
@@ -828,7 +827,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "model") {
                 if (!args[0]) {
-                    navigateToSettings("models");
+                    navigateToSettings("session");
                     return true;
                 }
                 const model = await sessionModel(call, args[0], args[1]);
@@ -837,7 +836,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "effort") {
                 if (!args[0]) {
-                    navigateToSettings("models");
+                    navigateToSettings("session");
                     return true;
                 }
                 const { effort, source, supported } = await sessionEffort(call, args[0]);
@@ -846,7 +845,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "persona") {
                 if (!args[0]) {
-                    navigateToSettings("personas");
+                    navigateToSettings("session");
                     return true;
                 }
                 const { currentValue, supported } = await sessionConfigOption(call, "persona", args[0]);
@@ -855,7 +854,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "child") {
                 if (!args[0]) {
-                    navigateToSettings("models");
+                    navigateToSettings("session");
                     return true;
                 }
                 const { currentValue } = await sessionConfigOption(call, "spawn_model", args[0]);
@@ -864,7 +863,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "mode") {
                 if (!args[0]) {
-                    navigateToSettings("general");
+                    navigateToSettings("session");
                     return true;
                 }
                 const { currentValue } = await sessionConfigOption(call, "mode", args[0]);
@@ -973,7 +972,15 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "session") {
                 const { workspaceName } = readIdentity();
-                await call("session/new", { _meta: { plurnk: { workspace: workspaceName, session: args[0] } } });
+                let exists = actions.hasSession?.(args[0]) === true;
+                if (!exists && actions.hasSession !== undefined) {
+                    const res = await call("workspace.sessions", {});
+                    const items = isRecord(res) && Array.isArray(res.sessions) ? res.sessions : [];
+                    exists = items.some((s) => isRecord(s) && s.name === args[0] && s.origin === "model" && !s.archived_at);
+                }
+                if (!exists) {
+                    await call("session/new", { _meta: { plurnk: { workspace: workspaceName, session: args[0] } } });
+                }
                 const targetPath = directoryPath({ kind: "session", workspace: workspaceName, session: args[0] });
                 showStatus(`Session: ${args[0]}.`);
                 if (targetPath) actions.navigate?.(targetPath);

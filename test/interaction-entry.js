@@ -3,7 +3,7 @@ import reviewRequests from "../web/session-review.js";
 
 await the.boot({ locale: "en", defaultLocale: "en", persistKeys: [] });
 const controls = $.clone("#main", "#session-controls");
-const review = reviewRequests(controls, false);
+const review = reviewRequests(controls);
 let gates = [];
 window.responses = [];
 window.review = (values) => {

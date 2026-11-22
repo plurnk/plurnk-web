@@ -70,28 +70,58 @@ export default async function verifySessionObserve(t) {
                     const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
 
-                    await t.test("{§web-session-input} {§web-session-status} {§web-session-approval} Shift+Tab toggles YOLO in composer and settles pending proposals", async () => {
-                        const gateResponses = [];
+                    await t.test("{§web-session-input} {§web-session-status} {§web-session-approval} {§web-session-commands} Shift+Tab toggles durable session approval mode in composer and settles pending proposals", async () => {
+                        let currentMode = "review";
+                        let pendingGateRequestId = null;
+                        const modeConfigOptions = () => [
+                            {
+                                configId: "mode",
+                                name: "Approval Policy",
+                                type: "select",
+                                currentValue: currentMode,
+                                options: [
+                                    { value: "review", name: "Review" },
+                                    { value: "accept", name: "Accept" },
+                                    { value: "reject", name: "Reject" },
+                                ],
+                            },
+                        ];
                         fixture.onAcp((input) => {
                             if (input.method === undefined) {
                                 assert.equal(input.error, undefined);
-                                gateResponses.push(input);
-                                setTimeout(() => {
-                                    fixture.push({
-                                        sessionUpdate: "state_update",
-                                        state: "running",
-                                        _meta: { plurnk: sessionMeta("running") },
-                                    });
-                                }, 20);
                                 return {};
                             }
                             if (input.method === "session/resume") {
                                 return {
                                     updates: [],
                                     result: {
-                                        configOptions: [],
+                                        configOptions: modeConfigOptions(),
                                         availableCommands: [],
                                         _meta: { plurnk: sessionMeta("idle") },
+                                    },
+                                };
+                            }
+                            if (input.method === "session/set_config_option" && input.params.configId === "mode") {
+                                currentMode = input.params.value;
+                                if (currentMode === "accept" && pendingGateRequestId !== null) {
+                                    const gateReqId = pendingGateRequestId;
+                                    pendingGateRequestId = null;
+                                    setTimeout(() => {
+                                        fixture.pushFrame({ jsonrpc: "2.0", method: "$/cancel_request", params: { id: gateReqId } });
+                                        fixture.push({
+                                            sessionUpdate: "config_option_update",
+                                            configOptions: modeConfigOptions(),
+                                        });
+                                        fixture.push({
+                                            sessionUpdate: "state_update",
+                                            state: "running",
+                                            _meta: { plurnk: sessionMeta("running") },
+                                        });
+                                    }, 15);
+                                }
+                                return {
+                                    result: {
+                                        configOptions: modeConfigOptions(),
                                     },
                                 };
                             }
@@ -100,14 +130,16 @@ export default async function verifySessionObserve(t) {
                         await page.goto(fixture.url);
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                         const draft = page.getByRole("textbox", { name: "Message", exact: true });
-                        const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
+                        const sendBtn = page.getByRole("button", { name: "Send", exact: true });
+                        const statusFooter = page.locator("#session-status");
                         const statusLine = page.locator("#session-status > [data-status-line]");
 
                         assert.equal(await statusLine.isVisible(), true, "connected session keeps steady status row visible without focus jump");
                         await draft.focus();
                         await draft.fill("Draft stays intact.");
                         assert.equal(await statusLine.isVisible(), true);
-                        assert.equal(await approval.getAttribute("aria-pressed"), "false");
+                        assert.equal(await statusFooter.getAttribute("data-approval-mode"), "review");
+                        assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🐹/u);
 
                         for (const lifecycle of ["idle", "running", "completed"]) {
                             fixture.push({
@@ -117,38 +149,41 @@ export default async function verifySessionObserve(t) {
                             });
                             await page.waitForFunction((expected) => document.querySelector("#session-status")?.dataset.lifecycle === expected, lifecycle);
                             await draft.focus();
-                            const before = await approval.getAttribute("aria-pressed");
+                            const before = await statusFooter.getAttribute("data-approval-mode");
+                            const expected = before === "accept" ? "review" : "accept";
                             await draft.press("Shift+Tab");
-                            const expected = before === "true" ? "false" : "true";
-                            assert.equal(await approval.getAttribute("aria-pressed"), expected, `${lifecycle}: Shift+Tab in composer toggles auto-approval`);
-                            assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), expected === "true" ? "Auto-approve" : "Review");
+                            await page.waitForFunction((exp) => document.querySelector("#session-status")?.dataset.approvalMode === exp, expected);
+                            assert.equal(await statusFooter.getAttribute("data-approval-mode"), expected, `${lifecycle}: Shift+Tab in composer toggles session approval mode`);
+                            assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), expected === "accept" ? /🔥/u : /🐹/u);
                             assert.equal(await page.evaluate(() => document.activeElement?.id), "session-message", `${lifecycle}: composer keeps focus`);
                             assert.equal(await draft.inputValue(), "Draft stays intact.");
                         }
 
-                        // Ended on completed with aria-pressed === "true" (idle->true, running->false, completed->true).
-                        assert.equal(await approval.getAttribute("aria-pressed"), "true");
+                        // Ended on completed with data-approval-mode === "accept" (idle->accept, running->review, completed->accept).
+                        assert.equal(await statusFooter.getAttribute("data-approval-mode"), "accept");
                         await draft.press("Escape");
                         assert.notEqual(await page.evaluate(() => document.activeElement?.id), "session-message", "Escape leaves the composer cleanly");
                         assert.equal(await draft.inputValue(), "Draft stays intact.", "Escape preserves unsent draft");
                         assert.equal(await statusLine.isVisible(), true);
 
-                        // Outside the composer when not interrupted, Shift+Tab preserves native backward focus traversal without toggling YOLO.
-                        const modelLink = page.getByRole("link", { name: "Model", exact: true });
-                        await modelLink.focus();
-                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-model");
+                        // Outside the composer when not interrupted, Shift+Tab preserves native backward focus traversal without toggling mode.
+                        const effortLink = page.getByRole("link", { name: "Effort", exact: true });
+                        await effortLink.focus();
+                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-effort");
                         await page.keyboard.press("Shift+Tab");
-                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-yolo", "Shift+Tab outside composer moves focus backward");
-                        assert.equal(await approval.getAttribute("aria-pressed"), "true", "backward focus navigation does not toggle YOLO");
+                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-model", "Shift+Tab outside composer moves focus backward");
+                        assert.equal(await statusFooter.getAttribute("data-approval-mode"), "accept", "backward focus navigation does not toggle mode");
 
-                        // Toggle Auto-approve off from composer and verify steady status bar stays visible without shifting.
+                        // Toggle approval mode back to review from composer and verify steady status bar stays visible without shifting.
                         await draft.focus();
                         await draft.press("Shift+Tab");
-                        assert.equal(await approval.getAttribute("aria-pressed"), "false");
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "review");
+                        assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🐹/u);
                         await page.locator("body > header > a").focus();
                         assert.equal(await statusLine.isVisible(), true, "steady status bar causes zero focus/blur layout shift");
 
-                        // When interrupted with a pending session/request_permission proposal, Shift+Tab anywhere auto-approves it.
+                        // When interrupted with a pending session/request_permission proposal, Shift+Tab switches mode to accept and settles the gate on the daemon.
+                        pendingGateRequestId = "gate-yolo-1";
                         fixture.pushFrame(permissionFrame("gate-yolo-1", {
                             logEntryId: 10,
                             sessionId: 9,
@@ -167,14 +202,11 @@ export default async function verifySessionObserve(t) {
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
                         await page.locator("body > header > a").focus();
                         await page.keyboard.press("Shift+Tab");
-                        await page.waitForFunction(() => document.querySelector("#session-yolo")?.getAttribute("aria-pressed") === "true");
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "accept");
+                        assert.match(await sendBtn.evaluate((el) => getComputedStyle(el, "::before").content), /🔥/u);
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-                        assert.equal(gateResponses.length, 1);
-                        assert.equal(gateResponses[0].id, "gate-yolo-1");
-                        assert.deepEqual(gateResponses[0].result, {
-                            outcome: { outcome: "selected", optionId: "allow_once" },
-                            _meta: { plurnk: { outcome: "client_yolo" } },
-                        });
+                        assert.equal(pendingGateRequestId, null);
+                        assert.equal(await page.locator('form[aria-label="Review requests"]').getAttribute("data-request-count"), "0");
                     });
 
                     await t.test("{§web-session-history} Reading Slate lands initial arrival at bottom, frames submitted turns at top without chasing streaming output, and surfaces jump-to-bottom / pending-review pill", async () => {
@@ -425,12 +457,23 @@ export default async function verifySessionObserve(t) {
                         await page.locator('#workspace-settings [data-settings-panel="help"] dl[aria-label="Keyboard shortcuts"]').waitFor({ state: "visible" });
                     });
 
-                    await t.test("{§web-onboarding} {§web-session-input} {§web-session-approval} {§web-session-commands} onboarding setup, prompt suggestions, @path openPaths, and ? forced review with e proposal editing", async () => {
-                        const recordedSetCalls = [];
-                        const deletedSessions = [];
+                    await t.test("{§web-session-input} {§web-session-approval} {§web-session-commands} prompt suggestions, @path openPaths, and ? forced review with e proposal editing", async () => {
                         const promptParams = [];
                         const gateResolutions = [];
-                        let activeModel = null;
+                        let currentMode = "review";
+                        const modeConfigOptions = () => [
+                            {
+                                configId: "mode",
+                                name: "Approval Policy",
+                                type: "select",
+                                currentValue: currentMode,
+                                options: [
+                                    { value: "review", name: "Review" },
+                                    { value: "accept", name: "Accept" },
+                                    { value: "reject", name: "Reject" },
+                                ],
+                            },
+                        ];
 
                         fixture.onAcp((input) => {
                             if (input.method === undefined) {
@@ -453,106 +496,25 @@ export default async function verifySessionObserve(t) {
                             if (input.method === "session/resume") {
                                 const meta = sessionMeta("idle");
                                 meta.workspace = { ...meta.workspace, projectRoot: "/srv/project", projectLabel: "conversation" };
-                                meta.status = { ...meta.status, model: activeModel };
                                 return {
                                     updates: [],
                                     result: {
-                                        configOptions: [],
+                                        configOptions: modeConfigOptions(),
                                         availableCommands: [],
                                         _meta: { plurnk: meta },
                                     },
                                 };
                             }
-                            if (input.method === "session/new") {
-                                return { result: { sessionId: "7#onboard-verify-1", configOptions: [] } };
-                            }
-                            if (input.method === "session/delete") {
-                                deletedSessions.push(input.params.sessionId);
-                                return { result: {} };
-                            }
-                            if (input.method === "session/set_config_option") {
-                                if (input.params.configId === "model") {
-                                    activeModel = { alias: input.params.value, provider: "deepseek", model: "deepseek-chat" };
-                                }
+                            if (input.method === "session/set_config_option" && input.params.configId === "mode") {
+                                currentMode = input.params.value;
                                 return {
                                     result: {
-                                        configOptions: [],
-                                        _meta: { plurnk: { status: { model: activeModel } } },
+                                        configOptions: modeConfigOptions(),
                                     },
                                 };
                             }
-                            if (input.method === "_plurnk/action") {
-                                const { kind, params } = input.params;
-                                if (kind === "models.local") {
-                                    return {
-                                        result: {
-                                            candidates: [
-                                                {
-                                                    runtime: "ollama",
-                                                    id: "qwen3:8b",
-                                                    label: "Ollama · qwen3:8b",
-                                                    alias: "ollama_qwen3",
-                                                    selector: "ollama/qwen3:8b",
-                                                    baseUrl: "http://127.0.0.1:11434/v1",
-                                                },
-                                            ],
-                                        },
-                                    };
-                                }
-                                if (kind === "service.env.list") {
-                                    return {
-                                        result: {
-                                            configFile: "/home/test/.config/plurnk/.env",
-                                            entries: [
-                                                { key: "DEEPSEEK_API_KEY", secret: true, configured: false, value: null, overriddenBy: null },
-                                            ],
-                                        },
-                                    };
-                                }
-                                if (kind === "models.list") {
-                                    return {
-                                        result: {
-                                            total: 1,
-                                            offset: 0,
-                                            items: [
-                                                { selector: "deepseek/deepseek-chat", provider: "deepseek", modelName: "DeepSeek Chat" },
-                                            ],
-                                        },
-                                    };
-                                }
-                                if (kind === "service.env.set") {
-                                    recordedSetCalls.push(params.updates);
-                                    return {
-                                        result: {
-                                            configFile: "/home/test/.config/plurnk/.env",
-                                            generation: 2,
-                                            entries: [],
-                                            shadowed: [{ key: "PLURNK_MODEL", overriddenBy: "process environment" }],
-                                        },
-                                    };
-                                }
-                            }
                             if (input.method === "session/prompt") {
                                 promptParams.push(input.params);
-                                if (input.params.sessionId === "7#onboard-verify-1") {
-                                    return {
-                                        updates: [
-                                            {
-                                                sessionUpdate: "agent_message_chunk",
-                                                messageId: "verify-reply",
-                                                content: { type: "text", text: "OK" },
-                                                _meta: { plurnk: { id: 1, coordinate: "1/1/2", loopId: 1, loopSeq: 1 } },
-                                            },
-                                            {
-                                                sessionUpdate: "state_update",
-                                                state: "idle",
-                                                stopReason: "end_turn",
-                                                _meta: { plurnk: { ...sessionMeta("completed"), terminal: { status: 200 } } },
-                                            },
-                                        ],
-                                        result: { messageId: input.params.messageId ?? "verify-1", stopReason: "end_turn" },
-                                    };
-                                }
                                 setTimeout(() => {
                                     fixture.pushFrame(permissionFrame("gate-edit-1", {
                                         logEntryId: 99,
@@ -579,34 +541,7 @@ export default async function verifySessionObserve(t) {
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                         const draft = page.getByRole("textbox", { name: "Message", exact: true });
 
-                        // 1. Open onboarding via /onboard, verify local + hosted discovery, write-only secret clearing, 1-turn verification, and shadowed warning.
-                        await draft.fill("/onboard");
-                        await page.getByRole("button", { name: "Send", exact: true }).click();
-                        const dialog = page.locator("#dialog-onboarding");
-                        await dialog.waitFor({ state: "visible" });
-                        await page.waitForFunction(() => document.querySelector("#dialog-onboarding article")?.getAttribute("aria-busy") !== "true");
-                        const sourceSelect = dialog.getByRole("combobox", { name: "Model source", exact: true });
-                        assert.match(await sourceSelect.locator("option").first().textContent(), /Ollama · qwen3:8b/u);
-                        await sourceSelect.selectOption("hosted:deepseek");
-                        const apiKeyInput = dialog.getByLabel("Provider API key", { exact: true });
-                        await apiKeyInput.fill("sk-deepseek-secret-token");
-                        await dialog.getByRole("button", { name: "Save and verify", exact: true }).click();
-                        await page.waitForFunction(() =>
-                            document.querySelector('#dialog-onboarding [data-text="onboarding-shadowed"]')?.textContent?.includes("PLURNK_MODEL is overridden by process environment"),
-                        );
-                        assert.equal(await apiKeyInput.inputValue(), "", "secret input clears immediately after submission");
-                        assert.doesNotMatch(await dialog.innerHTML(), /sk-deepseek-secret-token/u, "secret never enters DOM attributes or text");
-                        assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0, "onboarding stores zero secrets in Web Storage");
-                        assert.deepEqual(recordedSetCalls, [{
-                            DEEPSEEK_API_KEY: "sk-deepseek-secret-token",
-                            PLURNK_MODEL_deepseek: "deepseek/deepseek-chat",
-                            PLURNK_MODEL: "deepseek",
-                        }]);
-                        assert.deepEqual(deletedSessions, ["7#onboard-verify-1"], "temporary verification session is deleted");
-                        await dialog.locator("header [data-dialog-close]").click();
-                        await dialog.waitFor({ state: "hidden" });
-
-                        // 2. Prompt suggestions project chips and Tab-complete into an empty composer.
+                        // 1. Prompt suggestions project chips and Tab-complete into an empty composer.
                         fixture.push({
                             sessionUpdate: "prompt_suggestions_update",
                             suggestions: [{ prompt: [{ type: "text", text: "? Inspect @src/app.js carefully" }] }],
@@ -617,15 +552,16 @@ export default async function verifySessionObserve(t) {
                         await draft.press("Tab");
                         assert.equal(await draft.inputValue(), "? Inspect @src/app.js carefully");
 
-                        // 3. Enable YOLO, submit '? Inspect @src/app.js carefully', verify openPaths + forced manual review + 'e' shortcut + Ctrl+Enter submit.
+                        // 2. Enable session accept mode via Shift+Tab, submit '? Inspect @src/app.js carefully', verify proposalPolicy: "review" + openPaths + 'e' shortcut + Ctrl+Enter submit.
                         await draft.press("Shift+Tab");
-                        assert.equal(await page.getByRole("button", { name: "Automatic approval", exact: true }).getAttribute("aria-pressed"), "true");
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.approvalMode === "accept");
                         await page.getByRole("button", { name: "Send", exact: true }).click();
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "interrupted");
                         const mainPrompt = promptParams.find((p) => p.sessionId === "7#session1");
                         assert.ok(mainPrompt);
                         assert.equal(mainPrompt.prompt[0].text, "Inspect @src/app.js carefully");
                         assert.deepEqual(mainPrompt._meta?.plurnk?.openPaths, ["src/app.js"]);
+                        assert.equal(mainPrompt._meta?.plurnk?.proposalPolicy, "review");
 
                         // Ensure focus is outside text-entry controls, then press 'e' to select Edit and focus [data-proposal-edit-body].
                         await page.locator("body > header > a").focus();

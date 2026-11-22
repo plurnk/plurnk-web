@@ -4,14 +4,17 @@ import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses
 import describeFailure from "./failure.js";
 import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
-import { createOnboardingController } from "./onboarding.js";
 import { primaryModifierLabel } from "./session-commands.js";
-import { listModels, modelLabel, sessionEffort, sessionModel } from "./session-models.js";
+import { listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
 import { isRecord } from "./session-translator.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
- * @typedef {"general" | "models" | "mcp" | "skills" | "schedule" | "personas" | "members" | "env" | "help"} SettingsSection
+ * @typedef {"workspace" | "session" | "models" | "mcp" | "skills" | "schedule" | "personas" | "members" | "env" | "help"} SettingsSection
+ */
+
+/**
+ * @typedef {"mcp" | "skills" | "schedule" | "personas" | "members"} WorkspaceFamily
  */
 
 /**
@@ -24,15 +27,19 @@ import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
  * }} WorkspaceSettingsContext
  */
 
-const SECTIONS = /** @type {const} */ (["general", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help"]);
+const SECTIONS = /** @type {const} */ (["workspace", "session", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help"]);
 const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members"]);
 
 /** @param {unknown} value @returns {value is SettingsSection} */
 export const isSettingsSection = (value) =>
     typeof value === "string" && /** @type {readonly string[]} */ (SECTIONS).includes(value);
 
+/** @param {unknown} value @returns {value is WorkspaceFamily} */
+const isWorkspaceFamily = (value) =>
+    typeof value === "string" && /** @type {readonly string[]} */ (FAMILIES).includes(value);
+
 /**
- * @param {"mcp" | "skills" | "schedule" | "personas" | "members"} family
+ * @param {WorkspaceFamily} family
  * @param {Record<string, unknown>} item
  * @returns {string}
  */
@@ -93,7 +100,191 @@ function formatFamilyDetails(family, item) {
 }
 
 /**
- * {§web-workspace-settings} Mounts workspace subsystem management inside `<article id="workspace-settings">`.
+ * {§web-workspace-settings} Table-driven Functionality save contracts across all five workspace families.
+ * @type {readonly {
+ *   readonly family: WorkspaceFamily,
+ *   readonly selector: string,
+ *   readonly action: string,
+ *   readonly build: (form: HTMLFormElement) => { readonly label: string, readonly payload: Record<string, unknown> },
+ *   readonly clear: (form: HTMLFormElement) => void,
+ * }[]}
+ */
+const FAMILY_SAVE_SPECS = [
+    {
+        family: "mcp",
+        selector: "[data-mcp-save-form]",
+        action: "workspace.mcp.replace",
+        build(form) {
+            const data = new FormData(form);
+            const transport = String(data.get("transport") ?? "stdio");
+            const alias = String(data.get("alias") ?? "").trim();
+            if (!alias) throw new Error("Enter a server alias.");
+            if (transport === "streamable-http") {
+                const url = String(data.get("url") ?? "").trim();
+                if (!url) throw new Error("Enter an HTTP(S) endpoint URL.");
+                const authMode = String(data.get("authMode") ?? "none");
+                const bearerToken = String(data.get("bearerToken") ?? "").trim();
+                return {
+                    label: alias,
+                    payload: {
+                        alias,
+                        type: "streamable-http",
+                        url,
+                        ...(authMode === "bearer"
+                            ? { authorization: { type: "bearer", token: bearerToken } }
+                            : authMode === "oauth"
+                                ? { authorization: { type: "oauth" } }
+                                : {}),
+                    },
+                };
+            }
+            const command = String(data.get("command") ?? "").trim();
+            if (!command) throw new Error("Enter a server command.");
+            const rawArgs = String(data.get("args") ?? "").trim();
+            const args = rawArgs ? rawArgs.split(/\s+/u) : [];
+            const cwd = String(data.get("cwd") ?? "").trim();
+            return {
+                label: alias,
+                payload: {
+                    alias,
+                    type: "stdio",
+                    command,
+                    ...(args.length > 0 ? { args } : {}),
+                    ...(cwd ? { cwd } : {}),
+                },
+            };
+        },
+        clear(form) {
+            for (const input of $$(form, "input")) {
+                if (input instanceof HTMLInputElement) input.value = "";
+            }
+        },
+    },
+    {
+        family: "skills",
+        selector: "[data-skills-save-form]",
+        action: "workspace.skills.replace",
+        build(form) {
+            const data = new FormData(form);
+            const alias = String(data.get("alias") ?? "").trim();
+            const source = String(data.get("source") ?? "").trim();
+            const ref = String(data.get("ref") ?? "").trim();
+            if (!alias || !source) throw new Error("Enter both a skill name and source.");
+            return {
+                label: alias,
+                payload: { alias, source, ...(ref ? { ref } : {}) },
+            };
+        },
+        clear(form) {
+            for (const input of $$(form, "input")) {
+                if (input instanceof HTMLInputElement) input.value = "";
+            }
+        },
+    },
+    {
+        family: "schedule",
+        selector: "[data-schedule-save-form]",
+        action: "workspace.schedule.replace",
+        build(form) {
+            const data = new FormData(form);
+            const alias = String(data.get("alias") ?? "").trim();
+            const rawTarget = String(data.get("target") ?? "").trim();
+            const rule = String(data.get("rule") ?? "").trim();
+            const prompt = String(data.get("prompt") ?? "").trim();
+            if (!alias || !rawTarget || !rule || !prompt) {
+                throw new Error("Complete name, target session, rule, and prompt.");
+            }
+            const target = rawTarget.startsWith("session://") ? rawTarget : `session://${rawTarget}`;
+            return {
+                label: alias,
+                payload: { alias, target, rule, prompt },
+            };
+        },
+        clear(form) {
+            for (const field of $$(form, 'input[name="alias"], input[name="rule"], textarea[name="prompt"]')) {
+                if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = "";
+            }
+        },
+    },
+    {
+        family: "personas",
+        selector: "[data-personas-save-form]",
+        action: "workspace.personas.replace",
+        build(form) {
+            const data = new FormData(form);
+            const mode = String(data.get("personaMode") ?? "inline");
+            const alias = String(data.get("alias") ?? "").trim();
+            const model = String(data.get("model") ?? "").trim();
+            const effort = String(data.get("effort") ?? "").trim();
+            if (!alias) throw new Error("Enter a persona name.");
+            if (mode === "source") {
+                const source = String(data.get("source") ?? "").trim();
+                if (!source) throw new Error("Enter a Markdown file path.");
+                return {
+                    label: alias,
+                    payload: {
+                        alias,
+                        source,
+                        ...(model ? { model } : {}),
+                        ...(effort ? { effort } : {}),
+                    },
+                };
+            }
+            const description = String(data.get("description") ?? "").trim();
+            const body = String(data.get("body") ?? "").trim();
+            if (!description || !body) {
+                throw new Error("Enter both a persona description and instructions.");
+            }
+            return {
+                label: alias,
+                payload: {
+                    alias,
+                    description,
+                    body,
+                    ...(model ? { model } : {}),
+                    ...(effort ? { effort } : {}),
+                },
+            };
+        },
+        clear(form) {
+            for (const field of $$(form, "input, textarea")) {
+                if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = "";
+            }
+            const effortField = $(form, 'select[name="effort"]');
+            if (effortField instanceof HTMLSelectElement) effortField.value = "";
+        },
+    },
+    {
+        family: "members",
+        selector: "[data-members-save-form]",
+        action: "workspace.members.add",
+        build(form) {
+            const rawFiles = String(new FormData(form).get("files") ?? "").trim();
+            const files = rawFiles.split(/\s+/u).filter((p) => p.length > 0);
+            if (files.length === 0) throw new Error("Enter at least one file path or glob pattern.");
+            return {
+                label: files.join(", "),
+                payload: { files },
+            };
+        },
+        clear(form) {
+            for (const input of $$(form, "input")) {
+                if (input instanceof HTMLInputElement) input.value = "";
+            }
+        },
+    },
+];
+
+/** @param {Element} form */
+function collapseEnclosingDisclosure(form) {
+    const disclosure = form.closest("details[data-family-disclosure]");
+    if (disclosure instanceof HTMLDetailsElement) {
+        disclosure.open = false;
+    }
+}
+
+/**
+ * {§web-workspace-settings} Mounts workspace and session management inside `<article id="workspace-settings">`.
  * @param {HTMLElement} article
  * @param {() => WorkspaceSettingsContext} getContext
  * @param {{ updateHash?: boolean, initialQuery?: string, initialHelpFilter?: string, initialEnvScope?: "workspace" | "session" }} [options]
@@ -102,7 +293,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     /** @type {Element | null} */
     let envPanel = null;
     /** @type {SettingsSection} */
-    let activeSection = "general";
+    let activeSection = "workspace";
     /** @type {"workspace" | "session"} */
     let envListScope = initialEnvScope === "session" ? "session" : "workspace";
     let modelsSearchQuery = initialQuery;
@@ -114,17 +305,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     let modelsLookup = null;
     /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas" | "members", alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
-
-    const onboarding = createOnboardingController(() => ({
-        auth: getContext().auth,
-        signal: getContext().signal,
-        onConfigured: async (alias) => {
-            if (getContext().sessionName !== null) {
-                await invoke("session/set_config_option", { configId: "model", value: alias }, { requireSession: true }).catch(() => {});
-            }
-            await refreshSection("models");
-        },
-    }));
+    /** @type {Map<string, { readonly efforts: readonly string[], readonly defaultEffort: string }>} */
+    const effortsBySelector = new Map();
 
     function syncLoadingState() {
         the(article, "ws-settings-loading", busy || refreshDepth > 0 ? "true" : null);
@@ -181,7 +363,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     }
 
     /**
-     * @param {"mcp" | "skills" | "schedule" | "personas" | "members"} family
+     * @param {WorkspaceFamily} family
      * @param {unknown} res
      */
     function renderFamilyList(family, res) {
@@ -222,7 +404,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     }
 
     /**
-     * @param {"mcp" | "skills" | "schedule" | "personas" | "members"} family
+     * @param {WorkspaceFamily} family
      * @param {unknown} res
      */
     function renderCandidates(family, res) {
@@ -256,47 +438,58 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         the(panel, { "candidate-count": candidates.length });
     }
 
-    /** @param {unknown} resumeOrSetResult */
-    function renderSessionPersonaOptions(resumeOrSetResult) {
-        const form = $(article, "form[data-session-persona-form]");
-        const select = form ? $(form, 'select[name="persona"]') : null;
-        if (!(form instanceof HTMLFormElement) || !(select instanceof HTMLSelectElement)) return;
-        const optionsList = isRecord(resumeOrSetResult) && Array.isArray(resumeOrSetResult.configOptions)
-            ? resumeOrSetResult.configOptions
-            : [];
-        const personaOption = optionsList.find((opt) => isRecord(opt) && opt.configId === "persona");
-        if (!isRecord(personaOption) || !Array.isArray(personaOption.options)) {
-            form.hidden = true;
-            return;
-        }
-        const choices = personaOption.options.flatMap((entry) => {
-            if (!isRecord(entry) || typeof entry.value !== "string" || typeof entry.name !== "string") return [];
-            const desc = typeof entry.description === "string" && entry.description.length > 0 ? ` — ${entry.description}` : "";
-            return [{ value: entry.value, label: `${entry.name}${desc}` }];
-        });
-        $.cloneEach(select, "#setting-option", choices, (optEl, choice) => {
-            the(optEl, {
-                "option-value": choice.value,
-                "option-label": choice.label,
-                "option-disabled": null,
+    /** @type {{ model: string, effort: string, spawnModel: string, persona: string, mode: string }} */
+    let currentSessionValues = { model: "", effort: "", spawnModel: "inherit", persona: "none", mode: "review" };
+
+    /**
+     * @param {HTMLSelectElement} effortSelect
+     * @param {string} selectedModel
+     * @param {string} preferredEffort
+     * @returns {string}
+     */
+    function syncSessionEffortSelect(effortSelect, selectedModel, preferredEffort) {
+        const entry = effortsBySelector.get(selectedModel);
+        const supported = entry ? entry.efforts : [];
+        if (supported.length === 0) {
+            $.cloneEach(effortSelect, "#setting-option", [{ value: "", label: "Not applicable" }], (optEl, choice) => {
+                the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": "" });
             });
-        });
-        if (typeof personaOption.currentValue === "string") {
-            select.value = personaOption.currentValue;
+            effortSelect.disabled = true;
+            effortSelect.value = "";
+            return "";
         }
-        form.hidden = false;
+        const choices = supported.map((v) => ({ value: v, label: v }));
+        $.cloneEach(effortSelect, "#setting-option", choices, (optEl, choice) => {
+            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+        });
+        effortSelect.disabled = false;
+        const resolved = preferredEffort && supported.includes(preferredEffort)
+            ? preferredEffort
+            : entry?.defaultEffort && supported.includes(entry.defaultEffort)
+                ? entry.defaultEffort
+                : (supported[0] ?? "");
+        effortSelect.value = resolved;
+        return resolved;
     }
 
     /**
      * @param {unknown} sessionRes
-     * @param {readonly { readonly alias: string, readonly provider: string, readonly model: string }[]} aliases
-     * @param {readonly { readonly selector: string, readonly modelName: string, readonly readiness: { readonly ready: boolean } }[]} catalogItems
+     * @param {readonly { readonly alias: string, readonly provider: string, readonly model: string, readonly effort?: string }[]} aliases
+     * @param {readonly { readonly selector: string, readonly modelName: string, readonly capabilities: { readonly efforts: readonly string[] }, readonly readiness: { readonly ready: boolean } }[]} catalogItems
      */
-    function renderSessionModelControls(sessionRes, aliases, catalogItems) {
-        const form = $(article, "form[data-session-model-form]");
+    function renderSessionConfigControls(sessionRes, aliases, catalogItems) {
+        const form = $(article, "form[data-session-config-form]");
         const modelSelect = form ? $(form, 'select[name="model"]') : null;
         const effortSelect = form ? $(form, 'select[name="effort"]') : null;
-        if (!(form instanceof HTMLFormElement) || !(modelSelect instanceof HTMLSelectElement) || !(effortSelect instanceof HTMLSelectElement)) {
+        const spawnSelect = form ? $(form, 'select[name="spawnModel"]') : null;
+        const personaSelect = form ? $(form, 'select[name="persona"]') : null;
+        const modeSelect = form ? $(form, 'select[name="mode"]') : null;
+        if (!(form instanceof HTMLFormElement)
+            || !(modelSelect instanceof HTMLSelectElement)
+            || !(effortSelect instanceof HTMLSelectElement)
+            || !(spawnSelect instanceof HTMLSelectElement)
+            || !(personaSelect instanceof HTMLSelectElement)
+            || !(modeSelect instanceof HTMLSelectElement)) {
             return;
         }
         if (getContext().sessionName === null || !isRecord(sessionRes) || !Array.isArray(sessionRes.configOptions)) {
@@ -305,6 +498,39 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         }
         const modelOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "model");
         const thoughtOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "thought_level");
+        const spawnOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "spawn_model");
+        const personaOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "persona");
+        const modeOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "mode");
+
+        effortsBySelector.clear();
+        /** @type {Map<string, readonly string[]>} */
+        const catalogEfforts = new Map();
+        for (const m of catalogItems) {
+            catalogEfforts.set(m.selector, m.capabilities.efforts);
+            effortsBySelector.set(m.selector, { efforts: m.capabilities.efforts, defaultEffort: "" });
+        }
+        for (const a of aliases) {
+            const routeSelector = `${a.provider}/${a.model}`;
+            const routeEfforts = catalogEfforts.get(routeSelector) ?? [];
+            effortsBySelector.set(a.alias, { efforts: routeEfforts, defaultEffort: a.effort ?? "" });
+        }
+
+        const thoughtSupported = isRecord(thoughtOption) && Array.isArray(thoughtOption.options)
+            ? thoughtOption.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
+            : [];
+        const currentModel = isRecord(modelOption) && typeof modelOption.currentValue === "string" && modelOption.currentValue
+            ? modelOption.currentValue
+            : "";
+        if (currentModel && thoughtSupported.length > 0) {
+            const existing = effortsBySelector.get(currentModel);
+            if (!existing || existing.efforts.length === 0) {
+                effortsBySelector.set(currentModel, {
+                    efforts: thoughtSupported,
+                    defaultEffort: existing?.defaultEffort ?? "",
+                });
+            }
+        }
+
         const seen = new Set();
         /** @type {Array<{ value: string, label: string }>} */
         const modelChoices = [];
@@ -328,27 +554,91 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 addChoice(m.selector, `${m.selector} (${m.modelName})`);
             }
         }
-        const currentModel = isRecord(modelOption) && typeof modelOption.currentValue === "string" ? modelOption.currentValue : "";
         if (currentModel) addChoice(currentModel, currentModel);
         if (modelChoices.length === 0) {
-            form.hidden = true;
-            return;
+            addChoice("none", "No model configured");
         }
         $.cloneEach(modelSelect, "#setting-option", modelChoices, (optEl, choice) => {
             the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
         });
-        if (currentModel) modelSelect.value = currentModel;
+        const resolvedModel = currentModel && seen.has(currentModel) ? currentModel : (modelChoices[0]?.value ?? "");
+        modelSelect.value = resolvedModel;
 
-        const supportedEfforts = isRecord(thoughtOption) && Array.isArray(thoughtOption.options)
-            ? thoughtOption.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
-            : [];
         const currentEffort = isRecord(thoughtOption) && typeof thoughtOption.currentValue === "string" ? thoughtOption.currentValue : "";
-        const effortChoices = [{ value: "", label: "Effort (default)" }, ...supportedEfforts.map((v) => ({ value: v, label: v }))];
-        $.cloneEach(effortSelect, "#setting-option", effortChoices, (optEl, choice) => {
+        const resolvedEffort = syncSessionEffortSelect(effortSelect, resolvedModel, currentEffort);
+
+        const spawnSeen = new Set(["inherit"]);
+        /** @type {Array<{ value: string, label: string }>} */
+        const spawnChoices = [{ value: "inherit", label: "Inherit session model" }];
+        if (isRecord(spawnOption) && Array.isArray(spawnOption.options)) {
+            for (const entry of spawnOption.options) {
+                if (isRecord(entry) && typeof entry.value === "string" && typeof entry.name === "string" && !spawnSeen.has(entry.value)) {
+                    spawnSeen.add(entry.value);
+                    spawnChoices.push({ value: entry.value, label: entry.name });
+                }
+            }
+        } else {
+            for (const choice of modelChoices) {
+                if (choice.value !== "none" && !spawnSeen.has(choice.value)) {
+                    spawnSeen.add(choice.value);
+                    spawnChoices.push(choice);
+                }
+            }
+        }
+        const currentSpawn = isRecord(spawnOption) && typeof spawnOption.currentValue === "string" && spawnOption.currentValue
+            ? spawnOption.currentValue
+            : "inherit";
+        if (!spawnSeen.has(currentSpawn)) {
+            spawnSeen.add(currentSpawn);
+            spawnChoices.push({ value: currentSpawn, label: currentSpawn });
+        }
+        $.cloneEach(spawnSelect, "#setting-option", spawnChoices, (optEl, choice) => {
             the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
         });
-        effortSelect.disabled = supportedEfforts.length === 0;
-        effortSelect.value = supportedEfforts.includes(currentEffort) ? currentEffort : "";
+        spawnSelect.value = currentSpawn;
+
+        const personaChoices = isRecord(personaOption) && Array.isArray(personaOption.options) && personaOption.options.length > 0
+            ? personaOption.options.flatMap((entry) => {
+                if (!isRecord(entry) || typeof entry.value !== "string" || typeof entry.name !== "string") return [];
+                const desc = typeof entry.description === "string" && entry.description.length > 0 ? ` — ${entry.description}` : "";
+                return [{ value: entry.value, label: `${entry.name}${desc}` }];
+            })
+            : [{ value: "none", label: "None (default)" }];
+        const currentPersona = isRecord(personaOption) && typeof personaOption.currentValue === "string" && personaOption.currentValue
+            ? personaOption.currentValue
+            : "none";
+        $.cloneEach(personaSelect, "#setting-option", personaChoices, (optEl, choice) => {
+            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+        });
+        personaSelect.value = personaChoices.some((c) => c.value === currentPersona) ? currentPersona : "none";
+
+        const fallbackModes = [
+            { value: "review", label: "Ask before external mutations (review)" },
+            { value: "accept", label: "Auto-approve all operations (accept)" },
+            { value: "reject", label: "Deny gated operations (reject)" },
+        ];
+        const modeChoices = isRecord(modeOption) && Array.isArray(modeOption.options) && modeOption.options.length > 0
+            ? modeOption.options.flatMap((entry) =>
+                isRecord(entry) && typeof entry.value === "string" && typeof entry.name === "string"
+                    ? [{ value: entry.value, label: `${entry.name} (${entry.value})` }]
+                    : [])
+            : fallbackModes;
+        $.cloneEach(modeSelect, "#setting-option", modeChoices, (optEl, choice) => {
+            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+        });
+        const currentMode = isRecord(modeOption) && typeof modeOption.currentValue === "string" && modeOption.currentValue
+            ? modeOption.currentValue
+            : "review";
+        const resolvedMode = modeChoices.some((c) => c.value === currentMode) ? currentMode : (modeChoices[0]?.value ?? "review");
+        modeSelect.value = resolvedMode;
+
+        currentSessionValues = {
+            model: resolvedModel,
+            effort: resolvedEffort,
+            spawnModel: currentSpawn,
+            persona: personaSelect.value,
+            mode: resolvedMode,
+        };
         form.hidden = false;
     }
 
@@ -386,15 +676,23 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
 
     /**
      * @param {SettingsSection} section
-     * @param {{ catalogOnly?: boolean }} [opts]
      */
-    async function refreshSection(section, opts = {}) {
-        if (section === "general" || section === "help") {
-            if (section === "help") applyHelpFilter();
+    async function refreshSection(section) {
+        if (section === "workspace") {
+            if (!busy) setFeedback(false, "", "");
+            return;
+        }
+        if (section === "help") {
+            applyHelpFilter();
             if (!busy) setFeedback(false, "", "");
             return;
         }
         const ctx = getContext();
+        if (section === "session" && ctx.sessionName === null) {
+            renderSessionConfigControls(null, [], []);
+            if (!busy) setFeedback(false, "", "");
+            return;
+        }
         if (!busy) {
             the(article, { "ws-settings-message": "", "ws-settings-recovery": "" });
         }
@@ -403,6 +701,19 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         /** @type {AbortController | null} */
         let currentModelsReq = null;
         try {
+            if (section === "session") {
+                const callSession = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
+                    managementAction(kind, params, `${ctx.workspaceId}#${ctx.sessionName}`, ctx.auth, ctx.signal, {
+                        workspaceId: ctx.workspaceId,
+                    });
+                const [{ aliases, catalog }, sessionRes] = await Promise.all([
+                    listModels(callSession),
+                    callSession("session/options"),
+                ]);
+                ctx.signal.throwIfAborted();
+                renderSessionConfigControls(sessionRes, aliases, catalog.items);
+                return;
+            }
             if (section === "models") {
                 modelsLookup?.abort();
                 const req = modelsLookup = new AbortController();
@@ -412,12 +723,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", ctx.auth, signal, {
                         workspaceId: ctx.workspaceId,
                     });
-                const [{ aliases, catalog }, sessionRes] = await Promise.all([
-                    listModels(callModels, modelsSearchQuery),
-                    ctx.sessionName !== null && !opts.catalogOnly
-                        ? callModels("session/resume", { replayFrom: null }).catch(() => null)
-                        : Promise.resolve(null),
-                ]);
+                const { aliases, catalog } = await listModels(callModels, modelsSearchQuery);
                 signal.throwIfAborted();
                 const modelsPanel = $(article, '[data-settings-panel="models"]');
                 const aliasBody = modelsPanel ? $(modelsPanel, "[data-models-alias-rows]") : null;
@@ -450,9 +756,6 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                         "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search.",
                     });
                 }
-                if (!opts.catalogOnly) {
-                    renderSessionModelControls(sessionRes, aliases, catalog.items);
-                }
                 return;
             }
             if (section === "env") {
@@ -462,22 +765,6 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 });
                 ctx.signal.throwIfAborted();
                 if (envPanel) populateEnvPanel(envPanel, res, envListScope);
-                return;
-            }
-            if (section === "personas") {
-                const personaSessionForm = $(article, "form[data-session-persona-form]");
-                if (ctx.sessionName === null && personaSessionForm instanceof HTMLElement) {
-                    personaSessionForm.hidden = true;
-                }
-                const [listRes, sessionRes] = await Promise.all([
-                    invoke("workspace.personas.list", {}),
-                    ctx.sessionName !== null
-                        ? invoke("session/resume", {}, { requireSession: true }).catch(() => null)
-                        : Promise.resolve(null),
-                ]);
-                ctx.signal.throwIfAborted();
-                renderFamilyList("personas", listRes);
-                if (sessionRes !== null) renderSessionPersonaOptions(sessionRes);
                 return;
             }
             const res = await invoke(`workspace.${section}.list`, {});
@@ -492,6 +779,14 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         } finally {
             refreshDepth = Math.max(0, refreshDepth - 1);
             syncLoadingState();
+        }
+    }
+
+    function prefillScheduleTarget() {
+        const scheduleTarget = $(article, '[data-schedule-save-form] input[name="target"]');
+        const ctx = getContext();
+        if (scheduleTarget instanceof HTMLInputElement && scheduleTarget.value === "" && ctx.sessionName) {
+            scheduleTarget.value = ctx.sessionName;
         }
     }
 
@@ -512,24 +807,25 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             }
         }
         if (pushHash && updateHash && typeof history === "object") {
-            const nextUrl = section === "general"
+            const nextUrl = section === "workspace"
                 ? `${location.pathname}${location.search}`
                 : `${location.pathname}${location.search}#${section}`;
             if (`${location.pathname}${location.search}${location.hash}` !== nextUrl) {
                 history.replaceState(null, "", nextUrl);
             }
         }
-        const scheduleTarget = $(article, '[data-schedule-save-form] input[name="target"]');
-        const ctx = getContext();
-        if (section === "schedule" && scheduleTarget instanceof HTMLInputElement && scheduleTarget.value === "" && ctx.sessionName) {
-            scheduleTarget.value = ctx.sessionName;
-        }
+        if (section === "schedule") prefillScheduleTarget();
         void refreshSection(section);
     }
 
     function ensureMounted() {
         if (mounted) return;
         mounted = true;
+        const sessionConfigOutlet = $(article, "[data-session-config-outlet]");
+        if (sessionConfigOutlet) {
+            const clonedSessionCfg = $.clone(sessionConfigOutlet, "#session-config-controls", { position: "beforebegin" });
+            if (clonedSessionCfg) sessionConfigOutlet.remove();
+        }
         if (!$(article, '[data-settings-panel="mcp"]')) {
             const host = $(article, "[data-settings-subsystems]") ?? article;
             $.clone(host, "#workspace-settings-subsystems");
@@ -570,22 +866,17 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         }
         applyHelpFilter();
 
-        on(article, "click", "[data-open-model-setup]", () => {
-            if (!busy) setFeedback(false, "", "");
-            void onboarding.open();
-        });
-
         on(article, "submit", "[data-models-search-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             modelsSearchQuery = String(new FormData(form).get("q") ?? "").trim();
-            void refreshSection("models", { catalogOnly: true });
+            void refreshSection("models");
         });
 
         on(article, "input", '[data-models-search-form] input[name="q"]', (_event, input) => {
             if (!(input instanceof HTMLInputElement)) return;
             modelsSearchQuery = input.value.trim();
-            void refreshSection("models", { catalogOnly: true });
+            void refreshSection("models");
         });
 
         on(article, "submit", "[data-model-alias-row-form]", (event, form) => {
@@ -603,22 +894,80 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             });
         });
 
-        on(article, "submit", "[data-session-model-form]", (event, form) => {
+        on(article, "submit", "form[data-session-title-form]", (event, form) => {
+            event.preventDefault();
+            if (!(form instanceof HTMLFormElement)) return;
+            const rawTitle = String(new FormData(form).get("title") ?? "").trim();
+            if (!rawTitle) return;
+            void runMutation(async () => {
+                await invoke("session/set_title", { title: rawTitle }, { requireSession: true });
+                return `Title: ${rawTitle}.`;
+            });
+        });
+
+        on(article, "click", "[data-session-fork]", () => {
+            void runMutation(async () => {
+                const forked = await invoke("session/fork", {}, { requireSession: true });
+                const rawId = isRecord(forked) && typeof forked.sessionId === "string" ? forked.sessionId : "";
+                const forkedName = rawId.includes("#") ? (rawId.split("#")[1] ?? "") : "";
+                const ctx = getContext();
+                if (forkedName) {
+                    const dest = directoryPath({ kind: "session", workspace: ctx.workspaceName, session: forkedName });
+                    if (dest !== null) {
+                        location.assign(dest);
+                        return `Forked #${forkedName}.`;
+                    }
+                }
+                return "Session forked.";
+            });
+        });
+
+        on(article, "change", '[data-session-config-form] select[name="model"]', (_event, select) => {
+            if (!(select instanceof HTMLSelectElement)) return;
+            const form = select.closest("form[data-session-config-form]");
+            const effortField = form ? $(form, 'select[name="effort"]') : null;
+            if (effortField instanceof HTMLSelectElement) {
+                syncSessionEffortSelect(effortField, select.value, effortField.value);
+            }
+        });
+
+        on(article, "submit", "[data-session-config-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const data = new FormData(form);
             const selectedModel = String(data.get("model") ?? "").trim();
             const selectedEffort = String(data.get("effort") ?? "").trim();
-            if (!selectedModel) return;
+            const selectedSpawn = String(data.get("spawnModel") ?? "inherit").trim() || "inherit";
+            const selectedPersona = String(data.get("persona") ?? "none").trim() || "none";
+            const selectedMode = String(data.get("mode") ?? "review").trim() || "review";
             void runMutation(async () => {
                 const callSession = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
                     invoke(kind, params, { requireSession: true });
-                const route = await sessionModel(callSession, selectedModel, selectedEffort || undefined);
-                if (!selectedEffort && route?.effort) {
-                    await sessionEffort(callSession).catch(() => {});
+                /** @type {string[]} */
+                const summaries = [];
+                const modelChanged = Boolean(selectedModel && selectedModel !== "none" && selectedModel !== currentSessionValues.model);
+                const effortChanged = Boolean(selectedEffort && selectedEffort !== currentSessionValues.effort);
+                if (modelChanged) {
+                    const route = await sessionModel(callSession, selectedModel, selectedEffort || undefined);
+                    summaries.push(`Model: ${modelLabel(route)}${route?.effort ? ` (${route.effort})` : ""}`);
+                } else if (effortChanged) {
+                    const effRes = await sessionEffort(callSession, selectedEffort);
+                    summaries.push(`Effort: ${effRes.effort ?? selectedEffort}`);
                 }
-                await refreshSection("models");
-                return `Model: ${modelLabel(route)}${route?.effort ? ` (${route.effort})` : ""}.`;
+                if (selectedSpawn !== currentSessionValues.spawnModel) {
+                    const { currentValue } = await sessionConfigOption(callSession, "spawn_model", selectedSpawn);
+                    summaries.push(`Child model: ${currentValue || selectedSpawn}`);
+                }
+                if (selectedPersona !== currentSessionValues.persona) {
+                    const { currentValue } = await sessionConfigOption(callSession, "persona", selectedPersona);
+                    summaries.push(`Persona: ${currentValue || selectedPersona}`);
+                }
+                if (selectedMode !== currentSessionValues.mode) {
+                    const { currentValue } = await sessionConfigOption(callSession, "mode", selectedMode);
+                    summaries.push(`Approval policy: ${currentValue || selectedMode}`);
+                }
+                await refreshSection("session");
+                return summaries.length > 0 ? `${summaries.join(" · ")}.` : "Session settings saved.";
             });
         });
 
@@ -628,14 +977,11 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             applyHelpFilter();
         });
 
-        on(article, "click", '[data-dialog-target^="dialog-settings-"]', (_event, btn) => {
+        on(article, "click", "details[data-family-disclosure] > summary", (_event, summary) => {
             if (!busy) setFeedback(false, "", "");
-            if (btn.getAttribute("data-dialog-target") === "dialog-settings-schedule") {
-                const scheduleTarget = $(article, '[data-schedule-save-form] input[name="target"]');
-                const ctx = getContext();
-                if (scheduleTarget instanceof HTMLInputElement && scheduleTarget.value === "" && ctx.sessionName) {
-                    scheduleTarget.value = ctx.sessionName;
-                }
+            const details = summary.parentElement;
+            if (details instanceof HTMLDetailsElement && details.dataset.familyDisclosure === "schedule" && !details.open) {
+                prefillScheduleTarget();
             }
         });
 
@@ -677,8 +1023,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             if (!(form instanceof HTMLFormElement)) return;
             const panel = form.closest("[data-settings-panel]");
             const rawFamily = panel instanceof HTMLElement ? panel.dataset.settingsPanel : "";
-            if (!rawFamily || !/** @type {readonly string[]} */ (FAMILIES).includes(rawFamily)) return;
-            const family = /** @type {"mcp" | "skills" | "schedule" | "personas" | "members"} */ (rawFamily);
+            if (!isWorkspaceFamily(rawFamily)) return;
+            const family = rawFamily;
             const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
             const operation = submitter?.value ?? "";
             const alias = String(new FormData(form).get("alias") ?? "").trim();
@@ -686,7 +1032,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             void runMutation(async () => {
                 if (operation === "oauth" && family === "mcp") {
                     let redirectUrl = "http://127.0.0.1/callback";
-                    const listed = await invoke("workspace.mcp.list", {}).catch(() => null);
+                    const listed = await invoke("workspace.mcp.list", {});
                     if (isRecord(listed) && Array.isArray(listed.definitions)) {
                         const found = listed.definitions.find((entry) => isRecord(entry) && entry.alias === alias);
                         const def = isRecord(found) && isRecord(found.definition) ? found.definition : null;
@@ -712,10 +1058,6 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 await invoke(`workspace.${family}.${operation}`, family === "members" ? { file: alias } : { alias });
                 const fresh = await invoke(`workspace.${family}.list`, {});
                 renderFamilyList(family, fresh);
-                if (family === "personas" && getContext().sessionName !== null) {
-                    const sessionRes = await invoke("session/resume", {}, { requireSession: true }).catch(() => null);
-                    if (sessionRes !== null) renderSessionPersonaOptions(sessionRes);
-                }
                 const isRetry = submitter?.hasAttribute("data-family-retry") === true;
                 const verbLabel = operation === "remove" ? "removed" : isRetry ? "retried" : `${operation}d`;
                 return `${alias}  ${verbLabel}`;
@@ -745,17 +1087,14 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
             const rawFamily = form.dataset.family ?? "";
-            if (!/** @type {readonly string[]} */ (FAMILIES).includes(rawFamily)) return;
-            const family = /** @type {"mcp" | "skills" | "schedule" | "personas" | "members"} */ (rawFamily);
+            if (!isWorkspaceFamily(rawFamily)) return;
+            const family = rawFamily;
             const data = new FormData(form);
             /** @type {Record<string, unknown>} */
             const params = {};
             if (family === "mcp" || family === "members") {
                 const query = String(data.get("query") ?? "").trim();
                 if (query) params.query = query;
-            } else if (family === "skills") {
-                const source = String(data.get("source") ?? "").trim();
-                if (source) params.source = source;
             } else if (family === "schedule") {
                 const rule = String(data.get("rule") ?? "").trim();
                 if (rule) params.rule = rule;
@@ -787,204 +1126,32 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 }
                 const fresh = await invoke(`workspace.${meta.family}.list`, {});
                 renderFamilyList(meta.family, fresh);
-                if (meta.family === "personas" && getContext().sessionName !== null) {
-                    const sessionRes = await invoke("session/resume", {}, { requireSession: true }).catch(() => null);
-                    if (sessionRes !== null) renderSessionPersonaOptions(sessionRes);
-                }
-                const enclosing = form.closest("dialog");
-                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
+                collapseEnclosingDisclosure(form);
                 return `${meta.alias}  active`;
             });
         });
 
-        on(article, "submit", "[data-mcp-save-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const data = new FormData(form);
-            const transport = String(data.get("transport") ?? "stdio");
-            const alias = String(data.get("alias") ?? "").trim();
-            void runMutation(async () => {
-                if (!alias) throw new Error("Enter a server alias.");
-                /** @type {Record<string, unknown>} */
-                let payload;
-                if (transport === "streamable-http") {
-                    const url = String(data.get("url") ?? "").trim();
-                    if (!url) throw new Error("Enter an HTTP(S) endpoint URL.");
-                    const authMode = String(data.get("authMode") ?? "none");
-                    const bearerToken = String(data.get("bearerToken") ?? "").trim();
-                    payload = {
-                        alias,
-                        type: "streamable-http",
-                        url,
-                        ...(authMode === "bearer"
-                            ? { authorization: { type: "bearer", token: bearerToken } }
-                            : authMode === "oauth"
-                                ? { authorization: { type: "oauth" } }
-                                : {}),
-                    };
-                } else {
-                    const command = String(data.get("command") ?? "").trim();
-                    if (!command) throw new Error("Enter a server command.");
-                    const rawArgs = String(data.get("args") ?? "").trim();
-                    const args = rawArgs ? rawArgs.split(/\s+/u) : [];
-                    const cwd = String(data.get("cwd") ?? "").trim();
-                    payload = {
-                        alias,
-                        type: "stdio",
-                        command,
-                        ...(args.length > 0 ? { args } : {}),
-                        ...(cwd ? { cwd } : {}),
-                    };
+        for (const spec of FAMILY_SAVE_SPECS) {
+            on(article, "submit", spec.selector, (event, form) => {
+                event.preventDefault();
+                if (!(form instanceof HTMLFormElement) || busy) return;
+                let built;
+                try {
+                    built = spec.build(form);
+                } catch (error) {
+                    setFeedback(false, error instanceof Error ? error.message : String(error), "");
+                    return;
                 }
-                await invoke("workspace.mcp.replace", payload);
-                const fresh = await invoke("workspace.mcp.list", {});
-                renderFamilyList("mcp", fresh);
-                for (const input of $$(form, "input")) {
-                    if (input instanceof HTMLInputElement) input.value = "";
-                }
-                const enclosing = form.closest("dialog");
-                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
-                return `${alias}  saved`;
-            });
-        });
-
-        on(article, "submit", "[data-skills-save-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const data = new FormData(form);
-            const alias = String(data.get("alias") ?? "").trim();
-            const source = String(data.get("source") ?? "").trim();
-            const ref = String(data.get("ref") ?? "").trim();
-            void runMutation(async () => {
-                if (!alias || !source) throw new Error("Enter both a skill name and source.");
-                await invoke("workspace.skills.replace", {
-                    alias,
-                    source,
-                    ...(ref ? { ref } : {}),
+                void runMutation(async () => {
+                    await invoke(spec.action, built.payload);
+                    const fresh = await invoke(`workspace.${spec.family}.list`, {});
+                    renderFamilyList(spec.family, fresh);
+                    spec.clear(form);
+                    collapseEnclosingDisclosure(form);
+                    return `${built.label}  saved`;
                 });
-                const fresh = await invoke("workspace.skills.list", {});
-                renderFamilyList("skills", fresh);
-                for (const input of $$(form, "input")) {
-                    if (input instanceof HTMLInputElement) input.value = "";
-                }
-                const enclosing = form.closest("dialog");
-                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
-                return `${alias}  saved`;
             });
-        });
-
-        on(article, "submit", "[data-schedule-save-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const data = new FormData(form);
-            const alias = String(data.get("alias") ?? "").trim();
-            const rawTarget = String(data.get("target") ?? "").trim();
-            const rule = String(data.get("rule") ?? "").trim();
-            const prompt = String(data.get("prompt") ?? "").trim();
-            const target = rawTarget.startsWith("session://") ? rawTarget : `session://${rawTarget}`;
-            void runMutation(async () => {
-                if (!alias || !rawTarget || !rule || !prompt) {
-                    throw new Error("Complete name, target session, rule, and prompt.");
-                }
-                await invoke("workspace.schedule.replace", { alias, target, rule, prompt });
-                const fresh = await invoke("workspace.schedule.list", {});
-                renderFamilyList("schedule", fresh);
-                for (const field of $$(form, 'input[name="alias"], input[name="rule"], textarea[name="prompt"]')) {
-                    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = "";
-                }
-                const enclosing = form.closest("dialog");
-                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
-                return `${alias}  saved`;
-            });
-        });
-
-        on(article, "submit", "[data-session-persona-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const persona = String(new FormData(form).get("persona") ?? "none");
-            void runMutation(async () => {
-                const res = await invoke("session/set_config_option", {
-                    configId: "persona",
-                    value: persona,
-                }, { requireSession: true });
-                renderSessionPersonaOptions(res);
-                return `Session persona: ${persona}.`;
-            });
-        });
-
-        on(article, "submit", "[data-personas-save-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const data = new FormData(form);
-            const mode = String(data.get("personaMode") ?? "inline");
-            const alias = String(data.get("alias") ?? "").trim();
-            const model = String(data.get("model") ?? "").trim();
-            const effort = String(data.get("effort") ?? "").trim();
-            void runMutation(async () => {
-                if (!alias) throw new Error("Enter a persona name.");
-                /** @type {Record<string, unknown>} */
-                let payload;
-                if (mode === "source") {
-                    const source = String(data.get("source") ?? "").trim();
-                    if (!source) throw new Error("Enter a Markdown file path.");
-                    payload = {
-                        alias,
-                        source,
-                        ...(model ? { model } : {}),
-                        ...(effort ? { effort } : {}),
-                    };
-                } else {
-                    const description = String(data.get("description") ?? "").trim();
-                    const body = String(data.get("body") ?? "").trim();
-                    if (!description || !body) {
-                        throw new Error("Enter both a persona description and instructions.");
-                    }
-                    payload = {
-                        alias,
-                        description,
-                        body,
-                        ...(model ? { model } : {}),
-                        ...(effort ? { effort } : {}),
-                    };
-                }
-                await invoke("workspace.personas.replace", payload);
-                const [fresh, sessionRes] = await Promise.all([
-                    invoke("workspace.personas.list", {}),
-                    getContext().sessionName !== null
-                        ? invoke("session/resume", {}, { requireSession: true }).catch(() => null)
-                        : Promise.resolve(null),
-                ]);
-                renderFamilyList("personas", fresh);
-                if (sessionRes !== null) renderSessionPersonaOptions(sessionRes);
-                for (const field of $$(form, "input, textarea")) {
-                    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = "";
-                }
-                const effortField = $(form, 'select[name="effort"]');
-                if (effortField instanceof HTMLSelectElement) effortField.value = "";
-                const enclosing = form.closest("dialog");
-                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
-                return `${alias}  saved`;
-            });
-        });
-
-        on(article, "submit", "[data-members-save-form]", (event, form) => {
-            event.preventDefault();
-            if (!(form instanceof HTMLFormElement)) return;
-            const rawFiles = String(new FormData(form).get("files") ?? "").trim();
-            const files = rawFiles.split(/\s+/u).filter((p) => p.length > 0);
-            void runMutation(async () => {
-                if (files.length === 0) throw new Error("Enter at least one file path or glob pattern.");
-                await invoke("workspace.members.add", { files });
-                const fresh = await invoke("workspace.members.list", {});
-                renderFamilyList("members", fresh);
-                for (const input of $$(form, "input")) {
-                    if (input instanceof HTMLInputElement) input.value = "";
-                }
-                const enclosing = form.closest("dialog");
-                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
-                return `${files.join(", ")}  saved`;
-            });
-        });
+        }
 
         on(article, "submit", "[data-env-row-form]", (event, form) => {
             event.preventDefault();
@@ -1039,8 +1206,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 if (envPanel) populateEnvPanel(envPanel, fresh, envListScope);
                 aliasInput.value = "";
                 valueInput.value = "";
-                const enclosing = form.closest("dialog");
-                if (enclosing instanceof HTMLDialogElement && enclosing.open) enclosing.close();
+                collapseEnclosingDisclosure(form);
                 return `${alias}  active`;
             });
         });
@@ -1055,7 +1221,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     return {
         /** @param {SettingsSection} [initialSection] */
         open(initialSection = activeSection) {
-            const targetSection = isSettingsSection(initialSection) ? initialSection : "general";
+            const targetSection = isSettingsSection(initialSection) ? initialSection : "workspace";
             selectSection(targetSection, false);
         },
         /** @param {SettingsSection} section @param {boolean} [pushHash] */
@@ -1064,17 +1230,15 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         },
         /** @param {string} familyOrTopic */
         notifyChanged(familyOrTopic) {
-            if (busy || activeSection === "general" || activeSection === "help") return;
+            if (busy || activeSection === "help") return;
             if (
                 familyOrTopic === "resync"
                 || familyOrTopic === activeSection
-                || (familyOrTopic === "policy" && (activeSection === "personas" || activeSection === "models"))
+                || (familyOrTopic === "policy" && (activeSection === "session" || activeSection === "models"))
+                || (familyOrTopic === "personas" && activeSection === "session")
             ) {
                 void refreshSection(activeSection);
             }
-        },
-        openModelSetup() {
-            void onboarding.open();
         },
     };
 }
@@ -1084,9 +1248,9 @@ function parseSettingsHash(hash) {
     const raw = hash.startsWith("#") ? hash.slice(1) : hash;
     try {
         const decoded = decodeURIComponent(raw);
-        return isSettingsSection(decoded) ? decoded : "general";
+        return isSettingsSection(decoded) ? decoded : "workspace";
     } catch {
-        return "general";
+        return "workspace";
     }
 }
 
@@ -1132,9 +1296,6 @@ export default function observeWorkspaceSettings(main) {
     });
 
     controller.selectSection(parseSettingsHash(location.hash), false);
-    if (queryParams.get("setup") === "1") {
-        controller.openModelSetup();
-    }
 
     on.target(window, "hashchange", () => {
         controller.selectSection(parseSettingsHash(location.hash), false);

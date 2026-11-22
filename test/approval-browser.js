@@ -181,50 +181,26 @@ export default async function verifyApproval(t) {
                         },
                     ]);
 
-                    await page.goto(`${fixture.url}?yolo=1`);
-                    await page.waitForFunction(() => typeof window.review === "function");
-                    await page.evaluate((values) => window.review(values), gates);
-                    assert.deepEqual(await page.evaluate(() => window.responses), [gates.map(({ id }) => ({
-                        id, method: "session/request_permission",
-                        response: {
-                            outcome: { outcome: "selected", optionId: "allow_once" },
-                            _meta: { plurnk: { outcome: "client_yolo" } },
-                        },
-                    }))]);
-                    assert.equal(await form.isVisible(), false, "automatic approval does not display manual controls");
                     const question = { id: "question", method: "elicitation/create", mode: "form", requestedSchema: {
                         type: "object", properties: { answer: { type: "string", minLength: 1 } }, required: ["answer"],
                     } };
                     const mixed = [...gates, question];
-                    await page.evaluate((mixed) => window.review(mixed), mixed);
+                    assert.equal(await page.evaluate((values) => window.review(values), mixed), true);
                     assert.equal(await form.isVisible(), true);
-                    assert.equal(await groups.count(), 1, "only the question needs a manual answer in YOLO mode");
-                    assert.equal(await page.evaluate(() => window.responses.length), 1, "YOLO cannot answer questions or submit partial sets");
+                    assert.equal(await groups.count(), 3, "mixed proposal and question sets render all pending requests together");
+                    await groups.nth(0).getByRole("radio", { name: "Accept", exact: true }).check();
+                    await groups.nth(1).getByRole("radio", { name: "Reject", exact: true }).check();
                     await form.getByRole("textbox", { name: "answer", exact: true }).fill("operator answer");
-                    await page.evaluate(() => { window.answerNode = document.querySelector('[data-interrupt-id="question"] textarea'); });
-                    assert.equal(await page.evaluate(() => window.automatic(false)), "manual");
-                    assert.deepEqual(await groups.evaluateAll((nodes) => nodes.map((node) => node.dataset.interruptId)), mixed.map(({ id }) => id));
-                    assert.equal(await form.getByRole("textbox", { name: "answer", exact: true }).inputValue(), "operator answer");
-                    assert.equal(await page.evaluate(() => window.answerNode === document.querySelector('[data-interrupt-id="question"] textarea')), true);
-                    assert.equal(await form.locator('input[type="radio"]:checked').count(), 0);
-                    assert.equal(await page.evaluate(() => window.automatic(true)), "manual");
-                    assert.equal(await groups.count(), 1);
-                    assert.equal(await form.getByRole("textbox", { name: "answer", exact: true }).inputValue(), "operator answer");
-                    assert.equal(await page.evaluate(() => window.responses.length), 1, "changing approval policy never answers the question");
+                    const beforeMixed = await page.evaluate(() => window.responses.length);
                     await form.getByRole("button", { name: "Submit responses", exact: true }).click();
-                    await page.waitForFunction(() => window.responses.length === 2);
-                    assert.deepEqual(await page.evaluate(() => window.responses[1]), [
-                        ...gates.map(({ id }) => ({
-                            id, method: "session/request_permission",
-                            response: {
-                                outcome: { outcome: "selected", optionId: "allow_once" },
-                                _meta: { plurnk: { outcome: "client_yolo" } },
-                            },
-                        })),
+                    await page.waitForFunction((prev) => window.responses.length === prev + 1, beforeMixed);
+                    assert.deepEqual(await page.evaluate(() => window.responses.at(-1)), [
+                        { id: gates[0].id, method: "session/request_permission", response: { outcome: { outcome: "selected", optionId: "allow_once" } } },
+                        { id: gates[1].id, method: "session/request_permission", response: { outcome: { outcome: "selected", optionId: "reject_once" } } },
                         { id: "question", method: "elicitation/create", response: { action: "accept", content: { answer: "operator answer" } } },
                     ]);
                     assert.equal(await page.evaluate((values) => window.review(values), [...gates, { id: "unknown" }]), false);
-                    assert.equal(await page.evaluate(() => window.responses.length), 2, "unsupported sets are not partially auto-approved");
+                    assert.equal(await page.evaluate(() => window.responses.length), beforeMixed + 1, "unsupported sets never submit partial resolutions");
                     const multiChoiceQuestion = {
                         id: "multi-q",
                         method: "elicitation/create",
@@ -254,13 +230,14 @@ export default async function verifyApproval(t) {
                             required: ["store", "tiers"],
                         },
                     };
+                    const beforeMulti = await page.evaluate(() => window.responses.length);
                     assert.equal(await page.evaluate((values) => window.review(values), [multiChoiceQuestion]), true);
                     await form.getByRole("combobox", { name: "Store", exact: true }).selectOption({ label: "PostgreSQL — Server" });
                     await form.getByRole("checkbox", { name: "Lint — Static checks", exact: true }).check();
                     await form.getByRole("checkbox", { name: "Unit — Unit suite", exact: true }).check();
                     await form.getByRole("button", { name: "Submit responses", exact: true }).click();
-                    await page.waitForFunction(() => window.responses.length === 3);
-                    assert.deepEqual(await page.evaluate(() => window.responses[2]), [
+                    await page.waitForFunction((prev) => window.responses.length === prev + 1, beforeMulti);
+                    assert.deepEqual(await page.evaluate(() => window.responses.at(-1)), [
                         {
                             id: "multi-q",
                             method: "elicitation/create",
@@ -268,7 +245,7 @@ export default async function verifyApproval(t) {
                         },
                     ]);
                     assert.equal(await page.evaluate((values) => window.review(values), [{ ...gate("late"), expiresAt: "2020-01-01T00:00:00.000Z" }]), true);
-                    assert.equal(await page.evaluate(() => window.responses.length), 3, "automatic approval never answers an expired request");
+                    assert.equal(await page.evaluate(() => window.responses.length), beforeMulti + 1, "expired requests are never answered");
                     assert.equal(await form.locator("[data-deadline-notice]").isVisible(), true, "it is presented with its passed deadline");
                     checkBrowser();
                 } finally { await browser.close(); }

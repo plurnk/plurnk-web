@@ -487,7 +487,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await page.getByText("Completed after-stop.", { exact: true }).waitFor();
         assert.equal(model.requests.length, 2);
         checkBrowser();
-    }, { env: { PLURNK_WEB_YOLO: "0" } }));
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "review" } }));
 
     await t.test("{§web-session-input} Send waits while an arriving interrupt is not yet presented", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
         const arrived = Promise.withResolvers();
@@ -525,7 +525,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         } finally {
             release.resolve();
         }
-    }, { env: { PLURNK_WEB_YOLO: "0" } }));
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "review" } }));
 
     await t.test("{§web-session-history} on a conversation longer than the view, a review, a failure and command output follow the conversation in main", () => inputPage(withDaemon, async ({ page, checkBrowser }) => {
         page.setDefaultTimeout(5000);
@@ -559,7 +559,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await failure.waitFor();
         assert.equal(await afterConversation('[aria-label="Message feedback"]'), true, "a failure follows the conversation in main");
         checkBrowser([httpFailure("/acp", 409)]);
-    }, { env: { PLURNK_WEB_YOLO: "0" } }));
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "review" } }));
 
     await t.test("{§web-session-input} authenticated admission preserves newer typing and departure never cancels work", () => inputPage(withDaemon, async ({ page, context, path, model, checkBrowser }) => {
         const reached = Promise.withResolvers();

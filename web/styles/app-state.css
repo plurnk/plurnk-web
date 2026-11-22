@@ -29,7 +29,6 @@
         padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-search-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-search-measure)) / 2));
     }
 
-    [data-session-manage-actions],
     [data-workspaces-actions],
     [data-switcher-actions] {
         display: grid;
@@ -43,8 +42,7 @@
     }
 
     [data-workspaces-actions] button,
-    [data-switcher-actions] button,
-    [data-session-manage-actions] button {
+    [data-switcher-actions] button {
         --otm-primary-background: var(--plurnk-working-surface);
         --otm-primary-hover-background: var(--plurnk-user-surface);
         --otm-primary-inverse: var(--otm-color);
@@ -61,10 +59,6 @@
     }
 
     [data-workspaces-actions] > form {
-        margin: 0;
-    }
-
-    [data-session-manage-actions] > form[data-management-action] {
         margin: 0;
     }
 
@@ -124,6 +118,12 @@
         }
     }
 
+    @media (width >= 48rem), (scripting: none) {
+        #session-status [data-status-field="session"] {
+            display: none;
+        }
+    }
+
     @media (scripting: enabled) {
         #search-controls > button[data-search-submit] {
             display: none;
@@ -155,13 +155,6 @@
         border-color: var(--otm-primary);
         border-block-start-color: var(--otm-primary);
         background-color: var(--otm-card-background-color);
-    }
-
-    #workspace-tabs > ul > li > a[aria-current="true"]::after {
-        content: "▾" / "";
-        margin-inline-start: 0.25ch;
-        font-size: 0.8em;
-        color: var(--otm-muted-color);
     }
 
     #workspace-tabs > ul > li > a[aria-current="true"],
@@ -212,7 +205,41 @@
         font-size: 0.95rem;
     }
 
+    [data-family-disclosure] {
+        margin-block: 0 var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.5) calc(var(--otm-spacing) * 0.75);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-working-surface);
+    }
+
+    [data-family-disclosure] > :where(summary) {
+        margin-block-end: 0;
+    }
+
+    [data-family-disclosure]:not([open]) > :where(summary) {
+        border-block-end: 0;
+    }
+
+    [data-family-disclosure][open] > :where(summary) {
+        margin-block-end: calc(var(--otm-spacing) * 0.75);
+    }
+
     @media (width >= 48rem) {
+        #workspace-settings [data-session-config-form] > :where(fieldset) {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: calc(var(--otm-spacing) * 0.65) var(--otm-spacing);
+        }
+
+        #workspace-settings [data-session-config-form] :where(fieldset > label) {
+            margin: 0;
+        }
+
+        #workspace-settings [data-session-config-form] :where(fieldset > footer) {
+            grid-column: 1 / -1;
+        }
+
         [data-settings-panel="help"] :where(dl) {
             display: grid;
             grid-template-columns: max-content minmax(0, 1fr);
@@ -224,6 +251,13 @@
         [data-settings-panel="help"] :where(dt, dd) {
             margin: 0;
         }
+    }
+
+    #workspace-settings [data-session-fork] {
+        --otm-primary-background: var(--otm-secondary-background);
+        --otm-primary-hover-background: var(--otm-secondary-hover-background);
+        --otm-primary-inverse: var(--otm-secondary-inverse);
+        --otm-primary-focus: var(--otm-secondary-focus);
     }
 
     [data-panel-toolbar] > :where(button) {
@@ -290,7 +324,7 @@
         padding: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) > :where(fieldset > button),
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) :where(fieldset > button),
     #account-settings [data-session] :where(form > button) {
         flex: 0 0 auto;
         inline-size: auto;
@@ -325,16 +359,24 @@
         }
 
         button[data-dialog-target],
+        #workspace-settings [data-session-fork],
         #workspace-tabs button[data-open-sessions],
-        #workspace-settings [data-settings-nav] > li:not(:first-child) {
+        #workspace-settings [data-settings-nav] > li:nth-child(n+3) {
             display: none;
         }
 
+        #workspace-settings:not(:has(> #session:target)) > #session,
+        #workspace-settings:has(> #session:target) > #workspace {
+            display: none;
+        }
+
+        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="workspace"],
         #account-settings:has(> #about:target) [data-settings-nav] a[data-account-section="sign-ins"] {
             border-block-end-color: transparent;
             font-weight: 400;
         }
 
+        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="session"],
         #account-settings:has(> #about:target) [data-settings-nav] a[data-account-section="about"] {
             border-block-end-color: var(--otm-primary);
             font-weight: 700;
@@ -537,8 +579,7 @@
     }
 
     #session-status [data-status-line] button,
-    #session-compose [data-remove-attachment],
-    #session-onboarding-banner [data-dismiss-onboarding] {
+    #session-compose [data-remove-attachment] {
         --otm-primary-background: transparent;
         --otm-primary-hover-background: transparent;
         --otm-primary-inverse: var(--otm-primary);
@@ -626,14 +667,6 @@
         padding: 0 0.2ch;
         border-width: 0;
         line-height: inherit;
-    }
-
-    #session-onboarding-banner [data-dismiss-onboarding] {
-        --otm-form-element-spacing-block: 0;
-        --otm-form-element-spacing-inline: 0;
-
-        inline-size: auto;
-        margin: 0;
     }
 
     #session-status [data-status-telemetry] {
@@ -728,8 +761,8 @@
         text-decoration: underline;
     }
 
-    #main li > article > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
-    #main li > article > details > :where([data-image-reference]:last-child > [data-inline-image]:last-child),
+    #main li > article > :where([data-image-reference]:last-child) > :where([data-inline-image]:last-child),
+    #main li > article > details > :where([data-image-reference]:last-child) > :where([data-inline-image]:last-child),
     #session-conversation [data-prompt-work] > [data-work-items],
     #session-conversation [data-prompt-replies] > li:last-child > article {
         margin-block-end: 0;
@@ -833,18 +866,18 @@
         margin: 0;
     }
 
-    [data-env-set-form] > :where(fieldset > select, fieldset > button),
-    [data-env-row-form] > :where(fieldset > button) {
+    [data-env-set-form] :where(fieldset > select, fieldset > button),
+    [data-env-row-form] :where(fieldset > button) {
         flex: 0 0 auto;
         inline-size: auto;
         margin: 0;
     }
 
-    [data-env-row-form] > :where(fieldset > button) {
+    [data-env-row-form] :where(fieldset > button) {
         padding: calc(var(--otm-form-element-spacing-block) * 0.4) calc(var(--otm-form-element-spacing-inline) * 0.65);
     }
 
-    [data-env-set-form] > :where(fieldset > input) {
+    [data-env-set-form] :where(fieldset > input) {
         flex: 1 1 12ch;
         min-inline-size: 0;
         margin: 0;
@@ -1014,14 +1047,8 @@
         display: none;
     }
 
-    #session-onboarding-banner [data-dismiss-onboarding]::before {
-        content: "✕" / "";
-    }
-
-    /* {§web-workspace-settings} {§web-onboarding} {§web-session-commands} Empty feedback occupies no page space. */
-    :is(#workspace-settings, [data-settings-panel], [data-settings-dialog] > article, #dialog-session-create > article, #dialog-session-manage > article, #dialog-onboarding > article, #dialog-command-output > article) > p:empty,
-    #dialog-onboarding [data-onboarding-form]:not([data-onboarding-mode="hosted"]) [data-onboarding-hosted-fields],
-    #dialog-onboarding [data-onboarding-form] small:empty {
+    /* {§web-workspace-settings} {§web-session-commands} Empty feedback occupies no page space. */
+    :is(#workspace-settings, [data-settings-panel], #dialog-session-create > article, #dialog-command-output > article) > p:empty {
         display: none;
     }
 
@@ -1059,13 +1086,9 @@
         display: none;
     }
 
-    /* {§web-session-status} Status fields remain semantic; CSS owns their compact notation. */
-    #session-yolo[aria-pressed="true"]::before {
-        content: "🔥 " / "";
-    }
-
-    #session-yolo[aria-pressed="false"]::before {
-        content: "🐹 " / "";
+    /* {§web-session-status} {§web-session-input} {§web-session-approval} Status fields and Send posture remain semantic; CSS owns their compact notation. */
+    #session-status[data-approval-mode="accept"] button[form="session-compose"]::before {
+        content: "🔥" / "";
     }
 
     #session-status [data-text="input"]::before {

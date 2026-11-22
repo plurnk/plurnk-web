@@ -32,64 +32,45 @@ async function requestApproval(page, name) {
 // {§web-session-approval} The real native form is the only review UI in these installed journeys.
 export default async function verifySessionApproval({ t, withDaemon: startDaemon }) {
     const manualPage = (verify, options = {}) =>
-        inputPage(startDaemon, verify, { ...options, env: { PLURNK_WEB_YOLO: "0", ...options.env } });
-    await t.test("{§web-session-approval} configured YOLO accepts review once without another user message", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+        inputPage(startDaemon, verify, { ...options, env: { PLURNK_SERVICE_PROPOSALS: "review", ...options.env } });
+    await t.test("{§web-session-approval} session accept mode settles proposals on the daemon without a review interrupt", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
-        const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
+        const sendBtn = page.getByRole("button", { name: "Send", exact: true });
         await page.getByRole("textbox", { name: "Message", exact: true }).focus();
-        assert.equal(await approval.getAttribute("aria-pressed"), "true");
-        assert.equal(await approval.isVisible(), true);
-        assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
+        assert.equal(await page.locator("#session-status").getAttribute("data-approval-mode"), "accept");
+        assert.match(await sendBtn.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-automatic.");
-        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await sendBtn.click();
         await page.getByText("Completed approval-automatic.", { exact: true }).waitFor();
         await connected(page);
         assert.equal(model.requests.length, 2);
-        assert.equal(requests.length, 2, "one message and one decision, with no retry");
-        assert.deepEqual(requests[1].result?.outcome, { outcome: "selected", optionId: "allow_once" });
+        assert.equal(requests.length, 1, "one message, settled automatically on the daemon");
         assert.equal(await page.locator('[data-message-role="user"]').count(), 1);
         assert.equal(await page.getByRole("form", { name: "Review requests", exact: true }).isVisible(), false);
         assert.ok(JSON.stringify(model.requests[1].messages).includes("approved"), "the executor actually ran");
         checkBrowser();
-    }, { env: { PLURNK_WEB_YOLO: "1" } }));
-    await t.test("{§web-session-approval} a session page reached from another site never approves automatically", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, context, path, base, headers, model, checkBrowser }) => {
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "accept" } }));
+    await t.test("{§web-session-approval} {§web-session-input} leading ? narrows a single loop to manual review even when session mode is accept", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
-        const sessionId = await page.locator("#session-status").getAttribute("data-session-id");
-        await page.close();
-        // The proposal waits with no page open on its session.
-        const agent = new SessionAgent({ url: new URL("/acp", base).href, sessionId, headers });
-        const controller = new AbortController();
-        const running = agent.send({
-            abortController: controller,
-            message: { id: crypto.randomUUID(), role: "user", content: "Lifecycle fixture: approval-automatic." },
-        }).catch(() => {});
-        try {
-            await running;
-            await context.route("http://elsewhere.test/**", (route) => route.fulfill({ contentType: "text/html",
-                body: `<!doctype html><title>Elsewhere</title><link rel="icon" href="data:,"><a href="${path}">Open the session</a>` }));
-            const visitor = await context.newPage();
-            visitor.setDefaultTimeout(5000);
-            const sent = requestsFrom(visitor);
-            await visitor.goto("http://elsewhere.test/");
-            // Browsers send this navigation `Sec-Fetch-Site: cross-site`; Chromium's headless shell does not report it to Playwright.
-            await visitor.getByRole("link", { name: "Open the session", exact: true }).click();
-            await interrupted(visitor);
-            assert.equal(await visitor.getByRole("button", { name: "Automatic approval", exact: true, includeHidden: true }).getAttribute("aria-pressed"), "false");
-            assert.equal(await visitor.getByRole("form", { name: "Review requests", exact: true }).isVisible(), true, "the proposal waits for review");
-            assert.equal(sent.filter((req) => req?.result?.outcome !== undefined).length, 0, "nothing was decided");
-            // The person's own navigation keeps the configured preference.
-            const own = await context.newPage();
-            await own.goto(path);
-            await own.getByText("Completed approval-automatic.", { exact: true }).waitFor();
-            assert.equal(model.requests.length, 2);
-        } finally {
-            controller.abort();
-            agent.close();
-            await running;
-        }
+        const requests = requestsFrom(page);
+        const sendBtn = page.getByRole("button", { name: "Send", exact: true });
+        assert.equal(await page.locator("#session-status").getAttribute("data-approval-mode"), "accept");
+        assert.match(await sendBtn.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
+        await page.getByRole("textbox", { name: "Message", exact: true }).fill("? Lifecycle fixture: approval-automatic.");
+        await sendBtn.click();
+        await interrupted(page);
+        const review = page.getByRole("form", { name: "Review requests", exact: true });
+        assert.equal(await review.isVisible(), true, "? forces manual proposal review for this loop");
+        assert.equal(requests[0].params?._meta?.plurnk?.proposalPolicy, "review");
+        assert.equal(model.requests.length, 1);
+        await review.getByRole("radio", { name: "Accept", exact: true }).check();
+        await review.getByRole("button", { name: "Submit responses", exact: true }).click();
+        await page.getByText("Completed approval-automatic.", { exact: true }).waitFor();
+        await connected(page);
+        assert.equal(model.requests.length, 2);
         checkBrowser();
-    }, { env: { PLURNK_WEB_YOLO: "1" } }));
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "accept" } }));
     await t.test("{§web-session-approval} a proposal's deadline shows, and the page follows the daemon cancelling it", { timeout: 60_000 }, () => manualPage(async ({ page, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
@@ -103,7 +84,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         assert.equal(requests.filter((req) => req?.result?.outcome !== undefined).length, 0, "the page answered nothing");
         checkBrowser();
     }, { env: { PLURNK_SERVICE_PROPOSAL_TIMEOUT_MS: "3000" } }));
-    await t.test("{§web-session-approval} configured YOLO cannot override daemon rejection", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} daemon rejection settles proposals with policy_veto without asking the client", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-server-reject.");
@@ -115,8 +96,8 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         const outcome = page.locator('[data-call-id][data-plurnk-type="sh"] [data-plurnk-field="outcome"]');
         assert.match(await outcome.textContent(), /The proposal was rejected \(policy_veto\)\./u);
         checkBrowser();
-    }, { env: { PLURNK_SERVICE_PROPOSALS: "reject", PLURNK_WEB_YOLO: "1" } }));
-    await t.test("{§web-session-approval} uncertain YOLO delivery stops without replaying its decision", { timeout: 60_000 }, () => inputPage(startDaemon, async ({ page, model, checkBrowser }) => {
+    }, { env: { PLURNK_SERVICE_PROPOSALS: "reject" } }));
+    await t.test("{§web-session-approval} uncertain approval resolution delivery stops without replaying its decision", { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
         page.setDefaultTimeout(5000);
         const requests = requestsFrom(page);
         await routeAcpWebSocket(page, (ws) => {
@@ -139,15 +120,19 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         requests.length = 0;
         await page.getByRole("textbox", { name: "Message", exact: true }).fill("Lifecycle fixture: approval-auto-failure.");
         await page.getByRole("button", { name: "Send", exact: true }).click();
+        await interrupted(page);
+        const review = page.getByRole("form", { name: "Review requests", exact: true });
+        await review.getByRole("radio", { name: "Accept", exact: true }).check();
+        await review.getByRole("button", { name: "Submit responses", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
         assert.match(await page.locator('[data-text="command-error"]').textContent(), /Response could not be confirmed:/u);
         assert.equal(model.requests.length, 1);
-        assert.equal(requests.length, 2, "a failed automatic decision is not retried");
+        assert.equal(requests.length, 2, "a failed decision is not retried automatically");
         assert.equal(await page.getByRole("button", { name: "Reconnect", exact: true }).isVisible(), true);
         checkBrowser([
             networkFailure("/acp"),
         ]);
-    }, { env: { PLURNK_WEB_YOLO: "1" } }));
+    }));
     for (const decision of ["accept", "reject"]) {
         await t.test(`{§web-session-approval} explicit ${decision} resumes the exact proposal and preserves the operation's result`, { timeout: 60_000 }, () => manualPage(async ({ page, model, checkBrowser }) => {
             await page.setViewportSize({ width: 320, height: 700 });

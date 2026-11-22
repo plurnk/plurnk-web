@@ -65,21 +65,23 @@ export default async function verifyStatus(t) {
                     await page.locator("#session-status").evaluate((element) => element.setAttribute("data-connection", "initial"));
                     await page.setViewportSize({ width: 320, height: 700 });
                     await draft.focus();
-                    const approval = page.getByRole("button", { name: "Automatic approval", exact: true });
-                    assert.equal(await approval.getAttribute("type"), "button");
-                    assert.equal(await approval.getAttribute("aria-pressed"), "false");
-                    assert.equal(await approval.getAttribute("title"), "Manual Approval (Shift+Tab · /yolo)");
-                    assert.equal(await approval.locator('[data-text="yolo-label"]').textContent(), "Review");
-                    assert.equal(await approval.isVisible(), true, "manual approval is an explicit mode, not an absent indicator");
+                    const currentSessionLink = page.locator("#session-current");
+                    assert.equal(await currentSessionLink.isVisible(), true, "below 768px surfaces #session handle in status strip");
+                    assert.equal(await currentSessionLink.textContent(), "#session1");
+                    assert.equal(await currentSessionLink.getAttribute("href"), "/settings/?workspace=conversation&session=session1#session");
+                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/?workspace=conversation&session=session1#models");
                     assert.deepEqual(
                         await page.locator('#session-status [aria-label="Model controls"] > li').evaluateAll((items) => items.map((li) => getComputedStyle(li).listStyleType)),
                         ["none", "none"],
                         "model controls render without list bullets",
                     );
-                    assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
-                    await approval.evaluate((element) => element.setAttribute("aria-pressed", "true"));
-                    assert.match(await approval.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
-                    await approval.evaluate((element) => element.setAttribute("aria-pressed", "false"));
+                    const sendBtn = page.getByRole("button", { name: "Send", exact: true });
+                    assert.match(await sendBtn.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
+                    await page.locator("#session-status").evaluate((element) => element.setAttribute("data-approval-mode", "accept"));
+                    assert.match(await sendBtn.evaluate((element) => getComputedStyle(element, "::before").content), /🔥/u);
+                    await page.locator("#session-status").evaluate((element) => element.setAttribute("data-approval-mode", "review"));
+                    assert.match(await sendBtn.evaluate((element) => getComputedStyle(element, "::before").content), /🐹/u);
+                    await page.locator("#session-status").evaluate((element) => element.removeAttribute("data-approval-mode"));
                     for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
                         await page.emulateMedia({ colorScheme });
                         const appearance = await page.locator("#session-status > [data-status-line]").evaluate((element) => {
@@ -243,9 +245,13 @@ export default async function verifyStatus(t) {
                     const controlGroup = page.getByRole("list", { name: "Model controls", exact: true });
                     const telemetry = page.locator("#session-status [data-status-telemetry]");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                    assert.deepEqual(await controlGroup.locator(":is(button, a)").evaluateAll((controls) => controls.map(({ id }) => id)), ["session-yolo", "session-model", "session-effort"]);
+                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/?workspace=conversation&session=session1#session", "configured model links to #session");
+                    assert.equal(await page.locator("#session-effort").getAttribute("href"), "/settings/?workspace=conversation&session=session1#session", "configured effort links to #session");
+                    assert.deepEqual(await controlGroup.locator(":is(button, a)").evaluateAll((controls) => controls.map(({ id }) => id)), ["session-current", "session-model", "session-effort"]);
                     await page.setViewportSize({ width: 1440, height: 900 });
+                    assert.equal(await page.locator("#session-current").isVisible(), false, ">= 768px hides #session-current in status strip");
                     await receive(initial);
+                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/?workspace=conversation&session=session1#models", "No model falls back to #models");
                     const compactControls = await controlGroup.boundingBox();
                     const compactTelemetry = await telemetry.boundingBox();
                     assert.ok(Math.abs(compactControls.y - compactTelemetry.y) < 6, "controls and telemetry share a row when they fit");

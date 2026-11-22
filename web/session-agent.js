@@ -85,6 +85,7 @@ const GATE_COALESCE_MS = 10;
  *   projectRoot?: string,
  *   gates?: readonly string[],
  *   openPaths?: readonly string[],
+ *   proposalPolicy?: "review" | "accept" | "reject",
  * }} SessionRunOptions
  */
 
@@ -924,6 +925,7 @@ export default class SessionAgent {
                         ...(options.workspace ? { workspace: options.workspace } : {}),
                         ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
                         ...(openPaths?.length ? { openPaths: [...openPaths] } : {}),
+                        ...(options.proposalPolicy ? { proposalPolicy: options.proposalPolicy } : {}),
                     },
                 },
             };

@@ -134,6 +134,7 @@ test("{§web-session-identity} {§web-workspace-folder} folder labels are compar
         workspacePath: "/~/~/project",
         sessionPath: "/~/~/project#session1",
         workspaceSettingsPath: "/settings/?workspace=%7E%2Fproject&session=session1",
+        sessionSettingsPath: "/settings/?workspace=%7E%2Fproject&session=session1#session",
         modelsSettingsPath: "/settings/?workspace=%7E%2Fproject&session=session1#models",
         projectLabel: "",
         workspaceIcon: "🗂️",

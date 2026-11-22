@@ -18,6 +18,7 @@ export default function sessionState(element, main = $("#main")) {
     const presentDescendants = sessionDescendants(element);
     /** @type {ReturnType<typeof workspaceIdentity> | null} */
     let latestIdentity = null;
+    let hasConfiguredModel = false;
     const syncHeader = () => {
         if (!latestIdentity || !main.isConnected || element.hidden) return;
         the("page-title", latestIdentity.pageTitle);
@@ -55,7 +56,11 @@ export default function sessionState(element, main = $("#main")) {
             const identity = workspaceIdentity(workspace, sessionName);
             latestIdentity = identity;
             syncHeader();
-            the(element, { "models-settings-path": identity.modelsSettingsPath });
+            the(element, {
+                "session-name": sessionName,
+                "session-settings-path": identity.sessionSettingsPath,
+                "models-settings-path": hasConfiguredModel ? identity.sessionSettingsPath : identity.modelsSettingsPath,
+            });
             the(folder, "project-label", identity.projectLabel);
             the(connectionNotice, { "session-path": identity.sessionPath, "sign-in-path": `/auth/login?return=${encodeURIComponent(identity.sessionPath)}` });
             for (const link of $$(main, "a[data-session-name]")) {
@@ -70,9 +75,20 @@ export default function sessionState(element, main = $("#main")) {
             });
         }
         if (status) {
-            if (!workspace) throw new Error("Session state has no workspace identity.");
-            the(element, { ...gauges(status, state.budget ?? state.plurnk?.budget, { providers, configOptions }), ...clocks(status, now) });
+            if (!workspace || !latestIdentity) throw new Error("Session state has no workspace identity.");
+            const gaugeValues = gauges(status, state.budget ?? state.plurnk?.budget, { providers, configOptions });
+            hasConfiguredModel = gaugeValues.model !== "No model";
+            the(element, {
+                ...gaugeValues,
+                "models-settings-path": hasConfiguredModel ? latestIdentity.sessionSettingsPath : latestIdentity.modelsSettingsPath,
+                ...clocks(status, now),
+            });
             presentDescendants(status.descendants, workspace.name);
+        } else if (Array.isArray(configOptions)) {
+            const modeOpt = configOptions.find((entry) => entry?.configId === "mode");
+            the(element, {
+                "approval-mode": typeof modeOpt?.currentValue === "string" && modeOpt.currentValue.length > 0 ? modeOpt.currentValue : null,
+            });
         }
     };
     present.syncHeader = syncHeader;
