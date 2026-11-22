@@ -31,8 +31,7 @@
 
     [data-session-manage-actions],
     [data-workspaces-actions],
-    [data-switcher-actions],
-    [data-alias-choices] {
+    [data-switcher-actions] {
         display: grid;
         gap: calc(var(--otm-spacing) * 0.4);
         margin: 0 0 var(--otm-spacing);
@@ -43,13 +42,6 @@
         grid-template-columns: repeat(auto-fit, minmax(14ch, 1fr));
     }
 
-    [data-alias-choices] > li {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-    }
-
-    [data-alias-choices] button,
     [data-workspaces-actions] button,
     [data-switcher-actions] button,
     [data-session-manage-actions] button {
@@ -215,6 +207,25 @@
         font-size: 1.05rem;
     }
 
+    [data-settings-panel] > :where(h3) {
+        margin-block: var(--otm-spacing) calc(var(--otm-spacing) * 0.5);
+        font-size: 0.95rem;
+    }
+
+    @media (width >= 48rem) {
+        [data-settings-panel="help"] :where(dl) {
+            display: grid;
+            grid-template-columns: max-content minmax(0, 1fr);
+            align-items: baseline;
+            gap: calc(var(--otm-spacing) * 0.5) calc(var(--otm-spacing) * 1.25);
+            margin-block: 0 var(--otm-spacing);
+        }
+
+        [data-settings-panel="help"] :where(dt, dd) {
+            margin: 0;
+        }
+    }
+
     [data-panel-toolbar] > :where(button) {
         flex: 0 0 auto;
         inline-size: auto;
@@ -266,11 +277,11 @@
         padding-block: calc(var(--otm-spacing) * 0.25);
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-candidate-add-form], #account-settings [data-session] form) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form], #account-settings [data-session] form) {
         margin: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-candidate-add-form]) > :where(fieldset) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) > :where(fieldset) {
         display: inline-flex;
         flex-wrap: nowrap;
         align-items: center;
@@ -279,7 +290,7 @@
         padding: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-candidate-add-form]) > :where(fieldset > button),
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) > :where(fieldset > button),
     #account-settings [data-session] :where(form > button) {
         flex: 0 0 auto;
         inline-size: auto;
@@ -293,7 +304,7 @@
         overflow-wrap: anywhere;
     }
 
-    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form])) {
+    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form]), td:has(> [data-model-alias-row-form])) {
         white-space: nowrap;
     }
 
@@ -527,8 +538,7 @@
 
     #session-status [data-status-line] button,
     #session-compose [data-remove-attachment],
-    #session-onboarding-banner [data-dismiss-onboarding],
-    #session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
+    #session-onboarding-banner [data-dismiss-onboarding] {
         --otm-primary-background: transparent;
         --otm-primary-hover-background: transparent;
         --otm-primary-inverse: var(--otm-primary);
@@ -540,7 +550,6 @@
     button[data-insert-command],
     [aria-label="Session controls"] button[data-open-sessions],
     button[data-accept-suggestion],
-    button[data-cancel-settings]:not([rel="prev"]),
     dialog button[data-dialog-close]:not([rel="prev"]) {
         --otm-primary-background: var(--otm-secondary-background);
         --otm-primary-hover-background: var(--otm-secondary-hover-background);
@@ -619,8 +628,7 @@
         line-height: inherit;
     }
 
-    #session-onboarding-banner [data-dismiss-onboarding],
-    #session-command-results :is([data-dismiss-command], [data-open-workspace-settings]) {
+    #session-onboarding-banner [data-dismiss-onboarding] {
         --otm-form-element-spacing-block: 0;
         --otm-form-element-spacing-inline: 0;
 
@@ -628,26 +636,31 @@
         margin: 0;
     }
 
-    #session-command-results [data-open-workspace-settings] {
-        margin-inline-start: auto;
-        text-decoration: none;
-    }
-
     #session-status [data-status-telemetry] {
         display: inline-flex;
         flex-wrap: wrap;
         align-items: baseline;
+        justify-content: flex-end;
         gap: calc(var(--otm-spacing) * 0.65);
         min-inline-size: 0;
+        margin-inline-start: auto;
     }
 
-    #session-status [data-status-line],
+    #session-status [data-status-line] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+        padding: 0;
+        margin: 0;
+    }
+
     #session-status [data-status-line] > ul,
     #session-status [data-status-telemetry] > ul {
         display: flex;
         flex-wrap: wrap;
         align-items: baseline;
-        justify-content: center;
         gap: var(--otm-spacing);
         padding: 0;
         margin: 0;
@@ -668,6 +681,12 @@
         display: inline-flex;
         align-items: baseline;
         gap: 0.45ch;
+        max-inline-size: 100%;
+    }
+
+    #session-status [data-status-field="model"] > a {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
     }
 
     #session-status [data-status-line] button {
@@ -701,8 +720,8 @@
         text-decoration: underline;
     }
 
-    #workspace-settings [data-settings-nav] a:is(:hover, :focus-visible),
-    #session-command-results [data-open-workspace-settings]:is(:hover, :focus-visible),
+    :is(#workspace-settings, #account-settings) [data-settings-nav] a:is(:hover, :focus-visible),
+    :is(#session-model, #session-effort):is(:hover, :focus-visible),
     :is(#dialog-workspace-switcher, #dialog-workspaces) :is([data-switcher-list], [data-workspaces-list]) > li > a:is(:hover, :focus-visible),
     [data-session-link]:is(:hover, :focus-visible),
     [data-directory-entry="workspace"] > article > header > a[data-text="name"]:is(:hover, :focus-visible) {
@@ -954,13 +973,28 @@
         color: var(--plurnk-diff-meta-color);
     }
 
-    /* {§web-session-commands} {§web-workspace-settings} Results and settings controls reflect explicit state. */
-    #session-command-results article[aria-busy="true"] :is([data-dismiss-command], [data-open-workspace-settings]),
-    #session-command-results section:not([data-alias-count="0"]) > [data-no-aliases],
-    :is(#session-command-results, #workspace-settings) [data-env-panel][data-env-count="0"] > figure,
-    :is(#session-command-results, #workspace-settings) [data-env-enabled="true"] [data-env-enable],
-    :is(#session-command-results, #workspace-settings) [data-env-enabled="false"] [data-env-disable],
-    :is(#session-command-results, #workspace-settings) [data-env-removable="false"] [data-env-unset],
+    @keyframes plurnk-telemetry-dwell {
+        0% {
+            opacity: 0;
+        }
+
+        100% {
+            opacity: 1;
+        }
+    }
+
+    #session-status :is([data-status-field="preparation"], [data-status-field="activity"], [data-status-field="inbox"]) {
+        animation: plurnk-telemetry-dwell 220ms steps(1, end);
+    }
+
+    /* {§web-session-commands} {§web-workspace-settings} Settings and modal controls reflect explicit state. */
+    #workspace-settings [data-env-panel][data-env-count="0"] > figure,
+    #workspace-settings [data-env-enabled="true"] [data-env-enable],
+    #workspace-settings [data-env-enabled="false"] [data-env-disable],
+    #workspace-settings [data-env-removable="false"] [data-env-unset],
+    #workspace-settings [data-settings-panel="models"][data-alias-count="0"] > [data-models-aliases-wrap],
+    #workspace-settings [data-settings-panel="models"]:not([data-alias-count="0"]) > [data-models-aliases-empty],
+    #workspace-settings tr[data-model-session-usable="false"] [data-model-use-session],
     #workspace-settings [data-family-count="0"] > [data-family-table-wrap],
     #workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
     #workspace-settings [data-settings-panel="env"]:has([data-env-panel]:not([data-env-count="0"])) > [data-env-empty],
@@ -975,20 +1009,19 @@
     #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],
     #workspace-settings [data-personas-save-form]:not([data-persona-mode="inline"]) [data-persona-inline-fields],
-    #workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields] {
+    #workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields],
+    #dialog-command-output [data-command-literal-wrap]:has(> code:empty) {
         display: none;
     }
 
-    #session-command-results [data-dismiss-command]::before,
     #session-onboarding-banner [data-dismiss-onboarding]::before {
         content: "✕" / "";
     }
 
-    /* {§web-session-settings} {§web-workspace-settings} {§web-onboarding} Empty feedback occupies no page space. */
-    :is(#session-model-settings, #session-effort-settings, #session-command-results article, #workspace-settings, [data-settings-dialog] > article, #dialog-session-manage > article, #dialog-onboarding > article) > p:empty,
+    /* {§web-workspace-settings} {§web-onboarding} {§web-session-commands} Empty feedback occupies no page space. */
+    :is(#workspace-settings, [data-settings-panel], [data-settings-dialog] > article, #dialog-session-create > article, #dialog-session-manage > article, #dialog-onboarding > article, #dialog-command-output > article) > p:empty,
     #dialog-onboarding [data-onboarding-form]:not([data-onboarding-mode="hosted"]) [data-onboarding-hosted-fields],
-    #dialog-onboarding [data-onboarding-form] small:empty,
-    #session-command-results [data-command-output]:empty {
+    #dialog-onboarding [data-onboarding-form] small:empty {
         display: none;
     }
 
@@ -1012,6 +1045,7 @@
     #session-status:not([data-lifecycle]) > [data-status-line],
     #session-status:is([data-connection="disconnected"], [data-connection="signed-out"]) > [data-status-line],
     #session-status[data-connection="connected"] > [role="status"],
+    #session-status[data-lifecycle][data-connection="connecting"] > [role="status"],
     #session-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
     #session-status:not([data-elapsed]) [data-status-field="elapsed"],
     #session-status[data-elapsed=""] [data-status-field="elapsed"],

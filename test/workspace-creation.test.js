@@ -421,11 +421,13 @@ test("{§web-workspace-rename} workspace rename updates name and redirects to ne
     assert.deepEqual(renamed, [{ id: 7, name: "  spaced  " }, { id: 7, name: "new-name" }, { id: 7, name: "new-name" }]);
 });
 
-test("{§web-session-creation} session creation creates independent session and redirects", async (t) => {
+test("{§web-session-creation} session creation creates independent session, applies optional title, and redirects", async (t) => {
     const createdSessions = [];
+    const titledSessions = [];
     const { base } = await fixture(t, {
         workspaces: [{ id: 7, name: "my-workspace", project_root: null, project_label: null, archived_at: null }],
-        createSession: async (args) => { createdSessions.push(args); return { sessionId: 10, sessionName: args.name || "bob" }; },
+        createSession: async (args) => { createdSessions.push(args); return { sessionId: 10 + createdSessions.length, sessionName: args.name || "bob" }; },
+        setSessionTitle: async (args) => { titledSessions.push(args); return { id: args.sessionId, title: args.title }; },
     });
 
     const sessionPost = (body, headers = {}) => fetch(new URL("/sessions/new", base), {
@@ -451,11 +453,12 @@ test("{§web-session-creation} session creation creates independent session and 
     const missing = await sessionPost({ workspace: "nonexistent", token: randomUUID(), name: "alice" });
     assert.equal(missing.status, 404);
 
-    // Create named session
-    const namedRes = await sessionPost({ workspace: "my-workspace", token: randomUUID(), name: "alice" });
+    // Create named session with optional title
+    const namedRes = await sessionPost({ workspace: "my-workspace", token: randomUUID(), name: "alice", title: "  Design sync  " });
     assert.equal(namedRes.status, 303);
     assert.equal(namedRes.headers.get("location"), "/~/my-workspace#alice");
     assert.deepEqual(createdSessions[0], { workspaceId: 7, name: "alice" });
+    assert.deepEqual(titledSessions[0], { workspaceId: 7, sessionId: 11, title: "Design sync" });
 
     // Create unnamed session (client allocates sequential session1)
     const unnamedToken = randomUUID();
@@ -463,6 +466,7 @@ test("{§web-session-creation} session creation creates independent session and 
     assert.equal(unnamedRes.status, 303);
     assert.equal(unnamedRes.headers.get("location"), "/~/my-workspace#session1");
     assert.deepEqual(createdSessions[1], { workspaceId: 7, name: "session1" });
+    assert.equal(titledSessions.length, 1, "omitted title leaves session untitled");
 
     // Idempotent retry converges to same session
     const retryRes = await sessionPost({ workspace: "my-workspace", token: unnamedToken });

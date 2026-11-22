@@ -206,12 +206,12 @@ registerHooks({
                                 await verifyPageShell(page, { title: `${workspace.name}#${session.name} — Plurnk`, kind: "session" });
                                 assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), workspace.name);
                                 assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), session.name);
-                                // {§web-workspace-folder} Render the daemon's label, including after a rename.
+                                // {§web-workspace-folder} Render 🗂️ on every folder-bound workspace and ☁️ strictly on folderless workspaces, keeping the secondary folder row when renamed.
                                 const sameFolder = workspace.name === workspace.project_label;
                                 const marker = page.locator("#session-workspace").getByRole("img", {
-                                    name: sameFolder ? "Project workspace" : workspace.project_root === null ? "Folderless workspace" : "Workspace", exact: true,
+                                    name: workspace.project_root === null ? "Folderless workspace" : "Project workspace", exact: true,
                                 });
-                                assert.equal(await marker.innerText(), sameFolder ? "🗂️" : "☁️");
+                                assert.equal(await marker.innerText(), workspace.project_root === null ? "☁️" : "🗂️");
                                 const folder = page.locator("#session-folder");
                                 if (workspace.project_label !== null && !sameFolder) {
                                     assert.equal(await folder.isVisible(), true);
@@ -415,11 +415,9 @@ registerHooks({
                             const openSessionCreate = async () => {
                                 const target = page.locator("#session-create");
                                 if (javaScriptEnabled) {
-                                    await page.locator('#workspace-tabs a[aria-current="true"]').click();
-                                    await page.locator("#dialog-session-manage").waitFor({ state: "visible" });
-                                    await page.locator('#dialog-session-manage button[data-dialog-target="dialog-session-create"]').click();
-                                    assert.equal(await page.locator("#dialog-session-create[open]").count(), 1, "dialog-session-create opened");
-                                    assert.equal(await page.locator("#dialog-session-manage[open]").count(), 0, "enclosing session manage dialog closed");
+                                    await page.locator("body > #dialog-session-create").waitFor({ state: "attached" });
+                                    await page.locator('#workspace-tabs [data-action="new-session"]').click();
+                                    await page.locator("#dialog-session-create[open]").waitFor();
                                 } else {
                                     assert.ok(await target.isVisible() && await target.evaluate((element) => element.closest("main") !== null), "without JavaScript session-create renders in the page content");
                                 }
@@ -436,17 +434,25 @@ registerHooks({
                             const sessionName = `added-${javaScriptEnabled ? "scripted" : "unscripted"}`;
                             const sessionForm = await openSessionCreate();
                             await sessionForm.locator('input[name="name"]').fill(sessionName);
+                            await sessionForm.locator('input[name="title"]').fill("Added title");
                             await sessionForm.getByRole("button", { name: "Confirm", exact: true }).click();
                             await page.waitForLoadState("load");
                             const renamed = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id);
                             assert.equal(renamed?.name, renamedName, "the daemon holds the new name");
                             const added = renamed.sessions.find((session) => session.name === sessionName);
                             assert.ok(added, "the daemon holds the new session");
+                            assert.equal(added.title, "Added title", "the daemon holds the new session title");
                             assert.deepEqual([added.parentSessionId, added.loops.length], [null, 0], "an independent session with no loop");
 
-                            // 1-click leading "+" in #workspace-tabs creates a sequential session2!
-                            if (javaScriptEnabled) await page.locator("body > #dialog-session-manage").waitFor({ state: "attached" });
-                            await page.locator('#workspace-tabs [data-action="new-session"]').click();
+                            // Leading "+" in #workspace-tabs creates a sequential session2 (via modal Confirm with JS, or direct POST without JS)!
+                            if (javaScriptEnabled) {
+                                await page.locator("body > #dialog-session-create").waitFor({ state: "attached" });
+                                await page.locator('#workspace-tabs [data-action="new-session"]').click();
+                                await page.locator("#dialog-session-create[open]").waitFor();
+                                await page.locator('#session-create button[type="submit"]').click();
+                            } else {
+                                await page.locator('#workspace-tabs [data-action="new-session"]').click();
+                            }
                             await page.locator('#workspace-tabs a[aria-current="true"][data-tab-session="session2"]').waitFor();
                             const named = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id)
                                 .sessions.filter(({ name, origin }) => origin === "model" && name !== "session1" && name !== sessionName);

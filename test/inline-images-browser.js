@@ -176,9 +176,9 @@ export default async function verifyInlineImages(t) {
 
                         await userRow.scrollIntoViewIfNeeded();
                         await userRow.locator('[data-image-reference][data-body-state="loaded"]').nth(1).waitFor();
-                        assert.deepEqual(entryReads, [
-                            "session://user/attachments/deadbeef/diagram.png",
+                        assert.deepEqual(entryReads.toSorted(), [
                             "session://user/attachments/deadbeef/binary.gif",
+                            "session://user/attachments/deadbeef/diagram.png",
                         ]);
                         assert.equal(await userRow.locator("article p").textContent(), "Inspect these two captures.");
                         assert.doesNotMatch(await userRow.innerText(), /session:\/\/user\/attachments/u);

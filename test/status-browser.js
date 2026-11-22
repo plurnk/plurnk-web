@@ -243,7 +243,7 @@ export default async function verifyStatus(t) {
                     const controlGroup = page.getByRole("list", { name: "Model controls", exact: true });
                     const telemetry = page.locator("#session-status [data-status-telemetry]");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                    assert.deepEqual(await controlGroup.locator("button").evaluateAll((buttons) => buttons.map(({ id }) => id)), ["session-yolo", "session-model", "session-effort"]);
+                    assert.deepEqual(await controlGroup.locator(":is(button, a)").evaluateAll((controls) => controls.map(({ id }) => id)), ["session-yolo", "session-model", "session-effort"]);
                     await page.setViewportSize({ width: 1440, height: 900 });
                     await receive(initial);
                     const compactControls = await controlGroup.boundingBox();

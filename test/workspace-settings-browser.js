@@ -128,9 +128,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             const composer = page.getByRole("textbox", { name: "Message", exact: true });
             await composer.fill("/personas list");
             await page.getByRole("button", { name: "Send", exact: true }).click();
-            const cmdRow = page.locator("#session-command-results > ul > li").last();
-            await cmdRow.locator('[data-command-state="done"]').waitFor();
-            await cmdRow.getByRole("link", { name: "Settings", exact: true }).click();
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#personas");
 
             await settingsArticle.waitFor({ state: "visible" });
             const sessionPersonaForm = settingsArticle.locator('[data-settings-panel="personas"] [data-session-persona-form]');

@@ -128,24 +128,26 @@ test("{§web-session-status} wait uses the daemon deadline without changing life
     assert.equal(clocks({ ...waiting, waitUntil: null }, 90_000).wait, "", "a daemon update clears the previous bound");
 });
 
-test("{§web-session-identity} folder labels are compared, not derived, and names use the shared URL codec", () => {
+test("{§web-session-identity} {§web-workspace-folder} folder labels are compared, not derived, and names use the shared URL codec", () => {
     assert.deepEqual(workspaceIdentity({ name: "~/project", projectLabel: "~/project" }, "session1"), {
         workspaceName: "~/project",
         workspacePath: "/~/~/project",
         sessionPath: "/~/~/project#session1",
         workspaceSettingsPath: "/settings/?workspace=%7E%2Fproject&session=session1",
+        modelsSettingsPath: "/settings/?workspace=%7E%2Fproject&session=session1#models",
         projectLabel: "",
         workspaceIcon: "🗂️",
         workspaceIconLabel: "Project workspace",
         pageTitle: "~/project#session1 — Plurnk",
     });
     const named = workspaceIdentity({ name: 'review <&@%>', projectLabel: "~/project" }, "session1");
-    assert.equal(named.workspaceIcon, "☁️");
-    assert.equal(named.workspaceIconLabel, "Workspace");
+    assert.equal(named.workspaceIcon, "🗂️");
+    assert.equal(named.workspaceIconLabel, "Project workspace");
     assert.equal(named.projectLabel, "~/project");
     assert.equal(named.workspacePath, "/~/review%20%3C%26%40%25%3E");
     assert.equal(named.sessionPath, "/~/review%20%3C%26%40%25%3E#session1");
     const folderless = workspaceIdentity({ name: "scratch", projectLabel: null }, "session1");
+    assert.equal(folderless.workspaceIcon, "☁️");
     assert.equal(folderless.workspaceIconLabel, "Folderless workspace");
     assert.equal(folderless.projectLabel, "");
     assert.throws(() => workspaceIdentity({ name: "../bad", projectLabel: null }, "session1"), /Workspace has no directory address/u);

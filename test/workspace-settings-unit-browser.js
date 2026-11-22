@@ -50,6 +50,8 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         },
                     ];
                     let activeSessionPersona = "none";
+                    let activeSessionModel = "local";
+                    let activeSessionEffort = "low";
                     /** @type {any[]} */
                     let memberDefs = [];
                     /** @type {any[]} */
@@ -83,51 +85,104 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 },
                             };
                         }
+                        if (input.method === "providers/list") {
+                            return {
+                                result: {
+                                    providers: [
+                                        { providerId: "local", supported: ["fixture"], required: false, _meta: { plurnk: { alias: "local", provider: "fixture", model: "small", effort: "low", effortSource: "default", active: true } } },
+                                        { providerId: "fast", supported: ["fixture"], required: false, _meta: { plurnk: { alias: "fast", provider: "fixture", model: "fast", effort: "high", effortSource: "default", active: false } } },
+                                    ],
+                                },
+                            };
+                        }
+                        const sessionConfigOptions = () => [
+                            {
+                                configId: "persona",
+                                name: "Persona",
+                                type: "select",
+                                currentValue: activeSessionPersona,
+                                options: [
+                                    { value: "none", name: "None (default)", description: null },
+                                    ...personaDefs.map((p) => ({
+                                        value: p.alias,
+                                        name: p.alias,
+                                        description: p.definition.description ?? null,
+                                    })),
+                                ],
+                            },
+                            {
+                                configId: "thought_level",
+                                name: "Reasoning Effort",
+                                type: "select",
+                                currentValue: activeSessionEffort,
+                                options: [
+                                    { value: "low", name: "low" },
+                                    { value: "high", name: "high" },
+                                ],
+                            },
+                        ];
+                        const sessionStatusMeta = () => ({
+                            status: {
+                                model: {
+                                    alias: activeSessionModel,
+                                    provider: "fixture",
+                                    model: activeSessionModel === "fast" ? "fast" : "small",
+                                    effort: activeSessionEffort,
+                                    effortSource: "explicit",
+                                },
+                            },
+                        });
                         if (input.method === "session/resume") {
                             return {
                                 result: {
-                                    configOptions: [{
-                                        configId: "persona",
-                                        name: "Persona",
-                                        type: "select",
-                                        currentValue: activeSessionPersona,
-                                        options: [
-                                            { value: "none", name: "None (default)", description: null },
-                                            ...personaDefs.map((p) => ({
-                                                value: p.alias,
-                                                name: p.alias,
-                                                description: p.definition.description ?? null,
-                                            })),
-                                        ],
-                                    }],
+                                    configOptions: sessionConfigOptions(),
                                     availableCommands: [],
+                                    _meta: { plurnk: sessionStatusMeta() },
                                 },
                             };
                         }
                         if (input.method === "session/set_config_option") {
-                            activeSessionPersona = input.params.value;
+                            if (input.params.configId === "persona") activeSessionPersona = input.params.value;
+                            if (input.params.configId === "model") activeSessionModel = input.params.value;
+                            if (input.params.configId === "thought_level") activeSessionEffort = input.params.value;
                             return {
                                 result: {
-                                    configOptions: [{
-                                        configId: "persona",
-                                        name: "Persona",
-                                        type: "select",
-                                        currentValue: activeSessionPersona,
-                                        options: [
-                                            { value: "none", name: "None (default)", description: null },
-                                            ...personaDefs.map((p) => ({
-                                                value: p.alias,
-                                                name: p.alias,
-                                                description: p.definition.description ?? null,
-                                            })),
-                                        ],
-                                    }],
+                                    configOptions: sessionConfigOptions(),
+                                    _meta: { plurnk: sessionStatusMeta() },
                                 },
                             };
                         }
                         assert.equal(input.method, "_plurnk/action");
                         const { kind, params } = input.params;
                         switch (kind) {
+                            case "models.list":
+                                return {
+                                    result: {
+                                        items: [{
+                                            selector: "fixture/small",
+                                            provider: "fixture",
+                                            providerName: "Fixture",
+                                            model: "small",
+                                            modelName: params?.search ? `Small (${params.search})` : "Fixture Small",
+                                            limits: { contextTokens: 32768 },
+                                            capabilities: {
+                                                attachment: false,
+                                                reasoning: true,
+                                                efforts: ["low", "high"],
+                                                toolCall: true,
+                                                inputModalities: ["text"],
+                                                outputModalities: ["text"],
+                                            },
+                                            readiness: { ready: true, causes: [] },
+                                        }],
+                                        offset: 0,
+                                        total: 1,
+                                    },
+                                };
+                            case "models.local":
+                                return { result: { candidates: [] } };
+                            case "service.env.list":
+                                return { result: { configFile: "/tmp/.env", entries: [] } };
                             case "workspace.mcp.list":
                                 return { result: { family: "mcp", definitions: mcpDefs } };
                             case "workspace.mcp.enable":
@@ -408,13 +463,24 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     assert.equal(await envSection.locator("[data-ws-env-scope-form]").isVisible(), false, "Workspace-only mode hides session env scope switcher");
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value/u);
 
-                    // 2. Session mode (sessionName = "user"): slash-command Settings link navigates to /settings/?workspace=conversation&session=user#personas
+                    // Help tab renders keyboard shortcuts and live-filterable slash commands
+                    await settingsArticle.getByRole("link", { name: "Help", exact: true }).click();
+                    const helpPanel = settingsArticle.locator('[data-settings-panel="help"]');
+                    await helpPanel.waitFor({ state: "visible" });
+                    assert.equal(await helpPanel.locator('dl[aria-label="Keyboard shortcuts"]').isVisible(), true);
+                    const helpFilter = helpPanel.getByRole("searchbox", { name: "Filter commands", exact: true });
+                    await helpFilter.fill("rollback");
+                    assert.deepEqual(
+                        await helpPanel.locator("[data-command-name]:not([hidden])").evaluateAll((els) => els.map((el) => el.getAttribute("data-command-name"))),
+                        ["rollback"],
+                    );
+
+                    // 2. Session mode (sessionName = "user"): `/personas list` navigates directly to /settings/?workspace=conversation&session=user#personas
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.runCommand === "function");
                     await page.evaluate(() => window.setSessionContext("user"));
-                    assert.equal(await page.evaluate(() => window.runCommand("/personas list")), true);
-                    const cmdCard = page.locator("#session-command-results > ul > li").last();
-                    await cmdCard.getByRole("link", { name: "Settings", exact: true }).click();
+                    void page.evaluate(() => window.runCommand("/personas list"));
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#personas");
                     await settingsArticle.waitFor({ state: "visible" });
                     const personasPanel = settingsArticle.locator('[data-settings-panel="personas"]');
                     await personasPanel.waitFor({ state: "visible" });
@@ -425,6 +491,25 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await sessionPersonaForm.getByRole("button", { name: "Apply to session", exact: true }).click();
                     await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Session persona: auditor.");
                     assert.equal(activeSessionPersona, "auditor");
+
+                    // Models tab in Session mode: shows aliases, catalog search, + Add model onboarding dialog, and session model + effort apply
+                    await settingsArticle.getByRole("link", { name: "Models", exact: true }).click();
+                    const modelsPanel = settingsArticle.locator('[data-settings-panel="models"]');
+                    await modelsPanel.waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 2);
+                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 1);
+                    const sessionModelForm = modelsPanel.locator("[data-session-model-form]");
+                    await sessionModelForm.waitFor({ state: "visible" });
+                    await sessionModelForm.getByRole("combobox", { name: "Active session model", exact: true }).selectOption("fast");
+                    await sessionModelForm.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("high");
+                    await sessionModelForm.getByRole("button", { name: "Apply to session", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/fast"));
+                    assert.equal(activeSessionModel, "fast");
+                    assert.equal(activeSessionEffort, "high");
+                    await modelsPanel.getByRole("button", { name: "+ Add model", exact: true }).click();
+                    await page.locator("#dialog-onboarding").waitFor({ state: "visible" });
+                    await page.locator("#dialog-onboarding [data-dialog-close]").first().click();
+                    await page.locator("#dialog-onboarding").waitFor({ state: "hidden" });
 
                     // Switch to Environment in Session mode and verify session listing scope
                     await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();

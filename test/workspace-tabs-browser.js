@@ -198,8 +198,14 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await page.waitForFunction(() => !document.querySelector("#dialog-session-manage")?.hasAttribute("open"));
             await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="user"] [data-tab-label]')?.textContent === "Main chat");
 
-            // Clicking + creates an untouched draft tab and switches to it; switching back to Main chat folds the untouched draft out!
+            // Clicking + opens #dialog-session-create; confirming empty creates an untouched sequential draft tab and switches to it; switching back to Main chat folds the untouched draft out!
+            const createDialog = page.locator("#dialog-session-create");
             await plusBtn.click();
+            await createDialog.waitFor({ state: "visible" });
+            assert.equal(await createDialog.getByRole("textbox", { name: "Session name", exact: true }).inputValue(), "");
+            assert.equal(await createDialog.getByRole("textbox", { name: "Session title", exact: true }).inputValue(), "");
+            await createDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+            await createDialog.waitFor({ state: "hidden" });
             await page.waitForFunction(() => {
                 const active = document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session");
                 return active !== null && active !== "user";
@@ -288,15 +294,16 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, userPath);
 
             await page.keyboard.press("Alt+KeyN");
-            const createDialog = page.locator("#dialog-session-create");
             await createDialog.waitFor({ state: "visible" });
             await createDialog.getByRole("textbox", { name: "Session name", exact: true }).fill("chord-session");
+            await createDialog.getByRole("textbox", { name: "Session title", exact: true }).fill("Chord title");
             await createDialog.getByRole("button", { name: "Confirm", exact: true }).click();
             const chordPath = directoryPath({ kind: "session", workspace, session: "chord-session" });
             assert.ok(chordPath);
             await page.waitForURL(new URL(chordPath, base).href);
             await waitConnectedSession(page, "chord-session");
             assert.equal(await tabs.locator('a[data-tab-session="chord-session"]').getAttribute("aria-current"), "true");
+            assert.equal(await tabs.locator('a[data-tab-session="chord-session"] [data-tab-label]').textContent(), "Chord title");
 
             // Clicking active chord-session tab opens #dialog-session-manage -> Archive session over ACP, switches cleanly back to #user, and surfaces Archived sessions (1) in ☰!
             await tabs.locator('a[data-tab-session="chord-session"]').click();

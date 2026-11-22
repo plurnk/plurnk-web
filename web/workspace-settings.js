@@ -4,11 +4,14 @@ import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses
 import describeFailure from "./failure.js";
 import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
+import { createOnboardingController } from "./onboarding.js";
+import { primaryModifierLabel } from "./session-commands.js";
+import { listModels, modelLabel, sessionEffort, sessionModel } from "./session-models.js";
 import { isRecord } from "./session-translator.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
- * @typedef {"general" | "mcp" | "skills" | "schedule" | "personas" | "members" | "env"} SettingsSection
+ * @typedef {"general" | "models" | "mcp" | "skills" | "schedule" | "personas" | "members" | "env" | "help"} SettingsSection
  */
 
 /**
@@ -21,7 +24,7 @@ import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
  * }} WorkspaceSettingsContext
  */
 
-const SECTIONS = /** @type {const} */ (["general", "mcp", "skills", "schedule", "personas", "members", "env"]);
+const SECTIONS = /** @type {const} */ (["general", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help"]);
 const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members"]);
 
 /** @param {unknown} value @returns {value is SettingsSection} */
@@ -93,19 +96,34 @@ function formatFamilyDetails(family, item) {
  * {§web-workspace-settings} Mounts workspace subsystem management inside `<article id="workspace-settings">`.
  * @param {HTMLElement} article
  * @param {() => WorkspaceSettingsContext} getContext
- * @param {{ updateHash?: boolean }} [options]
+ * @param {{ updateHash?: boolean, initialQuery?: string, initialHelpFilter?: string, initialEnvScope?: "workspace" | "session" }} [options]
  */
-export function createWorkspaceSettingsController(article, getContext, { updateHash = false } = {}) {
+export function createWorkspaceSettingsController(article, getContext, { updateHash = false, initialQuery = "", initialHelpFilter = "", initialEnvScope = "workspace" } = {}) {
     /** @type {Element | null} */
     let envPanel = null;
     /** @type {SettingsSection} */
     let activeSection = "general";
     /** @type {"workspace" | "session"} */
-    let envListScope = "workspace";
+    let envListScope = initialEnvScope === "session" ? "session" : "workspace";
+    let modelsSearchQuery = initialQuery;
+    let helpFilterQuery = initialHelpFilter;
     let busy = false;
     let mounted = false;
+    /** @type {AbortController | null} */
+    let modelsLookup = null;
     /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas" | "members", alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
+
+    const onboarding = createOnboardingController(() => ({
+        auth: getContext().auth,
+        signal: getContext().signal,
+        onConfigured: async (alias) => {
+            if (getContext().sessionName !== null) {
+                await invoke("session/set_config_option", { configId: "model", value: alias }, { requireSession: true }).catch(() => {});
+            }
+            await refreshSection("models");
+        },
+    }));
 
     /** @param {boolean} nextBusy @param {string} [message] @param {string} [recovery] */
     function setFeedback(nextBusy, message = "", recovery = "") {
@@ -263,6 +281,83 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         form.hidden = false;
     }
 
+    /**
+     * @param {unknown} sessionRes
+     * @param {readonly { readonly alias: string, readonly provider: string, readonly model: string }[]} aliases
+     * @param {readonly { readonly selector: string, readonly modelName: string, readonly readiness: { readonly ready: boolean } }[]} catalogItems
+     */
+    function renderSessionModelControls(sessionRes, aliases, catalogItems) {
+        const form = $(article, "form[data-session-model-form]");
+        const modelSelect = form ? $(form, 'select[name="model"]') : null;
+        const effortSelect = form ? $(form, 'select[name="effort"]') : null;
+        if (!(form instanceof HTMLFormElement) || !(modelSelect instanceof HTMLSelectElement) || !(effortSelect instanceof HTMLSelectElement)) {
+            return;
+        }
+        if (getContext().sessionName === null || !isRecord(sessionRes) || !Array.isArray(sessionRes.configOptions)) {
+            form.hidden = true;
+            return;
+        }
+        const modelOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "model");
+        const thoughtOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "thought_level");
+        const seen = new Set();
+        /** @type {Array<{ value: string, label: string }>} */
+        const modelChoices = [];
+        const addChoice = (/** @type {string} */ value, /** @type {string} */ label) => {
+            if (!value || seen.has(value)) return;
+            seen.add(value);
+            modelChoices.push({ value, label });
+        };
+        if (isRecord(modelOption) && Array.isArray(modelOption.options)) {
+            for (const entry of modelOption.options) {
+                if (isRecord(entry) && typeof entry.value === "string" && typeof entry.name === "string") {
+                    addChoice(entry.value, entry.name);
+                }
+            }
+        }
+        for (const a of aliases) {
+            addChoice(a.alias, `${a.alias} — ${a.provider}/${a.model}`);
+        }
+        for (const m of catalogItems) {
+            if (m.readiness.ready) {
+                addChoice(m.selector, `${m.selector} (${m.modelName})`);
+            }
+        }
+        const currentModel = isRecord(modelOption) && typeof modelOption.currentValue === "string" ? modelOption.currentValue : "";
+        if (currentModel) addChoice(currentModel, currentModel);
+        if (modelChoices.length === 0) {
+            form.hidden = true;
+            return;
+        }
+        $.cloneEach(modelSelect, "#setting-option", modelChoices, (optEl, choice) => {
+            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+        });
+        if (currentModel) modelSelect.value = currentModel;
+
+        const supportedEfforts = isRecord(thoughtOption) && Array.isArray(thoughtOption.options)
+            ? thoughtOption.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
+            : [];
+        const currentEffort = isRecord(thoughtOption) && typeof thoughtOption.currentValue === "string" ? thoughtOption.currentValue : "";
+        const effortChoices = [{ value: "", label: "Effort (default)" }, ...supportedEfforts.map((v) => ({ value: v, label: v }))];
+        $.cloneEach(effortSelect, "#setting-option", effortChoices, (optEl, choice) => {
+            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+        });
+        effortSelect.disabled = supportedEfforts.length === 0;
+        effortSelect.value = supportedEfforts.includes(currentEffort) ? currentEffort : "";
+        form.hidden = false;
+    }
+
+    function applyHelpFilter() {
+        const helpPanel = $(article, '[data-settings-panel="help"]');
+        if (!helpPanel) return;
+        const needle = helpFilterQuery.trim().replace(/^\//u, "").toLowerCase();
+        for (const item of $$(helpPanel, "[data-command-name]")) {
+            if (!(item instanceof HTMLElement)) continue;
+            const name = (item.getAttribute("data-command-name") ?? "").toLowerCase();
+            const summary = (item.textContent ?? "").toLowerCase();
+            item.hidden = needle !== "" && !name.includes(needle) && !summary.includes(needle);
+        }
+    }
+
     function syncEnvScopeControls() {
         if (!envPanel) return;
         const ctx = getContext();
@@ -285,13 +380,64 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
 
     /** @param {SettingsSection} section */
     async function refreshSection(section) {
-        if (section === "general") {
+        if (section === "general" || section === "help") {
+            if (section === "help") applyHelpFilter();
             setFeedback(false, "", "");
             return;
         }
         const ctx = getContext();
         setFeedback(true, "", "");
         try {
+            if (section === "models") {
+                modelsLookup?.abort();
+                const req = modelsLookup = new AbortController();
+                const signal = AbortSignal.any([ctx.signal, req.signal]);
+                const callModels = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
+                    managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", ctx.auth, signal, {
+                        workspaceId: ctx.workspaceId,
+                    });
+                const [{ aliases, catalog }, sessionRes] = await Promise.all([
+                    listModels(callModels, modelsSearchQuery),
+                    ctx.sessionName !== null
+                        ? callModels("session/resume", { replayFrom: null }).catch(() => null)
+                        : Promise.resolve(null),
+                ]);
+                signal.throwIfAborted();
+                const modelsPanel = $(article, '[data-settings-panel="models"]');
+                const aliasBody = modelsPanel ? $(modelsPanel, "[data-models-alias-rows]") : null;
+                const catalogBody = modelsPanel ? $(modelsPanel, "[data-models-catalog-rows]") : null;
+                if (modelsPanel && aliasBody && catalogBody) {
+                    const sessionUsable = ctx.sessionName !== null ? "true" : "false";
+                    $.cloneEach(aliasBody, "#workspace-model-alias-row", aliases, (tr, item) => {
+                        the(tr, {
+                            "alias-name": item.alias,
+                            "alias-route": `${item.provider}/${item.model}`,
+                            "alias-effort": item.effort ?? "Unspecified",
+                            "alias-active": item.active ? "Default" : "Configured",
+                            "model-session-usable": sessionUsable,
+                        });
+                    });
+                    $.cloneEach(catalogBody, "#command-model", catalog.items, (tr, model) => {
+                        the(tr, {
+                            "model-selector": model.selector,
+                            "model-name": model.modelName,
+                            "model-context": model.limits.contextTokens,
+                            "model-efforts": model.capabilities.efforts.join(", "),
+                            "model-readiness": model.readiness.ready ? "Configured" : "Not configured",
+                        });
+                    });
+                    the(modelsPanel, {
+                        "alias-count": aliases.length,
+                        "model-offset": catalog.offset,
+                        "model-count": catalog.items.length,
+                        "model-total": catalog.total,
+                        "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search.",
+                    });
+                }
+                renderSessionModelControls(sessionRes, aliases, catalog.items);
+                setFeedback(false, "", "");
+                return;
+            }
             if (section === "env") {
                 syncEnvScopeControls();
                 const res = await invoke(`${envListScope}.env.list`, {}, {
@@ -324,6 +470,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             renderFamilyList(section, res);
             setFeedback(false, "", "");
         } catch (error) {
+            if (modelsLookup?.signal.aborted && section === "models") return;
             const { message, recovery } = await describeFailure(error);
             setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery);
         }
@@ -384,6 +531,83 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 the(opt, { "option-value": level, "option-label": level, "option-disabled": null });
             }
         }
+
+        const shortcutsOutlet = $(article, "[data-help-shortcuts-outlet]");
+        if (shortcutsOutlet && shortcutsOutlet.children.length === 0) {
+            const shortcuts = $.clone(shortcutsOutlet, "#command-shortcuts");
+            the(shortcuts, "shortcut-mod", primaryModifierLabel());
+        }
+        const commandsOutlet = $(article, "[data-help-commands-outlet]");
+        if (commandsOutlet && commandsOutlet.children.length === 0) {
+            $.clone(commandsOutlet, "#command-help");
+        }
+        const helpFilterInput = $(article, "[data-help-filter]");
+        if (helpFilterInput instanceof HTMLInputElement && helpFilterQuery) {
+            helpFilterInput.value = helpFilterQuery;
+        }
+        const modelsSearchInput = $(article, '[data-models-search-form] input[name="q"]');
+        if (modelsSearchInput instanceof HTMLInputElement && modelsSearchQuery) {
+            modelsSearchInput.value = modelsSearchQuery;
+        }
+        applyHelpFilter();
+
+        on(article, "click", "[data-open-model-setup]", () => {
+            if (!busy) setFeedback(false, "", "");
+            void onboarding.open();
+        });
+
+        on(article, "submit", "[data-models-search-form]", (event, form) => {
+            event.preventDefault();
+            if (!(form instanceof HTMLFormElement)) return;
+            modelsSearchQuery = String(new FormData(form).get("q") ?? "").trim();
+            void refreshSection("models");
+        });
+
+        on(article, "input", '[data-models-search-form] input[name="q"]', (_event, input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            modelsSearchQuery = input.value.trim();
+            void refreshSection("models");
+        });
+
+        on(article, "submit", "[data-model-alias-row-form]", (event, form) => {
+            event.preventDefault();
+            if (!(form instanceof HTMLFormElement)) return;
+            const alias = String(new FormData(form).get("alias") ?? "").trim();
+            if (!alias) return;
+            void runMutation(async () => {
+                const route = await sessionModel(
+                    (kind, params = {}) => invoke(kind, params, { requireSession: true }),
+                    alias,
+                );
+                await refreshSection("models");
+                return `Model: ${modelLabel(route)}${route?.effort ? ` (${route.effort})` : ""}.`;
+            });
+        });
+
+        on(article, "submit", "[data-session-model-form]", (event, form) => {
+            event.preventDefault();
+            if (!(form instanceof HTMLFormElement)) return;
+            const data = new FormData(form);
+            const selectedModel = String(data.get("model") ?? "").trim();
+            const selectedEffort = String(data.get("effort") ?? "").trim();
+            if (!selectedModel) return;
+            void runMutation(async () => {
+                const callSession = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
+                    invoke(kind, params, { requireSession: true });
+                const route = await sessionModel(callSession, selectedModel, selectedEffort || undefined);
+                if (!selectedEffort && route?.effort) {
+                    await sessionEffort(callSession).catch(() => {});
+                }
+                await refreshSection("models");
+                return `Model: ${modelLabel(route)}${route?.effort ? ` (${route.effort})` : ""}.`;
+            });
+        });
+
+        on(article, "input", "[data-help-filter]", (_event, input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            helpFilterQuery = input.value;
+            applyHelpFilter();
+        });
 
         on(article, "click", '[data-dialog-target^="dialog-settings-"]', (_event, btn) => {
             if (!busy) setFeedback(false, "", "");
@@ -821,14 +1045,17 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         },
         /** @param {string} familyOrTopic */
         notifyChanged(familyOrTopic) {
-            if (busy || activeSection === "general") return;
+            if (busy || activeSection === "general" || activeSection === "help") return;
             if (
                 familyOrTopic === "resync"
                 || familyOrTopic === activeSection
-                || (familyOrTopic === "policy" && activeSection === "personas")
+                || (familyOrTopic === "policy" && (activeSection === "personas" || activeSection === "models"))
             ) {
                 void refreshSection(activeSection);
             }
+        },
+        openModelSetup() {
+            void onboarding.open();
         },
     };
 }
@@ -871,15 +1098,24 @@ export default function observeWorkspaceSettings(main) {
         }
     });
 
+    const queryParams = new URLSearchParams(location.search);
     const controller = createWorkspaceSettingsController(article, () => ({
         workspaceId,
         workspaceName: currentWorkspaceName,
         sessionName,
         auth,
         signal: pageLifetime.signal,
-    }), { updateHash: true });
+    }), {
+        updateHash: true,
+        initialQuery: queryParams.get("q") ?? "",
+        initialHelpFilter: queryParams.get("cmd") ?? "",
+        initialEnvScope: queryParams.get("envScope") === "session" ? "session" : "workspace",
+    });
 
     controller.selectSection(parseSettingsHash(location.hash), false);
+    if (queryParams.get("setup") === "1") {
+        controller.openModelSetup();
+    }
 
     on.target(window, "hashchange", () => {
         controller.selectSection(parseSettingsHash(location.hash), false);

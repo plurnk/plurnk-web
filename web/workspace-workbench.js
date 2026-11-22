@@ -113,10 +113,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
     if (projectLabel !== null) hasProjectRoot = true;
 
     function recomputeWorkspaceMarker() {
-        const separateFolder = projectLabel !== null && projectLabel !== currentWorkspaceName;
-        if (separateFolder) {
-            workspaceMarker = { icon: "☁️", label: "Workspace" };
-        } else if (hasProjectRoot === true || projectLabel !== null) {
+        if (hasProjectRoot === true || projectLabel !== null) {
             workspaceMarker = { icon: "🗂️", label: "Project workspace" };
         } else {
             workspaceMarker = { icon: "☁️", label: "Folderless workspace" };
@@ -514,12 +511,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
         });
         on(switcherDialog, "click", "[data-switcher-new-session]", () => {
             switcherDialog?.close();
-            if (live) {
-                void openFreshSequentialSession("push");
-            } else {
-                const newForm = $(tabs, "form[data-tab-new]");
-                if (newForm instanceof HTMLFormElement) newForm.requestSubmit();
-            }
+            openSessionCreateDialog();
         });
         on(switcherDialog, "click", "[data-switcher-manage-active]", () => {
             switcherDialog?.close();
@@ -680,15 +672,8 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
 
         if (rawEvent.code === "KeyN") {
-            const createDialog = $("#dialog-session-create");
-            if (createDialog instanceof HTMLDialogElement) {
+            if (openSessionCreateDialog()) {
                 rawEvent.preventDefault();
-                createDialog.showModal();
-                const nameInput = $(createDialog, 'input[name="name"]');
-                if (nameInput instanceof HTMLInputElement) {
-                    nameInput.focus();
-                    nameInput.select();
-                }
             }
         }
     });
@@ -697,34 +682,74 @@ export default async function observeWorkspaceWorkbench(tabs) {
         openSwitcherDialog();
     });
 
+    function openSessionCreateDialog() {
+        const createDialog = $("#dialog-session-create");
+        if (!(createDialog instanceof HTMLDialogElement)) return false;
+        if (switcherDialog?.open) switcherDialog.close();
+        const manageDialog = $("#dialog-session-manage");
+        if (manageDialog instanceof HTMLDialogElement && manageDialog.open) manageDialog.close();
+        syncHeaderPlace();
+        the(createDialog, "session-create-error", "");
+        const nameInput = $(createDialog, 'input[name="name"]');
+        const titleInput = $(createDialog, 'input[name="title"]');
+        if (nameInput instanceof HTMLInputElement) nameInput.value = "";
+        if (titleInput instanceof HTMLInputElement) titleInput.value = "";
+        if (!createDialog.open) createDialog.showModal();
+        if (nameInput instanceof HTMLInputElement) {
+            nameInput.focus();
+        }
+        return true;
+    }
+
     let newSessionBusy = false;
-    /** @param {"push" | "replace"} historyMode */
-    async function openFreshSequentialSession(historyMode) {
-        if (newSessionBusy) return;
+    /**
+     * @param {"push" | "replace"} historyMode
+     * @param {{ name?: string, title?: string }} [requested]
+     */
+    async function openFreshSequentialSession(historyMode, requested = {}) {
+        if (newSessionBusy) return false;
         newSessionBusy = true;
         try {
-            const seen = new Set([...sessionsById.values()].map(({ name }) => name));
+            const explicitName = (requested.name ?? "").trim();
+            const explicitTitle = (requested.title ?? "").trim();
             /** @type {unknown} */
             let created;
-            for (let attempt = 0; attempt < 8; attempt++) {
-                const candidate = nextSequentialName("session", seen);
-                try {
-                    created = await managementAction("session/new", {
-                        _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: candidate } },
-                    }, "", auth, pageLifetime.signal);
-                    break;
-                } catch (error) {
-                    if (Reflect.get(Object(error), "status") === 409 && attempt < 7) {
-                        seen.add(candidate);
-                        continue;
+            if (explicitName) {
+                created = await managementAction("session/new", {
+                    _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: explicitName } },
+                }, "", auth, pageLifetime.signal);
+            } else {
+                const seen = new Set([...sessionsById.values()].map(({ name }) => name));
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    const candidate = nextSequentialName("session", seen);
+                    try {
+                        created = await managementAction("session/new", {
+                            _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: candidate } },
+                        }, "", auth, pageLifetime.signal);
+                        break;
+                    } catch (error) {
+                        if (Reflect.get(Object(error), "status") === 409 && attempt < 7) {
+                            seen.add(candidate);
+                            continue;
+                        }
+                        throw error;
                     }
-                    throw error;
                 }
             }
             const rawSessionId = isRecord(created) && typeof created.sessionId === "string" ? created.sessionId : "";
-            const freshName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : "";
+            const freshName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : explicitName;
             if (freshName) {
-                if (![...sessionsById.values()].some(({ name }) => name === freshName)) {
+                if (explicitTitle) {
+                    await managementAction(
+                        "session/set_title",
+                        { title: explicitTitle },
+                        `${workspaceId}#${freshName}`,
+                        auth,
+                        pageLifetime.signal,
+                    );
+                }
+                const existingEntry = [...sessionsById.values()].find(({ name }) => name === freshName);
+                if (!existingEntry) {
                     const maxId = Math.max(0, ...sessionsById.keys());
                     sessionsById.set(maxId + 1, {
                         id: maxId + 1,
@@ -733,24 +758,58 @@ export default async function observeWorkspaceWorkbench(tabs) {
                         kind: "root",
                         lifecycle: "idle",
                         gates: 0,
-                        title: null,
+                        title: explicitTitle || null,
                         replyId: null,
                         archived: false,
                     });
+                } else if (explicitTitle) {
+                    sessionsById.set(existingEntry.id, { ...existingEntry, title: explicitTitle });
+                }
+                const emptyCard = $("#workspace-empty");
+                if (emptyCard) {
+                    location.assign(directoryPath({ kind: "session", workspace: currentWorkspaceName, session: freshName }) ?? "/");
+                    return true;
                 }
                 await selectSession(freshName, { updateHistory: historyMode, recordPlace: true });
-            } else {
-                location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/");
+                return true;
             }
+            location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/");
+            return true;
         } finally {
             newSessionBusy = false;
         }
     }
 
-    on(document.body, "submit", "form[data-tab-new]", (event, form) => {
+    on(document.body, "submit", "form[data-tab-new], form[data-workspace-empty-new]", (event, form) => {
+        if (!(form instanceof HTMLFormElement)) return;
+        if (openSessionCreateDialog()) {
+            event.preventDefault();
+        }
+    });
+
+    on(document.body, "submit", "form#session-create", (event, form) => {
         if (!live || !(form instanceof HTMLFormElement)) return;
+        const data = new FormData(form);
+        const rawName = String(data.get("name") ?? "").trim();
+        const rawTitle = String(data.get("title") ?? "").trim();
+        if (rawName !== "") return;
         event.preventDefault();
-        void openFreshSequentialSession("push");
+        if (newSessionBusy) return;
+        const createDialog = $("#dialog-session-create");
+        if (createDialog instanceof HTMLElement) the(createDialog, "session-create-error", "");
+        void (async () => {
+            try {
+                const ok = await openFreshSequentialSession("push", { title: rawTitle });
+                if (ok && createDialog instanceof HTMLDialogElement && createDialog.open) {
+                    createDialog.close();
+                }
+            } catch (error) {
+                const { message, recovery } = await describeFailure(error);
+                if (createDialog instanceof HTMLElement) {
+                    the(createDialog, "session-create-error", [message, recovery].filter(Boolean).join(" "));
+                }
+            }
+        })();
     });
 
     let unarchiveMutationBusy = false;
