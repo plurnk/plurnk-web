@@ -161,7 +161,16 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             seenHistoryMessageIds.add(msg.id);
             const plurnk = /** @type {Record<string, unknown> | undefined} */ (msg._meta?.plurnk);
             if (typeof plurnk?.answering === "string") continue;
-            if (typeof plurnk?.voice === "string" && plurnk.voice !== "" && plurnk.voice !== "operator" && plurnk.voice !== "anonymous") continue;
+            if (
+                typeof plurnk?.actor === "string" &&
+                plurnk.actor !== "" &&
+                plurnk.actor !== "operator" &&
+                plurnk.actor !== "anonymous" &&
+                plurnk.actor !== "client" &&
+                plurnk.actor !== "owner"
+            ) {
+                continue;
+            }
             if (typeof plurnk?.source === "string"
                 && (plurnk.source.startsWith("session://") || plurnk.source.startsWith("schedule://"))) {
                 continue;

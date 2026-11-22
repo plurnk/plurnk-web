@@ -138,9 +138,9 @@ export default async function verifySessionDrafts(t) {
                         sessionUpdate: "user_message_chunk",
                         messageId: "actor-msg-1",
                         content: { type: "text", text: "Actor ping from scoutproxy." },
-                        _meta: { plurnk: { id: 99, coordinate: "1/3/1", loopId: 1, origin: "_plurnk", voice: "scoutproxy" } },
+                        _meta: { plurnk: { id: 99, coordinate: "1/3/1", loopId: 1, origin: "_plurnk", actor: "scoutproxy" } },
                     });
-                    await page.locator('[data-message-id="actor-msg-1"][data-message-voice="scoutproxy"]').waitFor();
+                    await page.locator('[data-message-id="actor-msg-1"][data-actor="scoutproxy"]').waitFor();
                     await field.focus();
                     await page.evaluate(() => {
                         const el = /** @type {HTMLTextAreaElement} */ (document.querySelector("#session-message"));

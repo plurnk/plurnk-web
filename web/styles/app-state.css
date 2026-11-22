@@ -761,24 +761,24 @@
     }
 
     /* {§web-session-conversation} {§web-conversation-surfaces} Warm amber surfaces and directional attribution for non-operator actors. */
-    #session-conversation [data-message-role="user"][data-message-voice] {
+    #session-conversation [data-message-role="user"][data-actor] {
         --otm-card-background-color: var(--plurnk-actor-surface);
     }
 
-    #session-conversation [data-voice-direction="outbound"][data-message-voice] {
+    #session-conversation [data-actor-direction="outbound"][data-actor] {
         --otm-card-background-color: var(--plurnk-actor-reply-surface);
     }
 
-    #session-conversation :is([data-message-role="user"][data-message-voice]:not(:has(> [data-prompt-work])), [data-voice-direction="outbound"][data-message-voice]) > article {
+    #session-conversation :is([data-message-role="user"][data-actor]:not(:has(> [data-prompt-work])), [data-actor-direction="outbound"][data-actor]) > article {
         box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-actor-border), var(--otm-card-box-shadow);
     }
 
-    #session-conversation [data-message-role="user"][data-message-voice]:has(> [data-prompt-work]) {
+    #session-conversation [data-message-role="user"][data-actor]:has(> [data-prompt-work]) {
         background-color: var(--plurnk-actor-surface);
         box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-actor-border), var(--otm-card-box-shadow);
     }
 
-    #session-conversation [data-message-role="user"][data-message-voice] > [data-prompt-work][open] {
+    #session-conversation [data-message-role="user"][data-actor] > [data-prompt-work][open] {
         border-block-end-color: var(--plurnk-actor-border);
     }
 
@@ -791,15 +791,15 @@
         font-weight: 700;
     }
 
-    #session-conversation [data-voice-direction="inbound"] [data-message-actor]::before {
+    #session-conversation [data-actor-direction="inbound"] [data-message-actor]::before {
         content: "✉️ " / "";
     }
 
-    #session-conversation [data-voice-direction="inbound"] [data-message-actor]::after {
+    #session-conversation [data-actor-direction="inbound"] [data-message-actor]::after {
         content: " →" / "";
     }
 
-    #session-conversation [data-voice-direction="outbound"] [data-message-actor]::before {
+    #session-conversation [data-actor-direction="outbound"] [data-message-actor]::before {
         content: "✉️ → " / "";
     }
 

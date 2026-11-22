@@ -759,7 +759,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                                         op: "send",
                                         coordinate: "1/3/1",
                                         origin: "_plurnk",
-                                        voice: "scoutproxy",
+                                        actor: "scoutproxy",
                                         source: "acp://scoutproxy/threads/7",
                                         receipt: { status: 200, resource: "message://session1/scoutproxy_02" },
                                     },
@@ -804,41 +804,41 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         ]);
 
                         // Operator prompt targeting session://session1 stays a plain green operator prompt with no actor strip.
-                        assert.equal(await row("op-prompt").getAttribute("data-message-voice"), null);
+                        assert.equal(await row("op-prompt").getAttribute("data-actor"), null);
                         assert.equal(await row("op-prompt").locator("[data-message-actor]").count(), 0);
 
                         // Outbound send to intra-workspace session://worker renders top attribution link "✉️ → #worker".
-                        assert.equal(await row("outbound-peer").getAttribute("data-message-voice"), "#worker");
-                        assert.equal(await row("outbound-peer").getAttribute("data-voice-direction"), "outbound");
+                        assert.equal(await row("outbound-peer").getAttribute("data-actor"), "#worker");
+                        assert.equal(await row("outbound-peer").getAttribute("data-actor-direction"), "outbound");
                         assert.equal(await row("outbound-peer").locator("[data-message-actor]").textContent(), "#worker");
                         assert.match(await row("outbound-peer").locator("[data-message-actor]").evaluate((el) => getComputedStyle(el, "::before").content), /✉️ →/u);
                         assert.equal(await row("outbound-peer").locator('[data-message-actor] a[data-workspace-route="session"]').getAttribute("href"), "#worker");
                         assert.equal(await row("outbound-peer").locator('[data-message-actor] a[data-workspace-route="session"]').getAttribute("data-tab-session"), "worker");
 
                         // Inbound message from session://worker renders top attribution link "✉️ #worker →".
-                        assert.equal(await row("inbound-peer").getAttribute("data-message-voice"), "#worker");
-                        assert.equal(await row("inbound-peer").getAttribute("data-voice-direction"), "inbound");
+                        assert.equal(await row("inbound-peer").getAttribute("data-actor"), "#worker");
+                        assert.equal(await row("inbound-peer").getAttribute("data-actor-direction"), "inbound");
                         assert.equal(await row("inbound-peer").locator("[data-message-actor]").textContent(), "#worker");
                         assert.match(await row("inbound-peer").locator("[data-message-actor]").evaluate((el) => getComputedStyle(el, "::before").content), /✉️/u);
                         assert.match(await row("inbound-peer").locator("[data-message-actor]").evaluate((el) => getComputedStyle(el, "::after").content), /→/u);
                         assert.equal(await row("inbound-peer").locator('[data-message-actor] a[data-workspace-route="session"]').getAttribute("href"), "#worker");
 
                         // Inbound message from external ACP actor scoutproxy renders plain text attribution "✉️ scoutproxy →".
-                        assert.equal(await row("inbound-actor").getAttribute("data-message-voice"), "scoutproxy");
-                        assert.equal(await row("inbound-actor").getAttribute("data-voice-direction"), "inbound");
+                        assert.equal(await row("inbound-actor").getAttribute("data-actor"), "scoutproxy");
+                        assert.equal(await row("inbound-actor").getAttribute("data-actor-direction"), "inbound");
                         assert.equal(await row("inbound-actor").locator("[data-message-actor]").textContent(), "scoutproxy");
                         assert.equal(await row("inbound-actor").locator("[data-message-actor] a").count(), 0);
                         assert.equal(await row("inbound-actor").getByRole("article", { name: "User · From scoutproxy", exact: true }).count(), 1);
 
                         // Outbound done replying to scoutproxy stays top-level (not nested in [data-prompt-replies]) with "✉️ → scoutproxy".
                         assert.equal(await page.locator('[data-messages] > li[data-message-id="outbound-actor-done"]').count(), 1);
-                        assert.equal(await row("outbound-actor-done").getAttribute("data-message-voice"), "scoutproxy");
-                        assert.equal(await row("outbound-actor-done").getAttribute("data-voice-direction"), "outbound");
+                        assert.equal(await row("outbound-actor-done").getAttribute("data-actor"), "scoutproxy");
+                        assert.equal(await row("outbound-actor-done").getAttribute("data-actor-direction"), "outbound");
                         assert.equal(await row("outbound-actor-done").locator("[data-message-actor]").textContent(), "scoutproxy");
                         assert.equal(await row("outbound-actor-done").getByRole("article", { name: "done · To scoutproxy", exact: true }).count(), 1);
 
                         // Schedule trigger renders "✉️ schedule:nightly-audit →".
-                        assert.equal(await row("inbound-schedule").getAttribute("data-message-voice"), "schedule:nightly-audit");
+                        assert.equal(await row("inbound-schedule").getAttribute("data-actor"), "schedule:nightly-audit");
                         assert.equal(await row("inbound-schedule").locator("[data-message-actor]").textContent(), "schedule:nightly-audit");
                     });
                     checkBrowser();
