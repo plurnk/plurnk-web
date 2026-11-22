@@ -5,6 +5,7 @@ import { chromium } from "playwright";
 import { build } from "vite";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
+import testPasswordHash from "./password-hash.js";
 
 async function sessionAgentBundle() {
     const built = await build({
@@ -33,7 +34,7 @@ async function sessionAgentBundle() {
 export default async function verifyTokens({ t, withDaemon }) {
     const mount = await sessionAgentBundle();
     await t.test("{§web-access-token} browser sign-in supplies only access credentials and sign-out revokes them", async () => {
-        await withDaemon({ PLURNK_PASS: "token-fixture-password", PLURNK_AUTH_ACCESS_TTL_SEC: "3" }, async (base) => {
+        await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("token-fixture-password"), PLURNK_AUTH_ACCESS_TTL_SEC: "3" }, async (base) => {
             const browser = await chromium.launch();
             try {
                 const context = await browser.newContext();
@@ -146,7 +147,7 @@ export default async function verifyTokens({ t, withDaemon }) {
         const model = await startModel();
         const secret = crypto.randomUUID();
         try {
-            await withDaemon({ ...model.env, PLURNK_PASS: "revocation-password", PLURNK_SECRET: secret }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("revocation-password"), PLURNK_SECRET: secret }, async (base) => {
                 const browser = await chromium.launch();
                 try {
                     const context = await browser.newContext();

@@ -155,8 +155,8 @@ explicitly disabled authentication; directory reads are then anonymous.
 
 | Boundary | Contract |
 |---|---|
-| Authentication enabled, empty password | The authority shows configuration-required information and issues no browser sign-in, including on localhost. Web neither infers anonymous access nor adds a local bypass. |
-| Authentication enabled, configured password | A browser signs in with `PLURNK_PASS` alone. No username field or web-owned identity configuration; a wrong password is refused by the authority at 401. |
+| Authentication enabled, empty password hash | The authority answers `503` (`Sign-in unavailable`) without exposing host configuration and issues no browser password sign-in, including on localhost; `plurnk web` establishes local browser sessions via `/oauth/handoff`. Web neither infers anonymous access nor adds a local bypass. |
+| Authentication enabled, configured password hash | A browser signs in with the password verified against `PLURNK_AUTH_PASSWORD_HASH` (`plurnk-service hash-password`), without third-party delegation copy on first-party `plurnk-web` pages. No username field or web-owned identity configuration; a wrong password is refused by the authority at `401` (`Invalid password.`). |
 | Authentication explicitly disabled | Anonymous directories; no Account or Sign Out controls. |
 | GET `/auth/login?return=<page>` | Begin authorization code with PKCE S256 and a fresh state, carried sealed in that browser's own HttpOnly cookie. Return locations are `/` (the default), local directory addresses, `/search/` or `/settings/` (preserving query strings), or `/account/` (also their explicit indexes); never an external URL. |
 | GET `/auth/callback` | Open this browser's transaction for the returned state and clear it whatever the outcome; validate and exchange the code with client authentication. A code the authority already redeemed answers 400. Issue a new authority `session` credential for the same subject, client, scopes and grant family, expiring with that grant's refresh credential. |

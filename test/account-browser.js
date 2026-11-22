@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import verifyPageShell from "./page-shell.js";
 import browserDiagnostics from "./browser-diagnostics.js";
+import testPasswordHash from "./password-hash.js";
 
 // {§web-account} Exercise the installed tabbed Account document (`#sign-ins` and `#about`) and ordinary forms, not a session-manager mock.
 export default async function verifyAccount({ t, withDaemon }) {
     for (const javaScriptEnabled of [true, false]) {
         await t.test(`{§web-account} sign-in, tabbed Account (Sign-ins + About), individual/other revocation and sign-out with JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
-            await withDaemon({ PLURNK_PASS: "account-password" }, async (base) => {
+            await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("account-password") }, async (base) => {
                 const browser = await chromium.launch();
                 const contexts = [];
                 const checks = [];

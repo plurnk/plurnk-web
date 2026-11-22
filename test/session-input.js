@@ -7,6 +7,7 @@ import { launchBrowser } from "./engines.js";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { PNG_1X1_BASE64 } from "./inline-images-browser.js";
+import testPasswordHash from "./password-hash.js";
 
 /**
  * @typedef {object} SharedDaemonEntry
@@ -39,7 +40,7 @@ export async function acquireSharedDaemon(withDaemon, authenticated, env = {}) {
             const ready = Promise.withResolvers();
             const release = Promise.withResolvers();
             const done = withDaemon(
-                { ...model.env, ...env, PLURNK_AUTH: authenticated ? "1" : "0", PLURNK_PASS: "compose-password", PLURNK_SECRET: secret },
+                { ...model.env, ...env, PLURNK_AUTH: authenticated ? "1" : "0", PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("compose-password"), PLURNK_SECRET: secret },
                 async (base) => {
                     ready.resolve(base);
                     await release.promise;
