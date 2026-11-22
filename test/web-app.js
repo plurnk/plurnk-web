@@ -19,6 +19,8 @@ export default async function verifyWebApp(browser, base) {
         const cdp = await context.newCDPSession(tab);
         await cdp.send("Page.enable");
         await tab.goto(base);
+        await tab.waitForURL((url) => new URL(url).pathname === "/~/workspace1");
+        await tab.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
         const { url, errors, data } = await cdp.send("Page.getAppManifest");
         assert.equal(url, new URL("/manifest.webmanifest", base).href);
         assert.deepEqual(errors, []);
