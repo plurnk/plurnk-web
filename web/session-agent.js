@@ -30,6 +30,8 @@ import {
     applyTerminalStreamUpdate,
     applyUsageUpdate,
 } from "./session-state-projection.js";
+import { acpUrl, recordServiceVersion } from "./endpoints.js";
+import { withAccessTokenQuery } from "./oidc.js";
 import {
     createAcpFetch,
     extractRpcFailure,
@@ -177,6 +179,8 @@ export default class SessionAgent {
     #submittedPrompt = undefined;
     /** @type {boolean} */
     #needsConnectionSse = false;
+    /** @type {string} */
+    #connAuth = "";
     /** @type {"http" | "ws"} */
     #transport = "http";
 
@@ -192,7 +196,7 @@ export default class SessionAgent {
      * }} [config]
      */
     constructor(config = {}) {
-        this.url = config.url ?? "/acp";
+        this.url = config.url ?? acpUrl();
         this.sessionId = config.sessionId ?? null;
         this.headers = { ...config.headers };
         this.#transport = config.transport === "ws" && typeof globalThis.WebSocket === "function" ? "ws" : "http";
@@ -210,6 +214,8 @@ export default class SessionAgent {
         this.promptImageSupported = false;
         /** @type {boolean} */
         this.promptSkillSupported = false;
+        /** @type {string | null} */
+        this.serviceVersion = null;
         this.#fetch = config.fetch ?? ((url, init) => globalThis.fetch(url, init));
     }
 
@@ -233,6 +239,7 @@ export default class SessionAgent {
         this.#streamProblem = undefined;
         this.#connController?.abort();
         this.#connController = undefined;
+        this.#connAuth = "";
         const prev = this.#conn;
         this.#conn = undefined;
         if (prev) {
@@ -374,24 +381,32 @@ export default class SessionAgent {
 
     /** @param {AbortSignal} signal */
     async #ensureConnection(signal) {
-        if (this.#conn !== undefined && this.#connController !== undefined && !this.#connController.signal.aborted) {
+        const currentAuth = (this.headers.Authorization ?? this.headers.authorization ?? "").trim();
+        const wsAuthStale = this.#transport === "ws"
+            && ((this.#connAuth !== "" && currentAuth === "")
+                || (currentAuth !== this.#connAuth && this.pendingGates.length === 0));
+        if (
+            !wsAuthStale
+            && this.#conn !== undefined
+            && this.#connController !== undefined
+            && !this.#connController.signal.aborted
+        ) {
             return this.#conn;
         }
         this.close();
+        this.#connAuth = currentAuth;
         const connController = new AbortController();
         this.#connController = connController;
         this.#streamProblem = undefined;
 
         /** @type {ReturnType<typeof createHttpStream>} */
         let stream;
+        let wsOpened = false;
         if (this.#transport === "ws") {
-            const httpUrl = new URL(resolveAcpUrl(this.url));
-            httpUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
             const authHeader = this.headers.Authorization ?? this.headers.authorization ?? "";
             const bearerMatch = /^Bearer\s+(\S+)$/iu.exec(authHeader.trim());
-            if (bearerMatch) {
-                httpUrl.searchParams.set("access_token", bearerMatch[1]);
-            }
+            const wsTarget = new URL(withAccessTokenQuery(resolveAcpUrl(this.url), bearerMatch ? bearerMatch[1] : null));
+            wsTarget.protocol = wsTarget.protocol === "https:" ? "wss:" : "ws:";
             const getChain = () => this.#notificationChain;
             const getProblem = () => this.#streamProblem;
             const emitOutcome = (/** @type {LiveOutcome} */ outcome) => this.#emitLiveOutcome(outcome);
@@ -409,7 +424,10 @@ export default class SessionAgent {
                 constructor(url, protocols) {
                     super(url, protocols);
                     let opened = false;
-                    this.onopen = () => { opened = true; };
+                    this.onopen = () => {
+                        opened = true;
+                        wsOpened = true;
+                    };
                     /** @param {MessageEvent} event */
                     this.onmessage = (event) => {
                         if (typeof event.data !== "string" || !event.data.includes("$/cancel_request")) return;
@@ -442,7 +460,7 @@ export default class SessionAgent {
                     };
                 }
             });
-            stream = createWebSocketStream(httpUrl.href, {
+            stream = createWebSocketStream(wsTarget.href, {
                 WebSocket: MonitoredWebSocket,
                 cookies: "omit",
             });
@@ -521,7 +539,7 @@ export default class SessionAgent {
         try {
             const initRes = /** @type {unknown} */ (await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
-                info: { name: "@plurnk/plurnk-web", version: "3.0.0" },
+                info: { name: "@plurnk/plurnk-web", version: "4.0.0" },
                 capabilities: {
                     session: {
                         commands: {
@@ -532,6 +550,11 @@ export default class SessionAgent {
                 },
             }));
             const initRecord = isRecord(initRes) ? initRes : {};
+            const infoRecord = isRecord(initRecord.info) ? initRecord.info : {};
+            if (typeof infoRecord.version === "string" && infoRecord.version.trim() !== "") {
+                this.serviceVersion = infoRecord.version.trim();
+                recordServiceVersion(this.serviceVersion);
+            }
             const capabilities = isRecord(initRecord.capabilities) ? initRecord.capabilities : {};
             const sessionCaps = isRecord(capabilities.session) ? capabilities.session : {};
             const promptCaps = isRecord(sessionCaps.prompt) ? sessionCaps.prompt : {};
@@ -546,6 +569,29 @@ export default class SessionAgent {
                     status: streamProblem.status,
                     problem: streamProblem.problem,
                 });
+            }
+            if (this.#transport === "ws" && !wsOpened && !signal.aborted) {
+                try {
+                    const probe = await this.#fetch(resolveAcpUrl(this.url), {
+                        method: "POST",
+                        headers: { "content-type": "application/json", ...this.headers },
+                        body: JSON.stringify({
+                            jsonrpc: "2.0",
+                            id: 0,
+                            method: "initialize",
+                            params: { protocolVersion: PROTOCOL_VERSION, info: { name: "@plurnk/plurnk-web", version: "4.0.0" } },
+                        }),
+                        cache: "no-store",
+                        signal,
+                    });
+                    if (probe.status === 401) {
+                        throw Object.assign(new Error("Sign in required."), { status: 401 });
+                    }
+                } catch (probeError) {
+                    if (Reflect.get(Object(probeError), "status") === 401) {
+                        throw probeError;
+                    }
+                }
             }
             if (!(error instanceof Error)) {
                 throw new Error("ACP WebSocket connection failed.", { cause: error });
@@ -815,8 +861,24 @@ export default class SessionAgent {
                 response = { cancelled: true };
             } else if (actionKind === "session/list") {
                 response = await conn.agent.request(methods.agent.session.list, {
-                    cwd: typeof actionParams.cwd === "string" ? actionParams.cwd : undefined,
+                    ...(typeof actionParams.cwd === "string" ? { cwd: actionParams.cwd } : {}),
+                    ...(actionParams.archived === "exclude" || actionParams.archived === "include" || actionParams.archived === "only"
+                        ? { archived: actionParams.archived }
+                        : {}),
                     ...(isRecord(actionParams._meta) ? { _meta: actionParams._meta } : {}),
+                });
+            } else if (actionKind === "session/set_title") {
+                response = await conn.agent.request(methods.agent.session.setTitle, {
+                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
+                    title: String(actionParams.title ?? ""),
+                });
+            } else if (actionKind === "session/archive") {
+                response = await conn.agent.request(methods.agent.session.archive, {
+                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
+                });
+            } else if (actionKind === "session/unarchive") {
+                response = await conn.agent.request(methods.agent.session.unarchive, {
+                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
                 });
             } else if (actionKind === "session/delete") {
                 response = await conn.agent.request(methods.agent.session.delete, {

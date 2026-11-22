@@ -1,671 +1,523 @@
 import assert from "node:assert/strict";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import { join } from "node:path";
-import { createServer, request as httpRequest } from "node:http";
-import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { directoryPath } from "../src/directory-addresses.js";
+import SessionAgent from "../web/session-agent.js";
+import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
+import { launchBrowser } from "./engines.js";
+import startMockOidcIdp from "./mock-oidc-idp.js";
+import startModel from "./model-fixture.js";
 import verifyPageShell from "./page-shell.js";
-import verifyAuthorizationPage from "./authorization-page.js";
 import verifySessionDirectory from "./session-directory-browser.js";
-import browserDiagnostics, { httpFailure } from "./browser-diagnostics.js";
-import testPasswordHash from "./password-hash.js";
 
-export default async function verifySessions({ t, consumer, withDaemon: baseWithDaemon }) {
-    // {§web-directory-documents} Fixture seeding and censuses use the same public application port,
-    // not the database. Only this isolated daemon run loads the fixture hook and its routes.
-    const fixture = join(consumer, "web-directory-fixture-hook.mjs");
-    const names = ['~/repo with space/@%2F/<script>&"', "folderless", "/root//project/", "分析", "%2E%2E", `~/project/${"long-name-".repeat(12)}`];
-    const projectRoot = join(consumer, "directory-project");
-    const homeFolders = [
-        ['project @<draft>&"', null],
-        ["renamed-project", "renamed workspace"],
-    ];
-    await mkdir(projectRoot);
-    const fixtureBody = `import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-export default function createFixtureModule() {
-    const web = createRealModule();
-    if (!web.mounts) return web;
-    return {
-        ...web,
-        mounts: [...web.mounts, "/__fixture"],
-        async start(port) {
-            for (const name of ${JSON.stringify(names)}) {
-                const existing = (await port.listWorkspaces()).find((workspace) => workspace.name === name);
-                const projectRoot = name === ${JSON.stringify(names[0])} ? ${JSON.stringify(projectRoot)} : null;
-                const workspaceId = existing?.id ?? (await port.createWorkspace({ name, projectRoot })).workspaceId;
-                if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
-                    const createdUser = await port.createSession({ workspaceId, name: "user" });
-                    if (name !== "folderless") {
-                        await port.setSessionTitle({ workspaceId, sessionId: createdUser.sessionId, title: "Workspace chat" });
-                    }
-                }
-                if (name === ${JSON.stringify(names[0])} && !(await port.listSessions(workspaceId)).some((session) => session.name === "primary")) {
-                    const owner = "acp://fixture/threads/primary";
-                    await port.registerSessionOwner(workspaceId, { address: owner, tools: [], interactive: false });
-                    const parent = await port.createSession({ workspaceId, name: "primary", owner });
-                    const review = await port.forkSession({ workspaceId, sessionId: parent.sessionId, name: "review" });
-                    await port.createSession({ workspaceId, name: "research", parentSessionId: parent.sessionId });
-                    await port.createSession({ workspaceId, name: "evidence", parentSessionId: review.sessionId });
-                    const uuidSess = await port.createSession({ workspaceId, name: "2bb6a400-7106-4299-ae47-66daea5d6077" });
-                    await port.setSessionTitle({ workspaceId, sessionId: uuidSess.sessionId, title: "UUID audit" });
-                    const runtime = await port.ensureRuntimeSession(workspaceId);
-                    const incoming = await port.createSession({ workspaceId, name: "incoming", parentSessionId: runtime });
-                    await port.createSession({ workspaceId, name: "incoming-child", parentSessionId: incoming.sessionId });
-                    await port.createSession({ workspaceId, name: "background-peer", parentSessionId: runtime });
-                }
-            }
-            for (const [folder, name] of ${JSON.stringify(homeFolders)}) {
-                const projectRoot = join(homedir(), folder);
-                await mkdir(projectRoot, { recursive: true });
-                const existing = (await port.listWorkspaces()).find((workspace) => workspace.project_root === projectRoot);
-                const workspaceId = existing?.id ?? (await port.createWorkspace({ projectRoot })).workspaceId;
-                if (name !== null && existing?.name !== name) await port.renameWorkspace(workspaceId, name);
-                if (!(await port.listSessions(workspaceId)).some((session) => session.name === "user")) {
-                    const createdUser = await port.createSession({ workspaceId, name: "user" });
-                    await port.setSessionTitle({ workspaceId, sessionId: createdUser.sessionId, title: "Workspace chat" });
-                }
-            }
-            port.registerHttpRoute("/__fixture", async (req, res) => {
-                if (req.url === "/__fixture/revoke" && req.method === "POST") {
-                    const token = req.headers.authorization?.slice(7);
-                    const claims = token ? port.credentials.verify(token) : null;
-                    if (claims) port.credentials.revokeFamily(claims.family);
-                    res.writeHead(204); res.end(); return;
-                }
-                if (req.url === "/__fixture/archive" && req.method === "POST") {
-                    let body = "";
-                    for await (const chunk of req) body += chunk;
-                    const { workspaceId, sessionId, archived } = JSON.parse(body);
-                    if (sessionId === undefined) await port.setWorkspaceArchived({ workspaceId, archived });
-                    else await port.setSessionArchived({ workspaceId, sessionId, archived });
-                    res.writeHead(204); res.end(); return;
-                }
-                if (req.url === "/__fixture/create-empty" && req.method === "POST") {
-                    let body = "";
-                    for await (const chunk of req) body += chunk;
-                    const { name } = JSON.parse(body);
-                    const created = await port.createWorkspace({ name, projectRoot: null });
-                    res.setHeader("content-type", "application/json");
-                    res.end(JSON.stringify(created));
-                    return;
-                }
-                const workspaces = await port.listWorkspaces();
-                const snapshot = await Promise.all(workspaces.map(async (workspace) => ({ ...workspace,
-                    sessions: await Promise.all((await port.listSessions(workspace.id)).map(async (session) => ({ ...session,
-                        loops: await port.listSessionLoops({ workspaceId: workspace.id, sessionId: session.id }),
-                    }))),
-                })));
-                res.setHeader("content-type", "application/json"); res.end(JSON.stringify(snapshot));
-            });
-            return await web.start?.(port);
-        },
-    };
-}`;
-    await writeFile(fixture, `import { registerHooks } from "node:module";
-const body = ${JSON.stringify(fixtureBody)};
-registerHooks({
-    load(url, context, nextLoad) {
-        if (!url.endsWith("/@plurnk/plurnk-web/src/module.js")) return nextLoad(url, context);
-        return {
-            format: "module",
-            shortCircuit: true,
-            source: \`import createRealModule from \${JSON.stringify(\`\${url}?real\`)};\\n\${body}\`,
-        };
-    },
-});\n`);
-    const withDaemon = (overrides, verify) => baseWithDaemon({
-        NODE_OPTIONS: `--import=${pathToFileURL(fixture).href}`,
-        ...overrides,
-    }, verify);
+/**
+ * @param {string} base
+ * @param {string} [sessionId]
+ * @param {Record<string, string>} [headers]
+ */
+function createAgent(base, sessionId = "", headers = {}) {
+    return new SessionAgent({
+        url: new URL("/acp", base).href,
+        ...(sessionId ? { sessionId } : {}),
+        headers,
+    });
+}
+
+/**
+ * Read daemon workspace & session census strictly over public `/acp`.
+ * @param {string} base
+ * @param {Record<string, string>} [headers]
+ */
+async function readAcpCensus(base, headers = {}) {
+    const agent = createAgent(base, "", headers);
     try {
-        await t.test("{§web-session} {§web-arrival} {§web-search} native sign-in, remembered arrival, /search/ directory, logout and independent browsers", async () => {
-            await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password"), PLURNK_WEB_OVERVIEW_SESSIONS: "12" }, async (base) => {
-                const initial = await (await fetch(new URL("/__fixture", base))).json();
-                assert.equal(initial.find(({ name }) => name === '~/project @<draft>&"')?.project_label, '~/project @<draft>&"');
-                assert.equal(initial.find(({ name }) => name === "renamed workspace")?.project_label, "~/renamed-project");
-                const browser = await chromium.launch();
-                try {
-                    for (const javaScriptEnabled of [true, false]) {
-                        const context = await browser.newContext({ javaScriptEnabled });
-                        const other = await browser.newContext({ javaScriptEnabled });
-                        const checkBrowser = browserDiagnostics(context);
-                        const checkOther = browserDiagnostics(other);
-                        try {
-                            const signIn = async (ctx, path) => {
-                                const page = await ctx.newPage();
-                                const response = await page.goto(new URL(path, base).href);
-                                assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
-                                assert.match(await page.locator("h1").innerText(), /Sign in/u);
-                                assert.doesNotMatch(await page.locator("body").innerText(), /asks to use this daemon/u);
-                                await verifyAuthorizationPage(page, response, { password: true });
-                                await page.getByLabel("Password", { exact: true }).fill("wrong");
-                                const failure = page.waitForResponse((reply) => reply.request().isNavigationRequest() && reply.request().method() === "POST");
-                                await page.getByRole("button", { name: "Continue", exact: true }).click();
-                                const failedResponse = await failure;
-                                assert.equal(failedResponse.status(), 401);
-                                assert.match(await page.getByRole("alert").innerText(), /Invalid password\./u);
-                                await verifyAuthorizationPage(page, failedResponse, { password: true, warning: true });
-                                await page.getByLabel("Password", { exact: true }).fill("browser-password");
-                                await page.getByRole("button", { name: "Continue", exact: true }).click();
-                                await page.waitForLoadState("load");
-                                return page;
-                            };
-                            const page = await signIn(context, "/");
-                            const second = await signIn(other, "/~/");
-                            assert.ok(new URL(page.url()).pathname.startsWith("/~/"), "{§web-arrival} GET / arrives at a workspace session");
-                            assert.equal(new URL(second.url()).pathname, "/search/", "{§web-directory-documents} GET /~/ redirects 303 to /search/");
-
-                            await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
-                            await page.waitForURL(new URL("/search/", base).href);
-                            await verifyPageShell(page, { title: "Search — Plurnk", kind: "search" });
-                            assert.equal(await page.locator("main h1").count(), 0);
-                            const totalSessions = initial.reduce((sum, ws) => sum + ws.sessions.filter((s) => {
-                                if (s.origin !== "model") return false;
-                                const kind = s.kind ?? (s.parentSessionId === null ? "root" : "work");
-                                const hasChildren = ws.sessions.some((c) => c.origin === "model" && c.parentSessionId === s.id);
-                                const isDraft = s.parentSessionId === null && kind === "root" && s.lifecycle === "idle" && !s.title && s.loops.length === 0 && !hasChildren;
-                                return !isDraft;
-                            }).length, 0);
-                            assert.equal(
-                                await page.locator("#search-workspaces :is(a, span)[data-session-link]").count(),
-                                Math.min(12, totalSessions),
-                                "unfiltered /search/ renders the bounded daemon-wide non-draft model session overview",
-                            );
-                            assert.equal(await page.locator('main [data-text="overview-omitted"]').innerText(), String(totalSessions - 12));
-
-                            const renderedWsNames = await page.locator("#search-workspaces > ul > li > article > header > :is(a, span)[data-text='name']").allTextContents();
-                            assert.deepEqual([...renderedWsNames].toSorted(), initial.map(({ name }) => name).toSorted());
-                            for (const ws of initial) {
-                                const wsEntry = page.locator(`#search-workspaces > ul > li[data-workspace-id="${ws.id}"] > article`);
-                                assert.equal(
-                                    await wsEntry.locator(":scope > header").evaluate((el) => getComputedStyle(el, "::before").content.match(/☁️|🗂️/u)?.[0]),
-                                    ws.project_root === null ? "☁️" : "🗂️",
-                                );
-                                assert.equal(await wsEntry.getAttribute("aria-label"), ws.project_root === null ? "Folderless workspace" : "Project workspace");
-                            }
-
-                            const cookie = (await context.cookies()).find(({ name }) => name === "plurnk_web_session");
-                            assert.ok(cookie);
-                            assert.equal(cookie.httpOnly, true);
-                            assert.equal(cookie.sameSite, "Lax");
-                            assert.equal(cookie.path, "/");
-                            const foreign = await fetch(new URL("/search/", base), { headers: { authorization: `Bearer ${cookie.value}` }, redirect: "manual" });
-                            assert.equal(foreign.status, 303, "the session is not accepted through a bearer header");
-                            assert.equal((await fetch(new URL("/auth/logout", base), { method: "POST", headers: { cookie: `plurnk_web_session=${cookie.value}`, origin: "https://elsewhere.example" }, redirect: "manual" })).status, 403);
-                            assert.equal((await fetch(new URL("/auth/logout", base), { headers: { cookie: `plurnk_web_session=${cookie.value}` }, redirect: "manual" })).status, 405);
-
-                            for (const workspace of initial) {
-                                const wsUrl = new URL(directoryPath({ kind: "workspace", workspace: workspace.name }), base).href;
-                                await page.goto(wsUrl);
-                                assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "workspace", workspace: workspace.name }));
-                                const session = workspace.sessions.find(({ origin, parentSessionId, name }) => origin === "model" && parentSessionId === null && name === "user")
-                                    ?? workspace.sessions.find(({ origin, parentSessionId }) => origin === "model" && parentSessionId === null);
-                                assert.ok(session);
-                                await verifyPageShell(page, { title: `${workspace.name}#${session.name} — Plurnk`, kind: "session" });
-                                assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), workspace.name);
-                                assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), session.name);
-                                // {§web-workspace-folder} Render 🗂️ on every folder-bound workspace and ☁️ strictly on folderless workspaces, keeping the secondary folder row when renamed.
-                                const sameFolder = workspace.name === workspace.project_label;
-                                const marker = page.locator("#session-workspace").getByRole("img", {
-                                    name: workspace.project_root === null ? "Folderless workspace" : "Project workspace", exact: true,
-                                });
-                                assert.equal(await marker.innerText(), workspace.project_root === null ? "☁️" : "🗂️");
-                                const folder = page.locator("#session-folder");
-                                if (workspace.project_label !== null && !sameFolder) {
-                                    assert.equal(await folder.isVisible(), true);
-                                    assert.equal(await folder.locator('[data-text="project-label"]').textContent(), workspace.project_label);
-                                    assert.equal(await folder.getByRole("img", { name: "Project folder", exact: true }).innerText(), "🗂️");
-                                    assert.equal(await folder.locator("a").count(), 0, "a filesystem label is not a web link");
-                                } else {
-                                    assert.equal(await folder.isVisible(), false, "equal labels and folderless workspaces need no folder row");
-                                }
-
-                                const wsSearchUrl = new URL(`/search/?${new URLSearchParams({ workspace: workspace.name })}`, base).href;
-                                await page.goto(wsSearchUrl);
-                                await verifySessionDirectory(page, workspace);
-                            }
-                            const response = await context.request.get(new URL("/search/index.html?q=hello", base).href);
-                            assert.equal(response.status(), 200);
-                            assert.equal(response.headers()["cache-control"], "no-store");
-                            assert.equal(response.headers()["referrer-policy"], "no-referrer");
-                            const head = await context.request.head(new URL("/search/?q=hello", base).href);
-                            assert.equal(head.headers()["content-length"], response.headers()["content-length"]);
-                            assert.equal((await head.body()).length, 0);
-                            assert.equal((await context.request.get(new URL("/~/missing/", base).href)).status(), 404);
-                            const missing = await page.goto(new URL("/~/missing/", base).href);
-                            assert.equal(missing.status(), 404);
-                            await verifyPageShell(page, { title: "404 Not Found — Plurnk", kind: "error" });
-
-                            const rememberedWs = initial.at(-1);
-                            assert.ok(rememberedWs);
-                            await page.goto(new URL(directoryPath({ kind: "workspace", workspace: rememberedWs.name }), base).href);
-                            await page.goto(base);
-                            assert.equal(new URL(page.url()).pathname, directoryPath({ kind: "workspace", workspace: rememberedWs.name }),
-                                "{§web-arrival} GET / returns to the remembered workspace session");
-
-                            await page.getByRole("banner").getByRole("link", { name: "Account", exact: true }).click();
-                            await page.waitForURL(new URL("/account/", base).href);
-                            await page.getByRole("button", { name: "Sign out", exact: true }).click();
-                            await page.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
-                            assert.equal((await context.cookies()).some(({ name }) => name === "plurnk_web_session" || name === "plurnk_web_place"), false);
-                            const replay = await fetch(new URL("/search/", base), { headers: { cookie: `plurnk_web_session=${cookie.value}` }, redirect: "manual" });
-                            assert.equal(replay.status, 303, "logout revokes the credential, not only the browser cookie");
-                            await second.reload();
-                            assert.equal(new URL(second.url()).pathname, "/search/", "another browser's grant survives");
-                            const secondCookie = (await other.cookies()).find(({ name }) => name === "plurnk_web_session");
-                            await second.close();
-                            await fetch(new URL("/__fixture/revoke", base), { method: "POST", headers: { authorization: `Bearer ${secondCookie.value}` } });
-                            const revoked = await other.request.get(new URL("/search/", base).href, { maxRedirects: 0 });
-                            assert.equal(revoked.status(), 303, "authority revocation invalidates the web cookie immediately");
-                            checkBrowser([httpFailure("/oauth/authorize", 401), httpFailure("/~/missing/", 404)]);
-                            checkOther([httpFailure("/oauth/authorize", 401)]);
-                        } finally { await context.close(); await other.close(); }
-                    }
-                    assert.deepEqual(await (await fetch(new URL("/__fixture", base))).json(), initial,
-                        "navigation did not change identities, owners, project roots, sessions or loops");
-                } finally { await browser.close(); }
+        const listed = await agent.send({ action: { kind: "workspace.list", includeArchived: true } });
+        assert.equal(listed.result.ok, true, JSON.stringify(listed.result));
+        const workspaces = /** @type {any[]} */ (listed.result.result.workspaces ?? []);
+        const enriched = [];
+        for (const ws of workspaces) {
+            const sessAgent = createAgent(base, "", headers);
+            const sessRes = await sessAgent.send({
+                workspace: ws.name,
+                action: { kind: "workspace.sessions", workspaceId: ws.id, includeArchived: true },
             });
-        });
-        await t.test("{§web-directory-documents} {§web-search} archived places leave active views, open by direct address, and unarchive cleanly", async () => {
-            await withDaemon({ PLURNK_AUTH: "0", PLURNK_AUTH_PASSWORD_HASH: "" }, async (base) => {
-                const census = await (await fetch(new URL("/__fixture", base))).json();
-                const shelved = census.find(({ name }) => name === "folderless");
-                const project = census.find(({ name }) => name === names[0]);
-                const review = project.sessions.find(({ name }) => name === "review");
-                const archive = async (place, archived) => assert.equal((await fetch(new URL("/__fixture/archive", base), {
-                    method: "POST", body: JSON.stringify({ ...place, archived }) })).status, 204);
-                await archive({ workspaceId: shelved.id }, true);
-                await archive({ workspaceId: project.id, sessionId: review.id }, true);
-                const browser = await chromium.launch();
-                try {
-                    for (const javaScriptEnabled of [true, false]) {
-                        const context = await browser.newContext({ javaScriptEnabled });
-                        const checkBrowser = browserDiagnostics(context);
-                        try {
-                            const page = await context.newPage();
-                            await page.goto(new URL("/search/", base).href);
-                            const activeSearchWs = await page.locator("#search-workspaces > ul > li > article > header > :is(a, span)[data-text='name']").allTextContents();
-                            assert.deepEqual([...activeSearchWs].toSorted(),
-                                census.filter(({ id }) => id !== shelved.id).map(({ name }) => name).toSorted(), "an archived workspace leaves the active search list");
-                            await page.goto(new URL(`/search/?${new URLSearchParams({ workspace: project.name })}`, base).href);
-                            const tree = await page.locator("#search-workspaces a[data-session-link]").evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
-                            assert.ok(tree.includes("primary") && tree.includes("research"), "shown sessions stay in the tree");
-                            assert.ok(!tree.includes("review") && !tree.includes("evidence"), "an archived session leaves the tree with the sessions beneath it");
-                            const opened = await page.goto(new URL(directoryPath({ kind: "session", workspace: project.name, session: "review" }), base).href);
-                            assert.equal(opened.status(), 200, "an archived session's workspace page opens by its address");
-                            assert.equal((await page.goto(new URL(directoryPath({ kind: "workspace", workspace: shelved.name }), base).href)).status(), 200,
-                                "an archived workspace's page opens by its address");
-
-                            await page.goto(new URL("/search/?status=archived", base).href);
-                            assert.equal(await page.locator(`#search-workspaces form[action="/workspaces/unarchive"] input[value="folderless"]`).count(), 1);
-                            checkBrowser();
-                        } finally { await context.close(); }
+            sessAgent.close();
+            assert.equal(sessRes.result.ok, true, JSON.stringify(sessRes.result));
+            const sessions = [];
+            for (const s of sessRes.result.result.sessions ?? []) {
+                let loops = [];
+                if (s.origin === "model") {
+                    const loopsAgent = createAgent(base, `${ws.id}#${s.name}`, headers);
+                    const loopsRes = await loopsAgent.send({
+                        action: { kind: "session.loops", workspaceId: ws.id, session: s.name },
+                    });
+                    loopsAgent.close();
+                    if (loopsRes.result.ok) {
+                        loops = loopsRes.result.result.items ?? [];
                     }
-                } finally { await browser.close(); }
-                await archive({ workspaceId: shelved.id }, false);
-                await archive({ workspaceId: project.id, sessionId: review.id }, false);
-                const shown = await (await fetch(new URL("/search/", base))).text();
-                assert.match(shown, new RegExp(`href="${directoryPath({ kind: "workspace", workspace: shelved.name })}"`, "u"), "a shown workspace returns to /search/");
-            });
-        });
-        await t.test("{§web-session} an empty password hash renders generic unavailability without leaking configuration or admitting a localhost browser", async () => {
-            await withDaemon({ PLURNK_AUTH: "1", PLURNK_AUTH_PASSWORD_HASH: "" }, async (base) => {
-                const browser = await chromium.launch();
+                }
+                sessions.push({ ...s, loops });
+            }
+            enriched.push({ ...ws, sessions });
+        }
+        return enriched;
+    } finally {
+        agent.close();
+    }
+}
+
+export default async function verifySessions({ t, consumer, withDaemon, webPackage }) {
+    const projectRoot = join(consumer, "directory-project");
+    await mkdir(projectRoot, { recursive: true });
+    t.after(() => rm(projectRoot, { recursive: true, force: true }));
+
+    await t.test("{§web-arrival} {§web-directory-documents} {§web-search} {§web-workspace-creation} {§web-session-creation} {§web-workspace-rename} {§web-workspace-settings} pure-ACP arrival, /search/ directory, workspace/session modals, rename/archive, #about, and 404 safety", { timeout: 120_000 }, async () => {
+        await withDaemon({ PLURNK_WEB_OVERVIEW_SESSIONS: "6" }, async (base) => {
+            const names = ['~/repo with space/@%2F/<script>&"', "folderless", "分析", `~/project/${"long-name-".repeat(8)}`];
+            for (const name of names) {
+                const wsRoot = name === names[0] ? projectRoot : null;
+                const creator = createAgent(base);
+                const createdWs = await creator.send({
+                    action: { kind: "workspace.create", name, projectRoot: wsRoot },
+                });
+                assert.equal(createdWs.result.ok, true, JSON.stringify(createdWs.result));
+                const wsId = createdWs.result.result.workspaceId;
+                creator.close();
+
+                const sUser = createAgent(base, "user");
+                const initUser = await sUser.send({ workspace: name, action: { kind: "session/new" } });
+                assert.equal(initUser.result.ok, true, JSON.stringify(initUser.result));
+                sUser.close();
+
+                if (name !== "folderless") {
+                    const titler = createAgent(base, `${wsId}#user`);
+                    const titled = await titler.send({ action: { kind: "session/set_title", title: "Workspace chat" } });
+                    assert.equal(titled.result.ok, true, JSON.stringify(titled.result));
+                    titler.close();
+                }
+
+                if (name === names[0]) {
+                    const sPrimary = createAgent(base, "primary");
+                    assert.equal((await sPrimary.send({ workspace: name, action: { kind: "session/new" } })).result.ok, true);
+                    sPrimary.close();
+                    const titlerPrimary = createAgent(base, `${wsId}#primary`);
+                    assert.equal((await titlerPrimary.send({ action: { kind: "session/set_title", title: "Primary work" } })).result.ok, true);
+                    titlerPrimary.close();
+
+                    const fReview = createAgent(base, `${wsId}#primary`);
+                    assert.equal((await fReview.send({ action: { kind: "session/fork", name: "review" } })).result.ok, true);
+                    fReview.close();
+                    const tReview = createAgent(base, `${wsId}#review`);
+                    assert.equal((await tReview.send({ action: { kind: "session/set_title", title: "Review branch" } })).result.ok, true);
+                    tReview.close();
+
+                    const fEvidence = createAgent(base, `${wsId}#review`);
+                    assert.equal((await fEvidence.send({ action: { kind: "session/fork", name: "evidence" } })).result.ok, true);
+                    fEvidence.close();
+                    const tEvidence = createAgent(base, `${wsId}#evidence`);
+                    assert.equal((await tEvidence.send({ action: { kind: "session/set_title", title: "Evidence leaf" } })).result.ok, true);
+                    tEvidence.close();
+
+                    const sDraft = createAgent(base, "untouched-draft");
+                    assert.equal((await sDraft.send({ workspace: name, action: { kind: "session/new" } })).result.ok, true);
+                    sDraft.close();
+                }
+            }
+
+            const initial = await readAcpCensus(base);
+            const browser = await launchBrowser(chromium);
+            try {
+                const context = await browser.newContext({ userAgent: "Mozilla/5.0 plurnk-desktop/1.4.2" });
+                const checkBrowser = browserDiagnostics(context);
                 try {
-                    for (const javaScriptEnabled of [true, false]) {
-                        const context = await browser.newContext({ javaScriptEnabled });
-                        const checkBrowser = browserDiagnostics(context);
-                        try {
-                            const page = await context.newPage();
-                            const response = await page.goto(base);
-                            assert.equal(response.status(), 503, "unconfigured sign-in answers 503 without granting localhost access");
-                            const bodyText = await page.locator("body").innerText();
-                            assert.match(bodyText, /Sign-in unavailable/u);
-                            assert.match(bodyText, /Password sign-in is not enabled\./u);
-                            assert.doesNotMatch(bodyText, /PLURNK_|\.env|XDG|plurnk web|secret/iu);
-                            await verifyAuthorizationPage(page, response, { warning: true });
-                            assert.equal((await context.cookies()).some(({ name }) => ["plurnk_session", "plurnk_web_session"].includes(name)), false,
-                                "an empty password hash issued no sign-in");
-                            assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
-                            checkBrowser([httpFailure("/oauth/authorize", 503)]);
-                        } finally { await context.close(); }
+                    const page = await context.newPage();
+                    page.setDefaultTimeout(10_000);
+
+                    // 1. GET / arrives over /acp; GET /~/ redirects 303 to /search/
+                    await page.goto(base);
+                    await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/"));
+                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                    assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0, "loopback access renders no Sign out button");
+                    assert.deepEqual(await context.cookies(), [], "pure-ACP web client sets zero cookies");
+
+                    const tildeRes = await fetch(new URL("/~/", base), { redirect: "manual" });
+                    assert.equal(tildeRes.status, 303);
+                    assert.equal(tildeRes.headers.get("location"), "/search/");
+
+                    // 2. /search/ directory bounded overview, workspace markers, and tree verification
+                    await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
+                    await page.waitForURL(new URL("/search/", base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    await verifyPageShell(page, { title: "Search — Plurnk", kind: "search" });
+                    assert.equal(await page.locator("main h1").count(), 0);
+
+                    for (const ws of initial) {
+                        const wsEntry = page.locator(`#search-workspaces > ul > li[data-workspace-id="${ws.id}"] > article`);
+                        await wsEntry.waitFor();
+                        assert.equal(
+                            await wsEntry.locator(":scope > header").evaluate((el) => getComputedStyle(el, "::before").content.match(/☁️|🗂️/u)?.[0]),
+                            ws.project_root === null ? "☁️" : "🗂️",
+                        );
+                        assert.equal(await wsEntry.getAttribute("aria-label"), ws.project_root === null ? "Folderless workspace" : "Project workspace");
                     }
-                } finally { await browser.close(); }
-            });
+
+                    const primaryWs = initial.find((ws) => ws.name === names[0]);
+                    assert.ok(primaryWs);
+                    await page.goto(new URL(`/search/?${new URLSearchParams({ workspace: primaryWs.name })}`, base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    await verifySessionDirectory(page, primaryWs);
+
+                    // 3. Missing /~/missing/ renders in-page 404 without creating a workspace on the daemon
+                    await page.goto(new URL("/~/missing", base).href);
+                    await page.locator("#error-title").waitFor();
+                    await verifyPageShell(page, { title: "404 Not Found — Plurnk", kind: "error" });
+                    await page.setViewportSize({ width: 1280, height: 800 });
+                    const afterMissing = await readAcpCensus(base);
+                    assert.equal(afterMissing.some((ws) => ws.name === "missing"), false, "missing /~/<workspace> never allocates a workspace");
+
+                    // 4. Archive & inline Unarchive over /acp on /search/?status=archived
+                    const shelved = initial.find((ws) => ws.name === "folderless");
+                    assert.ok(shelved);
+                    const archiver = createAgent(base);
+                    assert.equal((await archiver.send({ workspace: shelved.name, action: { kind: "workspace.archive", workspaceId: shelved.id, archived: true } })).result.ok, true);
+                    archiver.close();
+
+                    await page.goto(new URL("/search/", base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    const activeNames = await page.locator("#search-workspaces > ul > li > article > header > a[data-text='name']").allTextContents();
+                    assert.equal(activeNames.includes("folderless"), false, "archived workspace leaves active /search/");
+
+                    await page.goto(new URL("/search/?status=archived", base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    const unarchiveForm = page.locator('#search-workspaces form[data-inline-unarchive="workspace"]').filter({
+                        has: page.locator('input[name="workspace"][value="folderless"]'),
+                    });
+                    await unarchiveForm.waitFor();
+                    await unarchiveForm.getByRole("button", { name: "Unarchive", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll('#search-workspaces form[data-inline-unarchive="workspace"]').length === 0);
+
+                    // 5. New workspace modal, New session modal, /settings/ Rename, 409 inline error recovery, and #about
+                    await page.goto(new URL("/search/", base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    await page.getByRole("button", { name: "Change workspace", exact: true }).click();
+                    const wsDialog = page.locator("#dialog-workspaces");
+                    await wsDialog.waitFor({ state: "visible" });
+                    await wsDialog.getByRole("button", { name: "New workspace…", exact: true }).click();
+                    const wsCreateDialog = page.locator("#dialog-workspace-create");
+                    await wsCreateDialog.waitFor({ state: "visible" });
+                    assert.equal(await wsCreateDialog.locator("input[data-toggle-project-folder]").isChecked(), false);
+                    assert.equal(await wsCreateDialog.locator("input[data-project-folder-input]").isVisible(), false);
+
+                    // 409 duplicate workspace name keeps draft in modal and displays inline Problem
+                    await wsCreateDialog.locator('input[name="name"]').fill("folderless");
+                    await wsCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#dialog-workspace-create [data-text="workspace-create-error"]')?.textContent ?? "").length > 0);
+                    assert.match(await wsCreateDialog.locator('[data-text="workspace-create-error"]').innerText(), /already in use/u);
+                    assert.equal(await wsCreateDialog.locator('input[name="name"]').inputValue(), "folderless");
+
+                    // Clear name -> sequential workspace1 + #session1 over /acp
+                    await wsCreateDialog.locator('input[name="name"]').fill("");
+                    await wsCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+                    await page.waitForURL((url) => /^\/~\/workspace\d+$/u.test(new URL(url).pathname));
+                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                    const createdWsName = new URL(page.url()).pathname.slice(3);
+                    assert.match(createdWsName, /^workspace\d+$/u);
+
+                    // New session modal: 409 conflict recovery + sequential session2
+                    await page.locator('#workspace-tabs button[data-tab-new]').click();
+                    const sessCreateDialog = page.locator("#dialog-session-create");
+                    await sessCreateDialog.waitFor({ state: "visible" });
+                    await sessCreateDialog.locator('input[name="name"]').fill("session1");
+                    await sessCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#dialog-session-create [data-text="session-create-error"]')?.textContent ?? "").length > 0);
+                    assert.match(await sessCreateDialog.locator('[data-text="session-create-error"]').innerText(), /already in use/u);
+                    await sessCreateDialog.locator('input[name="name"]').fill("added-session");
+                    await sessCreateDialog.locator('input[name="title"]').fill("Added title");
+                    await sessCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "added-session");
+
+                    // /settings/ Rename + #about section (service version, web 4.0.0, desktop UA 1.4.2, MIT, issues link)
+                    await page.locator("#session-workspace").click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/");
+                    const settingsArticle = page.locator("#workspace-settings");
+                    await settingsArticle.waitFor({ state: "visible" });
+
+                    await settingsArticle.getByRole("link", { name: "About", exact: true }).click();
+                    const aboutPanel = settingsArticle.locator('[data-settings-panel="about"]');
+                    await aboutPanel.waitFor({ state: "visible" });
+                    assert.equal(await aboutPanel.locator('[data-text="about-web-version"]').textContent(), "4.0.0");
+                    assert.match((await aboutPanel.locator('[data-text="about-service-version"]').textContent()) ?? "", /^\d+\.\d+\.\d+/u);
+                    assert.equal(await aboutPanel.locator("[data-about-desktop-term]").isVisible(), true);
+                    assert.equal(await aboutPanel.locator("[data-about-desktop-value]").isVisible(), true);
+                    assert.equal(await aboutPanel.locator('[data-text="about-desktop-version"]').textContent(), "1.4.2");
+                    assert.match(await aboutPanel.innerText(), /MIT/u);
+                    assert.equal(
+                        await aboutPanel.locator('a[href="https://github.com/plurnk/plurnk-service/issues"]').count(),
+                        1,
+                    );
+
+                    await settingsArticle.getByRole("link", { name: "Workspace", exact: true }).click();
+                    const renameForm = settingsArticle.locator("form#workspace-rename");
+                    await renameForm.locator('input[name="name"]').fill("folderless");
+                    await renameForm.getByRole("button", { name: "Rename", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
+                    await renameForm.locator('input[name="name"]').fill("renamed-pure-acp");
+                    await renameForm.getByRole("button", { name: "Rename", exact: true }).click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/~/renamed-pure-acp");
+
+                    checkBrowser();
+                } finally {
+                    await context.close();
+                }
+            } finally {
+                await browser.close();
+            }
         });
-        await t.test("{§web-workspace-creation} {§web-session-creation} {§web-workspace-rename} native 1-click header and modal workspace/session creation, rename, and refusal recovery", async () => {
-            await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password") }, async (base) => {
-                const browser = await chromium.launch();
+
+        await withDaemon({ PLURNK_WEB_ALLOW_PROJECT_FOLDER: "0" }, async (base) => {
+            const browser = await launchBrowser(chromium);
+            try {
+                const context = await browser.newContext();
+                const checkBrowser = browserDiagnostics(context);
                 try {
-                    for (const javaScriptEnabled of [true, false]) {
-                        const context = await browser.newContext({ javaScriptEnabled });
-                        const checkBrowser = browserDiagnostics(context);
-                        try {
-                            const page = await context.newPage();
-                            await page.goto(new URL("/search/", base).href);
-                            await page.getByLabel("Password", { exact: true }).fill("browser-password");
-                            await page.getByRole("button", { name: "Continue", exact: true }).click();
-                            await page.waitForURL(new URL("/search/", base).href);
-
-                            const initialCensus = await (await fetch(new URL("/__fixture", base))).json();
-
-                            const openWorkspaceCreate = async () => {
-                                const target = page.locator("#workspace-create");
-                                if (javaScriptEnabled) {
-                                    await page.getByRole("button", { name: "Change workspace", exact: true }).click();
-                                    const wsDialog = page.locator("#dialog-workspaces");
-                                    await wsDialog.waitFor({ state: "visible" });
-                                    assert.match(await wsDialog.locator("footer").innerText(), /Archived workspaces \(0\)/u);
-                                    await wsDialog.getByRole("button", { name: "New workspace…", exact: true }).click();
-                                    await page.locator("#dialog-workspace-create[open]").waitFor();
-                                    assert.equal(await page.locator("#dialog-workspaces[open]").count(), 0, "enclosing workspace switcher closed");
-                                    assert.equal(await target.locator("input[data-toggle-project-folder]").isChecked(), false, "Project folder checkbox starts unchecked");
-                                    assert.equal(await target.locator("input[data-project-folder-input]").isVisible(), false, "projectRoot input stays hidden until checked");
-                                } else {
-                                    assert.ok(await target.isVisible() && await target.evaluate((element) => element.closest("main") !== null), "without JavaScript the creation form renders in main");
-                                }
-                                return target;
-                            };
-
-                            // 1. "New workspace…" modal creates a sequential folderless workspaceX + starter #session1 session!
-                            const createForm = await openWorkspaceCreate();
-                            const postedWs = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/workspaces/new");
-                            await createForm.getByRole("button", { name: "Confirm", exact: true }).click();
-                            await postedWs;
-                            await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/"));
-                            const createdPath = new URL(page.url()).pathname;
-
-                            const fixtureAfter = await (await fetch(new URL("/__fixture", base))).json();
-                            const newlyCreated = fixtureAfter.find((ws) => directoryPath({ kind: "workspace", workspace: ws.name }) === createdPath);
-                            assert.ok(newlyCreated, "created workspace appears in daemon census");
-                            assert.match(newlyCreated.name, /^workspace\d+$/u, "{§web-workspace-creation} folderless unnamed creation allocates workspaceX");
-                            assert.equal(newlyCreated.project_root, null, "project_root is strictly null");
-                            assert.equal(newlyCreated.project_label, null, "project_label is strictly null");
-                            assert.equal(newlyCreated.sessions.filter(({ origin }) => origin === "model").length, 1, "starter session1 created with zero loops");
-                            assert.equal(newlyCreated.sessions.find(({ origin }) => origin === "model")?.name, "session1");
-                            assert.equal(newlyCreated.sessions.find(({ origin }) => origin === "model")?.loops.length, 0);
-
-                            for (const ws of initialCensus) {
-                                const found = fixtureAfter.find((after) => after.name === ws.name);
-                                assert.equal(found?.project_root, ws.project_root, `${ws.name} project_root untouched`);
-                            }
-
-                            // 2. Verify representation in /search/ list has ☁️ and Folderless workspace label
-                            await page.goto(new URL("/search/", base).href);
-                            const createdEntry = page.locator(`#search-workspaces > ul > li > article:has(header a[href="${createdPath}"])`);
-                            assert.equal(await createdEntry.count(), 1);
-                            assert.equal(await createdEntry.getAttribute("aria-label"), "Folderless workspace");
-                            assert.equal(await createdEntry.locator("header").evaluate((element) => getComputedStyle(element, "::before").content.match(/☁️|🗂️/u)?.[0]), "☁️");
-
-                            // 3. Test #workspace-create modal on /search/ with keyboard Enter on name input
-                            const secondForm = await openWorkspaceCreate();
-                            await secondForm.locator('input[name="name"]').focus();
-                            await page.keyboard.press("Enter");
-                            await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/") && new URL(url).pathname !== createdPath);
-                            const secondCreatedPath = new URL(page.url()).pathname;
-                            assert.ok(secondCreatedPath.startsWith("/~/"));
-
-                            // 4. {§web-workspace-rename} via #session-workspace -> /settings/?workspace=... and {§web-session-creation} via [+] -> #dialog-session-create (or inline when no-JS)
-                            const openWorkspaceRename = async () => {
-                                await page.locator("#session-workspace").click();
-                                await page.waitForURL((url) => new URL(url).pathname === "/settings/");
-                                const target = page.locator("#workspace-rename");
-                                await target.waitFor({ state: "visible" });
-                                return target;
-                            };
-                            const openSessionCreate = async () => {
-                                const target = page.locator("#session-create");
-                                if (javaScriptEnabled) {
-                                    await page.locator("body > #dialog-session-create").waitFor({ state: "attached" });
-                                    await page.locator('#workspace-tabs [data-action="new-session"]').click();
-                                    await page.locator("#dialog-session-create[open]").waitFor();
-                                } else {
-                                    assert.ok(await target.isVisible() && await target.evaluate((element) => element.closest("main") !== null), "without JavaScript session-create renders in the page content");
-                                }
-                                return target;
-                            };
-                            await page.goto(new URL(createdPath, base).href);
-                            const renamedName = `renamed-${javaScriptEnabled ? "scripted" : "unscripted"}`;
-                            const renameForm = await openWorkspaceRename();
-                            await renameForm.locator('input[name="name"]').fill(renamedName);
-                            await renameForm.getByRole("button", { name: "Rename", exact: true }).click();
-                            const renamedPath = directoryPath({ kind: "workspace", workspace: renamedName });
-                            await page.waitForURL((url) => new URL(url).pathname === renamedPath);
-
-                            const sessionName = `added-${javaScriptEnabled ? "scripted" : "unscripted"}`;
-                            const sessionForm = await openSessionCreate();
-                            await sessionForm.locator('input[name="name"]').fill(sessionName);
-                            await sessionForm.locator('input[name="title"]').fill("Added title");
-                            await sessionForm.getByRole("button", { name: "Confirm", exact: true }).click();
-                            await page.waitForLoadState("load");
-                            const renamed = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id);
-                            assert.equal(renamed?.name, renamedName, "the daemon holds the new name");
-                            const added = renamed.sessions.find((session) => session.name === sessionName);
-                            assert.ok(added, "the daemon holds the new session");
-                            assert.equal(added.title, "Added title", "the daemon holds the new session title");
-                            assert.deepEqual([added.parentSessionId, added.loops.length], [null, 0], "an independent session with no loop");
-
-                            // Leading "+" in #workspace-tabs creates a sequential session2 (via modal Confirm with JS, or direct POST without JS)!
-                            if (javaScriptEnabled) {
-                                await page.locator("body > #dialog-session-create").waitFor({ state: "attached" });
-                                await page.locator('#workspace-tabs [data-action="new-session"]').click();
-                                await page.locator("#dialog-session-create[open]").waitFor();
-                                await page.locator('#session-create button[type="submit"]').click();
-                            } else {
-                                await page.locator('#workspace-tabs [data-action="new-session"]').click();
-                            }
-                            await page.locator('#workspace-tabs a[aria-current="true"][data-tab-session="session2"]').waitFor();
-                            const named = (await (await fetch(new URL("/__fixture", base))).json()).find((ws) => ws.id === newlyCreated.id)
-                                .sessions.filter(({ name, origin }) => origin === "model" && name !== "session1" && name !== sessionName);
-                            assert.equal(named.length, 1, "one sequential session allocated");
-                            assert.equal(named[0]?.name, "session2");
-
-                            // 5. Daemon 409 refusal retains draft and recovers on retry
-                            const refusal = async (openFn, formId, name, detail) => {
-                                const submitLabel = formId === "workspace-rename" ? "Rename" : "Confirm";
-                                const target = await openFn();
-                                await target.locator('input[name="name"]').fill(name);
-                                await target.getByRole("button", { name: submitLabel, exact: true }).click();
-                                await page.waitForLoadState("domcontentloaded");
-                                assert.equal(await page.locator('[data-text="error-title"]').innerText(), "409 Conflict", `${formId} keeps the daemon's status`);
-                                assert.match(await page.locator('[data-text="error-message"]').innerText(), detail, `${formId} shows the daemon's detail`);
-                                const retry = page.locator(`main #${formId}`);
-                                assert.equal(await retry.locator('input[name="name"]').inputValue(), name, `${formId} offers the draft again`);
-                                return retry;
-                            };
-                            const correct = async (retry, formId, name, expectedPathname) => {
-                                const submitLabel = formId === "workspace-rename" ? "Rename" : "Confirm";
-                                await retry.locator('input[name="name"]').fill(name);
-                                await retry.getByRole("button", { name: submitLabel, exact: true }).click();
-                                await page.waitForURL((url) => new URL(url).pathname === expectedPathname);
-                            };
-                            const suffix = javaScriptEnabled ? "scripted" : "unscripted";
-                            await page.goto(new URL(renamedPath, base).href);
-                            await correct(await refusal(openSessionCreate, "session-create", sessionName, /already in use/u),
-                                "session-create", `again-${suffix}`, renamedPath);
-                            await page.goto(new URL(renamedPath, base).href);
-                            await correct(await refusal(openWorkspaceRename, "workspace-rename", "folderless", /already in use/u),
-                                "workspace-rename", `${renamedName}-final`, directoryPath({ kind: "workspace", workspace: `${renamedName}-final` }));
-                            await page.goto(new URL("/search/", base).href);
-                            await correct(await refusal(openWorkspaceCreate, "workspace-create", "folderless", /already in use/u),
-                                "workspace-create", `corrected-${suffix}`, directoryPath({ kind: "workspace", workspace: `corrected-${suffix}` }));
-
-                            checkBrowser([httpFailure("/sessions/new", 409), httpFailure("/workspaces/rename", 409), httpFailure("/workspaces/new", 409)]);
-                        } finally { await context.close(); }
-                    }
-                } finally { await browser.close(); }
-            });
+                    const page = await context.newPage();
+                    await page.goto(new URL("/search/", base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    await page.getByRole("button", { name: "Change workspace", exact: true }).click();
+                    await page.locator("#dialog-workspaces").getByRole("button", { name: "New workspace…", exact: true }).click();
+                    const wsCreateDialog = page.locator("#dialog-workspace-create");
+                    await wsCreateDialog.waitFor({ state: "visible" });
+                    assert.equal(await wsCreateDialog.locator("[data-toggle-project-folder]").count(), 0, "PLURNK_WEB_ALLOW_PROJECT_FOLDER=0 omits project folder toggle");
+                    assert.equal(await wsCreateDialog.locator("[data-project-folder-input]").count(), 0, "PLURNK_WEB_ALLOW_PROJECT_FOLDER=0 omits project folder input");
+                    checkBrowser();
+                } finally {
+                    await context.close();
+                }
+            } finally {
+                await browser.close();
+            }
         });
-        await t.test("{§web-session} explicitly anonymous access offers no fictional account or sign-out", async () => {
-            await withDaemon({ PLURNK_AUTH: "0", PLURNK_AUTH_PASSWORD_HASH: "" }, async (base) => {
-                const browser = await chromium.launch();
+    });
+
+    await t.test("{§web-host} {§web-configuration} {§web-browser-security} standalone 2-port cross-origin deployment connects /acp and /notifications to PLURNK_ACP_URL with zero ApplicationPort backdoors", { timeout: 90_000 }, async () => {
+        const model = await startModel();
+        const savedAcpUrl = process.env.PLURNK_ACP_URL;
+        /** @type {import("node:http").Server | null} */
+        let webServer = null;
+        /** @type {Awaited<ReturnType<any>> | null} */
+        let standaloneModule = null;
+        try {
+            webServer = createServer();
+            await new Promise((resolve) => webServer.listen(0, "127.0.0.1", resolve));
+            const webAddress = /** @type {import("node:net").AddressInfo} */ (webServer.address());
+            const originA = `http://127.0.0.1:${webAddress.port}`;
+
+            await withDaemon({
+                ...model.env,
+                PLURNK_ACP_ALLOW_ORIGIN: originA,
+                PLURNK_SERVICE_NOTIFICATIONS_ALLOW_ORIGIN: originA,
+            }, async (daemonBase) => {
+                const acpEndpoint = new URL("/acp", daemonBase).href;
+                const originB = new URL(daemonBase).origin;
+                const wsOriginB = originB.replace(/^http:/u, "ws:");
+                process.env.PLURNK_ACP_URL = acpEndpoint;
+
+                const { default: createModule } = await import(`${pathToFileURL(join(webPackage, "src", "module.js")).href}?standalone=${Date.now()}`);
+                let handler = null;
+                standaloneModule = createModule();
+                await standaloneModule.start({
+                    registerHttpRoute(_mount, fn) {
+                        handler = fn;
+                    },
+                });
+                assert.equal(typeof handler, "function");
+                webServer.on("request", (req, res) => handler(req, res));
+
+                // Verify dynamic CSP headers on port A authorize HTTP + WS to port B while keeping script-src 'self'
+                const shellRes = await fetch(originA);
+                assert.equal(shellRes.status, 200);
+                const csp = shellRes.headers.get("content-security-policy") ?? "";
+                assert.match(csp, /script-src 'self'/u);
+                assert.ok(csp.includes(`connect-src 'self' ${originB} ${wsOriginB}`), `expected cross-origin connect-src in CSP: ${csp}`);
+                assert.ok(csp.includes(`img-src 'self' ${originB} data: blob:`), `expected cross-origin img-src in CSP: ${csp}`);
+                const shellHtml = await shellRes.text();
+                assert.ok(shellHtml.includes(`data-acp-url="${acpEndpoint}"`), "HTML stamps data-acp-url without inline script");
+
+                // Seed model on starter workspace1#session1 via daemon port B
+                const setup = createAgent(daemonBase, "session1");
+                assert.equal((await setup.send({
+                    workspace: "workspace1",
+                    action: { kind: "session/set_config_option", configId: "model", value: "browser" },
+                })).result.ok, true);
+                setup.close();
+
+                const browser = await launchBrowser(chromium);
                 try {
-                    for (const javaScriptEnabled of [true, false]) {
-                        const context = await browser.newContext({ javaScriptEnabled });
-                        const checkBrowser = browserDiagnostics(context);
-                        try {
-                            const page = await context.newPage();
-                            const response = await page.goto(new URL("/search/", base).href);
-                            assert.equal(response.status(), 200);
-                            assert.equal(await page.locator('#header-place [aria-current="page"]').textContent(), "Search");
-                            assert.equal(new URL(page.url()).pathname, "/search/");
-                            assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
-                            assert.equal(await page.getByRole("link", { name: "Account", exact: true }).count(), 0);
-                            assert.deepEqual(await context.cookies(), []);
-                            assert.equal((await context.request.get(new URL("/account/", base).href)).status(), 404);
-                            assert.equal((await context.request.get(new URL("/account/index.html", base).href)).status(), 404);
-                            assert.equal((await context.request.post(new URL("/account/sign-ins/revoke-others", base).href)).status(), 404);
-                            checkBrowser();
-                        } finally { await context.close(); }
-                    }
-                } finally { await browser.close(); }
-            });
-        });
-        await t.test("{§web-session} sign-out stays signed out on a fresh visit, with another browser unaffected", async (journeys) => {
-            await withDaemon({ PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password") }, async (base) => {
-                const browser = await chromium.launch();
-                try {
-                    for (const javaScriptEnabled of [true, false]) {
-                        await journeys.test(`JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
-                            const context = await browser.newContext({ javaScriptEnabled });
-                            const other = await browser.newContext({ javaScriptEnabled });
-                            const checkBrowser = browserDiagnostics(context);
-                            const checkOther = browserDiagnostics(other);
-                            try {
-                                const enter = async (ctx) => {
-                                    const page = await ctx.newPage();
-                                    await page.goto(new URL("/search/", base).href);
-                                    await page.getByLabel("Password", { exact: true }).fill("browser-password");
-                                    await page.getByRole("button", { name: "Continue", exact: true }).click();
-                                    await page.waitForURL(new URL("/search/", base).href);
-                                    return page;
-                                };
-                                const page = await enter(context);
-                                const second = await enter(other);
-                                await page.getByRole("banner").getByRole("link", { name: "Account", exact: true }).click();
-                                await page.waitForURL(new URL("/account/", base).href);
-                                await page.getByRole("button", { name: "Sign out", exact: true }).click();
-                                await page.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
-                                assert.equal(await page.getByLabel("Password", { exact: true }).count(), 1);
-                                await page.goto(new URL("/search/", base).href);
-                                assert.equal(new URL(page.url()).pathname, "/oauth/authorize", "revisiting /search/ requires sign-in; revoking only the web cookie is insufficient");
-                                assert.equal(await page.getByLabel("Password", { exact: true }).count(), 1);
-                                await second.reload();
-                                assert.equal(new URL(second.url()).pathname, "/search/", "another browser remains admitted");
-                                checkBrowser();
-                                checkOther();
-                            } finally { await context.close(); await other.close(); }
+                    const context = await browser.newContext();
+                    const checkBrowser = browserDiagnostics(context);
+                    try {
+                        const page = await context.newPage();
+                        page.setDefaultTimeout(10_000);
+                        /** @type {string[]} */
+                        const mermaidOrigins = [];
+                        page.on("request", (req) => {
+                            const u = new URL(req.url());
+                            if (u.pathname === "/render/mermaid") mermaidOrigins.push(u.origin);
                         });
+
+                        await page.goto(originA);
+                        await page.waitForURL(`${originA}/~/workspace1#session1`);
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                        await page.waitForFunction(() => document.querySelector("#workspace-tabs")?.dataset.notifications === "connected");
+
+                        const composer = page.getByRole("textbox", { name: "Message", exact: true });
+                        await composer.fill("Lifecycle fixture: diagrams.");
+                        await page.getByRole("button", { name: "Send", exact: true }).click();
+                        const figure = page.locator('[data-message-role="assistant"] [data-diagram]:not([hidden])');
+                        await figure.waitFor();
+                        assert.equal(
+                            await figure.locator("img").evaluate((img) => img.complete && img.naturalWidth > 0),
+                            true,
+                        );
+                        assert.deepEqual(mermaidOrigins, [originA], "POST /render/mermaid stays same-origin on port A");
+
+                        await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
+                        await page.waitForURL(`${originA}/search/`);
+                        await page.locator('main[data-connection="connected"]').waitFor();
+                        const session1Card = page.locator('#search-workspaces a[data-session-link][aria-label="session1"]');
+                        await session1Card.waitFor();
+                        assert.equal(await session1Card.count(), 1);
+
+                        await page.goto(`${originA}/settings/?workspace=workspace1&session=session1#about`);
+                        const aboutPanel = page.locator('#workspace-settings [data-settings-panel="about"]');
+                        await aboutPanel.waitFor({ state: "visible" });
+                        assert.equal(await aboutPanel.locator("[data-about-desktop-term]").isHidden(), true, "desktop row hidden on standard browser UA");
+                        assert.equal(await aboutPanel.locator("[data-about-desktop-value]").isHidden(), true, "desktop value hidden on standard browser UA");
+                        assert.match((await aboutPanel.locator('[data-text="about-service-version"]').textContent()) ?? "", /^\d+\.\d+\.\d+/u);
+
+                        checkBrowser();
+                    } finally {
+                        await context.close();
                     }
-                } finally { await browser.close(); }
+                } finally {
+                    await browser.close();
+                }
             });
-        });
-        await t.test("{§web-session} browser-bound single-use callbacks, expiry, host and return validation", async () => {
-            await withDaemon({ PLURNK_WEB_LOGIN_TTL_SEC: "1", PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("browser-password") }, async (base) => {
-                const browser = await chromium.launch();
+        } finally {
+            if (savedAcpUrl === undefined) delete process.env.PLURNK_ACP_URL;
+            else process.env.PLURNK_ACP_URL = savedAcpUrl;
+            standaloneModule?.stop?.();
+            await standaloneModule?.close?.().catch(() => {});
+            if (webServer) {
+                webServer.closeAllConnections();
+                await new Promise((resolve) => webServer.close(resolve));
+            }
+            await model.close();
+        }
+    });
+
+    await t.test("{§web-oidc} {§web-diagram-content} end-to-end OIDC Authorization Code + PKCE S256 with ES256 JWKS verification, Mermaid Bearer admission, and independent browser Sign out", { timeout: 90_000 }, async () => {
+        const model = await startModel();
+        const idp = await startMockOidcIdp({ clientId: "web-client", autoApprove: false });
+        try {
+            await withDaemon({
+                ...model.env,
+                PLURNK_AUTH_ISSUER: idp.issuer,
+                PLURNK_AUTH_CLIENT_ID: "web-client",
+            }, async (base) => {
+                const driverToken = idp.mintToken();
+                const setup = createAgent(base, "session1", { Authorization: `Bearer ${driverToken}` });
+                assert.equal((await setup.send({
+                    workspace: "workspace1",
+                    action: { kind: "session/set_config_option", configId: "model", value: "browser" },
+                })).result.ok, true);
+                setup.close();
+
+                const browser = await launchBrowser(chromium);
                 try {
                     const context = await browser.newContext();
                     const other = await browser.newContext();
                     const checkBrowser = browserDiagnostics(context);
                     const checkOther = browserDiagnostics(other);
-                    const request = context.request;
-                    const get = (path) => request.get(new URL(path, base).href, { maxRedirects: 0 });
-                    const authorize = (ctx, url) => ctx.request.post(url, { maxRedirects: 0, headers: { origin: new URL(base).origin },
-                        form: { ...Object.fromEntries(new URL(url).searchParams), password: "browser-password" },
-                    });
-                    for (const path of ["https://elsewhere.example/", "//elsewhere.example/", "/oauth/authorize", "/~/../bad/"]) {
-                        assert.equal((await get(`/auth/login?${new URLSearchParams({ return: path })}`)).status(), 400);
-                    }
-                    // Fetch owns Host; use a raw HTTP request to exercise a different Host on the wire.
-                    const hostRequest = (host) => new Promise((accept, reject) => {
-                        httpRequest(new URL("/search/", base), { headers: { host } }, (response) => {
-                            response.resume(); response.once("end", () => accept(response));
-                        }).once("error", reject).end();
-                    });
-                    // {§web-session} A browser is answered at whatever address it reached the daemon by.
-                    for (const host of ["elsewhere.example", `localhost:${new URL(base).port}`]) {
-                        const answered = await hostRequest(host);
-                        assert.equal(answered.statusCode, 303, host);
-                        assert.equal(answered.headers.location, `/auth/login?${new URLSearchParams({ return: "/search/" })}`, host);
-                    }
-                    const first = await get("/auth/login?return=/search/");
-                    assert.equal(first.status(), 303);
-                    const authorizedFirst = await authorize(context, first.headers().location);
-                    assert.equal(authorizedFirst.status(), 302);
-                    const callback = authorizedFirst.headers().location;
-                    assert.equal((await other.request.get(callback, { maxRedirects: 0 })).status(), 400, "a stolen callback is not a login");
-                    const altered = new URL(callback);
-                    altered.searchParams.set("state", "wrong");
-                    assert.equal((await get(altered.href)).status(), 400);
-                    const completed = await get(callback);
-                    assert.equal(completed.status(), 303);
-                    assert.equal(completed.headers().location, "/search/");
-                    assert.equal((await get(callback)).status(), 400, "callback replay is not a second grant");
-                    assert.equal((await get("/search/")).status(), 200);
-                    // Unauthenticated starts leave no module state behind to fill.
-                    for (let index = 0; index < 300; index++) {
-                        assert.equal((await fetch(new URL("/auth/login", base), { redirect: "manual" })).status, 303);
-                    }
-                    const pending = await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 });
-                    const again = await other.request.get(new URL("/auth/login", base).href, { maxRedirects: 0 });
-                    assert.equal(pending.status(), 303);
-                    assert.equal(again.status(), 303);
-                    const expiring = await authorize(other, pending.headers().location);
-                    const signedIn = await other.request.get((await authorize(other, again.headers().location)).headers().location, { maxRedirects: 0 });
-                    assert.equal(signedIn.status(), 303, "a real sign-in completes beside another tab's transaction");
-                    assert.equal(signedIn.headers().location, "/");
-                    const page = await other.newPage();
-                    await page.waitForTimeout(1100);
-                    assert.equal((await other.request.get(expiring.headers().location, { maxRedirects: 0 })).status(), 400, "expired transactions cannot establish sessions");
-                    checkBrowser();
-                    checkOther();
-                } finally { await browser.close(); }
-            });
-        });
-        await t.test("{§web-session} configured public issuer works through its real proxy", async () => {
-            let upstream;
-            const errors = [];
-            const proxy = createServer((req, res) => {
-                const forwarded = httpRequest(new URL(req.url, upstream), { method: req.method, headers: req.headers }, (reply) => {
-                    res.writeHead(reply.statusCode, reply.headers); reply.pipe(res);
-                });
-                forwarded.once("error", (error) => { errors.push(error); res.writeHead(502); res.end(); });
-                req.pipe(forwarded);
-            });
-            proxy.listen(0, "127.0.0.1");
-            await once(proxy, "listening");
-            const issuer = `http://127.0.0.1:${proxy.address().port}`;
-            try {
-                await withDaemon({ PLURNK_AUTH_ISSUER: issuer, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("proxy-pass") }, async (base) => {
-                    upstream = base;
-                    const browser = await chromium.launch();
                     try {
-                        const page = await browser.newPage();
-                        const checkBrowser = browserDiagnostics(page.context());
-                        await page.goto(`${issuer}/search/`);
-                        assert.equal(new URL(page.url()).origin, issuer);
-                        assert.equal(new URL(page.url()).pathname, "/oauth/authorize");
-                        assert.equal(new URL(page.url()).searchParams.get("redirect_uri"), `${issuer}/auth/callback`);
-                        await page.getByLabel("Password", { exact: true }).fill("proxy-pass");
+                        // Browser 1: GET / -> 401 -> OIDC PKCE S256 redirect -> IdP Continue -> /auth/callback -> /~/workspace1#session1
+                        const page = await context.newPage();
+                        page.setDefaultTimeout(10_000);
+                        await page.goto(base);
+                        await page.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
+                        const authUrl = new URL(page.url());
+                        assert.equal(authUrl.searchParams.get("client_id"), "web-client");
+                        assert.equal(authUrl.searchParams.get("code_challenge_method"), "S256");
+                        assert.equal(authUrl.searchParams.get("redirect_uri"), new URL("/auth/callback", base).href);
+
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
-                        await page.waitForURL(`${issuer}/search/`);
-                        assert.equal(await page.locator("main h1").count(), 0);
-                        await page.getByRole("banner").getByRole("link", { name: "Account", exact: true }).click();
-                        await page.waitForURL(`${issuer}/account/`);
-                        await page.getByRole("button", { name: "Sign out", exact: true }).click();
-                        await page.waitForURL((url) => new URL(url).origin === issuer && new URL(url).pathname === "/oauth/authorize");
+                        await page.waitForURL(`${new URL("/~/workspace1", base).href}#session1`);
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                        checkBrowser([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                            Object.assign(networkFailure("/acp"), { optional: true }),
+                        ]);
+
+                        const storageSnapshot = await page.evaluate(() => ({
+                            localKeys: Object.keys(localStorage),
+                            sessionKeys: Object.keys(sessionStorage),
+                            grant: JSON.parse(localStorage.getItem("plurnk_oidc_grant") ?? "null"),
+                        }));
+                        assert.deepEqual(storageSnapshot.localKeys, ["plurnk_oidc_grant"]);
+                        assert.deepEqual(storageSnapshot.sessionKeys, [], "ephemeral plurnk_oidc_pkce cleared after /auth/callback");
+                        assert.equal(storageSnapshot.grant?.clientId, "web-client");
+                        assert.equal(storageSnapshot.grant?.issuer, idp.issuer);
+
+                        // Live prompt with Mermaid diagram rendering authenticated via Bearer JWT
+                        const composer = page.getByRole("textbox", { name: "Message", exact: true });
+                        await composer.fill("Lifecycle fixture: diagrams.");
+                        await page.getByRole("button", { name: "Send", exact: true }).click();
+                        const figure = page.locator('[data-message-role="assistant"] [data-diagram]:not([hidden])');
+                        await figure.waitFor();
+                        assert.equal(await figure.locator("img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
+
+                        // Browser 2 signs into /search/ independently
+                        const second = await other.newPage();
+                        second.setDefaultTimeout(10_000);
+                        await second.goto(new URL("/search/", base).href);
+                        await second.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
+                        await second.getByRole("button", { name: "Continue", exact: true }).click();
+                        await second.waitForURL(new URL("/search/", base).href);
+                        await second.locator('main[data-connection="connected"]').waitFor();
+                        checkOther([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                        ]);
+
+                        // Browser 1 clicks header Sign out -> clears plurnk_oidc_grant and redirects to IdP; Browser 2 remains signed in
+                        const signOutBtn = page.getByRole("banner").getByRole("button", { name: "Sign out", exact: true });
+                        assert.equal(await signOutBtn.isVisible(), true);
+                        await signOutBtn.click();
+                        await page.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
+                        checkBrowser([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                        ]);
+
+                        await second.reload();
+                        await second.locator('main[data-connection="connected"]').waitFor();
+                        assert.equal(new URL(second.url()).pathname, "/search/", "independent browser context retains its own OIDC grant");
+
                         checkBrowser();
-                    } finally { await browser.close(); }
-                });
-                assert.deepEqual(errors, []);
-            } finally {
-                const closed = once(proxy, "close");
-                proxy.close(); proxy.closeAllConnections(); await closed;
-            }
-        });
-    } finally { await rm(fixture, { force: true }); }
+                        checkOther();
+                    } finally {
+                        await context.close();
+                        await other.close();
+                    }
+                } finally {
+                    await browser.close();
+                }
+            });
+        } finally {
+            await Promise.allSettled([model.close(), idp.close()]);
+        }
+    });
 }

@@ -1,6 +1,8 @@
 import { $, on } from "on_the_money";
 import { sse } from "on_the_money/live";
 import accessHeaders from "./access-headers.js";
+import { acpOrigin, notificationsUrl } from "./endpoints.js";
+import { hasActiveOidcGrant, onOidcGrantChange, recoverFromUnauthorized } from "./oidc.js";
 import { isRetryableObservationFailure } from "./passive-reconnect.js";
 
 export const NOTIFICATION_EVENT_LIST = [
@@ -50,16 +52,15 @@ const isRecord = (value) => typeof value === "object" && value !== null && !Arra
 const activeStreams = new Map();
 
 /**
- * {§web-session-directory} {§web-workspace-tabs} Shared reference-counted `/notifications` SSE subscription per scope.
+ * {§web-session-directory} {§web-workspace-tabs} Shared reference-counted `/notifications` SSE subscription per scope on `acpOrigin()`.
  * @param {{
- *   auth: "session" | "none",
  *   workspaceId?: number,
  *   onNotification?: (payload: Record<string, unknown>) => void,
  *   onStateChange?: (state: NotificationState) => void,
  * }} options
  */
-export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotification, onStateChange }) {
-    const scopeKey = `${auth}:${workspaceId ?? "daemon"}`;
+export function subscribeWorkspaceNotifications({ workspaceId, onNotification, onStateChange }) {
+    const scopeKey = `${acpOrigin()}:${workspaceId ?? "daemon"}`;
     let entry = activeStreams.get(scopeKey);
     if (!entry) {
         const listeners = /** @type {Set<NotificationListener>} */ (new Set());
@@ -73,9 +74,9 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
             if (entry) entry.state = next;
             for (const listener of listeners) listener.onStateChange?.(next);
         };
-        const path = workspaceId === undefined
-            ? "/notifications"
-            : `/notifications/${encodeURIComponent(String(workspaceId))}`;
+        const endpoint = workspaceId === undefined
+            ? notificationsUrl()
+            : notificationsUrl(`/${encodeURIComponent(String(workspaceId))}`);
         /** @type {{ close: () => void } | null} */
         let stream = null;
         let disposed = false;
@@ -84,14 +85,14 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
             stream?.close();
             if (disposed) return;
             setState("connecting");
-            const instance = sse(path, {
+            const instance = sse(endpoint, {
                 types: NOTIFICATION_EVENT_LIST,
                 headers: async (signal) => {
                     try {
-                        if (auth === "session" && $('#session-status[data-connection="signed-out"], #main[data-connection="signed-out"]')) {
+                        if ($('#session-status[data-connection="signed-out"], #main[data-connection="signed-out"]')) {
                             throw Object.assign(new Error("Sign-in ended"), { status: 401 });
                         }
-                        return await accessHeaders(auth, signal);
+                        return await accessHeaders(signal);
                     } finally {
                         resolveInitialAuth(undefined);
                     }
@@ -119,9 +120,21 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
                 onError: (error) => {
                     if (disposed) return;
                     const signedOut = Reflect.get(Object(error), "status") === 401;
-                    if (signedOut || !isRetryableObservationFailure(error)) {
+                    if (signedOut) {
                         instance.close();
-                        setState(signedOut ? "signed-out" : "disconnected");
+                        void recoverFromUnauthorized({ redirectOnDiscovery: false }).then((recovery) => {
+                            if (disposed) return;
+                            if (recovery.status === "refreshed") {
+                                startStream();
+                            } else {
+                                setState("signed-out");
+                            }
+                        });
+                        return;
+                    }
+                    if (!isRetryableObservationFailure(error)) {
+                        instance.close();
+                        setState("disconnected");
                         return;
                     }
                     setState("disconnected");
@@ -134,6 +147,15 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
             });
             stream = instance;
         };
+
+        const offGrantChange = onOidcGrantChange(() => {
+            if (disposed) return;
+            if (!hasActiveOidcGrant()) {
+                stream?.close();
+                stream = null;
+                setState("signed-out");
+            }
+        });
 
         const offPageHide = on.target(window, "pagehide", () => {
             if (disposed) return;
@@ -157,6 +179,7 @@ export function subscribeWorkspaceNotifications({ auth, workspaceId, onNotificat
             close() {
                 if (disposed) return;
                 disposed = true;
+                offGrantChange();
                 offPageHide();
                 offPageShow();
                 stream?.close();

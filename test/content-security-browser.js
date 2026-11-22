@@ -3,20 +3,20 @@ import { engines } from "./engines.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 import conversationFixture from "./conversation-fixture.js";
 
-const injection = '<img src="/auth/token" onerror="window.contentExecuted=true">';
+const injection = '<img src="/render/mermaid" onerror="window.contentExecuted=true">';
 const hostile = [
     "**Readable evidence**",
     '<script>window.contentExecuted=true</script>',
-    '<svg onload="window.contentExecuted=true"><foreignObject><iframe src="/auth/token"></iframe></foreignObject></svg>',
+    '<svg onload="window.contentExecuted=true"><foreignObject><iframe src="/render/mermaid"></iframe></foreignObject></svg>',
     '<math><mtext><table><mglyph><style><!--</style>' + injection,
     '<style>body{display:none} @import "https://example.invalid/style.css";</style>',
-    '<link rel="stylesheet" href="/auth/token"><meta http-equiv="refresh" content="0;url=/auth/logout"><base href="https://example.invalid/">',
-    '<form action="/auth/logout" method="post"><button data-action="sign-out">Injected action</button></form>',
+    '<link rel="stylesheet" href="/render/mermaid"><meta http-equiv="refresh" content="0;url=/security-probe"><base href="https://example.invalid/">',
+    '<form action="/render/mermaid" method="post"><button data-action="sign-out">Injected action</button></form>',
     '<input name="__proto__" autofocus onfocus="window.contentExecuted=true">',
-    '<iframe srcdoc="<script>parent.contentExecuted=true</script>"></iframe><object data="/auth/token"></object>',
-    '<audio src="/auth/token" autoplay></audio><video poster="/auth/token"></video>',
+    '<iframe srcdoc="<script>parent.contentExecuted=true</script>"></iframe><object data="/render/mermaid"></object>',
+    '<audio src="/render/mermaid" autoplay></audio><video poster="/render/mermaid"></video>',
     '<template id="conversation-message"><button>Replacement template</button></template>',
-    '<a id="session-status" name="location" data-text="message-author" data-bind="href:call-href" data-action="sign-out" href="/auth/logout">Injected binding</a>',
+    '<a id="session-status" name="location" data-text="message-author" data-bind="href:call-href" data-action="sign-out" href="/security-probe">Injected binding</a>',
     '<span data-math="inline">Injected renderer marker</span>',
     '[script](javascript:alert%281%29)',
     '[mixed case](JaVaScRiPt:alert%281%29)',
@@ -26,7 +26,7 @@ const hostile = [
     '[vbscript](vbscript:msgbox%281%29)',
     '[file](file:///etc/passwd)',
     '![remote image](https://example.invalid/image.svg)',
-    '![local image](/auth/token)',
+    '![local image](/render/mermaid)',
     '[ordinary link](https://example.invalid/evidence)',
     '- [x] Disabled task',
 ].join("\n\n");
@@ -80,7 +80,7 @@ export default async function verifyContentSecurity(t) {
                             assert.equal(await body.locator("script, style, link, meta, base, img, svg, math, iframe, object, embed, audio, video, form, button, template, [id], [name], [class], [style], [data-text], [data-bind], [data-action], [data-math], [onerror], [autofocus]").count(), 0);
                             assert.equal(await body.locator("input").count(), 1);
                             assert.equal(await body.locator("input:disabled").count(), 1);
-                            assert.deepEqual(await body.locator("a[href]").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), ["https://example.invalid/image.svg", "/auth/token", "https://example.invalid/evidence"]);
+                            assert.deepEqual(await body.locator("a[href]").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), ["https://example.invalid/image.svg", "/render/mermaid", "https://example.invalid/evidence"]);
                             assert.equal(await body.locator("a:not([href])").count(), 7);
                             // A stripped executable URL remains inert even when the user activates its label.
                             await body.locator("a:not([href])").evaluateAll((links) => links.forEach((link) => link.click()));

@@ -59,8 +59,8 @@ async function treeSignature(directory) {
 
 /**
  * {§web-build} Live-source development module: compiles web/ + src/documents.js into a
- * disposable directory whenever source mtime/size changes, preserving production CSP,
- * compressed asset negotiation, and OAuth stylesheet registration without restarting the daemon.
+ * disposable directory whenever source mtime/size changes, preserving production CSP and
+ * compressed asset negotiation without restarting the daemon.
  *
  * @param {{
  *   webRoot?: URL,
@@ -80,8 +80,6 @@ export default function createDevModule(options = {}) {
 
     /** @type {string | null} */
     let outDir = null;
-    /** @type {string | null} */
-    let registeredStylesheetPath = null;
     /** @type {import("../src/module.js").DocumentKnobs | null} */
     let knobs = null;
     let currentSignature = "";
@@ -141,16 +139,8 @@ export default function createDevModule(options = {}) {
             if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
             }
-            if (registeredStylesheetPath !== null && registeredStylesheetPath !== stylesheetPath) {
-                resources.set(registeredStylesheetPath, stylesheetAsset);
-            }
-            const activeKnobs = knobs ?? { overviewSessions: null, overviewExcerptChars: null, allowProjectFolder: true };
-            const documents = new DocumentsClass(
-                root.body.toString("utf8"),
-                activeKnobs.overviewSessions,
-                activeKnobs.overviewExcerptChars,
-                activeKnobs.allowProjectFolder ?? true,
-            );
+            const activeKnobs = knobs ?? { acpUrl: "/acp", overviewSessions: null, overviewExcerptChars: null, allowProjectFolder: true };
+            const documents = new DocumentsClass(root.body.toString("utf8"), activeKnobs);
             compiled = { documents, resources, stylesheetPath };
             currentSignature = (await sourceSignature()).signature;
         })();
@@ -164,12 +154,6 @@ export default function createDevModule(options = {}) {
     }
 
     return createModule({
-        async setupStylesheet() {
-            await prepareAssets(webRoot);
-            const state = await ensureCurrent();
-            registeredStylesheetPath = state.stylesheetPath;
-            return state.stylesheetPath;
-        },
         async start(initialKnobs) {
             knobs = initialKnobs;
             if (compiled === null) {
@@ -185,12 +169,7 @@ export default function createDevModule(options = {}) {
             }
             compiled = {
                 ...compiled,
-                documents: new DocumentsClass(
-                    root.body.toString("utf8"),
-                    initialKnobs.overviewSessions,
-                    initialKnobs.overviewExcerptChars,
-                    initialKnobs.allowProjectFolder ?? true,
-                ),
+                documents: new DocumentsClass(root.body.toString("utf8"), initialKnobs),
             };
         },
         async snapshot() {

@@ -19,16 +19,22 @@ export default async function verifyBodies(t) {
                 try {
                     const context = await browser.newContext();
                     const checkBrowser = browserDiagnostics(context);
+                    const origin = new URL(url).origin;
+                    await context.addInitScript((acpOrigin) => {
+                        if (location.protocol === "about:") return;
+                        localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                            acpOrigin,
+                            issuer: "http://idp.test",
+                            clientId: "plurnk-web",
+                            tokenEndpoint: "http://idp.test/token",
+                            accessToken: "body-fixture-credential",
+                        }));
+                    }, origin);
                     const page = await context.newPage();
                     const reads = [];
                     const redirects = [];
                     page.on("request", (request) => {
                         if (request.url().includes("elsewhere.invalid")) redirects.push(request.url());
-                    });
-                    let credentials = 0;
-                    await page.route("**/auth/token", async (route) => {
-                        credentials++;
-                        await route.fulfill({ json: { token_type: "Bearer", access_token: "body-fixture-credential" } });
                     });
                     await page.goto(url);
                     await page.waitForFunction(() => typeof window.present === "function");
@@ -61,8 +67,7 @@ export default async function verifyBodies(t) {
                     assert.equal(await result.locator("button, a, section, div").count(), 0);
                     assert.equal(await result.innerText(), "");
                     assert.doesNotMatch(await result.innerHTML(), /file.html|text\/html|acp\/7|status/u);
-                    assert.equal(reads.length, 0);
-                    assert.equal(credentials, 0, "off-screen history neither fetches nor obtains credentials");
+                    assert.equal(reads.length, 0, "off-screen history makes no eager entry requests");
                     await result.locator("[data-body-reference]").scrollIntoViewIfNeeded();
                     await result.locator('[data-body-state="loaded"]').waitFor();
                     assert.equal(await result.locator("[data-body-reference]").textContent(), source);
@@ -71,7 +76,6 @@ export default async function verifyBodies(t) {
                     await page.evaluate(() => { window.bodyNode = document.querySelector("[data-body-reference]"); window.present(structuredClone(window.messages)); });
                     assert.equal(await page.evaluate(() => window.bodyNode === document.querySelector("[data-body-reference]")), true);
                     assert.equal(reads.length, 1);
-                    assert.equal(credentials, 1);
 
                     const presentReference = async (value) => {
                         const replacement = structuredClone(messages);
@@ -84,8 +88,7 @@ export default async function verifyBodies(t) {
                         await result.locator('[data-body-state="error"]').waitFor();
                         assert.equal(await result.locator("[data-body-reference]").textContent(), "Read address must be on this daemon's origin.");
                     }
-                    assert.equal(credentials, 1, "an inadmissible address obtains no bearer");
-                    assert.equal(reads.length, 1);
+                    assert.equal(reads.length, 1, "an inadmissible address issues no network request");
 
                     const missing = new URL("/acp/missing", url).href;
                     await presentReference(missing);

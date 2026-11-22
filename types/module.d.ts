@@ -1,29 +1,14 @@
-import type { CredentialAuthority } from "@plurnk/plurnk-contracts";
 import type { ApplicationPort } from "@plurnk/plurnk-contracts/port";
 import type { DaemonModule } from "@plurnk/plurnk-modules";
 
-export interface WebSetupPort {
-    readonly credentials?: Pick<CredentialAuthority, "registerClient"> | null;
+export interface MermaidCredentialVerifier {
+    verify(token: string): Promise<unknown> | unknown;
+    face(): unknown;
 }
 
-export type WebStartPort = Pick<
-    ApplicationPort,
-    | "registerHttpRoute"
-    | "listWorkspaces"
-    | "listSessions"
-    | "createWorkspace"
-    | "renameWorkspace"
-    | "createSession"
-    | "setWorkspaceArchived"
-    | "setSessionArchived"
-> & {
-    readonly credentials?: Pick<
-        CredentialAuthority,
-        "verify" | "issue" | "revokeFamily" | "sessions" | "onRevoked" | "face"
-    > | null;
-    readonly readSessionOverview?: ApplicationPort["readSessionOverview"];
-    readonly listSessionLoops?: ApplicationPort["listSessionLoops"];
-    readonly setSessionTitle?: ApplicationPort["setSessionTitle"];
-};
+export interface WebModulePort {
+    readonly registerHttpRoute: ApplicationPort["registerHttpRoute"];
+    readonly credentials?: MermaidCredentialVerifier | null;
+}
 
-export default function createModule(): DaemonModule<WebSetupPort, WebStartPort>;
+export default function createModule(): DaemonModule<unknown, WebModulePort>;

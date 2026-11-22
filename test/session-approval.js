@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import SessionAgent from "../web/session-agent.js";
-import { networkFailure } from "./browser-diagnostics.js";
+import { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { inspectResult, observeMessages } from "./result-body.js";
 import { inputPage, onAcpSent, routeAcpWebSocket } from "./session-input.js";
 
@@ -188,8 +188,8 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             const expectedDraftKey = await page.evaluate(() => `plurnk:draft:${document.querySelector("#session-status")?.dataset.sessionId}`);
             assert.deepEqual(
                 await page.evaluate(() => [Object.keys(localStorage), Object.entries(sessionStorage)]),
-                [[], [[expectedDraftKey, "Keep this newer draft."]]],
-                "only the unsent composer draft enters tab-ephemeral sessionStorage",
+                [["plurnk_oidc_grant"], [[expectedDraftKey, "Keep this newer draft."]]],
+                "only the OIDC grant in localStorage and the unsent composer draft in sessionStorage are stored",
             );
             const ids = await page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId));
             await page.reload();
@@ -198,7 +198,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
             assert.deepEqual(await page.locator("[data-messages] [data-message-id]").evaluateAll((rows) => rows.map((row) => row.dataset.messageId)), ids);
             assert.equal(model.requests.length, 2);
             await page.getByRole("textbox", { name: "Message", exact: true }).fill("");
-            assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
+            assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [["plurnk_oidc_grant"], []]);
             checkBrowser();
         }, { authenticated: true }));
     }
@@ -529,25 +529,32 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         }, { authenticated: true }));
     }
 
-    await t.test("{§web-session-approval} revoked browser authority cannot decide and fresh sign-in rediscovers the gate", { timeout: 60_000 }, () => manualPage(async ({ page, context, path, base, model, checkBrowser }) => {
+    await t.test("{§web-session-approval} {§web-oidc} cleared browser sign-in cannot decide and fresh sign-in rediscovers the gate", { timeout: 60_000 }, () => manualPage(async ({ page, context, base, path, model, checkBrowser }) => {
         const requests = requestsFrom(page);
         await requestApproval(page, "approval-revoked");
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
-        const logout = await context.request.post(new URL("/auth/logout", base).href, { headers: { Origin: new URL(base).origin }, maxRedirects: 0 });
-        assert.equal(logout.status(), 303);
+        const otherTab = await context.newPage();
+        await otherTab.goto(new URL("/search/", base).href);
+        await otherTab.getByRole("button", { name: "Sign out", exact: true }).click();
+        await otherTab.close();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
-        assert.match(await page.locator('[data-text="connection-detail"]').textContent(), /credential.*revoked/iu);
+        assert.match(await page.locator('[data-text="connection-detail"]').textContent(), /Sign-in was cleared/iu);
         assert.equal(await page.getByRole("button", { name: "Submit responses", exact: true }).isDisabled(), true);
-        assert.equal(await page.getByRole("link", { name: "Sign in", exact: true }).isVisible(), true);
+        assert.equal(await page.getByRole("button", { name: "Sign in", exact: true }).isVisible(), true);
         assert.equal(model.requests.length, 1);
         assert.equal(requests.length, 1, "no resume is sent without a fresh credential");
-        checkBrowser();
-        await page.getByRole("link", { name: "Sign in", exact: true }).click();
-        await page.waitForLoadState("load");
-        await page.getByLabel("Password", { exact: true }).fill("compose-password");
-        await page.getByRole("button", { name: "Continue", exact: true }).click();
+        checkBrowser([
+            Object.assign(httpFailure("/acp", 401), { optional: true }),
+            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+        ]);
+        await page.getByRole("button", { name: "Sign in", exact: true }).click();
         await page.waitForURL((url) => new URL(url).pathname === new URL(path).pathname);
         await interrupted(page);
+        checkBrowser([
+            Object.assign(httpFailure("/acp", 401), { optional: true }),
+            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+            Object.assign(networkFailure("/acp"), { optional: true }),
+        ]);
         assert.equal(await page.locator('[data-requests] input:checked').count(), 0);
         await page.getByRole("radio", { name: "Reject", exact: true }).check();
         await page.getByRole("button", { name: "Submit responses", exact: true }).click();

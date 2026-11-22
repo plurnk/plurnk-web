@@ -563,7 +563,7 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                             "| Name | Value |\n| --- | --- |\n| File | cobalt |",
                             "```text\nflowchart LR\n A --> B\n```",
                             '<script>window.pwned = true</script>', '<div data-text="connection-label" id="session-status" onclick="alert(1)">HTML remains text</div>',
-                            '<form action="/auth/logout"><button>Injected sign out</button></form>',
+                            '<form action="/render/mermaid"><button>Injected control</button></form>',
                             '[unsafe](javascript:alert%281%29)', '![image](https://example.invalid/image.png "Image")',
                             '[evidence](https://example.com/evidence)',
                         ].join("\n\n");
@@ -853,7 +853,7 @@ test("{§web-card-disclosure} native bodies preserve defaults, reader choices an
 test("{§web-operation-summary} every operation shares its authored summary with its own receipt", { timeout: 60_000 }, verifySemanticContent);
 test("{§web-session-diagnostics} public notices and Problems remain visible outside conversation", { timeout: 60_000 }, verifyDiagnostics);
 
-test("{§web-session-status} {§web-session-identity} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
+test("{§web-session-status} {§web-session-identity} {§web-workspace-folder} public state projects through native status and navigation", { timeout: 60_000 }, verifyStatus);
 test("{§web-page-shell} pinned shell and native multiline composer reflow", { timeout: 60_000 }, verifyShell);
 test("{§web-conversation-surfaces} semantic backgrounds retain contrast in light and dark themes", { timeout: 60_000 }, verifySurfaces);
 test("{§web-content-reflow} literal content wraps without changing text or explicit code", { timeout: 60_000 }, verifyReflow);
@@ -871,9 +871,9 @@ test("{§web-diagram-content} {§web-content-reflow} static Mermaid images throu
 test("{§web-diagram-content} unavailable diagram compilation preserves source and ordinary messages", verifyUnavailableMermaid);
 test("{§web-session-approval} native review controls project complete SDK gate sets", { timeout: 60_000 }, verifyApproval);
 test("{§web-session-questions} native and JSON answers preserve the full response contract", { timeout: 60_000 }, verifyInteractions);
-test("{§web-session-directory} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifySessionCards);
+test("{§web-session-directory} {§web-workspace-archive} {§web-session-archive} two-line cards retain native links, lineage and disclosure without a browser controller", { timeout: 60_000 }, verifySessionCards);
 test("{§web-session-input} {§web-document} unsent prompt drafts survive reload in tab-ephemeral sessionStorage", { timeout: 60_000 }, verifySessionDrafts);
 test("{§web-session-observer} {§web-page-shell} passive observation streams auto-recover without retrying mutations or 4xx refusals", { timeout: 90_000 }, verifySessionReconnect);
 test("{§web-session-input} {§web-session-status} {§web-session-history} composer YOLO toggle, active YOLO visibility and Reading Slate scroll framing", { timeout: 90_000 }, verifySessionObserve);
-test("{§web-workspace-settings} workspace subsystem settings modal manages families, OAuth, session personas, and masked env", { timeout: 90_000 }, verifyWorkspaceSettingsUnit);
+test("{§web-workspace-settings} {§web-workspace-rename} workspace subsystem settings modal manages families, OAuth, session personas, and masked env", { timeout: 90_000 }, verifyWorkspaceSettingsUnit);
 test("{§web-inline-images} {§web-session-input} {§web-card-disclosure} {§web-operation-summary} {§web-result-bodies} verified raster images across transcript, lazy operation disclosures, and composer attachments", { timeout: 90_000 }, verifyInlineImages);

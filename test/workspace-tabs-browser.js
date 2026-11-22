@@ -45,13 +45,10 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.equal(result.ok, true, JSON.stringify(result));
             workspaceId = /** @type {any} */ (setup.state.plurnk).workspace.id;
             setup.close();
-            const titleRes = await fetch(new URL("/sessions/title", base), {
-                method: "POST",
-                headers: { "content-type": "application/x-www-form-urlencoded", origin: base },
-                body: new URLSearchParams({ workspace, session: name, title: `Session ${name}` }),
-                redirect: "manual",
-            });
-            assert.equal(titleRes.status, 303);
+            const titler = createAgent(base, `${workspaceId}#${name}`);
+            const titled = await titler.send({ action: { kind: "session/set_title", title: `Session ${name}` } });
+            assert.equal(titled.result.ok, true, JSON.stringify(titled.result));
+            titler.close();
         }
 
         const browser = await launchBrowser(chromium);
@@ -135,7 +132,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
         }
     });
 
-    await t.test("{§web-workspace-tabs} {§web-session-archive} browser-style tab strip, active-tab manage dialog, inline × archive, trailing + draft folding, live child workers, chords, and 320px/no-JS parity", { timeout: 60_000 }, async () => {
+    await t.test("{§web-workspace-tabs} {§web-session-archive} browser-style tab strip, active-tab manage dialog, inline × archive, trailing + draft folding, live child workers, chords, and 320px parity", { timeout: 60_000 }, async () => {
         const { model, base } = await acquireSharedDaemon(withDaemon, false);
         model.reset();
         const workspace = `tabs-live-${crypto.randomUUID()}`;
@@ -165,14 +162,14 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             const tabs = page.locator("#workspace-tabs");
             assert.equal(await tabs.getAttribute("data-tab-count"), "1");
             assert.equal(await tabs.isVisible(), true, "tab strip defends its bottom row even with 1 tab");
-            const plusBtn = tabs.locator('form[data-tab-new] > button');
+            const plusBtn = tabs.locator("button[data-tab-new]");
             const archivesBtn = tabs.locator("button[data-open-sessions]");
             assert.equal(await plusBtn.isVisible(), true);
             assert.equal(await archivesBtn.isVisible(), true);
             const barGeometry = await page.evaluate(() => {
                 const statusBox = document.querySelector("#session-status")?.getBoundingClientRect();
                 const barBox = document.querySelector("#workspace-tabs")?.getBoundingClientRect();
-                const plusBox = document.querySelector('#workspace-tabs > form[data-tab-new] > button')?.getBoundingClientRect();
+                const plusBox = document.querySelector("#workspace-tabs > button[data-tab-new]")?.getBoundingClientRect();
                 const archivesBox = document.querySelector("#workspace-tabs > button[data-open-sessions]")?.getBoundingClientRect();
                 const tabBox = document.querySelector("#workspace-tabs > ul > li")?.getBoundingClientRect();
                 return statusBox && barBox && plusBox && archivesBox && tabBox
@@ -351,16 +348,6 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             assert.ok((await mobilePage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "320px #session settings tab has no horizontal overflow");
             checkMobile();
             await mobileContext.close();
-
-            const noJsContext = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 320, height: 640 } });
-            const checkNoJs = browserDiagnostics(noJsContext);
-            const noJsPage = await noJsContext.newPage();
-            noJsPage.setDefaultTimeout(10_000);
-            await noJsPage.goto(new URL(userPath, base).href);
-            assert.equal(await noJsPage.locator("#workspace-tabs > ul").isVisible(), true, "no-JS retains native scrollable tab strip");
-            assert.ok((await noJsPage.evaluate(() => document.documentElement.scrollWidth)) <= 320, "no-JS 320px tab strip scrolls internally without page overflow");
-            checkNoJs();
-            await noJsContext.close();
         } finally {
             await browser.close();
         }

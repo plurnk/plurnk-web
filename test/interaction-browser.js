@@ -110,7 +110,7 @@ export default async function verifyInteractions(t) {
                         },
                     }], "defaults retain their types; action/content are answer keys, not a wrapper");
 
-                    const injected = '<script>window.schemaExecuted=true</script><form action="/auth/logout">';
+                    const injected = '<script>window.schemaExecuted=true</script><form action="/render/mermaid">';
                     const unsafe = request({ $ref: "https://schema.invalid/not-fetched.json", description: injected });
                     unsafe.gates[0].message = injected;
                     unsafe.gates[0]._meta = { plurnk: { arguments: injected, interaction: { sessionId: injected } } };

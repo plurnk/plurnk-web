@@ -16,19 +16,29 @@ export default async function verifyCommands(t) {
                     const checkBrowser = browserDiagnostics(context);
                     const page = await context.newPage();
                     const requests = [];
-                    let credentials = 0;
-                    let credentialStatus = 200;
+                    let acpStatus = 200;
+                    let expectedAuthHeader = "Bearer command-fixture-token";
                     const modelResponse = (model) => ({ configOptions: [], availableCommands: [], _meta: { plurnk: { status: { model, spawnModel: null } } } });
                     /** @type {any} */
                     let result = modelResponse(null);
                     let held = undefined;
-                    await page.route("**/auth/token", (route) => {
-                        credentials++;
-                        return route.fulfill({ status: credentialStatus,
-                            json: { token_type: "Bearer", access_token: "command-fixture-token" } });
+                    await page.route("**/acp", (route) => {
+                        if (acpStatus !== 200 && route.request().method() !== "DELETE") {
+                            return route.fulfill({
+                                status: acpStatus,
+                                contentType: "application/problem+json",
+                                body: JSON.stringify({
+                                    type: "https://problems.plurnk.xyz/http/unauthorized",
+                                    title: "Unauthorized",
+                                    status: acpStatus,
+                                    detail: "Sign in to continue.",
+                                }),
+                            });
+                        }
+                        return route.continue();
                     });
                     fixture.onAcp(async (input, headers) => {
-                        assert.equal(headers.authorization, "Bearer command-fixture-token");
+                        assert.equal(headers.authorization, expectedAuthHeader);
                         requests.push(input);
                         if (held) await held.promise;
                         const errorProblem = result?.problem;
@@ -37,6 +47,15 @@ export default async function verifyCommands(t) {
                             : { result };
                     });
                     await page.goto(fixture.url);
+                    await page.evaluate((acpOrigin) => {
+                        localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                            acpOrigin,
+                            issuer: "http://idp.test",
+                            clientId: "plurnk-web",
+                            tokenEndpoint: "http://idp.test/token",
+                            accessToken: "command-fixture-token",
+                        }));
+                    }, new URL(fixture.url).origin);
                     await page.waitForFunction(() => typeof window.command === "function");
                     assert.equal(await page.getByRole("textbox", { name: "Message", exact: true }).count(), 1);
                     assert.equal(await page.locator('label[for="session-message"]').count(), 0, "the textarea keeps its name without a visible title");
@@ -254,7 +273,6 @@ export default async function verifyCommands(t) {
                         assert.equal(await feedback.locator('[role="alert"]').isVisible(), true, text);
                     }
                     assert.equal(requests.length, 0);
-                    assert.equal(credentials, 0);
 
                     // Multi-line CLI output opens in #dialog-command-output without injecting DOM scripts or waterfall cards.
                     const source = '<script>window.commandExecuted=true</script>';
@@ -334,14 +352,17 @@ export default async function verifyCommands(t) {
                         assert.equal(await command("/model local"), false, "missing, mismatched and malformed results cannot claim success");
                     }
 
-                    credentialStatus = 401;
+                    acpStatus = 401;
                     const count = requests.length;
                     assert.equal(await command("/model local"), false);
-                    assert.equal(requests.length, count, "credential refusal prevents action delivery");
-                    assert.match(await errorText.textContent(), /401/u);
-                    checkBrowser(engine === firefox ? [] : [httpFailure("/auth/token", 401)]);
+                    assert.equal(requests.length, count, "401 refusal prevents action delivery");
+                    assert.match(await errorText.textContent(), /401|Sign in/u);
+                    checkBrowser(engine === firefox ? [] : [httpFailure("/acp", 401)]);
 
-                    credentialStatus = 200;
+                    // Clear OIDC grant to verify loopback zero-storage fast path recovers cleanly
+                    await page.evaluate(() => localStorage.clear());
+                    expectedAuthHeader = undefined;
+                    acpStatus = 200;
                     result = modelResponse({ alias: "local", provider: "fixture", model: "small" });
                     assert.equal(await command("/model local"), true, "a later explicit command can recover");
 

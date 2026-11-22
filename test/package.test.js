@@ -8,7 +8,6 @@ test("{§web-package} every package the module imports is a declared dependency"
     const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
     assert.deepEqual(Object.keys(manifest.peerDependencies ?? {}).toSorted(), [
         "@plurnk/plurnk-acp",
-        "@plurnk/plurnk-auth",
         "@plurnk/plurnk-contracts",
         "@plurnk/plurnk-modules",
     ]);

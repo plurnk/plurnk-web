@@ -9,153 +9,183 @@ import { build } from "vite";
 import { chromium } from "playwright";
 import Documents from "../src/documents.js";
 import browserDiagnostics from "./browser-diagnostics.js";
+import { buildPreseededSessionDocument } from "./conversation-fixture.js";
 
-test("{§web-page-shell} compact header stays on one row and long workspace places scroll without JavaScript", async (t) => {
+test("{§web-page-shell} compact header stays on one row and long workspace places scroll cleanly", async (t) => {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
-    const documents = new Documents(assets.get("/index.html").body.toString(), 128);
+    const rawTemplate = assets.get("/index.html").body.toString();
+    const documents = new Documents(rawTemplate, { overviewSessions: 128 });
     const browser = await chromium.launch();
     t.after(() => browser.close());
-    for (const javaScriptEnabled of [false, true]) {
-        const context = await browser.newContext({ javaScriptEnabled });
-        const checkBrowser = browserDiagnostics(context);
-        try {
-            let html;
-            await context.route("http://web.test/**", (route) => {
-                const path = new URL(route.request().url()).pathname;
-                return route.fulfill(path === "/" ? { body: html, contentType: "text/html" } : assets.get(path));
-            });
-            const page = await context.newPage();
-            for (const authenticated of [false, true]) {
-                for (const name of ["w", "~/ptl/project", `~/project/${"long-name-".repeat(20)}`]) {
-                    const port = {
-                        listWorkspaces: async () => [{ id: 1, name, project_root: null, project_label: null, archived_at: null }],
-                        listSessions: async () => [{ id: 2, name: "session1", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
-                    };
-                    html = await documents.read({ kind: "session", workspace: name, session: "session1" }, port, authenticated);
-                    await page.goto("http://web.test/");
-                    assert.equal(await page.locator("header > #header-place").count(), 1);
-                    assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
-                    const measure = () => page.evaluate(() => {
-                        const header = document.querySelector("body > header");
-                        const place = header.querySelector("#header-place");
-                        const searchLink = header.querySelector('[data-nav="search"]');
-                        const searchIcon = searchLink.querySelector("svg");
-                        return {
-                            header: header.getBoundingClientRect().toJSON(),
-                            search: searchLink.getBoundingClientRect().toJSON(),
-                            glyph: searchIcon.getBoundingClientRect().toJSON(),
-                            menu: header.querySelector('nav[aria-label="Main navigation"]').getBoundingClientRect().toJSON(),
-                            place: place.getBoundingClientRect().toJSON(),
-                            font: parseFloat(getComputedStyle(header).fontSize),
-                            scrollable: place.scrollWidth > place.clientWidth,
-                            verticalOverflow: place.scrollHeight > place.clientHeight + 1,
-                            overflow: document.documentElement.scrollWidth > innerWidth,
-                            labelsVisible: [...header.querySelectorAll("[data-header-label]")].every((el) => getComputedStyle(el).display !== "none"),
-                        };
-                    });
-                    for (const width of [500, 320, 768, 1024, 500]) {
-                        await page.setViewportSize({ width, height: 700 });
-                        const { search, glyph, menu, place, header, overflow, font, scrollable, verticalOverflow, labelsVisible } = await measure();
-                        assert.ok(glyph.width > 0 && glyph.height > 0, "far-left Search icon renders cleanly");
-                        assert.equal(overflow, false);
-                        assert.equal(verticalOverflow, false, "place controls fit their scroll area vertically");
-                        assert.equal(labelsVisible, width >= 1024, `${width}px collapses header button text labels below 1024px`);
-                        assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), name);
-                        assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "session1");
-                        assert.ok(place.y < search.bottom && place.bottom > search.y, "place shares the far-left Search row");
-                        if (menu.width > 0) {
-                            assert.ok(menu.y < search.bottom && menu.bottom > search.y, "menu shares the Search row");
-                        }
-                        assert.ok(place.x >= search.right - 1 && place.right <= menu.x + 1, "the place remains between far-left Search and navigation controls");
-                        assert.ok(header.height <= Math.max(search.height, menu.height, place.height) + font, "header padding is at most one text line in total");
-                        await page.locator("#session-workspace").focus();
-                        assert.equal(await page.locator("#session-workspace").evaluate((btn) => {
-                            const style = getComputedStyle(btn);
-                            return document.activeElement === btn && style.boxShadow.includes("inset");
-                        }), true, "keyboard focus stays visible inside the header place scroll area");
-                        if (name.length > 100) {
-                            assert.equal(scrollable, true, "long names are retained in a locally scrollable header place");
-                            assert.equal(await page.locator("#header-place").evaluate((el) => {
-                                el.scrollLeft = el.scrollWidth;
-                                return el.scrollLeft > 0;
-                            }), true);
-                        }
+    const context = await browser.newContext();
+    const checkBrowser = browserDiagnostics(context);
+    try {
+        /** @type {Buffer} */
+        let html;
+        await context.route("http://web.test/**", (route) => {
+            const path = new URL(route.request().url()).pathname;
+            if (/^\/assets\/workspace-workbench-[^/]+\.js$/u.test(path)) {
+                return route.fulfill({ contentType: "text/javascript", body: "export default async function () {}\n" });
+            }
+            return route.fulfill(path === "/~/workspace" ? { body: html, contentType: "text/html" } : assets.get(path));
+        });
+        const page = await context.newPage();
+        for (const authenticated of [false, true]) {
+            for (const name of ["w", "~/ptl/project", `~/project/${"long-name-".repeat(20)}`]) {
+                html = buildPreseededSessionDocument(documents, rawTemplate, { workspaceName: name, sessionName: "session1" });
+                await page.goto("http://web.test/~/workspace#session1");
+                await page.evaluate((withGrant) => {
+                    if (withGrant) {
+                        localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                            acpOrigin: "http://web.test",
+                            issuer: "http://idp.test",
+                            clientId: "plurnk-web",
+                            tokenEndpoint: "http://idp.test/token",
+                            accessToken: "hdr.payload.sig",
+                        }));
+                    } else {
+                        localStorage.removeItem("plurnk_oidc_grant");
                     }
-                    if (name === "~/ptl/project") {
-                        await page.setViewportSize({ width: 768, height: 700 });
-                        await page.evaluate(() => { document.documentElement.style.fontSize = "48px"; });
-                        const { search, glyph, menu, place, overflow, verticalOverflow } = await measure();
-                        assert.ok(glyph.width > 0 && glyph.height > 0);
-                        assert.ok(place.y < search.bottom && place.bottom > search.y, "large text still has one header row");
-                        assert.ok(place.x >= search.right - 1 && place.right <= menu.x + 1);
-                        assert.equal(overflow, false);
-                        assert.equal(verticalOverflow, false, "large text introduces no vertical header place scroll");
-                        await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
+                }, authenticated);
+                await page.reload();
+                assert.equal(await page.locator("header > #header-place").count(), 1);
+                assert.equal(await page.locator('main nav[aria-label="breadcrumb"]').count(), 0);
+                assert.equal(await page.locator("header [data-oidc-sign-out]").count(), authenticated ? 1 : 0);
+                const measure = () => page.evaluate(() => {
+                    const header = document.querySelector("body > header");
+                    const place = header.querySelector("#header-place");
+                    const searchLink = header.querySelector('[data-nav="search"]');
+                    const searchIcon = searchLink.querySelector("svg");
+                    return {
+                        header: header.getBoundingClientRect().toJSON(),
+                        search: searchLink.getBoundingClientRect().toJSON(),
+                        glyph: searchIcon.getBoundingClientRect().toJSON(),
+                        menu: header.querySelector('nav[aria-label="Main navigation"]').getBoundingClientRect().toJSON(),
+                        place: place.getBoundingClientRect().toJSON(),
+                        font: parseFloat(getComputedStyle(header).fontSize),
+                        scrollable: place.scrollWidth > place.clientWidth,
+                        verticalOverflow: place.scrollHeight > place.clientHeight + 1,
+                        overflow: document.documentElement.scrollWidth > innerWidth,
+                        labelsVisible: [...header.querySelectorAll("[data-header-label]")].every((el) => getComputedStyle(el).display !== "none"),
+                    };
+                });
+                for (const width of [500, 320, 768, 1024, 500]) {
+                    await page.setViewportSize({ width, height: 700 });
+                    const { search, glyph, menu, place, header, overflow, font, scrollable, verticalOverflow, labelsVisible } = await measure();
+                    assert.ok(glyph.width > 0 && glyph.height > 0, "far-left Search icon renders cleanly");
+                    assert.equal(overflow, false);
+                    assert.equal(verticalOverflow, false, "place controls fit their scroll area vertically");
+                    assert.equal(labelsVisible, width >= 1024, `${width}px collapses header button text labels below 1024px`);
+                    assert.equal(await page.locator('#session-workspace [data-text="workspace-name"]').textContent(), name);
+                    assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "session1");
+                    assert.ok(place.y < search.bottom && place.bottom > search.y, "place shares the far-left Search row");
+                    if (menu.width > 0) {
+                        assert.ok(menu.y < search.bottom && menu.bottom > search.y, "menu shares the Search row");
+                    }
+                    assert.ok(place.x >= search.right - 1 && place.right <= menu.x + 1, "the place remains between far-left Search and navigation controls");
+                    assert.ok(header.height <= Math.max(search.height, menu.height, place.height) + font, "header padding is at most one text line in total");
+                    await page.locator("#session-workspace").focus();
+                    assert.equal(await page.locator("#session-workspace").evaluate((btn) => {
+                        const style = getComputedStyle(btn);
+                        return document.activeElement === btn && style.boxShadow.includes("inset");
+                    }), true, "keyboard focus stays visible inside the header place scroll area");
+                    if (name.length > 100) {
+                        assert.equal(scrollable, true, "long names are retained in a locally scrollable header place");
+                        assert.equal(await page.locator("#header-place").evaluate((el) => {
+                            el.scrollLeft = el.scrollWidth;
+                            return el.scrollLeft > 0;
+                        }), true);
                     }
                 }
+                if (name === "~/ptl/project") {
+                    await page.setViewportSize({ width: 768, height: 700 });
+                    await page.evaluate(() => { document.documentElement.style.fontSize = "48px"; });
+                    const { search, glyph, menu, place, overflow, verticalOverflow } = await measure();
+                    assert.ok(glyph.width > 0 && glyph.height > 0);
+                    assert.ok(place.y < search.bottom && place.bottom > search.y, "large text still has one header row");
+                    assert.ok(place.x >= search.right - 1 && place.right <= menu.x + 1);
+                    assert.equal(overflow, false);
+                    assert.equal(verticalOverflow, false, "large text introduces no vertical header place scroll");
+                    await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
+                }
             }
-            checkBrowser();
-        } finally {
-            await context.close();
         }
+        checkBrowser();
+    } finally {
+        await context.close();
     }
 });
 
-test("{§web-page-shell} disconnection is a named header glyph between Search and Account, not a second connection state", async (t) => {
+test("{§web-page-shell} disconnection is a named header glyph between Search and Sign out, following observed transport state only", async (t) => {
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     const assets = new Map(await Promise.all(inventory.map(async ([path, file, contentType]) =>
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
-    const documents = new Documents(assets.get("/index.html").body.toString(), 128);
+    const rawTemplate = assets.get("/index.html").body.toString();
+    const documents = new Documents(rawTemplate, { overviewSessions: 128 });
     const browser = await chromium.launch();
     t.after(() => browser.close());
-    const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 320, height: 700 } });
+    const context = await browser.newContext({ viewport: { width: 320, height: 700 } });
     const checkBrowser = browserDiagnostics(context);
-    const port = {
-        listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, archived_at: null }],
-        listSessions: async () => [{ id: 9, name: "session1", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null }],
-    };
-    const emptyPort = {
-        listWorkspaces: async () => [{ id: 7, name: "project", project_root: null, project_label: null, archived_at: null }],
-        listSessions: async () => [],
-    };
-    let html;
-    await context.route("http://web.test/**", (route) => {
-        const path = new URL(route.request().url()).pathname;
-        return route.fulfill(path === "/" ? { body: html, contentType: "text/html" } : assets.get(path));
-    });
-    const page = await context.newPage();
-    for (const authenticated of [false, true]) {
-        html = await documents.read({ kind: "session", workspace: "project", session: "session1" }, port, authenticated);
-        await page.goto("http://web.test/");
-        const indicator = page.getByRole("img", { name: "Disconnected", exact: true, includeHidden: true });
-        assert.equal(await indicator.count(), 1);
-        assert.equal(await indicator.getAttribute("title"), "Disconnected");
-        assert.equal(await indicator.locator("svg").count(), 1);
-        for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
-            await page.emulateMedia({ colorScheme });
-            for (const state of ["initial", "connecting", "connected", "interrupted", "disconnected", "signed-out", "connected"]) {
-                await page.locator("#session-status").evaluate((element, state) => { element.dataset.connection = state; }, state);
-                assert.equal(await indicator.isVisible(), ["disconnected", "signed-out"].includes(state), `${state}: the header follows observed transport state only`);
-                if (await indicator.isVisible()) {
-                    const box = await indicator.boundingBox();
-                    const search = await page.getByRole("link", { name: "Search", exact: true }).boundingBox();
-                    assert.ok(search.x + search.width <= box.x, "far-left Search precedes the right-side Disconnected glyph");
-                    assert.ok(Math.abs(box.y + box.height / 2 - search.y - search.height / 2) < 2);
-                    if (authenticated) {
-                        const account = await page.getByRole("link", { name: "Account", exact: true }).boundingBox();
-                        assert.ok(box.x + box.width <= account.x, "the plug is immediately left of Account on the same row");
-                    }
-                }
-                assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    try {
+        /** @type {Buffer} */
+        let html;
+        await context.route("http://web.test/**", (route) => {
+            const path = new URL(route.request().url()).pathname;
+            if (/^\/assets\/workspace-workbench-[^/]+\.js$/u.test(path)) {
+                return route.fulfill({ contentType: "text/javascript", body: "export default async function () {}\n" });
             }
+            return route.fulfill(path === "/~/project" ? { body: html, contentType: "text/html" } : assets.get(path));
+        });
+        const page = await context.newPage();
+        for (const authenticated of [false, true]) {
+            html = buildPreseededSessionDocument(documents, rawTemplate, { workspaceName: "project", sessionName: "session1" });
+            await page.goto("http://web.test/~/project#session1");
+            await page.evaluate((withGrant) => {
+                if (withGrant) {
+                    localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                        acpOrigin: "http://web.test",
+                        issuer: "http://idp.test",
+                        clientId: "plurnk-web",
+                        tokenEndpoint: "http://idp.test/token",
+                        accessToken: "hdr.payload.sig",
+                    }));
+                } else {
+                    localStorage.removeItem("plurnk_oidc_grant");
+                }
+            }, authenticated);
+            await page.reload();
+            const indicator = page.getByRole("img", { name: "Disconnected", exact: true, includeHidden: true });
+            assert.equal(await indicator.count(), 1);
+            assert.equal(await indicator.getAttribute("title"), "Disconnected");
+            assert.equal(await indicator.locator("svg").count(), 1);
+            for (const colorScheme of /** @type {const} */ (["light", "dark"])) {
+                await page.emulateMedia({ colorScheme });
+                for (const state of ["initial", "connecting", "connected", "interrupted", "disconnected", "signed-out", "connected"]) {
+                    await page.locator("#session-status").evaluate((element, nextState) => { element.dataset.connection = nextState; }, state);
+                    assert.equal(await indicator.isVisible(), ["disconnected", "signed-out"].includes(state), `${state}: the header follows observed transport state only`);
+                    if (await indicator.isVisible()) {
+                        const box = await indicator.boundingBox();
+                        const search = await page.getByRole("link", { name: "Search", exact: true }).boundingBox();
+                        assert.ok(search.x + search.width <= box.x, "far-left Search precedes the right-side Disconnected glyph");
+                        assert.ok(Math.abs(box.y + box.height / 2 - search.y - search.height / 2) < 2);
+                        if (authenticated) {
+                            const signOut = await page.getByRole("button", { name: "Sign out", exact: true }).boundingBox();
+                            assert.ok(box.x + box.width <= signOut.x + 1, "the plug sits left of Sign out on the same row");
+                        }
+                    }
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                }
+            }
+            html = documents.home();
+            await page.goto("http://web.test/~/project");
+            assert.equal(await indicator.isVisible(), false, "a document without an active observation never claims disconnection");
         }
-        html = await documents.read({ kind: "workspace", workspace: "project" }, emptyPort, authenticated);
-        await page.goto("http://web.test/");
-        assert.equal(await indicator.isVisible(), false, "a document without an observation never claims disconnection");
+        checkBrowser();
+    } finally {
+        await context.close();
     }
-    checkBrowser();
 });
 
 test("{§web-build} production HTML references compiled assets, not development modules", async () => {

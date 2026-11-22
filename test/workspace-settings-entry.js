@@ -17,7 +17,7 @@ if (main instanceof HTMLElement && main.dataset.page === "settings") {
     if (tabsNav instanceof HTMLElement) tabsNav.dataset.live = "true";
 
     const call = (kind, params = {}, signal = lifetime.signal) =>
-        managementAction(kind, params, sessionName ? `7#${sessionName}` : "", "session", signal, { workspaceId: 7 });
+        managementAction(kind, params, sessionName ? `7#${sessionName}` : "", signal, { workspaceId: 7, redirectOn401: false });
 
     const command = sessionCommands(main, {
         call,

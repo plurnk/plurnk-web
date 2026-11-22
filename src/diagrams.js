@@ -90,7 +90,7 @@ export default class Diagrams {
         if (type.essence !== "application/json" || (type.params.has("charset") && type.params.get("charset")?.toLowerCase() !== "utf-8")) {
             throw new RequestError(415, "Use UTF-8 application/json.");
         }
-        if (req.headers["sec-fetch-site"] !== undefined && req.headers["sec-fetch-site"] !== "same-origin") {
+        if (req.headers["sec-fetch-site"] !== undefined && req.headers["sec-fetch-site"] !== "same-origin" && req.headers["sec-fetch-site"] !== "none") {
             throw new RequestError(403, "Same-origin request required.");
         }
         const disconnected = new AbortController();

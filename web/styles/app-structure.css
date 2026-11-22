@@ -108,6 +108,15 @@
         padding: 0;
     }
 
+    header nav :where(button) {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35ch;
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.15) calc(var(--otm-spacing) * 0.35);
+    }
+
     body > header > nav[aria-label="breadcrumb"] > ul {
         align-items: stretch;
         inline-size: max-content;
@@ -320,8 +329,8 @@
         padding: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.6);
     }
 
-    /* {§web-workspace-settings} {§web-account} Dedicated workspace settings and account page layout. */
-    :is(#workspace-settings, #account-settings) :where(nav[aria-label] > ul) {
+    /* {§web-workspace-settings} Dedicated workspace settings and about page layout. */
+    #workspace-settings :where(nav[aria-label] > ul) {
         display: flex;
         flex: 1 1 auto;
         flex-wrap: nowrap;
@@ -333,14 +342,14 @@
         white-space: nowrap;
     }
 
-    :is(#workspace-settings, #account-settings) :where(nav[aria-label] > ul > li) {
+    #workspace-settings :where(nav[aria-label] > ul > li) {
         flex: 0 0 auto;
         list-style: none;
         margin: 0;
         padding: 0;
     }
 
-    :is(#workspace-settings, #account-settings) :where(nav[aria-label] a) {
+    #workspace-settings :where(nav[aria-label] a) {
         display: inline-flex;
         align-items: center;
         padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.6);
@@ -363,16 +372,16 @@
         margin: 0;
     }
 
-    :is(#workspace-settings, #account-settings) :where(table) {
+    #workspace-settings :where(table) {
         inline-size: 100%;
     }
 
-    :is(#workspace-settings, #account-settings) :where(th, td) {
+    #workspace-settings :where(th, td) {
         padding: calc(var(--otm-spacing) * 0.45) calc(var(--otm-spacing) * 0.55);
         vertical-align: middle;
     }
 
-    #account-settings :where(dl) {
+    #workspace-settings :where(#about dl) {
         display: grid;
         grid-template-columns: max-content minmax(0, 1fr);
         align-items: baseline;
@@ -380,7 +389,7 @@
         margin: 0;
     }
 
-    #account-settings :where(dt, dd) {
+    #workspace-settings :where(#about dt, #about dd) {
         margin: 0;
     }
 
@@ -439,7 +448,8 @@
     }
 
     #session-reconnect,
-    #session-reconnect > button {
+    #session-reconnect > button,
+    #session-connection > header > :where(button) {
         inline-size: auto;
         margin: 0;
     }

@@ -14,9 +14,9 @@ const PageSchema = z.object({
     updates: z.array(UpdateSchema),
 });
 
-/** @param {string} address @param {"session" | "none"} auth @param {AbortSignal} signal */
-export default async function readHistory(address, auth, signal) {
-    const response = await daemonRead(address, auth, signal);
+/** @param {string} address @param {AbortSignal} signal */
+export default async function readHistory(address, signal) {
+    const response = await daemonRead(address, signal);
     const raw = PageSchema.parse(await response.json());
     const messages = SessionTranslator.projectMessages(
         /** @type {readonly import("./session-translator.js").AcpSessionUpdate[]} */ (raw.updates),

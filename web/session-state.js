@@ -62,7 +62,7 @@ export default function sessionState(element, main = $("#main")) {
                 "models-settings-path": hasConfiguredModel ? identity.sessionSettingsPath : identity.modelsSettingsPath,
             });
             the(folder, "project-label", identity.projectLabel);
-            the(connectionNotice, { "session-path": identity.sessionPath, "sign-in-path": `/auth/login?return=${encodeURIComponent(identity.sessionPath)}` });
+            the(connectionNotice, { "session-path": identity.sessionPath });
             for (const link of $$(main, "a[data-session-name]")) {
                 const session = /** @type {HTMLAnchorElement} */ (link).dataset.sessionName;
                 if (!session) throw new Error("Session navigation has no identity.");

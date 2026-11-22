@@ -7,6 +7,8 @@ import sessionHistory from "./session-history.js";
 import reviewRequests from "./session-review.js";
 import diagnostics from "./session-diagnostics.js";
 import accessHeaders from "./access-headers.js";
+import { acpUrl } from "./endpoints.js";
+import { hasActiveOidcGrant, onOidcGrantChange, recoverFromUnauthorized } from "./oidc.js";
 import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import managementAction from "./management-action.js";
@@ -70,8 +72,8 @@ function failing(subscriber, fail) {
  * }} [options]
  */
 export default function observeSession(element, { main: suppliedMain = $("#main"), transport, onNavigate, getWorkbenchSnapshot } = {}) {
-    const { sessionId, auth } = element.dataset;
-    if (!sessionId || (auth !== "session" && auth !== "none")) throw new Error("Session document metadata is incomplete.");
+    const { sessionId } = element.dataset;
+    if (!sessionId) throw new Error("Session document metadata is incomplete.");
     if (!(suppliedMain instanceof HTMLElement)) throw new Error("Session document has no main region.");
     const main = suppliedMain;
     const history = $(main, "#session-conversation");
@@ -142,6 +144,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     let historyIndex = -1;
     /** @type {string | null} */
     let historyDraft = null;
+    let connectedWithGrant = false;
+    let inFlightAuthRecovery = false;
 
     /** @param {string} raw */
     function pushPromptHistory(raw) {
@@ -182,14 +186,14 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
 
     the(feedback, "message-status", "");
     let resources = new AbortController();
-    const transcript = sessionHistory(history, (address) => readBody(address, auth, resources.signal),
-        (address, signal) => readHistory(address, auth, AbortSignal.any([signal, resources.signal])));
+    const transcript = sessionHistory(history, (address) => readBody(address, resources.signal),
+        (address, signal) => readHistory(address, AbortSignal.any([signal, resources.signal])));
     const diagnosticList = $(main, "#session-diagnostics");
     if (!(diagnosticList instanceof HTMLElement)) throw new Error("Session document has no diagnostics outlet.");
     const diagnose = diagnostics(diagnosticList);
     const presentState = sessionState(element, main);
     const effectiveTransport = transport ?? ($('#workspace-tabs[data-live="true"]') ? "ws" : "http");
-    const agent = new SessionAgent({ url: "/acp", sessionId, transport: effectiveTransport });
+    const agent = new SessionAgent({ url: acpUrl(), sessionId, transport: effectiveTransport });
     void import("@plurnk/plurnk-contracts").catch(() => {});
     /** @type {string | null | undefined} */
     let workspaceProjectRoot = $(main.ownerDocument.body, '#session-workspace [aria-label="Folderless workspace"]') ? null : undefined;
@@ -223,7 +227,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     };
     const isClientDispatch = (/** @type {string} */ value) => isCommand(value, availableCommands()) || isLocalExec(value);
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
-    const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, sessionId, auth, signal);
+    const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, sessionId, signal, { redirectOn401: false });
     const toggleYolo = async () => {
         const currentMode = the(element, "approval-mode") ?? "review";
         const nextMode = currentMode === "accept" ? "review" : "accept";
@@ -452,7 +456,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     }
 
     /** @param {AbortSignal} signal @returns {Promise<Record<string, string>>} */
-    const credentials = (signal) => accessHeaders(auth, signal);
+    const credentials = (signal) => accessHeaders(signal);
 
     /** @param {string} id */
     function acknowledged(id) {
@@ -498,9 +502,15 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     connection("connecting", "Connecting…");
                 }
                 if (!submission?.resolutions && !holding && !passiveRetry) review.present([]);
-                agent.headers = await credentials(signal);
+                try {
+                    inFlightAuthRecovery = true;
+                    agent.headers = await credentials(signal);
+                } finally {
+                    inFlightAuthRecovery = false;
+                }
+                if (Object.keys(agent.headers).length > 0) connectedWithGrant = true;
                 signal.throwIfAborted();
-                agent.url = "/acp";
+                agent.url = acpUrl();
                 // This run ends with the page's observation or with its first intake failure.
                 const run = new AbortController();
                 signal.onabort = () => run.abort(signal.reason);
@@ -639,6 +649,26 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             clearSendingTimer();
             agent.close();
             const signedOut = Reflect.get(Object(error), "status") === 401;
+            if (signedOut) {
+                let recovery;
+                try {
+                    inFlightAuthRecovery = true;
+                    recovery = await recoverFromUnauthorized({
+                        signal,
+                        redirectOnDiscovery: status === undefined && !submission && !pending,
+                    });
+                } finally {
+                    inFlightAuthRecovery = false;
+                }
+                if (signal.aborted) return;
+                if (recovery.status === "refreshed") {
+                    connect(submission, passiveRetry);
+                    return;
+                }
+                if (recovery.status === "redirecting") {
+                    return;
+                }
+            }
             if (signedOut || !passiveRetry) {
                 connection(signedOut ? "signed-out" : "disconnected", signedOut ? "Sign-in ended" : "Disconnected");
                 const guidance = signedOut ? "Sign in to connect to this session again." : "Displayed values are no longer live. Reconnect to check the session.";
@@ -1037,6 +1067,19 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
 
     let savedScrollTop = main.scrollTop;
 
+    const offGrantChange = onOidcGrantChange(() => {
+        if (disposed || inFlightAuthRecovery) return;
+        if (connectedWithGrant && !hasActiveOidcGrant()) {
+            connectedWithGrant = false;
+            clearSendingTimer();
+            reconnect.stop();
+            delivery?.controller.abort();
+            agent.close();
+            connection("signed-out", "Sign-in ended");
+            the(connectionNotice, "connection-detail", "Sign-in was cleared. Sign in to connect to this session again.");
+            availability();
+        }
+    });
     const offPageHide = on.target(window, "pagehide", () => {
         if (disposed) return;
         reconnect.reset();
@@ -1086,6 +1129,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             if (disposed) return;
             disposed = true;
             clearSendingTimer();
+            offGrantChange();
             offKeydown();
             offCoarseMedia();
             offPageHide();

@@ -161,7 +161,7 @@ export default async function verifyStatus(t) {
                     assert.equal(await page.locator('#session-directory').count(), 0);
                     assert.equal(await page.locator('#workspace-tabs a[aria-current="true"]').getAttribute("data-tab-session"), "session1");
                     assert.equal(await page.locator("#session-reconnect").getAttribute("action"), "/~/review%20%3Cscript%3E%26%40%25#session1");
-                    assert.equal(new URL(await page.locator("[data-sign-in]").getAttribute("href"), url).searchParams.get("return"), "/~/review%20%3Cscript%3E%26%40%25#session1");
+                    assert.equal(await page.locator("[data-sign-in]").getAttribute("data-return-path"), "/~/review%20%3Cscript%3E%26%40%25#session1");
                     assert.equal(await page.title(), `${active.plurnk.workspace.name}#session1 — Plurnk`);
                     assert.equal(await page.locator("#session-folder").isVisible(), true);
                     assert.equal(await page.locator("#session-folder [data-text=project-label]").textContent(), "~/project");

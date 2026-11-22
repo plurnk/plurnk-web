@@ -20,6 +20,7 @@ export default async function verifySessionDirectory(page, workspace) {
     const wsPath = directoryPath({ kind: "workspace", workspace: workspace.name });
     const path = (session) => directoryPath({ kind: "session", workspace: workspace.name, session: session.name });
     const wsCard = page.locator(`#search-workspaces > ul > li[data-directory-entry="workspace"][data-workspace-id="${workspace.id}"] > article`);
+    await wsCard.waitFor({ state: "visible" });
     assert.equal(await wsCard.count(), 1);
     if (wsPath !== null) {
         assert.equal(await wsCard.locator(':scope > header > a[data-text="name"]').getAttribute("href"), wsPath);
@@ -117,22 +118,13 @@ export default async function verifySessionDirectory(page, workspace) {
     await entry(review).locator(":scope > details > summary").press("Space");
     assert.equal(await link(evidence).isVisible(), true);
     await verifyPageShell(page, { title: "Search — Plurnk", kind: "search" });
-    const hasScript = await page.evaluate(() => matchMedia("(scripting: enabled)").matches);
     await link(evidence).click();
     await page.waitForFunction(
-        ({ expected, scripted }) => {
-            if (!scripted) return location.hash === `#${expected}`;
-            return document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === expected;
-        },
-        { expected: evidence.name, scripted: hasScript },
+        (expected) => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === expected,
+        evidence.name,
     );
     assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, path(evidence));
-    const openSessionSettings = async (targetSession) => {
-        if (!hasScript) {
-            const directUrl = new URL(`/settings/?${new URLSearchParams({ workspace: workspace.name, session: targetSession.name })}#session`, page.url()).href;
-            await page.goto(directUrl);
-            return;
-        }
+    const openSessionSettings = async () => {
         const activeTab = page.locator('#workspace-tabs a[aria-current="true"]');
         if (await activeTab.isVisible()) {
             await activeTab.click();
@@ -141,32 +133,32 @@ export default async function verifySessionDirectory(page, workspace) {
         }
         await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
     };
-    await openSessionSettings(evidence);
+    await openSessionSettings();
     const parentLink = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-parent-line]');
+    await parentLink.waitFor({ state: "visible" });
     assert.equal((await parentLink.innerText()).trim(), "Parent: review");
     assert.equal(await page.locator("#session-directory").count(), 0);
     await parentLink.getByRole("link", { name: "review", exact: true }).click();
     await page.waitForFunction(
-        ({ scripted }) => scripted
-            ? document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "review"
-            : location.hash === "#review",
-        { scripted: hasScript },
+        () => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "review",
     );
     assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, path(review));
+    if (background.length > 0) {
+        await page.goto(directory);
+        await page.locator("#search-workspaces [data-workspace-background] > summary").waitFor({ state: "visible" });
+        await backgroundSection.locator(":scope > summary").click();
+        const incoming = models.find(({ name }) => name === "incoming");
+        assert.equal(await link(incoming).isVisible(), true);
+        await link(incoming).click();
+        await page.waitForFunction(
+            () => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "incoming",
+        );
+        await openSessionSettings();
+        const incomingParentLink = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-parent-line]');
+        await incomingParentLink.waitFor({ state: "visible" });
+        assert.equal((await incomingParentLink.innerText()).trim(), "Parent: _plurnk");
+        assert.equal(await incomingParentLink.locator("a").count(), 0);
+    }
     await page.goto(directory);
-    await backgroundSection.locator(":scope > summary").click();
-    const incoming = models.find(({ name }) => name === "incoming");
-    assert.equal(await link(incoming).isVisible(), true);
-    await link(incoming).click();
-    await page.waitForFunction(
-        ({ scripted }) => scripted
-            ? document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "incoming"
-            : location.hash === "#incoming",
-        { scripted: hasScript },
-    );
-    await openSessionSettings(incoming);
-    const incomingParentLink = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-parent-line]');
-    assert.equal((await incomingParentLink.innerText()).trim(), "Parent: _plurnk");
-    assert.equal(await incomingParentLink.locator("a").count(), 0);
-    await page.goto(directory);
+    await wsCard.waitFor({ state: "visible" });
 }

@@ -1,3 +1,4 @@
+import { acpOrigin, acpUrl } from "./endpoints.js";
 import problemFromResponse from "./problem-response.js";
 import { isRecord } from "./session-translator.js";
 
@@ -21,14 +22,12 @@ import { isRecord } from "./session-translator.js";
  */
 
 /**
- * @param {string} url
+ * @param {string} [url]
  * @returns {string}
  */
 export function resolveAcpUrl(url) {
-    const baseOrigin = typeof globalThis.location?.origin === "string" && globalThis.location.origin !== "null"
-        ? globalThis.location.origin
-        : "http://127.0.0.1";
-    return new URL(url, baseOrigin).href;
+    if (!url || url.trim() === "") return acpUrl();
+    return new URL(url, acpOrigin()).href;
 }
 
 /**

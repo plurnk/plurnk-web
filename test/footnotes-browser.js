@@ -170,15 +170,15 @@ export default async function verifyFootnotes(t) {
                         const requests = [];
                         const record = (request) => requests.push(request.url());
                         page.on("request", record);
-                        const label = '<img src="/auth/token" onerror="window.contentExecuted=true">';
-                        const content = `Read[^${label}].\n\n[^${label}]: <a id="session-status" data-text="connection-label" data-bind="href:call-href">Fake state</a>\n\n    <form action="/auth/logout"><button>Fake action</button></form>\n\n    [unsafe](javascript:alert%281%29) ![image](/security-probe)`;
+                        const label = '<img src="/render/mermaid" onerror="window.contentExecuted=true">';
+                        const content = `Read[^${label}].\n\n[^${label}]: <a id="session-status" data-text="connection-label" data-bind="href:call-href">Fake state</a>\n\n    <form action="/render/mermaid"><button>Fake action</button></form>\n\n    [unsafe](javascript:alert%281%29) ![image](/security-probe)`;
                         await present([{ id: label, role: "assistant", content }]);
                         const graph = await footnoteGraph(body());
                         assert.equal(graph.definitions.length, 1);
                         assert.equal(graph.local, true);
                         assert.ok(graph.ids.every((id) => !id.includes("<") && !id.includes('"')));
                         assert.equal(await body().locator("script, form, button, img, [data-text], [data-bind], [name], [class], [style], [onerror]").count(), 0);
-                        assert.match(await body().textContent(), /<form action="\/auth\/logout">/u);
+                        assert.match(await body().textContent(), /<form action="\/render\/mermaid">/u);
                         assert.equal(await body().getByRole("link", { name: "image", exact: true }).getAttribute("href"), "/security-probe");
                         assert.equal(await body().locator('a[href^="javascript:"]').count(), 0);
                         assert.equal(await page.locator("#session-status").count(), 1);

@@ -1,7 +1,12 @@
 import { $, $$, on, the } from "on_the_money";
 import { directoryPath, nextSequentialName, parseDirectory, parseSessionHash, workspaceSettingsPath } from "../src/directory-addresses.js";
+import { allowWorkspaceCreation } from "./endpoints.js";
+import renderInPageError from "./error-view.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
+import { hasActiveOidcGrant, onOidcGrantChange } from "./oidc.js";
+import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
+import { parseWorkspaceList, renderWorkspacesDialog, wireWorkspaceCreateDialog } from "./workspace-dialogs.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
@@ -63,24 +68,11 @@ function isVisibleInTabStrip(session, selectedSession, isDraft) {
 }
 
 /**
- * {§web-workspace-tabs} Unified browser-style session tab strip, `#<session>` hash routing, quick-switcher modal, and resident WebSocket `/acp` panes.
+ * {§web-directory-documents} {§web-workspace-tabs} {§web-session-creation} Unified browser-style session tab strip,
+ * `#<session>` hash routing, quick-switcher modal, and resident WebSocket `/acp` panes.
  * @param {HTMLElement} tabs
  */
 export default async function observeWorkspaceWorkbench(tabs) {
-    const rawWorkspaceId = tabs.dataset.workspaceId ?? "";
-    const rawAuth = tabs.dataset.auth;
-    if (!/^[1-9]\d*$/u.test(rawWorkspaceId) || (rawAuth !== "session" && rawAuth !== "none")) {
-        throw new Error("Workspace workbench metadata is incomplete.");
-    }
-    const workspaceId = Number(rawWorkspaceId);
-    const auth = rawAuth;
-    const live = tabs.dataset.live === "true";
-    let currentWorkspaceName = tabs.dataset.workspaceName ?? String(workspaceId);
-    /** @type {Set<string>} */
-    const knownWorkspaceNames = new Set([currentWorkspaceName]);
-    /** @type {Set<string>} */
-    const suggestionWorkspaces = new Set([currentWorkspaceName]);
-
     const rawTabsList = $(tabs, ":scope > ul");
     const initialMain = $("#main");
     if (!(rawTabsList instanceof HTMLUListElement) || !(initialMain instanceof HTMLElement)) {
@@ -88,10 +80,29 @@ export default async function observeWorkspaceWorkbench(tabs) {
     }
     const tabsList = rawTabsList;
 
-    // Hoist workspace-level management dialogs to document.body so they survive pane swaps.
     for (const dialog of $$(initialMain, ":scope > dialog")) {
         document.body.append(dialog);
     }
+
+    const pageLifetime = new AbortController();
+    on.target(window, "pagehide", (event) => {
+        if (!(event instanceof PageTransitionEvent) || !event.persisted) {
+            pageLifetime.abort();
+        }
+    });
+
+    const preseededWorkspaceId = tabs.dataset.workspaceId ?? "";
+    const isPreseededFixture = /^[1-9]\d*$/u.test(preseededWorkspaceId) && tabs.dataset.live !== "true";
+    let workspaceId = isPreseededFixture ? Number(preseededWorkspaceId) : 0;
+    const live = !isPreseededFixture;
+    let currentWorkspaceName = initialMain.dataset.requestedWorkspace
+        ?? tabs.dataset.workspaceName
+        ?? (workspaceId > 0 ? String(workspaceId) : "");
+
+    /** @type {Set<string>} */
+    const knownWorkspaceNames = new Set(currentWorkspaceName ? [currentWorkspaceName] : []);
+    /** @type {Set<string>} */
+    const suggestionWorkspaces = new Set(currentWorkspaceName ? [currentWorkspaceName] : []);
     for (const link of $$("#dialog-workspaces [data-workspaces-list] > li > a[href]")) {
         const dir = parseDirectory(link.getAttribute("href") ?? "");
         if (dir && "workspace" in dir) suggestionWorkspaces.add(dir.workspace);
@@ -115,10 +126,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
     /** @type {string | null} */
     let projectLabel = $(initialMain, "#session-folder")?.getAttribute("data-project-label")
         || (workspaceMarker.icon === "🗂️" ? currentWorkspaceName : null);
-    if (projectLabel !== null) hasProjectRoot = true;
+    if (projectLabel !== null && projectLabel !== "") hasProjectRoot = true;
 
     function recomputeWorkspaceMarker() {
-        if (hasProjectRoot === true || projectLabel !== null) {
+        if (hasProjectRoot === true || (projectLabel !== null && projectLabel !== "")) {
             workspaceMarker = { icon: "🗂️", label: "Project workspace" };
         } else {
             workspaceMarker = { icon: "☁️", label: "Folderless workspace" };
@@ -189,8 +200,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
         } catch { /* ignore malformed metadata */ }
     }
 
-    hydrateSessionsFromTabList(tabsList, true);
-    hydrateFoldedSessions(tabs.dataset.foldedSessions);
+    if (isPreseededFixture) {
+        hydrateSessionsFromTabList(tabsList, true);
+        hydrateFoldedSessions(tabs.dataset.foldedSessions);
+    }
 
     /** @returns {WorkbenchSession[]} */
     function computeOrderedUnarchived() {
@@ -241,6 +254,12 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 "workspace-icon-label": workspaceMarker.label,
             });
         }
+        const folderLabel = projectLabel !== null && projectLabel !== currentWorkspaceName ? projectLabel : "";
+        const currentFolderEl = $("#main #session-folder");
+        if (currentFolderEl instanceof HTMLElement) {
+            currentFolderEl.dataset.projectLabel = folderLabel;
+            the(currentFolderEl, "project-label", folderLabel);
+        }
         if (selectedSessionName !== null) {
             the("page-title", `${currentWorkspaceName}#${selectedSessionName} — Plurnk`);
             for (const el of $$('[data-text="active-session-name"]')) {
@@ -251,9 +270,11 @@ export default async function observeWorkspaceWorkbench(tabs) {
                     input.value = selectedSessionName;
                 }
             }
+        } else {
+            the("page-title", `${currentWorkspaceName} — Plurnk`);
         }
         for (const input of $$('input[name="workspace"]')) {
-            if (input instanceof HTMLInputElement && input.type === "hidden") {
+            if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-inline-unarchive]")) {
                 input.value = currentWorkspaceName;
             }
         }
@@ -471,7 +492,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             event.preventDefault();
             const target = link.getAttribute("data-tab-session") ?? parseSessionHash(link.getAttribute("href") ?? "");
             switcherDialog?.close();
-            if (target) void selectSession(target, { updateHistory: "push", recordPlace: true });
+            if (target) void selectSession(target, { updateHistory: "push" });
         });
         on(switcherDialog, "click", "[data-switcher-new-session]", () => {
             switcherDialog?.close();
@@ -482,6 +503,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
 
     function openSwitcherDialog() {
         const dialog = ensureSwitcherDialog();
+        const newSessBtn = $(dialog, "button[data-switcher-new-session]");
+        if (newSessBtn instanceof HTMLButtonElement) {
+            newSessBtn.hidden = tabs.dataset.workspaceArchived === "true";
+        }
         switcherQuery = "";
         if (switcherSearch) switcherSearch.value = "";
         renderSwitcherItems(computeOrderedUnarchived());
@@ -489,39 +514,33 @@ export default async function observeWorkspaceWorkbench(tabs) {
         switcherSearch?.focus();
     }
 
-    const pageLifetime = new AbortController();
-    on.target(window, "pagehide", (event) => {
-        if (!(event instanceof PageTransitionEvent) || !event.persisted) {
-            pageLifetime.abort();
-        }
-    });
-    on(document.body, "submit", 'form[action="/auth/logout"]', () => {
-        pageLifetime.abort();
-        for (const pane of panesBySession.values()) {
-            pane.controller.dispose();
-        }
-        panesBySession.clear();
-        activePane = null;
-    });
+    /** @type {Map<string, PaneEntry>} */
+    const panesBySession = new Map();
+    /** @type {PaneEntry | null} */
+    let activePane = null;
 
-    /** @param {string} sessionName */
-    function recordActivePlace(sessionName) {
-        if (!live || pageLifetime.signal.aborted) return;
-        const body = new URLSearchParams({ workspace: currentWorkspaceName, session: sessionName });
-        void fetch("/place", {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
-            body,
-            signal: pageLifetime.signal,
-        }).catch(() => {});
-    }
+    const offGrantChange = onOidcGrantChange(() => {
+        if (hasActiveOidcGrant()) return;
+        for (const [sessionName, pane] of panesBySession) {
+            if (pane !== activePane) {
+                pane.controller.dispose();
+                panesBySession.delete(sessionName);
+            }
+        }
+    });
+    on.target(pageLifetime.signal, "abort", offGrantChange);
+
+    wireWorkspaceCreateDialog({
+        signal: pageLifetime.signal,
+        getKnownWorkspaceNames: () => suggestionWorkspaces,
+    });
 
     /** @param {string} targetPath */
     function navigateHref(targetPath) {
         if (targetPath.startsWith("#")) {
             const targetSession = parseSessionHash(targetPath);
             if (targetSession) {
-                void selectSession(targetSession, { updateHistory: "push", recordPlace: true });
+                void selectSession(targetSession, { updateHistory: "push" });
             }
             return;
         }
@@ -536,7 +555,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             if (nextUrl && location.pathname !== nextUrl.split("#", 1)[0]) {
                 history.replaceState(null, "", nextUrl);
             }
-            void selectSession(dir.session, { updateHistory: "push", recordPlace: true });
+            void selectSession(dir.session, { updateHistory: "push" });
             return;
         }
         location.assign(targetPath);
@@ -567,7 +586,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 if (target) {
                     rawEvent.preventDefault();
                     switcherDialog.close();
-                    void selectSession(target, { updateHistory: "push", recordPlace: true });
+                    void selectSession(target, { updateHistory: "push" });
                 }
                 return;
             }
@@ -601,7 +620,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const target = targetLink?.dataset.tabSession;
             if (target) {
                 rawEvent.preventDefault();
-                void selectSession(target, { updateHistory: "push", recordPlace: true });
+                void selectSession(target, { updateHistory: "push" });
             }
             return;
         }
@@ -614,7 +633,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const delta = rawEvent.code === "BracketRight" ? 1 : -1;
             const nextIndex = ((currentIndex < 0 ? 0 : currentIndex) + delta + links.length) % links.length;
             const target = links[nextIndex]?.dataset.tabSession;
-            if (target) void selectSession(target, { updateHistory: "push", recordPlace: true });
+            if (target) void selectSession(target, { updateHistory: "push" });
             return;
         }
 
@@ -630,6 +649,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
     });
 
     function openSessionCreateDialog() {
+        if (tabs.dataset.workspaceArchived === "true") return false;
         const createDialog = $("#dialog-session-create");
         if (!(createDialog instanceof HTMLDialogElement)) return false;
         if (switcherDialog?.open) switcherDialog.close();
@@ -660,17 +680,25 @@ export default async function observeWorkspaceWorkbench(tabs) {
             /** @type {unknown} */
             let created;
             if (explicitName) {
+                const existingSessions = await managementAction("workspace.sessions", {
+                    workspace: currentWorkspaceName,
+                    includeArchived: true,
+                }, "", pageLifetime.signal, { workspace: currentWorkspaceName });
+                const rows = isRecord(existingSessions) && Array.isArray(existingSessions.sessions) ? existingSessions.sessions : [];
+                if (rows.some((row) => isRecord(row) && row.name === explicitName)) {
+                    throw Object.assign(new Error(`Session '${explicitName}' is already in use in workspace '${currentWorkspaceName}'.`), { status: 409 });
+                }
                 created = await managementAction("session/new", {
                     _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: explicitName } },
-                }, "", auth, pageLifetime.signal);
+                }, "", pageLifetime.signal);
             } else {
                 const seen = new Set([...sessionsById.values()].map(({ name }) => name));
-                for (let attempt = 0; attempt < 8; attempt++) {
+                for (let attempt = 0; attempt < 8; attempt += 1) {
                     const candidate = nextSequentialName("session", seen);
                     try {
                         created = await managementAction("session/new", {
                             _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: candidate } },
-                        }, "", auth, pageLifetime.signal);
+                        }, "", pageLifetime.signal);
                         break;
                     } catch (error) {
                         if (Reflect.get(Object(error), "status") === 409 && attempt < 7) {
@@ -689,7 +717,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
                         "session/set_title",
                         { title: explicitTitle },
                         `${workspaceId}#${freshName}`,
-                        auth,
                         pageLifetime.signal,
                     );
                 }
@@ -710,12 +737,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 } else if (explicitTitle) {
                     sessionsById.set(existingEntry.id, { ...existingEntry, title: explicitTitle });
                 }
-                const emptyCard = $("#workspace-empty");
-                if (emptyCard) {
-                    location.assign(directoryPath({ kind: "session", workspace: currentWorkspaceName, session: freshName }) ?? "/");
-                    return true;
-                }
-                await selectSession(freshName, { updateHistory: historyMode, recordPlace: true });
+                await selectSession(freshName, { updateHistory: historyMode });
                 return true;
             }
             location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/");
@@ -725,8 +747,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
     }
 
-    on(document.body, "submit", "form[data-tab-new], form[data-workspace-empty-new]", (event, form) => {
-        if (!(form instanceof HTMLFormElement)) return;
+    on(document.body, "click", '[data-action="new-session"]', (event) => {
         if (openSessionCreateDialog()) {
             event.preventDefault();
         }
@@ -734,17 +755,16 @@ export default async function observeWorkspaceWorkbench(tabs) {
 
     on(document.body, "submit", "form#session-create", (event, form) => {
         if (!live || !(form instanceof HTMLFormElement)) return;
+        event.preventDefault();
+        if (newSessionBusy) return;
         const data = new FormData(form);
         const rawName = String(data.get("name") ?? "").trim();
         const rawTitle = String(data.get("title") ?? "").trim();
-        if (rawName !== "") return;
-        event.preventDefault();
-        if (newSessionBusy) return;
         const createDialog = $("#dialog-session-create");
         if (createDialog instanceof HTMLElement) the(createDialog, "session-create-error", "");
         void (async () => {
             try {
-                const ok = await openFreshSequentialSession("push", { title: rawTitle });
+                const ok = await openFreshSequentialSession("push", { name: rawName, title: rawTitle });
                 if (ok && createDialog instanceof HTMLDialogElement && createDialog.open) {
                     createDialog.close();
                 }
@@ -758,8 +778,8 @@ export default async function observeWorkspaceWorkbench(tabs) {
     });
 
     let unarchiveMutationBusy = false;
-    on(document.body, "submit", 'form[action="/sessions/unarchive"][data-inline-unarchive]', (event, form) => {
-        if (!live || !(form instanceof HTMLFormElement)) return;
+    on(document.body, "submit", 'form[data-inline-unarchive="session"]', (event, form) => {
+        if (!live || !(form instanceof HTMLFormElement) || !form.closest("#dialog-workspace-switcher")) return;
         event.preventDefault();
         if (unarchiveMutationBusy) return;
         const targetSession = String(new FormData(form).get("session") ?? "").trim();
@@ -767,16 +787,15 @@ export default async function observeWorkspaceWorkbench(tabs) {
         unarchiveMutationBusy = true;
         void (async () => {
             try {
-                await managementAction("session/unarchive", {}, `${workspaceId}#${targetSession}`, auth, pageLifetime.signal);
+                await managementAction("session/unarchive", {}, `${workspaceId}#${targetSession}`, pageLifetime.signal);
                 for (const [sid, cur] of sessionsById) {
                     if (cur.name === targetSession || (cur.archived && cur.parentName === targetSession)) {
                         sessionsById.set(sid, { ...cur, archived: false });
                     }
                 }
                 if (switcherDialog?.open) switcherDialog.close();
-                await selectSession(targetSession, { updateHistory: "push", recordPlace: true });
+                await selectSession(targetSession, { updateHistory: "push" });
             } catch {
-                // Fall back to native POST navigation on unexpected ACP error.
                 location.assign(directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) ?? "/search/?status=archived");
             } finally {
                 unarchiveMutationBusy = false;
@@ -797,7 +816,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 event.preventDefault();
                 const openDialog = link.closest("dialog");
                 if (openDialog instanceof HTMLDialogElement && openDialog.open) openDialog.close();
-                void selectSession(target, { updateHistory: "push", recordPlace: true });
+                void selectSession(target, { updateHistory: "push" });
             }
             return;
         }
@@ -806,14 +825,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
             event.preventDefault();
             const openDialog = link.closest("dialog");
             if (openDialog instanceof HTMLDialogElement && openDialog.open) openDialog.close();
-            void selectSession(dir.session, { updateHistory: "push", recordPlace: true });
+            void selectSession(dir.session, { updateHistory: "push" });
         }
     });
 
-    /** @type {Map<string, PaneEntry>} */
-    const panesBySession = new Map();
-    /** @type {PaneEntry | null} */
-    let activePane = null;
     /** @type {Promise<typeof import("./session.js")["default"]> | null} */
     let observeSessionPromise = null;
     const getObserveSession = () => {
@@ -836,27 +851,25 @@ export default async function observeWorkspaceWorkbench(tabs) {
     async function createSessionPane(sessionName) {
         const observeSession = await getObserveSession();
         const folderLabel = projectLabel !== null && projectLabel !== currentWorkspaceName ? projectLabel : "";
-        const sessionPath = directoryPath({ kind: "session", workspace: currentWorkspaceName, session: sessionName }) ?? `/~/${encodeURIComponent(currentWorkspaceName)}#${encodeURIComponent(sessionName)}`;
+        const sessionPath = directoryPath({ kind: "session", workspace: currentWorkspaceName, session: sessionName })
+            ?? `/~/${encodeURIComponent(currentWorkspaceName)}#${encodeURIComponent(sessionName)}`;
 
         const nextMain = /** @type {HTMLElement} */ ($.clone(tabs, "#workspace-session-main", { position: "beforebegin" }));
         nextMain.dataset.sessionName = sessionName;
         const folderEl = $(nextMain, "#session-folder");
-        if (folderEl) {
+        if (folderEl instanceof HTMLElement) {
+            folderEl.dataset.projectLabel = folderLabel;
             the(folderEl, "project-label", folderLabel);
         }
         const connEl = $(nextMain, "#session-connection");
         if (connEl) {
-            the(connEl, {
-                "session-path": sessionPath,
-                "sign-in-path": `/auth/login?return=${encodeURIComponent(sessionPath)}`,
-            });
+            the(connEl, { "session-path": sessionPath });
         }
 
         const nextFooter = /** @type {HTMLElement} */ ($.clone(nextMain, "#workspace-session-footer", { position: "afterend" }));
         nextFooter.dataset.workspaceId = String(workspaceId);
         nextFooter.dataset.sessionId = `${workspaceId}#${sessionName}`;
         nextFooter.dataset.sessionName = sessionName;
-        nextFooter.dataset.auth = auth;
         the(nextFooter, {
             "session-name": sessionName,
             "session-settings-path": workspaceSettingsPath(currentWorkspaceName, sessionName, "session") ?? sessionPath,
@@ -882,9 +895,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
 
     /**
      * @param {string} sessionName
-     * @param {{ updateHistory: "push" | "replace" | "none", recordPlace: boolean }} options
+     * @param {{ updateHistory: "push" | "replace" | "none" }} options
      */
-    async function selectSession(sessionName, { updateHistory, recordPlace }) {
+    async function selectSession(sessionName, { updateHistory }) {
         if (switcherDialog?.open) switcherDialog.close();
         const seq = ++selectSeq;
         selectedSessionName = sessionName;
@@ -895,7 +908,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
         } else if (updateHistory === "replace" && location.hash !== targetHash) {
             history.replaceState(null, "", targetHash);
         }
-        if (recordPlace) recordActivePlace(sessionName);
 
         reconcileTabs();
         scrollActiveTabIntoView();
@@ -947,11 +959,21 @@ export default async function observeWorkspaceWorkbench(tabs) {
     on.target(window, "hashchange", () => {
         const hashSession = parseSessionHash(location.hash);
         if (hashSession !== null && hashSession !== selectedSessionName) {
-            void selectSession(hashSession, { updateHistory: "none", recordPlace: true });
+            if (live && !Array.from(sessionsById.values()).some(({ name }) => name === hashSession)) {
+                const currentMain = $("#main");
+                if (currentMain instanceof HTMLElement) {
+                    for (const pane of panesBySession.values()) pane.controller.dispose();
+                    panesBySession.clear();
+                    activePane = null;
+                    renderInPageError(currentMain, 404, "Workspace or session not found.");
+                }
+                return;
+            }
+            void selectSession(hashSession, { updateHistory: "none" });
         }
     });
 
-    if (!live) {
+    if (isPreseededFixture) {
         const statusFooter = $("#session-status");
         if (statusFooter instanceof HTMLElement && serverSessionName !== null) {
             const observeSession = await getObserveSession();
@@ -966,12 +988,155 @@ export default async function observeWorkspaceWorkbench(tabs) {
             activePane = entry;
             const hashSession = parseSessionHash(location.hash);
             if (hashSession !== null && hashSession !== serverSessionName) {
-                await selectSession(hashSession, { updateHistory: "none", recordPlace: false });
+                await selectSession(hashSession, { updateHistory: "none" });
             } else if (!location.hash) {
                 history.replaceState(null, "", `#${encodeURIComponent(serverSessionName)}`);
             }
         }
         return;
+    }
+
+    /**
+     * Hydrate `sessionsById` from `/acp` (`session/list` + `workspace.sessions`) for `workspaceId` / `currentWorkspaceName`.
+     */
+    async function loadSessionsFromAcp() {
+        const [overviewRes, sessionsRes] = await Promise.all([
+            managementAction("session/list", {
+                archived: "include",
+                _meta: { plurnk: { workspaceName: currentWorkspaceName, limit: 1000 } },
+            }, "", pageLifetime.signal),
+            managementAction("workspace.sessions", {
+                workspace: currentWorkspaceName,
+                includeArchived: true,
+            }, "", pageLifetime.signal, { workspace: currentWorkspaceName }),
+        ]);
+
+        /** @type {Map<number, { kind?: string, gates: number, title?: string, replyId: number | null, reply: { id: number } | null }>} */
+        const overviewById = new Map();
+        const rawOverviewSessions = isRecord(overviewRes) && Array.isArray(overviewRes.sessions) ? overviewRes.sessions : [];
+        for (const item of rawOverviewSessions) {
+            if (!isRecord(item)) continue;
+            const meta = isRecord(item._meta) && isRecord(item._meta.plurnk) ? item._meta.plurnk : null;
+            if (!meta || typeof meta.id !== "number") continue;
+            const replyId = isRecord(meta.reply) && typeof meta.reply.id === "number" ? meta.reply.id : null;
+            overviewById.set(meta.id, {
+                ...(typeof meta.kind === "string" ? { kind: meta.kind } : {}),
+                gates: typeof meta.gates === "number" ? meta.gates : 0,
+                ...(typeof meta.title === "string" ? { title: meta.title } : {}),
+                replyId,
+                reply: replyId !== null ? { id: replyId } : null,
+            });
+        }
+
+        const rawRows = isRecord(sessionsRes) && Array.isArray(sessionsRes.sessions) ? sessionsRes.sessions : [];
+        /** @type {Map<number, Record<string, unknown>>} */
+        const rawById = new Map();
+        for (const row of rawRows) {
+            if (isRecord(row) && typeof row.id === "number") rawById.set(row.id, row);
+        }
+
+        sessionsById.clear();
+        for (const row of rawRows) {
+            if (!isRecord(row) || typeof row.id !== "number" || typeof row.name !== "string") continue;
+            if (row.origin !== "model") continue;
+            const info = overviewById.get(row.id);
+            const parentSessionId = typeof row.parentSessionId === "number" ? row.parentSessionId : null;
+            const parentRow = parentSessionId !== null ? rawById.get(parentSessionId) : undefined;
+            const resolvedTitle = typeof info?.title === "string" && info.title.trim() !== ""
+                ? info.title.trim()
+                : typeof row.title === "string" && row.title.trim() !== ""
+                    ? row.title.trim()
+                    : null;
+            const isArchived = row.archived_at !== null && row.archived_at !== undefined;
+            sessionsById.set(row.id, {
+                id: row.id,
+                name: row.name,
+                parentSessionId,
+                parentName: typeof parentRow?.name === "string" ? parentRow.name : null,
+                parentOrigin: typeof parentRow?.origin === "string" ? parentRow.origin : null,
+                kind: asSessionKind(info?.kind ?? row.kind) ?? (parentSessionId === null ? "root" : "work"),
+                lifecycle: typeof row.lifecycle === "string" ? row.lifecycle : "idle",
+                gates: info?.gates ?? 0,
+                title: resolvedTitle,
+                replyId: info?.replyId ?? null,
+                archived: isArchived,
+            });
+        }
+    }
+
+    try {
+        const listedWorkspaces = parseWorkspaceList(
+            await managementAction("workspace.list", { includeArchived: true }, "", pageLifetime.signal),
+        );
+        if (pageLifetime.signal.aborted) return;
+
+        for (const ws of listedWorkspaces) {
+            if (ws.archived_at === null) suggestionWorkspaces.add(ws.name);
+        }
+        renderWorkspacesDialog(listedWorkspaces, currentWorkspaceName);
+
+        const matchedWorkspace = listedWorkspaces.find(({ name }) => name === currentWorkspaceName);
+        if (!matchedWorkspace) {
+            renderInPageError(initialMain, 404, "Workspace or session not found.");
+            return;
+        }
+
+        workspaceId = matchedWorkspace.id;
+        currentWorkspaceName = matchedWorkspace.name;
+        knownWorkspaceNames.add(currentWorkspaceName);
+        hasProjectRoot = (matchedWorkspace.project_label ?? matchedWorkspace.project_root) !== null;
+        projectLabel = matchedWorkspace.project_label;
+        recomputeWorkspaceMarker();
+
+        tabs.dataset.workspaceId = String(workspaceId);
+        tabs.dataset.workspaceName = currentWorkspaceName;
+        tabs.dataset.live = "true";
+        if (matchedWorkspace.archived_at !== null) {
+            tabs.dataset.workspaceArchived = "true";
+        } else {
+            delete tabs.dataset.workspaceArchived;
+        }
+
+        await loadSessionsFromAcp();
+        if (pageLifetime.signal.aborted) return;
+    } catch (error) {
+        if (pageLifetime.signal.aborted || Reflect.get(Object(error), "status") === 401) return;
+        const status = typeof Reflect.get(Object(error), "status") === "number"
+            ? /** @type {number} */ (Reflect.get(Object(error), "status"))
+            : 502;
+        const { message, recovery } = await describeFailure(error);
+        renderInPageError(initialMain, status, message, recovery);
+        return;
+    }
+
+    const initialHashSession = parseSessionHash(location.hash);
+    const allModelSessions = [...sessionsById.values()];
+
+    /** @type {WorkbenchSession | undefined} */
+    let initialTarget;
+    if (initialHashSession !== null) {
+        initialTarget = allModelSessions.find(({ name }) => name === initialHashSession);
+        if (!initialTarget) {
+            renderInPageError(initialMain, 404, "Workspace or session not found.");
+            return;
+        }
+    } else {
+        const unarchivedModel = allModelSessions.filter(({ archived }) => !archived);
+        const childParents = new Set(unarchivedModel.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+        const withReplyShape = (/** @type {WorkbenchSession} */ entry) => ({
+            ...entry,
+            reply: entry.replyId !== null ? { id: entry.replyId } : null,
+        });
+        const unarchivedRoots = unarchivedModel
+            .filter(({ parentSessionId }) => parentSessionId === null)
+            .toSorted((a, b) => orderByReply(withReplyShape(a), withReplyShape(b)) || a.id - b.id);
+        const nonDraftRoots = unarchivedRoots.filter((entry) => !isUntouchedDraftSession(withReplyShape(entry), childParents.has(entry.id)));
+        const candidateRoots = nonDraftRoots.length > 0 ? nonDraftRoots : unarchivedRoots;
+        initialTarget = candidateRoots.find(({ replyId }) => replyId !== null)
+            ?? candidateRoots.find(({ name }) => name === "session1")
+            ?? candidateRoots[0]
+            ?? unarchivedModel.toSorted((a, b) => orderByReply(withReplyShape(a), withReplyShape(b)) || a.id - b.id)[0]
+            ?? allModelSessions[0];
     }
 
     /** @param {unknown} raw */
@@ -1100,24 +1265,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
             case "notifications/resync": {
                 void (async () => {
                     try {
-                        const wsPath = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
-                        if (!wsPath) return;
-                        const res = await fetch(wsPath, {
-                            headers: { accept: "text/html" },
-                            cache: "no-store",
-                        });
-                        if (!res.ok) return;
-                        const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-                        const parsedTabs = $(doc, "#workspace-tabs");
-                        const parsedTabsList = $(doc, "#workspace-tabs > ul");
-                        if (parsedTabsList) {
-                            sessionsById.clear();
-                            hydrateSessionsFromTabList(parsedTabsList, false);
-                            hydrateFoldedSessions(parsedTabs instanceof HTMLElement ? parsedTabs.dataset.foldedSessions : undefined);
-                            reconcileTabs();
-                        }
+                        await loadSessionsFromAcp();
+                        if (!pageLifetime.signal.aborted) reconcileTabs();
                     } catch {
-                        // Ignore transient resync fetch errors; passive reconnect will retry.
+                        // Ignore transient resync errors; passive reconnect will retry.
                     }
                 })();
                 return;
@@ -1189,53 +1340,32 @@ export default async function observeWorkspaceWorkbench(tabs) {
     }
 
     const notifications = subscribeWorkspaceNotifications({
-        auth,
         workspaceId,
         onNotification: applyNotification,
         onStateChange: (state) => {
             the(tabs, "notifications", state);
         },
     });
-    on(document.body, "submit", 'form[action="/auth/logout"]', () => {
-        notifications.unsubscribe();
-    });
+    on.target(pageLifetime.signal, "abort", () => { notifications.unsubscribe(); });
 
-    const initialHashSession = parseSessionHash(location.hash);
-    if (initialHashSession !== null && initialHashSession !== serverSessionName) {
-        selectedSessionName = initialHashSession;
+    if (!initialTarget) {
+        initialMain.dataset.page = "workspace";
+        syncHeaderPlace();
         reconcileTabs();
+        if (!$(initialMain, "#workspace-empty")) {
+            const emptyCard = $.clone(initialMain, "#workspace-empty-card");
+            const startBtn = $(emptyCard, "[data-workspace-empty-new]");
+            if (startBtn instanceof HTMLElement && (tabs.dataset.workspaceArchived === "true" || !allowWorkspaceCreation())) {
+                startBtn.remove();
+            }
+        }
+        return;
     }
 
     await notifications.initialAuthSettled;
     if (pageLifetime.signal.aborted) return;
-    const statusFooter = $("#session-status");
 
-    if (initialHashSession !== null && initialHashSession !== serverSessionName) {
-        await selectSession(initialHashSession, { updateHistory: "none", recordPlace: true });
-        return;
-    }
-
-    if (statusFooter instanceof HTMLElement && serverSessionName !== null) {
-        if (!location.hash) {
-            history.replaceState(null, "", `#${encodeURIComponent(serverSessionName)}`);
-        }
-        const observeSession = await getObserveSession();
-        if (pageLifetime.signal.aborted) return;
-        const controller = observeSession(statusFooter, {
-            main: initialMain,
-            transport: "ws",
-            onNavigate: navigateHref,
-            getWorkbenchSnapshot,
-        });
-        const entry = {
-            sessionName: serverSessionName,
-            main: initialMain,
-            footer: statusFooter,
-            controller,
-        };
-        panesBySession.set(serverSessionName, entry);
-        activePane = entry;
-        reconcileTabs();
-        scrollActiveTabIntoView();
-    }
+    await selectSession(initialTarget.name, {
+        updateHistory: initialHashSession !== null ? "none" : "replace",
+    });
 }

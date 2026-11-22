@@ -1,76 +1,57 @@
 import { readFile } from "node:fs/promises";
-import { MIMEType } from "node:util";
 import { ConfigurationError, Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
 import indexDocument from "./index-document.js";
-import { DEFAULT_SESSION_NAME, directoryPath, nextSequentialName, parseDirectory } from "./directory-addresses.js";
-import Documents, { isUntouchedDraftSession, orderByReply } from "./documents.js";
-import Session, { CALLBACK, CLIENT } from "./session.js";
+import { parseDirectory } from "./directory-addresses.js";
+import Documents from "./documents.js";
 import {
-    clearPlaceCookie,
-    formatPlaceCookie,
+    parseAcpEndpoint,
     privateHeaders,
-    readPlaceCookie,
+    privateHeadersFor,
     redirect,
-    refusal,
     RequestError,
-    sameOriginFetch,
+    resolveIssuerOrigin,
+    sameOriginRequest,
 } from "./http.js";
 import { readAsset, sendAsset } from "./static-assets.js";
-import Creations from "./creations.js";
 import Diagrams from "./diagrams.js";
 
-/** @typedef {{ credentials?: Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort["credentials"], "registerClient"> | null }} SetupPort */
-/**
- * @typedef {{
- *   serviceVersion?: string,
- *   credentials?: (import("./session.js").SessionCredentials & Pick<import("@plurnk/plurnk-contracts/port").ApplicationPort["credentials"], "face">) | null,
- *   registerHttpRoute: import("@plurnk/plurnk-contracts/port").ApplicationPort["registerHttpRoute"],
- *   listWorkspaces: () => Promise<readonly import("./documents.js").DirectoryWorkspace[]>,
- *   listSessions: (workspaceId: number) => Promise<readonly import("./documents.js").DirectorySession[]>,
- *   readSessionOverview?: import("@plurnk/plurnk-contracts/port").ApplicationPort["readSessionOverview"],
- *   listSessionLoops?: import("@plurnk/plurnk-contracts/port").ApplicationPort["listSessionLoops"],
- *   setSessionTitle?: import("@plurnk/plurnk-contracts/port").ApplicationPort["setSessionTitle"],
- *   createWorkspace: (args: { name?: string, projectRoot: string | null }) => Promise<{ workspaceId: number, workspaceName: string, projectRoot: string | null }>,
- *   renameWorkspace: (workspaceId: number, name: string) => Promise<{ name: string }>,
- *   createSession: (args: { workspaceId: number, name?: string }) => Promise<{ sessionId: number, sessionName: string }>,
- *   setWorkspaceArchived: (args: { workspaceId: number, archived: boolean }) => Promise<unknown>,
- *   setSessionArchived: (args: { workspaceId: number, sessionId: number, archived: boolean }) => Promise<unknown>,
- * }} Port
- */
+/** @typedef {import("../types/module.js").MermaidCredentialVerifier} MermaidCredentialVerifier */
+/** @typedef {import("../types/module.js").WebModulePort} WebModulePort */
 /** @typedef {Awaited<ReturnType<typeof readAsset>>} LoadedAsset */
 /**
  * @typedef {{
- *   overviewSessions: number | null,
- *   overviewExcerptChars: number | null,
- *   allowProjectFolder?: boolean | null,
+ *   readonly acpUrl: string | null,
+ *   readonly overviewSessions: number | null,
+ *   readonly overviewExcerptChars: number | null,
+ *   readonly allowProjectFolder: boolean | null,
  * }} DocumentKnobs
  */
 /**
  * @typedef {{
- *   setupStylesheet: () => Promise<string>,
  *   start: (knobs: DocumentKnobs) => Promise<void>,
  *   snapshot: () => Promise<{ documents: Documents, resources: ReadonlyMap<string, LoadedAsset> }>,
  *   close?: () => Promise<void> | void,
  * }} ModuleAssetSource
  */
 
-/** {§web-assets} {§web-authorization-style} @returns {ModuleAssetSource} */
+/**
+ * Extract a single `Bearer <token>` credential from an HTTP `Authorization` header.
+ * @param {string | string[] | undefined} header
+ * @returns {string | null}
+ */
+function parseBearerToken(header) {
+    if (typeof header !== "string" || header.includes(",")) return null;
+    const match = /^\s*Bearer\s+([^\s,]+)\s*$/iu.exec(header);
+    return match ? match[1] : null;
+}
+
+/** {§web-assets} @returns {ModuleAssetSource} */
 function productionAssets() {
     /** @type {{ documents: Documents, resources: ReadonlyMap<string, LoadedAsset> } | null} */
     let loaded = null;
     return {
-        async setupStylesheet() {
-            // {§web-authorization-style} The same built stylesheet serves both document owners.
-            /** @type {import("./static-assets.js").AssetEntry[]} */
-            const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
-            const root = inventory.find(([path]) => path === "/index.html");
-            if (!root) throw new Error("The web asset inventory must include index.html.");
-            const stylesheetPath = Documents.stylesheet((await readAsset(root[1], root[2], root[3])).body.toString("utf8"));
-            if (!inventory.some(([path, , type]) => path === stylesheetPath && type === "text/css")) throw new Error("The application stylesheet is absent from the web asset inventory.");
-            return stylesheetPath;
-        },
-        async start({ overviewSessions, overviewExcerptChars, allowProjectFolder = true }) {
+        async start({ acpUrl, overviewSessions, overviewExcerptChars, allowProjectFolder }) {
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
@@ -80,7 +61,17 @@ function productionAssets() {
             ]))));
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const documents = new Documents(root.body.toString("utf8"), overviewSessions, overviewExcerptChars, allowProjectFolder);
+            const stylesheetPath = Documents.stylesheet(root.body.toString("utf8"));
+            const stylesheetAsset = resources.get(stylesheetPath);
+            if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
+                throw new Error("The application stylesheet is absent from the web asset inventory.");
+            }
+            const documents = new Documents(root.body.toString("utf8"), {
+                acpUrl,
+                overviewSessions,
+                overviewExcerptChars,
+                allowProjectFolder,
+            });
             loaded = { documents, resources };
         },
         async snapshot() {
@@ -92,7 +83,7 @@ function productionAssets() {
 
 /** {§web-host} {§web-configuration} {§web-package}
  * @param {ModuleAssetSource} [assets]
- * @returns {import("@plurnk/plurnk-modules").DaemonModule<SetupPort, Port>}
+ * @returns {import("@plurnk/plurnk-modules").DaemonModule<unknown, WebModulePort>}
  */
 export default function createModule(assets = productionAssets()) {
     /** @type {import("@plurnk/plurnk-modules").ContainedConfiguration[]} */
@@ -106,642 +97,113 @@ export default function createModule(assets = productionAssets()) {
             return null;
         }
     };
+    const acpEndpoint = contain(() => parseAcpEndpoint(process.env.PLURNK_ACP_URL));
     const allowProjectFolder = contain(() => Knob.flag("PLURNK_WEB_ALLOW_PROJECT_FOLDER"));
     const overviewSessions = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_SESSIONS", 1));
     const overviewExcerptChars = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", 1));
-    const limits = { ttl: contain(() => Knob.integer("PLURNK_WEB_LOGIN_TTL_SEC", 1)) };
-    const createTtl = contain(() => Knob.integer("PLURNK_WEB_CREATE_TTL_SEC", 1));
-    const createTokens = contain(() => Knob.integer("PLURNK_WEB_CREATE_TOKENS", 1));
-    const formBytes = contain(() => Knob.integer("PLURNK_WEB_FORM_BYTES", 1));
-    const creations = createTtl !== null && createTokens !== null ? new Creations({ ttl: createTtl, tokens: createTokens }) : null;
     const diagrams = Diagrams.create(contain);
-    /** @type {{ clientId: string, clientSecret: string } | null} */
-    let registration = null;
-    /** @type {Session | null} */
-    let session = null;
     let stopped = false;
     /** @type {Set<Promise<void>>} */
     const requests = new Set();
-    /** @type {Promise<{ readonly location: string, readonly workspaceId: number, readonly sessionId: number }> | null} */
-    let starterFlight = null;
     const stop = () => { stopped = true; };
 
     return {
         mounts: ["/"],
         contained: Object.freeze(contained),
-        async setup({ credentials }) {
-            if (!credentials) return;
-            const stylesheetPath = await assets.setupStylesheet();
-            registration = credentials.registerClient({ id: CLIENT, redirectPaths: [CALLBACK], scopes: ["acp"], stylesheetPath });
-        },
+        setup() {},
         async start(seam) {
-            const credentials = seam.credentials;
-            const face = credentials?.face() ?? null;
-            if (face !== null && credentials) {
-                if (registration === null) throw new Error("Web sign-in requires the daemon's credential authority and completed module setup.");
-                session = new Session(credentials, registration, face, limits);
-            }
-            await assets.start({ overviewSessions, overviewExcerptChars, allowProjectFolder });
+            await assets.start({
+                acpUrl: acpEndpoint?.acpUrl ?? null,
+                overviewSessions,
+                overviewExcerptChars,
+                allowProjectFolder,
+            });
 
             /** @param {import("node:http").IncomingMessage} req */
-            const isSecureRequest = (req) => session !== null
-                ? session.secure(req)
-                : Boolean(req.socket && "encrypted" in req.socket && req.socket.encrypted);
-
-            /** @param {unknown} cause */
-            const isConflictError = (cause) => Problems.fromError(cause)?.status === 409;
-
-            /**
-             * {§web-workspace-creation} Allocate a sequential `workspaceX` across all active and archived workspaces, retrying on 409.
-             * @param {readonly { readonly name: string }[]} [initialWorkspaces]
-             */
-            const createSequentialWorkspace = async (initialWorkspaces) => {
-                if (typeof seam.listWorkspaces !== "function") {
-                    return seam.createWorkspace({ name: "workspace1", projectRoot: null });
-                }
-                const seen = new Set((initialWorkspaces ?? await seam.listWorkspaces()).map(({ name }) => name));
-                for (let attempt = 0; attempt < 8; attempt++) {
-                    const candidate = nextSequentialName("workspace", seen);
-                    try {
-                        return await seam.createWorkspace({ name: candidate, projectRoot: null });
-                    } catch (cause) {
-                        if (isConflictError(cause) && attempt < 7) {
-                            seen.add(candidate);
-                            continue;
-                        }
-                        throw cause;
-                    }
-                }
-                return seam.createWorkspace({ projectRoot: null });
-            };
-
-            /**
-             * {§web-session-creation} Allocate a sequential `sessionX` across all active and archived sessions in the workspace, retrying on 409.
-             * @param {number} workspaceId
-             * @param {readonly { readonly name: string }[]} [initialSessions]
-             */
-            const createSequentialSession = async (workspaceId, initialSessions) => {
-                if (typeof seam.listSessions !== "function") {
-                    return seam.createSession({ workspaceId, name: DEFAULT_SESSION_NAME });
-                }
-                const seen = new Set((initialSessions ?? await seam.listSessions(workspaceId)).map(({ name }) => name));
-                for (let attempt = 0; attempt < 8; attempt++) {
-                    const candidate = nextSequentialName("session", seen);
-                    try {
-                        return await seam.createSession({ workspaceId, name: candidate });
-                    } catch (cause) {
-                        if (isConflictError(cause) && attempt < 7) {
-                            seen.add(candidate);
-                            continue;
-                        }
-                        throw cause;
-                    }
-                }
-                return seam.createSession({ workspaceId });
-            };
-
-            /**
-             * {§web-arrival} Resolve `GET /` in three tiers:
-             * 1. This browser's remembered unarchived `<workspaceId>:<sessionId>` cookie;
-             * 2. Most recently active unarchived root model session on the daemon;
-             * 3. Allocate a single starter `<workspaceX>#session1` when the daemon holds zero unarchived model sessions.
-             * Returns `null` only when `seam` has no workspace creation seam and zero sessions exist (static asset fixture).
-             * @param {import("node:http").IncomingMessage} req
-             */
-            const resolveHomeArrival = async (req) => {
-                if (typeof seam.listWorkspaces !== "function" || typeof seam.listSessions !== "function") return null;
-                const secure = isSecureRequest(req);
-                const remembered = readPlaceCookie(req, secure);
-                const workspaces = await seam.listWorkspaces();
-                const unarchivedWorkspaces = workspaces.filter(({ archived_at }) => archived_at === null);
-                const wsById = new Map(unarchivedWorkspaces.map((ws) => [ws.id, ws]));
-
-                if (remembered !== null) {
-                    const ws = wsById.get(remembered.workspaceId);
-                    if (ws !== undefined) {
-                        const sessions = await seam.listSessions(ws.id);
-                        const match = sessions.find(({ id, origin, archived_at }) => id === remembered.sessionId && origin === "model" && archived_at === null);
-                        if (match !== undefined) {
-                            const loc = directoryPath({ kind: "session", workspace: ws.name, session: match.name });
-                            if (loc !== null) return { location: loc, cookie: formatPlaceCookie(ws.id, match.id, secure) };
-                        }
-                    }
-                }
-
-                if (typeof seam.readSessionOverview === "function" && overviewSessions !== null && overviewExcerptChars !== null) {
-                    const overview = await seam.readSessionOverview({ limit: Number.MAX_SAFE_INTEGER, excerptChars: overviewExcerptChars });
-                    const unarchivedOverview = overview.sessions.filter((entry) => wsById.has(entry.workspaceId));
-                    const childParents = new Set(unarchivedOverview.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
-                    const nonDraft = unarchivedOverview.filter((entry) => !isUntouchedDraftSession(entry, childParents.has(entry.id)));
-                    const pool = nonDraft.length > 0 ? nonDraft : unarchivedOverview;
-                    const roots = pool.filter(({ parentSessionId }) => parentSessionId === null).toSorted(orderByReply);
-                    const chosen = roots[0] ?? pool.toSorted(orderByReply)[0];
-                    if (chosen !== undefined) {
-                        const ws = wsById.get(chosen.workspaceId);
-                        if (ws !== undefined) {
-                            const loc = directoryPath({ kind: "session", workspace: ws.name, session: chosen.name });
-                            if (loc !== null) return { location: loc, cookie: formatPlaceCookie(ws.id, chosen.id, secure) };
-                        }
-                    }
-                }
-
-                /** @type {Array<{ readonly ws: (typeof unarchivedWorkspaces)[number], readonly session: Awaited<ReturnType<NonNullable<typeof seam.listSessions>>>[number], readonly hasChildren: boolean }>} */
-                const allCandidates = [];
-                for (const ws of unarchivedWorkspaces) {
-                    const sessions = await seam.listSessions(ws.id);
-                    const modelUnarchived = sessions.filter((s) => s.origin === "model" && s.archived_at === null);
-                    const childParents = new Set(modelUnarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
-                    for (const session of modelUnarchived) {
-                        allCandidates.push({ ws, session, hasChildren: childParents.has(session.id) });
-                    }
-                }
-                if (allCandidates.length > 0) {
-                    allCandidates.sort((a, b) => orderByReply(a.session, b.session));
-                    const nonDraft = allCandidates.filter(({ session, hasChildren }) => !isUntouchedDraftSession(session, hasChildren));
-                    const candidatePool = nonDraft.length > 0 ? nonDraft : allCandidates;
-                    const picked = candidatePool.find(({ session }) => session.parentSessionId === null) ?? candidatePool[0];
-                    if (picked !== undefined) {
-                        const loc = directoryPath({ kind: "session", workspace: picked.ws.name, session: picked.session.name });
-                        if (loc !== null) return { location: loc, cookie: formatPlaceCookie(picked.ws.id, picked.session.id, secure) };
-                    }
-                }
-
-                if (typeof seam.createWorkspace !== "function" || typeof seam.createSession !== "function") {
-                    return null;
-                }
-
-                const flight = starterFlight ?? (starterFlight = (async () => {
-                    const latestWorkspaces = await seam.listWorkspaces();
-                    const existingWs = latestWorkspaces.find(({ archived_at, project_root }) => archived_at === null && project_root === null)
-                        ?? latestWorkspaces.find(({ archived_at }) => archived_at === null);
-                    /** @type {number} */
-                    let wsId;
-                    /** @type {string} */
-                    let wsName;
-                    /** @type {readonly { readonly id: number, readonly name: string, readonly origin: string, readonly archived_at: string | null }[]} */
-                    let existing = [];
-                    if (existingWs !== undefined) {
-                        wsId = existingWs.id;
-                        wsName = existingWs.name;
-                        existing = await seam.listSessions(wsId);
-                    } else {
-                        const created = await createSequentialWorkspace(latestWorkspaces);
-                        wsId = created.workspaceId;
-                        wsName = created.workspaceName;
-                    }
-                    const unarchivedModel = existing.find(({ origin, archived_at }) => origin === "model" && archived_at === null);
-                    if (unarchivedModel !== undefined) {
-                        const loc = directoryPath({ kind: "session", workspace: wsName, session: unarchivedModel.name });
-                        if (loc === null) throw new Error("Starter session has no directory address.");
-                        return { location: loc, workspaceId: wsId, sessionId: unarchivedModel.id };
-                    }
-                    const createdSess = await createSequentialSession(wsId, existing);
-                    const loc = directoryPath({ kind: "session", workspace: wsName, session: createdSess.sessionName });
-                    if (loc === null) throw new Error("Starter session has no directory address.");
-                    return { location: loc, workspaceId: wsId, sessionId: createdSess.sessionId };
-                })().finally(() => { starterFlight = null; }));
-
-                const allocated = await flight;
-                return {
-                    location: allocated.location,
-                    cookie: formatPlaceCookie(allocated.workspaceId, allocated.sessionId, secure),
-                };
-            };
+            const responseHeadersFor = (req) => privateHeadersFor({
+                acpHttpOrigin: acpEndpoint?.httpOrigin ?? null,
+                acpWsOrigin: acpEndpoint?.wsOrigin ?? null,
+                issuerOrigin: resolveIssuerOrigin(seam.credentials?.face?.() ?? null, req),
+            });
 
             /** @param {import("node:http").IncomingMessage} req @param {import("node:http").ServerResponse} res */
             const serve = async (req, res) => {
                 const { documents, resources } = await assets.snapshot();
                 const rawUrl = req.url ?? "/";
                 const pathname = rawUrl.split("?")[0];
-                const directory = parseDirectory(pathname);
-                const home = indexDocument(pathname) === "/index.html";
-                const search = indexDocument(pathname) === "/search/index.html";
-                const settings = indexDocument(pathname) === "/settings/index.html";
-                const account = indexDocument(pathname) === "/account/index.html";
-                const revoke = /^\/account\/sign-ins\/([^/]+)\/revoke$/u.exec(pathname);
-                const others = pathname === "/account/sign-ins/revoke-others";
-                const token = pathname === "/auth/token";
-                const creation = pathname === "/workspaces/new";
-                const rename = pathname === "/workspaces/rename";
-                const sessionCreation = pathname === "/sessions/new";
-                const workspaceArchive = pathname === "/workspaces/archive";
-                const workspaceUnarchive = pathname === "/workspaces/unarchive";
-                const sessionArchive = pathname === "/sessions/archive";
-                const sessionUnarchive = pathname === "/sessions/unarchive";
-                const sessionTitle = pathname === "/sessions/title";
-                const placeUpdate = pathname === "/place";
                 const diagram = pathname === "/render/mermaid";
-                const auth = token || ["/auth/login", CALLBACK, "/auth/logout"].includes(pathname);
-                let admitted = false;
+                const headers = responseHeadersFor(req);
                 try {
-                    const inventory = account ? session?.account(req) : null;
-                    admitted = account ? inventory != null : session?.admitted(req) ?? false;
                     if (diagram) {
-                        if (session !== null && !admitted) throw new RequestError(401, "Sign in to render diagrams.");
-                        if (diagrams === null) throw new RequestError(503, "Diagram compilation is unavailable because its configuration is invalid.");
+                        if (req.method !== "POST") {
+                            res.setHeader("allow", "POST");
+                            throw new RequestError(405, "Use POST for diagram compilation.");
+                        }
+                        sameOriginRequest(req);
+                        if (diagrams === null) {
+                            throw new RequestError(503, "Diagram compilation is unavailable because its configuration is invalid.");
+                        }
+                        const credentials = seam.credentials ?? null;
+                        if ((credentials?.face() ?? null) !== null && credentials !== null) {
+                            const token = parseBearerToken(req.headers.authorization);
+                            if (token === null) throw new RequestError(401, "Sign in to render diagrams.");
+                            const verified = await Promise.resolve(credentials.verify(token));
+                            if (verified == null) throw new RequestError(401, "Sign in to render diagrams.");
+                        }
                         await diagrams.serve(req, res);
                         return;
                     }
-                    if (token && session === null) throw new RequestError(404, "Access credentials are unavailable while authentication is disabled.");
-                    if (auth && session !== null) {
-                        const expected = token || pathname === "/auth/logout" ? "POST" : "GET";
-                        if (req.method !== expected) {
-                            res.setHeader("allow", expected);
-                            throw new RequestError(405, "Method not allowed.");
-                        }
-                        if (pathname === "/auth/login") await session.login(req, res);
-                        else if (pathname === CALLBACK) await session.callback(req, res);
-                        else if (token) await session.token(req, res);
-                        else session.logout(req, res);
-                        return;
-                    }
-                    const isFormMutation = creation || rename || sessionCreation || workspaceArchive || workspaceUnarchive || sessionArchive || sessionUnarchive || sessionTitle || placeUpdate;
-                    if (isFormMutation) {
-                        const actionName = creation ? "create a workspace"
-                            : rename ? "rename a workspace"
-                            : sessionCreation ? "create a session"
-                            : workspaceArchive ? "archive a workspace"
-                            : workspaceUnarchive ? "unarchive a workspace"
-                            : sessionArchive ? "archive a session"
-                            : sessionUnarchive ? "unarchive a session"
-                            : sessionTitle ? "title a session"
-                            : "record the active session";
-                        if (req.method !== "POST") {
-                            res.setHeader("allow", "POST");
-                            throw new RequestError(405, `Use POST to ${actionName}.`);
-                        }
-                        if (session !== null && !admitted) throw new RequestError(401, `Sign in again before ${actionName}.`);
-                        if (session !== null) session.sameOriginForm(req);
-                        else {
-                            const origin = req.headers.origin;
-                            if (typeof origin !== "string") throw new RequestError(403, "Same-origin form required.");
-                            let host;
-                            try { host = new URL(origin).host; }
-                            catch (cause) { throw new RequestError(403, "Same-origin form required.", { cause }); }
-                            if (host !== req.headers.host) throw new RequestError(403, "Same-origin form required.");
-                            sameOriginFetch(req);
-                        }
-                        let type;
-                        try { type = new MIMEType(req.headers["content-type"] ?? ""); }
-                        catch (cause) { throw new RequestError(415, "Use UTF-8 application/x-www-form-urlencoded.", { cause }); }
-                        if (type.essence !== "application/x-www-form-urlencoded"
-                            || (type.params.has("charset") && type.params.get("charset")?.toLowerCase() !== "utf-8")) {
-                            throw new RequestError(415, "Use UTF-8 application/x-www-form-urlencoded.");
-                        }
-                        if (formBytes === null) {
-                            req.resume();
-                            throw new RequestError(503, "Form submissions are unavailable because PLURNK_WEB_FORM_BYTES is invalid.");
-                        }
-                        if ((creation || sessionCreation) && creations === null) {
-                            req.resume();
-                            throw new RequestError(503, "Creation forms are unavailable because their configuration is invalid.");
-                        }
-                        if (creation && allowProjectFolder === null) {
-                            req.resume();
-                            throw new RequestError(503, "Workspace creation is unavailable because PLURNK_WEB_ALLOW_PROJECT_FOLDER is invalid.");
-                        }
-                        let size = 0;
-                        const chunks = [];
-                        for await (const chunk of req.iterator({ destroyOnReturn: false })) {
-                            size += chunk.byteLength;
-                            if (size > formBytes) { req.resume(); throw new RequestError(413, "Form exceeds its bound."); }
-                            chunks.push(chunk);
-                        }
-                        let fields;
-                        try { fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))); }
-                        catch (cause) { throw new RequestError(400, "Invalid form data.", { cause }); }
-                        const secure = isSecureRequest(req);
 
-                        if (placeUpdate) {
-                            const targetWs = fields.get("workspace");
-                            const targetSess = fields.get("session");
-                            if (!targetWs || !targetSess || typeof seam.listWorkspaces !== "function" || typeof seam.listSessions !== "function") {
-                                throw new RequestError(400, "Expected workspace and session name.");
-                            }
-                            const ws = (await seam.listWorkspaces()).find(({ name, archived_at }) => name === targetWs && archived_at === null);
-                            if (ws) {
-                                const sess = (await seam.listSessions(ws.id)).find(({ name, origin, archived_at }) => name === targetSess && origin === "model" && archived_at === null);
-                                if (sess) res.setHeader("set-cookie", formatPlaceCookie(ws.id, sess.id, secure));
-                            }
-                            res.writeHead(204, privateHeaders);
-                            res.end();
-                            return;
-                        }
-                        if (creation && creations !== null) {
-                            const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
-                            if (!formToken) throw new RequestError(400, "Expected the form's workspace creation token.");
-                            const name = fields.get("name") ?? "";
-                            const rawUseProject = fields.get("useProjectFolder") ?? "";
-                            const rawProjectRoot = fields.get("projectRoot") ?? "";
-                            if (!allowProjectFolder && (rawUseProject !== "" || rawProjectRoot !== "")) {
-                                throw new RequestError(403, "Project folder workspaces are disabled on this web interface.");
-                            }
-                            if (rawUseProject === "1" && rawProjectRoot.trim() === "") {
-                                throw new RequestError(400, "Enter a project folder path.", {
-                                    retry: documents.retryCreation(name, rawProjectRoot, true),
-                                });
-                            }
-                            const projectRoot = rawProjectRoot === "" ? null : rawProjectRoot;
-                            /** @type {string | undefined} */
-                            let placeCookie;
-                            const targetLocation = await creations.submit(formToken, async () => {
-                                let created;
-                                try {
-                                    created = name === "" && projectRoot === null
-                                        ? await createSequentialWorkspace()
-                                        : await seam.createWorkspace({ ...(name === "" ? {} : { name }), projectRoot });
-                                } catch (cause) {
-                                    throw refusal(cause, "The daemon could not create the workspace.", documents.retryCreation(name, rawProjectRoot, projectRoot !== null));
-                                }
-                                const wsName = created.workspaceName;
-                                const wsRoot = created.projectRoot;
-                                if (projectRoot === null && wsRoot !== null) {
-                                    throw new Error("The daemon created a workspace with a project folder from a folderless request.");
-                                }
-                                if (projectRoot !== null && wsRoot === null) {
-                                    throw new Error("The daemon created a folderless workspace when a project folder was requested.");
-                                }
-                                if (typeof seam.createSession === "function" && typeof created.workspaceId === "number") {
-                                    const sess = await createSequentialSession(created.workspaceId, []);
-                                    placeCookie = formatPlaceCookie(created.workspaceId, sess.sessionId, secure);
-                                    return { workspaceName: wsName, projectRoot: wsRoot, sessionName: sess.sessionName };
-                                }
-                                return { workspaceName: wsName, projectRoot: wsRoot };
-                            }, { folderRequested: projectRoot !== null });
-                            redirect(res, targetLocation, placeCookie);
-                            return;
-                        }
-                        if (rename) {
-                            const targetName = fields.get("workspace");
-                            const newName = fields.get("name");
-                            const currentSession = fields.get("session") ?? "";
-                            if (!targetName || !newName) throw new RequestError(400, "Expected current workspace and new name.");
-                            const workspaces = await seam.listWorkspaces();
-                            const ws = workspaces.find(({ name }) => name === targetName);
-                            if (!ws) throw new RequestError(404, "Workspace not found.");
-                            let renamed;
-                            try { renamed = await seam.renameWorkspace(ws.id, newName); }
-                            catch (cause) { throw refusal(cause, "The daemon could not rename the workspace.", documents.retryRename(ws.name, newName, currentSession)); }
-                            const path = currentSession
-                                ? directoryPath({ kind: "session", workspace: renamed.name, session: currentSession })
-                                : directoryPath({ kind: "workspace", workspace: renamed.name });
-                            if (path === null) throw new Error("The daemon returned a workspace name without a directory address.");
-                            redirect(res, path);
-                            return;
-                        }
-                        if (sessionCreation && creations !== null) {
-                            const formToken = fields.getAll("token").length === 1 ? fields.get("token") : null;
-                            const targetName = fields.get("workspace");
-                            if (!formToken || !targetName) throw new RequestError(400, "Expected session creation token and workspace name.");
-                            const sessionName = fields.get("name") ?? "";
-                            const rawTitle = (fields.get("title") ?? "").trim();
-                            const workspaces = await seam.listWorkspaces();
-                            const ws = workspaces.find(({ name }) => name === targetName);
-                            if (!ws) throw new RequestError(404, "Workspace not found.");
-                            /** @type {string | undefined} */
-                            let placeCookie;
-                            const targetLocation = await creations.submit(formToken, async () => {
-                                let createdSession;
-                                try {
-                                    createdSession = sessionName === ""
-                                        ? await createSequentialSession(ws.id)
-                                        : await seam.createSession({ workspaceId: ws.id, name: sessionName });
-                                    if (rawTitle !== "" && typeof seam.setSessionTitle === "function") {
-                                        await seam.setSessionTitle({ workspaceId: ws.id, sessionId: createdSession.sessionId, title: rawTitle });
-                                    }
-                                } catch (cause) {
-                                    throw refusal(cause, "The daemon could not create the session.", documents.retrySession(ws.name, sessionName, rawTitle));
-                                }
-                                placeCookie = formatPlaceCookie(ws.id, createdSession.sessionId, secure);
-                                const path = directoryPath({ kind: "session", workspace: ws.name, session: createdSession.sessionName });
-                                if (path === null) throw new Error("The daemon returned a session name without a directory address.");
-                                return path;
-                            });
-                            redirect(res, targetLocation, placeCookie);
-                            return;
-                        }
-                        if (workspaceArchive) {
-                            const targetName = fields.get("workspace");
-                            if (!targetName) throw new RequestError(400, "Expected workspace name.");
-                            const workspaces = await seam.listWorkspaces();
-                            const ws = workspaces.find(({ name }) => name === targetName);
-                            if (!ws) throw new RequestError(404, "Workspace not found.");
-                            try { await seam.setWorkspaceArchived({ workspaceId: ws.id, archived: true }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not archive the workspace."); }
-                            const remembered = readPlaceCookie(req, secure);
-                            const cleared = remembered?.workspaceId === ws.id ? clearPlaceCookie(secure) : undefined;
-                            redirect(res, "/", cleared);
-                            return;
-                        }
-                        if (workspaceUnarchive) {
-                            const targetName = fields.get("workspace");
-                            if (!targetName) throw new RequestError(400, "Expected workspace name.");
-                            const workspaces = await seam.listWorkspaces();
-                            const ws = workspaces.find(({ name }) => name === targetName);
-                            if (!ws) throw new RequestError(404, "Workspace not found.");
-                            try { await seam.setWorkspaceArchived({ workspaceId: ws.id, archived: false }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not unarchive the workspace."); }
-                            const path = directoryPath({ kind: "workspace", workspace: ws.name });
-                            redirect(res, path ?? "/search/");
-                            return;
-                        }
-                        if (sessionArchive) {
-                            const targetName = fields.get("workspace");
-                            const targetSession = fields.get("session");
-                            if (!targetName || !targetSession) throw new RequestError(400, "Expected workspace and session name.");
-                            const workspaces = await seam.listWorkspaces();
-                            const ws = workspaces.find(({ name }) => name === targetName);
-                            if (!ws) throw new RequestError(404, "Workspace not found.");
-                            const workspaceSessions = await seam.listSessions(ws.id);
-                            const target = workspaceSessions.find(({ name }) => name === targetSession);
-                            if (!target) throw new RequestError(404, "Session not found.");
-                            try { await seam.setSessionArchived({ workspaceId: ws.id, sessionId: target.id, archived: true }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not archive the session."); }
-                            const afterSessions = await seam.listSessions(ws.id);
-                            const overview = typeof seam.readSessionOverview === "function" && overviewExcerptChars !== null
-                                ? await seam.readSessionOverview({ workspaceId: ws.id, limit: Number.MAX_SAFE_INTEGER, excerptChars: overviewExcerptChars })
-                                : null;
-                            const overviewById = new Map(overview?.sessions.map((entry) => [entry.id, entry]) ?? []);
-                            const unarchived = afterSessions
-                                .filter(({ origin, archived_at }) => origin === "model" && archived_at === null)
-                                .map((entry) => {
-                                    const info = overviewById.get(entry.id);
-                                    const resolvedTitle = info?.title ?? entry.title;
-                                    return {
-                                        ...entry,
-                                        kind: info?.kind ?? entry.kind ?? (entry.parentSessionId === null ? "root" : "work"),
-                                        gates: info?.gates ?? entry.gates ?? 0,
-                                        ...(typeof resolvedTitle === "string" ? { title: resolvedTitle } : {}),
-                                        reply: info?.reply ?? entry.reply ?? null,
-                                    };
-                                })
-                                .toSorted((a, b) => orderByReply(a, b) || a.id - b.id);
-                            const childParents = new Set(unarchived.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
-                            const nonDraft = unarchived.filter((entry) => !isUntouchedDraftSession(entry, childParents.has(entry.id)));
-                            const topLevelNonDraft = nonDraft.filter((entry) => entry.parentSessionId === null || entry.kind === "fork");
-                            const remaining = topLevelNonDraft.length > 0 ? topLevelNonDraft : nonDraft.length > 0 ? nonDraft : unarchived;
-                            if (remaining.length > 0) {
-                                const next = remaining[0];
-                                const path = directoryPath({ kind: "session", workspace: ws.name, session: next.name });
-                                if (path !== null) {
-                                    redirect(res, path, formatPlaceCookie(ws.id, next.id, secure));
-                                    return;
-                                }
-                            }
-                            if (ws.archived_at === null && typeof seam.createSession === "function") {
-                                const fresh = await createSequentialSession(ws.id, afterSessions);
-                                const freshPath = directoryPath({ kind: "session", workspace: ws.name, session: fresh.sessionName });
-                                if (freshPath !== null) {
-                                    redirect(res, freshPath, formatPlaceCookie(ws.id, fresh.sessionId, secure));
-                                    return;
-                                }
-                            }
-                            redirect(res, "/", clearPlaceCookie(secure));
-                            return;
-                        }
-                        if (sessionTitle) {
-                            const targetName = fields.get("workspace");
-                            const targetSession = fields.get("session");
-                            const rawTitle = (fields.get("title") ?? "").trim();
-                            if (!targetName || !targetSession || !rawTitle) {
-                                throw new RequestError(400, "Expected workspace, session name, and non-empty title.");
-                            }
-                            if (typeof seam.setSessionTitle !== "function") {
-                                throw new RequestError(501, "Session titling is unavailable.");
-                            }
-                            const workspaces = await seam.listWorkspaces();
-                            const ws = workspaces.find(({ name }) => name === targetName);
-                            if (!ws) throw new RequestError(404, "Workspace not found.");
-                            const workspaceSessions = await seam.listSessions(ws.id);
-                            const target = workspaceSessions.find(({ name }) => name === targetSession);
-                            if (!target) throw new RequestError(404, "Session not found.");
-                            try { await seam.setSessionTitle({ workspaceId: ws.id, sessionId: target.id, title: rawTitle }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not title the session."); }
-                            const path = directoryPath({ kind: "session", workspace: ws.name, session: target.name });
-                            redirect(res, path ?? "/search/", formatPlaceCookie(ws.id, target.id, secure));
-                            return;
-                        }
-                        if (sessionUnarchive) {
-                            const targetName = fields.get("workspace");
-                            const targetSession = fields.get("session");
-                            if (!targetName || !targetSession) throw new RequestError(400, "Expected workspace and session name.");
-                            const workspaces = await seam.listWorkspaces();
-                            const ws = workspaces.find(({ name }) => name === targetName);
-                            if (!ws) throw new RequestError(404, "Workspace not found.");
-                            const workspaceSessions = await seam.listSessions(ws.id);
-                            const target = workspaceSessions.find(({ name }) => name === targetSession);
-                            if (!target) throw new RequestError(404, "Session not found.");
-                            try { await seam.setSessionArchived({ workspaceId: ws.id, sessionId: target.id, archived: false }); }
-                            catch (cause) { throw refusal(cause, "The daemon could not unarchive the session."); }
-                            if (ws.archived_at !== null) {
-                                await seam.setWorkspaceArchived({ workspaceId: ws.id, archived: false });
-                            }
-                            const path = directoryPath({ kind: "session", workspace: ws.name, session: target.name });
-                            redirect(res, path ?? "/search/", formatPlaceCookie(ws.id, target.id, secure));
-                            return;
-                        }
-                    }
-                    if (account || revoke !== null || others) {
-                        if (session === null) throw new RequestError(404, "Account is unavailable while authentication is disabled.");
-                        if (revoke !== null || others) {
-                            if (req.method !== "POST") {
-                                res.setHeader("allow", "POST");
-                                throw new RequestError(405, "Method not allowed.");
-                            }
-                            if (others) session.revokeOthers(req, res);
-                            else if (revoke !== null) {
-                                let family;
-                                try { family = decodeURIComponent(revoke[1]); }
-                                catch (cause) { throw new RequestError(400, "Invalid sign-in address.", { cause }); }
-                                session.revoke(req, res, family);
-                            }
-                            return;
-                        }
-                    }
-                    if (directory !== null || home || search || settings || account) {
+                    const directory = parseDirectory(pathname);
+                    const home = indexDocument(pathname) === "/index.html";
+                    const search = indexDocument(pathname) === "/search/index.html";
+                    const settings = indexDocument(pathname) === "/settings/index.html";
+                    const callback = pathname === "/auth/callback";
+
+                    if (directory !== null || home || search || settings || callback) {
                         if (req.method !== "GET" && req.method !== "HEAD") {
                             res.setHeader("allow", "GET, HEAD");
                             throw new RequestError(405, "Method not allowed.");
                         }
-                        if (session !== null && !admitted) {
-                            redirect(res, session.signIn(req, rawUrl));
-                            return;
-                        }
                         if (directory?.kind === "daemon") {
-                            redirect(res, "/search/");
+                            redirect(res, "/search/", headers);
                             return;
                         }
-                        if (home && pathname === "/") {
-                            const arrival = await resolveHomeArrival(req);
-                            if (arrival !== null) {
-                                redirect(res, arrival.location, req.method === "GET" ? arrival.cookie : undefined);
-                                return;
-                            }
+                        if (acpEndpoint === null) {
+                            throw new RequestError(503, "The web client is unavailable because PLURNK_ACP_URL is invalid.");
                         }
-                        const secure = isSecureRequest(req);
-                        if (settings) {
-                            if (typeof seam.listWorkspaces !== "function" || typeof seam.listSessions !== "function") {
-                                throw new RequestError(404, "Workspace settings are unavailable without a daemon workspace directory.");
-                            }
-                            const params = new URL(rawUrl, "http://settings.local").searchParams;
-                            const wsName = params.get("workspace") ?? "";
-                            const sessName = params.get("session");
-                            if (!wsName) throw new RequestError(404, "Workspace not found.");
-                            const body = await documents.settings(wsName, sessName, /** @type {any} */ (seam), admitted, {
-                                creationsAvailable: creations !== null,
-                            });
-                            if (body === null) throw new RequestError(404, "Workspace not found.");
-                            res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
-                            res.end(req.method === "HEAD" ? undefined : body);
-                            return;
+                        if (search && (overviewSessions === null || overviewExcerptChars === null)) {
+                            throw new RequestError(503, "Search is unavailable because its overview configuration is invalid.");
                         }
-                        if (search) {
-                            if (typeof seam.listWorkspaces !== "function" || typeof seam.listSessions !== "function") {
-                                throw new RequestError(404, "Search is unavailable without a daemon workspace directory.");
-                            }
+                        let body;
+                        if (home) {
+                            body = documents.home();
+                        } else if (callback) {
+                            body = documents.callback();
+                        } else if (search) {
                             const params = new URL(rawUrl, "http://search.local").searchParams;
-                            const body = await documents.search(admitted, /** @type {any} */ (seam), {
+                            body = documents.search({
                                 q: params.get("q") ?? undefined,
                                 workspace: params.get("workspace") ?? undefined,
                                 status: params.get("status") ?? undefined,
                                 kind: params.get("kind") ?? undefined,
-                            }, { creationsAvailable: creations !== null });
-                            res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
-                            res.end(req.method === "HEAD" ? undefined : body);
-                            return;
-                        }
-                        if (directory !== null) {
-                            if (typeof seam.listWorkspaces !== "function" || typeof seam.listSessions !== "function") {
-                                throw new RequestError(404, "Workspace or session not found.");
-                            }
-                            const remembered = readPlaceCookie(req, secure);
-                            /** @type {Record<string, string>} */
-                            let setCookie = {};
-                            const body = await documents.read(directory, /** @type {any} */ (seam), admitted, {
-                                preferredSessionId: remembered?.sessionId ?? null,
-                                creationsAvailable: creations !== null,
-                                onSelected: (ws, selected) => {
-                                    if (req.method === "GET" && ws.archived_at === null && selected !== null && selected.archived_at === null) {
-                                        setCookie = { "set-cookie": formatPlaceCookie(ws.id, selected.id, secure) };
-                                    }
-                                },
                             });
-                            if (body === null) throw new RequestError(404, "Workspace or session not found.");
-                            res.writeHead(200, { ...privateHeaders, ...setCookie, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
-                            res.end(req.method === "HEAD" ? undefined : body);
-                            return;
+                        } else if (settings) {
+                            const params = new URL(rawUrl, "http://settings.local").searchParams;
+                            body = documents.settings({
+                                workspace: params.get("workspace") ?? undefined,
+                                session: params.get("session"),
+                            });
+                        } else if (directory !== null) {
+                            body = documents.session(directory.workspace);
+                        } else {
+                            throw new RequestError(404, "The requested page does not exist.");
                         }
-                        const desktopVersion = account
-                            ? (/\bplurnk-desktop\/([^\s;()]+)/iu.exec(String(req.headers["user-agent"] ?? ""))?.[1] ?? null)
-                            : null;
-                        const body = home ? documents.home(admitted)
-                            : inventory ? documents.account(inventory, { serviceVersion: seam.serviceVersion ?? null, desktopVersion })
-                            : null;
-                        if (body === null) throw new RequestError(404, "The requested page does not exist.");
-                        res.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
+                        res.writeHead(200, { ...headers, "content-type": "text/html; charset=utf-8", "content-length": body.byteLength });
                         res.end(req.method === "HEAD" ? undefined : body);
                         return;
                     }
+
                     if (req.method !== "GET" && req.method !== "HEAD") {
                         res.setHeader("allow", "GET, HEAD");
                         throw new RequestError(405, "Use GET or HEAD for this resource.");
@@ -751,9 +213,14 @@ export default function createModule(assets = productionAssets()) {
                     sendAsset(req, res, resource);
                 } catch (error) {
                     if (!(error instanceof RequestError)) throw error;
-                    const body = token || diagram ? Buffer.from(JSON.stringify(Problems.create("web", diagram ? "diagram-request-rejected" : "token-request-rejected", error.status, error.message)))
-                        : documents.error(error.status, error.message, admitted, { recovery: error.recovery, retry: error.retry });
-                    res.writeHead(error.status, { ...privateHeaders, "content-type": token || diagram ? "application/problem+json" : "text/html; charset=utf-8", "content-length": body.byteLength });
+                    const body = diagram
+                        ? Buffer.from(JSON.stringify(Problems.create("web", "diagram-request-rejected", error.status, error.message)))
+                        : documents.error(error.status, error.message);
+                    res.writeHead(error.status, {
+                        ...headers,
+                        "content-type": diagram ? "application/problem+json" : "text/html; charset=utf-8",
+                        "content-length": body.byteLength,
+                    });
                     res.end(req.method === "HEAD" ? undefined : body);
                 } finally {
                     if (diagram) req.resume();
@@ -779,7 +246,6 @@ export default function createModule(assets = productionAssets()) {
         async close() {
             stop();
             const cleanup = new AsyncDisposableStack();
-            cleanup.defer(() => session?.close());
             cleanup.defer(() => assets.close?.());
             cleanup.defer(async () => { await Promise.allSettled(requests); });
             cleanup.defer(() => diagrams?.close());

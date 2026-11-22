@@ -7,7 +7,7 @@ import pty from "node-pty";
 import headless from "@xterm/headless";
 
 // {§web-package} Drive the installed client through a real terminal, not its private transport.
-export default async function startTerminal({ consumer, base, workspace, secret, yolo }) {
+export default async function startTerminal({ consumer, base, workspace, yolo }) {
     const home = await mkdtemp(join(tmpdir(), "plurnk-web-terminal-"));
     const url = new URL(base);
     const cols = 120;
@@ -27,7 +27,6 @@ export default async function startTerminal({ consumer, base, workspace, secret,
                 PLURNK_HOST: url.hostname,
                 PLURNK_PORT: url.port,
                 PLURNK_ACP_URL: "",
-                PLURNK_SECRET: secret,
                 PLURNK_CLIENT_AUTOSTART: "0",
                 PLURNK_CLIENT_YOLO: yolo ? "1" : "0",
                 NO_COLOR: "1",

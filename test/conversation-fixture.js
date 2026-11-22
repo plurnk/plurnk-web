@@ -8,8 +8,93 @@ import createModule from "../src/module.js";
 
 /** @type {Promise<Map<string, { body: Buffer | string, type: string }>> | null} */
 let baseAssetsPromise = null;
-/** @type {Map<string, Promise<{ assets: Map<string, { body: Buffer | string, type: string }>, document: Buffer, documents: Documents, fixturePort: any }>>} */
+/** @type {Map<string, Promise<{ assets: Map<string, { body: Buffer | string, type: string }>, document: Buffer, documents: Documents }>>} */
 const compiledEntries = new Map();
+
+/**
+ * @param {string} source
+ * @param {string} templateId
+ */
+function readTemplateInner(source, templateId) {
+    const match = new RegExp(`<template\\s+id="${templateId}">([\\s\\S]*?)<\\/template>`, "u").exec(source);
+    if (!match) throw new Error(`Missing template #${templateId} in compiled web document.`);
+    return match[1].trim();
+}
+
+/**
+ * Pre-seed a session workbench HTML document from `Documents#session` + `web/index.html` templates
+ * so isolated component tests mount `#session-conversation`, `#session-status`, and `#workspace-tabs` directly.
+ * @param {Documents} documents
+ * @param {string} template
+ */
+export function buildPreseededSessionDocument(documents, template, {
+    workspaceId = 7,
+    workspaceName = "conversation",
+    sessionName = "session1",
+    sessions = [
+        { id: 9, name: "session1", kind: "root", lifecycle: "idle" },
+        { id: 10, name: "user", kind: "root", lifecycle: "idle" },
+    ],
+} = {}) {
+    const encodedWs = encodeURIComponent(workspaceName);
+    const encodedSess = encodeURIComponent(sessionName);
+    const sessionPath = `/~/${encodedWs}#${encodedSess}`;
+    const sessionSettingsHref = `/settings/?workspace=${encodedWs}&amp;session=${encodedSess}#session`;
+    const modelsSettingsHref = `/settings/?workspace=${encodedWs}&amp;session=${encodedSess}#models`;
+    const wsSettingsHref = `/settings/?workspace=${encodedWs}&amp;session=${encodedSess}`;
+
+    const sessionMain = readTemplateInner(template, "workspace-session-main")
+        .replace(
+            'data-page="session" data-session-name=""',
+            `data-page="session" data-requested-workspace="${workspaceName}" data-session-name="${sessionName}"`,
+        )
+        .replace('id="session-reconnect" action="/"', `id="session-reconnect" action="${sessionPath}"`)
+        .replace(
+            'data-bind="data-return-path:session-path"',
+            `data-bind="data-return-path:session-path" data-return-path="${sessionPath}"`,
+        );
+
+    const sessionFooter = readTemplateInner(template, "workspace-session-footer")
+        .replace(
+            'data-workspace-id="" data-session-id="" data-session-name=""',
+            `data-workspace-id="${workspaceId}" data-session-id="${workspaceId}#${sessionName}" data-session-name="${sessionName}"`,
+        )
+        .replace(
+            'href="/settings/" data-bind="href:session-settings-path"',
+            `href="${sessionSettingsHref}" data-bind="href:session-settings-path"`,
+        )
+        .replace('<span data-text="session-name"></span>', `<span data-text="session-name">${sessionName}</span>`)
+        .replaceAll(
+            'href="/settings/" data-bind="href:models-settings-path"',
+            `href="${modelsSettingsHref}" data-bind="href:models-settings-path"`,
+        );
+
+    const tabItems = sessions.map((item) => {
+        const current = item.name === sessionName ? ' aria-current="true"' : "";
+        return `<li data-tab-id="${workspaceId}:${item.id}" data-session-kind="${item.kind}">`
+            + `<a href="/~/${encodedWs}#${encodeURIComponent(item.name)}" data-workspace-route="session" data-tab-session="${item.name}"${current}>`
+            + `<span data-lifecycle="${item.lifecycle}" aria-hidden="true"></span>`
+            + `<span data-tab-label>#${item.name}</span></a></li>`;
+    }).join("");
+
+    const shell = documents.session(workspaceName).toString()
+        .replace(
+            `<title data-text="page-title">${workspaceName} — Plurnk</title>`,
+            `<title data-text="page-title">${workspaceName}#${sessionName} — Plurnk</title>`,
+        )
+        .replace(
+            `href="/settings/?workspace=${encodedWs}"`,
+            `href="${wsSettingsHref}"`,
+        )
+        .replace(/<main id="main" data-page="session"[^>]*>[\s\S]*?<\/main>/u, sessionMain)
+        .replace(
+            `<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-name="${workspaceName}" data-tab-count="0">`,
+            `${sessionFooter}<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-id="${workspaceId}" data-workspace-name="${workspaceName}" data-tab-count="${sessions.length}">`,
+        )
+        .replace(/(<nav id="workspace-tabs"[\s\S]*?)<ul><\/ul>/u, `$1<ul>${tabItems}</ul>`);
+
+    return Buffer.from(shell);
+}
 
 async function compileEntry(entryURL) {
     let pending = compiledEntries.get(entryURL.href);
@@ -39,16 +124,9 @@ async function compileEntry(entryURL) {
                 // The component entry has its own module graph, not the production entry's preloads.
                 .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gu, "")
                 .replace(/<script\b[^>]*src="\/assets\/[^"]+\.js"[^>]*><\/script>/u, `<script type="module" crossorigin src="/${entry.fileName}"></script>${preloads}`);
-            const documents = new Documents(template, 64);
-            const fixturePort = {
-                listWorkspaces: async () => [{ id: 7, name: "conversation", project_root: null, project_label: null, archived_at: null }],
-                listSessions: async () => [
-                    { id: 9, name: "session1", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null },
-                    { id: 10, name: "user", parentSessionId: null, origin: "model", owner: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null },
-                ],
-            };
-            const document = await documents.read({ kind: "session", workspace: "conversation", session: "session1" }, fixturePort, false);
-            return { assets, document, documents, fixturePort };
+            const documents = new Documents(template, { overviewSessions: 64 });
+            const document = buildPreseededSessionDocument(documents, template);
+            return { assets, document, documents };
         })();
         compiledEntries.set(entryURL.href, pending);
     }
@@ -57,7 +135,7 @@ async function compileEntry(entryURL) {
 
 // A component fixture using the real document and browser modules, not a second HTML implementation.
 export default async function conversationFixture(entryURL = new URL("./conversation-entry.js", import.meta.url), routes = new Map()) {
-    const { assets, document, documents, fixturePort } = await compileEntry(entryURL);
+    const { assets, document, documents } = await compileEntry(entryURL);
     let module = null;
     let serve = null;
     const ensureModule = async () => {
@@ -181,10 +259,17 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         if (path === "/settings/" || path === "/settings/index.html") {
             const wsName = parsed.searchParams.get("workspace") ?? "";
             const sessName = parsed.searchParams.get("session");
-            void documents.settings(wsName, sessName, fixturePort, true).then((body) => {
-                response.writeHead(body ? 200 : 404, { ...privateHeaders, "content-type": body ? "text/html; charset=utf-8" : "text/plain" });
-                response.end(body ?? "Not found");
-            });
+            const validSession = !sessName || sessName === "session1" || sessName === "user";
+            if (wsName !== "conversation" || !validSession) {
+                response.writeHead(404, { ...privateHeaders, "content-type": "text/plain" });
+                response.end("Not found");
+                return;
+            }
+            const body = documents.settings({ workspace: wsName, session: sessName })
+                .toString()
+                .replace('<main id="main" data-page="settings"', '<main id="main" data-page="settings" data-workspace-id="7"');
+            response.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8" });
+            response.end(body);
             return;
         }
         const asset = path === "/conversation-test" ? { body: document, type: "text/html" } : assets.get(path);

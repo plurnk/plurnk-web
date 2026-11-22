@@ -13,8 +13,6 @@ import verifyWebApp from "./web-app.js";
 import verifyDocument from "./document.js";
 import candidatePackages from "./candidate-packages.js";
 import verifySessions from "./sessions-browser.js";
-import verifyAccount from "./account-browser.js";
-import verifyTokens from "./tokens-browser.js";
 import verifySessionPage from "./session-browser.js";
 import verifySessionCommands from "./session-commands.js";
 import verifySessionInput, { closeSharedDaemons } from "./session-input.js";
@@ -57,7 +55,7 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
     assert.ok(archive.files.some(({ path }) => path === "dist/vendor/DEPENDENCIES-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "dist/assets.json"));
     assert.ok(archive.files.some(({ path }) => path === ".env.defaults"));
-    for (const name of ["module.js", "index-document.js", "directory-addresses.js", "creations.js", "documents.js", "session.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
+    for (const name of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
         assert.ok(archive.files.some(({ path }) => path === `src/${name}`), `expected src/${name} in packed package`);
     }
     for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable.svg", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt"]) {
@@ -136,15 +134,12 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
     };
 
     await t.test("{§web-host} composition, default floor and route precedence", async (discovery) => {
-        await withDaemon({ PLURNK_AUTH: "0" }, async (base) => {
+        await withDaemon({}, async (base) => {
             await discovery.test("{§web-asset-encoding} packed assets negotiate exact compressed bytes", () =>
                 verifyStaticAssets(base, pathToFileURL(`${webPackage}/`)));
             const arrival = await fetch(base, { redirect: "manual" });
-            assert.equal(arrival.status, 303, "{§web-arrival} GET / allocates and redirects to starter workspace1#session1");
-            assert.equal(arrival.headers.get("location"), "/~/workspace1#session1");
-            const page = await fetch(base);
-            assert.equal(page.status, 200);
-            assert.match(await page.text(), /<main\b[^>]*data-page="session"[^>]*data-session-name="session1"[^>]*>/u);
+            assert.equal(arrival.status, 200, "{§web-arrival} GET / serves the static arrival shell");
+            assert.match(await arrival.text(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
             const explicitIndex = await fetch(new URL("/index.html?q=one%2Ftwo", base));
             assert.equal(explicitIndex.status, 200, "{§web-index-documents} packed explicit index selects the static root document");
             assert.match(await explicitIndex.text(), /<main\b[^>]*data-page="home"[^>]*>\s*<\/main>/u);
@@ -152,7 +147,7 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
             assert.notEqual(acp.status, 200);
             assert.match(acp.headers.get("content-type"), /application\/problem\+json/u);
             assert.equal(typeof (await acp.json()).type, "string");
-            for (const path of ["/not-a-page", "/~/example/missing-session"]) {
+            for (const path of ["/not-a-page", "/~", "/account/"]) {
                 const unknown = await fetch(new URL(path, base));
                 assert.equal(unknown.status, 404, `${path}: no unimplemented resource is served`);
                 assert.equal(unknown.headers.get("content-type"), "text/html; charset=utf-8");
@@ -163,53 +158,51 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
             try {
                 await discovery.test("{§web-installation} browser recognizes app metadata and decodes every icon", () => verifyWebApp(browser, base));
                 await discovery.test("{§web-language} source English remains intact without translation or persistence", () => verifyDocument(browser, base));
-                for (const javaScriptEnabled of [true, false]) {
-                    await discovery.test(`{§web-document} classless green follows color preference with JavaScript ${javaScriptEnabled ? "on" : "off"}`, async () => {
-                        const context = await browser.newContext({ javaScriptEnabled, colorScheme: "light" });
-                        const checkBrowser = browserDiagnostics(context);
-                        try {
-                            const tab = await context.newPage();
-                            await tab.goto(base);
-                            assert.equal(await tab.locator("main").getAttribute("data-page"), "session");
-                            assert.match(await tab.title(), /#session1 — Plurnk$/u);
-                            for (const [colorScheme, primary] of /** @type {const} */ ([["light", "rgb(20, 136, 0)"], ["dark", "rgb(78, 179, 27)"]])) {
-                                await tab.emulateMedia({ colorScheme });
-                                const rendered = await tab.evaluate(() => {
-                                    const root = getComputedStyle(document.documentElement);
-                                    const probe = document.createElement("a");
-                                    document.body.append(probe);
-                                    const resolvedPrimary = getComputedStyle(probe).color;
-                                    probe.remove();
-                                    return {
-                                        primary: resolvedPrimary,
-                                        scheme: root.colorScheme,
-                                        padding: parseFloat(getComputedStyle(document.querySelector("main")).paddingTop),
-                                        font: getComputedStyle(document.querySelector("main")).fontFamily,
-                                        monospace: root.getPropertyValue("--otm-font-family-monospace").trim(),
-                                    };
-                                });
-                                assert.equal(rendered.primary, primary);
-                                assert.equal(rendered.scheme, "light dark");
-                                assert.ok(rendered.padding > 0, "semantic main receives the substrate layout");
-                                assert.deepEqual(rendered.font.split(",").map((name) => name.trim()),
-                                    rendered.monospace.split(",").map((name) => name.trim()),
-                                    "the document inherits the system monospace stack");
-                            }
-                            checkBrowser();
-                        } finally {
-                            await context.close();
+                await discovery.test("{§web-document} {§web-arrival} classless green follows color preference and arrives at starter workspace1#session1", async () => {
+                    const context = await browser.newContext({ colorScheme: "light" });
+                    const checkBrowser = browserDiagnostics(context);
+                    try {
+                        const tab = await context.newPage();
+                        await tab.goto(base);
+                        await tab.waitForURL((url) => new URL(url).pathname === "/~/workspace1");
+                        await tab.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                        assert.equal(await tab.locator("main").getAttribute("data-page"), "session");
+                        assert.match(await tab.title(), /#session1 — Plurnk$/u);
+                        for (const [colorScheme, primary] of /** @type {const} */ ([["light", "rgb(20, 136, 0)"], ["dark", "rgb(78, 179, 27)"]])) {
+                            await tab.emulateMedia({ colorScheme });
+                            const rendered = await tab.evaluate(() => {
+                                const root = getComputedStyle(document.documentElement);
+                                const probe = document.createElement("a");
+                                document.body.append(probe);
+                                const resolvedPrimary = getComputedStyle(probe).color;
+                                probe.remove();
+                                return {
+                                    primary: resolvedPrimary,
+                                    scheme: root.colorScheme,
+                                    padding: parseFloat(getComputedStyle(document.querySelector("main")).paddingTop),
+                                    font: getComputedStyle(document.querySelector("main")).fontFamily,
+                                    monospace: root.getPropertyValue("--otm-font-family-monospace").trim(),
+                                };
+                            });
+                            assert.equal(rendered.primary, primary);
+                            assert.equal(rendered.scheme, "light dark");
+                            assert.ok(rendered.padding > 0, "semantic main receives the substrate layout");
+                            assert.deepEqual(rendered.font.split(",").map((name) => name.trim()),
+                                rendered.monospace.split(",").map((name) => name.trim()),
+                                "the document inherits the system monospace stack");
                         }
-                    });
-                }
+                        checkBrowser();
+                    } finally {
+                        await context.close();
+                    }
+                });
             } finally {
                 await browser.close();
             }
         });
     });
 
-    await verifySessions({ t, consumer, withDaemon });
-    await verifyAccount({ t, withDaemon });
-    await verifyTokens({ t, withDaemon });
+    await verifySessions({ t, consumer, withDaemon, webPackage });
     await verifySessionPage({ t, withDaemon });
     await verifySessionCommands({ t, withDaemon });
     await verifySessionInput({ t, withDaemon });
@@ -225,7 +218,7 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
         const savedWeb = join(directory, "omitted-plurnk-web");
         await rename(webPackage, savedWeb);
         try {
-            await withDaemon({ PLURNK_AUTH: "0" }, async (base) => {
+            await withDaemon({}, async (base) => {
                 const res = await fetch(base);
                 assert.equal(res.status, 404);
                 const problem = await res.json();
@@ -234,11 +227,11 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
         } finally {
             await rename(savedWeb, webPackage);
         }
-        await withDaemon({ PLURNK_AUTH: "0", PLURNK_WEB_DIAGRAM_THREADS: "0" }, async (base, daemon) => {
+        await withDaemon({ PLURNK_WEB_DIAGRAM_THREADS: "0" }, async (base, daemon) => {
             assert.equal((await fetch(base)).status, 200);
             assert.equal((await fetch(new URL("/render/mermaid", base), {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers: { "content-type": "application/json", origin: new URL(base).origin },
                 body: JSON.stringify({ source: "flowchart LR\n A-->B" }),
             })).status, 503);
             assert.match(daemon.stdout() + daemon.stderr(), /PLURNK_WEB_DIAGRAM_THREADS/u);

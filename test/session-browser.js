@@ -12,17 +12,10 @@ import { engines, launchBrowser } from "./engines.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { inspectResult } from "./result-body.js";
 import { acquireSharedDaemon, onAcpSent } from "./session-input.js";
-import testPasswordHash from "./password-hash.js";
+import startMockOidcIdp from "./mock-oidc-idp.js";
 
-async function controller(base, secret) {
-    const headers = {};
-    if (secret) {
-        const grant = await fetch(new URL("/oauth/token", base), {
-            method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "acp" }),
-        });
-        assert.equal(grant.status, 200);
-        headers.Authorization = `Bearer ${(await grant.json()).access_token}`;
-    }
+function controller(base, bearerToken) {
+    const headers = bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {};
     return new SessionAgent({ url: new URL("/acp", base).href, sessionId: "user", headers });
 }
 
@@ -192,7 +185,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         try {
             await withDaemon({
-                ...model.env, PLURNK_AUTH: "0", PLURNK_SERVICE_EXEC_CONCURRENCY: "invalid",
+                ...model.env, PLURNK_SERVICE_EXEC_CONCURRENCY: "invalid",
                 PLURNK_MODEL_unavailable: "browser-fixture/browser-fixture", PLURNK_PROVIDERS_EFFORT_unavailable: "invalid",
             }, async (base) => {
                 for (const engine of [chromium]) {
@@ -265,14 +258,16 @@ export default async function verifySessionPage({ t, withDaemon }) {
 
     await t.test("{§web-conversation-content} hostile model output stays inert through authenticated SDK delivery and replay", { timeout: 60_000 }, async () => {
         const model = await startModel();
-        const secret = crypto.randomUUID();
+        const idp = await startMockOidcIdp({ autoApprove: true });
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("content-password"), PLURNK_SECRET: secret }, async (base) => {
+            await withDaemon({ ...model.env, ...idp.env }, async (base) => {
+                const token = idp.mintToken();
                 for (const engine of engines) {
                     model.reset();
                     const workspace = `content-security-${engine.name()}`;
-                    const setup = await controller(base, secret);
+                    const setup = controller(base, token);
                     await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                    setup.close();
                     const browser = await launchBrowser(engine);
                     try {
                         const context = await browser.newContext();
@@ -281,20 +276,24 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         const unexpected = [];
                         await context.route("**/*", (route) => {
                             const url = new URL(route.request().url());
-                            if (url.origin === new URL(base).origin && url.pathname !== "/security-probe") return route.continue();
+                            if ((url.origin === new URL(base).origin || url.origin === new URL(idp.issuer).origin) && url.pathname !== "/security-probe") {
+                                return route.continue();
+                            }
                             unexpected.push(url.href);
                             return route.abort();
                         });
                         const path = new URL(`/~/${workspace}#user`, base).href;
                         await page.goto(path);
-                        await page.getByLabel("Password", { exact: true }).fill("content-password");
-                        await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await page.waitForURL((url) => new URL(url).pathname === `/~/${workspace}`);
                         await connected(page);
-                        const readHeader = () => page.locator("body > header").evaluate((element) =>
-                            element.outerHTML.replaceAll(/name="token" value="[0-9a-f-]{36}"/giu, 'name="token"'));
+                        checkBrowser([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                            Object.assign(networkFailure("/acp"), { optional: true }),
+                        ]);
+                        const readHeader = () => page.locator("body > header").evaluate((element) => element.outerHTML);
                         const header = await readHeader();
-                        const run = await controller(base, secret);
+                        const run = controller(base, token);
                         await run.send({ workspace, message: prompt("content-security") });
                         run.close();
                         assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, contentAttack, "the protocol preserves the source; the browser owns its interpretation");
@@ -318,7 +317,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.equal(await page.locator('[data-messages] article a[href^="javascript:"]').count(), 0);
                             assert.equal(await page.locator("#session-status").count(), 1);
                             assert.equal(await readHeader(), header);
-                            assert.equal(await page.getByRole("banner").getByRole("link", { name: "Account", exact: true }).count(), 1);
+                            assert.equal(await page.getByRole("banner").getByRole("button", { name: "Sign out", exact: true }).count(), 1);
                             assert.equal(await page.evaluate(() => window.contentExecuted), undefined);
                             await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "completed");
                             assert.equal(await value(page, "lifecycle"), "completed");
@@ -334,7 +333,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     } finally { await browser.close(); }
                 }
             });
-        } finally { await model.close(); }
+        } finally { await Promise.allSettled([model.close(), idp.close()]); }
     });
 
     await t.test("{§web-working-notes} packed note calls expose semantic bodies and correlated results live and on replay", { timeout: 60_000 }, async () => {
@@ -479,18 +478,23 @@ export default async function verifySessionPage({ t, withDaemon }) {
 
     await t.test("{§web-diagram-content} authenticated delivery and replay produce local static images", { timeout: 60_000 }, async () => {
         const model = await startModel();
-        const secret = crypto.randomUUID();
+        const idp = await startMockOidcIdp({ autoApprove: true });
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("diagram-password"), PLURNK_SECRET: secret }, async (base) => {
-                const denied = await fetch(new URL("/render/mermaid", base), { method: "POST",
-                    headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "flowchart LR\n A-->B" }) });
-                assert.equal(denied.status, 401, "the packed compiler uses web session admission");
+            await withDaemon({ ...model.env, ...idp.env }, async (base) => {
+                const token = idp.mintToken();
+                const denied = await fetch(new URL("/render/mermaid", base), {
+                    method: "POST",
+                    headers: { "content-type": "application/json", origin: new URL(base).origin },
+                    body: JSON.stringify({ source: "flowchart LR\n A-->B" }),
+                });
+                assert.equal(denied.status, 401, "the packed compiler enforces Bearer credential admission");
                 assert.equal((await denied.json()).status, 401);
                 for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `diagrams-${engine.name()}`;
-                    const setup = await controller(base, secret);
+                    const setup = controller(base, token);
                     await setup.send({ workspace, action: { kind: "session/set_config_option", configId: "model", value: "browser" } });
+                    setup.close();
                     const browser = await launchBrowser(engine);
                     try {
                         const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
@@ -501,18 +505,21 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         page.on("request", (request) => requests.push(request.url()));
                         await context.route("**/*", (route) => {
                             const url = new URL(route.request().url());
-                            if (url.origin === new URL(base).origin) return route.continue();
+                            if (url.origin === new URL(base).origin || url.origin === new URL(idp.issuer).origin) return route.continue();
                             unexpected.push(url.href);
                             return route.abort();
                         });
                         const path = new URL(`/~/${workspace}#user`, base).href;
                         await page.goto(path);
-                        await page.getByLabel("Password", { exact: true }).fill("diagram-password");
-                        await page.getByRole("button", { name: "Continue", exact: true }).click();
                         await page.waitForURL((url) => new URL(url).pathname === `/~/${workspace}`);
                         await connected(page);
-                        assert.ok(!requests.some((path) => path.endsWith("/render/mermaid")), "an idle session requests no compilation");
-                        const run = await controller(base, secret);
+                        checkBrowser([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                            Object.assign(networkFailure("/acp"), { optional: true }),
+                        ]);
+                        assert.ok(!requests.some((reqUrl) => reqUrl.endsWith("/render/mermaid")), "an idle session requests no compilation");
+                        const run = controller(base, token);
                         await run.send({ workspace, message: prompt("diagrams") });
                         run.close();
                         assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, diagramContent);
@@ -531,8 +538,8 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await page.reload();
                         await connected(page);
                         await verify();
-                        assert.ok(requests.some((path) => path.endsWith("/render/mermaid")));
-                        assert.ok(!requests.some((path) => /mermaid-renderer|\.wasm$/u.test(path)), "compiler stays on the daemon");
+                        assert.ok(requests.some((reqUrl) => reqUrl.endsWith("/render/mermaid")));
+                        assert.ok(!requests.some((reqUrl) => /mermaid-renderer|\.wasm$/u.test(reqUrl)), "compiler stays on the daemon");
                         assert.deepEqual(unexpected, [], "no remote renderer or font requests");
                         assert.equal(model.requests.length, 1, "refresh renders retained diagrams without inference");
                         assert.deepEqual(model.errors, []);
@@ -540,13 +547,13 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     } finally { await browser.close(); }
                 }
             });
-        } finally { await model.close(); }
+        } finally { await Promise.allSettled([model.close(), idp.close()]); }
     });
 
     await t.test("{§web-diagram-content} a page with more diagrams than the service admits at once renders them all", { timeout: 60_000 }, async () => {
         const model = await startModel();
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_WEB_DIAGRAM_PENDING: "1", PLURNK_WEB_DIAGRAM_THREADS: "1" }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_WEB_DIAGRAM_PENDING: "1", PLURNK_WEB_DIAGRAM_THREADS: "1" }, async (base) => {
                 for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `burst-${engine.name()}`;
@@ -590,7 +597,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
         const model = await startModel();
         await writeFile(join(projectRoot, "witness.txt"), "cobalt heron\n");
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_MEMBERS_witness: "witness.txt" }, async (base) => {
+            await withDaemon({ ...model.env, PLURNK_MEMBERS_witness: "witness.txt" }, async (base) => {
                 for (const engine of engines) {
                     model.reset();
                     const workspace = `conversation-${engine.name()}`;
@@ -726,21 +733,23 @@ export default async function verifySessionPage({ t, withDaemon }) {
         }
     });
 
-    await t.test("{§web-session-observer} the actual page observes consecutive loops, cancellation and workspace rename without owning work", { timeout: 60_000 }, async () => {
+    await t.test("{§web-session-observer} {§web-oidc} the actual page observes consecutive loops, token refresh rotation, cancellation and workspace rename without owning work", { timeout: 60_000 }, async () => {
         const model = await startModel();
-        const secret = crypto.randomUUID();
+        const idp = await startMockOidcIdp({ autoApprove: true, accessTtlSec: 2 });
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("session-password"), PLURNK_SECRET: secret, PLURNK_AUTH_ACCESS_TTL_SEC: "1" }, async (base) => {
+            await withDaemon({ ...model.env, ...idp.env }, async (base) => {
+                const driverToken = idp.mintToken({ ttlSec: 3600 });
                 for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `~/observer-${engine.name()} @%/<draft>&"`;
                     const sessionId = "user";
                     const action = async (kind, parameters = {}, selected = workspace) => {
-                        const agent = await controller(base, secret);
+                        const agent = controller(base, driverToken);
                         let result;
                         await agent.send({ workspace: selected, action: { kind, ...parameters } }, {
                             onSettled: ({ result: outcome }) => { result = outcome; },
                         });
+                        agent.close();
                         assert.equal(result?.ok, true, JSON.stringify(result));
                         return result.result;
                     };
@@ -763,23 +772,26 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         });
                         page.on("response", async (response) => {
                             try {
-                                if (new URL(response.url()).pathname === "/auth/token" && response.ok()) access.push((await response.json()).access_token);
+                                if (response.url() === `${idp.issuer}/token` && response.ok()) {
+                                    access.push((await response.json()).access_token);
+                                }
                             } catch {
                                 // Response body may be released when navigation closes the context.
                             }
                         });
                         const path = directoryPath({ kind: "session", workspace, session: sessionId });
                         await page.goto(new URL(path, base).href);
-                        await page.getByLabel("Password", { exact: true }).fill("session-password");
-                        await page.getByRole("button", { name: "Continue", exact: true }).click();
-                        await page.waitForURL((url) => new URL(url).pathname === new URL(path, base).pathname);
-                        assert.equal(await page.locator("#session-status").count(), 1, "the packed session page supplies the status surface");
                         const connected = () => page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                         const value = (key) => key === "lifecycle"
                             ? page.locator('#session-status [data-status-field="lifecycle"]').getAttribute("aria-label")
                             : page.locator(`#session-status [data-text="${key}"]`).textContent();
                         await connected();
-                        checkBrowser();
+                        assert.equal(await page.locator("#session-status").count(), 1, "the packed session page supplies the status surface");
+                        checkBrowser([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                            Object.assign(networkFailure("/acp"), { optional: true }),
+                        ]);
                         assert.equal(await value("lifecycle"), "idle");
                         assert.equal(await value("input"), "0");
                         assert.equal(await value("cost"), "$0.0000");
@@ -799,7 +811,8 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(model.requests.length, 0);
 
                         for (let turn = 1; turn <= 2; turn++) {
-                            const run = await controller(base, secret);
+                            if (turn === 2) await setTimeout(2100);
+                            const run = controller(base, driverToken);
                             const ready = Promise.withResolvers();
                             const completion = run.send({ workspace, message: prompt("held-session-page") }, {
                                 onThoughtChunk: () => { ready.resolve(); },
@@ -835,7 +848,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.equal(model.requests.length, turn, "observation never submits a prompt");
                         }
 
-                        const cancelled = await controller(base, secret);
+                        const cancelled = controller(base, driverToken);
                         const ready = Promise.withResolvers();
                         let terminal;
                         const cancellation = cancelled.send({ workspace, message: prompt("held-page-cancel") }, {
@@ -844,9 +857,10 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         });
                         await ready.promise;
                         await page.waitForFunction(() => document.querySelector('#session-status [data-status-field="lifecycle"]')?.getAttribute("aria-label") === "running");
-                        const cancelAgent = await controller(base, secret);
+                        const cancelAgent = controller(base, driverToken);
                         cancelAgent.sessionId = identity;
                         await cancelAgent.send({ action: { kind: "session/cancel", reason: "browser-stop" } });
+                        cancelAgent.close();
                         await cancellation;
                         cancelled.close();
                         assert.equal(terminal?.stopReason, "cancelled");
@@ -863,8 +877,8 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             assert.equal(input.params.prompt, undefined);
                             assert.equal(input.params._meta?.plurnk?.workspace, undefined);
                         }
-                        assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]);
-                        assert.ok(new Set(access).size > 1, "a later connection gets a fresh credential after expiry");
+                        assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [["plurnk_oidc_grant"], []]);
+                        assert.ok(new Set(access).size > 1, "a later connection rotates to a fresh OIDC access_token after expiry");
                         for (const token of access) assert.equal((await page.content()).includes(token), false, "credentials never enter document state");
                         checkBrowser();
                         const after = await action("workspace.sessions");
@@ -873,7 +887,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
 
                         const renamed = `renamed observer ${engine.name()}`;
                         await action("workspace.rename", { name: renamed });
-                        const afterRename = await controller(base, secret);
+                        const afterRename = controller(base, driverToken);
                         afterRename.sessionId = identity;
                         const readyAfterRename = Promise.withResolvers();
                         const completionAfterRename = afterRename.send({ message: prompt("held-page-rename") }, {
@@ -892,8 +906,9 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(await page.title(), `${renamed}#user — Plurnk`);
                         assert.equal(page.url(), new URL(path, base).href, "a live rename does not rewrite browser history");
                         const attempts = observations.length;
-                        assert.equal((await page.reload()).status(), 404, "an old named URL is not an identity alias");
-                        checkBrowser([httpFailure(new URL(path, base).pathname, 404)]);
+                        assert.equal((await page.reload()).status(), 200, "static shell serves 200 and resolves missing workspace over /acp");
+                        await page.locator("#error-title").waitFor();
+                        assert.equal(await page.title(), "404 Not Found — Plurnk");
                         assert.equal(observations.length, attempts, "a missing directory starts no observation");
                         const renamedPath = directoryPath({ kind: "session", workspace: renamed, session: sessionId });
                         await page.goto(new URL(renamedPath, base).href);
@@ -909,18 +924,19 @@ export default async function verifySessionPage({ t, withDaemon }) {
                     } finally { await browser.close(); }
                 }
             });
-        } finally { await model.close(); }
+        } finally { await Promise.allSettled([model.close(), idp.close()]); }
     });
 
-    await t.test("{§web-session-observer} sign-out ends page observation, not independently controlled work", { timeout: 60_000 }, async () => {
+    await t.test("{§web-session-observer} {§web-oidc} sign-out ends page observation, not independently controlled work", { timeout: 60_000 }, async () => {
         const model = await startModel();
-        const secret = crypto.randomUUID();
+        const idp = await startMockOidcIdp({ autoApprove: false });
         try {
-            await withDaemon({ ...model.env, PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("revocation-password"), PLURNK_SECRET: secret }, async (base) => {
+            await withDaemon({ ...model.env, ...idp.env }, async (base) => {
+                const driverToken = idp.mintToken();
                 for (const engine of [chromium]) {
                     model.reset();
                     const workspace = `observer-revocation-${engine.name()}`;
-                    const run = await controller(base, secret);
+                    const run = controller(base, driverToken);
                     const ready = Promise.withResolvers();
                     const completion = run.send({ workspace, message: prompt("held-page-revocation") }, {
                         onThoughtChunk: () => { ready.resolve(); },
@@ -936,37 +952,46 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             if (body?.method === "session/resume" && body?.params?._meta?.plurnk?.control === false) attempts++;
                         });
                         await page.goto(new URL(`/~/${workspace}#user`, base).href);
-                        await page.getByLabel("Password", { exact: true }).fill("revocation-password");
+                        await page.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
                         await page.getByRole("button", { name: "Continue", exact: true }).click();
+                        await page.waitForURL((url) => new URL(url).pathname === `/~/${workspace}`);
                         await connected(page);
+                        checkBrowser([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                            Object.assign(networkFailure("/acp"), { optional: true }),
+                        ]);
                         assert.equal(await value(page, "lifecycle"), "running");
                         const second = await context.newPage();
-                        await second.goto(new URL("/account/", base).href);
+                        await second.goto(new URL("/search/", base).href);
                         await second.getByRole("button", { name: "Sign out", exact: true }).click();
-                        await second.waitForURL((url) => new URL(url).pathname === "/oauth/authorize");
+                        await second.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), true);
                         const frozen = await value(page, "elapsed");
                         assert.equal(run.isRunning, true);
                         assert.equal(await page.getByRole("alert").isVisible(), true);
-                        assert.equal(await page.getByRole("link", { name: "Sign in", exact: true }).isVisible(), true);
+                        assert.equal(await page.getByRole("button", { name: "Sign in", exact: true }).isVisible(), true);
                         assert.equal(await page.getByRole("button", { name: "Reconnect", exact: true }).isVisible(), false);
                         await setTimeout(1100);
                         assert.equal(await value(page, "elapsed"), frozen, "a disconnected clock cannot pretend to be live");
-                        assert.equal(attempts, 1, "revocation does not start a reconnection loop");
+                        assert.equal(attempts, 1, "sign-out does not start a reconnection loop");
                         model.release("held-page-revocation");
                         await completion;
                         assert.equal(run.messages.findLast(({ role }) => role === "assistant").content, "Completed held-page-revocation.");
                         assert.equal(model.requests.length, 1);
-                        await page.getByRole("link", { name: "Sign in", exact: true }).click();
-                        await page.waitForLoadState("load");
-                        await page.getByLabel("Password", { exact: true }).waitFor();
-                        assert.equal(await page.getByLabel("Password", { exact: true }).isVisible(), true);
+                        checkBrowser([
+                            Object.assign(httpFailure("/acp", 401), { optional: true }),
+                            Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                        ]);
+                        await page.getByRole("button", { name: "Sign in", exact: true }).click();
+                        await page.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
+                        assert.equal(await page.getByRole("button", { name: "Continue", exact: true }).isVisible(), true);
                         checkBrowser();
                     } finally { run.abortRun(); run.close(); await completion.catch(() => {}); await browser.close(); }
                 }
             });
-        } finally { await model.close(); }
+        } finally { await Promise.allSettled([model.close(), idp.close()]); }
     });
 
     await t.test("{§web-session-observer} manual-mode pages leave approvals undecided and expose network loss and shutdown", { timeout: 90_000 }, async () => {
@@ -974,8 +999,8 @@ export default async function verifySessionPage({ t, withDaemon }) {
         try {
             for (const engine of [chromium]) {
                 model.reset();
-                await withDaemon({ ...model.env, PLURNK_AUTH: "0", PLURNK_SERVICE_PROPOSALS: "review" }, async (base, daemon) => {
-                    const run = await controller(base);
+                await withDaemon({ ...model.env, PLURNK_SERVICE_PROPOSALS: "review" }, async (base, daemon) => {
+                    const run = controller(base);
                     const parameters = { workspace: "observer-approval" };
                     await run.send({ ...parameters, message: prompt("approval") });
                     assert.equal(run.pendingGates.length, 1);
@@ -994,7 +1019,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                             }
                         });
                         await page.goto(new URL("/search/", proxy.url).href);
-                        assert.equal(requests.some((request) => /session-.*\.js|\/auth\/token|\/acp/u.test(request.url())), false, "directory navigation needs no session runtime");
+                        assert.equal(requests.some((request) => /session-.*\.js/u.test(request.url())), false, "directory navigation needs no session runtime");
                         await page.goto(new URL("/~/observer-approval#user", proxy.url).href);
                         await connection(page, "interrupted");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false,
@@ -1003,7 +1028,6 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         assert.equal(await page.locator('[data-requests] input:checked').count(), 0, "passive discovery chooses nothing");
                         assert.equal(model.requests.length, 1, "the approval remains pending");
                         assert.equal(observations.length, 1, "one held passive observation");
-                        assert.equal(requests.some((request) => new URL(request.url()).pathname === "/auth/token"), false);
                         for (const request of requests) assert.equal(request.headers().authorization, undefined);
                         await run.send({
                             ...parameters,
@@ -1020,21 +1044,6 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         await connected(page);
                         assert.equal(model.requests.length, 2);
                         checkBrowser();
-
-                        const native = await browser.newContext({ javaScriptEnabled: false });
-                        const checkNative = browserDiagnostics(native);
-                        const nativePage = await native.newPage();
-                        const nativeRequests = [];
-                        nativePage.on("request", (request) => nativeRequests.push(request.url()));
-                        await nativePage.goto(new URL("/~/observer-approval#user", base).href);
-                        assert.equal(await nativePage.getByText("Live status requires JavaScript.", { exact: true }).isVisible(), true);
-                        assert.equal(await nativePage.locator("#session-status > [data-status-line]").isVisible(), false, "without delivery the footer cannot invent session state");
-                        assert.equal(await value(nativePage, "lifecycle"), null);
-                        assert.equal(await nativePage.getByText("No messages.", { exact: true }).isVisible(), false,
-                            "a native document without conversation delivery cannot claim the existing history is empty");
-                        assert.equal(nativeRequests.some((url) => /\/acp|\/auth\/token/u.test(url)), false);
-                        checkNative();
-                        await native.close();
 
                         proxy.drop();
                         await connection(page, "disconnected");

@@ -7,7 +7,7 @@ export const contentAttack = [
     "**Readable evidence**",
     '<script>window.contentExecuted=true</script>',
     '<span id="session-status" data-text="connection-label" data-bind="href:call-href">Forged control</span>',
-    '<form action="/auth/logout" method="post"><button>Injected sign out</button></form>',
+    '<form action="/render/mermaid" method="post"><button>Injected control</button></form>',
     '![automatic request](/security-probe)',
     '[unsafe](javascript:alert%281%29)',
 ].join("\n\n");

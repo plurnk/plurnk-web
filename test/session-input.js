@@ -7,12 +7,12 @@ import { launchBrowser } from "./engines.js";
 import startModel from "./model-fixture.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { PNG_1X1_BASE64 } from "./inline-images-browser.js";
-import testPasswordHash from "./password-hash.js";
+import startMockOidcIdp from "./mock-oidc-idp.js";
 
 /**
  * @typedef {object} SharedDaemonEntry
  * @property {Awaited<ReturnType<typeof startModel>>} model
- * @property {string} secret
+ * @property {Awaited<ReturnType<typeof startMockOidcIdp>> | null} idp
  * @property {string} base
  * @property {Record<string, string>} headers
  * @property {() => Promise<void>} close
@@ -36,11 +36,11 @@ export async function acquireSharedDaemon(withDaemon, authenticated, env = {}) {
     if (!pending) {
         pending = (async () => {
             const model = await startModel();
-            const secret = crypto.randomUUID();
+            const idp = authenticated ? await startMockOidcIdp({ autoApprove: true }) : null;
             const ready = Promise.withResolvers();
             const release = Promise.withResolvers();
             const done = withDaemon(
-                { ...model.env, ...env, PLURNK_AUTH: authenticated ? "1" : "0", PLURNK_AUTH_PASSWORD_HASH: testPasswordHash("compose-password"), PLURNK_SECRET: secret },
+                { ...model.env, ...(idp ? idp.env : {}), ...env },
                 async (base) => {
                     ready.resolve(base);
                     await release.promise;
@@ -50,21 +50,17 @@ export async function acquireSharedDaemon(withDaemon, authenticated, env = {}) {
             const base = await ready.promise;
             /** @type {Record<string, string>} */
             const headers = {};
-            if (authenticated) {
-                const response = await fetch(new URL("/oauth/token", base), {
-                    method: "POST", body: new URLSearchParams({ grant_type: "client_credentials", client_id: "operator", client_secret: secret, scope: "acp" }),
-                });
-                assert.equal(response.status, 200);
-                headers.Authorization = `Bearer ${(await response.json()).access_token}`;
+            if (idp) {
+                headers.Authorization = `Bearer ${idp.mintToken()}`;
             }
             return {
                 model,
-                secret,
+                idp,
                 base,
                 headers,
                 async close() {
                     release.resolve();
-                    await Promise.allSettled([done, model.close()]);
+                    await Promise.allSettled([done, model.close(), ...(idp ? [idp.close()] : [])]);
                 },
             };
         })();
@@ -84,12 +80,20 @@ after(closeSharedDaemons);
 const acpListeners = new WeakMap();
 const routedPages = new WeakSet();
 
+function isReadOnlyDirectoryAcp(body) {
+    if (body === null || typeof body !== "object") return false;
+    if (body.method === "session/list") return true;
+    return body.method === "_plurnk/action"
+        && ["workspace.list", "workspace.sessions", "session.loops"].includes(body.params?.kind);
+}
+
 function emitAcpPayload(listeners, payload, transport) {
     for (const line of String(payload).split("\n")) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         let parsed;
         try { parsed = JSON.parse(trimmed); } catch { continue; }
+        if (isReadOnlyDirectoryAcp(parsed)) continue;
         for (const fn of listeners) fn(parsed, transport);
     }
 }
@@ -117,7 +121,7 @@ export function installAcpRecorder(page) {
         if (pathname !== "/acp" || req.method() !== "POST") return;
         let body;
         try { body = req.postDataJSON(); } catch { return; }
-        if (body !== null) {
+        if (body !== null && !isReadOnlyDirectoryAcp(body)) {
             for (const fn of listeners) fn(body, "http");
         }
     });
@@ -168,7 +172,7 @@ export async function routeAcpWebSocket(page, handler) {
 
 export async function inputPage(withDaemon, verify, { authenticated = false, hostname = "127.0.0.1", env = {}, modelOptions = {}, selector = "browser", contextOptions = {} } = {}) {
     const shared = await acquireSharedDaemon(withDaemon, authenticated, env);
-    const { model, secret, base } = shared;
+    const { model, idp, base } = shared;
     for (const engine of [chromium]) {
         model.reset(modelOptions);
         const headers = { ...shared.headers };
@@ -190,21 +194,36 @@ export async function inputPage(withDaemon, verify, { authenticated = false, hos
             });
             context.on("page", installAcpRecorder);
             const checkBrowser = browserDiagnostics(context);
-            const page = await context.newPage();
             const address = new URL(`/~/${workspace}#session1`, base);
             address.hostname = hostname;
             const path = address.href;
+            if (authenticated && idp && hostname !== "127.0.0.1") {
+                const seededGrant = {
+                    acpOrigin: address.origin,
+                    issuer: idp.issuer,
+                    clientId: idp.clientId,
+                    tokenEndpoint: `${idp.issuer}/token`,
+                    accessToken: idp.mintToken(),
+                };
+                await context.addInitScript((grant) => {
+                    if (location.protocol === "about:") return;
+                    localStorage.setItem("plurnk_oidc_grant", JSON.stringify(grant));
+                }, seededGrant);
+            }
+            const page = await context.newPage();
             await page.goto(path);
-            if (authenticated) {
-                await page.getByLabel("Password", { exact: true }).fill("compose-password");
-                await page.getByRole("button", { name: "Continue", exact: true }).click();
+            if (authenticated && hostname === "127.0.0.1") {
                 await page.waitForURL((url) => new URL(url).pathname === `/~/${workspace}`);
-                if (hostname !== "127.0.0.1" && engine.name() === "firefox") {
-                    checkBrowser([/^warning \/oauth\/authorize: .*Password fields present on an insecure \(http:\/\/\) page/u]);
-                }
             }
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-            try { await verify({ page, context, path, base, model, checkBrowser, workspace, setup, headers, secret, engine }); }
+            if (authenticated && hostname === "127.0.0.1") {
+                checkBrowser([
+                    Object.assign(httpFailure("/acp", 401), { optional: true }),
+                    Object.assign(httpFailure("/notifications", 401), { optional: true }),
+                    Object.assign(networkFailure("/acp"), { optional: true }),
+                ]);
+            }
+            try { await verify({ page, context, path, base, model, idp, checkBrowser, workspace, setup, headers, engine }); }
             catch (cause) {
                 const document = page.isClosed() ? "Page closed" : await page.locator("main").textContent();
                 const message = `Session journey failed (${engine.name()}): ${JSON.stringify({ document, modelErrors: model.errors.map(String) })}`;
@@ -270,7 +289,6 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await page.locator("[data-settings-back]").click();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
         await routeAcpWebSocket(page, (ws) => ws.close({ code: 3001, reason: "Unavailable" }));
-        await page.route("**/acp", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
         await page.reload();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
         await field.fill("Retain this draft while disconnected.");
@@ -687,24 +705,48 @@ export default async function verifySessionInput({ t, withDaemon }) {
         checkBrowser();
     }));
 
-    for (const [label, status, body, explanation] of [
-        ["HTTP failure", 502, '{"access_token":"not-a-diagnostic"}', "Access credential request failed (502)."],
-        ["invalid JSON", 200, '{"access_token":"not-a-diagnostic",', "Access credential response is not valid JSON."],
-        ["invalid shape", 200, '{"access_token":"not-a-diagnostic","token_type":"Unknown"}', "Invalid access credential response."],
-        ["null response", 200, "null", "Invalid access credential response."],
+    for (const [label, status, body] of [
+        ["HTTP failure", 502, '{"access_token":"not-a-diagnostic"}'],
+        ["invalid JSON", 200, '{"access_token":"not-a-diagnostic",'],
+        ["invalid shape", 200, '{"token_type":"Unknown"}'],
+        ["null response", 200, "null"],
     ]) {
-        await t.test(`{§web-session-observer} ${label} retains safe failure detail and never exposes credential bytes`, () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
-            await page.route("**/auth/token", (route) => route.fulfill({ status, contentType: "application/json", body }), { times: 1 });
+        await t.test(`{§web-session-observer} {§web-oidc} ${label} on OIDC token refresh never exposes credential bytes and preserves the draft`, () => inputPage(withDaemon, async ({ page, idp, model, checkBrowser }) => {
+            await page.evaluate(() => {
+                const current = JSON.parse(localStorage.getItem("plurnk_oidc_grant") ?? "{}");
+                localStorage.setItem("plurnk_oidc_grant", JSON.stringify({ ...current, expiresAt: 1 }));
+            });
+            await page.route(`${idp.issuer}/token`, (route) => route.fulfill({
+                status,
+                headers: { "access-control-allow-origin": "*" },
+                contentType: "application/json",
+                body,
+            }), { times: 2 });
             const field = page.getByRole("textbox", { name: "Message", exact: true });
             await field.fill("Keep this draft on credential failure.");
             await page.getByRole("button", { name: "Send", exact: true }).click();
-            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "disconnected");
-            assert.ok((await page.locator('#session-connection').innerText()).includes(explanation));
+            await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
             assert.doesNotMatch(await page.locator("body").innerText(), /not-a-diagnostic/u);
             assert.equal(await field.inputValue(), "Keep this draft on credential failure.");
             assert.equal(model.requests.length, 0);
-            checkBrowser(status === 200 ? [] : [httpFailure("/auth/token", status)]);
-            await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+            checkBrowser([
+                ...(status === 200 ? [] : [
+                    Object.assign(httpFailure("/token", status), { optional: true }),
+                    Object.assign(httpFailure("/token", status), { optional: true }),
+                ]),
+                Object.assign(httpFailure("/acp", 401), { optional: true }),
+                Object.assign(networkFailure("/acp"), { optional: true }),
+            ]);
+            await page.evaluate((freshToken) => {
+                localStorage.setItem("plurnk_oidc_grant", JSON.stringify(freshToken));
+            }, {
+                acpOrigin: new URL(page.url()).origin,
+                issuer: idp.issuer,
+                clientId: idp.clientId,
+                tokenEndpoint: `${idp.issuer}/token`,
+                accessToken: idp.mintToken(),
+            });
+            await page.reload();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             assert.equal(await field.inputValue(), "Keep this draft on credential failure.");
             assert.equal(model.requests.length, 0, "reconnection repairs delivery, not resubmits the draft");
@@ -741,28 +783,29 @@ export default async function verifySessionInput({ t, withDaemon }) {
         checkBrowser();
     }));
 
-    await t.test("{§web-session-input} expired browser authority cannot submit or silently replace a draft", () => inputPage(withDaemon, async ({ page, context, base, model, checkBrowser }) => {
-        const reached = Promise.withResolvers();
-        const release = Promise.withResolvers();
-        await page.route("**/auth/token", async (route) => {
-            reached.resolve();
-            await release.promise;
-            await route.continue();
-        }, { times: 1 });
+    await t.test("{§web-session-input} {§web-oidc} expired browser authority cannot submit or silently replace a draft", () => inputPage(withDaemon, async ({ page, idp, model, checkBrowser }) => {
         const text = page.getByRole("textbox", { name: "Message", exact: true });
-        try {
-            await text.fill("Lifecycle fixture: unauthorised.");
-            await page.getByRole("button", { name: "Send", exact: true }).click();
-            await reached.promise;
-            const logout = await context.request.post(new URL("/auth/logout", base).href, { headers: { Origin: new URL(base).origin }, maxRedirects: 0 });
-            assert.equal(logout.status(), 303);
-        } finally { release.resolve(); }
+        await text.fill("Lifecycle fixture: unauthorised.");
+        await page.evaluate(() => {
+            const current = JSON.parse(localStorage.getItem("plurnk_oidc_grant") ?? "{}");
+            localStorage.setItem("plurnk_oidc_grant", JSON.stringify({
+                ...current,
+                refreshToken: "revoked-refresh-token",
+                expiresAt: 1,
+            }));
+        });
+        await page.getByRole("button", { name: "Send", exact: true }).click();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
         assert.equal(await text.inputValue(), "Lifecycle fixture: unauthorised.");
         assert.equal(model.requests.length, 0);
         assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isDisabled(), true);
-        assert.equal(await page.getByRole("link", { name: "Sign in", exact: true }).isVisible(), true);
-        checkBrowser([httpFailure("/auth/token", 401)]);
+        assert.equal(await page.getByRole("button", { name: "Sign in", exact: true }).isVisible(), true);
+        checkBrowser([
+            Object.assign(httpFailure("/token", 400), { optional: true }),
+            Object.assign(httpFailure("/acp", 401), { optional: true }),
+            Object.assign(networkFailure("/acp"), { optional: true }),
+        ]);
+        void idp;
     }, { authenticated: true }));
 
     await t.test("{§web-session-input} delivery lost before acknowledgement is rediscovered without submitting again", () => inputPage(withDaemon, async ({ page, model, checkBrowser }) => {

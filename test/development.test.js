@@ -10,6 +10,7 @@ import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { chromium } from "playwright";
 import { build, createServer, preview } from "vite";
 import createDevModule from "../scripts/dev-module.mjs";
+import Documents from "../src/documents.js";
 import verifyDirectories from "./directories.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
@@ -27,7 +28,6 @@ async function copySources(directory) {
 }
 
 test("{§web-build} development reloads HTML and hot-updates CSS without the daemon", { timeout: 30_000 }, async () => {
-    // Keep dependency resolution local while editing only a disposable source copy.
     const directory = await mkdtemp(new URL("../.vite-test-", import.meta.url));
     let server;
     let browser;
@@ -108,40 +108,38 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
         for (const server of [development, compiled]) {
             const base = `http://127.0.0.1:${server.httpServer.address().port}`;
             await verifyDirectories(base);
-            for (const javaScriptEnabled of [false, true]) {
-                const context = await browser.newContext({ javaScriptEnabled });
-                const checkBrowser = browserDiagnostics(context);
-                try {
-                    const page = await context.newPage();
-                    const navigations = [];
-                    page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
-                    await page.goto(`${base}/`);
-                    if (javaScriptEnabled) await page.evaluate(() => import(document.querySelector('script[type="module"]').src));
-                    await page.getByRole("link", { name: "Nested document" }).click();
-                    await page.waitForURL(`${base}/nested/?q=one%2Ftwo#greeting`);
-                    assert.equal(await page.locator("h1").innerText(), "Nested document");
-                    assert.ok(navigations.some((url) => url.includes("/nested/?q=")), "link requests the document instead of replacing it in JavaScript");
-                    await page.reload();
-                    assert.equal(await page.locator("h1").innerText(), "Nested document");
-                    await page.getByRole("link", { name: "Explicit index" }).click();
-                    await page.waitForURL(`${base}/nested/index.html`);
-                    assert.equal(await page.locator("h1").innerText(), "Nested document");
-                    await page.getByRole("link", { name: "Child resource" }).click();
-                    await page.waitForURL(`${base}/nested/child.txt`);
-                    assert.match(await page.locator("body").innerText(), /Child resource/u);
-                    await page.goBack();
-                    assert.equal(page.url(), `${base}/nested/index.html`);
-                    await page.goForward();
-                    assert.equal(page.url(), `${base}/nested/child.txt`);
-                    await page.goBack();
-                    await page.getByRole("link", { name: "Parent" }).click();
-                    await page.waitForURL(`${base}/`);
-                    assert.equal(await page.locator("main h1").count(), 0);
-                    assert.equal(await page.title(), "Plurnk");
-                    checkBrowser();
-                } finally {
-                    await context.close();
-                }
+            const context = await browser.newContext();
+            const checkBrowser = browserDiagnostics(context);
+            try {
+                const page = await context.newPage();
+                const navigations = [];
+                page.on("request", (request) => { if (request.isNavigationRequest()) navigations.push(request.url()); });
+                await page.goto(`${base}/`);
+                await page.evaluate(() => import(document.querySelector('script[type="module"]').src));
+                await page.getByRole("link", { name: "Nested document" }).click();
+                await page.waitForURL(`${base}/nested/?q=one%2Ftwo#greeting`);
+                assert.equal(await page.locator("h1").innerText(), "Nested document");
+                assert.ok(navigations.some((url) => url.includes("/nested/?q=")), "link requests the document instead of replacing it in JavaScript");
+                await page.reload();
+                assert.equal(await page.locator("h1").innerText(), "Nested document");
+                await page.getByRole("link", { name: "Explicit index" }).click();
+                await page.waitForURL(`${base}/nested/index.html`);
+                assert.equal(await page.locator("h1").innerText(), "Nested document");
+                await page.getByRole("link", { name: "Child resource" }).click();
+                await page.waitForURL(`${base}/nested/child.txt`);
+                assert.match(await page.locator("body").innerText(), /Child resource/u);
+                await page.goBack();
+                assert.equal(page.url(), `${base}/nested/index.html`);
+                await page.goForward();
+                assert.equal(page.url(), `${base}/nested/child.txt`);
+                await page.goBack();
+                await page.getByRole("link", { name: "Parent" }).click();
+                await page.waitForURL(`${base}/`);
+                assert.equal(await page.locator("main h1").count(), 0);
+                assert.equal(await page.title(), "Plurnk");
+                checkBrowser();
+            } finally {
+                await context.close();
             }
         }
     } finally {
@@ -152,7 +150,7 @@ test("{§web-index-documents} Vite dev and compiled preview preserve native dire
     }
 });
 
-test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve live source edits on a mounted daemon without restarting", { timeout: 60_000 }, async () => {
+test("{§web-build} {§web-assets} dev-loader and dev-module serve live source edits on a mounted daemon without restarting", { timeout: 60_000 }, async () => {
     const loaderPath = fileURLToPath(new URL("../scripts/dev-loader.mjs", import.meta.url));
     const expectedModule = new URL("../scripts/dev-module.mjs", import.meta.url).href;
     const expectedManifest = new URL("../package.json", import.meta.url).href;
@@ -179,32 +177,28 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
             documentsUrl: pathToFileURL(documentsFile),
         });
 
-        let registeredStylesheetPath = null;
-        await mod.setup({
-            credentials: {
-                registerClient(spec) {
-                    registeredStylesheetPath = spec.stylesheetPath ?? null;
-                    return { clientId: spec.id, clientSecret: "secret" };
-                },
-            },
-        });
-        assert.ok(typeof registeredStylesheetPath === "string" && registeredStylesheetPath.endsWith(".css"));
+        await mod.setup({});
 
         let routeHandler = null;
         await mod.start({
             credentials: null,
             registerHttpRoute(_mount, handler) { routeHandler = handler; },
-            listWorkspaces: async () => [],
-            listSessions: async () => [],
-            createWorkspace: async () => ({ workspaceId: 1, workspaceName: "alpha", projectRoot: null, projectLabel: null }),
-            renameWorkspace: async () => ({ name: "alpha" }),
-            createSession: async () => ({ sessionId: 1, sessionName: "session1" }),
-            setWorkspaceArchived: async () => ({}),
-            setSessionArchived: async () => ({}),
         });
         assert.equal(typeof routeHandler, "function");
 
-        httpServer = createHttpServer((req, res) => { routeHandler(req, res); });
+        httpServer = createHttpServer((req, res) => {
+            if (req.url?.startsWith("/acp")) {
+                res.writeHead(200, { "content-type": "application/json", "acp-connection-id": "dev-conn" });
+                res.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { workspaces: [], sessions: [] } }));
+                return;
+            }
+            if (req.url?.startsWith("/notifications")) {
+                res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+                res.write(":\n\n");
+                return;
+            }
+            routeHandler(req, res);
+        });
         await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
         const base = `http://127.0.0.1:${httpServer.address().port}`;
 
@@ -214,8 +208,12 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
         const page = await context.newPage();
 
         await page.goto(`${base}/search/`);
-        assert.match(await page.locator("main").innerText(), /No matching workspaces\./u);
-        const initialCss = await page.request.get(`${base}${registeredStylesheetPath}`);
+        assert.equal(
+            await page.locator('#search-controls input[name="q"]').getAttribute("placeholder"),
+            "Search workspaces and sessions…",
+        );
+        const stylesheetPath = Documents.stylesheet(await (await fetch(`${base}/search/`)).text());
+        const initialCss = await page.request.get(`${base}${stylesheetPath}`);
         assert.equal(initialCss.status(), 200);
 
         const htmlFile = join(root, "index.html");
@@ -225,7 +223,7 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
             stylesFile,
             (await readFile(stylesFile, "utf8")).replace(/\}\s*$/u, "    :root { --dev-live-probe: 17px; }\n}\n"),
         );
-        await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replaceAll("No matching workspaces.", "Zero workspaces yet."));
+        await writeFile(documentsFile, (await readFile(documentsFile, "utf8")).replaceAll("Search workspaces and sessions…", "Filter live workspaces…"));
 
         await page.reload();
         assert.equal(await page.locator('header a[title="Live search"]').count(), 1);
@@ -233,7 +231,10 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
             await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--dev-live-probe").trim()),
             "17px",
         );
-        assert.match(await page.locator("main").innerText(), /Zero workspaces yet\./u);
+        assert.equal(
+            await page.locator('#search-controls input[name="q"]').getAttribute("placeholder"),
+            "Filter live workspaces…",
+        );
 
         const rawGet = (url, encoding) => new Promise((resolve, reject) => {
             httpGet(url, { headers: { "accept-encoding": encoding } }, (res) => {
@@ -244,16 +245,17 @@ test("{§web-build} {§web-authorization-style} dev-loader and dev-module serve 
             }).on("error", reject);
         });
 
-        const updatedAuthCss = await rawGet(`${base}${registeredStylesheetPath}`, "br");
-        assert.equal(updatedAuthCss.status, 200);
-        assert.equal(updatedAuthCss.headers["content-encoding"], "br");
-        const cssText = brotliDecompressSync(updatedAuthCss.body).toString("utf8");
+        const updatedStylesheetPath = Documents.stylesheet(await (await fetch(`${base}/search/`)).text());
+        const updatedCss = await rawGet(`${base}${updatedStylesheetPath}`, "br");
+        assert.equal(updatedCss.status, 200);
+        assert.equal(updatedCss.headers["content-encoding"], "br");
+        const cssText = brotliDecompressSync(updatedCss.body).toString("utf8");
         assert.match(cssText, /--dev-live-probe:\s*17px/u);
 
-        const gzipAuthCss = await rawGet(`${base}${registeredStylesheetPath}`, "gzip");
-        assert.equal(gzipAuthCss.status, 200);
-        assert.equal(gzipAuthCss.headers["content-encoding"], "gzip");
-        assert.equal(gunzipSync(gzipAuthCss.body).toString("utf8"), cssText);
+        const gzipCss = await rawGet(`${base}${updatedStylesheetPath}`, "gzip");
+        assert.equal(gzipCss.status, 200);
+        assert.equal(gzipCss.headers["content-encoding"], "gzip");
+        assert.equal(gunzipSync(gzipCss.body).toString("utf8"), cssText);
 
         checkBrowser();
         await context.close();
