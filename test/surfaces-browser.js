@@ -7,7 +7,7 @@ import browserDiagnostics from "./browser-diagnostics.js";
 export const messages = [
     { id: "user", role: "user", content: "Please inspect [the evidence](https://example.com/)." },
     { id: "decorated-user", role: "user", content: "An incoming user message.", _meta: { plurnk: { op: "send", origin: "_plurnk", target: "session://session1" } } },
-    { id: "actor-inbound", role: "user", content: "Inbound message from [scoutproxy](https://example.com/).", _meta: { plurnk: { op: "send", origin: "_plurnk", voice: "scoutproxy" } } },
+    { id: "actor-inbound", role: "user", content: "Inbound message from [scoutproxy](https://example.com/).", _meta: { plurnk: { op: "send", origin: "_plurnk", actor: "scoutproxy" } } },
     { id: "actor-outbound", role: "tool", toolCallId: "actor-delivered", content: "Reply to [scoutproxy](https://example.com/).", _meta: { plurnk: { op: "done", signal: 200, receipt: { repliedToSources: ["acp://scoutproxy/threads/1"] } } } },
     { id: "assistant", role: "assistant", content: "I will inspect [the evidence](https://example.com/).", toolCalls: [
         { toolCallId: "generic", name: "send", rawInput: {} },

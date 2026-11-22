@@ -41,12 +41,12 @@ import operationSummary, { GLYPH_OPS, argumentsOf, bodyOf, receiptOf, record } f
 const isReplyOp = (value) => value === "send" || value === "done" || value === "fail";
 
 /**
- * {§web-session-conversation} Extract non-operator actor voice and intra-workspace session target from ACP metadata.
+ * {§web-session-conversation} Extract non-operator actor name and intra-workspace session target from ACP metadata.
  * @param {boolean} inbound
  * @param {Record<string, unknown> | null} facts
  * @param {Record<string, unknown> | null} receipt
  * @param {Record<string, unknown> | null} args
- * @returns {{ readonly voice: string, readonly sessionTarget: string | null } | null}
+ * @returns {{ readonly actor: string, readonly sessionTarget: string | null } | null}
  */
 function extractActorInfo(inbound, facts, receipt, args) {
     /** @type {unknown[]} */
@@ -65,17 +65,23 @@ function extractActorInfo(inbound, facts, receipt, args) {
             try {
                 const peer = decodeURIComponent(sessionMatch[1] ?? "").trim();
                 if (peer.length > 0 && peer !== "_plurnk") {
-                    return { voice: `#${peer}`, sessionTarget: peer };
+                    return { actor: `#${peer}`, sessionTarget: peer };
                 }
             } catch { /* fall through */ }
             continue;
         }
-        const acpMatch = /^acp:\/\/([^/?#]+)/u.exec(candidate);
-        if (acpMatch !== null) {
+        const exteriorMatch = /^(?:acp|mcp):\/\/([^/?#]+)/u.exec(candidate);
+        if (exteriorMatch !== null) {
             try {
-                const principal = decodeURIComponent(acpMatch[1] ?? "").trim();
-                if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
-                    return { voice: principal, sessionTarget: null };
+                const principal = decodeURIComponent(exteriorMatch[1] ?? "").trim();
+                if (
+                    principal.length > 0 &&
+                    principal !== "operator" &&
+                    principal !== "anonymous" &&
+                    principal !== "client" &&
+                    principal !== "owner"
+                ) {
+                    return { actor: principal, sessionTarget: null };
                 }
             } catch { /* fall through */ }
             continue;
@@ -83,8 +89,14 @@ function extractActorInfo(inbound, facts, receipt, args) {
         const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
         if (messageMatch !== null) {
             const principal = (messageMatch[1] ?? "").trim();
-            if (principal.length > 0 && principal !== "operator" && principal !== "anonymous") {
-                return { voice: principal, sessionTarget: null };
+            if (
+                principal.length > 0 &&
+                principal !== "operator" &&
+                principal !== "anonymous" &&
+                principal !== "client" &&
+                principal !== "owner"
+            ) {
+                return { actor: principal, sessionTarget: null };
             }
             continue;
         }
@@ -93,15 +105,21 @@ function extractActorInfo(inbound, facts, receipt, args) {
             try {
                 const alias = decodeURIComponent(scheduleMatch[1] ?? "").trim();
                 if (alias.length > 0) {
-                    return { voice: `schedule:${alias}`, sessionTarget: null };
+                    return { actor: `schedule:${alias}`, sessionTarget: null };
                 }
             } catch { /* fall through */ }
         }
     }
-    if (typeof facts?.voice === "string") {
-        const direct = facts.voice.trim();
-        if (direct.length > 0 && direct !== "operator" && direct !== "anonymous") {
-            return { voice: direct, sessionTarget: null };
+    if (typeof facts?.actor === "string") {
+        const direct = facts.actor.trim();
+        if (
+            direct.length > 0 &&
+            direct !== "operator" &&
+            direct !== "anonymous" &&
+            direct !== "client" &&
+            direct !== "owner"
+        ) {
+            return { actor: direct, sessionTarget: null };
         }
     }
     return null;
@@ -533,17 +551,17 @@ export default function conversation(root, readBody) {
             : message.role === "activity" ? message.activityType : labels[message.role];
         const author = "name" in message ? message.name : undefined;
         const actor = conversational ? extractActorInfo(message.role === "user", facts, receipt, args) : null;
-        const voiceDirection = actor ? (message.role === "user" ? "inbound" : "outbound") : null;
+        const actorDirection = actor ? (message.role === "user" ? "inbound" : "outbound") : null;
         const actorDescription = actor
-            ? (voiceDirection === "inbound" ? `From ${actor.voice}` : `To ${actor.voice}`)
+            ? (actorDirection === "inbound" ? `From ${actor.actor}` : `To ${actor.actor}`)
             : null;
         the(row, {
             "message-id": message.id,
             "message-role": message.role,
             "message-label": [label, author, actorDescription, message.subagentRunId ? `Subagent ${message.subagentRunId}` : null].filter(Boolean).join(" · "),
             "message-author": author ?? null,
-            "message-voice": actor?.voice ?? null,
-            "voice-direction": voiceDirection,
+            "actor": actor?.actor ?? null,
+            "actor-direction": actorDirection,
             "subagent-run-id": message.subagentRunId ?? null,
             "message-error": error ? true : null,
             "tool-call-id": message.role === "tool" ? message.toolCallId : null,
@@ -636,10 +654,10 @@ export default function conversation(root, readBody) {
                         }
                         the(actorBadge, {
                             "actor-href": `#${encodeURIComponent(actor.sessionTarget)}`,
-                            "actor-name": actor.voice,
+                            "actor-name": actor.actor,
                         });
                     } else {
-                        the(actorBadge, { "actor-name": actor.voice });
+                        the(actorBadge, { "actor-name": actor.actor });
                     }
                 }
             } else if (actorBadge) {
