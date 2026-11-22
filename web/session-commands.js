@@ -1,9 +1,8 @@
-import { $, $$, on, the } from "on_the_money";
+import { $, on, the } from "on_the_money";
 import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
 import { isRecord } from "./session-translator.js";
-import { listModels, sessionConfigOption, sessionEffort, sessionModel, modelLabel } from "./session-models.js";
+import { sessionConfigOption, sessionEffort, sessionModel, modelLabel } from "./session-models.js";
 import { allowOptionId, rejectOptionId } from "./session-review.js";
-import { populateEnvPanel } from "./env-panel.js";
 import describeFailure from "./failure.js";
 
 /** @returns {"⌘" | "Ctrl"} */
@@ -71,7 +70,9 @@ export const SLASH_COMMAND_NAMES = Object.freeze([
     "/learn",
     "/review",
     "/accept",
+    "/approve",
     "/reject",
+    "/cancel",
     "/edit",
     "/answer",
     "/stop",
@@ -90,6 +91,287 @@ export const SLASH_COMMAND_NAMES = Object.freeze([
     "/newer",
     "/script",
 ]);
+
+const ZERO_ARG_COMMANDS = new Set([
+    "/yolo",
+    "/stop",
+    "/onboard",
+    "/update",
+    "/workspaces",
+    "/sessions",
+    "/loops",
+    "/review",
+    "/parent",
+    "/enter",
+    "/older",
+    "/newer",
+]);
+
+const FAMILY_SUBCOMMANDS = Object.freeze({
+    mcp: ["list", "enable", "disable", "remove", "oauth", "discover", "add", "replace", "skills", "complete"],
+    skills: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
+    schedule: ["list", "run", "enable", "disable", "done", "reopen", "remove", "discover", "add", "replace"],
+    personas: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
+    members: ["list", "enable", "disable", "remove", "discover", "add"],
+    env: ["list", "set", "unset", "enable", "disable", "remove", "--scope"],
+});
+
+const FAMILY_ALIAS_SUBS = new Set(["enable", "disable", "remove", "oauth", "run", "done", "reopen", "unset"]);
+
+/**
+ * @typedef {{
+ *   readonly availableCommands?: readonly { readonly name: string, readonly type?: string }[],
+ *   readonly promptSuggestions?: readonly string[],
+ *   readonly models?: readonly string[],
+ *   readonly efforts?: readonly string[],
+ *   readonly personas?: readonly string[],
+ *   readonly childModels?: readonly string[],
+ *   readonly modes?: readonly string[],
+ *   readonly workspaces?: readonly string[],
+ *   readonly sessions?: readonly string[],
+ *   readonly loops?: readonly string[],
+ *   readonly gateIds?: readonly string[],
+ *   readonly familyAliases?: Partial<Record<"mcp" | "skills" | "schedule" | "personas" | "members" | "env", readonly string[]>>,
+ * }} SuggestionSources
+ */
+
+/**
+ * @param {readonly string[]} candidates
+ * @param {string} partial
+ * @param {boolean} terminal
+ * @returns {readonly string[]}
+ */
+function filterCandidates(candidates, partial, terminal) {
+    const seen = new Set();
+    /** @type {string[]} */
+    const unique = [];
+    for (const raw of candidates) {
+        if (typeof raw !== "string" || !raw || seen.has(raw)) continue;
+        seen.add(raw);
+        unique.push(raw);
+    }
+    const needle = partial.toLowerCase();
+    if (!needle) return unique;
+    const prefixMatches = unique.filter((item) => item.toLowerCase().startsWith(needle));
+    const substringMatches = unique.filter((item) => !item.toLowerCase().startsWith(needle) && item.toLowerCase().includes(needle));
+    const combined = [...prefixMatches, ...substringMatches];
+    if (terminal && combined.length === 1 && combined[0] === partial) {
+        return [];
+    }
+    return combined;
+}
+
+/**
+ * @param {string} cmd
+ * @param {readonly string[]} completedArgs
+ * @param {SuggestionSources} sources
+ * @returns {{ candidates: readonly string[], advances: boolean }}
+ */
+function resolveArgumentStage(cmd, completedArgs, sources) {
+    if (cmd === "model") {
+        if (completedArgs.length === 0) {
+            return { candidates: sources.models ?? [], advances: (sources.efforts?.length ?? 0) > 0 };
+        }
+        if (completedArgs.length === 1) {
+            return { candidates: sources.efforts ?? [], advances: false };
+        }
+        return { candidates: [], advances: false };
+    }
+    if (cmd === "effort") {
+        return completedArgs.length === 0
+            ? { candidates: sources.efforts ?? [], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "persona") {
+        return completedArgs.length === 0
+            ? { candidates: sources.personas ?? ["none"], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "child") {
+        return completedArgs.length === 0
+            ? { candidates: ["inherit", ...(sources.childModels ?? sources.models ?? [])], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "mode") {
+        return completedArgs.length === 0
+            ? { candidates: sources.modes ?? ["review", "accept", "reject"], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "workspace") {
+        return completedArgs.length === 0
+            ? { candidates: sources.workspaces ?? [], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "session") {
+        return completedArgs.length === 0
+            ? { candidates: sources.sessions ?? [], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "loop") {
+        return completedArgs.length === 0
+            ? { candidates: sources.loops ?? [], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "help") {
+        return completedArgs.length === 0
+            ? { candidates: [...helpCommands], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "learn") {
+        if (completedArgs.length === 0) {
+            return { candidates: ["--scope"], advances: true };
+        }
+        if (completedArgs.length === 1 && completedArgs[0] === "--scope") {
+            return { candidates: ["project", "plurnk"], advances: true };
+        }
+        return { candidates: [], advances: false };
+    }
+    if (cmd === "accept" || cmd === "approve" || cmd === "reject" || cmd === "cancel") {
+        return completedArgs.length === 0
+            ? { candidates: sources.gateIds ?? [], advances: false }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "edit" || cmd === "answer") {
+        return completedArgs.length === 0
+            ? { candidates: sources.gateIds ?? [], advances: true }
+            : { candidates: [], advances: false };
+    }
+    if (cmd === "env") {
+        const envVars = sources.familyAliases?.env ?? [];
+        if (completedArgs[0] === "--scope") {
+            if (completedArgs.length === 1) return { candidates: ["session", "workspace"], advances: true };
+            if (completedArgs.length === 2) return { candidates: ["list", "set", "unset", "enable", "disable", "remove"], advances: true };
+            if (completedArgs.length === 3 && FAMILY_ALIAS_SUBS.has(completedArgs[2] ?? "")) {
+                return { candidates: envVars, advances: false };
+            }
+            return { candidates: [], advances: false };
+        }
+        if (completedArgs.length === 0) {
+            return { candidates: FAMILY_SUBCOMMANDS.env, advances: true };
+        }
+        if (completedArgs.length === 1 && FAMILY_ALIAS_SUBS.has(completedArgs[0] ?? "")) {
+            return { candidates: envVars, advances: false };
+        }
+        return { candidates: [], advances: false };
+    }
+    if (cmd === "mcp" || cmd === "skills" || cmd === "schedule" || cmd === "personas" || cmd === "members") {
+        if (completedArgs.length === 0) {
+            return { candidates: FAMILY_SUBCOMMANDS[cmd], advances: true };
+        }
+        const sub = completedArgs[0] ?? "";
+        if (completedArgs.length === 1 && FAMILY_ALIAS_SUBS.has(sub)) {
+            const aliases = sources.familyAliases?.[cmd] ?? [];
+            return { candidates: aliases, advances: sub === "oauth" };
+        }
+        if (cmd === "mcp" && completedArgs.length === 2 && sub === "oauth") {
+            return { candidates: ["begin", "complete"], advances: false };
+        }
+        return { candidates: [], advances: false };
+    }
+    return { candidates: [], advances: false };
+}
+
+/**
+ * {§web-session-commands} {§web-session-input} Compute live-narrowing pill candidates across command and argument stages.
+ * @param {string} rawInput
+ * @param {SuggestionSources} [sources]
+ * @param {{ readonly allowPromptSuggestions?: boolean }} [options]
+ * @returns {{ readonly kind: "command" | "arg" | "skill" | "prompt", readonly items: readonly string[], readonly advances: boolean }}
+ */
+export function computeCommandSuggestions(rawInput, sources = {}, options = {}) {
+    const available = sources.availableCommands ?? [];
+    const slashMatch = /^\s*\/([a-z0-9_-]*)$/iu.exec(rawInput);
+    if (slashMatch) {
+        const typed = (slashMatch[1] ?? "").toLowerCase();
+        const prefix = `/${typed}`;
+        const dynamic = available
+            .filter((c) => c.type !== "skill" && typeof c.name === "string" && c.name.length > 0)
+            .map((c) => `/${c.name}`);
+        const skills = typed === ""
+            ? available
+                .filter((c) => c.type === "skill" && typeof c.name === "string" && c.name.length > 0)
+                .map((c) => `$${c.name}`)
+            : [];
+        const all = [...new Set([...SLASH_COMMAND_NAMES, ...dynamic])];
+        const matches = all.filter((cmd) => cmd.toLowerCase().startsWith(prefix));
+        if (matches.length === 1 && matches[0] === prefix && ZERO_ARG_COMMANDS.has(prefix)) {
+            return { kind: "command", items: [], advances: false };
+        }
+        return { kind: "command", items: [...matches, ...skills], advances: true };
+    }
+
+    const trimmedStart = rawInput.trimStart();
+    if (!trimmedStart.startsWith(": ") && !rawInput.includes("\n")) {
+        const argMatch = /^\/([a-z0-9_-]+)\s+([\s\S]*)$/iu.exec(trimmedStart);
+        if (argMatch) {
+            const cmd = (argMatch[1] ?? "").toLowerCase();
+            const restRaw = argMatch[2] ?? "";
+            const endsWithSpace = restRaw === "" || /\s$/u.test(restRaw);
+            const parts = restRaw.trim() ? restRaw.trim().split(/\s+/u) : [];
+            const completedArgs = endsWithSpace ? parts : parts.slice(0, -1);
+            const partial = endsWithSpace ? "" : (parts.at(-1) ?? "");
+            const { candidates, advances } = resolveArgumentStage(cmd, completedArgs, sources);
+            const items = filterCandidates(candidates, partial, !advances);
+            if (items.length > 0) {
+                return { kind: "arg", items, advances };
+            }
+        }
+    }
+
+    const skillMatch = /(?:^|\s)\$([a-z0-9_-]*)$/iu.exec(rawInput);
+    if (skillMatch) {
+        const prefix = (skillMatch[1] ?? "").toLowerCase();
+        const skills = available
+            .filter((c) => c.type === "skill" && typeof c.name === "string" && c.name.toLowerCase().startsWith(prefix))
+            .map((c) => `$${c.name}`);
+        if (skills.length > 0) return { kind: "skill", items: skills, advances: true };
+    }
+
+    const prompts = rawInput === "" && options.allowPromptSuggestions === true
+        ? (sources.promptSuggestions ?? [])
+        : [];
+    return { kind: "prompt", items: prompts, advances: false };
+}
+
+/**
+ * {§web-session-commands} {§web-session-input} Apply a chosen pill or `Tab` completion to `rawInput`.
+ * @param {string} rawInput
+ * @param {string} suggestion
+ * @param {SuggestionSources} [sources]
+ * @returns {string}
+ */
+export function acceptCommandSuggestion(rawInput, suggestion, sources = {}) {
+    const text = suggestion.trim();
+    if (!text) return rawInput;
+    if (text.startsWith("$") && /(?:^|\s)\$[a-z0-9_-]*$/iu.test(rawInput)) {
+        return rawInput.replace(/\$[a-z0-9_-]*$/iu, `${text} `);
+    }
+    if (text.startsWith("$") && /^\s*\/$/u.test(rawInput)) {
+        return `${text} `;
+    }
+    if (text.startsWith("/") && /^\s*\/[a-z0-9_-]*$/iu.test(rawInput)) {
+        return ZERO_ARG_COMMANDS.has(text) ? text : `${text} `;
+    }
+    const trimmedStart = rawInput.trimStart();
+    if (!trimmedStart.startsWith(": ") && !rawInput.includes("\n")) {
+        const argMatch = /^\/([a-z0-9_-]+)\s+([\s\S]*)$/iu.exec(trimmedStart);
+        if (argMatch) {
+            const cmd = (argMatch[1] ?? "").toLowerCase();
+            const restRaw = argMatch[2] ?? "";
+            const endsWithSpace = restRaw === "" || /\s$/u.test(restRaw);
+            const parts = restRaw.trim() ? restRaw.trim().split(/\s+/u) : [];
+            const completedArgs = endsWithSpace ? parts : parts.slice(0, -1);
+            const { advances } = resolveArgumentStage(cmd, completedArgs, sources);
+            const nextSubAdvances = (cmd === "mcp" || cmd === "skills" || cmd === "schedule" || cmd === "personas" || cmd === "members" || cmd === "env")
+                && completedArgs.length === 0
+                ? text !== "list"
+                : advances;
+            const prefixTokens = [`/${argMatch[1]}`, ...completedArgs, text].join(" ");
+            return nextSubAdvances ? `${prefixTokens} ` : prefixTokens;
+        }
+    }
+    return text;
+}
 
 /**
  * @param {string} text
@@ -251,12 +533,13 @@ export function parseCommand(text) {
         "parent", "enter", "older", "newer", "review", "onboard",
     ]);
     const singleOptionalArg = new Set([
-        "help", "effort", "persona", "child", "mode", "fork", "workspace", "session", "loop",
+        "help", "effort", "persona", "child", "mode", "fork", "session", "loop",
     ]);
-    const singleRequiredArg = new Set(["rollback", "rename"]);
+    const singleRequiredArg = new Set(["rollback"]);
     if ((zeroArg.has(name) && args.length > 0)
         || (singleOptionalArg.has(name) && args.length > 1)
         || (singleRequiredArg.has(name) && args.length !== 1)
+        || (name === "rename" && rest.length === 0)
         || (name === "model" && args.length > 2)
         || (name === "loop" && args[0] !== undefined && !/^[1-9]\d*$/u.test(args[0]))
         || ((name === "share" || name === "script") && rest.length === 0)) {
@@ -327,27 +610,12 @@ function formatFamilyResult(family, parsed, res) {
             return { message: "", literal: lines.join("\n") };
         }
         if (res.removed === true && typeof res.alias === "string") {
-            return { message: `${res.alias}  removed` };
+            const verb = family === "env" ? "unset" : "removed";
+            return { message: `${res.alias}  ${verb}` };
         }
         if (isRecord(res.definition) && typeof res.definition.alias === "string") {
             const state = typeof res.definition.state === "string" ? res.definition.state : "active";
             return { message: `${res.definition.alias}  ${state}` };
-        }
-        const definitions = Array.isArray(res.definitions) ? res.definitions
-            : Array.isArray(res.items) ? res.items : null;
-        if (definitions !== null) {
-            if (definitions.length === 0) return { message: `${family}: none` };
-            const lines = definitions.map((item) => {
-                if (!isRecord(item)) return String(item);
-                const name = typeof item.alias === "string" ? item.alias
-                    : typeof item.name === "string" ? item.name : "";
-                const state = typeof item.state === "string" ? item.state : "active";
-                const provenance = isRecord(item.provenance) && typeof item.provenance.source === "string" && item.provenance.source.length > 0
-                    ? `  source=${item.provenance.source}`
-                    : "";
-                return `${name}  ${state}${provenance}`;
-            });
-            return { message: "", literal: lines.join("\n") };
         }
     }
     return { message: `Executed /${family}.` };
@@ -379,8 +647,9 @@ function selectGate(gates, rawTarget, cmdName) {
     throw new Error(`Specify @<id> for /${cmdName}; inspect pending gates with /review.`);
 }
 
-/** {§web-session-commands} Native, literal results stay outside the observer's messages and state.
- * @param {Element} controls
+/**
+ * {§web-session-commands} Route inspection commands to canonical UI surfaces, mutations to `#session-feedback`, and multi-line CLI output to `#dialog-command-output`.
+ * @param {Element} main
  * @param {{
  *   call: Action,
  *   toggleYolo: () => Promise<boolean>,
@@ -392,94 +661,59 @@ function selectGate(gates, rawTarget, cmdName) {
  *   openOnboarding?: () => Promise<void> | void,
  * }} actions
  */
-export default function sessionCommands(controls, actions) {
-    const outlet = $.clone(controls, "#command-results");
-    const list = $(outlet, "ul");
-    if (!list) throw new Error("Command results template is incomplete.");
-    /** @type {WeakMap<Element, { listScope: "session" | "workspace", signal: AbortSignal }>} */
-    const envPanels = new WeakMap();
-    on(outlet, "click", "[data-dismiss-command]", (_event, target) => {
-        const row = target.closest("li");
-        const article = row ? $(row, "article") : null;
-        if (!row || !article || article.getAttribute("aria-busy") === "true") return;
-        row.remove();
-    });
-    on(outlet, "input", '[data-env-set-form] input[name="alias"]', (_event, target) => {
-        if (target instanceof HTMLInputElement) target.setCustomValidity("");
-    });
-    on(outlet, "submit", "[data-env-row-form]", async (event, target) => {
-        event.preventDefault();
-        if (!(target instanceof HTMLFormElement)) return;
-        const panel = target.closest("[data-env-panel]");
-        const article = target.closest("article");
-        const ctx = panel ? envPanels.get(panel) : undefined;
-        if (!panel || !article || !ctx || article.getAttribute("aria-busy") === "true") return;
-        const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
-        const operation = submitter?.value ?? "";
-        if (operation !== "enable" && operation !== "disable" && operation !== "remove") return;
-        const data = new FormData(target);
-        const alias = typeof data.get("alias") === "string" ? /** @type {string} */ (data.get("alias")).trim() : "";
-        const origin = data.get("origin");
-        if (!alias) return;
-        const targetScope = operation === "remove"
-            ? (origin === "workspace" ? "workspace" : "session")
-            : ctx.listScope;
-        the(article, { "command-state": "pending", "command-busy": "true", "command-message": "Running…", "command-recovery": "" });
-        the(panel, "env-busy", "");
-        try {
-            ctx.signal.throwIfAborted();
-            await actions.call(`${targetScope}.env.${operation}`, { alias }, ctx.signal);
-            const fresh = await actions.call(`${ctx.listScope}.env.list`, {}, ctx.signal);
-            ctx.signal.throwIfAborted();
-            populateEnvPanel(panel, fresh, ctx.listScope);
-            const verbLabel = operation === "remove" ? "unset" : `${operation}d`;
-            the(article, { "command-state": "done", "command-busy": "false", "command-message": `${alias}  ${verbLabel}`, "command-recovery": "" });
-        } catch (error) {
-            const { message, recovery, status } = await describeFailure(error);
-            the(panel, "env-busy", null);
-            the(article, { "command-state": "error", "command-busy": "false",
-                "command-message": ctx.signal.aborted ? "Response not confirmed." : message, "command-recovery": recovery, "command-status": status });
+export default function sessionCommands(main, actions) {
+    const ensureFeedback = () => {
+        const existing = $(main, '[aria-label="Message feedback"]');
+        if (existing instanceof HTMLElement) return existing;
+        const cloned = $.clone(main, "#session-feedback");
+        if (!(cloned instanceof HTMLElement)) throw new Error("Session feedback template is incomplete.");
+        return cloned;
+    };
+
+    /** @type {HTMLDialogElement | null} */
+    let outputDialog = null;
+    const ensureOutputDialog = () => {
+        if (outputDialog && outputDialog.isConnected) return outputDialog;
+        const existing = $("#dialog-command-output");
+        if (existing instanceof HTMLDialogElement) {
+            outputDialog = existing;
+            return outputDialog;
         }
-    });
-    on(outlet, "submit", "[data-env-set-form]", async (event, target) => {
-        event.preventDefault();
-        if (!(target instanceof HTMLFormElement)) return;
-        const panel = target.closest("[data-env-panel]");
-        const article = target.closest("article");
-        const ctx = panel ? envPanels.get(panel) : undefined;
-        if (!panel || !article || !ctx || article.getAttribute("aria-busy") === "true") return;
-        const aliasInput = $(target, 'input[name="alias"]');
-        const valueInput = $(target, 'input[name="value"]');
-        const scopeSelect = $(target, 'select[name="scope"]');
-        if (!(aliasInput instanceof HTMLInputElement) || !(valueInput instanceof HTMLInputElement)) return;
-        const alias = aliasInput.value.trim();
-        if (!alias) {
-            aliasInput.setCustomValidity("Enter a variable name.");
-            aliasInput.reportValidity();
-            return;
-        }
-        const value = valueInput.value;
-        const targetScope = scopeSelect instanceof HTMLSelectElement && scopeSelect.value === "workspace"
-            ? "workspace"
-            : "session";
-        the(article, { "command-state": "pending", "command-busy": "true", "command-message": "Running…", "command-recovery": "" });
-        the(panel, "env-busy", "");
-        try {
-            ctx.signal.throwIfAborted();
-            await actions.call(`${targetScope}.env.replace`, { alias, value }, ctx.signal);
-            const fresh = await actions.call(`${ctx.listScope}.env.list`, {}, ctx.signal);
-            ctx.signal.throwIfAborted();
-            populateEnvPanel(panel, fresh, ctx.listScope);
-            aliasInput.value = "";
-            valueInput.value = "";
-            the(article, { "command-state": "done", "command-busy": "false", "command-message": `${alias}  active`, "command-recovery": "" });
-        } catch (error) {
-            const { message, recovery, status } = await describeFailure(error);
-            the(panel, "env-busy", null);
-            the(article, { "command-state": "error", "command-busy": "false",
-                "command-message": ctx.signal.aborted ? "Response not confirmed." : message, "command-recovery": recovery, "command-status": status });
-        }
-    });
+        const cloned = $.clone(document.body, "#command-output-dialog");
+        if (!(cloned instanceof HTMLDialogElement)) throw new Error("Command output dialog template is incomplete.");
+        on(cloned, "click", "[data-dialog-close]", () => {
+            if (cloned.open) cloned.close();
+        });
+        outputDialog = cloned;
+        return cloned;
+    };
+
+    /**
+     * @param {string} title
+     * @param {string} literal
+     * @param {string} [message]
+     */
+    const showOutputModal = (title, literal, message = "") => {
+        const dialog = ensureOutputDialog();
+        the(dialog, {
+            "command-title": title,
+            "command-message": message,
+            "command-literal": literal,
+        });
+        if (!dialog.open) dialog.showModal();
+    };
+
+    /** @param {string} message */
+    const showStatus = (message) => {
+        const feedback = ensureFeedback();
+        the(feedback, { "message-status": message, "command-error": "" });
+    };
+
+    /** @param {string} errorText */
+    const showError = (errorText) => {
+        const feedback = ensureFeedback();
+        the(feedback, { "message-status": "", "command-error": errorText });
+    };
 
     const readIdentity = () => {
         if (actions.getContext) return actions.getContext();
@@ -490,23 +724,27 @@ export default function sessionCommands(controls, actions) {
         return { workspaceName, sessionName };
     };
 
-    /** @param {Element} body @param {string} content */
-    const appendLiteral = (body, content) => {
-        const literal = $.clone(body, "#conversation-literal");
-        literal.textContent = content;
+    /**
+     * @param {string} section
+     * @param {Readonly<Record<string, string | null | undefined>>} [extra]
+     */
+    const navigateToSettings = (section, extra = undefined) => {
+        const { workspaceName, sessionName } = readIdentity();
+        const targetPath = workspaceSettingsPath(workspaceName, sessionName, section, extra);
+        if (!targetPath) throw new Error(`Invalid workspace settings address: ${workspaceName}.`);
+        if (actions.navigate) {
+            actions.navigate(targetPath);
+        } else {
+            location.assign(targetPath);
+        }
     };
 
     /** @param {string} text @param {AbortSignal} signal */
     const execute = async (text, signal) => {
         /** @type {Action} */
         const call = (kind, params) => actions.call(kind, params, signal);
-        const row = $.clone(list, "#session-command-result");
-        const article = $(row, "article");
-        const input = $(row, "header code");
-        const body = $(row, "[data-command-output]");
-        if (!article || !input || !body) throw new Error("Command result template is incomplete.");
-        input.textContent = text;
-        the(article, { "command-state": "pending", "command-busy": "true", "command-message": "Running…", "command-recovery": "" });
+        const feedback = ensureFeedback();
+        the(feedback, { "command-error": "" });
         try {
             signal.throwIfAborted();
             if (isLocalExec(text)) {
@@ -521,46 +759,48 @@ export default function sessionCommands(controls, actions) {
                 const res = await call("op.exec", { text: stmt });
                 signal.throwIfAborted();
                 const out = formatExecResults(res);
-                if (out) appendLiteral(body, out);
-                the(article, { "command-state": "done", "command-busy": "false", "command-message": out ? "" : "Completed." });
+                if (out) {
+                    showOutputModal(trimmed, out);
+                } else {
+                    showStatus("Completed.");
+                }
                 return true;
             }
+
             const { name, rest, args } = parseCommand(text);
-            if (familyCommands.has(name)) {
-                const { workspaceName, sessionName } = readIdentity();
-                const settingsUrl = workspaceSettingsPath(workspaceName, sessionName, name);
-                const header = $(row, "header");
-                const dismiss = header ? $(header, "[data-dismiss-command]") : null;
-                if (settingsUrl !== null && header && dismiss) {
-                    const openLink = $.clone(header, "#workspace-open-settings");
-                    openLink.setAttribute("href", settingsUrl);
-                    openLink.setAttribute("data-open-workspace-settings", name);
-                    header.insertBefore(openLink, dismiss);
-                }
-            }
-            /** @type {string} */
-            let message = "";
             if (name === "help") {
                 const selected = rest.replace(/^\//u, "");
                 if (selected && !helpCommands.has(selected)) throw new Error(`Unknown command ${rest}. Use /help.`);
-                const help = $.clone(body, "#command-help");
-                for (const item of $$(help, "[data-command-name]")) {
-                    if (selected && the(item, "command-name") !== selected) item.remove();
+                navigateToSettings("help", selected ? { cmd: selected } : undefined);
+                return true;
+            }
+            if (name === "onboard") {
+                if (actions.openOnboarding) {
+                    await actions.openOnboarding();
+                } else {
+                    navigateToSettings("models", { setup: "1" });
                 }
-                if (!selected) {
-                    const shortcuts = $.clone(body, "#command-shortcuts");
-                    the(shortcuts, "shortcut-mod", primaryModifierLabel());
-                }
-            } else if (name === "yolo") {
-                message = `Approvals: ${await actions.toggleYolo() ? "Automatic" : "Manual"}.`;
-            } else if (name === "stop") {
-                message = await actions.stop();
-            } else if (name === "onboard") {
-                await actions.openOnboarding?.();
-                message = "Opened model setup.";
-            } else if (familyCommands.has(name)) {
+                return true;
+            }
+            if (name === "models") {
+                navigateToSettings("models", rest ? { q: rest } : undefined);
+                return true;
+            }
+            if (name === "yolo") {
+                showStatus(`Approvals: ${await actions.toggleYolo() ? "Automatic" : "Manual"}.`);
+                return true;
+            }
+            if (name === "stop") {
+                showStatus(await actions.stop());
+                return true;
+            }
+            if (familyCommands.has(name)) {
                 const { parseFamilyCommand } = await import("@plurnk/plurnk-contracts");
                 const parsed = parseFamilyCommand(name, args);
+                if (parsed.sub === "list") {
+                    navigateToSettings(name, name === "env" && parsed.scopePrefix === "session" ? { envScope: "session" } : undefined);
+                    return true;
+                }
                 let params = parsed.params;
                 if (parsed.actionName === "workspace.mcp.oauth.begin") {
                     const alias = typeof params.alias === "string" ? params.alias : "";
@@ -578,80 +818,105 @@ export default function sessionCommands(controls, actions) {
                 }
                 const res = await call(parsed.actionName, params);
                 signal.throwIfAborted();
-                if (name === "env" && parsed.sub === "list") {
-                    const panel = $.clone(body, "#command-env");
-                    const scopeSelect = $(panel, 'select[name="scope"]');
-                    if (scopeSelect instanceof HTMLSelectElement) scopeSelect.value = parsed.scopePrefix;
-                    envPanels.set(panel, { listScope: parsed.scopePrefix, signal });
-                    const count = populateEnvPanel(panel, res, parsed.scopePrefix);
-                    message = count === 0 ? "env: none" : "";
+                const formatted = formatFamilyResult(name, parsed, res);
+                if (formatted.literal) {
+                    showOutputModal(text.trim(), formatted.literal, formatted.message);
                 } else {
-                    const formatted = formatFamilyResult(name, parsed, res);
-                    message = formatted.message;
-                    if (formatted.literal) appendLiteral(body, formatted.literal);
+                    showStatus(formatted.message);
                 }
-            } else if (name === "models") {
-                const { aliases: matches, catalog } = await listModels(call, rest);
-                signal.throwIfAborted();
-                const result = $.clone(body, "#command-models");
-                const aliasList = $(result, "[data-model-aliases]");
-                const entries = $(result, "tbody");
-                if (!aliasList || !entries) throw new Error("Model catalog template is incomplete.");
-                $.cloneEach(aliasList, "#command-alias", matches, (item, alias) => the(item, {
-                    "alias-name": alias.alias, "alias-route": `${alias.provider}/${alias.model}`,
-                    "alias-effort": alias.effort ?? "Unspecified", "alias-active": alias.active ? "Default" : "",
-                }));
-                $.cloneEach(entries, "#command-model", catalog.items, (item, model) => the(item, {
-                    "model-selector": model.selector, "model-name": model.modelName, "model-context": model.limits.contextTokens,
-                    "model-efforts": model.capabilities.efforts.join(", "), "model-readiness": model.readiness.ready ? "Configured" : "Not configured",
-                }));
-                the(result, { "alias-count": matches.length, "model-total": catalog.total, "model-count": catalog.items.length,
-                    "model-offset": catalog.offset, "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search." });
-            } else if (name === "model") {
+                return true;
+            }
+            if (name === "model") {
+                if (!args[0]) {
+                    navigateToSettings("models");
+                    return true;
+                }
                 const model = await sessionModel(call, args[0], args[1]);
-                message = `Model: ${modelLabel(model)}${model?.effort === undefined ? "" : ` (${model.effort})`}.`;
-            } else if (name === "effort") {
+                showStatus(`Model: ${modelLabel(model)}${model?.effort === undefined ? "" : ` (${model.effort})`}.`);
+                return true;
+            }
+            if (name === "effort") {
+                if (!args[0]) {
+                    navigateToSettings("models");
+                    return true;
+                }
                 const { effort, source, supported } = await sessionEffort(call, args[0]);
-                message = `Effort: ${effort ?? "Unavailable"} (${source}). Supported: ${supported.join(", ") || "None"}.`;
-            } else if (name === "persona") {
+                showStatus(`Effort: ${effort ?? "Unavailable"} (${source}). Supported: ${supported.join(", ") || "None"}.`);
+                return true;
+            }
+            if (name === "persona") {
+                if (!args[0]) {
+                    navigateToSettings("personas");
+                    return true;
+                }
                 const { currentValue, supported } = await sessionConfigOption(call, "persona", args[0]);
-                message = `Persona: ${currentValue || "none"}. Supported: ${supported.join(", ") || "none"}.`;
-            } else if (name === "child") {
+                showStatus(`Persona: ${currentValue || "none"}. Supported: ${supported.join(", ") || "none"}.`);
+                return true;
+            }
+            if (name === "child") {
+                if (!args[0]) {
+                    navigateToSettings("models");
+                    return true;
+                }
                 const { currentValue } = await sessionConfigOption(call, "spawn_model", args[0]);
-                message = `Child model: ${currentValue || "inherit"}.`;
-            } else if (name === "mode") {
+                showStatus(`Child model: ${currentValue || "inherit"}.`);
+                return true;
+            }
+            if (name === "mode") {
+                if (!args[0]) {
+                    navigateToSettings("general");
+                    return true;
+                }
                 const { currentValue } = await sessionConfigOption(call, "mode", args[0]);
-                message = `Approval policy: ${currentValue || "review"}.`;
-            } else if (name === "update") {
+                showStatus(`Approval policy: ${currentValue || "review"}.`);
+                return true;
+            }
+            if (name === "update") {
                 const [{ formatServiceUpdateReport }, res] = await Promise.all([
                     import("@plurnk/plurnk-contracts"),
                     call("service.update", {}),
                 ]);
                 signal.throwIfAborted();
                 const report = formatServiceUpdateReport(isRecord(res) ? res : {});
-                appendLiteral(body, report);
-            } else if (name === "share") {
+                showOutputModal("/update", report);
+                return true;
+            }
+            if (name === "share") {
                 const res = await call("workspace.share", { folder: rest });
                 const folder = isRecord(res) && typeof res.folder === "string" ? res.folder : rest;
-                message = `Shared digest: ${folder}.`;
-            } else if (name === "rollback") {
+                showStatus(`Shared digest: ${folder}.`);
+                return true;
+            }
+            if (name === "rollback") {
                 const res = await call("session.rollback", { to: args[0] });
                 const restored = isRecord(res) && Array.isArray(res.restored) ? res.restored.length : 0;
                 const skipped = isRecord(res) && Array.isArray(res.skipped) ? res.skipped.length : 0;
                 const to = isRecord(res) && typeof res.to === "string" ? res.to : args[0];
-                message = `Rolled back to ${to} (${restored} restored, ${skipped} skipped).`;
-            } else if (name === "script") {
+                showStatus(`Rolled back to ${to} (${restored} restored, ${skipped} skipped).`);
+                return true;
+            }
+            if (name === "script") {
                 const res = await call("op.exec", { text: rest });
                 signal.throwIfAborted();
                 const out = formatExecResults(res);
-                if (out) appendLiteral(body, out);
-                message = out ? "" : "Completed.";
-            } else if (name === "workspaces") {
+                if (out) {
+                    showOutputModal(text.trim(), out);
+                } else {
+                    showStatus("Completed.");
+                }
+                return true;
+            }
+            if (name === "workspaces" || (name === "workspace" && !rest)) {
+                const wsDialog = $("#dialog-workspaces");
+                if (wsDialog instanceof HTMLDialogElement) {
+                    if (!wsDialog.open) wsDialog.showModal();
+                    return true;
+                }
                 const res = await call("workspace.list", {});
                 signal.throwIfAborted();
                 const items = isRecord(res) && Array.isArray(res.workspaces) ? res.workspaces : [];
                 if (items.length === 0) {
-                    message = "workspaces: none";
+                    showStatus("workspaces: none");
                 } else {
                     const lines = items.map((w) => {
                         if (!isRecord(w)) return String(w);
@@ -660,32 +925,38 @@ export default function sessionCommands(controls, actions) {
                             : typeof w.projectRoot === "string" ? w.projectRoot : "(folderless)";
                         return `${wsName}  ${root}`;
                     });
-                    appendLiteral(body, lines.join("\n"));
+                    showOutputModal("/workspaces", lines.join("\n"));
                 }
-            } else if (name === "workspace") {
-                const { workspaceName } = readIdentity();
-                if (!args[0]) {
-                    message = `Workspace: ${workspaceName}.`;
-                } else {
-                    const targetPath = directoryPath({ kind: "workspace", workspace: args[0] });
-                    if (!targetPath) throw new Error(`Invalid workspace address: ${args[0]}.`);
-                    message = `Workspace: ${args[0]}.`;
-                    actions.navigate?.(targetPath);
-                }
-            } else if (name === "rename") {
+                return true;
+            }
+            if (name === "workspace") {
+                const targetPath = directoryPath({ kind: "workspace", workspace: rest });
+                if (!targetPath) throw new Error(`Invalid workspace address: ${rest}.`);
+                if (actions.navigate) actions.navigate(targetPath);
+                else location.assign(targetPath);
+                return true;
+            }
+            if (name === "rename") {
                 const { workspaceName, sessionName } = readIdentity();
-                const res = await call("workspace.rename", { from: workspaceName, name: args[0] });
-                const nextName = isRecord(res) && typeof res.name === "string" ? res.name : args[0];
-                message = `Workspace: ${nextName}.`;
+                const res = await call("workspace.rename", { from: workspaceName, name: rest });
+                const nextName = isRecord(res) && typeof res.name === "string" ? res.name : rest;
+                showStatus(`Workspace: ${nextName}.`);
                 const targetPath = directoryPath({ kind: "session", workspace: nextName, session: sessionName });
                 if (targetPath) actions.navigate?.(targetPath);
-            } else if (name === "sessions") {
+                return true;
+            }
+            if (name === "sessions" || (name === "session" && !args[0])) {
+                const openSessionsBtn = $("[data-open-sessions]");
+                if (openSessionsBtn instanceof HTMLButtonElement) {
+                    openSessionsBtn.click();
+                    return true;
+                }
                 const { sessionName } = readIdentity();
                 const res = await call("workspace.sessions", {});
                 signal.throwIfAborted();
                 const items = isRecord(res) && Array.isArray(res.sessions) ? res.sessions : [];
                 if (items.length === 0) {
-                    message = `● ${sessionName}`;
+                    showStatus(`● ${sessionName}`);
                 } else {
                     const lines = items.map((s) => {
                         if (!isRecord(s)) return String(s);
@@ -696,29 +967,30 @@ export default function sessionCommands(controls, actions) {
                             : "";
                         return `${mark} ${sName}${lc}`;
                     });
-                    appendLiteral(body, lines.join("\n"));
+                    showOutputModal("/sessions", lines.join("\n"));
                 }
-            } else if (name === "session") {
-                const { workspaceName, sessionName } = readIdentity();
-                if (!args[0]) {
-                    const curPath = directoryPath({ kind: "session", workspace: workspaceName, session: sessionName }) ?? "";
-                    message = `Session: ${sessionName}${curPath ? ` (${curPath})` : ""}.`;
-                } else {
-                    await call("session/new", { _meta: { plurnk: { workspace: workspaceName, session: args[0] } } });
-                    const targetPath = directoryPath({ kind: "session", workspace: workspaceName, session: args[0] });
-                    message = `Session: ${args[0]}.`;
-                    if (targetPath) actions.navigate?.(targetPath);
-                }
-            } else if (name === "fork") {
+                return true;
+            }
+            if (name === "session") {
+                const { workspaceName } = readIdentity();
+                await call("session/new", { _meta: { plurnk: { workspace: workspaceName, session: args[0] } } });
+                const targetPath = directoryPath({ kind: "session", workspace: workspaceName, session: args[0] });
+                showStatus(`Session: ${args[0]}.`);
+                if (targetPath) actions.navigate?.(targetPath);
+                return true;
+            }
+            if (name === "fork") {
                 const { workspaceName } = readIdentity();
                 const res = await call("session/fork", args[0] ? { name: args[0] } : {});
                 const rawSessionId = isRecord(res) && typeof res.sessionId === "string" ? res.sessionId : "";
                 const forkedName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : (args[0] ?? "");
                 if (!forkedName) throw new Error("Fork response returned no session name.");
-                message = `Forked session: ${forkedName}.`;
+                showStatus(`Forked session: ${forkedName}.`);
                 const targetPath = directoryPath({ kind: "session", workspace: workspaceName, session: forkedName });
                 if (targetPath) actions.navigate?.(targetPath);
-            } else if (name === "parent" || name === "enter" || name === "older" || name === "newer") {
+                return true;
+            }
+            if (name === "parent" || name === "enter" || name === "older" || name === "newer") {
                 const { workspaceName, sessionName } = readIdentity();
                 const res = await call("workspace.sessions", {});
                 signal.throwIfAborted();
@@ -732,39 +1004,41 @@ export default function sessionCommands(controls, actions) {
                     const pid = parentIdOf(current);
                     const parent = pid !== null ? sessions.find((s) => isRecord(s) && s.id === pid) : undefined;
                     if (!isRecord(parent) || typeof parent.name !== "string") {
-                        message = "(at the root: no parent)";
-                    } else {
-                        targetName = parent.name;
+                        showStatus("(at the root: no parent)");
+                        return true;
                     }
+                    targetName = parent.name;
                 } else if (name === "enter") {
                     const curId = isRecord(current) && typeof current.id === "number" ? current.id : null;
                     const children = curId !== null ? sessions.filter((s) => parentIdOf(s) === curId) : [];
                     const newest = children.at(-1);
                     if (!isRecord(newest) || typeof newest.name !== "string") {
-                        message = "(no children)";
-                    } else {
-                        targetName = newest.name;
+                        showStatus("(no children)");
+                        return true;
                     }
+                    targetName = newest.name;
                 } else {
                     const pid = parentIdOf(current);
                     const siblings = sessions.filter((s) => parentIdOf(s) === pid);
                     if (siblings.length <= 1) {
-                        message = "(no siblings)";
-                    } else {
-                        const idx = siblings.findIndex((s) => isRecord(s) && s.name === sessionName);
-                        const nextIdx = name === "older"
-                            ? (idx - 1 + siblings.length) % siblings.length
-                            : (idx + 1) % siblings.length;
-                        const chosen = siblings[nextIdx];
-                        if (isRecord(chosen) && typeof chosen.name === "string") targetName = chosen.name;
+                        showStatus("(no siblings)");
+                        return true;
                     }
+                    const idx = siblings.findIndex((s) => isRecord(s) && s.name === sessionName);
+                    const nextIdx = name === "older"
+                        ? (idx - 1 + siblings.length) % siblings.length
+                        : (idx + 1) % siblings.length;
+                    const chosen = siblings[nextIdx];
+                    if (isRecord(chosen) && typeof chosen.name === "string") targetName = chosen.name;
                 }
                 if (targetName) {
-                    message = `Session: ${targetName}.`;
+                    showStatus(`Session: ${targetName}.`);
                     const targetPath = directoryPath({ kind: "session", workspace: workspaceName, session: targetName });
                     if (targetPath) actions.navigate?.(targetPath);
                 }
-            } else if (name === "loops" || name === "loop") {
+                return true;
+            }
+            if (name === "loops" || name === "loop") {
                 const reqSeq = name === "loop" && args[0] ? Number.parseInt(args[0], 10) : undefined;
                 const res = await call("session.loops", reqSeq !== undefined ? { loopSeq: reqSeq } : {});
                 signal.throwIfAborted();
@@ -772,8 +1046,10 @@ export default function sessionCommands(controls, actions) {
                     .filter(isRecord)
                     .toSorted((a, b) => Number(a.sequence ?? 0) - Number(b.sequence ?? 0));
                 if (items.length === 0) {
-                    message = "(no loops yet)";
-                } else if (name === "loops") {
+                    showStatus("(no loops yet)");
+                    return true;
+                }
+                if (name === "loops") {
                     const lines = items.map((l) => {
                         const seq = String(l.sequence ?? "");
                         const rawPrompt = typeof l.prompt === "string" ? l.prompt : "";
@@ -781,37 +1057,39 @@ export default function sessionCommands(controls, actions) {
                         const clipped = firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
                         return `${seq}: ${clipped}`;
                     });
-                    appendLiteral(body, lines.join("\n"));
-                } else {
-                    const targetSeq = reqSeq ?? Number(items.at(-1)?.sequence ?? 1);
-                    const targetLoop = items.find((i) => Number(i.sequence) === targetSeq);
-                    if (!targetLoop) {
-                        message = `(no loop ${targetSeq}; /loops lists them)`;
-                    } else {
-                        const detail = reqSeq !== undefined ? res : await call("session.loops", { loopSeq: targetSeq });
-                        const updates = isRecord(detail) && Array.isArray(detail.updates) ? detail.updates : [];
-                        const lines = [`── loop ${targetSeq} ──`];
-                        if (typeof targetLoop.prompt === "string" && targetLoop.prompt) {
-                            lines.push(`> ${targetLoop.prompt}`);
-                        }
-                        for (const u of updates) {
-                            if (!isRecord(u)) continue;
-                            if (u.sessionUpdate === "tool_call_update" && typeof u.title === "string") {
-                                lines.push(u.title);
-                            } else if (u.sessionUpdate === "agent_message" && Array.isArray(u.content)) {
-                                const msgText = u.content
-                                    .map((c) => isRecord(c) && typeof c.text === "string" ? c.text : "")
-                                    .join("");
-                                if (msgText) lines.push(msgText);
-                            }
-                        }
-                        appendLiteral(body, lines.join("\n"));
+                    showOutputModal("/loops", lines.join("\n"));
+                    return true;
+                }
+                const targetSeq = reqSeq ?? Number(items.at(-1)?.sequence ?? 1);
+                const targetLoop = items.find((i) => Number(i.sequence) === targetSeq);
+                if (!targetLoop) {
+                    showStatus(`(no loop ${targetSeq}; /loops lists them)`);
+                    return true;
+                }
+                const detail = reqSeq !== undefined ? res : await call("session.loops", { loopSeq: targetSeq });
+                const updates = isRecord(detail) && Array.isArray(detail.updates) ? detail.updates : [];
+                const lines = [`── loop ${targetSeq} ──`];
+                if (typeof targetLoop.prompt === "string" && targetLoop.prompt) {
+                    lines.push(`> ${targetLoop.prompt}`);
+                }
+                for (const u of updates) {
+                    if (!isRecord(u)) continue;
+                    if (u.sessionUpdate === "tool_call_update" && typeof u.title === "string") {
+                        lines.push(u.title);
+                    } else if (u.sessionUpdate === "agent_message" && Array.isArray(u.content)) {
+                        const msgText = u.content
+                            .map((c) => isRecord(c) && typeof c.text === "string" ? c.text : "")
+                            .join("");
+                        if (msgText) lines.push(msgText);
                     }
                 }
-            } else if (name === "review") {
+                showOutputModal(`/loop ${targetSeq}`, lines.join("\n"));
+                return true;
+            }
+            if (name === "review") {
                 const gates = actions.getPendingGates?.() ?? [];
                 if (gates.length === 0) {
-                    message = "review: none";
+                    showStatus("review: none");
                 } else {
                     const lines = gates.map((g) => {
                         if (g.method === "session/request_permission") {
@@ -821,9 +1099,11 @@ export default function sessionCommands(controls, actions) {
                         }
                         return `@${g.id}  elicitation  ${g.message ?? "input required"}`;
                     });
-                    appendLiteral(body, lines.join("\n"));
+                    showOutputModal("/review", lines.join("\n"));
                 }
-            } else if (name === "accept" || name === "approve" || name === "reject" || name === "cancel" || name === "edit" || name === "answer") {
+                return true;
+            }
+            if (name === "accept" || name === "approve" || name === "reject" || name === "cancel" || name === "edit" || name === "answer") {
                 if (!actions.resolveGate) throw new Error("Gate resolution is unavailable outside an active session.");
                 const gates = actions.getPendingGates?.() ?? [];
                 const hasExplicitId = args[0]?.startsWith("@") === true;
@@ -845,7 +1125,7 @@ export default function sessionCommands(controls, actions) {
                             _meta: { plurnk: { body: editedBody } },
                         },
                     });
-                    message = `Submitted edited proposal @${gate.id}.`;
+                    showStatus(`Submitted edited proposal @${gate.id}.`);
                 } else if (name === "answer") {
                     if (gate.method !== "elicitation/create") {
                         throw new Error(`Gate @${gate.id} is not an elicitation request.`);
@@ -869,49 +1149,54 @@ export default function sessionCommands(controls, actions) {
                         method: "elicitation/create",
                         response: { action: "accept", content },
                     });
-                    message = `Submitted answer for @${gate.id}.`;
+                    showStatus(`Submitted answer for @${gate.id}.`);
                 } else if (name === "cancel") {
                     await actions.resolveGate(gate.method === "session/request_permission"
                         ? { id: gate.id, method: "session/request_permission", response: { outcome: { outcome: "cancelled" } } }
                         : { id: gate.id, method: "elicitation/create", response: { action: "cancel" } });
-                    message = `Cancelled @${gate.id}.`;
+                    showStatus(`Cancelled @${gate.id}.`);
                 } else if (name === "reject") {
                     await actions.resolveGate(gate.method === "session/request_permission"
                         ? { id: gate.id, method: "session/request_permission", response: { outcome: { outcome: "selected", optionId: rejectOptionId(gate) } } }
                         : { id: gate.id, method: "elicitation/create", response: { action: "decline" } });
-                    message = `Rejected @${gate.id}.`;
+                    showStatus(`Rejected @${gate.id}.`);
                 } else {
                     await actions.resolveGate(gate.method === "session/request_permission"
                         ? { id: gate.id, method: "session/request_permission", response: { outcome: { outcome: "selected", optionId: allowOptionId(gate) } } }
                         : { id: gate.id, method: "elicitation/create", response: { action: "accept" } });
-                    message = `Accepted @${gate.id}.`;
+                    showStatus(`Accepted @${gate.id}.`);
                 }
+                return true;
             }
-            signal.throwIfAborted();
-            the(article, { "command-state": "done", "command-busy": "false", "command-message": message });
             return true;
         } catch (error) {
-            const { message, recovery, status } = await describeFailure(error);
-            the(article, { "command-state": "error", "command-busy": "false",
-                "command-message": signal.aborted ? "Response not confirmed." : message, "command-recovery": recovery, "command-status": status });
+            const { message, recovery } = await describeFailure(error);
+            showError(signal.aborted ? "Response not confirmed." : [message, recovery].filter(Boolean).join(" "));
             return false;
         }
     };
+
     const dismissAll = () => {
-        const settled = $$(list, ":scope > li").filter((item) => $(item, "article")?.getAttribute("aria-busy") !== "true");
-        if (settled.length === 0) return false;
-        for (const item of settled) item.remove();
-        return true;
-    };
-    /** @param {AbortSignal} signal */
-    const showHelp = async (signal) => {
-        for (const item of $$(list, ":scope > li")) {
-            const code = $(item, "header code")?.textContent?.trim();
-            if ((code === "/help" || code === "/") && $(item, "article")?.getAttribute("aria-busy") !== "true") {
-                item.remove();
+        if (outputDialog?.open) {
+            outputDialog.close();
+            return true;
+        }
+        const feedback = $(main, '[aria-label="Message feedback"]');
+        if (feedback instanceof HTMLElement) {
+            const curStatus = the(feedback, "message-status") ?? "";
+            const curError = the(feedback, "command-error") ?? "";
+            if ((curStatus && curStatus !== "Sending…") || curError) {
+                the(feedback, { "message-status": "", "command-error": "" });
+                return true;
             }
         }
-        return execute("/help", signal);
+        return false;
     };
+
+    const showHelp = () => {
+        navigateToSettings("help");
+        return true;
+    };
+
     return Object.assign(execute, { dismissAll, showHelp });
 }

@@ -19,16 +19,9 @@ export default async function verifyCommands(t) {
                     let credentials = 0;
                     let credentialStatus = 200;
                     const modelResponse = (model) => ({ configOptions: [], availableCommands: [], _meta: { plurnk: { status: { model, spawnModel: null } } } });
-                    const effortResponse = (model, supportedEfforts = []) => ({
-                        configOptions: [{ id: "thought_level", configId: "thought_level", name: "Reasoning Effort", type: "select", currentValue: model?.effort ?? "", options: supportedEfforts.map((value) => ({ value, name: value })) }],
-                        availableCommands: [],
-                        _meta: { plurnk: { status: { model, spawnModel: null } } },
-                    });
                     /** @type {any} */
                     let result = modelResponse(null);
                     let held = undefined;
-                    let delayed = undefined;
-                    let catalog = undefined;
                     await page.route("**/auth/token", (route) => {
                         credentials++;
                         return route.fulfill({ status: credentialStatus,
@@ -38,27 +31,10 @@ export default async function verifyCommands(t) {
                         assert.equal(headers.authorization, "Bearer command-fixture-token");
                         requests.push(input);
                         if (held) await held.promise;
-                        const kind = input.method === "_plurnk/action" ? input.params.kind : input.method;
-                        const search = input.method === "_plurnk/action" ? input.params.params?.search : undefined;
-                        const wait = kind === "models.list" && search === delayed?.search ? delayed : undefined;
-                        if (wait) { wait.started.resolve(); await wait.release.promise; }
-                        let payload;
-                        let errorProblem;
-                        if (catalog && kind === "providers/list") {
-                            payload = { providers: catalog.aliases.map((a) => ({ providerId: a.alias, supported: [a.provider], required: false, _meta: { plurnk: a } })) };
-                        } else if (catalog && kind === "models.list") {
-                            const chosen = wait?.outcome ?? catalog.error;
-                            if (chosen?.problem) errorProblem = chosen.problem;
-                            else payload = catalog.page;
-                        } else if (result?.problem) {
-                            errorProblem = result.problem;
-                        } else {
-                            payload = result;
-                        }
-                        queueMicrotask(() => wait?.done.resolve());
+                        const errorProblem = result?.problem;
                         return errorProblem
                             ? { error: { code: -32000, message: errorProblem.detail, data: errorProblem } }
-                            : { result: payload };
+                            : { result };
                     });
                     await page.goto(fixture.url);
                     await page.waitForFunction(() => typeof window.command === "function");
@@ -183,251 +159,189 @@ export default async function verifyCommands(t) {
                         await page.evaluate(() => window.prepareComposerPrompt("... follow up", { projectRoot: null })),
                         { ok: true, prompt: "follow up", forceReview: false, openPaths: [] },
                     );
-                    const rows = page.locator("#session-command-results > ul > li");
-                    assert.equal(await page.locator("#session-command-results").isVisible(), false, "empty command results occupy no space");
-                    assert.equal(await command("/"), true);
-                    assert.equal(await rows.last().locator('dl[aria-label="Keyboard shortcuts"]').count(), 1, "bare help includes keyboard shortcuts");
-                    const applePlatform = await page.evaluate(() => /\b(?:Macintosh|Mac OS|iPhone|iPad|iPod)\b/iu.test(navigator.userAgent));
-                    assert.match(await rows.last().locator('dl[aria-label="Keyboard shortcuts"]').textContent(), applePlatform ? /⌘\+Enter/u : /Ctrl\+Enter/u);
-                    await rows.last().getByRole("button", { name: "Dismiss", exact: true }).click();
-                    assert.equal(await rows.count(), 0, "Dismiss removes a settled command card");
-                    assert.equal(await page.locator("#session-command-results").isVisible(), false);
-                    for (const text of ["  /help /model \n", "/help learn", "/yolo"]) assert.equal(await command(text), true);
-                    assert.equal(await rows.nth(1).locator('dl[aria-label="Keyboard shortcuts"]').count(), 0, "named command help omits full shortcut index");
+                    // {§web-session-commands} Progressive multi-token autocomplete across command names and subsequent argument tokens.
+                    const autocompleteSources = {
+                        models: ["local", "fast"],
+                        efforts: ["low", "high"],
+                        personas: ["none", "reviewer"],
+                        modes: ["default", "architect"],
+                        workspaces: ["conversation", "ops"],
+                        sessions: ["session1", "user"],
+                        gateIds: ["@gate-42"],
+                        familyAliases: {
+                            mcp: ["svc-git", "remote-docs"],
+                            skills: ["triage"],
+                            schedule: ["nightly"],
+                            personas: ["reviewer"],
+                            members: ["src/**"],
+                            env: ["API_TOKEN"],
+                        },
+                    };
+                    const suggest = (draft, availableCommands = []) =>
+                        page.evaluate(({ draft, sources }) => window.computeCommandSuggestions(draft, sources), {
+                            draft,
+                            sources: { ...autocompleteSources, availableCommands },
+                        });
+                    const accept = (draft, suggestion) =>
+                        page.evaluate(({ draft, suggestion, sources }) => window.acceptCommandSuggestion(draft, suggestion, sources), {
+                            draft,
+                            suggestion,
+                            sources: autocompleteSources,
+                        });
+
+                    const allSlash = await suggest("/");
+                    assert.ok(allSlash.items.length > 25, "bare '/' surfaces all command candidates without an 8-item cap");
+                    assert.deepEqual((await suggest("/mo")).items, ["/model", "/models", "/mode"]);
+                    const modelArgs = await suggest("/model ");
+                    assert.deepEqual(modelArgs.items, ["local", "fast"]);
+                    assert.equal(await accept("/model ", modelArgs.items[0]), "/model local ");
+                    const modelEfforts = await suggest("/model local ");
+                    assert.deepEqual(modelEfforts.items, ["low", "high"]);
+                    assert.equal(await accept("/model local ", modelEfforts.items[1]), "/model local high");
+                    assert.deepEqual((await suggest("/effort ")).items, ["low", "high"]);
+                    assert.deepEqual((await suggest("/persona r")).items, ["reviewer"]);
+                    assert.equal((await suggest("/mcp e")).items[0], "enable", "prefix match orders ahead of substring matches");
+                    assert.deepEqual((await suggest("/mcp en")).items, ["enable"]);
+                    assert.equal(await accept("/mcp en", "enable"), "/mcp enable ");
+                    assert.deepEqual((await suggest("/mcp enable ")).items, ["svc-git", "remote-docs"]);
+                    assert.deepEqual((await suggest("/env --scope ")).items, ["session", "workspace"]);
+                    assert.equal(await accept("/env --scope ", "session"), "/env --scope session ");
+                    assert.deepEqual((await suggest("/env unset ")).items, ["API_TOKEN"]);
+                    assert.deepEqual((await suggest("/accept ")).items, ["@gate-42"]);
+                    assert.deepEqual((await suggest("/learn ")).items, ["--scope"]);
+                    assert.deepEqual((await suggest("/learn --scope ")).items, ["project", "plurnk"]);
+
+                    // {§web-session-commands} {§web-workspace-settings} Inspection and list commands route directly to unified /settings/ tabs.
+                    const feedback = page.locator('[aria-label="Message feedback"]');
+                    const statusText = feedback.locator('[data-text="message-status"]');
+                    const errorText = feedback.locator('[data-text="command-error"]');
+                    const outputDialog = page.locator("#dialog-command-output");
+
+                    for (const [cmd, expectedTarget] of [
+                        ["/", "/settings/?workspace=conversation&session=session1#help"],
+                        ["  /help /model \n", "/settings/?workspace=conversation&session=session1&cmd=model#help"],
+                        ["/help learn", "/settings/?workspace=conversation&session=session1&cmd=learn#help"],
+                        ["/onboard", "/settings/?workspace=conversation&session=session1&setup=1#models"],
+                        ["/models", "/settings/?workspace=conversation&session=session1#models"],
+                        ["/models fixture", "/settings/?workspace=conversation&session=session1&q=fixture#models"],
+                        ["/model", "/settings/?workspace=conversation&session=session1#models"],
+                        ["/effort", "/settings/?workspace=conversation&session=session1#models"],
+                        ["/child", "/settings/?workspace=conversation&session=session1#models"],
+                        ["/persona", "/settings/?workspace=conversation&session=session1#personas"],
+                        ["/mode", "/settings/?workspace=conversation&session=session1#general"],
+                        ["/mcp", "/settings/?workspace=conversation&session=session1#mcp"],
+                        ["/mcp list", "/settings/?workspace=conversation&session=session1#mcp"],
+                        ["/skills list", "/settings/?workspace=conversation&session=session1#skills"],
+                        ["/schedule list", "/settings/?workspace=conversation&session=session1#schedule"],
+                        ["/personas list", "/settings/?workspace=conversation&session=session1#personas"],
+                        ["/members list", "/settings/?workspace=conversation&session=session1#members"],
+                        ["/env list", "/settings/?workspace=conversation&session=session1&envScope=session#env"],
+                        ["/env --scope workspace list", "/settings/?workspace=conversation&session=session1#env"],
+                    ]) {
+                        await page.evaluate(() => { window.lastNavigated = null; });
+                        assert.equal(await command(cmd), true, cmd);
+                        assert.equal(await page.evaluate(() => window.lastNavigated), expectedTarget, cmd);
+                    }
+
+                    assert.equal(await command("/yolo"), true);
+                    assert.equal(await statusText.textContent(), "Approvals: Automatic.");
+
                     for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b"]) {
-                        assert.equal(await command(text), false);
+                        assert.equal(await command(text), false, text);
+                        assert.equal(await feedback.locator('[role="alert"]').isVisible(), true, text);
                     }
                     assert.equal(requests.length, 0);
                     assert.equal(credentials, 0);
-                    assert.equal(await command("/model"), true);
-                    assert.equal(await rows.last().locator("header code").textContent(), "/model");
-                    assert.equal(await rows.last().getAttribute("data-command-input"), null, "the submitted command is content, not attribute state");
-                    assert.match(await rows.last().textContent(), /Not selected/u);
+
+                    // Multi-line CLI output opens in #dialog-command-output without injecting DOM scripts or waterfall cards.
                     const source = '<script>window.commandExecuted=true</script>';
-                    result = modelResponse({ provider: "fixture", model: source });
-                    assert.equal(await command("/model"), true);
-                    assert.match(await rows.last().textContent(), /<script>/u);
-                    assert.equal(await rows.locator("script").count(), 0, "daemon strings remain literal text");
-                    result = { definitions: [{ alias: `mcp-${source}`, state: "active", provenance: { source: ".mcp.json" } }] };
-                    assert.equal(await command("/mcp list"), true);
-                    assert.equal(requests.at(-1).params.kind, "workspace.mcp.list");
-                    assert.match(await rows.last().locator("pre").textContent(), /mcp-<script>[\s\S]* {2}active {2}source=\.mcp\.json/u);
-                    assert.equal(await rows.locator("script").count(), 0);
-                    result = { definitions: [] };
-                    assert.equal(await command("/skills list"), true);
-                    assert.equal(requests.at(-1).params.kind, "workspace.skills.list");
-                    assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "skills: none");
-                    result = { definitions: [{ alias: "nightly", state: "active" }] };
-                    assert.equal(await command("/schedule list"), true);
-                    assert.equal(requests.at(-1).params.kind, "workspace.schedule.list");
-                    assert.equal(await rows.last().locator("pre").textContent(), "nightly  active");
-                    result = { definitions: [] };
-                    assert.equal(await command("/personas list"), true);
-                    assert.equal(requests.at(-1).params.kind, "workspace.personas.list");
-                    assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "personas: none");
-                    result = { results: [{ status: 200, content: "shell-ok" }] };
+                    result = { results: [{ status: 200, content: `shell-ok ${source}` }] };
                     assert.equal(await command("! echo shell-ok"), true);
                     assert.equal(requests.at(-1).params.kind, "op.exec");
                     assert.match(requests.at(-1).params.params.text, /plurnk\.sh\(/u);
-                    assert.equal(await rows.last().locator("pre").textContent(), "shell-ok");
+                    await outputDialog.waitFor({ state: "visible" });
+                    assert.equal(await outputDialog.locator('[data-text="command-title"]').textContent(), "! echo shell-ok");
+                    assert.equal(await outputDialog.locator('[data-text="command-literal"]').textContent(), `shell-ok ${source}`);
+                    assert.equal(await outputDialog.locator("script").count(), 0, "daemon strings remain literal text");
+                    await outputDialog.locator("button[data-dialog-close]").click();
+                    await outputDialog.waitFor({ state: "hidden" });
+
                     result = { results: [{ status: 200, content: "note-ok" }] };
                     assert.equal(await command('plurnk.note({ body: "note-ok" })'), true);
                     assert.equal(requests.at(-1).params.kind, "op.exec");
-                    assert.equal(await rows.last().locator("pre").textContent(), "note-ok");
+                    await outputDialog.waitFor({ state: "visible" });
+                    assert.equal(await outputDialog.locator('[data-text="command-literal"]').textContent(), "note-ok");
+                    await outputDialog.press("Escape");
+                    await outputDialog.waitFor({ state: "hidden" });
+
+                    result = { family: "mcp", candidates: [{ alias: "sqlite-mcp", summary: "SQLite inspector" }] };
+                    assert.equal(await command("/mcp discover sqlite"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.mcp.discover");
+                    await outputDialog.waitFor({ state: "visible" });
+                    assert.match(await outputDialog.locator('[data-text="command-literal"]').textContent(), /sqlite-mcp {2}SQLite inspector/u);
+                    await outputDialog.locator("button[data-dialog-close]").click();
+                    await outputDialog.waitFor({ state: "hidden" });
+
+                    // Direct mutations confirm in #session-feedback without opening dialogs or leaking secrets.
                     result = { configOptions: [{ configId: "persona", name: "Persona", type: "select", currentValue: "reviewer", options: [{ value: "none", name: "none" }, { value: "reviewer", name: "reviewer" }] }] };
                     assert.equal(await command("/persona reviewer"), true);
                     assert.equal(requests.at(-1).method, "session/set_config_option");
                     assert.equal(requests.at(-1).params.configId, "persona");
-                    assert.match(await rows.last().textContent(), /Persona: reviewer\./u);
+                    assert.equal(await statusText.textContent(), "Persona: reviewer. Supported: none, reviewer.");
+
                     result = { configOptions: [{ configId: "spawn_model", name: "Child Session Model", type: "select", currentValue: "inherit", options: [{ value: "inherit", name: "inherit" }] }] };
                     assert.equal(await command("/child inherit"), true);
                     assert.equal(requests.at(-1).params.configId, "spawn_model");
-                    assert.match(await rows.last().textContent(), /Child model: inherit\./u);
+                    assert.equal(await statusText.textContent(), "Child model: inherit.");
+
                     result = { to: "1/1/2", restored: ["a.ts"], skipped: [] };
                     assert.equal(await command("/rollback 1/1/2"), true);
                     assert.equal(requests.at(-1).params.kind, "session.rollback");
-                    assert.match(await rows.last().textContent(), /Rolled back to 1\/1\/2 \(1 restored, 0 skipped\)\./u);
+                    assert.equal(await statusText.textContent(), "Rolled back to 1/1/2 (1 restored, 0 skipped).");
+
                     result = { folder: "/tmp/digest-out" };
                     assert.equal(await command("/share /tmp/digest-out"), true);
                     assert.equal(requests.at(-1).params.kind, "workspace.share");
-                    assert.match(await rows.last().textContent(), /Shared digest: \/tmp\/digest-out\./u);
-                    result = {
-                        definitions: [
-                            { alias: "API_TOKEN", origin: "session", state: "active", definition: { value: "top-secret-value" } },
-                            { alias: "WS_TOKEN", origin: "workspace", state: "disabled", provenance: { source: ".env" }, definition: { value: "ws-secret" } },
-                            { alias: "SVC_TOKEN", origin: "service", state: "active", definition: { value: "svc-secret" } },
-                        ],
-                    };
-                    assert.equal(await command("/env list"), true);
-                    assert.equal(requests.at(-1).params.kind, "session.env.list");
-                    const envCard = rows.last();
-                    const envRows = envCard.locator("[data-env-panel] tbody tr");
-                    assert.equal(await envRows.count(), 3);
-                    assert.equal(await envRows.nth(0).locator('[data-text="env-alias"]').textContent(), "API_TOKEN");
-                    assert.equal(await envRows.nth(0).locator('[data-text="env-origin"]').textContent(), "session");
-                    assert.equal(await envRows.nth(0).locator('[data-text="env-status"]').textContent(), "active");
-                    assert.equal(await envRows.nth(0).getByRole("button", { name: "Disable", exact: true }).isVisible(), true);
-                    assert.equal(await envRows.nth(0).getByRole("button", { name: "Enable", exact: true, includeHidden: true }).isVisible(), false);
-                    assert.equal(await envRows.nth(0).getByRole("button", { name: "Unset", exact: true }).isVisible(), true);
-                    assert.equal(await envRows.nth(1).locator('[data-text="env-status"]').textContent(), "disabled (.env)");
-                    assert.equal(await envRows.nth(1).getByRole("button", { name: "Enable", exact: true }).isVisible(), true);
-                    assert.equal(await envRows.nth(2).getByRole("button", { name: "Unset", exact: true, includeHidden: true }).isVisible(), false, "service variables cannot be unset");
-                    assert.doesNotMatch(await envCard.textContent(), /top-secret-value|ws-secret|svc-secret/u);
-                    await envCard.getByRole("combobox", { name: "Variable scope", exact: true }).selectOption("workspace");
-                    await envCard.getByRole("textbox", { name: "Variable name", exact: true }).fill("NEW_FLAG");
-                    await envCard.getByLabel("Variable value", { exact: true }).fill("inline-secret-value");
-                    result = { definitions: [{ alias: "NEW_FLAG", origin: "workspace", state: "active", definition: { value: "inline-secret-value" } }] };
-                    await envCard.getByRole("button", { name: "Set", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#session-command-results > ul > li:last-child article")?.getAttribute("data-command-state") === "done"
-                        && document.querySelector("#session-command-results > ul > li:last-child [data-text='command-message']")?.textContent === "NEW_FLAG  active");
-                    assert.deepEqual(requests.slice(-2).map((r) => [r.params.kind, r.params.params]), [
-                        ["workspace.env.replace", { alias: "NEW_FLAG", value: "inline-secret-value" }],
-                        ["session.env.list", {}],
+                    assert.equal(await statusText.textContent(), "Shared digest: /tmp/digest-out.");
+
+                    result = { status: 201 };
+                    assert.equal(await command("/env --scope workspace set NEW_FLAG inline-secret-value"), true);
+                    assert.deepEqual([requests.at(-1).params.kind, requests.at(-1).params.params], [
+                        "workspace.env.replace",
+                        { alias: "NEW_FLAG", value: "inline-secret-value" },
                     ]);
-                    assert.equal(await envCard.getByRole("textbox", { name: "Variable name", exact: true }).inputValue(), "");
-                    assert.equal(await envCard.getByLabel("Variable value", { exact: true }).inputValue(), "");
-                    assert.doesNotMatch(await envCard.textContent(), /inline-secret-value/u);
-                    result = { problem: { type: "https://problems.plurnk.xyz/env/alias-invalid", title: "Bad Request", status: 400, detail: "Alias '123' is invalid.", recovery: "Start with an uppercase letter." } };
-                    await envCard.getByRole("textbox", { name: "Variable name", exact: true }).fill("123");
-                    await envCard.getByLabel("Variable value", { exact: true }).fill("kept-on-error");
-                    await envCard.getByRole("button", { name: "Set", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#session-command-results > ul > li:last-child article")?.getAttribute("data-command-state") === "error");
-                    assert.equal(await envCard.locator("[data-text=command-message]").textContent(), "Alias '123' is invalid.");
-                    assert.equal(await envCard.locator("[data-text=command-recovery]").textContent(), "Start with an uppercase letter.");
-                    assert.equal(await envCard.getByRole("textbox", { name: "Variable name", exact: true }).inputValue(), "123", "refusal preserves unsent variable input");
-                    assert.equal(await envCard.getByLabel("Variable value", { exact: true }).inputValue(), "kept-on-error");
-                    await envCard.getByLabel("Variable value", { exact: true }).fill("");
-                    result = { definitions: [] };
-                    await envRows.nth(0).getByRole("button", { name: "Unset", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#session-command-results > ul > li:last-child article")?.getAttribute("data-command-state") === "done");
-                    assert.deepEqual(requests.slice(-2).map((r) => [r.params.kind, r.params.params]), [
-                        ["workspace.env.remove", { alias: "NEW_FLAG" }],
-                        ["session.env.list", {}],
-                    ]);
-                    catalog = {
-                        aliases: [{ alias: "local", provider: "fixture", model: "small", active: true }],
-                        page: { items: [{ selector: "fixture/small", provider: "fixture", providerName: "Fixture",
-                            model: "small", modelName: source, limits: { contextTokens: 32768 },
-                            capabilities: { attachment: false, reasoning: true, efforts: ["low", "high"],
-                                toolCall: true, inputModalities: ["text"], outputModalities: ["text"] },
-                            readiness: { ready: false, causes: [{ kind: "credential", alternatives: [["FIXTURE_KEY"]] }] },
-                        }], offset: 0, total: 2, nextOffset: 1 },
-                    };
-                    assert.equal(await command("/models fixture"), true);
-                    assert.equal(await rows.last().locator("[data-model-aliases] > li").count(), 1);
-                    assert.equal(await rows.last().locator("tbody tr").count(), 1);
-                    assert.equal(await rows.last().locator("[data-text=model-name]").textContent(), source);
-                    assert.equal(await rows.last().locator("[data-text=model-readiness]").textContent(), "Not configured");
-                    assert.equal(await rows.last().locator("[data-text=model-more]").isVisible(), true);
-                    assert.equal(requests.at(-1).params.params.search, "fixture");
-                    const modelButton = page.getByRole("button", { name: "Model", exact: true });
-                    const modelDialog = page.locator("#dialog-session-model");
-                    const modelPanel = page.locator("#session-model-settings");
-                    const selectModel = modelPanel.getByRole("combobox", { name: "Search Models", exact: true });
-                    const statusLine = page.locator("#session-status > [data-status-line]");
-                    result = modelResponse(null);
-                    await page.getByRole("textbox", { name: "Message", exact: true }).focus();
-                    await modelButton.press("Enter");
-                    await modelDialog.waitFor({ state: "visible" });
-                    await modelPanel.locator('datalist option[value="fixture/small"]').waitFor({ state: "attached" });
-                    assert.equal(await modelButton.getAttribute("aria-expanded"), "true");
-                    assert.equal(await statusLine.isVisible(), true);
-                    assert.equal(await selectModel.inputValue(), "");
-                    assert.equal(await selectModel.getAttribute("placeholder"), "Search Models");
-                    assert.equal(await modelPanel.locator('datalist option[value="fixture/small"]').textContent(), `${source} — Not configured`);
-                    assert.equal(await modelPanel.locator("[data-select-alias='local']").count(), 1, "configured alias renders as a 1-click button");
-                    assert.equal(await modelPanel.locator("script").count(), 0);
-                    assert.equal(await modelPanel.locator("label, h2, select, [data-text=catalog-summary]").count(), 0);
-                    assert.equal(await modelPanel.locator("p[role='status']:visible").count(), 0, "no success or catalog-summary chatter");
-                    assert.equal(await page.locator("main").evaluate((main) => main.scrollWidth <= main.clientWidth), true, "native model dialog fits the narrow viewport");
-                    delayed = { search: "stale", started: Promise.withResolvers(), release: Promise.withResolvers(), done: Promise.withResolvers(),
-                        outcome: { ok: false, problem: { type: "https://example.test/problems/catalog", title: "Stale search", status: 503, detail: "Stale failure." } } };
-                    await selectModel.fill("stale");
-                    await delayed.started.promise;
-                    const beforeSearch = requests.length;
-                    catalog.page = { items: [{ ...catalog.page.items[0], selector: "fixture/beyond-first-page", model: "beyond-first-page" }], offset: 0, total: 1 };
-                    await selectModel.fill("beyond-first-page");
-                    await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
-                    assert.deepEqual(requests.slice(beforeSearch).map((req) => req.method === "_plurnk/action" ? req.params.kind : req.method), ["providers/list", "models.list"]);
-                    assert.equal(requests.at(-1).params.params.search, "beyond-first-page");
-                    assert.equal(await modelPanel.locator('datalist option[value="local"]').count(), 0);
-                    delayed.release.resolve();
-                    await delayed.done.promise;
-                    assert.equal(await modelPanel.locator("p[role='status']:visible").count(), 0, "superseded catalog failure cannot overwrite current suggestions");
-                    assert.equal(await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').count(), 1);
-                    delayed = undefined;
-                    catalog.error = { ok: false, problem: { type: "https://example.test/problems/catalog", title: "Catalog unavailable", status: 503, detail: "Catalog unavailable." } };
-                    await selectModel.fill("unavailable");
-                    await modelPanel.getByRole("status").filter({ hasText: "Catalog unavailable." }).waitFor();
-                    assert.equal(await selectModel.inputValue(), "unavailable");
-                    catalog.error = undefined;
-                    await selectModel.fill("fixture/not-in-catalog");
-                    result = { ok: false, problem: { type: "https://example.test/problems/config", title: "Not configured", status: 422, detail: "Credential required.", recovery: "Configure this provider." } };
-                    const historyCount = await rows.count();
-                    await modelPanel.getByRole("button", { name: "Select Model", exact: true }).click();
-                    await modelPanel.getByRole("status").filter({ hasText: "Credential required." }).waitFor();
-                    assert.equal(await selectModel.inputValue(), "fixture/not-in-catalog", "suggestions are not an admission allowlist");
-                    assert.equal(await modelPanel.locator("[data-text=settings-recovery]").textContent(), "Configure this provider.");
-                    assert.equal(await rows.count(), historyCount, "native selection is not synthetic command history");
-                    assert.equal(await modelDialog.isVisible(), true, "refusal retains the dialog");
-                    result = modelResponse({ provider: "fixture", model: "not-in-catalog" });
-                    await modelPanel.getByRole("button", { name: "Select Model", exact: true }).click();
-                    await modelDialog.waitFor({ state: "hidden" });
-                    assert.equal(await modelButton.getAttribute("aria-expanded"), "false");
-                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true);
-                    assert.equal(await statusLine.isVisible(), true, "successful selection retains focus and status");
-                    const effortButton = page.getByRole("button", { name: "Effort", exact: true });
-                    const effortDialog = page.locator("#dialog-session-effort");
-                    const effortPanel = page.locator("#session-effort-settings");
-                    result = effortResponse(null, []);
-                    await effortButton.click();
-                    await effortDialog.waitFor({ state: "visible" });
-                    await effortPanel.getByRole("status").filter({ hasText: "No supported efforts." }).waitFor();
-                    assert.equal(await modelDialog.isVisible(), false);
-                    assert.equal(await effortPanel.getByRole("button", { name: "Select Effort", exact: true }).isDisabled(), true);
-                    assert.equal(await effortPanel.getByRole("combobox").locator('option[value=""]').textContent(), "Reasoning Effort");
-                    await effortPanel.getByRole("button", { name: "Cancel", exact: true }).click();
-                    await effortDialog.waitFor({ state: "hidden" });
-                    assert.equal(await effortButton.evaluate((button) => document.activeElement === button), true);
-                    assert.equal(await statusLine.isVisible(), true, "Cancel retains focus and status");
-                    await page.getByRole("textbox", { name: "Message", exact: true }).focus();
-                    await modelButton.click();
-                    await modelDialog.waitFor({ state: "visible" });
-                    await modelPanel.locator('datalist option[value="fixture/beyond-first-page"]').waitFor({ state: "attached" });
-                    assert.equal(await modelDialog.isVisible(), true, "pointer activation opens the modal");
-                    await selectModel.press("Escape");
-                    // Firefox's native <datalist> popup consumes the first Escape in browser chrome before DOM cancel.
-                    if (engine === firefox && await modelDialog.isVisible()) await selectModel.press("Escape");
-                    await modelDialog.waitFor({ state: "hidden" });
-                    assert.equal(await modelButton.evaluate((button) => document.activeElement === button), true, "Escape closes model dialog and restores focus");
-                    catalog.page = { items: [], offset: 0, total: 0 };
-                    assert.equal(await command("/models absent"), true);
-                    assert.equal(await rows.last().locator("[data-no-aliases]").isVisible(), true);
-                    catalog = undefined;
+                    assert.doesNotMatch(await feedback.textContent(), /inline-secret-value/u);
+
+                    result = modelResponse({ alias: "local", provider: "fixture", model: "small", effort: "high", effortSource: "explicit" });
+                    assert.equal(await command("/model local high"), true);
+                    assert.equal(await statusText.textContent(), "Model: local — fixture/small (high).");
+
+                    // Daemon Problem refusals, malformed responses, auth failures, and aborted requests report cleanly in #session-feedback.
                     const problem = { type: "https://example.test/problems/busy", title: "Busy", status: 409, detail: "Session still active.", recovery: "Wait for the work to settle." };
                     result = { ok: false, problem };
                     assert.equal(await command("/model fixture"), false);
-                    assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), problem.detail);
-                    assert.equal(await rows.last().locator("[data-text=command-recovery]").textContent(), problem.recovery);
-                    assert.equal(await rows.last().locator("article").getAttribute("data-command-status"), "409");
-                    assert.equal(await rows.last().locator("details, pre").count(), 0);
+                    assert.equal(await errorText.textContent(), `${problem.detail} ${problem.recovery}`);
+
                     for (const invalid of [
                         { configOptions: [], availableCommands: [] },
                         { configOptions: [], availableCommands: [], _meta: { plurnk: { status: {} } } },
                         { configOptions: [], availableCommands: [], _meta: { plurnk: { status: { model: 42 } } } },
                     ]) {
                         result = invalid;
-                        assert.equal(await command("/model"), false, "missing, mismatched and malformed results cannot claim success");
+                        assert.equal(await command("/model local"), false, "missing, mismatched and malformed results cannot claim success");
                     }
+
                     credentialStatus = 401;
                     const count = requests.length;
-                    assert.equal(await command("/model"), false);
+                    assert.equal(await command("/model local"), false);
                     assert.equal(requests.length, count, "credential refusal prevents action delivery");
-                    assert.match(await rows.last().textContent(), /401/u);
+                    assert.match(await errorText.textContent(), /401/u);
                     checkBrowser(engine === firefox ? [] : [httpFailure("/auth/token", 401)]);
+
                     credentialStatus = 200;
-                    result = modelResponse(null);
-                    assert.equal(await command("/model"), true, "a later explicit command can recover");
+                    result = modelResponse({ alias: "local", provider: "fixture", model: "small" });
+                    assert.equal(await command("/model local"), true, "a later explicit command can recover");
+
                     for (const input of requests) {
                         if (input.method !== "providers/list") {
                             assert.equal(input.params.sessionId, "7#session1");
@@ -438,13 +352,12 @@ export default async function verifyCommands(t) {
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
                     held = Promise.withResolvers();
                     const received = page.waitForRequest((req) => req.url().endsWith("/acp") && req.method() === "POST" && req.postDataJSON()?.method !== "initialize");
-                    const pending = command("/model");
+                    const pending = command("/model local");
                     await received;
                     await page.evaluate(() => window.depart());
                     held.resolve();
                     assert.equal(await pending, false, "departure cancels only delivery, with no successful result invented");
-                    assert.equal(await rows.last().locator("[data-command-state=error]").count(), 1);
-                    assert.equal(await rows.last().locator("[data-text=command-message]").textContent(), "Response not confirmed.");
+                    assert.equal(await errorText.textContent(), "Response not confirmed.");
                     assert.equal(requests.some((input) => input.method === "session/cancel"), false);
                     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
                     checkBrowser();

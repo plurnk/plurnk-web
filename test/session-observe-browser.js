@@ -134,11 +134,11 @@ export default async function verifySessionObserve(t) {
                         assert.equal(await statusLine.isVisible(), true);
 
                         // Outside the composer when not interrupted, Shift+Tab preserves native backward focus traversal without toggling YOLO.
-                        const effort = page.getByRole("button", { name: "Effort", exact: true });
-                        await effort.focus();
-                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-effort");
+                        const modelLink = page.getByRole("link", { name: "Model", exact: true });
+                        await modelLink.focus();
+                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-model");
                         await page.keyboard.press("Shift+Tab");
-                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-model", "Shift+Tab outside composer moves focus backward");
+                        assert.equal(await page.evaluate(() => document.activeElement?.id), "session-yolo", "Shift+Tab outside composer moves focus backward");
                         assert.equal(await approval.getAttribute("aria-pressed"), "true", "backward focus navigation does not toggle YOLO");
 
                         // Toggle Auto-approve off from composer and verify steady status bar stays visible without shifting.
@@ -418,11 +418,11 @@ export default async function verifySessionObserve(t) {
                         await page.locator('[data-message-id="older-0"]').waitFor();
                         assert.ok((await metrics()).gap > 400, "activating Load earlier messages keeps reader away from bottom");
 
-                        // 7. Client /help command reveals #session-command-results at the bottom.
+                        // 7. Client /help command navigates directly to /settings/#help without waterfall injection into #main.
                         await draft.fill("/help");
                         await page.getByRole("button", { name: "Send", exact: true }).click();
-                        await page.locator("#session-command-results > ul > li").waitFor();
-                        assert.ok((await metrics()).gap <= 24, "client command presentation jumps to show command output");
+                        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#help");
+                        await page.locator('#workspace-settings [data-settings-panel="help"] dl[aria-label="Keyboard shortcuts"]').waitFor({ state: "visible" });
                     });
 
                     await t.test("{§web-onboarding} {§web-session-input} {§web-session-approval} {§web-session-commands} onboarding setup, prompt suggestions, @path openPaths, and ? forced review with e proposal editing", async () => {

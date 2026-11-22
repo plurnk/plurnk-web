@@ -47,7 +47,9 @@
     }
 
     body > header > a,
-    header #header-place a {
+    header #header-place a,
+    #session-model,
+    #session-effort {
         text-decoration: none;
     }
 
@@ -56,8 +58,7 @@
     }
 
     header :where(#header-place button, nav button),
-    #session-usage > summary,
-    #dialog-session-model > article > footer > button {
+    #session-usage > summary {
         --otm-primary-background: transparent;
         --otm-primary-hover-background: transparent;
         --otm-primary-inverse: var(--otm-primary);

@@ -118,7 +118,7 @@
             <div data-status-line>
                 <ul aria-label="Model controls">
                     <li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="false" aria-label="Automatic approval" title="Manual Approval (Shift+Tab · /yolo)"><span data-text="yolo-label">Review</span></button></li>
-                    <li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="session-model" aria-label="Model" aria-expanded="false" aria-controls="dialog-session-model"><span data-text="model">No model</span></button><button type="button" id="session-effort" aria-label="Effort" aria-expanded="false" aria-controls="dialog-session-effort"><span data-text="effort"></span></button></li>
+                    <li data-status-field="model" data-bind="aria-label:model-label title:model-label"><a id="session-model" href="/settings/" data-bind="href:models-settings-path" aria-label="Model"><span data-text="model">No model</span></a><a id="session-effort" href="/settings/" data-bind="href:models-settings-path" aria-label="Effort"><span data-text="effort"></span></a></li>
                 </ul>
                 <div data-status-telemetry>
                     <ul aria-label="Active session activity">
@@ -172,12 +172,60 @@
     <template id="workspace-switcher-archived-item">
         <li data-switcher-archived-entry=""><span data-switcher-archived-label></span><form method="post" action="/sessions/unarchive" data-inline-unarchive><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form></li>
     </template>
-    <!-- {§web-workspace-settings} Dedicated workspace settings page templates for MCP, skills, schedules, personas, members, and env. -->
-    <template id="workspace-open-settings">
-        <a href="/settings/" data-open-workspace-settings="" data-i18n="ws-settings-open">Settings</a>
-    </template>
+    <!-- {§web-workspace-settings} Dedicated settings page templates for models, MCP, skills, schedules, personas, members, env, and help. -->
     <template id="workspace-settings-subsystems">
         <div data-settings-panels>
+            <section data-settings-panel="models" aria-label="Models" data-alias-count="0" hidden>
+                <header data-panel-toolbar>
+                    <h2 data-i18n="ws-settings-tab-models">Models</h2>
+                    <form data-session-model-form hidden>
+                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                            <select name="model" aria-label="Active session model"></select>
+                            <select name="effort" aria-label="Reasoning effort"></select>
+                            <button type="submit" data-i18n="ws-settings-apply-persona">Apply to session</button>
+                        </fieldset>
+                    </form>
+                    <button type="button" data-open-model-setup data-i18n="ws-settings-add-model">+ Add model</button>
+                </header>
+                <p data-models-aliases-empty data-i18n="no-aliases">No matching aliases.</p>
+                <figure data-models-aliases-wrap>
+                    <table>
+                        <thead><tr>
+                            <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
+                            <th scope="col" data-i18n="onboarding-model-label">Model</th>
+                            <th scope="col" data-i18n="model-efforts">Efforts</th>
+                            <th scope="col" data-i18n="ws-settings-col-state">State</th>
+                            <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                        </tr></thead>
+                        <tbody data-models-alias-rows></tbody>
+                    </table>
+                </figure>
+                <h3 data-i18n="model-catalog">Model catalog</h3>
+                <form data-models-search-form>
+                    <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                        <input type="search" name="q" aria-label="Search model catalog" placeholder="Search model catalog…" autocomplete="off" spellcheck="false">
+                        <button type="submit" data-i18n="search">Search</button>
+                    </fieldset>
+                </form>
+                <p>
+                    <span data-i18n="model-offset">Offset:</span> <span data-text="model-offset">0</span>
+                    <span data-i18n="models-shown">Shown:</span> <span data-text="model-count">0</span>
+                    <span data-i18n="models-total">Total:</span> <span data-text="model-total">0</span>
+                </p>
+                <p data-text="model-more"></p>
+                <figure>
+                    <table>
+                        <thead><tr>
+                            <th scope="col" data-i18n="model-selector">Selector</th>
+                            <th scope="col" data-i18n="model-name">Name</th>
+                            <th scope="col" data-i18n="model-context">Context</th>
+                            <th scope="col" data-i18n="model-efforts">Efforts</th>
+                            <th scope="col" data-i18n="model-readiness">Readiness</th>
+                        </tr></thead>
+                        <tbody data-models-catalog-rows></tbody>
+                    </table>
+                </figure>
+            </section>
             <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-mcp-heading">MCP servers</h2>
@@ -484,7 +532,33 @@
                     </article>
                 </dialog>
             </section>
+            <section data-settings-panel="help" aria-label="Help" hidden>
+                <header data-panel-toolbar>
+                    <h2 data-i18n="ws-settings-tab-help">Help</h2>
+                </header>
+                <h3 data-i18n="keyboard-shortcuts">Keyboard shortcuts</h3>
+                <div data-help-shortcuts-outlet></div>
+                <h3 data-i18n="slash-commands">Slash commands</h3>
+                <input type="search" data-help-filter aria-label="Filter commands" placeholder="Filter commands…" autocomplete="off" spellcheck="false">
+                <div data-help-commands-outlet></div>
+            </section>
         </div>
+    </template>
+    <template id="workspace-model-alias-row">
+        <tr data-model-session-usable="false">
+            <th scope="row"><code data-text="alias-name">alias</code></th>
+            <td><code data-text="alias-route">provider/model</code></td>
+            <td data-text="alias-effort">Unspecified</td>
+            <td data-text="alias-active">Configured</td>
+            <td>
+                <form data-model-alias-row-form>
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <input type="hidden" name="alias" data-bind="value:alias-name">
+                        <button type="submit" name="operation" value="select" data-model-use-session data-i18n="ws-settings-use-in-session">Use in session</button>
+                    </fieldset>
+                </form>
+            </td>
+        </tr>
     </template>
     <template id="workspace-family-row">
         <tr data-family-removable="true" data-family-state="active" data-family-auth="false">
@@ -645,71 +719,19 @@
             </article>
         </section>
     </template>
-    <!-- {§web-session-settings} Native modal dialogs and forms reuse the command action boundary. -->
-    <template id="model-settings">
-        <dialog id="dialog-session-model" aria-label="Model selection">
-            <article id="session-model-settings" aria-label="Model selection" tabindex="-1">
-                <header>
-                    <p><strong data-i18n="select-model">Select Model</strong></p>
-                    <button type="button" aria-label="Close" rel="prev" data-cancel-settings></button>
-                </header>
-                <ul data-alias-choices aria-label="Configured model aliases"></ul>
-                <form data-setting="model" data-bind="aria-busy:settings-pending">
-                    <input id="session-model-choice" type="search" name="selection" list="session-model-options" aria-label="Search Models" placeholder="Search Models" autocomplete="off" spellcheck="false" required data-bind="disabled:settings-pending">
-                    <datalist id="session-model-options"></datalist>
-                    <fieldset role="group">
-                        <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
-                        <button type="submit" data-bind="disabled:selection-unavailable" data-i18n="select-model">Select Model</button>
-                    </fieldset>
-                </form>
-                <p role="status" data-text="settings-message"></p>
-                <p data-text="settings-recovery"></p>
-                <footer>
-                    <button type="button" data-open-model-onboarding data-i18n="onboarding-open">Set up model…</button>
-                </footer>
-            </article>
-        </dialog>
-    </template>
-    <template id="alias-choice-item">
-        <li><button type="button" data-select-alias=""><strong data-text="alias-name"></strong> <small data-text="alias-route"></small></button></li>
-    </template>
-    <template id="effort-settings">
-        <dialog id="dialog-session-effort" aria-label="Effort selection">
-            <article id="session-effort-settings" aria-label="Effort selection" tabindex="-1">
-                <header>
-                    <p><strong data-i18n="reasoning-effort">Reasoning Effort</strong></p>
-                    <button type="button" aria-label="Close" rel="prev" data-cancel-settings></button>
-                </header>
-                <form data-setting="effort" data-bind="aria-busy:settings-pending">
-                    <select id="session-effort-choice" name="selection" aria-label="Reasoning Effort" required disabled data-bind="disabled:selection-unavailable">
-                        <option value="" disabled selected data-i18n="reasoning-effort">Reasoning Effort</option>
-                    </select>
-                    <fieldset role="group">
-                        <button type="button" data-cancel-settings data-bind="disabled:settings-pending" data-i18n="cancel">Cancel</button>
-                        <button type="submit" disabled data-bind="disabled:selection-unavailable" data-i18n="select-effort">Select Effort</button>
-                    </fieldset>
-                </form>
-                <p role="status" data-text="settings-message"></p>
-                <p data-text="settings-recovery"></p>
-            </article>
-        </dialog>
-    </template>
     <template id="setting-option"><option data-bind="value:option-value disabled:option-disabled" data-text="option-label"></option></template>
-    <!-- {§web-session-commands} Command results are local presentation, not conversation messages. -->
-    <template id="command-results">
-        <section id="session-command-results" aria-label="Command results">
-            <ul></ul>
-        </section>
-    </template>
-    <template id="session-command-result">
-        <li>
-            <article data-command-state="pending" data-bind="aria-busy:command-busy">
-                <header><code></code><button type="button" data-dismiss-command aria-label="Dismiss" title="Dismiss"></button></header>
-                <p role="status" data-text="command-message">Running…</p>
-                <div data-command-output></div>
-                <p data-text="command-recovery"></p>
+    <!-- {§web-session-commands} Multi-line client command output opens in a single modal, never conversation waterfall cards. -->
+    <template id="command-output-dialog">
+        <dialog id="dialog-command-output" aria-label="Command output">
+            <article>
+                <header>
+                    <p><code data-text="command-title"></code></p>
+                    <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
+                </header>
+                <p role="status" data-text="command-message"></p>
+                <pre data-command-literal-wrap><code data-text="command-literal"></code></pre>
             </article>
-        </li>
+        </dialog>
     </template>
     <template id="command-help">
         <ul aria-label="Supported commands">
@@ -760,47 +782,13 @@
             <dt><kbd>Enter</kbd> · <kbd><span data-text="shortcut-mod">Ctrl</span>+Enter</kbd></dt><dd data-i18n="shortcut-send">Send message (touch keyboards keep Enter as a newline).</dd>
             <dt><kbd>Shift+Enter</kbd> · <kbd>Ctrl+J</kbd></dt><dd data-i18n="shortcut-newline">Insert a newline in the message field.</dd>
             <dt><kbd>↑</kbd> / <kbd>↓</kbd></dt><dd data-i18n="shortcut-history">Cycle previous prompts and commands in the message field.</dd>
-            <dt><kbd>Tab</kbd></dt><dd data-i18n="shortcut-suggestion">Accept the lead prompt suggestion when the message field is empty.</dd>
+            <dt><kbd>Tab</kbd></dt><dd data-i18n="shortcut-suggestion">Accept the lead prompt suggestion or command completion in the message field.</dd>
             <dt><kbd>Shift+Tab</kbd></dt><dd data-i18n="shortcut-yolo">Toggle automatic approval on this page.</dd>
-            <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open selector or command results, or request Stop.</dd>
+            <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open dialog, or request Stop.</dd>
             <dt><kbd>/</kbd> · <kbd>?</kbd></dt><dd data-i18n="shortcut-focus-help">Focus the message field or open this command and shortcut reference.</dd>
             <dt><kbd>Y</kbd> / <kbd>N</kbd> / <kbd>E</kbd> (<kbd>A</kbd> / <kbd>R</kbd>)</dt><dd data-i18n="shortcut-review">Select Accept, Reject, or Edit on a pending proposal; confirm with Enter.</dd>
             <dt><kbd><span data-text="shortcut-mod">Ctrl</span>+K</kbd> · <kbd>Alt+1…9</kbd> · <kbd>Alt+[</kbd> / <kbd>]</kbd> · <kbd>Alt+N</kbd></dt><dd data-i18n="shortcut-tabs">Switch workspace tabs or create a session.</dd>
         </dl>
-    </template>
-    <template id="command-models">
-        <section aria-label="Available models">
-            <h2 data-i18n="model-aliases">Aliases</h2>
-            <p data-no-aliases data-i18n="no-aliases">No matching aliases.</p>
-            <ul data-model-aliases></ul>
-            <h2 data-i18n="model-catalog">Model catalog</h2>
-            <p>
-                <span data-i18n="model-offset">Offset:</span> <span data-text="model-offset">0</span>
-                <span data-i18n="models-shown">Shown:</span> <span data-text="model-count">0</span>
-                <span data-i18n="models-total">Total:</span> <span data-text="model-total">0</span>
-            </p>
-            <p data-text="model-more">Narrow the search for more matches.</p>
-            <figure>
-                <table>
-                    <thead><tr>
-                        <th scope="col" data-i18n="model-selector">Selector</th>
-                        <th scope="col" data-i18n="model-name">Name</th>
-                        <th scope="col" data-i18n="model-context">Context</th>
-                        <th scope="col" data-i18n="model-efforts">Efforts</th>
-                        <th scope="col" data-i18n="model-readiness">Readiness</th>
-                    </tr></thead>
-                    <tbody></tbody>
-                </table>
-            </figure>
-        </section>
-    </template>
-    <template id="command-alias">
-        <li>
-            <code data-text="alias-name">Alias</code>
-            <span data-text="alias-route">Provider/model</span>
-            <span data-text="alias-effort">Effort</span>
-            <span data-text="alias-active">Default</span>
-        </li>
     </template>
     <template id="command-model">
         <tr>

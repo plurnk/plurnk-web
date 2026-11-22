@@ -208,9 +208,10 @@ export function workspaceIdentity({ name, projectLabel }, session) {
         workspacePath,
         sessionPath,
         workspaceSettingsPath: workspaceSettingsPath(name, session) ?? workspacePath,
+        modelsSettingsPath: workspaceSettingsPath(name, session, "models") ?? workspacePath,
         projectLabel: namedFolder ? projectLabel : "",
-        workspaceIcon: projectLabel !== null && !namedFolder ? "🗂️" : "☁️",
-        workspaceIconLabel: projectLabel === null ? "Folderless workspace" : namedFolder ? "Workspace" : "Project workspace",
+        workspaceIcon: projectLabel !== null ? "🗂️" : "☁️",
+        workspaceIconLabel: projectLabel === null ? "Folderless workspace" : "Project workspace",
         pageTitle: `${name}#${session} — Plurnk`,
     };
 }

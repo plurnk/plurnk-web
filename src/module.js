@@ -500,6 +500,7 @@ export default function createModule(assets = productionAssets()) {
                             const targetName = fields.get("workspace");
                             if (!formToken || !targetName) throw new RequestError(400, "Expected session creation token and workspace name.");
                             const sessionName = fields.get("name") ?? "";
+                            const rawTitle = (fields.get("title") ?? "").trim();
                             const workspaces = await seam.listWorkspaces();
                             const ws = workspaces.find(({ name }) => name === targetName);
                             if (!ws) throw new RequestError(404, "Workspace not found.");
@@ -511,8 +512,11 @@ export default function createModule(assets = productionAssets()) {
                                     createdSession = sessionName === ""
                                         ? await createSequentialSession(ws.id)
                                         : await seam.createSession({ workspaceId: ws.id, name: sessionName });
+                                    if (rawTitle !== "" && typeof seam.setSessionTitle === "function") {
+                                        await seam.setSessionTitle({ workspaceId: ws.id, sessionId: createdSession.sessionId, title: rawTitle });
+                                    }
                                 } catch (cause) {
-                                    throw refusal(cause, "The daemon could not create the session.", documents.retrySession(ws.name, sessionName));
+                                    throw refusal(cause, "The daemon could not create the session.", documents.retrySession(ws.name, sessionName, rawTitle));
                                 }
                                 placeCookie = formatPlaceCookie(ws.id, createdSession.sessionId, secure);
                                 const path = directoryPath({ kind: "session", workspace: ws.name, session: createdSession.sessionName });

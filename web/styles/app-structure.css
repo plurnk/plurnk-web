@@ -179,7 +179,7 @@
     }
 
     /* {§web-page-shell} Dialog headers align titles with close controls; footers inside forms align actions to the end. */
-    article:where(#session-connection, #session-onboarding-banner, #session-command-results article) > header {
+    article:where(#session-connection, #session-onboarding-banner) > header {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -390,12 +390,12 @@
     }
 
     #session-conversation :where(details > ul),
-    :is(#session-conversation, #session-diagnostics, #session-command-results) > ul {
+    :is(#session-conversation, #session-diagnostics) > ul {
         padding: 0;
     }
 
     #session-conversation :where(details > ul) > li,
-    :is(#session-conversation, #session-diagnostics, #session-command-results) > ul > li {
+    :is(#session-conversation, #session-diagnostics) > ul > li {
         list-style: none;
     }
 
@@ -436,8 +436,7 @@
         margin: 0;
     }
 
-    #session-onboarding-banner > footer > button,
-    #dialog-session-model > article > footer > button {
+    #session-onboarding-banner > footer > button {
         inline-size: auto;
         margin: 0;
     }
@@ -611,7 +610,6 @@
         margin-block-end: calc(var(--otm-spacing) * -1);
     }
 
-    #session-command-results:not(:has(ul > li)),
     #session-diagnostics:not(:has(ul > li)) {
         display: none;
     }
@@ -646,7 +644,7 @@
     }
 
     #session-conversation pre,
-    #session-command-results pre,
+    #dialog-command-output pre,
     #workspace-settings pre,
     #main [aria-label="Review requests"] pre {
         max-inline-size: 100%;

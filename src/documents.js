@@ -265,7 +265,7 @@ export default class Documents {
                 const path = directoryPath({ kind: "workspace", workspace: ws.name });
                 const effectiveProject = ws.project_label ?? ws.project_root;
                 const separateFolder = ws.project_label !== null && ws.project_label !== ws.name;
-                const glyph = effectiveProject !== null && !separateFolder ? "🗂️" : "☁️";
+                const glyph = effectiveProject !== null ? "🗂️" : "☁️";
                 const folderNote = separateFolder ? ` <small>${escapeHtml(ws.project_label ?? "")}</small>` : "";
                 const current = ws.name === currentWorkspaceName ? ' aria-current="page"' : "";
                 const label = `${glyph} <span>${escapeHtml(ws.name)}</span>${folderNote}`;
@@ -319,8 +319,8 @@ export default class Documents {
     /** {§web-workspace-rename} @param {string} workspace @param {string} name @param {string} [session] */
     retryRename(workspace, name, session = "") { return this.#renameFields(workspace, name, "", session); }
 
-    /** {§web-session-creation} @param {string} workspace @param {string} name */
-    retrySession(workspace, name) { return this.#sessionFields(workspace, name, ""); }
+    /** {§web-session-creation} @param {string} workspace @param {string} name @param {string} [title] */
+    retrySession(workspace, name, title = "") { return this.#sessionFields(workspace, name, "", title); }
 
     /** {§web-account} Unified tabbed Account document (`#sign-ins` and `#about`); only authority-supplied facts are presented as sign-in information.
      * @param {{ family: string, sessions: readonly Pick<import("@plurnk/plurnk-contracts").CredentialSession, "family" | "createdAt" | "expiresAt" | "clients">[] }} account
@@ -419,23 +419,25 @@ export default class Documents {
     }
 
     /**
-     * {§web-session-creation} Native dialog modal for named session creation.
+     * {§web-session-creation} Native dialog modal for session creation (`name` and `title` optional).
      * @param {{name: string}} workspace
      */
     #sessionCreationForm(workspace) {
         return '<dialog id="dialog-session-create"><article>'
             + '<header><p><strong data-i18n="new-session">New session</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + this.#sessionFields(workspace.name, "", CANCEL)
+            + '<p role="alert" data-text="session-create-error"></p>'
+            + this.#sessionFields(workspace.name, "", CANCEL, "")
             + "</article></dialog>";
     }
 
-    /** @param {string} workspace @param {string} name @param {string} cancel */
-    #sessionFields(workspace, name, cancel) {
+    /** @param {string} workspace @param {string} name @param {string} cancel @param {string} [title] */
+    #sessionFields(workspace, name, cancel, title = "") {
         return '<form id="session-create" method="post" action="/sessions/new">'
             + `<input type="hidden" name="token" value="${randomUUID()}">`
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}" data-bind="value:workspace-name">`
-            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Session name (optional)" aria-label="Session name">`
+            + `<input type="text" name="name" value="${escapeHtml(name)}" placeholder="Session name (optional)" aria-label="Session name" autocomplete="off" spellcheck="false">`
+            + `<input type="text" name="title" value="${escapeHtml(title)}" placeholder="Session title (optional)" aria-label="Session title" autocomplete="off">`
             + `<footer>${cancel}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`;
     }
 
@@ -461,7 +463,6 @@ export default class Documents {
             + '<p role="alert" data-text="session-manage-error"></p>'
             + '<div data-session-manage-actions>'
             + '<button type="button" data-session-fork data-i18n="fork-session">Fork session</button>'
-            + '<button type="button" data-dialog-target="dialog-session-create" data-i18n="named-session">New named session…</button>'
             + '<form id="session-archive" method="post" action="/sessions/archive" data-session-archive-form>'
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}" data-bind="value:workspace-name">`
             + `<input type="hidden" name="session" value="${escapeHtml(session.name)}" data-bind="value:active-session-name">`
@@ -880,12 +881,13 @@ export default class Documents {
     #sessionStatus(directory, workspaceId, authenticated, automatic, needsOnboarding = false) {
         const path = directoryPath(directory);
         if (path === null) throw new Error("An admitted session must have a directory address.");
+        const modelsHref = workspaceSettingsPath(directory.workspace, directory.session, "models") ?? path;
         const footer = `<footer id="session-status" aria-label="Session status" data-workspace-id="${workspaceId}" data-session-id="${workspaceId}#${escapeHtml(directory.session)}"`
             + ` data-session-name="${escapeHtml(directory.session)}" data-auth="${authenticated ? "session" : "none"}" data-connection="initial"${needsOnboarding ? ' data-needs-onboarding="true"' : ""}>`
             + '<p role="status" data-text="connection-label">Not connected.</p><noscript><p data-i18n="live-status-needs-js">Live status requires JavaScript.</p></noscript>'
             + '<div data-status-line><ul aria-label="Model controls">'
             + `<li data-status-field="yolo"><button type="button" id="session-yolo" aria-pressed="${automatic}" aria-label="Automatic approval" title="${automatic ? "Auto" : "Manual"} Approval (Shift+Tab · /yolo)"><span data-text="yolo-label">${automatic ? "Auto-approve" : "Review"}</span></button></li>`
-            + '<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><button type="button" id="session-model" aria-label="Model" aria-expanded="false" aria-controls="dialog-session-model"><span data-text="model">No model</span></button><button type="button" id="session-effort" aria-label="Effort" aria-expanded="false" aria-controls="dialog-session-effort"><span data-text="effort"></span></button></li></ul>'
+            + `<li data-status-field="model" data-bind="aria-label:model-label title:model-label"><a id="session-model" href="${escapeHtml(modelsHref)}" data-bind="href:models-settings-path" aria-label="Model"><span data-text="model">No model</span></a><a id="session-effort" href="${escapeHtml(modelsHref)}" data-bind="href:models-settings-path" aria-label="Effort"><span data-text="effort"></span></a></li></ul>`
             + '<div data-status-telemetry>'
             + '<ul aria-label="Active session activity">'
             + '<li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>'
@@ -1132,8 +1134,8 @@ export default class Documents {
         // {§web-workspace-folder}
         const effectiveProject = workspace.project_label ?? workspace.project_root;
         const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
-        const iconLabel = effectiveProject === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
-        const iconGlyph = effectiveProject !== null && !folder ? "🗂️" : "☁️";
+        const iconLabel = effectiveProject === null ? "Folderless workspace" : "Project workspace";
+        const iconGlyph = effectiveProject !== null ? "🗂️" : "☁️";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${iconGlyph}</span>`;
         const switcherTrigger = `<button type="button" data-dialog-target="dialog-workspaces" aria-label="Change workspace" title="Change workspace">${WORKSPACES_ICON}</button>`;
         const settingsHref = workspaceSettingsPath(workspace.name, selected?.name ?? null);
@@ -1150,7 +1152,7 @@ export default class Documents {
         if (selected === undefined) {
             const tabs = this.#workspaceTabs(workspace, sessions, byId, overviewById, null, authenticated, live, automatic, needsOnboarding, creationsAvailable);
             const startForm = creationsAvailable && workspace.archived_at === null
-                ? `<form method="post" action="/sessions/new"><input type="hidden" name="token" value="${randomUUID()}"><input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}"><button type="submit" data-i18n="start-conversation">New session</button></form>`
+                ? `<form method="post" action="/sessions/new" data-workspace-empty-new><input type="hidden" name="token" value="${randomUUID()}"><input type="hidden" name="workspace" value="${escapeHtml(workspace.name)}"><button type="submit" data-i18n="start-conversation">New session</button></form>`
                 : "";
             const body = `<p id="session-folder" data-project-label="${escapeHtml(folder)}"><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label">${escapeHtml(folder)}</span></p>`
                 + `<article id="workspace-empty"><p data-i18n="no-sessions">No sessions in this workspace yet.</p>${startForm}</article>`;
@@ -1204,9 +1206,8 @@ export default class Documents {
             ? (sessions.find(({ name, origin }) => name === requestedSessionName && origin === "model") ?? null)
             : null;
         const effectiveProject = workspace.project_label ?? workspace.project_root;
-        const folder = workspace.project_label !== null && workspace.project_label !== workspace.name ? workspace.project_label : "";
-        const iconLabel = effectiveProject === null ? "Folderless workspace" : folder ? "Workspace" : "Project workspace";
-        const iconGlyph = effectiveProject !== null && !folder ? "🗂️" : "☁️";
+        const iconLabel = effectiveProject === null ? "Folderless workspace" : "Project workspace";
+        const iconGlyph = effectiveProject !== null ? "🗂️" : "☁️";
         const marker = `<span role="img" aria-label="${iconLabel}" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">${iconGlyph}</span>`;
         const backPath = activeSession !== null
             ? directoryPath({ kind: "session", workspace: workspace.name, session: activeSession.name })
@@ -1237,12 +1238,14 @@ export default class Documents {
 
         const navHtml = '<nav aria-label="Settings sections"><ul data-settings-nav>'
             + '<li><a href="#general" data-settings-section="general" aria-current="true" data-i18n="ws-settings-tab-general">General</a></li>'
+            + '<li><a href="#models" data-settings-section="models" data-i18n="ws-settings-tab-models">Models</a></li>'
             + '<li><a href="#mcp" data-settings-section="mcp" data-i18n="ws-settings-tab-mcp">MCP</a></li>'
             + '<li><a href="#skills" data-settings-section="skills" data-i18n="ws-settings-tab-skills">Skills</a></li>'
             + '<li><a href="#schedule" data-settings-section="schedule" data-i18n="ws-settings-tab-schedule">Schedule</a></li>'
             + '<li><a href="#personas" data-settings-section="personas" data-i18n="ws-settings-tab-personas">Personas</a></li>'
             + '<li><a href="#members" data-settings-section="members" data-i18n="ws-settings-tab-members">Members</a></li>'
             + '<li><a href="#env" data-settings-section="env" data-i18n="ws-settings-tab-env">Environment</a></li>'
+            + '<li><a href="#help" data-settings-section="help" data-i18n="ws-settings-tab-help">Help</a></li>'
             + "</ul></nav>";
 
         const generalPanel = '<section data-settings-panel="general" aria-label="General">'
@@ -1255,7 +1258,7 @@ export default class Documents {
             + "</section>";
 
         const body = '<article id="workspace-settings" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-busy">'
-            + '<header><h1 id="workspace-settings-title" data-i18n="ws-settings-title">Workspace settings</h1></header>'
+            + '<header><h1 id="workspace-settings-title" data-i18n="settings">Settings</h1></header>'
             + navHtml
             + '<p role="status" data-text="ws-settings-message"></p>'
             + '<p data-text="ws-settings-recovery"></p>'

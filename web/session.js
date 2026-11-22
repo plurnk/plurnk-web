@@ -11,13 +11,14 @@ import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import managementAction from "./management-action.js";
 import sessionCommands, {
-    SLASH_COMMAND_NAMES,
+    acceptCommandSuggestion,
+    computeCommandSuggestions,
     isCommand,
     isLocalExec,
     prepareComposerPrompt,
     primaryModifierLabel,
 } from "./session-commands.js";
-import sessionSettings from "./session-settings.js";
+import { isRecord } from "./session-translator.js";
 import describeFailure from "./failure.js";
 import { createPassiveReconnect, isRetryableObservationFailure } from "./passive-reconnect.js";
 import readingSlate from "./reading-slate.js";
@@ -34,15 +35,11 @@ function isTextEntry(target) {
     return target instanceof HTMLElement && target.isContentEditable;
 }
 
-const ZERO_ARG_COMPLETIONS = new Set([
-    "/help", "/yolo", "/stop", "/onboard", "/update", "/workspaces", "/sessions", "/loops", "/review",
-    "/parent", "/enter", "/older", "/newer",
-]);
-
 /** @typedef {{message?: {id: string, role: "user", content: string, attachments?: readonly import("./session-agent.js").PromptImageAttachment[], openPaths?: readonly string[]}, resolutions?: readonly import("./session-agent.js").GateResolution[], forceReview?: boolean}} Submission */
 
 // {§web-session-status} Repaint elapsed and wait at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
+const SENDING_DWELL_MS = 250;
 
 /** {§web-session-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback
  * here hands its first failure to `fail` and skips the rest, so the run ends with that cause.
@@ -290,8 +287,15 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         },
         openOnboarding,
     });
-    const dismissSettings = sessionSettings(main, element, action, () => resources.signal, { openOnboarding });
     const slate = readingSlate(main);
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let sendingTimer = null;
+    const clearSendingTimer = () => {
+        if (sendingTimer !== null) {
+            clearTimeout(sendingTimer);
+            sendingTimer = null;
+        }
+    };
 
     function syncAttachments() {
         draft.required = attachments.length === 0;
@@ -345,51 +349,88 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         slate.sync();
     }
 
-    /** @returns {{ kind: "command" | "skill" | "prompt", items: readonly string[] }} */
-    function computeComposeSuggestions() {
-        const value = draft.value;
-        const slashMatch = /^\s*\/([a-z0-9_-]*)$/iu.exec(value);
-        if (slashMatch) {
-            const prefix = `/${(slashMatch[1] ?? "").toLowerCase()}`;
-            const dynamic = availableCommands()
-                .filter((c) => c.type !== "skill" && typeof c.name === "string" && c.name.length > 0)
-                .map((c) => `/${c.name}`);
-            const skills = slashMatch[1] === ""
-                ? availableCommands()
-                    .filter((c) => c.type === "skill" && typeof c.name === "string" && c.name.length > 0)
-                    .map((c) => `$${c.name}`)
+    /** @returns {import("./session-commands.js").SuggestionSources} */
+    function buildSuggestionSources() {
+        const plurnk = /** @type {Record<string, unknown> | undefined} */ (agent.state.plurnk);
+        const configOptions = Array.isArray(plurnk?.configOptions) ? plurnk.configOptions : [];
+        const providers = Array.isArray(plurnk?.providers) ? plurnk.providers : [];
+        const readOptionValues = (/** @type {string} */ id) => {
+            const opt = configOptions.find((entry) => isRecord(entry) && entry.configId === id);
+            return isRecord(opt) && Array.isArray(opt.options)
+                ? opt.options.flatMap((o) => isRecord(o) && typeof o.value === "string" && o.value ? [o.value] : [])
                 : [];
-            const all = [...new Set([...SLASH_COMMAND_NAMES, ...dynamic])];
-            const matches = all.filter((cmd) => cmd.toLowerCase().startsWith(prefix)).slice(0, 8);
-            return { kind: "command", items: [...matches, ...skills.slice(0, Math.max(0, 8 - matches.length))] };
+        };
+        const providerAliases = providers.flatMap((p) => isRecord(p) && typeof p.alias === "string" && p.alias ? [p.alias] : []);
+        const models = [...providerAliases, ...readOptionValues("model").filter((v) => v !== "none")];
+        const efforts = readOptionValues("thought_level");
+        const personaOptions = readOptionValues("persona");
+        /** @type {Partial<Record<"mcp" | "skills" | "schedule" | "personas" | "members" | "env", readonly string[]>>} */
+        const familyAliases = {};
+        for (const family of /** @type {const} */ (["mcp", "skills", "schedule", "personas"])) {
+            const prefix = `${family}:`;
+            const aliases = configOptions.flatMap((entry) =>
+                isRecord(entry) && typeof entry.configId === "string" && entry.configId.startsWith(prefix)
+                    ? [entry.configId.slice(prefix.length)]
+                    : []);
+            if (aliases.length > 0) familyAliases[family] = aliases;
         }
-        const skillMatch = /(?:^|\s)\$([a-z0-9_-]*)$/iu.exec(value);
-        if (skillMatch) {
-            const prefix = (skillMatch[1] ?? "").toLowerCase();
-            const skills = availableCommands()
-                .filter((c) => c.type === "skill" && typeof c.name === "string" && c.name.toLowerCase().startsWith(prefix))
-                .map((c) => `$${c.name}`)
-                .slice(0, 8);
-            if (skills.length > 0) return { kind: "skill", items: skills };
+        const personas = personaOptions.length > 0
+            ? personaOptions
+            : ["none", ...(familyAliases.personas ?? [])];
+        const childModels = [...readOptionValues("spawn_model"), ...models];
+        const modes = readOptionValues("mode");
+        const workspaces = $$("#dialog-workspaces [data-workspaces-list] > li > a > span")
+            .map((el) => el.textContent?.trim() ?? "")
+            .filter(Boolean);
+        const tabSessions = $$("#workspace-tabs a[data-tab-session]")
+            .map((el) => el.getAttribute("data-tab-session") ?? "")
+            .filter(Boolean);
+        let foldedSessions = /** @type {string[]} */ ([]);
+        const rawFolded = $("#workspace-tabs")?.getAttribute("data-folded-sessions") ?? "";
+        if (rawFolded) {
+            try {
+                const parsed = JSON.parse(rawFolded);
+                if (Array.isArray(parsed)) {
+                    foldedSessions = parsed
+                        .filter((s) => isRecord(s) && !s.archived && typeof s.name === "string" && s.name.length > 0)
+                        .map((s) => String(s.name));
+                }
+            } catch {
+                // Ignore malformed attribute.
+            }
         }
+        const sessions = [...tabSessions, ...foldedSessions];
+        const latestLoopId = status?.loopId;
+        const loops = typeof latestLoopId === "number" && latestLoopId > 0
+            ? Array.from({ length: latestLoopId }, (_, idx) => String(latestLoopId - idx))
+            : [];
+        return {
+            availableCommands: availableCommands(),
+            promptSuggestions: promptSuggestions(),
+            models,
+            efforts,
+            personas,
+            childModels,
+            ...(modes.length > 0 ? { modes } : {}),
+            workspaces,
+            sessions,
+            loops,
+            gateIds: agent.pendingGates.map((g) => `@${g.id}`),
+            familyAliases,
+        };
+    }
+
+    function computeComposeSuggestions() {
         const live = Boolean(status && ["queued", "running", "parked"].includes(status.lifecycle));
-        const prompts = value === "" && !live && the(element, "connection") !== "interrupted" ? promptSuggestions() : [];
-        return { kind: "prompt", items: prompts };
+        const allowPromptSuggestions = !live && the(element, "connection") !== "interrupted";
+        return computeCommandSuggestions(draft.value, buildSuggestionSources(), { allowPromptSuggestions });
     }
 
     /** @param {string} suggestion */
     function acceptComposeSuggestion(suggestion) {
-        const text = suggestion.trim();
-        if (!text) return;
-        if (text.startsWith("$") && /(?:^|\s)\$[a-z0-9_-]*$/iu.test(draft.value)) {
-            draft.value = draft.value.replace(/\$[a-z0-9_-]*$/iu, `${text} `);
-        } else if (text.startsWith("/") && /^\s*\/[a-z0-9_-]*$/iu.test(draft.value)) {
-            draft.value = ZERO_ARG_COMPLETIONS.has(text) ? text : `${text} `;
-        } else if (text.startsWith("$") && /^\s*\/$/u.test(draft.value)) {
-            draft.value = `${text} `;
-        } else {
-            draft.value = text;
-        }
+        const nextValue = acceptCommandSuggestion(draft.value, suggestion, buildSuggestionSources());
+        if (nextValue === draft.value) return;
+        draft.value = nextValue;
         draft.focus();
         draft.setSelectionRange(draft.value.length, draft.value.length);
         draft.dispatchEvent(new Event("input", { bubbles: true }));
@@ -442,6 +483,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     /** @param {string} id */
     function acknowledged(id) {
         if (pending?.message.id !== id) return;
+        clearSendingTimer();
         seenHistoryMessageIds.add(id);
         pushPromptHistory(pending.source);
         historyIndex = -1;
@@ -479,7 +521,9 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         }, CLOCK_TICK_MS);
         try {
             while (!signal.aborted) {
-                if (!holding && !passiveRetry) connection("connecting", "Connecting…");
+                if (!holding && !passiveRetry) {
+                    connection("connecting", "Connecting…");
+                }
                 if (!submission?.resolutions && !holding && !passiveRetry) review.present([]);
                 agent.headers = await credentials(signal);
                 signal.throwIfAborted();
@@ -566,11 +610,12 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                     },
                     onError: ({ message, status: errStatus, problem: errProblem, terminal: errTerminal, settled: errSettled }) => {
                         if (signal.aborted) return;
+                        clearSendingTimer();
                         terminal = errTerminal !== undefined;
                         problem = errStatus ?? (typeof errProblem?.status === "number" ? errProblem.status : undefined);
                         settled = Boolean(errSettled);
                         // An observer sent nothing: the session's own failure shows in its status, not as this page's request.
-                        if (terminal && submission) the(feedback, "command-error", message);
+                        if (terminal && submission) the(feedback, { "message-status": "", "command-error": message });
                         else refusal = message;
                     },
                 };
@@ -621,6 +666,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             }
         } catch (error) {
             if (signal.aborted) return;
+            clearSendingTimer();
             agent.close();
             const signedOut = Reflect.get(Object(error), "status") === 401;
             if (signedOut || !passiveRetry) {
@@ -646,7 +692,11 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         previous?.controller.abort();
         if (!passiveRetry) {
             reconnect.reset();
-            connection("connecting", "Connecting…");
+            if (submission && the(element, "connection") === "interrupted") {
+                connection("connected", "Connected");
+            } else {
+                connection("connecting", "Connecting…");
+            }
         }
         const controller = new AbortController();
         delivery = { controller, done: (async () => {
@@ -697,7 +747,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         }
         if (isTextEntry(event.target) || event.ctrlKey || event.altKey || event.metaKey) return;
         if (event.key === "Escape" && !event.shiftKey) {
-            if (dismissSettings() || runCommand.dismissAll()) {
+            if (runCommand.dismissAll()) {
                 event.preventDefault();
                 return;
             }
@@ -713,16 +763,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             return;
         }
         if (event.key === "?") {
-            if (the(controls, "command-pending") !== null) return;
             event.preventDefault();
-            the(controls, "command-pending", "");
-            availability();
-            void runCommand.showHelp(resources.signal).then(() => {
-                slate.jumpToBottom();
-            }).finally(() => {
-                the(controls, "command-pending", null);
-                availability();
-            });
+            runCommand.showHelp();
             return;
         }
         const lower = event.key.toLowerCase();
@@ -982,7 +1024,15 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             attachmentIds: new Set(attachments.map(({ id }) => id)),
             retryable: false,
         };
-        the(feedback, { "message-status": "Sending…", "command-error": "" });
+        clearSendingTimer();
+        the(feedback, { "message-status": "", "command-error": "" });
+        sendingTimer = setTimeout(() => {
+            sendingTimer = null;
+            if (pending && !disposed) {
+                the(feedback, { "message-status": "Sending…", "command-error": "" });
+                slate.sync();
+            }
+        }, SENDING_DWELL_MS);
         slate.frameTurn(message.id);
         connect({ message, ...(prepared.forceReview ? { forceReview: true } : {}) });
     });
@@ -1087,6 +1137,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         dispose() {
             if (disposed) return;
             disposed = true;
+            clearSendingTimer();
             offFork();
             offKeydown();
             offCoarseMedia();

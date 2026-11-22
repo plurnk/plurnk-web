@@ -75,13 +75,21 @@ export function nextSequentialName(prefix, existingNames) {
  * @param {string} workspace
  * @param {string | null} [session]
  * @param {string | null} [section]
+ * @param {Readonly<Record<string, string | null | undefined>>} [extra]
  * @returns {string | null}
  */
-export function workspaceSettingsPath(workspace, session = null, section = null) {
+export function workspaceSettingsPath(workspace, session = null, section = null, extra = undefined) {
     if (directoryPath({ kind: "workspace", workspace }) === null) return null;
     const params = new URLSearchParams({ workspace });
     if (session !== null && session !== "" && session.isWellFormed()) {
         params.set("session", session);
+    }
+    if (extra) {
+        for (const [key, value] of Object.entries(extra)) {
+            if (typeof value === "string" && value !== "" && value.isWellFormed()) {
+                params.set(key, value);
+            }
+        }
     }
     const hash = section ? `#${encodeURIComponent(section)}` : "";
     return `/settings/?${params}${hash}`;

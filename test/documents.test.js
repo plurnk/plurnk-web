@@ -85,11 +85,11 @@ test("{§web-page-shell} {§web-workspace-folder} header place and search direct
     for (const [name, project_root, project_label, icon, label, separateFolder] of /** @type {const} */ ([
         ["~/looks-like-a-folder", null, null, "☁️", "Folderless workspace", false],
         ["~/project", "/home/daemon/project", "~/project", "🗂️", "Project workspace", false],
-        ["research<&>", "/home/daemon/project", "~/project", "☁️", "Workspace", true],
-        ["~/project/", "/home/daemon/project", "~/project", "☁️", "Workspace", true],
+        ["research<&>", "/home/daemon/project", "~/project", "🗂️", "Project workspace", true],
+        ["~/project/", "/home/daemon/project", "~/project", "🗂️", "Project workspace", true],
         ["~", "/home/daemon", "~", "🗂️", "Project workspace", false],
         ["/", "/", "/", "🗂️", "Project workspace", false],
-        ["研究", '/srv/資料 @<script>&"', '/srv/資料 @<script>&"', "☁️", "Workspace", true],
+        ["研究", '/srv/資料 @<script>&"', '/srv/資料 @<script>&"', "🗂️", "Project workspace", true],
     ])) {
         const port = {
             listWorkspaces: async () => [{ id: 7, name, project_root, project_label, archived_at: null }],
@@ -278,8 +278,9 @@ test("{§web-directory-documents} {§web-search} read-only lookup escapes names 
     const sessions = (await document.read(workspace, port, false)).toString();
     assert.match(sessions, /href="#session1"/u);
     assert.match(sessions, /<dialog id="dialog-session-manage"[\s\S]*id="session-title"[\s\S]*Change title[\s\S]*data-session-fork[\s\S]*id="session-archive"/u, "workspace workbench carries Change title, Fork session, and Archive session in session manage dialog");
+    assert.doesNotMatch(/<dialog id="dialog-session-manage"[\s\S]*?<\/dialog>/u.exec(sessions)?.[0] ?? "", /dialog-session-create/u, "session creation belongs to [+] and Alt+N, not a redundant button in session manage");
     assert.doesNotMatch(sessions, /id="workspace-rename"|id="workspace-archive"/u, "workspace rename and archive live on /settings/");
-    assert.match(sessions, /<dialog id="dialog-session-create"[^>]*>[\s\S]*<form id="session-create" method="post" action="\/sessions\/new">/u);
+    assert.match(sessions, /<dialog id="dialog-session-create"[^>]*>[\s\S]*<form id="session-create" method="post" action="\/sessions\/new">[\s\S]*name="name"[\s\S]*name="title"/u);
     assert.doesNotMatch(/<form id="session-create"[\s\S]*?<\/form>/u.exec(sessions)?.[0] ?? "", /<small/u, "session creation form carries no filler hint text");
     assert.match(sessions, /<dialog id="dialog-workspaces"[\s\S]*data-dialog-target="dialog-workspace-create"[^>]*>New workspace…<\/button>/u);
     assert.match(sessions, /id="workspace-tabs"[\s\S]*action="\/sessions\/new" data-tab-new><input[^>]*><input[^>]*><button[^>]*>\+<\/button><\/form><button[^>]*data-open-sessions[^>]*>☰<\/button><ul>/u, "bottom tab bar carries leading [+] and [☰] before <ul>");
@@ -297,8 +298,8 @@ test("{§web-session-status} status is a compact footer after conversation, not 
     const footer = html.slice(html.indexOf('<footer id="session-status"'), html.indexOf('<nav id="workspace-tabs"'));
     assert.match(footer, /<details id="session-usage">[\s\S]*<ul aria-label="Session statistics">/u);
     assert.match(footer, /<details id="session-descendants"><summary/u);
-    assert.match(footer, /aria-controls="dialog-session-model"/u);
-    assert.match(footer, /aria-controls="dialog-session-effort"/u);
+    assert.match(footer, /<a id="session-model" href="\/settings\/\?workspace=review&amp;session=session1#models"/u);
+    assert.match(footer, /<a id="session-effort" href="\/settings\/\?workspace=review&amp;session=session1#models"/u);
     assert.match(footer, /data-bind="aria-label:lifecycle title:lifecycle"/u);
     assert.doesNotMatch(footer, /<dl|<table|id="(?:session-accounting|workspace-activity|session-inbox)"|data-text="(?:requests|turns|loop)"/u);
     assert.match(html, /<article id="session-connection" role="alert"><header>[\s\S]*id="session-reconnect"[\s\S]*data-sign-in[\s\S]*<\/header>[\s\S]*<\/main><footer/u);
@@ -671,6 +672,8 @@ test("{§web-workspace-settings} {§web-workspace-rename} {§web-workspace-archi
     assert.match(activeHtml, /<code data-text="project-label">~\/alpha<\/code>/u);
     assert.match(activeHtml, /<form id="workspace-rename" method="post" action="\/workspaces\/rename">[\s\S]*name="session" value="session1"/u);
     assert.match(activeHtml, /<form id="workspace-archive" method="post" action="\/workspaces\/archive">/u);
+    assert.match(activeHtml, /<h1[^>]*>Settings<\/h1>/u);
+    assert.match(activeHtml, /href="#general"[\s\S]*href="#models"[\s\S]*href="#mcp"[\s\S]*href="#skills"[\s\S]*href="#schedule"[\s\S]*href="#personas"[\s\S]*href="#members"[\s\S]*href="#env"[\s\S]*href="#help"/u);
 
     const archivedHtml = (await document.settings("archived-ws", null, port, false)).toString();
     assert.match(archivedHtml, /<a href="\/~\/archived-ws" data-settings-back/u);

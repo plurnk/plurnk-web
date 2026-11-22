@@ -1,7 +1,7 @@
 /** @typedef {(kind: string, params?: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>} Action */
 /** @typedef {import("@plurnk/plurnk-contracts").ModelRoute} ModelRoute */
 
-/** {§web-session-settings} Shared validation for native forms and slash commands.
+/** {§web-workspace-settings} {§web-session-commands} Shared validation for native forms and slash commands.
  * @param {ModelRoute | null} model
  */
 export const modelLabel = (model) => model === null ? "Not selected" : `${model.alias ? `${model.alias} — ` : ""}${model.provider}/${model.model}`;

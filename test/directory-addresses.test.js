@@ -111,6 +111,8 @@ test("{§web-workspace-creation} {§web-session-creation} {§web-workspace-setti
     assert.equal(workspaceSettingsPath("workspace1"), "/settings/?workspace=workspace1");
     assert.equal(workspaceSettingsPath("~/ptl/project", "session1"), "/settings/?workspace=%7E%2Fptl%2Fproject&session=session1");
     assert.equal(workspaceSettingsPath("work", "session1", "personas"), "/settings/?workspace=work&session=session1#personas");
+    assert.equal(workspaceSettingsPath("work", "session1", "models", { setup: "1" }), "/settings/?workspace=work&session=session1&setup=1#models");
+    assert.equal(workspaceSettingsPath("work", "session1", "help", { cmd: "model" }), "/settings/?workspace=work&session=session1&cmd=model#help");
     assert.equal(workspaceSettingsPath(""), null);
     assert.equal(workspaceSettingsPath("../legacy"), null);
 });

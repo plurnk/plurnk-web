@@ -263,8 +263,11 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await field.inputValue(), "", "daemon admission clears the shortcut-submitted draft");
         await field.fill("/help");
         await field.press("Meta+Enter");
-        await page.locator('#session-command-results > ul > li header code').filter({ hasText: "/help" }).waitFor();
+        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#help");
+        await page.locator('#workspace-settings [data-settings-panel="help"] ul[aria-label="Supported commands"]').waitFor({ state: "visible" });
         assert.equal(inputs.length, 1, "Meta+Enter routes commands through the same non-model path");
+        await page.locator("[data-settings-back]").click();
+        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
         await routeAcpWebSocket(page, (ws) => ws.close({ code: 3001, reason: "Unavailable" }));
         await page.route("**/acp", (route) => route.fulfill({ status: 503, json: { title: "Unavailable" } }));
         await page.reload();
@@ -299,8 +302,9 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(model.requests.length, 1);
         await page.locator("body > header > a").focus();
         await page.keyboard.press("?");
-        const helpShortcut = page.locator('#session-command-results dl[aria-label="Keyboard shortcuts"]');
-        await helpShortcut.waitFor();
+        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#help");
+        const helpShortcut = page.locator('#workspace-settings [data-settings-panel="help"] dl[aria-label="Keyboard shortcuts"]');
+        await helpShortcut.waitFor({ state: "visible" });
         assert.match(await helpShortcut.textContent(), /⌘\+Enter/u);
         checkBrowser();
     }, {
@@ -536,11 +540,13 @@ export default async function verifySessionInput({ t, withDaemon }) {
         await send.click();
         await page.getByText("Completed long-note.", { exact: true }).waitFor();
         assert.ok(await page.locator("main").evaluate((main) => main.scrollHeight > 2 * main.clientHeight), "the conversation is longer than the view");
-        await text.fill("/help");
+        await text.fill("/yolo");
         await send.click();
-        const help = page.locator("#session-command-results > ul > li").last();
-        await help.locator('[data-command-state="done"]').waitFor();
-        assert.equal(await afterConversation("#session-command-results"), true, "command output follows the conversation in main");
+        await page.locator('[aria-label="Message feedback"] [role="status"]').filter({ hasText: "Approvals: Automatic." }).waitFor();
+        assert.equal(await afterConversation('[aria-label="Message feedback"]'), true, "command feedback follows the conversation in main");
+        await text.fill("/yolo");
+        await send.click();
+        await page.locator('[aria-label="Message feedback"] [role="status"]').filter({ hasText: "Approvals: Manual." }).waitFor();
         await text.fill("Lifecycle fixture: approval-input.");
         await send.click();
         const review = page.getByRole("form", { name: "Review requests", exact: true });
