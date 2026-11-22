@@ -76,6 +76,7 @@ export function createAcpFetch(hooks) {
         if (init?.method === "GET") {
             const fetchPromise = hooks.fetchImpl(input, {
                 ...init,
+                cache: "no-store",
                 headers: mergedHeaders,
                 signal: fetchSignal,
             });
@@ -151,6 +152,7 @@ export function createAcpFetch(hooks) {
         try {
             const fetchPromise = hooks.fetchImpl(input, {
                 ...init,
+                cache: "no-store",
                 headers: mergedHeaders,
                 signal: fetchSignal,
             });
