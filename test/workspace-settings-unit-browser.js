@@ -492,12 +492,35 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Session persona: auditor.");
                     assert.equal(activeSessionPersona, "auditor");
 
-                    // Models tab in Session mode: shows aliases, catalog search, + Add model onboarding dialog, and session model + effort apply
+                    // Models tab in Session mode: shows aliases, catalog search (preserving focus across sequential keystrokes and superseded lookups), + Add model onboarding dialog, and session model + effort apply
                     await settingsArticle.getByRole("link", { name: "Models", exact: true }).click();
                     const modelsPanel = settingsArticle.locator('[data-settings-panel="models"]');
                     await modelsPanel.waitFor({ state: "visible" });
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 2);
                     assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 1);
+                    const catalogSearch = modelsPanel.getByRole("searchbox", { name: "Search model catalog", exact: true });
+                    await catalogSearch.focus();
+                    await catalogSearch.pressSequentially("small", { delay: 15 });
+                    await page.waitForFunction(() =>
+                        document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null
+                        && document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-name"]')?.textContent === "Small (small)",
+                    );
+                    assert.equal(
+                        await page.evaluate(() => document.activeElement?.getAttribute("aria-label")),
+                        "Search model catalog",
+                        "typing sequentially into Search model catalog retains focus across every character",
+                    );
+                    assert.equal(await catalogSearch.inputValue(), "small");
+                    assert.equal(
+                        await settingsArticle.locator('> [data-text="ws-settings-message"]').textContent(),
+                        "",
+                        "superseded model catalog lookups abort silently without flashing AbortError",
+                    );
+                    await catalogSearch.fill("");
+                    await page.waitForFunction(() =>
+                        document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null
+                        && document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 2,
+                    );
                     const sessionModelForm = modelsPanel.locator("[data-session-model-form]");
                     await sessionModelForm.waitFor({ state: "visible" });
                     await sessionModelForm.getByRole("combobox", { name: "Active session model", exact: true }).selectOption("fast");
