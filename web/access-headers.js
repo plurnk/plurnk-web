@@ -25,7 +25,7 @@ export default async function accessHeaders(auth, signal) {
     ensureLogoutGuard();
     const effectiveSignal = AbortSignal.any([signal, logoutAbort.signal]);
     effectiveSignal.throwIfAborted();
-    const response = await fetch("/auth/token", { method: "POST", signal: effectiveSignal });
+    const response = await fetch("/auth/token", { method: "POST", cache: "no-store", signal: effectiveSignal });
     if (!response.ok) throw Object.assign(new Error(`Access credential request failed (${response.status}).`), { status: response.status });
     let token;
     try {
