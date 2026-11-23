@@ -107,13 +107,13 @@ const ZERO_ARG_COMMANDS = new Set([
 const FAMILY_SUBCOMMANDS = Object.freeze({
     mcp: ["list", "enable", "disable", "remove", "oauth", "discover", "add", "replace", "skills", "complete"],
     skills: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
-    schedule: ["list", "run", "enable", "disable", "done", "reopen", "remove", "discover", "add", "replace"],
+    schedule: ["list", "inspect", "run", "enable", "disable", "done", "reopen", "remove", "discover", "add", "replace"],
     personas: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
     members: ["list", "enable", "disable", "remove", "discover", "add"],
     env: ["list", "set", "unset", "enable", "disable", "remove", "--scope"],
 });
 
-const FAMILY_ALIAS_SUBS = new Set(["enable", "disable", "remove", "oauth", "run", "done", "reopen", "unset"]);
+const FAMILY_ALIAS_SUBS = new Set(["inspect", "enable", "disable", "remove", "oauth", "run", "done", "reopen", "unset"]);
 
 /**
  * @typedef {{
@@ -652,6 +652,45 @@ function formatFamilyResult(family, parsed, res) {
             });
             return { message: "", literal: lines.join("\n") };
         }
+        if (parsed.actionName === "workspace.schedule.run") {
+            const alias = typeof res.alias === "string" ? res.alias
+                : typeof parsed.params.alias === "string" ? parsed.params.alias : "";
+            const status = typeof res.status === "string" ? res.status : "open";
+            const loopId = typeof res.loopId === "number" ? res.loopId : null;
+            if (Array.isArray(res.results) && res.results.length > 0) {
+                /** @type {string[]} */
+                const lines = [];
+                for (const rawStep of res.results) {
+                    if (!isRecord(rawStep)) continue;
+                    const idx = typeof rawStep.index === "number" ? rawStep.index + 1 : lines.length + 1;
+                    const srv = typeof rawStep.server === "string" ? rawStep.server : "?";
+                    const tool = typeof rawStep.tool === "string" ? rawStep.tool : "?";
+                    const st = typeof rawStep.status === "number" ? rawStep.status : 200;
+                    const uri = typeof rawStep.uri === "string" && rawStep.uri ? `  ${rawStep.uri}` : "";
+                    lines.push(`[${idx}] ${srv}.${tool}  ${st}${uri}`);
+                    if (typeof rawStep.preview === "string" && rawStep.preview.trim()) {
+                        lines.push(`    ${rawStep.preview.trim().replace(/\r?\n/gu, "\n    ")}`);
+                    }
+                    if (isRecord(rawStep.problem) && typeof rawStep.problem.detail === "string" && rawStep.problem.detail) {
+                        lines.push(`    ! ${rawStep.problem.detail}`);
+                    }
+                }
+                const stepCount = res.results.length;
+                return {
+                    message: `${alias}  ${status} (${stepCount} ${stepCount === 1 ? "step" : "steps"})`,
+                    literal: lines.join("\n"),
+                };
+            }
+            return {
+                message: `${alias}  ${status}${loopId !== null ? ` (loop ${loopId})` : ""}`,
+            };
+        }
+        if (parsed.actionName === "workspace.schedule.status") {
+            const alias = typeof res.alias === "string" ? res.alias
+                : typeof parsed.params.alias === "string" ? parsed.params.alias : "";
+            const status = typeof res.status === "string" ? res.status : "open";
+            return { message: `${alias}  ${status}` };
+        }
         if (res.removed === true && typeof res.alias === "string") {
             const verb = family === "env" ? "unset" : "removed";
             return { message: `${res.alias}  ${verb}` };
@@ -830,6 +869,29 @@ export default function sessionCommands(main, actions) {
                 return true;
             }
             if (familyCommands.has(name)) {
+                if (name === "schedule" && args[0] === "inspect") {
+                    const alias = (args[1] ?? "").trim();
+                    if (!alias) throw new Error("Usage: /schedule inspect <alias>.");
+                    const listed = await call("workspace.schedule.list", {});
+                    signal.throwIfAborted();
+                    const defs = isRecord(listed) && Array.isArray(listed.definitions) ? listed.definitions : [];
+                    const found = defs.find((d) => isRecord(d) && d.alias === alias);
+                    if (!isRecord(found)) throw new Error(`Schedule '${alias}' not found.`);
+                    const detail = isRecord(found.detail) ? found.detail : {};
+                    const def = isRecord(found.definition) ? found.definition : {};
+                    const summaryParts = [
+                        `${alias}`,
+                        typeof detail.kind === "string" ? detail.kind : (Array.isArray(def.run) ? "run" : "prompt"),
+                        typeof detail.status === "string" ? detail.status : (typeof found.state === "string" ? found.state : "open"),
+                        typeof detail.rule === "string" ? detail.rule : (typeof def.rule === "string" ? def.rule : "manual"),
+                    ];
+                    showOutputModal(
+                        text.trim(),
+                        JSON.stringify({ alias, state: found.state, detail, definition: def }, null, 2),
+                        summaryParts.join(" · "),
+                    );
+                    return true;
+                }
                 const { parseFamilyCommand } = await import("@plurnk/plurnk-contracts");
                 const parsed = parseFamilyCommand(name, args);
                 if (parsed.sub === "list") {

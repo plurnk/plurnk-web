@@ -141,19 +141,46 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Persona: reviewer"));
             assert.match(await settingsArticle.locator('> [data-text="ws-settings-message"]').textContent(), /Approval policy: review/u);
 
-            // Schedule targeting #session1 via inline disclosure now that session exists
+            // Schedule & Macro Control Panel: timed prompt schedule + manual multi-step macro with live Run now receipts against real daemon!
             await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();
             const schedulePanel = settingsArticle.locator('[data-settings-panel="schedule"]');
             const scheduleDisclosure = schedulePanel.locator('details[data-family-disclosure="schedule"]');
             await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
             await scheduleDisclosure.locator("> summary").click();
-            assert.equal(await scheduleDisclosure.getByRole("textbox", { name: "Target session", exact: true }).inputValue(), "session1", "Target session defaults to active session");
+            assert.equal(await scheduleDisclosure.getByRole("combobox", { name: "Target session", exact: true }).inputValue(), "session1", "Target session defaults to active session");
             await scheduleDisclosure.getByRole("textbox", { name: "Schedule name", exact: true }).fill("hourly-ping");
-            await scheduleDisclosure.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 * * * *");
+            await scheduleDisclosure.getByRole("combobox", { name: "Schedule timing", exact: true }).selectOption("repeating");
+            await scheduleDisclosure.getByRole("combobox", { name: "Repeat frequency", exact: true }).selectOption("every-hours");
             await scheduleDisclosure.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Status check.");
             await scheduleDisclosure.getByRole("button", { name: "Save schedule", exact: true }).click();
             await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
             assert.equal(await scheduleDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false, "Save schedule collapses disclosure");
+
+            // Author a reusable manual 2-step macro (plurnk.edit -> plurnk.sh), run it now, and inspect live per-step receipts!
+            await scheduleDisclosure.locator("> summary").click();
+            await scheduleDisclosure.getByRole("textbox", { name: "Schedule name", exact: true }).fill("smoke-macro");
+            await scheduleDisclosure.getByRole("combobox", { name: "Schedule kind", exact: true }).selectOption("run");
+            await scheduleDisclosure.getByRole("combobox", { name: "Schedule timing", exact: true }).selectOption("manual");
+            const step1 = scheduleDisclosure.locator("[data-schedule-step]").nth(0);
+            await step1.getByRole("combobox", { name: "Step tool", exact: true }).click();
+            await step1.locator('[data-schedule-combobox="tool"] [data-combobox-option="edit"]').click();
+            await step1.getByLabel("path argument", { exact: true }).fill("workspace:///macro-check.txt");
+            await step1.getByLabel("text argument", { exact: true }).fill("hello-from-web-macro");
+            await scheduleDisclosure.getByRole("button", { name: "+ Add step", exact: true }).click();
+            const step2 = scheduleDisclosure.locator("[data-schedule-step]").nth(1);
+            await step2.getByRole("combobox", { name: "Step tool", exact: true }).click();
+            await step2.locator('[data-schedule-combobox="tool"] [data-combobox-option="sh"]').click();
+            await step2.getByLabel("text argument", { exact: true }).fill("echo live-macro-ok");
+            await scheduleDisclosure.getByRole("button", { name: "Save schedule", exact: true }).click();
+            await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 2);
+
+            const macroRow = schedulePanel.locator("[data-family-rows] tr", { hasText: "smoke-macro" });
+            await macroRow.getByRole("button", { name: "Run now", exact: true }).click();
+            const receiptBox = schedulePanel.locator("[data-schedule-receipt]");
+            await receiptBox.waitFor({ state: "visible" });
+            assert.equal(await receiptBox.getAttribute("data-receipt-status"), "ok");
+            assert.equal(await receiptBox.locator("[data-receipt-step]").count(), 2);
+            assert.match(await receiptBox.textContent(), /plurnk\.edit[\s\S]*201[\s\S]*plurnk\.sh[\s\S]*200[\s\S]*live-macro-ok/u);
 
             checkBrowser();
         } finally {

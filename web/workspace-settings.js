@@ -9,6 +9,7 @@ import managementAction from "./management-action.js";
 import { primaryModifierLabel } from "./session-commands.js";
 import { createModelSearchCache, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
 import { attachModelCombobox } from "./model-combobox.js";
+import { mountSchedulePanel } from "./schedule-panel.js";
 import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
 import { isRecord } from "./session-translator.js";
 import { parseWorkspaceList, wireWorkspaceCreateDialog } from "./workspace-dialogs.js";
@@ -186,31 +187,6 @@ const FAMILY_SAVE_SPECS = [
         },
     },
     {
-        family: "schedule",
-        selector: "[data-schedule-save-form]",
-        action: "workspace.schedule.replace",
-        build(form) {
-            const data = new FormData(form);
-            const alias = String(data.get("alias") ?? "").trim();
-            const rawTarget = String(data.get("target") ?? "").trim();
-            const rule = String(data.get("rule") ?? "").trim();
-            const prompt = String(data.get("prompt") ?? "").trim();
-            if (!alias || !rawTarget || !rule || !prompt) {
-                throw new Error("Complete name, target session, rule, and prompt.");
-            }
-            const target = rawTarget.startsWith("session://") ? rawTarget : `session://${rawTarget}`;
-            return {
-                label: alias,
-                payload: { alias, target, rule, prompt },
-            };
-        },
-        clear(form) {
-            for (const field of $$(form, 'input[name="alias"], input[name="rule"], textarea[name="prompt"]')) {
-                if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = "";
-            }
-        },
-    },
-    {
         family: "personas",
         selector: "[data-personas-save-form]",
         action: "workspace.personas.replace",
@@ -323,6 +299,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     let sessionSpawnCombobox = null;
     /** @type {ReturnType<typeof attachModelCombobox> | null} */
     let personaModelCombobox = null;
+    /** @type {ReturnType<typeof mountSchedulePanel> | null} */
+    let schedulePanelController = null;
     const modelSearchCache = createModelSearchCache((kind, params = {}, signal) => {
         const ctx = getContext();
         const combinedSignal = signal ? AbortSignal.any([ctx.signal, signal]) : ctx.signal;
@@ -390,6 +368,10 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
      * @param {unknown} res
      */
     function renderFamilyList(family, res) {
+        if (family === "schedule" && schedulePanelController) {
+            schedulePanelController.renderList(res);
+            return;
+        }
         const panel = $(article, `[data-settings-panel="${family}"]`);
         const tbody = panel ? $(panel, "[data-family-rows]") : null;
         if (!panel || !tbody) return;
@@ -801,6 +783,9 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             const res = await invoke(`workspace.${section}.list`, {});
             ctx.signal.throwIfAborted();
             renderFamilyList(section, res);
+            if (section === "schedule" && schedulePanelController) {
+                void schedulePanelController.refreshAuxiliaryData();
+            }
         } catch (error) {
             if (currentModelsReq?.signal.aborted && !ctx.signal.aborted) return;
             const { message, recovery } = await describeFailure(error);
@@ -839,11 +824,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     }
 
     function prefillScheduleTarget() {
-        const scheduleTarget = $(article, '[data-schedule-save-form] input[name="target"]');
-        const ctx = getContext();
-        if (scheduleTarget instanceof HTMLInputElement && scheduleTarget.value === "" && ctx.sessionName) {
-            scheduleTarget.value = ctx.sessionName;
-        }
+        schedulePanelController?.prefillTarget();
     }
 
     /** @param {SettingsSection} section @param {boolean} [pushHash] */
@@ -959,6 +940,22 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 signal: getContext().signal,
             });
         }
+        const schedulePanelEl = $(article, '[data-settings-panel="schedule"]');
+        if (schedulePanelEl instanceof HTMLElement) {
+            schedulePanelController = mountSchedulePanel(schedulePanelEl, {
+                getContext,
+                invoke,
+                invokeForSession: (kind, params, targetSession, signal) => {
+                    const ctx = getContext();
+                    const combinedSignal = signal ? AbortSignal.any([ctx.signal, signal]) : ctx.signal;
+                    return managementAction(kind, params, `${ctx.workspaceId}#${targetSession}`, combinedSignal, {
+                        workspaceId: ctx.workspaceId,
+                    });
+                },
+                runMutation,
+                setFeedback,
+            });
+        }
 
         const offSvc = onServiceVersion(() => { syncAboutPanel(); });
         on.target(getContext().signal, "abort", () => {
@@ -967,6 +964,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             sessionModelCombobox?.dispose();
             sessionSpawnCombobox?.dispose();
             personaModelCombobox?.dispose();
+            schedulePanelController?.dispose();
         });
 
         // {§web-workspace-rename} {§web-workspace-archive} {§web-session-archive} Workspace and session lifecycle mutations dispatch over /acp.
@@ -1524,7 +1522,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 familyOrTopic === "resync"
                 || familyOrTopic === activeSection
                 || (familyOrTopic === "policy" && (activeSection === "session" || activeSection === "models"))
-                || (familyOrTopic === "personas" && activeSection === "session")
+                || (familyOrTopic === "personas" && (activeSection === "session" || activeSection === "schedule"))
+                || (familyOrTopic === "mcp" && activeSection === "schedule")
             ) {
                 void refreshSection(activeSection);
             }
