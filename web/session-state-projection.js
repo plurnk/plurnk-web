@@ -257,10 +257,12 @@ export function applyLifecycleStateUpdate(state, update, plurnk) {
     } else if (update.state === "running" && prevStatus.lifecycle !== "queued" && prevStatus.lifecycle !== "parked") {
         prevStatus.lifecycle = "running";
         prevStatus.waitUntil = null;
+        prevPlurnk.laneQueue = null;
     } else if (update.state === "idle" && isRecord(plurnk?.terminal)) {
         const termStatus = typeof plurnk.terminal.status === "number" ? plurnk.terminal.status : 200;
         prevStatus.lifecycle = termStatus === 499 ? "cancelled" : termStatus >= 400 ? "failed" : "completed";
         prevStatus.waitUntil = null;
+        prevPlurnk.laneQueue = null;
     }
     if (Object.keys(prevStatus).length === 0 && !suggestionsCleared) {
         return { changed: false, state };
@@ -288,9 +290,32 @@ export function applyNoticeStateUpdate(state, plurnk) {
     const notice = isRecord(plurnk?.notice) ? plurnk.notice : undefined;
     let stateChanged = false;
 
+    if (notice?.source === "engine:turn" && notice.kind === "turn_queued") {
+        prevStatus.lifecycle = "queued";
+        prevStatus.terminatedAt = null;
+        prevPlurnk.status = prevStatus;
+        prevPlurnk.laneQueue = {
+            position: typeof notice.queuePosition === "number" ? notice.queuePosition : null,
+            depth: typeof notice.queueDepth === "number" ? notice.queueDepth : null,
+            laneLimit: typeof notice.laneLimit === "number" ? notice.laneLimit : null,
+        };
+        stateChanged = true;
+    }
+    if (notice?.source === "engine:turn" && (notice.kind === "turn_awaiting_model" || notice.kind === "turn_generated")) {
+        if (prevPlurnk.laneQueue !== null && prevPlurnk.laneQueue !== undefined) {
+            prevPlurnk.laneQueue = null;
+            stateChanged = true;
+        }
+        if (prevStatus.lifecycle === "queued") {
+            prevStatus.lifecycle = "running";
+            prevPlurnk.status = prevStatus;
+            stateChanged = true;
+        }
+    }
     if (notice?.source === "engine:lifecycle" && notice.kind === "loop_status") {
         const code = typeof notice.status === "number" ? notice.status : 102;
         prevStatus.lifecycle = code === 100 ? "queued" : code === 202 ? "parked" : "running";
+        if (code !== 100) prevPlurnk.laneQueue = null;
         if (typeof notice.loopSeq === "number") prevStatus.loopSeq = notice.loopSeq;
         if (typeof notice.packetCount === "number") prevStatus.packetCount = notice.packetCount;
         if (notice.waitUntil === null || typeof notice.waitUntil === "number") {

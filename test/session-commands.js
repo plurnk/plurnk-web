@@ -38,7 +38,7 @@ const reasoning = {
 
 // {§web-session-commands} {§web-workspace-settings} Real shipped composer, multi-token autocomplete, and unified Settings tabs.
 export default async function verifySessionCommands({ t, withDaemon }) {
-    await t.test("{§web-workspace-settings} {§web-session-commands} status model links open Settings #session when configured without inference and composer pills complete multi-token /model commands", () =>
+    await t.test("{§web-workspace-settings} {§web-session-commands} status model links open in-place combobox dialog without inference and composer autocomplete completes multi-token /model commands", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             page.setDefaultTimeout(5000);
             const draft = page.getByRole("textbox", { name: "Message", exact: true });
@@ -49,33 +49,43 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             assert.match((await modelLink.getAttribute("href")) ?? "", /^\/settings\/\?workspace=.*#session$/u);
             assert.equal(await effortLink.getAttribute("href"), await modelLink.getAttribute("href"));
 
+            // Clicking #session-model opens the in-place quick-picker dialog without navigating away
+            const sessionUrlBefore = page.url();
             await modelLink.click();
-            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
-            const sessionConfigForm = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-config-form]');
-            await sessionConfigForm.waitFor({ state: "visible" });
+            const quickDialog = page.locator("#dialog-session-model");
+            await quickDialog.waitFor({ state: "visible" });
+            assert.equal(page.url(), sessionUrlBefore, "quick model dialog opens in place without leaving the conversation");
+            const quickCombo = quickDialog.getByRole("combobox", { name: "Session model", exact: true });
+            const quickList = quickDialog.locator("[data-combobox-list]");
+            await quickList.locator('[role="option"][data-combobox-option="browser"]').waitFor({ state: "visible" });
+            await quickList.locator('[role="option"][data-combobox-option="browser"]').click();
+            assert.equal(await quickCombo.inputValue(), "browser");
+            await quickDialog.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("low");
+            await quickDialog.getByRole("button", { name: "Apply", exact: true }).click();
+            await quickDialog.waitFor({ state: "hidden" });
+            await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "low");
             assert.equal(model.requests.length, 0);
 
-            await sessionConfigForm.getByRole("combobox", { name: "Active session model", exact: true }).selectOption("browser");
-            await sessionConfigForm.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("low");
-            await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-            await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("low"));
-            assert.equal(model.requests.length, 0);
-
-            await page.locator('#workspace-settings').getByRole("link", { name: "Models", exact: true }).click();
+            // Opening the quick dialog again and clicking "Browse full catalog…" reaches /settings/#models
+            await modelLink.click();
+            await quickDialog.waitFor({ state: "visible" });
+            await quickDialog.getByRole("link", { name: "Browse full catalog…", exact: true }).click();
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#models");
             await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length >= 1);
 
             await page.locator("[data-settings-back]").click();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
             await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "low");
 
-            // Progressive multi-token pill buttons in the composer: `/model ` -> click `browser` -> click `high` -> Enter!
+            // Progressive multi-token autocomplete menu in the composer: `/model ` -> click `browser` -> click `high` -> Enter!
             await draft.focus();
             await draft.fill("/model ");
-            const browserPill = page.locator("[data-compose-suggestions] button[data-accept-suggestion]").filter({ hasText: /^browser\b/u });
+            await page.waitForFunction(() => document.querySelector("[data-compose-suggestions]")?.getAttribute("data-suggestions-mode") === "menu");
+            const browserPill = page.locator('[data-compose-suggestions] button[data-accept-suggestion][data-suggestion-value="browser"]');
             await browserPill.waitFor({ state: "visible" });
             await browserPill.click();
             assert.equal(await draft.inputValue(), "/model browser ");
-            const highPill = page.locator("[data-compose-suggestions] button[data-accept-suggestion]").filter({ hasText: /^high$/u });
+            const highPill = page.locator('[data-compose-suggestions] button[data-accept-suggestion][data-suggestion-value="high"]');
             await highPill.waitFor({ state: "visible" });
             await highPill.click();
             assert.equal(await draft.inputValue(), "/model browser high");

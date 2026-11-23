@@ -99,6 +99,15 @@
     <template id="search-suggestion-option">
         <option value=""></option>
     </template>
+    <template id="model-combobox-option">
+        <li role="option" aria-selected="false" data-combobox-option="" data-combobox-kind="catalog">
+            <span data-combobox-primary></span>
+            <small data-combobox-secondary></small>
+        </li>
+    </template>
+    <template id="model-combobox-hint">
+        <li role="presentation" data-combobox-hint></li>
+    </template>
     <template id="workspace-list-item">
         <li><a><span data-workspace-item-glyph></span> <span data-workspace-item-name></span></a></li>
     </template>
@@ -134,6 +143,7 @@
                 <div data-status-telemetry>
                     <ul aria-label="Active session activity">
                         <li data-status-field="lifecycle" data-bind="aria-label:lifecycle title:lifecycle"></li>
+                        <li data-status-field="queue" data-text="queue" data-bind="aria-label:queue-label title:queue-label"></li>
                         <li data-status-field="elapsed" aria-label="Latest loop elapsed time" title="Latest loop elapsed time"><time data-text="elapsed"></time></li>
                         <li data-status-field="descendants"><details id="session-descendants"><summary data-bind="aria-label:descendants-label title:descendants-label"><span data-text="descendants">0</span></summary><ul></ul></details></li>
                         <li data-status-field="gated" data-bind="aria-label:gated-label title:gated-label"><span data-text="gated">0</span></li>
@@ -182,13 +192,47 @@
     <template id="workspace-switcher-archived-item">
         <li data-switcher-archived-entry=""><span data-switcher-archived-label></span><form data-inline-unarchive="session"><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form></li>
     </template>
+    <template id="session-model-dialog">
+        <dialog id="dialog-session-model" aria-label="Select model">
+            <article>
+                <header>
+                    <p><strong data-i18n="select-model">Select model</strong></p>
+                    <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
+                </header>
+                <p role="alert" data-text="model-dialog-error"></p>
+                <form data-session-model-quick-form>
+                    <fieldset data-bind="disabled:model-dialog-busy">
+                        <label>
+                            <span data-i18n="model-label">Model</span>
+                            <div data-model-combobox="quickModel" data-combobox-open="false">
+                                <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
+                                <ul role="listbox" data-combobox-list hidden></ul>
+                            </div>
+                        </label>
+                        <label>
+                            <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
+                            <select name="effort" aria-label="Reasoning effort"></select>
+                        </label>
+                        <footer>
+                            <a href="/settings/" data-model-dialog-catalog data-bind="href:model-dialog-catalog-path" data-i18n="browse-model-catalog">Browse full catalog…</a>
+                            <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
+                            <button type="submit" data-i18n="apply">Apply</button>
+                        </footer>
+                    </fieldset>
+                </form>
+            </article>
+        </dialog>
+    </template>
     <!-- {§web-workspace-settings} Dedicated settings page templates for session policy, models, MCP, skills, schedules, personas, members, env, and help. -->
     <template id="session-config-controls">
         <form data-session-config-form hidden>
             <fieldset data-bind="disabled:ws-settings-busy">
                 <label>
                     <span data-i18n="model-label">Model</span>
-                    <select name="model" aria-label="Active session model"></select>
+                    <div data-model-combobox="model" data-combobox-open="false">
+                        <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
+                        <ul role="listbox" data-combobox-list hidden></ul>
+                    </div>
                 </label>
                 <label>
                     <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
@@ -196,7 +240,10 @@
                 </label>
                 <label>
                     <span data-i18n="child-session-model">Child session model</span>
-                    <select name="spawnModel" aria-label="Child session model"></select>
+                    <div data-model-combobox="spawnModel" data-combobox-open="false">
+                        <input type="text" name="spawnModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
+                        <ul role="listbox" data-combobox-list hidden></ul>
+                    </div>
                 </label>
                 <label>
                     <span data-i18n="persona-label">Persona</span>
@@ -235,14 +282,23 @@
                 <form data-models-search-form>
                     <fieldset role="group">
                         <input type="search" name="q" aria-label="Search model catalog" placeholder="Search model catalog…" autocomplete="off" spellcheck="false">
+                        <select name="provider" aria-label="Filter by provider">
+                            <option value="" data-i18n="all-providers">All providers</option>
+                        </select>
                         <button type="submit" data-i18n="search">Search</button>
                     </fieldset>
                 </form>
-                <p>
-                    <span data-i18n="model-offset">Offset:</span> <span data-text="model-offset">0</span>
-                    <span data-i18n="models-shown">Shown:</span> <span data-text="model-count">0</span>
-                    <span data-i18n="models-total">Total:</span> <span data-text="model-total">0</span>
-                </p>
+                <div data-models-pagination>
+                    <p data-models-summary>
+                        <span data-i18n="model-offset">Offset:</span> <span data-text="model-offset">0</span>
+                        <span data-i18n="models-shown">Shown:</span> <span data-text="model-count">0</span>
+                        <span data-i18n="models-total">Total:</span> <span data-text="model-total">0</span>
+                    </p>
+                    <div data-models-page-controls>
+                        <button type="button" data-models-prev disabled data-i18n="previous-page">Previous</button>
+                        <button type="button" data-models-next disabled data-i18n="next-page">Next</button>
+                    </div>
+                </div>
                 <p data-text="model-more"></p>
                 <figure>
                     <table>
@@ -252,6 +308,7 @@
                             <th scope="col" data-i18n="model-context">Context</th>
                             <th scope="col" data-i18n="model-efforts">Efforts</th>
                             <th scope="col" data-i18n="model-readiness">Readiness</th>
+                            <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
                         </tr></thead>
                         <tbody data-models-catalog-rows></tbody>
                     </table>
@@ -425,7 +482,10 @@
                             <div data-persona-source-fields>
                                 <input type="text" name="source" aria-label="Persona file path" placeholder="./personas/reviewer.md" autocomplete="off" spellcheck="false">
                             </div>
-                            <input type="text" name="model" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
+                            <div data-model-combobox="personaModel" data-combobox-open="false">
+                                <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
+                                <ul role="listbox" data-combobox-list hidden></ul>
+                            </div>
                             <select name="effort" aria-label="Persona default effort">
                                 <option value="" data-i18n="ws-settings-default-effort">Default effort (optional)</option>
                             </select>
@@ -616,8 +676,8 @@
         </section>
     </template>
     <template id="compose-suggestion">
-        <li data-suggestion-item>
-            <button type="button" data-accept-suggestion data-text="suggestion-text"></button>
+        <li data-suggestion-item data-suggestion-active="false">
+            <button type="button" data-accept-suggestion data-suggestion-value=""><span data-text="suggestion-text"></span><small data-text="suggestion-detail"></small></button>
         </li>
     </template>
     <template id="compose-attachment">
@@ -706,12 +766,21 @@
         </dl>
     </template>
     <template id="command-model">
-        <tr>
+        <tr data-model-session-usable="false" data-model-ready="false">
             <th scope="row"><code data-text="model-selector">Provider/model</code></th>
             <td data-text="model-name">Model</td>
             <td data-text="model-context">0</td>
             <td data-text="model-efforts">Efforts</td>
             <td data-text="model-readiness">Readiness</td>
+            <td>
+                <form data-model-catalog-row-form>
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <input type="hidden" name="selector" data-bind="value:model-selector">
+                        <button type="submit" name="operation" value="select" data-model-catalog-use-session data-i18n="ws-settings-use-in-session">Use in session</button>
+                        <button type="submit" name="operation" value="child" data-model-catalog-use-child data-i18n="ws-settings-use-as-child">Use as child</button>
+                    </fieldset>
+                </form>
+            </td>
         </tr>
     </template>
     <template id="command-env">

@@ -1,5 +1,5 @@
 import { $, $$, on, the } from "on_the_money";
-import { parseDirectory } from "../src/directory-addresses.js";
+import { parseDirectory, workspaceSettingsPath } from "../src/directory-addresses.js";
 import SessionAgent, { randomUUID } from "./session-agent.js";
 import { clocks } from "./session-status.js";
 import sessionState from "./session-state.js";
@@ -12,7 +12,8 @@ import { hasActiveOidcGrant, onOidcGrantChange, recoverFromUnauthorized } from "
 import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import managementAction from "./management-action.js";
-import { sessionConfigOption } from "./session-models.js";
+import { createModelSearchCache, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import { attachModelCombobox } from "./model-combobox.js";
 import sessionCommands, {
     acceptCommandSuggestion,
     computeCommandSuggestions,
@@ -43,6 +44,7 @@ function isTextEntry(target) {
 // {§web-session-status} Repaint elapsed and wait at whole-second precision; no network polling.
 const CLOCK_TICK_MS = 1000;
 const SENDING_DWELL_MS = 250;
+const COMPOSER_MODEL_DEBOUNCE_MS = 100;
 
 /** {§web-session-observer} The SDK reports a subscriber's exception to the console and continues delivery. Each callback
  * here hands its first failure to `fail` and skips the rest, so the run ends with that cause.
@@ -237,6 +239,42 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     const isClientDispatch = (/** @type {string} */ value) => isCommand(value, availableCommands()) || isLocalExec(value);
     /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
     const action = (kind, params = {}, signal = resources.signal) => managementAction(kind, params, sessionId, signal, { redirectOn401: false });
+    const modelSearchCache = createModelSearchCache((kind, params = {}, signal) => {
+        const combined = signal ? AbortSignal.any([resources.signal, signal]) : resources.signal;
+        return action(kind, params, combined);
+    });
+    /** @type {import("./session-models.js").ModelChoice[]} */
+    let liveModelChoices = [];
+    /** @type {import("./session-models.js").ModelChoice[]} */
+    let liveChildChoices = [];
+    /** @type {Record<string, readonly string[]>} */
+    const liveEffortsByModel = Object.create(null);
+    let lastModelLookupKey = "";
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let composerModelTimer = null;
+    /** @type {AbortController | null} */
+    let composerModelLookup = null;
+    let activeSuggestionIndex = 0;
+    let suggestionsDismissed = false;
+    /** @type {string} */
+    let lastSuggestionsSignature = "";
+    /** @type {string} */
+    let lastRenderedSuggestionsSignature = "";
+    /** @type {(() => void) | null} */
+    let cleanupModelDialog = null;
+
+    const clearComposerModelTimer = () => {
+        if (composerModelTimer !== null) {
+            clearTimeout(composerModelTimer);
+            composerModelTimer = null;
+        }
+    };
+
+    const abortComposerModelLookup = () => {
+        clearComposerModelTimer();
+        composerModelLookup?.abort();
+        composerModelLookup = null;
+    };
     const toggleYolo = async () => {
         const currentMode = the(element, "approval-mode") ?? "review";
         const nextMode = currentMode === "accept" ? "review" : "accept";
@@ -394,9 +432,12 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             availableCommands: availableCommands(),
             promptSuggestions: promptSuggestions(),
             models,
+            ...(liveModelChoices.length > 0 ? { modelChoices: liveModelChoices } : {}),
             efforts,
+            ...(Object.keys(liveEffortsByModel).length > 0 ? { effortsByModel: liveEffortsByModel } : {}),
             personas,
             childModels,
+            ...(liveChildChoices.length > 0 ? { childModelChoices: liveChildChoices } : {}),
             ...(modes.length > 0 ? { modes } : {}),
             workspaces,
             sessions,
@@ -405,6 +446,100 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             familyAliases,
             ...(effectiveProjectRoot !== undefined ? { projectRoot: effectiveProjectRoot } : {}),
         };
+    }
+
+    /** @param {string} rawInput */
+    function scheduleComposerModelLookup(rawInput) {
+        if (disposed) return;
+        const trimmedStart = rawInput.trimStart();
+        if (trimmedStart.startsWith(": ") || rawInput.includes("\n")) {
+            lastModelLookupKey = "";
+            abortComposerModelLookup();
+            return;
+        }
+        const argMatch = /^\/(model|child)\s+([\s\S]*)$/iu.exec(trimmedStart);
+        if (!argMatch) {
+            lastModelLookupKey = "";
+            abortComposerModelLookup();
+            return;
+        }
+        const cmd = (argMatch[1] ?? "").toLowerCase();
+        const restRaw = argMatch[2] ?? "";
+        const endsWithSpace = restRaw === "" || /\s$/u.test(restRaw);
+        const parts = restRaw.trim() ? restRaw.trim().split(/\s+/u) : [];
+        const completedArgs = endsWithSpace ? parts : parts.slice(0, -1);
+        const partial = endsWithSpace ? "" : (parts.at(-1) ?? "");
+
+        if (cmd === "model" && completedArgs.length === 1) {
+            const selector = completedArgs[0] ?? "";
+            if (!selector || (liveEffortsByModel[selector]?.length ?? 0) > 0) {
+                abortComposerModelLookup();
+                return;
+            }
+            const key = `efforts:${selector}`;
+            if (key === lastModelLookupKey) return;
+            lastModelLookupKey = key;
+            abortComposerModelLookup();
+            const controller = composerModelLookup = new AbortController();
+            void modelSearchCache.resolveEfforts(selector, controller.signal).then((resolved) => {
+                if (disposed || controller.signal.aborted) return;
+                if (resolved.efforts.length > 0) {
+                    liveEffortsByModel[selector] = resolved.efforts;
+                    syncSuggestions();
+                    slate.sync();
+                }
+            }).catch(() => {});
+            return;
+        }
+
+        if (completedArgs.length !== 0) return;
+        const includeInherit = cmd === "child";
+        const key = `${cmd}:${partial.toLowerCase()}`;
+        if (key === lastModelLookupKey) return;
+        lastModelLookupKey = key;
+
+        const cached = modelSearchCache.searchCached(partial, { includeInherit });
+        if (cached.length > 0) {
+            if (includeInherit) liveChildChoices = cached;
+            else liveModelChoices = cached;
+            for (const choice of cached) {
+                if (choice.efforts.length > 0) liveEffortsByModel[choice.value] = choice.efforts;
+            }
+        }
+
+        const runLookup = async () => {
+            abortComposerModelLookup();
+            const controller = composerModelLookup = new AbortController();
+            try {
+                const res = await modelSearchCache.search(partial, {
+                    includeInherit,
+                    limit: 40,
+                    signal: controller.signal,
+                });
+                if (disposed || controller.signal.aborted) return;
+                if (includeInherit) liveChildChoices = res.items;
+                else liveModelChoices = res.items;
+                for (const choice of res.items) {
+                    if (choice.efforts.length > 0) liveEffortsByModel[choice.value] = choice.efforts;
+                }
+                syncSuggestions();
+                slate.sync();
+            } catch {
+                // Ignore aborted or unavailable transient catalog lookups while typing.
+            } finally {
+                if (composerModelLookup === controller) composerModelLookup = null;
+            }
+        };
+
+        clearComposerModelTimer();
+        if (partial === "") {
+            void runLookup();
+        } else {
+            composerModelTimer = setTimeout(() => {
+                composerModelTimer = null;
+                void runLookup();
+            }, COMPOSER_MODEL_DEBOUNCE_MS);
+        }
     }
 
     function computeComposeSuggestions() {
@@ -417,18 +552,70 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     function acceptComposeSuggestion(suggestion) {
         const nextValue = acceptCommandSuggestion(draft.value, suggestion, buildSuggestionSources());
         if (nextValue === draft.value) return;
+        suggestionsDismissed = false;
+        activeSuggestionIndex = 0;
         draft.value = nextValue;
         draft.focus();
         draft.setSelectionRange(draft.value.length, draft.value.length);
         draft.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
+    function paintSuggestionHighlight() {
+        const rows = $$(suggestionOutlet, "[data-suggestion-item]");
+        for (let i = 0; i < rows.length; i += 1) {
+            const row = rows[i];
+            if (!(row instanceof HTMLElement)) continue;
+            const active = i === activeSuggestionIndex;
+            row.dataset.suggestionActive = active ? "true" : "false";
+            const btn = $(row, "[data-accept-suggestion]");
+            if (btn instanceof HTMLElement) {
+                btn.setAttribute("aria-selected", active ? "true" : "false");
+            }
+            if (active) row.scrollIntoView({ block: "nearest" });
+        }
+    }
+
     function syncSuggestions() {
-        const { kind, items } = computeComposeSuggestions();
+        scheduleComposerModelLookup(draft.value);
+        if (suggestionsDismissed) {
+            if (lastRenderedSuggestionsSignature !== "") {
+                lastRenderedSuggestionsSignature = "";
+                suggestionOutlet.replaceChildren();
+                delete suggestionOutlet.dataset.suggestionsMode;
+            }
+            draft.placeholder = defaultPlaceholder;
+            return;
+        }
+        const { kind, items, details, menu } = computeComposeSuggestions();
+        const sig = `${kind}\0${items.join("\0")}`;
+        if (sig !== lastSuggestionsSignature) {
+            lastSuggestionsSignature = sig;
+            activeSuggestionIndex = 0;
+        } else if (activeSuggestionIndex >= items.length) {
+            activeSuggestionIndex = Math.max(0, items.length - 1);
+        }
         if (items.length > 0) {
-            $.cloneEach(suggestionOutlet, "#compose-suggestion", items, (item, text) => {
-                the(item, { "suggestion-text": text });
-            });
+            const detailSig = details ? items.map((item) => details[item] ?? "").join("\0") : "";
+            const renderSig = `${menu ? "menu" : "pills"}\0${sig}\0${detailSig}`;
+            if (renderSig !== lastRenderedSuggestionsSignature || suggestionOutlet.childElementCount !== items.length) {
+                lastRenderedSuggestionsSignature = renderSig;
+                suggestionOutlet.dataset.suggestionsMode = menu ? "menu" : "pills";
+                $.cloneEach(suggestionOutlet, "#compose-suggestion", items, (item, text, index) => {
+                    const active = kind !== "prompt" && index === activeSuggestionIndex;
+                    if (item instanceof HTMLElement) {
+                        item.dataset.suggestionActive = active ? "true" : "false";
+                    }
+                    const btn = $(item, "[data-accept-suggestion]");
+                    if (btn instanceof HTMLElement) {
+                        btn.dataset.suggestionValue = text;
+                        btn.setAttribute("aria-selected", active ? "true" : "false");
+                    }
+                    the(item, {
+                        "suggestion-text": text,
+                        "suggestion-detail": details?.[text] ?? "",
+                    });
+                });
+            }
             if (kind === "prompt") {
                 const lead = items[0]?.replaceAll(/\s+/gu, " ").trim() ?? "";
                 draft.placeholder = lead ? `→ ${lead} (Tab)` : defaultPlaceholder;
@@ -436,7 +623,11 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 draft.placeholder = defaultPlaceholder;
             }
         } else {
-            suggestionOutlet.replaceChildren();
+            if (lastRenderedSuggestionsSignature !== "" || suggestionOutlet.childElementCount > 0) {
+                lastRenderedSuggestionsSignature = "";
+                suggestionOutlet.replaceChildren();
+                delete suggestionOutlet.dataset.suggestionsMode;
+            }
             draft.placeholder = defaultPlaceholder;
         }
     }
@@ -811,9 +1002,249 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             connect();
         }
     });
+    /**
+     * {§web-workspace-settings} {§web-session-commands} In-place quick model & effort picker dialog from the session status footer.
+     * @param {"model" | "effort"} initialFocus
+     */
+    function openSessionModelDialog(initialFocus) {
+        cleanupModelDialog?.();
+        const existing = $("#dialog-session-model");
+        if (existing instanceof HTMLDialogElement) existing.remove();
+        const cloned = $.clone(document.body, "#session-model-dialog");
+        if (!(cloned instanceof HTMLDialogElement)) return;
+        const dialog = cloned;
+        const dialogLifetime = new AbortController();
+        const combinedSignal = AbortSignal.any([resources.signal, dialogLifetime.signal]);
+        const rawForm = $(dialog, "[data-session-model-quick-form]");
+        const rawComboboxRoot = $(dialog, '[data-model-combobox="quickModel"]');
+        const rawEffortSelect = $(dialog, 'select[name="effort"]');
+        if (!(rawForm instanceof HTMLFormElement) || !(rawComboboxRoot instanceof HTMLElement) || !(rawEffortSelect instanceof HTMLSelectElement)) {
+            dialog.remove();
+            return;
+        }
+        const comboboxRoot = rawComboboxRoot;
+        const effortSelect = rawEffortSelect;
+
+        const wsName = latestWorkspaceName
+            || $('#session-workspace [data-text="workspace-name"]')?.textContent?.trim()
+            || "";
+        const sessName = element.dataset.sessionName || null;
+        const catalogHref = wsName
+            ? (workspaceSettingsPath(wsName, sessName, "models") ?? "/settings/#models")
+            : "/settings/#models";
+        the(dialog, {
+            "model-dialog-error": "",
+            "model-dialog-busy": null,
+            "model-dialog-catalog-path": catalogHref,
+        });
+
+        let initialModelValue = "";
+        let initialEffortValue = "";
+        let initialPersistedModel = false;
+        /** @type {AbortController | null} */
+        let dialogEffortLookup = null;
+
+        /**
+         * @param {readonly string[]} supported
+         * @param {string} defaultEffort
+         * @param {string} preferredEffort
+         */
+        function populateDialogEfforts(supported, defaultEffort, preferredEffort) {
+            if (supported.length === 0) {
+                $.cloneEach(effortSelect, "#setting-option", [{ value: "", label: "Not applicable" }], (optEl, choice) => {
+                    the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": "" });
+                });
+                effortSelect.disabled = true;
+                effortSelect.value = "";
+                return "";
+            }
+            $.cloneEach(effortSelect, "#setting-option", supported.map((v) => ({ value: v, label: v })), (optEl, choice) => {
+                the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+            });
+            effortSelect.disabled = false;
+            const resolved = preferredEffort && supported.includes(preferredEffort)
+                ? preferredEffort
+                : defaultEffort && supported.includes(defaultEffort)
+                    ? defaultEffort
+                    : (supported[0] ?? "");
+            effortSelect.value = resolved;
+            return resolved;
+        }
+
+        /**
+         * @param {string} selector
+         * @param {string} preferredEffort
+         * @param {readonly string[]} [knownEfforts]
+         * @param {string} [knownDefaultEffort]
+         */
+        function syncDialogEfforts(selector, preferredEffort, knownEfforts, knownDefaultEffort) {
+            if (knownEfforts !== undefined && knownEfforts.length > 0) {
+                return populateDialogEfforts(knownEfforts, knownDefaultEffort ?? "", preferredEffort);
+            }
+            const cached = modelSearchCache.getCachedEfforts(selector);
+            const resolved = populateDialogEfforts(cached?.efforts ?? [], cached?.defaultEffort ?? "", preferredEffort);
+            if ((!cached || cached.efforts.length === 0) && selector && selector !== "none") {
+                dialogEffortLookup?.abort();
+                const req = dialogEffortLookup = new AbortController();
+                const lookupSignal = AbortSignal.any([combinedSignal, req.signal]);
+                void modelSearchCache.resolveEfforts(selector, lookupSignal).then((fetched) => {
+                    if (req.signal.aborted || combinedSignal.aborted) return;
+                    if (combobox.getValue() !== selector) return;
+                    if (fetched.efforts.length > 0) {
+                        populateDialogEfforts(fetched.efforts, fetched.defaultEffort, effortSelect.value || preferredEffort);
+                    }
+                }).catch(() => {});
+            }
+            return resolved;
+        }
+
+        const combobox = attachModelCombobox(comboboxRoot, {
+            getCache: () => modelSearchCache,
+            inline: true,
+            signal: combinedSignal,
+            onSelect: (selector, choice) => {
+                syncDialogEfforts(selector, effortSelect.value, choice?.efforts, choice?.defaultEffort);
+            },
+            onInput: (selector) => {
+                const cached = modelSearchCache.getCachedEfforts(selector);
+                if (cached) syncDialogEfforts(selector, effortSelect.value, cached.efforts, cached.defaultEffort);
+            },
+        });
+
+        const cleanup = () => {
+            if (cleanupModelDialog === cleanup) cleanupModelDialog = null;
+            dialogEffortLookup?.abort();
+            dialogLifetime.abort();
+            combobox.dispose();
+            if (dialog.open) dialog.close();
+            dialog.remove();
+        };
+        cleanupModelDialog = cleanup;
+
+        on(dialog, "close", "dialog", () => {
+            cleanup();
+        });
+
+        on(dialog, "submit", "[data-session-model-quick-form]", (event) => {
+            event.preventDefault();
+            combobox.close();
+            const selectedModel = combobox.getValue();
+            const selectedEffort = effortSelect.disabled ? "" : effortSelect.value.trim();
+            if (!selectedModel || selectedModel === "none") {
+                the(dialog, "model-dialog-error", "Select a configured model or alias.");
+                return;
+            }
+            the(dialog, { "model-dialog-error": "", "model-dialog-busy": "true" });
+            void (async () => {
+                try {
+                    const modelChanged = selectedModel !== initialModelValue || !initialPersistedModel;
+                    const effortChanged = Boolean(selectedEffort && selectedEffort !== initialEffortValue);
+                    if (modelChanged) {
+                        await sessionModel(
+                            (kind, params = {}) => action(kind, params, combinedSignal),
+                            selectedModel,
+                            selectedEffort || undefined,
+                        );
+                    } else if (effortChanged) {
+                        await sessionEffort(
+                            (kind, params = {}) => action(kind, params, combinedSignal),
+                            selectedEffort,
+                        );
+                    }
+                    if (!combinedSignal.aborted) {
+                        dialog.close();
+                        draft.focus();
+                    }
+                } catch (error) {
+                    if (combinedSignal.aborted) return;
+                    const { message, recovery } = await describeFailure(error);
+                    the(dialog, {
+                        "model-dialog-busy": null,
+                        "model-dialog-error": [message, recovery].filter(Boolean).join(" "),
+                    });
+                }
+            })();
+        });
+
+        // Pre-seed immediately from live session state so the dialog opens in 0ms.
+        const plurnk = /** @type {Record<string, unknown> | undefined} */ (agent.state.plurnk);
+        const liveOptions = Array.isArray(plurnk?.configOptions) ? plurnk.configOptions : [];
+        const liveModelOpt = liveOptions.find((entry) => isRecord(entry) && entry.configId === "model");
+        const liveThoughtOpt = liveOptions.find((entry) => isRecord(entry) && entry.configId === "thought_level");
+        const liveModelVal = isRecord(liveModelOpt) && typeof liveModelOpt.currentValue === "string" && liveModelOpt.currentValue !== "none"
+            ? liveModelOpt.currentValue
+            : (status?.model ? (status.model.alias || `${status.model.provider}/${status.model.model}`) : "");
+        const liveEffortVal = isRecord(liveThoughtOpt) && typeof liveThoughtOpt.currentValue === "string"
+            ? liveThoughtOpt.currentValue
+            : (status?.model?.effort ?? "");
+        const liveSupportedEfforts = isRecord(liveThoughtOpt) && Array.isArray(liveThoughtOpt.options)
+            ? liveThoughtOpt.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
+            : [];
+        if (liveModelVal && liveSupportedEfforts.length > 0) {
+            modelSearchCache.seedEfforts(liveModelVal, liveSupportedEfforts);
+        }
+        initialModelValue = liveModelVal;
+        initialPersistedModel = Boolean(status?.model);
+        combobox.setValue(liveModelVal);
+        initialEffortValue = syncDialogEfforts(liveModelVal, liveEffortVal, liveSupportedEfforts.length > 0 ? liveSupportedEfforts : undefined);
+
+        dialog.showModal();
+        combobox.open();
+        if (initialFocus === "effort" && !effortSelect.disabled) {
+            effortSelect.focus();
+        } else {
+            combobox.input.focus();
+        }
+
+        // Hydrate authoritative options & aliases side-effect-free via session/options + providers/list.
+        void Promise.all([
+            action("session/options", {}, combinedSignal),
+            modelSearchCache.loadAliases(combinedSignal),
+        ]).then(([optRes, aliases]) => {
+            if (combinedSignal.aborted || !dialog.open) return;
+            const opts = isRecord(optRes) && Array.isArray(optRes.configOptions) ? optRes.configOptions : [];
+            const modelOpt = opts.find((entry) => isRecord(entry) && entry.configId === "model");
+            const thoughtOpt = opts.find((entry) => isRecord(entry) && entry.configId === "thought_level");
+            const optMeta = isRecord(optRes) && isRecord(optRes._meta) && isRecord(optRes._meta.plurnk) ? optRes._meta.plurnk : null;
+            const optStatus = isRecord(optMeta?.status) ? optMeta.status : null;
+            const currentModel = isRecord(modelOpt) && typeof modelOpt.currentValue === "string" && modelOpt.currentValue !== "none"
+                ? modelOpt.currentValue
+                : (aliases.find((a) => a.active)?.alias ?? "");
+            const currentEffort = isRecord(thoughtOpt) && typeof thoughtOpt.currentValue === "string" ? thoughtOpt.currentValue : "";
+            const supported = isRecord(thoughtOpt) && Array.isArray(thoughtOpt.options)
+                ? thoughtOpt.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
+                : [];
+            if (currentModel && supported.length > 0) {
+                modelSearchCache.seedEfforts(currentModel, supported);
+            }
+            initialPersistedModel = optStatus !== null && Object.hasOwn(optStatus, "model")
+                ? optStatus.model !== null
+                : Boolean(currentModel);
+            const untouched = combobox.getValue() === initialModelValue;
+            initialModelValue = currentModel;
+            if (untouched) {
+                combobox.setValue(currentModel);
+                initialEffortValue = syncDialogEfforts(currentModel, currentEffort, supported.length > 0 ? supported : undefined);
+            }
+            combobox.refresh();
+        }).catch(async (error) => {
+            if (combinedSignal.aborted || !dialog.open) return;
+            const { message, recovery } = await describeFailure(error);
+            the(dialog, "model-dialog-error", [message, recovery].filter(Boolean).join(" "));
+        });
+    }
+
+    on(element, "click", "#session-model, #session-effort", (event, link) => {
+        if (!(event instanceof MouseEvent)) return;
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        openSessionModelDialog(link.id === "session-effort" ? "effort" : "model");
+    });
+
     on(compose, "input", "textarea", () => {
         historyIndex = -1;
         historyDraft = null;
+        suggestionsDismissed = false;
         draft.setCustomValidity("");
         const value = draft.value;
         writeStoredDraft(value.trim() !== "" && !isClientDispatch(value) ? value : "");
@@ -822,19 +1253,34 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
     });
     on(compose, "click", "[data-insert-command]", () => {
         if (the(controls, "send-unavailable") !== null) return;
+        suggestionsDismissed = false;
         draft.value = draft.value === "/" ? "" : "/";
         draft.focus();
         draft.setSelectionRange(draft.value.length, draft.value.length);
         draft.dispatchEvent(new Event("input", { bubbles: true }));
     });
     on(compose, "click", "[data-accept-suggestion]", (_event, button) => {
-        acceptComposeSuggestion(button.textContent ?? "");
+        const value = button instanceof HTMLElement
+            ? (button.dataset.suggestionValue || $(button, '[data-text="suggestion-text"]')?.textContent || button.textContent || "")
+            : (button.textContent ?? "");
+        acceptComposeSuggestion(value);
     });
     on(compose, "keydown", "textarea", (event) => {
         if (!(event instanceof KeyboardEvent) || event.isComposing) return;
         if (!event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
             && (event.key === "ArrowUp" || event.key === "ArrowDown")
             && draft.selectionStart === draft.selectionEnd) {
+            if (!suggestionsDismissed && historyIndex === -1 && draft.value !== "") {
+                const { kind, items } = computeComposeSuggestions();
+                if (kind !== "prompt" && items.length > 0) {
+                    event.preventDefault();
+                    activeSuggestionIndex = event.key === "ArrowDown"
+                        ? (activeSuggestionIndex + 1) % items.length
+                        : (activeSuggestionIndex - 1 + items.length) % items.length;
+                    paintSuggestionHighlight();
+                    return;
+                }
+            }
             if (event.key === "ArrowUp") {
                 const isFirstLine = !draft.value.slice(0, draft.selectionStart).includes("\n");
                 if (isFirstLine && (draft.value === "" || historyIndex > -1 || draft.selectionStart === 0)) {
@@ -873,16 +1319,27 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         }
         if (event.repeat) return;
         if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-            const { kind, items } = computeComposeSuggestions();
-            const lead = items[0];
-            if (lead && (kind !== "prompt" || draft.value === "")) {
-                event.preventDefault();
-                acceptComposeSuggestion(lead);
+            if (!suggestionsDismissed) {
+                const { kind, items } = computeComposeSuggestions();
+                const chosen = kind === "prompt" ? items[0] : (items[activeSuggestionIndex] ?? items[0]);
+                if (chosen && (kind !== "prompt" || draft.value === "")) {
+                    event.preventDefault();
+                    acceptComposeSuggestion(chosen);
+                }
             }
             return;
         }
         if (event.key === "Escape" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
             event.preventDefault();
+            if (!suggestionsDismissed) {
+                const { kind, items } = computeComposeSuggestions();
+                if (kind !== "prompt" && items.length > 0) {
+                    suggestionsDismissed = true;
+                    syncSuggestions();
+                    slate.sync();
+                    return;
+                }
+            }
             draft.blur();
             return;
         }
@@ -1138,6 +1595,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             if (disposed) return;
             disposed = true;
             clearSendingTimer();
+            abortComposerModelLookup();
+            cleanupModelDialog?.();
             offGrantChange();
             offKeydown();
             offCoarseMedia();
