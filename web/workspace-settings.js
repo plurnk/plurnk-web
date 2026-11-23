@@ -79,9 +79,13 @@ function formatFamilyDetails(family, item) {
     if (family === "schedule") {
         if (def) {
             const target = typeof def.target === "string" ? def.target : "";
-            const rule = typeof def.rule === "string" ? def.rule : def.rule === null ? "unscheduled" : "";
-            const prompt = typeof def.prompt === "string" ? def.prompt : typeof def.run === "string" ? def.run : "";
-            return [target, rule, prompt].filter((part) => part.length > 0).join(" · ");
+            const rule = typeof def.rule === "string" ? def.rule : "manual";
+            const action = typeof def.prompt === "string"
+                ? def.prompt
+                : Array.isArray(def.run)
+                    ? `${def.run.length} ${def.run.length === 1 ? "step" : "steps"}`
+                    : "";
+            return [target, rule, action].filter((part) => part.length > 0).join(" · ");
         }
         return provSource;
     }

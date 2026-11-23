@@ -21,7 +21,7 @@ let comboboxIdCounter = 0;
 /**
  * @typedef {{
  *   readonly name: string,
- *   readonly type: "string" | "number" | "integer" | "boolean" | "enum" | "textarea",
+ *   readonly type: "string" | "number" | "integer" | "boolean" | "enum" | "textarea" | "string-list",
  *   readonly required: boolean,
  *   readonly description: string,
  *   readonly enumValues?: readonly string[],
@@ -574,31 +574,64 @@ export function parseRuleToTimingState(rawRule) {
 }
 
 /**
- * Extract compact guided scalar fields from a JSON Schema object.
+ * Resolve a local `#/$defs/<name>` `$ref` when present on a property schema.
+ * @param {Record<string, unknown>} rawProp
+ * @param {Record<string, unknown> | null} defs
+ * @returns {Record<string, unknown>}
+ */
+function resolveLocalSchemaRef(rawProp, defs) {
+    const ref = typeof rawProp.$ref === "string" ? rawProp.$ref : "";
+    if (!defs || !ref.startsWith("#/$defs/")) return rawProp;
+    const key = ref.slice("#/$defs/".length);
+    const target = defs[key];
+    return isRecord(target) ? { ...target, ...rawProp } : rawProp;
+}
+
+/**
+ * Extract compact guided scalar and string-list fields from a JSON Schema object.
+ * Resolves local `#/$defs/` `$ref`s and scalar `oneOf`/`anyOf` branches.
  * @param {Record<string, unknown> | undefined} schema
  * @returns {readonly GuidedArgField[]}
  */
 export function extractGuidedFields(schema) {
     if (!isRecord(schema) || !isRecord(schema.properties)) return [];
+    const defs = isRecord(schema.$defs) ? schema.$defs : null;
     const requiredSet = new Set(
         Array.isArray(schema.required) ? schema.required.filter((k) => typeof k === "string") : [],
     );
+    /** @param {Record<string, unknown>} prop @returns {string | undefined} */
+    const primaryTypeOf = (prop) => {
+        const rawType = prop.type;
+        if (typeof rawType === "string") return rawType;
+        if (Array.isArray(rawType)) {
+            return rawType.find((t) => typeof t === "string" && t !== "null");
+        }
+        const union = Array.isArray(prop.oneOf) ? prop.oneOf : Array.isArray(prop.anyOf) ? prop.anyOf : null;
+        if (union) {
+            for (const preferred of ["string", "integer", "number", "boolean", "array"]) {
+                for (const rawBranch of union) {
+                    if (!isRecord(rawBranch)) continue;
+                    const branch = resolveLocalSchemaRef(rawBranch, defs);
+                    if (branch.type === preferred || (Array.isArray(branch.type) && branch.type.includes(preferred))) {
+                        return preferred;
+                    }
+                }
+            }
+        }
+        return undefined;
+    };
     /** @type {GuidedArgField[]} */
     const fields = [];
-    for (const [name, rawProp] of Object.entries(schema.properties)) {
-        if (!isRecord(rawProp)) continue;
+    for (const [name, rawEntry] of Object.entries(schema.properties)) {
+        if (!isRecord(rawEntry)) continue;
+        const rawProp = resolveLocalSchemaRef(rawEntry, defs);
         const description = typeof rawProp.description === "string" ? rawProp.description : "";
         const required = requiredSet.has(name);
         if (Array.isArray(rawProp.enum) && rawProp.enum.every((v) => typeof v === "string")) {
             fields.push({ name, type: "enum", required, description, enumValues: rawProp.enum });
             continue;
         }
-        const rawType = rawProp.type;
-        const primaryType = typeof rawType === "string"
-            ? rawType
-            : Array.isArray(rawType)
-                ? rawType.find((t) => typeof t === "string" && t !== "null")
-                : undefined;
+        const primaryType = primaryTypeOf(rawProp);
         if (primaryType === "boolean") {
             fields.push({ name, type: "boolean", required, description });
         } else if (primaryType === "integer" || primaryType === "number") {
@@ -606,6 +639,11 @@ export function extractGuidedFields(schema) {
         } else if (primaryType === "string") {
             const multiline = name === "text" || name === "content" || name === "prompt" || name === "body" || name === "command";
             fields.push({ name, type: multiline ? "textarea" : "string", required, description });
+        } else if (primaryType === "array") {
+            const itemSchema = isRecord(rawProp.items) ? resolveLocalSchemaRef(rawProp.items, defs) : null;
+            if (itemSchema && (itemSchema.type === "string" || (Array.isArray(itemSchema.enum) && itemSchema.enum.every((v) => typeof v === "string")))) {
+                fields.push({ name, type: "string-list", required, description });
+            }
         }
     }
     return fields;
@@ -1309,12 +1347,16 @@ export function mountSchedulePanel(panel, host) {
             } else {
                 const input = $(wrapper, "input");
                 const area = $(wrapper, "textarea");
-                if (field.type === "textarea") {
+                if (field.type === "textarea" || field.type === "string-list") {
                     if (input instanceof HTMLElement) input.remove();
                     if (area instanceof HTMLTextAreaElement) {
                         area.setAttribute("aria-label", `${field.name} argument`);
-                        area.placeholder = field.description || field.name;
-                        area.value = typeof existing === "string" ? existing : "";
+                        area.placeholder = field.type === "string-list"
+                            ? `${field.description || field.name} (one per line)`
+                            : (field.description || field.name);
+                        area.value = field.type === "string-list"
+                            ? (Array.isArray(existing) ? existing.map(String).join("\n") : typeof existing === "string" ? existing : "")
+                            : (typeof existing === "string" ? existing : "");
                     }
                 } else {
                     if (area instanceof HTMLElement) area.remove();
@@ -1348,6 +1390,10 @@ export function mountSchedulePanel(panel, host) {
         } else if (argType === "integer" || argType === "number") {
             const parsed = Number(rawValue);
             if (Number.isFinite(parsed)) nextObj[argName] = argType === "integer" ? Math.trunc(parsed) : parsed;
+        } else if (argType === "string-list") {
+            const items = rawValue.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+            if (items.length === 0) delete nextObj[argName];
+            else nextObj[argName] = items;
         } else {
             nextObj[argName] = rawValue;
         }
@@ -1396,6 +1442,7 @@ export function mountSchedulePanel(panel, host) {
         }
 
         const findSelf = () => stepControllers.find((c) => c.li === li);
+        let lastServer = (initial.server ?? "plurnk").trim();
         const serverCombo = attachListCombobox(serverBox, {
             emptyHint: "No matching server — type any active MCP alias.",
             getChoices: () => [...serverCatalog.values()].map((srv) => ({
@@ -1407,9 +1454,22 @@ export function mountSchedulePanel(panel, host) {
                 kind: srv.kind,
             })),
             onSelect: (srvName) => {
-                void hydrateServerCatalog(srvName);
+                const nextServer = srvName.trim();
+                const serverChanged = nextServer !== lastServer;
+                lastServer = nextServer;
+                void hydrateServerCatalog(nextServer);
                 const self = findSelf();
                 if (self) {
+                    if (serverChanged) {
+                        const curTool = self.toolCombo.getValue();
+                        const hasCurTool = curTool !== ""
+                            && (serverCatalog.get(nextServer)?.tools.some((t) => t.name === curTool) ?? false);
+                        if (!hasCurTool) {
+                            self.toolCombo.setValue("");
+                            self.argsArea.value = "{}";
+                            self.argsArea.removeAttribute("aria-invalid");
+                        }
+                    }
                     self.toolCombo.refresh();
                     syncStepToolSchema(self);
                 }

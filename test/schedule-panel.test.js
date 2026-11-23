@@ -99,27 +99,37 @@ test("{§web-workspace-settings} synthesizeScheduleRule and parseRuleToTimingSta
     assert.throws(() => synthesizeScheduleRule({ ...base, mode: "custom", customRule: "   " }), /Enter a schedule rule/u);
 });
 
-test("{§web-workspace-settings} extractGuidedFields maps JSON Schema scalar properties into guided step argument inputs", () => {
+test("{§web-workspace-settings} extractGuidedFields maps JSON Schema scalar, $ref, oneOf, and string-array properties into guided step argument inputs", () => {
     const fields = extractGuidedFields({
         type: "object",
         required: ["path", "text"],
+        $defs: {
+            wsRef: { type: "string", description: "Workspace handle." },
+        },
         properties: {
-            path: { type: "string", description: "Target path." },
+            path: {
+                oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+                description: "Target path or globs.",
+            },
             text: { type: "string", description: "Body text." },
             count: { type: ["integer", "null"], description: "Max items." },
             ratio: { type: "number", description: "Scale factor." },
             force: { type: "boolean", description: "Overwrite existing." },
             mode: { type: "string", enum: ["fast", "safe"], description: "Run mode." },
+            args: { type: "array", items: { type: "string" }, description: "Extra arguments." },
+            workspace: { $ref: "#/$defs/wsRef" },
             nested: { type: "object", description: "Ignored in guided fields; edited in raw JSON." },
         },
     });
     assert.deepEqual(fields, [
-        { name: "path", type: "string", required: true, description: "Target path." },
+        { name: "path", type: "string", required: true, description: "Target path or globs." },
         { name: "text", type: "textarea", required: true, description: "Body text." },
         { name: "count", type: "integer", required: false, description: "Max items." },
         { name: "ratio", type: "number", required: false, description: "Scale factor." },
         { name: "force", type: "boolean", required: false, description: "Overwrite existing." },
         { name: "mode", type: "enum", required: false, description: "Run mode.", enumValues: ["fast", "safe"] },
+        { name: "args", type: "string-list", required: false, description: "Extra arguments." },
+        { name: "workspace", type: "string", required: false, description: "Workspace handle." },
     ]);
     assert.deepEqual(extractGuidedFields(undefined), []);
 });

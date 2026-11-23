@@ -857,6 +857,22 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await step2.getByLabel("branch argument", { exact: true }).waitFor({ state: "visible" });
                     await step2.getByLabel("branch argument", { exact: true }).fill("main");
                     await step2.getByLabel("short argument", { exact: true }).selectOption("true");
+
+                    // Switching Server back to plurnk clears incompatible MCP tool & stale args, then switching back to svc-git works cleanly
+                    await step2Server.click();
+                    await step2ServerList.waitFor({ state: "visible" });
+                    await step2ServerList.locator('[data-combobox-option="plurnk"]').click();
+                    assert.equal(await step2Tool.inputValue(), "", "switching server clears incompatible previous tool");
+                    assert.equal(await step2.getByLabel("Step arguments JSON", { exact: true }).inputValue(), "{}", "switching server clears stale tool arguments");
+                    await step2Server.click();
+                    await step2ServerList.waitFor({ state: "visible" });
+                    await step2ServerList.locator('[data-combobox-option="svc-git"]').click();
+                    await step2Tool.click();
+                    await step2ToolList.waitFor({ state: "visible" });
+                    await step2ToolList.locator('[data-combobox-option="git_status"]').click();
+                    await step2.getByLabel("branch argument", { exact: true }).waitFor({ state: "visible" });
+                    await step2.getByLabel("branch argument", { exact: true }).fill("main");
+                    await step2.getByLabel("short argument", { exact: true }).selectOption("true");
                     await step2.getByLabel("Step aside label", { exact: true }).fill("Check git tree");
 
                     await scheduleDisclosure.getByRole("button", { name: "Save schedule", exact: true }).click();
