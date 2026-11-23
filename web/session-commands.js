@@ -107,13 +107,27 @@ const ZERO_ARG_COMMANDS = new Set([
 const FAMILY_SUBCOMMANDS = Object.freeze({
     mcp: ["list", "enable", "disable", "remove", "oauth", "discover", "add", "replace", "skills", "complete"],
     skills: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
-    schedule: ["list", "inspect", "run", "enable", "disable", "done", "reopen", "remove", "discover", "add", "replace"],
+    schedule: ["list", "show", "inspect", "run", "enable", "disable", "done", "reopen", "remove", "discover", "add", "replace"],
     personas: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
     members: ["list", "enable", "disable", "remove", "discover", "add"],
     env: ["list", "set", "unset", "enable", "disable", "remove", "--scope"],
 });
 
-const FAMILY_ALIAS_SUBS = new Set(["inspect", "enable", "disable", "remove", "oauth", "run", "done", "reopen", "unset"]);
+const FAMILY_ALIAS_SUBS = new Set(["show", "inspect", "replace", "enable", "disable", "remove", "oauth", "run", "done", "reopen", "unset"]);
+
+const SCHEDULE_ADD_FLAGS = Object.freeze([
+    "--manual",
+    "--once",
+    "--rule",
+    "--step",
+    "--run",
+    "--aside",
+    "--target",
+    "--prompt",
+    "--persona",
+    "--catchup",
+    "--no-catchup",
+]);
 
 /**
  * @typedef {{
@@ -294,12 +308,17 @@ function resolveArgumentStage(cmd, completedArgs, sources) {
             return { candidates: FAMILY_SUBCOMMANDS[cmd], advances: true };
         }
         const sub = completedArgs[0] ?? "";
-        if (completedArgs.length === 1 && FAMILY_ALIAS_SUBS.has(sub)) {
+        const validAliasSub = ((sub !== "show" && sub !== "inspect") || cmd === "schedule")
+            && (sub !== "replace" || cmd !== "members");
+        if (completedArgs.length === 1 && FAMILY_ALIAS_SUBS.has(sub) && validAliasSub) {
             const aliases = sources.familyAliases?.[cmd] ?? [];
-            return { candidates: aliases, advances: sub === "oauth" };
+            return { candidates: aliases, advances: sub === "oauth" || sub === "replace" };
         }
         if (cmd === "mcp" && completedArgs.length === 2 && sub === "oauth") {
             return { candidates: ["begin", "complete"], advances: false };
+        }
+        if (cmd === "schedule" && (sub === "add" || sub === "replace") && completedArgs.length >= 2) {
+            return { candidates: SCHEDULE_ADD_FLAGS, advances: true };
         }
         return { candidates: [], advances: false };
     }
@@ -563,6 +582,69 @@ export function isCommand(text, availableCommands = []) {
     return !availableCommands.some((entry) => entry?.type !== "skill" && entry?.name === name);
 }
 
+/**
+ * Shell-style tokenizer preserving quoted rules ("0 9 * * 1-5") and JSON payloads ('{"text":"echo hi"}').
+ * @param {string} raw
+ * @returns {string[]}
+ */
+function tokenizeFamilyArgs(raw) {
+    /** @type {string[]} */
+    const tokens = [];
+    let current = "";
+    let inToken = false;
+    /** @type {"'" | '"' | null} */
+    let quote = null;
+
+    for (let i = 0; i < raw.length; i += 1) {
+        const ch = raw[i] ?? "";
+        if (quote !== null) {
+            if (quote === '"' && ch === "\\" && i + 1 < raw.length) {
+                const next = raw[i + 1] ?? "";
+                if (next === '"' || next === "\\" || next === "$" || next === "`") {
+                    current += next;
+                    i += 1;
+                    continue;
+                }
+            }
+            if (ch === quote) {
+                quote = null;
+                continue;
+            }
+            current += ch;
+            continue;
+        }
+        if (ch === "'" || ch === '"') {
+            quote = ch;
+            inToken = true;
+            continue;
+        }
+        if (ch === "\\" && i + 1 < raw.length && /\s/u.test(raw[i + 1] ?? "")) {
+            current += raw[i + 1] ?? "";
+            inToken = true;
+            i += 1;
+            continue;
+        }
+        if (/\s/u.test(ch)) {
+            if (inToken) {
+                tokens.push(current);
+                current = "";
+                inToken = false;
+            }
+            continue;
+        }
+        current += ch;
+        inToken = true;
+    }
+
+    if (quote !== null) {
+        throw new Error(`Unclosed ${quote === "'" ? "single" : "double"} quote in command arguments.`);
+    }
+    if (inToken) {
+        tokens.push(current);
+    }
+    return tokens;
+}
+
 /** @param {string} text */
 export function parseCommand(text) {
     const match = /^\/(\S*)\s*([\s\S]*)$/u.exec(text.trim());
@@ -570,7 +652,7 @@ export function parseCommand(text) {
     const name = match[1] || "help";
     if (!commands.has(name)) throw new Error(`Unknown command /${name}. Use /help.`);
     const rest = match[2].trim();
-    const args = rest ? rest.split(/\s+/u) : [];
+    const args = rest ? (familyCommands.has(name) ? tokenizeFamilyArgs(rest) : rest.split(/\s+/u)) : [];
     const zeroArg = new Set([
         "yolo", "stop", "update", "workspaces", "sessions", "loops",
         "parent", "enter", "older", "newer", "review",
@@ -869,9 +951,9 @@ export default function sessionCommands(main, actions) {
                 return true;
             }
             if (familyCommands.has(name)) {
-                if (name === "schedule" && args[0] === "inspect") {
+                if (name === "schedule" && (args[0] === "inspect" || args[0] === "show")) {
                     const alias = (args[1] ?? "").trim();
-                    if (!alias) throw new Error("Usage: /schedule inspect <alias>.");
+                    if (!alias) throw new Error(`Usage: /schedule ${args[0]} <alias>.`);
                     const listed = await call("workspace.schedule.list", {});
                     signal.throwIfAborted();
                     const defs = isRecord(listed) && Array.isArray(listed.definitions) ? listed.definitions : [];

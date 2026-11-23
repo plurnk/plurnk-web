@@ -226,8 +226,12 @@ export default async function verifyCommands(t) {
                     assert.deepEqual((await suggest("/mcp en")).items, ["enable"]);
                     assert.equal(await accept("/mcp en", "enable"), "/mcp enable ");
                     assert.deepEqual((await suggest("/mcp enable ")).items, ["svc-git", "remote-docs"]);
+                    assert.deepEqual((await suggest("/schedule show ")).items, ["nightly"]);
                     assert.deepEqual((await suggest("/schedule inspect ")).items, ["nightly"]);
+                    assert.deepEqual((await suggest("/schedule replace ")).items, ["nightly"]);
                     assert.deepEqual((await suggest("/schedule run ")).items, ["nightly"]);
+                    assert.deepEqual((await suggest("/schedule add deploy --m")).items, ["--manual"]);
+                    assert.deepEqual((await suggest("/schedule replace nightly --st")).items, ["--step"]);
                     assert.deepEqual((await suggest("/env --scope ")).items, ["session", "workspace"]);
                     assert.equal(await accept("/env --scope ", "session"), "/env --scope session ");
                     assert.deepEqual((await suggest("/env unset ")).items, ["API_TOKEN"]);
@@ -339,6 +343,17 @@ export default async function verifyCommands(t) {
                     assert.match(await outputDialog.locator('[data-text="command-literal"]').textContent(), /"rule": "manual"/u);
                     await outputDialog.locator("button[data-dialog-close]").click();
                     await outputDialog.waitFor({ state: "hidden" });
+
+                    assert.equal(await command("/schedule show repo-macro"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.schedule.list");
+                    await outputDialog.waitFor({ state: "visible" });
+                    assert.equal(await outputDialog.locator('[data-text="command-message"]').textContent(), "repo-macro · run · open · manual");
+                    await outputDialog.locator("button[data-dialog-close]").click();
+                    await outputDialog.waitFor({ state: "hidden" });
+
+                    // Quote-preserving tokenization keeps multi-word quoted args intact and rejects unclosed quotes cleanly.
+                    assert.equal(await command('/schedule add bad --rule "0 9 *'), false);
+                    assert.match(await errorText.textContent(), /Unclosed double quote/u);
 
                     result = { alias: "nightly", status: "done" };
                     assert.equal(await command("/schedule done nightly"), true);
