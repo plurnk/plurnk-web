@@ -120,10 +120,12 @@ const FAMILY_ALIAS_SUBS = new Set(["enable", "disable", "remove", "oauth", "run"
  *   readonly availableCommands?: readonly { readonly name: string, readonly type?: string }[],
  *   readonly promptSuggestions?: readonly string[],
  *   readonly models?: readonly string[],
+ *   readonly modelChoices?: readonly import("./session-models.js").ModelChoice[],
  *   readonly efforts?: readonly string[],
  *   readonly effortsByModel?: Readonly<Record<string, readonly string[]>>,
  *   readonly personas?: readonly string[],
  *   readonly childModels?: readonly string[],
+ *   readonly childModelChoices?: readonly import("./session-models.js").ModelChoice[],
  *   readonly modes?: readonly string[],
  *   readonly workspaces?: readonly string[],
  *   readonly sessions?: readonly string[],
@@ -138,9 +140,10 @@ const FAMILY_ALIAS_SUBS = new Set(["enable", "disable", "remove", "oauth", "run"
  * @param {readonly string[]} candidates
  * @param {string} partial
  * @param {boolean} terminal
+ * @param {Readonly<Record<string, string>>} [details]
  * @returns {readonly string[]}
  */
-function filterCandidates(candidates, partial, terminal) {
+function filterCandidates(candidates, partial, terminal, details) {
     const seen = new Set();
     /** @type {string[]} */
     const unique = [];
@@ -152,7 +155,9 @@ function filterCandidates(candidates, partial, terminal) {
     const needle = partial.toLowerCase();
     if (!needle) return unique;
     const prefixMatches = unique.filter((item) => item.toLowerCase().startsWith(needle));
-    const substringMatches = unique.filter((item) => !item.toLowerCase().startsWith(needle) && item.toLowerCase().includes(needle));
+    const substringMatches = unique.filter((item) =>
+        !item.toLowerCase().startsWith(needle)
+        && (item.toLowerCase().includes(needle) || (details?.[item]?.toLowerCase().includes(needle) ?? false)));
     const combined = [...prefixMatches, ...substringMatches];
     if (terminal && combined.length === 1 && combined[0] === partial) {
         return [];
@@ -164,14 +169,28 @@ function filterCandidates(candidates, partial, terminal) {
  * @param {string} cmd
  * @param {readonly string[]} completedArgs
  * @param {SuggestionSources} sources
- * @returns {{ candidates: readonly string[], advances: boolean }}
+ * @returns {{ candidates: readonly string[], advances: boolean, details?: Readonly<Record<string, string>>, menu?: boolean }}
  */
 function resolveArgumentStage(cmd, completedArgs, sources) {
     if (cmd === "model") {
         if (completedArgs.length === 0) {
             const anyModelEfforts = (sources.efforts?.length ?? 0) > 0
-                || Boolean(sources.effortsByModel && Object.values(sources.effortsByModel).some((list) => list.length > 0));
-            return { candidates: sources.models ?? [], advances: anyModelEfforts };
+                || Boolean(sources.effortsByModel && Object.values(sources.effortsByModel).some((list) => list.length > 0))
+                || Boolean(sources.modelChoices?.some((choice) => choice.efforts.length > 0));
+            if (sources.modelChoices && sources.modelChoices.length > 0) {
+                /** @type {Record<string, string>} */
+                const details = {};
+                const candidates = [];
+                for (const choice of sources.modelChoices) {
+                    candidates.push(choice.value);
+                    if (choice.secondary) details[choice.value] = choice.secondary;
+                }
+                for (const fallback of sources.models ?? []) {
+                    if (!Object.hasOwn(details, fallback)) candidates.push(fallback);
+                }
+                return { candidates, advances: anyModelEfforts, details, menu: true };
+            }
+            return { candidates: sources.models ?? [], advances: anyModelEfforts, menu: true };
         }
         if (completedArgs.length === 1) {
             const selected = completedArgs[0] ?? "";
@@ -193,9 +212,20 @@ function resolveArgumentStage(cmd, completedArgs, sources) {
             : { candidates: [], advances: false };
     }
     if (cmd === "child") {
-        return completedArgs.length === 0
-            ? { candidates: ["inherit", ...(sources.childModels ?? sources.models ?? [])], advances: false }
-            : { candidates: [], advances: false };
+        if (completedArgs.length === 0) {
+            if (sources.childModelChoices && sources.childModelChoices.length > 0) {
+                /** @type {Record<string, string>} */
+                const details = {};
+                const candidates = [];
+                for (const choice of sources.childModelChoices) {
+                    candidates.push(choice.value);
+                    if (choice.secondary) details[choice.value] = choice.secondary;
+                }
+                return { candidates: ["inherit", ...candidates], advances: false, details, menu: true };
+            }
+            return { candidates: ["inherit", ...(sources.childModels ?? sources.models ?? [])], advances: false, menu: true };
+        }
+        return { candidates: [], advances: false };
     }
     if (cmd === "mode") {
         return completedArgs.length === 0
@@ -277,11 +307,11 @@ function resolveArgumentStage(cmd, completedArgs, sources) {
 }
 
 /**
- * {§web-session-commands} {§web-session-input} Compute live-narrowing pill candidates across command and argument stages.
+ * {§web-session-commands} {§web-session-input} Compute live-narrowing pill/menu candidates across command and argument stages.
  * @param {string} rawInput
  * @param {SuggestionSources} [sources]
  * @param {{ readonly allowPromptSuggestions?: boolean }} [options]
- * @returns {{ readonly kind: "command" | "arg" | "skill" | "prompt", readonly items: readonly string[], readonly advances: boolean }}
+ * @returns {{ readonly kind: "command" | "arg" | "skill" | "prompt", readonly items: readonly string[], readonly advances: boolean, readonly details?: Readonly<Record<string, string>>, readonly menu?: boolean }}
  */
 export function computeCommandSuggestions(rawInput, sources = {}, options = {}) {
     const available = sources.availableCommands ?? [];
@@ -315,10 +345,16 @@ export function computeCommandSuggestions(rawInput, sources = {}, options = {}) 
             const parts = restRaw.trim() ? restRaw.trim().split(/\s+/u) : [];
             const completedArgs = endsWithSpace ? parts : parts.slice(0, -1);
             const partial = endsWithSpace ? "" : (parts.at(-1) ?? "");
-            const { candidates, advances } = resolveArgumentStage(cmd, completedArgs, sources);
-            const items = filterCandidates(candidates, partial, !advances);
+            const { candidates, advances, details, menu } = resolveArgumentStage(cmd, completedArgs, sources);
+            const items = filterCandidates(candidates, partial, !advances, details);
             if (items.length > 0) {
-                return { kind: "arg", items, advances };
+                return {
+                    kind: "arg",
+                    items,
+                    advances,
+                    ...(details ? { details } : {}),
+                    ...(menu ? { menu: true } : {}),
+                };
             }
         }
     }

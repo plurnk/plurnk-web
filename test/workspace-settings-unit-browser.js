@@ -52,6 +52,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     ];
                     let activeSessionPersona = "none";
                     let activeSessionModel = "local";
+                    let activeSessionModelPersisted = false;
                     let activeSessionEffort = "low";
                     let activeSpawnModel = "inherit";
                     let activeSessionMode = "review";
@@ -110,11 +111,13 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         }
                         const currentEfforts = activeSessionModel === "fast"
                             ? ["medium", "high"]
-                            : activeSessionModel === "uncataloged"
-                                ? []
-                                : activeSessionModel === "fixture/plain"
-                                    ? ["off", "adaptive"]
-                                    : ["low", "high"];
+                            : activeSessionModel === "anthropic/claude-sonnet-4-5"
+                                ? ["low", "medium", "high", "max"]
+                                : activeSessionModel === "uncataloged"
+                                    ? []
+                                    : activeSessionModel === "fixture/plain"
+                                        ? ["off", "adaptive"]
+                                        : ["low", "high"];
                         const sessionConfigOptions = () => [
                             {
                                 configId: "model",
@@ -173,16 +176,33 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 }]
                                 : []),
                         ];
-                        const sessionStatusMeta = () => ({
-                            status: {
-                                model: {
-                                    ...(activeSessionModel.includes("/") ? {} : { alias: activeSessionModel }),
-                                    provider: "fixture",
-                                    model: activeSessionModel === "fast" ? "fast" : activeSessionModel === "fixture/plain" ? "plain" : "small",
-                                    ...(currentEfforts.length > 0 ? { effort: activeSessionEffort, effortSource: "explicit" } : {}),
+                        const sessionStatusMeta = () => {
+                            if (!activeSessionModelPersisted) {
+                                return { status: { model: null } };
+                            }
+                            if (activeSessionModel.includes("/")) {
+                                const slash = activeSessionModel.indexOf("/");
+                                return {
+                                    status: {
+                                        model: {
+                                            provider: activeSessionModel.slice(0, slash),
+                                            model: activeSessionModel.slice(slash + 1),
+                                            ...(currentEfforts.length > 0 ? { effort: activeSessionEffort, effortSource: "explicit" } : {}),
+                                        },
+                                    },
+                                };
+                            }
+                            return {
+                                status: {
+                                    model: {
+                                        alias: activeSessionModel,
+                                        provider: "fixture",
+                                        model: activeSessionModel === "fast" ? "fast" : "small",
+                                        ...(currentEfforts.length > 0 ? { effort: activeSessionEffort, effortSource: "explicit" } : {}),
+                                    },
                                 },
-                            },
-                        });
+                            };
+                        };
                         if (input.method === "session/options") {
                             if (failNextSessionOptions) {
                                 failNextSessionOptions = false;
@@ -204,6 +224,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 result: {
                                     configOptions: sessionConfigOptions(),
                                     availableCommands: [],
+                                    _meta: { plurnk: sessionStatusMeta() },
                                 },
                             };
                         }
@@ -213,7 +234,10 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         }
                         if (input.method === "session/set_config_option") {
                             if (input.params.configId === "persona") activeSessionPersona = input.params.value;
-                            if (input.params.configId === "model") activeSessionModel = input.params.value;
+                            if (input.params.configId === "model") {
+                                activeSessionModel = input.params.value;
+                                activeSessionModelPersisted = true;
+                            }
                             if (input.params.configId === "thought_level") activeSessionEffort = input.params.value;
                             if (input.params.configId === "spawn_model") activeSpawnModel = input.params.value;
                             if (input.params.configId === "mode") activeSessionMode = input.params.value;
@@ -228,21 +252,44 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         const { kind, params } = input.params;
                         switch (kind) {
                             case "models.list": {
-                                assert.equal(params?.limit, 100, "models.list honors schema maximum limit of 100");
-                                const allCatalog = [
-                                    {
-                                        selector: "fixture/small",
-                                        provider: "fixture",
-                                        providerName: "Fixture",
-                                        model: "small",
-                                        modelName: params?.search ? `Small (${params.search})` : "Fixture Small",
-                                        limits: { contextTokens: 32768 },
+                                const limit = typeof params?.limit === "number" ? params.limit : 100;
+                                assert.ok(limit >= 1 && limit <= 100, "models.list honors schema maximum limit of 100");
+                                const offset = typeof params?.offset === "number" ? params.offset : 0;
+                                const fillerAlibaba = Array.from({ length: 115 }, (_, idx) => {
+                                    const num = String(idx + 1).padStart(3, "0");
+                                    return {
+                                        selector: `alibaba/qwen-${num}`,
+                                        provider: "alibaba",
+                                        providerName: "Alibaba",
+                                        model: `qwen-${num}`,
+                                        modelName: `Alibaba Qwen ${num}`,
+                                        limits: { contextTokens: 131072 },
                                         capabilities: {
                                             attachment: false,
-                                            reasoning: true,
-                                            efforts: ["low", "high"],
+                                            reasoning: false,
+                                            efforts: ["off"],
                                             toolCall: true,
                                             inputModalities: ["text"],
+                                            outputModalities: ["text"],
+                                        },
+                                        readiness: { ready: true, causes: [] },
+                                    };
+                                });
+                                const allCatalog = [
+                                    ...fillerAlibaba,
+                                    {
+                                        selector: "anthropic/claude-sonnet-4-5",
+                                        provider: "anthropic",
+                                        providerName: "Anthropic",
+                                        model: "claude-sonnet-4-5",
+                                        modelName: "Claude Sonnet 4.5",
+                                        limits: { contextTokens: 200000 },
+                                        capabilities: {
+                                            attachment: true,
+                                            reasoning: true,
+                                            efforts: ["low", "medium", "high", "max"],
+                                            toolCall: true,
+                                            inputModalities: ["text", "image"],
                                             outputModalities: ["text"],
                                         },
                                         readiness: { ready: true, causes: [] },
@@ -281,15 +328,59 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                         },
                                         readiness: { ready: true, causes: [] },
                                     },
+                                    {
+                                        selector: "fixture/small",
+                                        provider: "fixture",
+                                        providerName: "Fixture",
+                                        model: "small",
+                                        modelName: params?.search ? `Small (${params.search})` : "Fixture Small",
+                                        limits: { contextTokens: 32768 },
+                                        capabilities: {
+                                            attachment: false,
+                                            reasoning: true,
+                                            efforts: ["low", "high"],
+                                            toolCall: true,
+                                            inputModalities: ["text"],
+                                            outputModalities: ["text"],
+                                        },
+                                        readiness: { ready: true, causes: [] },
+                                    },
+                                    {
+                                        selector: "google/gemini-2.5-pro",
+                                        provider: "google",
+                                        providerName: "Google",
+                                        model: "gemini-2.5-pro",
+                                        modelName: "Gemini 2.5 Pro",
+                                        limits: { contextTokens: 1000000 },
+                                        capabilities: {
+                                            attachment: true,
+                                            reasoning: true,
+                                            efforts: ["low", "high"],
+                                            toolCall: true,
+                                            inputModalities: ["text", "image"],
+                                            outputModalities: ["text"],
+                                        },
+                                        readiness: { ready: true, causes: [] },
+                                    },
                                 ];
-                                const filtered = params?.search
-                                    ? allCatalog.filter((m) => m.selector.includes(params.search) || m.modelName.toLowerCase().includes(String(params.search).toLowerCase()))
+                                const byProvider = params?.provider
+                                    ? allCatalog.filter((m) => m.provider.toLowerCase() === String(params.provider).toLowerCase())
                                     : allCatalog;
+                                const needle = typeof params?.search === "string" ? params.search.trim().toLowerCase() : "";
+                                const filtered = needle
+                                    ? byProvider.filter((m) =>
+                                        m.selector.toLowerCase().includes(needle)
+                                        || m.modelName.toLowerCase().includes(needle)
+                                        || m.providerName.toLowerCase().includes(needle))
+                                    : byProvider;
+                                const items = filtered.slice(offset, offset + limit);
+                                const nextOffset = offset + items.length;
                                 return {
                                     result: {
-                                        items: filtered,
-                                        offset: 0,
+                                        items,
+                                        offset,
                                         total: filtered.length,
+                                        ...(nextOffset < filtered.length ? { nextOffset } : {}),
                                     },
                                 };
                             }
@@ -635,23 +726,60 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     assert.equal(applyRightAligned, true, "Apply to session button aligns to the right edge of the form footer");
                     await page.setViewportSize({ width: 320, height: 740 });
 
-                    const modelSelect = sessionConfigForm.getByRole("combobox", { name: "Active session model", exact: true });
+                    const modelCombo = sessionConfigForm.getByRole("combobox", { name: "Active session model", exact: true });
+                    const spawnCombo = sessionConfigForm.getByRole("combobox", { name: "Child session model", exact: true });
                     const effortSelect = sessionConfigForm.getByRole("combobox", { name: "Reasoning effort", exact: true });
                     assert.deepEqual(
                         await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
                         ["low", "high"],
                         "initial model populates exact supported efforts without fake placeholder",
                     );
-                    await modelSelect.selectOption("uncataloged");
+
+                    // Fresh session (status.model === null) persists default alias when clicking Apply to session
+                    await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/small"));
+                    assert.equal(activeSessionModelPersisted, true, "fresh session Apply to session persists default alias instead of no-oping");
+
+                    // Combobox searches past alphabetical row 100 (120-model catalog) and dynamically resolves efforts for anthropic/claude-sonnet-4-5!
+                    await modelCombo.click();
+                    const modelList = sessionConfigForm.locator('[data-model-combobox="model"] [data-combobox-list]');
+                    await modelList.waitFor({ state: "visible" });
+                    const initialFirstOption = await modelList.locator('[role="option"]').first().getAttribute("data-combobox-option");
+                    assert.equal(initialFirstOption, "local", "declared aliases rank first before alibaba/* catalog entries");
+                    await modelCombo.fill("claude");
+                    const claudeOption = modelList.locator('[role="option"][data-combobox-option="anthropic/claude-sonnet-4-5"]');
+                    await claudeOption.waitFor({ state: "visible" });
+                    await claudeOption.click();
+                    assert.equal(await modelCombo.inputValue(), "anthropic/claude-sonnet-4-5");
+                    assert.deepEqual(
+                        await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
+                        ["low", "medium", "high", "max"],
+                        "selecting a catalog model beyond row 100 immediately updates supported Reasoning effort options",
+                    );
+
+                    // Uncataloged alias disables effort; fixture/plain updates to off/adaptive; fast selects alias default effort "high"
+                    await modelCombo.fill("uncataloged");
+                    await modelList.locator('[role="option"][data-combobox-option="uncataloged"]').click();
                     assert.equal(await effortSelect.isDisabled(), true, "uncataloged route with no advertised efforts disables effort select");
-                    await modelSelect.selectOption("fixture/plain");
+
+                    await modelCombo.fill("plain");
+                    const plainOption = modelList.locator('[role="option"][data-combobox-option="fixture/plain"]');
+                    await plainOption.waitFor({ state: "visible" });
+                    await plainOption.click();
                     assert.equal(await effortSelect.isDisabled(), false);
                     assert.deepEqual(
                         await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
                         ["off", "adaptive"],
                     );
-                    await modelSelect.selectOption("fast");
-                    assert.equal(await effortSelect.isDisabled(), false);
+
+                    await modelCombo.fill("fast");
+                    const fastOption = modelList.locator('[role="option"][data-combobox-option="fast"]');
+                    await fastOption.waitFor({ state: "visible" });
+                    await fastOption.click();
+                    await page.waitForFunction(() => {
+                        const sel = document.querySelector('#workspace-settings [data-session-config-form] select[name="effort"]');
+                        return sel instanceof HTMLSelectElement && !sel.disabled && sel.options.length === 2 && sel.value === "high";
+                    });
                     assert.deepEqual(
                         await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
                         ["medium", "high"],
@@ -659,14 +787,25 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     );
                     assert.equal(await effortSelect.inputValue(), "high", "alias default effort is selected automatically");
                     await effortSelect.selectOption("medium");
-                    await sessionConfigForm.getByRole("combobox", { name: "Child session model", exact: true }).selectOption("fast");
+
+                    // Child session model combobox finds models beyond row 100 (google/gemini-2.5-pro) as well as inherit & aliases
+                    await spawnCombo.click();
+                    const spawnList = sessionConfigForm.locator('[data-model-combobox="spawnModel"] [data-combobox-list]');
+                    await spawnList.waitFor({ state: "visible" });
+                    assert.equal(await spawnList.locator('[role="option"]').first().getAttribute("data-combobox-option"), "inherit");
+                    await spawnCombo.fill("gemini");
+                    const geminiOption = spawnList.locator('[role="option"][data-combobox-option="google/gemini-2.5-pro"]');
+                    await geminiOption.waitFor({ state: "visible" });
+                    await geminiOption.click();
+                    assert.equal(await spawnCombo.inputValue(), "google/gemini-2.5-pro");
+
                     await sessionConfigForm.getByRole("combobox", { name: "Active session persona", exact: true }).selectOption("auditor");
                     await sessionConfigForm.getByRole("combobox", { name: "Approval policy", exact: true }).selectOption("accept");
                     await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
                     await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Approval policy: accept"));
                     assert.equal(activeSessionModel, "fast");
                     assert.equal(activeSessionEffort, "medium");
-                    assert.equal(activeSpawnModel, "fast");
+                    assert.equal(activeSpawnModel, "google/gemini-2.5-pro");
                     assert.equal(activeSessionPersona, "auditor");
                     assert.equal(activeSessionMode, "accept");
 
@@ -675,13 +814,40 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.locator("#dialog-session-create [data-dialog-close]").first().click();
                     await page.locator("#dialog-session-create").waitFor({ state: "hidden" });
 
-                    // Models tab in Session mode: shows aliases (with 1-click Use in session) and catalog search (preserving focus across sequential keystrokes and superseded lookups)
+                    // Models tab in Session mode: shows aliases + paginated 120-model catalog with provider filter and 1-click Use in session / Use as child on catalog rows!
                     await settingsArticle.getByRole("link", { name: "Models", exact: true }).click();
                     const modelsPanel = settingsArticle.locator('[data-settings-panel="models"]');
                     await modelsPanel.waitFor({ state: "visible" });
                     assert.equal(await modelsPanel.locator("[data-session-model-form]").count(), 0, "session model selector moved to #session tab");
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 3);
-                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 3);
+                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 100, "first page shows 100 of 120 catalog models");
+                    assert.equal(await modelsPanel.locator('[data-text="model-total"]').textContent(), "120");
+                    const nextPageBtn = modelsPanel.locator("[data-models-next]");
+                    const prevPageBtn = modelsPanel.locator("[data-models-prev]");
+                    assert.equal(await prevPageBtn.isDisabled(), true);
+                    assert.equal(await nextPageBtn.isDisabled(), false);
+                    await nextPageBtn.click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-offset"]')?.textContent === "100");
+                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 20, "second page shows remaining 20 catalog models");
+                    assert.equal(await prevPageBtn.isDisabled(), false);
+                    assert.equal(await nextPageBtn.isDisabled(), true);
+
+                    // Provider filter narrows directly to anthropic and exposes 1-click Use in session & Use as child on catalog rows
+                    const providerSelect = modelsPanel.getByRole("combobox", { name: "Filter by provider", exact: true });
+                    await providerSelect.selectOption("anthropic");
+                    await page.waitForFunction(() =>
+                        document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "1"
+                        && document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-selector"]')?.textContent === "anthropic/claude-sonnet-4-5",
+                    );
+                    await modelsPanel.locator("[data-models-catalog-rows] tr").first().getByRole("button", { name: "Use in session", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("anthropic/claude-sonnet-4-5"));
+                    assert.equal(activeSessionModel, "anthropic/claude-sonnet-4-5");
+                    await modelsPanel.locator("[data-models-catalog-rows] tr").first().getByRole("button", { name: "Use as child", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Child model: anthropic/claude-sonnet-4-5"));
+                    assert.equal(activeSpawnModel, "anthropic/claude-sonnet-4-5");
+                    await providerSelect.selectOption("");
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "120");
+
                     const catalogSearch = modelsPanel.getByRole("searchbox", { name: "Search model catalog", exact: true });
                     await catalogSearch.focus();
                     await catalogSearch.pressSequentially("small", { delay: 15 });

@@ -158,6 +158,7 @@ function resolveDisplayModel(statusModel, defaults) {
  * @param {{
  *   providers?: readonly Partial<import("@plurnk/plurnk-acp/client").AcpProviderRoute>[],
  *   configOptions?: readonly { configId?: string, currentValue?: unknown }[],
+ *   laneQueue?: { readonly position?: number | null, readonly depth?: number | null, readonly laneLimit?: number | null } | null,
  * }} [defaults]
  */
 export function gauges(status, budget, defaults) {
@@ -180,8 +181,21 @@ export function gauges(status, budget, defaults) {
     const approvalMode = typeof modeOption?.currentValue === "string" && modeOption.currentValue.length > 0
         ? modeOption.currentValue
         : null;
+    const laneQueue = status.lifecycle === "queued" ? defaults?.laneQueue : null;
+    const queuePos = typeof laneQueue?.position === "number" && laneQueue.position > 0 ? laneQueue.position : null;
+    const queueDepth = typeof laneQueue?.depth === "number" && laneQueue.depth > 0 ? laneQueue.depth : null;
+    const queueText = queuePos !== null
+        ? (queueDepth !== null && queueDepth >= queuePos ? `Queued #${queuePos}/${queueDepth}` : `Queued #${queuePos}`)
+        : "";
+    const queueLabel = queuePos !== null
+        ? (queueDepth !== null && queueDepth >= queuePos
+            ? `Queued for inference lane: position ${queuePos} of ${queueDepth}`
+            : `Queued for inference lane: position ${queuePos}`)
+        : "";
     return {
         lifecycle: status.lifecycle,
+        queue: queueText,
+        "queue-label": queueLabel,
         "approval-mode": approvalMode,
         input: input.text, output: output.text, cost: price.text === "?" ? "$?" : price.text,
         "usage-label": `Cumulative tokens, session and descendants. Input: ${input.exact}. Output: ${output.exact}.`,

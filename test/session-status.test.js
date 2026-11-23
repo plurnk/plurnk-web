@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { elapsed, gauges, clocks, workspaceIdentity, descendantTree } from "../web/session-status.js";
+import { applyNoticeStateUpdate } from "../web/session-state-projection.js";
 
 const idle = { lifecycle: "idle", model: null, loopId: null, packetCount: 0, waitUntil: null, descendants: [], inbox: [],
     claimedAt: null, terminatedAt: null,
@@ -152,4 +153,27 @@ test("{§web-session-identity} {§web-workspace-folder} folder labels are compar
     assert.equal(folderless.workspaceIconLabel, "Folderless workspace");
     assert.equal(folderless.projectLabel, "");
     assert.throws(() => workspaceIdentity({ name: "../bad", projectLabel: null }, "session1"), /Workspace has no directory address/u);
+});
+
+test("{§web-session-status} turn_queued telemetry projects lane queue position and clears on turn_awaiting_model", () => {
+    const queued = applyNoticeStateUpdate(
+        { plurnk: { status: { ...idle, lifecycle: "running" } } },
+        { notice: { source: "engine:turn", kind: "turn_queued", queuePosition: 2, queueDepth: 4, laneLimit: 1 } },
+    );
+    assert.equal(queued.changed, true);
+    const queuedPlurnk = /** @type {any} */ (queued.state.plurnk);
+    assert.equal(queuedPlurnk.status.lifecycle, "queued");
+    const queuedGauges = gauges(queuedPlurnk.status, emptyBudget, { laneQueue: queuedPlurnk.laneQueue });
+    assert.equal(queuedGauges.queue, "Queued #2/4");
+    assert.equal(queuedGauges["queue-label"], "Queued for inference lane: position 2 of 4");
+
+    const running = applyNoticeStateUpdate(
+        queued.state,
+        { notice: { source: "engine:turn", kind: "turn_awaiting_model" } },
+    );
+    assert.equal(running.changed, true);
+    const runningPlurnk = /** @type {any} */ (running.state.plurnk);
+    assert.equal(runningPlurnk.status.lifecycle, "running");
+    assert.equal(runningPlurnk.laneQueue, null);
+    assert.equal(gauges(runningPlurnk.status, emptyBudget, { laneQueue: runningPlurnk.laneQueue }).queue, "");
 });

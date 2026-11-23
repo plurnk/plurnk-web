@@ -7,7 +7,8 @@ import describeFailure from "./failure.js";
 import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
 import { primaryModifierLabel } from "./session-commands.js";
-import { listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import { createModelSearchCache, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import { attachModelCombobox } from "./model-combobox.js";
 import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
 import { isRecord } from "./session-translator.js";
 import { parseWorkspaceList, wireWorkspaceCreateDialog } from "./workspace-dialogs.js";
@@ -300,16 +301,35 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
     /** @type {"workspace" | "session"} */
     let envListScope = initialEnvScope === "session" ? "session" : "workspace";
     let modelsSearchQuery = initialQuery;
+    let modelsProviderFilter = "";
+    let modelsOffset = 0;
+    /** @type {number | undefined} */
+    let modelsNextOffset;
+    /** @type {Set<string>} */
+    const knownCatalogProviders = new Set();
     let helpFilterQuery = initialHelpFilter;
     let busy = false;
     let refreshDepth = 0;
     let mounted = false;
     /** @type {AbortController | null} */
     let modelsLookup = null;
+    /** @type {AbortController | null} */
+    let effortLookup = null;
     /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas" | "members", alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
-    /** @type {Map<string, { readonly efforts: readonly string[], readonly defaultEffort: string }>} */
-    const effortsBySelector = new Map();
+    /** @type {ReturnType<typeof attachModelCombobox> | null} */
+    let sessionModelCombobox = null;
+    /** @type {ReturnType<typeof attachModelCombobox> | null} */
+    let sessionSpawnCombobox = null;
+    /** @type {ReturnType<typeof attachModelCombobox> | null} */
+    let personaModelCombobox = null;
+    const modelSearchCache = createModelSearchCache((kind, params = {}, signal) => {
+        const ctx = getContext();
+        const combinedSignal = signal ? AbortSignal.any([ctx.signal, signal]) : ctx.signal;
+        return managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", combinedSignal, {
+            workspaceId: ctx.workspaceId,
+        });
+    });
 
     function syncLoadingState() {
         the(article, "ws-settings-loading", busy || refreshDepth > 0 ? "true" : null);
@@ -443,16 +463,16 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
 
     /** @type {{ model: string, effort: string, spawnModel: string, persona: string, mode: string }} */
     let currentSessionValues = { model: "", effort: "", spawnModel: "inherit", persona: "none", mode: "review" };
+    let hasPersistedSessionModel = false;
 
     /**
      * @param {HTMLSelectElement} effortSelect
-     * @param {string} selectedModel
+     * @param {readonly string[]} supported
+     * @param {string} defaultEffort
      * @param {string} preferredEffort
      * @returns {string}
      */
-    function syncSessionEffortSelect(effortSelect, selectedModel, preferredEffort) {
-        const entry = effortsBySelector.get(selectedModel);
-        const supported = entry ? entry.efforts : [];
+    function populateEffortSelect(effortSelect, supported, defaultEffort, preferredEffort) {
         if (supported.length === 0) {
             $.cloneEach(effortSelect, "#setting-option", [{ value: "", label: "Not applicable" }], (optEl, choice) => {
                 the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": "" });
@@ -468,29 +488,57 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         effortSelect.disabled = false;
         const resolved = preferredEffort && supported.includes(preferredEffort)
             ? preferredEffort
-            : entry?.defaultEffort && supported.includes(entry.defaultEffort)
-                ? entry.defaultEffort
+            : defaultEffort && supported.includes(defaultEffort)
+                ? defaultEffort
                 : (supported[0] ?? "");
         effortSelect.value = resolved;
         return resolved;
     }
 
     /**
+     * @param {HTMLSelectElement} effortSelect
+     * @param {string} selectedModel
+     * @param {string} preferredEffort
+     * @param {readonly string[]} [knownEfforts]
+     * @param {string} [knownDefaultEffort]
+     * @returns {string}
+     */
+    function syncSessionEffortSelect(effortSelect, selectedModel, preferredEffort, knownEfforts, knownDefaultEffort) {
+        if (knownEfforts !== undefined && knownEfforts.length > 0) {
+            return populateEffortSelect(effortSelect, knownEfforts, knownDefaultEffort ?? "", preferredEffort);
+        }
+        const entry = modelSearchCache.getCachedEfforts(selectedModel);
+        const resolved = populateEffortSelect(effortSelect, entry?.efforts ?? [], entry?.defaultEffort ?? "", preferredEffort);
+        if ((!entry || entry.efforts.length === 0) && selectedModel && selectedModel !== "none") {
+            effortLookup?.abort();
+            const req = effortLookup = new AbortController();
+            const ctx = getContext();
+            const lookupSignal = AbortSignal.any([ctx.signal, req.signal]);
+            void modelSearchCache.resolveEfforts(selectedModel, lookupSignal).then((fetched) => {
+                if (req.signal.aborted || ctx.signal.aborted) return;
+                if (sessionModelCombobox && sessionModelCombobox.getValue() !== selectedModel) return;
+                if (fetched.efforts.length > 0) {
+                    populateEffortSelect(effortSelect, fetched.efforts, fetched.defaultEffort, effortSelect.value || preferredEffort);
+                }
+            }).catch(() => {});
+        }
+        return resolved;
+    }
+
+    /**
      * @param {unknown} sessionRes
-     * @param {readonly { readonly alias: string, readonly provider: string, readonly model: string, readonly effort?: string }[]} aliases
-     * @param {readonly { readonly selector: string, readonly modelName: string, readonly capabilities: { readonly efforts: readonly string[] }, readonly readiness: { readonly ready: boolean } }[]} catalogItems
+     * @param {readonly import("./session-models.js").ModelAliasEntry[]} aliases
+     * @param {readonly import("@plurnk/plurnk-contracts").ModelCatalogEntry[]} catalogItems
      */
     function renderSessionConfigControls(sessionRes, aliases, catalogItems) {
         const form = $(article, "form[data-session-config-form]");
-        const modelSelect = form ? $(form, 'select[name="model"]') : null;
         const effortSelect = form ? $(form, 'select[name="effort"]') : null;
-        const spawnSelect = form ? $(form, 'select[name="spawnModel"]') : null;
         const personaSelect = form ? $(form, 'select[name="persona"]') : null;
         const modeSelect = form ? $(form, 'select[name="mode"]') : null;
         if (!(form instanceof HTMLFormElement)
-            || !(modelSelect instanceof HTMLSelectElement)
+            || !sessionModelCombobox
+            || !sessionSpawnCombobox
             || !(effortSelect instanceof HTMLSelectElement)
-            || !(spawnSelect instanceof HTMLSelectElement)
             || !(personaSelect instanceof HTMLSelectElement)
             || !(modeSelect instanceof HTMLSelectElement)) {
             return;
@@ -505,100 +553,35 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         const personaOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "persona");
         const modeOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "mode");
 
-        effortsBySelector.clear();
-        /** @type {Map<string, readonly string[]>} */
-        const catalogEfforts = new Map();
-        for (const m of catalogItems) {
-            catalogEfforts.set(m.selector, m.capabilities.efforts);
-            effortsBySelector.set(m.selector, { efforts: m.capabilities.efforts, defaultEffort: "" });
-        }
-        for (const a of aliases) {
-            const routeSelector = `${a.provider}/${a.model}`;
-            const routeEfforts = catalogEfforts.get(routeSelector) ?? [];
-            effortsBySelector.set(a.alias, { efforts: routeEfforts, defaultEffort: a.effort ?? "" });
-        }
+        modelSearchCache.recordAliases(aliases);
+        modelSearchCache.recordCatalogItems(catalogItems);
 
         const thoughtSupported = isRecord(thoughtOption) && Array.isArray(thoughtOption.options)
             ? thoughtOption.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
             : [];
-        const currentModel = isRecord(modelOption) && typeof modelOption.currentValue === "string" && modelOption.currentValue
+        const currentModel = isRecord(modelOption) && typeof modelOption.currentValue === "string" && modelOption.currentValue && modelOption.currentValue !== "none"
             ? modelOption.currentValue
             : "";
         if (currentModel && thoughtSupported.length > 0) {
-            const existing = effortsBySelector.get(currentModel);
-            if (!existing || existing.efforts.length === 0) {
-                effortsBySelector.set(currentModel, {
-                    efforts: thoughtSupported,
-                    defaultEffort: existing?.defaultEffort ?? "",
-                });
-            }
+            modelSearchCache.seedEfforts(currentModel, thoughtSupported);
         }
 
-        const seen = new Set();
-        /** @type {Array<{ value: string, label: string }>} */
-        const modelChoices = [];
-        const addChoice = (/** @type {string} */ value, /** @type {string} */ label) => {
-            if (!value || seen.has(value)) return;
-            seen.add(value);
-            modelChoices.push({ value, label });
-        };
-        if (isRecord(modelOption) && Array.isArray(modelOption.options)) {
-            for (const entry of modelOption.options) {
-                if (isRecord(entry) && typeof entry.value === "string" && typeof entry.name === "string") {
-                    addChoice(entry.value, entry.name);
-                }
-            }
-        }
-        for (const a of aliases) {
-            addChoice(a.alias, `${a.alias} — ${a.provider}/${a.model}`);
-        }
-        for (const m of catalogItems) {
-            if (m.readiness.ready) {
-                addChoice(m.selector, `${m.selector} (${m.modelName})`);
-            }
-        }
-        if (currentModel) addChoice(currentModel, currentModel);
-        if (modelChoices.length === 0) {
-            addChoice("none", "No model configured");
-        }
-        $.cloneEach(modelSelect, "#setting-option", modelChoices, (optEl, choice) => {
-            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
-        });
-        const resolvedModel = currentModel && seen.has(currentModel) ? currentModel : (modelChoices[0]?.value ?? "");
-        modelSelect.value = resolvedModel;
+        const plurnkMeta = isRecord(sessionRes._meta) && isRecord(sessionRes._meta.plurnk) ? sessionRes._meta.plurnk : null;
+        const metaStatus = isRecord(plurnkMeta?.status) ? plurnkMeta.status : null;
+        hasPersistedSessionModel = metaStatus !== null && Object.hasOwn(metaStatus, "model")
+            ? metaStatus.model !== null
+            : Boolean(currentModel);
+
+        const resolvedModel = currentModel || (aliases.find((a) => a.active)?.alias ?? aliases[0]?.alias ?? "");
+        sessionModelCombobox.setValue(resolvedModel);
 
         const currentEffort = isRecord(thoughtOption) && typeof thoughtOption.currentValue === "string" ? thoughtOption.currentValue : "";
         const resolvedEffort = syncSessionEffortSelect(effortSelect, resolvedModel, currentEffort);
 
-        const spawnSeen = new Set(["inherit"]);
-        /** @type {Array<{ value: string, label: string }>} */
-        const spawnChoices = [{ value: "inherit", label: "Inherit session model" }];
-        if (isRecord(spawnOption) && Array.isArray(spawnOption.options)) {
-            for (const entry of spawnOption.options) {
-                if (isRecord(entry) && typeof entry.value === "string" && typeof entry.name === "string" && !spawnSeen.has(entry.value)) {
-                    spawnSeen.add(entry.value);
-                    spawnChoices.push({ value: entry.value, label: entry.name });
-                }
-            }
-        } else {
-            for (const choice of modelChoices) {
-                if (choice.value !== "none" && !spawnSeen.has(choice.value)) {
-                    spawnSeen.add(choice.value);
-                    spawnChoices.push(choice);
-                }
-            }
-        }
         const currentSpawn = isRecord(spawnOption) && typeof spawnOption.currentValue === "string" && spawnOption.currentValue
             ? spawnOption.currentValue
             : "inherit";
-        if (!spawnSeen.has(currentSpawn)) {
-            spawnSeen.add(currentSpawn);
-            spawnChoices.push({ value: currentSpawn, label: currentSpawn });
-        }
-        $.cloneEach(spawnSelect, "#setting-option", spawnChoices, (optEl, choice) => {
-            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
-        });
-        spawnSelect.value = currentSpawn;
+        sessionSpawnCombobox.setValue(currentSpawn);
 
         const personaChoices = isRecord(personaOption) && Array.isArray(personaOption.options) && personaOption.options.length > 0
             ? personaOption.options.flatMap((entry) => {
@@ -740,11 +723,36 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", signal, {
                         workspaceId: ctx.workspaceId,
                     });
-                const { aliases, catalog } = await listModels(callModels, modelsSearchQuery);
+                const { aliases, catalog } = await listModels(callModels, modelsSearchQuery, {
+                    offset: modelsOffset,
+                    limit: 100,
+                    ...(modelsProviderFilter ? { provider: modelsProviderFilter } : {}),
+                    signal,
+                });
                 signal.throwIfAborted();
+                modelSearchCache.recordAliases(aliases);
+                modelSearchCache.recordCatalogItems(catalog.items);
+                for (const alias of aliases) {
+                    if (alias.provider) knownCatalogProviders.add(alias.provider);
+                }
+                for (const item of catalog.items) {
+                    if (item.provider) knownCatalogProviders.add(item.provider);
+                }
+                modelsNextOffset = catalog.nextOffset;
                 const modelsPanel = $(article, '[data-settings-panel="models"]');
                 const aliasBody = modelsPanel ? $(modelsPanel, "[data-models-alias-rows]") : null;
                 const catalogBody = modelsPanel ? $(modelsPanel, "[data-models-catalog-rows]") : null;
+                const providerSelect = modelsPanel ? $(modelsPanel, '[data-models-search-form] select[name="provider"]') : null;
+                if (providerSelect instanceof HTMLSelectElement) {
+                    const providerChoices = [
+                        { value: "", label: "All providers" },
+                        ...[...knownCatalogProviders].toSorted().map((name) => ({ value: name, label: name })),
+                    ];
+                    $.cloneEach(providerSelect, "#setting-option", providerChoices, (optEl, choice) => {
+                        the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+                    });
+                    providerSelect.value = modelsProviderFilter;
+                }
                 if (modelsPanel && aliasBody && catalogBody) {
                     const sessionUsable = ctx.sessionName !== null ? "true" : "false";
                     $.cloneEach(aliasBody, "#workspace-model-alias-row", aliases, (tr, item) => {
@@ -763,14 +771,20 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                             "model-context": model.limits.contextTokens,
                             "model-efforts": model.capabilities.efforts.join(", "),
                             "model-readiness": model.readiness.ready ? "Configured" : "Not configured",
+                            "model-session-usable": sessionUsable,
+                            "model-ready": model.readiness.ready ? "true" : "false",
                         });
                     });
+                    const prevBtn = $(modelsPanel, "[data-models-prev]");
+                    const nextBtn = $(modelsPanel, "[data-models-next]");
+                    if (prevBtn instanceof HTMLButtonElement) prevBtn.disabled = catalog.offset <= 0;
+                    if (nextBtn instanceof HTMLButtonElement) nextBtn.disabled = catalog.nextOffset === undefined;
                     the(modelsPanel, {
                         "alias-count": aliases.length,
                         "model-offset": catalog.offset,
                         "model-count": catalog.items.length,
                         "model-total": catalog.total,
-                        "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search.",
+                        "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search or paginate.",
                     });
                 }
                 return;
@@ -908,8 +922,52 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         }
         applyHelpFilter();
         syncAboutPanel();
+        const sessionModelBox = $(article, '[data-session-config-form] [data-model-combobox="model"]');
+        if (sessionModelBox instanceof HTMLElement) {
+            sessionModelCombobox = attachModelCombobox(sessionModelBox, {
+                getCache: () => modelSearchCache,
+                signal: getContext().signal,
+                onSelect: (selector, choice) => {
+                    const effortField = $(article, '[data-session-config-form] select[name="effort"]');
+                    if (effortField instanceof HTMLSelectElement) {
+                        syncSessionEffortSelect(effortField, selector, effortField.value, choice?.efforts, choice?.defaultEffort);
+                    }
+                },
+                onInput: (selector) => {
+                    const effortField = $(article, '[data-session-config-form] select[name="effort"]');
+                    if (effortField instanceof HTMLSelectElement && selector) {
+                        const cached = modelSearchCache.getCachedEfforts(selector);
+                        if (cached) {
+                            syncSessionEffortSelect(effortField, selector, effortField.value, cached.efforts, cached.defaultEffort);
+                        }
+                    }
+                },
+            });
+        }
+        const sessionSpawnBox = $(article, '[data-session-config-form] [data-model-combobox="spawnModel"]');
+        if (sessionSpawnBox instanceof HTMLElement) {
+            sessionSpawnCombobox = attachModelCombobox(sessionSpawnBox, {
+                getCache: () => modelSearchCache,
+                includeInherit: true,
+                signal: getContext().signal,
+            });
+        }
+        const personaModelBox = $(article, '[data-personas-save-form] [data-model-combobox="personaModel"]');
+        if (personaModelBox instanceof HTMLElement) {
+            personaModelCombobox = attachModelCombobox(personaModelBox, {
+                getCache: () => modelSearchCache,
+                signal: getContext().signal,
+            });
+        }
+
         const offSvc = onServiceVersion(() => { syncAboutPanel(); });
-        on.target(getContext().signal, "abort", offSvc);
+        on.target(getContext().signal, "abort", () => {
+            offSvc();
+            effortLookup?.abort();
+            sessionModelCombobox?.dispose();
+            sessionSpawnCombobox?.dispose();
+            personaModelCombobox?.dispose();
+        });
 
         // {§web-workspace-rename} {§web-workspace-archive} {§web-session-archive} Workspace and session lifecycle mutations dispatch over /acp.
         on(article, "submit", "form#workspace-rename", (event, form) => {
@@ -1059,13 +1117,36 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         on(article, "submit", "[data-models-search-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
-            modelsSearchQuery = String(new FormData(form).get("q") ?? "").trim();
+            const data = new FormData(form);
+            modelsSearchQuery = String(data.get("q") ?? "").trim();
+            modelsProviderFilter = String(data.get("provider") ?? "").trim();
+            modelsOffset = 0;
             void refreshSection("models");
         });
 
         on(article, "input", '[data-models-search-form] input[name="q"]', (_event, input) => {
             if (!(input instanceof HTMLInputElement)) return;
             modelsSearchQuery = input.value.trim();
+            modelsOffset = 0;
+            void refreshSection("models");
+        });
+
+        on(article, "change", '[data-models-search-form] select[name="provider"]', (_event, select) => {
+            if (!(select instanceof HTMLSelectElement)) return;
+            modelsProviderFilter = select.value.trim();
+            modelsOffset = 0;
+            void refreshSection("models");
+        });
+
+        on(article, "click", "[data-models-prev]", () => {
+            if (modelsOffset <= 0) return;
+            modelsOffset = Math.max(0, modelsOffset - 100);
+            void refreshSection("models");
+        });
+
+        on(article, "click", "[data-models-next]", () => {
+            if (modelsNextOffset === undefined) return;
+            modelsOffset = modelsNextOffset;
             void refreshSection("models");
         });
 
@@ -1079,6 +1160,27 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     (kind, params = {}) => invoke(kind, params, { requireSession: true }),
                     alias,
                 );
+                await refreshSection("models");
+                return `Model: ${modelLabel(route)}${route?.effort ? ` (${route.effort})` : ""}.`;
+            });
+        });
+
+        on(article, "submit", "[data-model-catalog-row-form]", (event, form) => {
+            event.preventDefault();
+            if (!(form instanceof HTMLFormElement)) return;
+            const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+            const operation = submitter?.value ?? "select";
+            const selector = String(new FormData(form).get("selector") ?? "").trim();
+            if (!selector) return;
+            void runMutation(async () => {
+                const callSession = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
+                    invoke(kind, params, { requireSession: true });
+                if (operation === "child") {
+                    const { currentValue } = await sessionConfigOption(callSession, "spawn_model", selector);
+                    await refreshSection("models");
+                    return `Child model: ${currentValue || selector}.`;
+                }
+                const route = await sessionModel(callSession, selector);
                 await refreshSection("models");
                 return `Model: ${modelLabel(route)}${route?.effort ? ` (${route.effort})` : ""}.`;
             });
@@ -1112,18 +1214,11 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             });
         });
 
-        on(article, "change", '[data-session-config-form] select[name="model"]', (_event, select) => {
-            if (!(select instanceof HTMLSelectElement)) return;
-            const form = select.closest("form[data-session-config-form]");
-            const effortField = form ? $(form, 'select[name="effort"]') : null;
-            if (effortField instanceof HTMLSelectElement) {
-                syncSessionEffortSelect(effortField, select.value, effortField.value);
-            }
-        });
-
         on(article, "submit", "[data-session-config-form]", (event, form) => {
             event.preventDefault();
             if (!(form instanceof HTMLFormElement)) return;
+            sessionModelCombobox?.close();
+            sessionSpawnCombobox?.close();
             const data = new FormData(form);
             const selectedModel = String(data.get("model") ?? "").trim();
             const selectedEffort = String(data.get("effort") ?? "").trim();
@@ -1135,7 +1230,11 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     invoke(kind, params, { requireSession: true });
                 /** @type {string[]} */
                 const summaries = [];
-                const modelChanged = Boolean(selectedModel && selectedModel !== "none" && selectedModel !== currentSessionValues.model);
+                const modelChanged = Boolean(
+                    selectedModel
+                    && selectedModel !== "none"
+                    && (selectedModel !== currentSessionValues.model || !hasPersistedSessionModel),
+                );
                 const effortChanged = Boolean(selectedEffort && selectedEffort !== currentSessionValues.effort);
                 if (modelChanged) {
                     const route = await sessionModel(callSession, selectedModel, selectedEffort || undefined);

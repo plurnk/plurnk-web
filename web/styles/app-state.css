@@ -306,11 +306,11 @@
         padding-block: calc(var(--otm-spacing) * 0.25);
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) {
         margin: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) > :where(fieldset) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) > :where(fieldset) {
         display: inline-flex;
         flex-wrap: nowrap;
         align-items: center;
@@ -319,7 +319,7 @@
         padding: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-candidate-add-form]) :where(fieldset > button) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) :where(fieldset > button) {
         flex: 0 0 auto;
         inline-size: auto;
         margin: 0;
@@ -332,8 +332,17 @@
         overflow-wrap: anywhere;
     }
 
-    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form]), td:has(> [data-model-alias-row-form])) {
+    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form]), td:has(> [data-model-alias-row-form]), td:has(> [data-model-catalog-row-form])) {
         white-space: nowrap;
+    }
+
+    tr[data-model-session-usable="false"] [data-model-catalog-row-form],
+    tr[data-model-ready="false"] [data-model-catalog-row-form] {
+        display: none;
+    }
+
+    #dialog-session-model [data-text="model-dialog-error"]:empty {
+        display: none;
     }
 
     @media (scripting: none) {
@@ -1066,6 +1075,8 @@
     #session-status[data-connection="connected"] > [role="status"],
     #session-status[data-lifecycle][data-connection="connecting"] > [role="status"],
     #session-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
+    #session-status:not([data-queue]) [data-status-field="queue"],
+    #session-status[data-queue=""] [data-status-field="queue"],
     #session-status:not([data-elapsed]) [data-status-field="elapsed"],
     #session-status[data-elapsed=""] [data-status-field="elapsed"],
     #session-status[data-context=""] [data-status-field="context"],
@@ -1298,6 +1309,158 @@
 
     [data-history-boundary] [data-text="history-error"]:empty {
         display: none;
+    }
+
+    /* {§web-workspace-settings} {§web-session-commands} Model combobox popover, dialog, catalog pagination, and composer menu. */
+    [data-model-combobox] {
+        position: relative;
+        min-inline-size: 0;
+    }
+
+    [data-model-combobox] > input[role="combobox"] {
+        margin-block-end: 0;
+    }
+
+    [data-model-combobox] > [data-combobox-list] {
+        position: absolute;
+        z-index: 20;
+        inset-block-start: 100%;
+        inset-inline: 0;
+        max-block-size: 16rem;
+        margin: calc(var(--otm-spacing) * 0.2) 0 0;
+        padding: calc(var(--otm-spacing) * 0.25);
+        overflow-y: auto;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+        box-shadow: var(--otm-card-box-shadow);
+    }
+
+    #dialog-session-model [data-model-combobox] > [data-combobox-list] {
+        position: static;
+        max-block-size: 12rem;
+        box-shadow: none;
+    }
+
+    [data-combobox-list] > [role="option"],
+    [data-combobox-list] > [data-combobox-hint] {
+        list-style: none;
+        margin: 0;
+    }
+
+    [data-model-combobox] [role="option"] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.2) 1ch;
+        padding: calc(var(--otm-spacing) * 0.35) calc(var(--otm-spacing) * 0.5);
+        border-radius: var(--otm-border-radius);
+        cursor: pointer;
+    }
+
+    [data-model-combobox] [role="option"]:hover,
+    [data-model-combobox] [role="option"][aria-selected="true"] {
+        background-color: var(--plurnk-user-surface);
+        color: var(--otm-color);
+    }
+
+    [data-model-combobox] [data-combobox-primary] {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
+    }
+
+    [data-model-combobox] [data-combobox-kind="alias"] [data-combobox-primary] {
+        font-weight: 700;
+    }
+
+    [data-model-combobox] [data-combobox-secondary] {
+        color: var(--otm-muted-color);
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
+    }
+
+    [data-model-combobox] [data-combobox-hint] {
+        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.5);
+        color: var(--otm-muted-color);
+        font-size: 0.85em;
+    }
+
+    #dialog-session-model [data-model-dialog-catalog] {
+        margin-inline-end: auto;
+    }
+
+    [data-models-pagination] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-models-summary] {
+        margin: 0;
+    }
+
+    [data-models-page-controls] {
+        display: inline-flex;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.35);
+    }
+
+    [data-models-page-controls] > :is([data-models-prev], [data-models-next]) {
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.65);
+    }
+
+    #session-compose [data-compose-suggestions][data-suggestions-mode="menu"] {
+        flex-flow: column nowrap;
+        align-items: stretch;
+        gap: calc(var(--otm-spacing) * 0.15);
+        max-block-size: 16rem;
+        padding: calc(var(--otm-spacing) * 0.25);
+        overflow-y: auto;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    #session-compose [data-compose-suggestions][data-suggestions-mode="menu"] [data-accept-suggestion] {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: var(--plurnk-user-surface);
+        --otm-primary-inverse: var(--otm-color);
+
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1ch;
+        inline-size: 100%;
+        border-width: 0;
+        text-align: start;
+    }
+
+    #session-compose [data-suggestion-item][data-suggestion-active="true"] > [data-accept-suggestion] {
+        outline: var(--otm-outline-width) solid var(--otm-primary-focus);
+        outline-offset: calc(var(--otm-outline-width) * -1);
+    }
+
+    #session-compose [data-compose-suggestions][data-suggestions-mode="menu"] [data-suggestion-item][data-suggestion-active="true"] > [data-accept-suggestion] {
+        background-color: var(--plurnk-user-surface);
+    }
+
+    #session-compose [data-accept-suggestion] > small {
+        color: var(--otm-muted-color);
+    }
+
+    #session-compose [data-accept-suggestion] > small:empty {
+        display: none;
+    }
+
+    #session-compose [data-accept-suggestion] > small:not(:empty) {
+        margin-inline-start: 0.6ch;
+        font-size: 0.85em;
     }
 
     [hidden] {
