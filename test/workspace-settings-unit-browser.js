@@ -20,6 +20,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     const requests = [];
                     let activeWork = false;
                     let failNextSessionOptions = false;
+                    let failNextScheduleAlreadyRunning = false;
                     /** @type {any[]} */
                     let mcpDefs = [
                         {
@@ -27,6 +28,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                             origin: "service",
                             state: "unavailable",
                             definition: { type: "stdio", command: "git-mcp", args: ["--read-only", "--config=/very/long/path/to/operator/mcp/configuration.json"] },
+                            detail: { description: "Git repository MCP", tools: ["git_status", "git_log"] },
                             problem: { detail: "Configured MCP server 'svc-git' is unavailable. Error: MCP connection failed." },
                         },
                         {
@@ -444,6 +446,89 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 skillDefs = [...skillDefs.filter((d) => d.alias !== alias), { alias, origin: "workspace", state: "active", definition: def }];
                                 return { result: { status: 201 } };
                             }
+                            case "workspace.sessions":
+                                return {
+                                    result: {
+                                        sessions: [
+                                            { id: 1, name: "user", origin: "model", archived_at: null },
+                                            { id: 2, name: "ops", origin: "model", archived_at: null },
+                                        ],
+                                    },
+                                };
+                            case "entry.read": {
+                                if (params.target === "mcp:///plurnk.json") {
+                                    return {
+                                        result: {
+                                            status: 200,
+                                            entry: {
+                                                channels: {
+                                                    body: {
+                                                        content: JSON.stringify({
+                                                            tools: [
+                                                                {
+                                                                    name: "edit",
+                                                                    description: "Create or edit a workspace file.",
+                                                                    inputSchema: {
+                                                                        type: "object",
+                                                                        required: ["path"],
+                                                                        properties: {
+                                                                            path: { type: "string", description: "Target path or URI." },
+                                                                            text: { type: "string", description: "File content." },
+                                                                        },
+                                                                    },
+                                                                },
+                                                                {
+                                                                    name: "sh",
+                                                                    description: "Run shell code.",
+                                                                    inputSchema: {
+                                                                        type: "object",
+                                                                        required: ["text"],
+                                                                        properties: { text: { type: "string", description: "Shell command." } },
+                                                                    },
+                                                                },
+                                                                { name: "done", description: "Turn-only done verb (must be filtered out)." },
+                                                                { name: "wait", description: "Turn-only wait verb (must be filtered out)." },
+                                                                { name: "question", description: "Turn-only question verb (must be filtered out)." },
+                                                            ],
+                                                        }),
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    };
+                                }
+                                if (params.target === "mcp:///svc-git.json") {
+                                    return {
+                                        result: {
+                                            status: 200,
+                                            entry: {
+                                                channels: {
+                                                    body: {
+                                                        content: JSON.stringify({
+                                                            tools: [
+                                                                {
+                                                                    name: "git_status",
+                                                                    description: "Inspect repository working tree status.",
+                                                                    inputSchema: {
+                                                                        type: "object",
+                                                                        required: ["branch"],
+                                                                        properties: {
+                                                                            branch: { type: "string", description: "Branch name to inspect." },
+                                                                            short: { type: "boolean", description: "Compact output." },
+                                                                        },
+                                                                    },
+                                                                },
+                                                                { name: "git_log", description: "Show recent commits." },
+                                                            ],
+                                                        }),
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    };
+                                }
+                                return { result: { status: 404, entry: null } };
+                            }
                             case "workspace.schedule.list":
                                 return { result: { family: "schedule", definitions: scheduleDefs } };
                             case "workspace.schedule.discover":
@@ -451,7 +536,9 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                     result: {
                                         family: "schedule",
                                         candidates: [{
-                                            summary: `Next occurrence for ${params.rule}: 2026-11-14T09:00:00Z`,
+                                            summary: params.rule
+                                                ? `Next occurrence for ${params.rule}: 2026-11-14T09:00:00Z`
+                                                : "now 2026-11-23T09:00:00+00:00[UTC]",
                                             definition: {},
                                             provenance: { kind: "preview" },
                                         }],
@@ -459,8 +546,100 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 };
                             case "workspace.schedule.replace": {
                                 const { alias, ...def } = params;
-                                scheduleDefs = [...scheduleDefs.filter((d) => d.alias !== alias), { alias, origin: "workspace", state: "active", definition: def }];
+                                const isRun = Array.isArray(def.run);
+                                scheduleDefs = [
+                                    ...scheduleDefs.filter((d) => d.alias !== alias),
+                                    {
+                                        alias,
+                                        origin: "workspace",
+                                        state: "active",
+                                        definition: def,
+                                        detail: {
+                                            kind: isRun ? "run" : "prompt",
+                                            status: "open",
+                                            rule: def.rule ?? "manual",
+                                            text: def.rule === "manual" ? "manual trigger"
+                                                : def.rule === "once" ? "unscheduled single-shot obligation"
+                                                    : String(def.rule),
+                                            next: def.rule === "manual" || def.rule === "once" ? null : "2026-11-24T09:00:00+00:00[UTC]",
+                                            lastFiredAt: null,
+                                            doneAt: null,
+                                        },
+                                    },
+                                ];
                                 return { result: { status: 201 } };
+                            }
+                            case "workspace.schedule.run": {
+                                const entry = scheduleDefs.find((d) => d.alias === params.alias);
+                                if (!entry) throw new Error(`Unknown schedule ${params.alias}`);
+                                if (failNextScheduleAlreadyRunning) {
+                                    failNextScheduleAlreadyRunning = false;
+                                    return {
+                                        error: {
+                                            code: -32000,
+                                            message: `Schedule '${params.alias}' is already running in this workspace.`,
+                                            data: {
+                                                type: "https://problems.plurnk.xyz/schedule/delivery/already-running",
+                                                title: "Already running",
+                                                status: 409,
+                                                detail: `Schedule '${params.alias}' is already running in this workspace.`,
+                                            },
+                                        },
+                                    };
+                                }
+                                if (entry.definition.rule === "once" && entry.detail?.status === "done") {
+                                    return {
+                                        error: {
+                                            code: -32000,
+                                            message: `Schedule '${params.alias}' is already done.`,
+                                            data: {
+                                                type: "https://problems.plurnk.xyz/schedule/delivery/already-done",
+                                                title: "Already done",
+                                                status: 409,
+                                                detail: `Schedule '${params.alias}' is already done; reopen with status "open" to execute again.`,
+                                            },
+                                        },
+                                    };
+                                }
+                                const nextStatus = entry.definition.rule === "once" ? "done" : "open";
+                                const nowIso = "2026-11-23T09:05:00+00:00[UTC]";
+                                entry.detail = {
+                                    ...entry.detail,
+                                    status: nextStatus,
+                                    lastFiredAt: nowIso,
+                                    doneAt: nextStatus === "done" ? nowIso : null,
+                                };
+                                const results = Array.isArray(entry.definition.run)
+                                    ? entry.definition.run.map((step, index) => ({
+                                        index,
+                                        server: step.server,
+                                        tool: step.tool,
+                                        status: index === 0 ? 201 : 200,
+                                        uri: index === 0 ? "log:///1/1/1/edit" : `exec:///${step.server}/abc`,
+                                        preview: index === 0 ? "edited workspace:///notes.md" : "clean tree on main",
+                                    }))
+                                    : undefined;
+                                return {
+                                    result: {
+                                        alias: entry.alias,
+                                        status: nextStatus,
+                                        loopId: 12,
+                                        lastFiredAt: nowIso,
+                                        doneAt: nextStatus === "done" ? nowIso : null,
+                                        ...(results ? { results } : {}),
+                                    },
+                                };
+                            }
+                            case "workspace.schedule.status": {
+                                const entry = scheduleDefs.find((d) => d.alias === params.alias);
+                                if (entry) {
+                                    entry.detail = {
+                                        ...entry.detail,
+                                        status: params.status,
+                                        doneAt: params.status === "done" ? "2026-11-23T09:06:00+00:00[UTC]" : null,
+                                    };
+                                }
+                                return { result: { alias: params.alias, status: params.status } };
                             }
                             case "workspace.personas.list":
                                 return { result: { family: "personas", definitions: personaDefs } };
@@ -619,23 +798,115 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     const skillReplaceReq = requests.find((r) => r.params?.kind === "workspace.skills.replace");
                     assert.equal("commit" in skillReplaceReq.params.params, false, "client strips service-owned commit field when adding discovered skill");
 
-                    // Schedule: inline disclosure -> rule preview + save normalizing bare session name to session://
+                    // Schedule & Macro Control Panel: guided timing dropdowns + live discover preview + session/persona pickers + MCP/tool autocomplete + step receipts + Edit round-trip
                     await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();
                     const schedulePanel = settingsArticle.locator('[data-settings-panel="schedule"]');
                     const scheduleDisclosure = schedulePanel.locator('details[data-family-disclosure="schedule"]');
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="schedule-clock"]')?.textContent ?? "").includes("UTC"));
                     await scheduleDisclosure.locator("> summary").click();
-                    await scheduleDisclosure.getByRole("textbox", { name: "Preview schedule rule", exact: true }).fill("FREQ=DAILY");
-                    await scheduleDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
-                    await scheduleDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
-                    assert.equal(await scheduleDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true, includeHidden: true }).isVisible(), false);
                     await scheduleDisclosure.getByRole("textbox", { name: "Schedule name", exact: true }).fill("daily-audit");
-                    await scheduleDisclosure.getByRole("textbox", { name: "Target session", exact: true }).fill("user");
-                    await scheduleDisclosure.getByRole("textbox", { name: "Schedule rule", exact: true }).fill("0 9 * * 1-5");
+                    await scheduleDisclosure.getByRole("combobox", { name: "Schedule timing", exact: true }).selectOption("repeating");
+                    await scheduleDisclosure.getByRole("combobox", { name: "Repeat frequency", exact: true }).selectOption("weekdays");
+                    await scheduleDisclosure.getByLabel("Repeat time", { exact: true }).fill("09:00");
+                    await scheduleDisclosure.getByRole("button", { name: "Preview", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="schedule-preview"]')?.textContent ?? "").includes("0 9 * * 1-5"));
+                    await scheduleDisclosure.getByRole("combobox", { name: "Target session", exact: true }).fill("user");
+                    await scheduleDisclosure.getByRole("combobox", { name: "Target session persona", exact: true }).selectOption("auditor");
                     await scheduleDisclosure.getByRole("textbox", { name: "Scheduled prompt", exact: true }).fill("Check status.");
                     await scheduleDisclosure.getByRole("button", { name: "Save schedule", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 1);
                     assert.equal(await scheduleDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
-                    assert.equal(requests.find((r) => r.params?.kind === "workspace.schedule.replace").params.params.target, "session://user");
+                    const promptReplace = requests.find((r) => r.params?.kind === "workspace.schedule.replace" && r.params?.params?.alias === "daily-audit");
+                    assert.equal(promptReplace.params.params.target, "session://user");
+                    assert.equal(promptReplace.params.params.rule, "0 9 * * 1-5");
+                    assert.equal(promptReplace.params.params.persona, "auditor");
+
+                    // Craft a multi-step "once" Macro using Server + Tool autocomplete (filtering out turn-only verbs!) and guided schema arguments
+                    await scheduleDisclosure.locator("> summary").click();
+                    await scheduleDisclosure.getByRole("textbox", { name: "Schedule name", exact: true }).fill("repo-macro");
+                    await scheduleDisclosure.getByRole("combobox", { name: "Schedule kind", exact: true }).selectOption("run");
+                    await scheduleDisclosure.getByRole("combobox", { name: "Schedule timing", exact: true }).selectOption("once");
+                    const step1 = scheduleDisclosure.locator("[data-schedule-step]").nth(0);
+                    const step1Tool = step1.getByRole("combobox", { name: "Step tool", exact: true });
+                    await step1Tool.click();
+                    const step1ToolList = step1.locator('[data-schedule-combobox="tool"] [data-combobox-list]');
+                    await step1ToolList.waitFor({ state: "visible" });
+                    assert.equal(await step1ToolList.locator('[data-combobox-option="done"]').count(), 0, "turn-only done verb is filtered out of macro tool autocomplete");
+                    assert.equal(await step1ToolList.locator('[data-combobox-option="wait"]').count(), 0, "turn-only wait verb is filtered out of macro tool autocomplete");
+                    await step1ToolList.locator('[data-combobox-option="edit"]').click();
+                    await step1.getByLabel("path argument", { exact: true }).fill("workspace:///notes.md");
+                    await step1.getByLabel("text argument", { exact: true }).fill("hello");
+                    assert.deepEqual(JSON.parse(await step1.getByLabel("Step arguments JSON", { exact: true }).inputValue()), {
+                        path: "workspace:///notes.md",
+                        text: "hello",
+                    });
+
+                    // Add Step 2 against active MCP server `svc-git` with tool schema hydrated from `mcp:///svc-git.json`
+                    await scheduleDisclosure.getByRole("button", { name: "+ Add step", exact: true }).click();
+                    const step2 = scheduleDisclosure.locator("[data-schedule-step]").nth(1);
+                    const step2Server = step2.getByRole("combobox", { name: "Step server", exact: true });
+                    await step2Server.click();
+                    const step2ServerList = step2.locator('[data-schedule-combobox="server"] [data-combobox-list]');
+                    await step2ServerList.waitFor({ state: "visible" });
+                    await step2ServerList.locator('[data-combobox-option="svc-git"]').click();
+                    const step2Tool = step2.getByRole("combobox", { name: "Step tool", exact: true });
+                    await step2Tool.click();
+                    const step2ToolList = step2.locator('[data-schedule-combobox="tool"] [data-combobox-list]');
+                    await step2ToolList.waitFor({ state: "visible" });
+                    await step2ToolList.locator('[data-combobox-option="git_status"]').click();
+                    await step2.getByLabel("branch argument", { exact: true }).waitFor({ state: "visible" });
+                    await step2.getByLabel("branch argument", { exact: true }).fill("main");
+                    await step2.getByLabel("short argument", { exact: true }).selectOption("true");
+                    await step2.getByLabel("Step aside label", { exact: true }).fill("Check git tree");
+
+                    await scheduleDisclosure.getByRole("button", { name: "Save schedule", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr').length === 2);
+                    const macroReplace = requests.find((r) => r.params?.kind === "workspace.schedule.replace" && r.params?.params?.alias === "repo-macro");
+                    assert.deepEqual(macroReplace.params.params, {
+                        alias: "repo-macro",
+                        rule: "once",
+                        run: [
+                            { server: "plurnk", tool: "edit", arguments: { path: "workspace:///notes.md", text: "hello" } },
+                            { server: "svc-git", tool: "git_status", arguments: { branch: "main", short: true }, aside: "Check git tree" },
+                        ],
+                    });
+
+                    // Run now renders inline step receipts, transitions "once" obligation to done, and disables Run now until Reopen
+                    const macroRow = schedulePanel.locator("[data-family-rows] tr").nth(1);
+                    assert.match(await macroRow.textContent(), /repo-macro[\s\S]*Macro[\s\S]*2 steps: plurnk\.edit → svc-git\.git_status/u);
+                    await macroRow.getByRole("button", { name: "Run now", exact: true }).click();
+                    const receiptBox = schedulePanel.locator("[data-schedule-receipt]");
+                    await receiptBox.waitFor({ state: "visible" });
+                    assert.equal(await receiptBox.locator("[data-receipt-step]").count(), 2);
+                    assert.match(await receiptBox.textContent(), /plurnk\.edit[\s\S]*201[\s\S]*log:\/\/\/1\/1\/1\/edit[\s\S]*svc-git\.git_status[\s\S]*clean tree on main/u);
+                    assert.equal(await macroRow.getByRole("button", { name: "Run now", exact: true }).isDisabled(), true, "completed once obligation disables Run now");
+                    assert.equal(await macroRow.getByRole("button", { name: "Reopen", exact: true }).isVisible(), true);
+                    await macroRow.getByRole("button", { name: "Reopen", exact: true }).click();
+                    await page.waitForFunction(() => {
+                        const row = document.querySelectorAll('#workspace-settings [data-settings-panel="schedule"] [data-family-rows] tr')[1];
+                        return row?.getAttribute("data-schedule-obligation") === "open";
+                    });
+                    assert.equal(await macroRow.getByRole("button", { name: "Run now", exact: true }).isDisabled(), false);
+
+                    // 409 already-running surfaces cleanly in the receipt drawer without clobbering the row
+                    failNextScheduleAlreadyRunning = true;
+                    await macroRow.getByRole("button", { name: "Run now", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="receipt-status-label"]')?.textContent ?? "").includes("409 already-running"));
+                    assert.equal(await receiptBox.getAttribute("data-receipt-status"), "error");
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "schedule control panel fits 320px viewport with receipt open");
+
+                    // Edit round-trips existing prompt schedule into timing dropdowns + persona + prompt
+                    const promptRow = schedulePanel.locator("[data-family-rows] tr").nth(0);
+                    await promptRow.getByRole("button", { name: "Edit", exact: true }).click();
+                    assert.equal(await scheduleDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
+                    assert.equal(await scheduleDisclosure.getByRole("textbox", { name: "Schedule name", exact: true }).inputValue(), "daily-audit");
+                    assert.equal(await scheduleDisclosure.getByRole("combobox", { name: "Schedule timing", exact: true }).inputValue(), "repeating");
+                    assert.equal(await scheduleDisclosure.getByRole("combobox", { name: "Repeat frequency", exact: true }).inputValue(), "weekdays");
+                    assert.equal(await scheduleDisclosure.getByRole("combobox", { name: "Target session", exact: true }).inputValue(), "user");
+                    assert.equal(await scheduleDisclosure.getByRole("combobox", { name: "Target session persona", exact: true }).inputValue(), "auditor");
+                    assert.equal(await scheduleDisclosure.getByRole("textbox", { name: "Scheduled prompt", exact: true }).inputValue(), "Check status.");
+                    await scheduleDisclosure.getByRole("button", { name: "Cancel", exact: true }).click();
+                    await scheduleDisclosure.locator("> summary").click();
 
                     // Members: inline disclosure -> preview + candidate Add + batch add + row Remove ({ file })
                     await settingsArticle.getByRole("link", { name: "Members", exact: true }).click();

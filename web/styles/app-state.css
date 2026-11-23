@@ -1311,17 +1311,17 @@
         display: none;
     }
 
-    /* {§web-workspace-settings} {§web-session-commands} Model combobox popover, dialog, catalog pagination, and composer menu. */
-    [data-model-combobox] {
+    /* {§web-workspace-settings} {§web-session-commands} Model and schedule combobox popovers, dialog, catalog pagination, and composer menu. */
+    :is([data-model-combobox], [data-schedule-combobox]) {
         position: relative;
         min-inline-size: 0;
     }
 
-    [data-model-combobox] > input[role="combobox"] {
+    :is([data-model-combobox], [data-schedule-combobox]) > input[role="combobox"] {
         margin-block-end: 0;
     }
 
-    [data-model-combobox] > [data-combobox-list] {
+    :is([data-model-combobox], [data-schedule-combobox]) > [data-combobox-list] {
         position: absolute;
         z-index: 20;
         inset-block-start: 100%;
@@ -1348,7 +1348,7 @@
         margin: 0;
     }
 
-    [data-model-combobox] [role="option"] {
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"] {
         display: flex;
         flex-wrap: wrap;
         align-items: baseline;
@@ -1359,28 +1359,28 @@
         cursor: pointer;
     }
 
-    [data-model-combobox] [role="option"]:hover,
-    [data-model-combobox] [role="option"][aria-selected="true"] {
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"]:hover,
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"][aria-selected="true"] {
         background-color: var(--plurnk-user-surface);
         color: var(--otm-color);
     }
 
-    [data-model-combobox] [data-combobox-primary] {
+    :is([data-model-combobox], [data-schedule-combobox]) [data-combobox-primary] {
         min-inline-size: 0;
         overflow-wrap: anywhere;
     }
 
-    [data-model-combobox] [data-combobox-kind="alias"] [data-combobox-primary] {
+    :is([data-model-combobox], [data-schedule-combobox]) :is([data-combobox-kind="alias"], [data-combobox-kind="builtin"]) [data-combobox-primary] {
         font-weight: 700;
     }
 
-    [data-model-combobox] [data-combobox-secondary] {
+    :is([data-model-combobox], [data-schedule-combobox]) [data-combobox-secondary] {
         color: var(--otm-muted-color);
         font-size: 0.85em;
         overflow-wrap: anywhere;
     }
 
-    [data-model-combobox] [data-combobox-hint] {
+    :is([data-model-combobox], [data-schedule-combobox]) [data-combobox-hint] {
         padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.5);
         color: var(--otm-muted-color);
         font-size: 0.85em;
@@ -1461,6 +1461,354 @@
     #session-compose [data-accept-suggestion] > small:not(:empty) {
         margin-inline-start: 0.6ch;
         font-size: 0.85em;
+    }
+
+    /* {§web-workspace-settings} Schedule & Macro Control Panel timing disclosure, step builder, row controls, and receipt drawer. */
+    [data-schedule-clock-note] {
+        color: var(--otm-muted-color);
+        font-size: 0.85em;
+    }
+
+    [data-schedule-editing-banner] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.6ch;
+        margin-block: 0 calc(var(--otm-spacing) * 0.65);
+        padding: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.65);
+        border: var(--otm-border-width) solid var(--otm-primary);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-user-surface);
+    }
+
+    [data-schedule-editing-banner] > [data-schedule-cancel-edit] {
+        inline-size: auto;
+        margin: 0 0 0 auto;
+        padding: 0.15rem 0.55rem;
+        font-size: 0.85em;
+    }
+
+    [data-schedule-identity-grid],
+    [data-schedule-timing="relative"],
+    [data-schedule-timing="repeating"],
+    [data-schedule-target-grid],
+    [data-step-tool-grid],
+    [data-step-guided-fields],
+    [data-step-raw-grid] {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+        gap: calc(var(--otm-spacing) * 0.55) var(--otm-spacing);
+        margin-block-end: calc(var(--otm-spacing) * 0.6);
+    }
+
+    [data-schedule-combobox-wrap] {
+        display: flex;
+        flex-direction: column;
+        gap: calc(var(--otm-spacing) * 0.25);
+        min-inline-size: 0;
+    }
+
+    [data-schedule-field-label] {
+        display: block;
+    }
+
+    [data-schedule-repeat-field="days"] {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.85);
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.65);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+    }
+
+    [data-schedule-repeat-field="days"] > label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35ch;
+        margin: 0;
+    }
+
+    [data-schedule-preview-bar] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block: 0 calc(var(--otm-spacing) * 0.75);
+        padding: calc(var(--otm-spacing) * 0.45) calc(var(--otm-spacing) * 0.65);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    [data-schedule-preview-text] {
+        flex: 1 1 20ch;
+        margin: 0;
+        color: var(--otm-muted-color);
+        font-size: 0.875em;
+        overflow-wrap: anywhere;
+    }
+
+    [data-schedule-preview-controls] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-schedule-catchup-wrap] {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45ch;
+        margin: 0;
+        font-size: 0.875em;
+    }
+
+    [data-schedule-catchup-wrap] > select,
+    [data-schedule-preview-btn],
+    [data-schedule-add-step],
+    [data-schedule-reset] {
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.65);
+        font-size: 0.875em;
+    }
+
+    [data-schedule-steps-header] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block-end: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-schedule-steps-list] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.65);
+        margin: 0 0 calc(var(--otm-spacing) * 0.75);
+        padding: 0;
+    }
+
+    [data-schedule-step] {
+        list-style: none;
+        padding: calc(var(--otm-spacing) * 0.6) calc(var(--otm-spacing) * 0.75);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    [data-step-header] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin-block-end: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-step-controls] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.3);
+    }
+
+    [data-step-controls] :where(button) {
+        inline-size: auto;
+        margin: 0;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.82em;
+    }
+
+    [data-step-tool-desc] {
+        display: block;
+        margin-block: calc(var(--otm-spacing) * -0.25) calc(var(--otm-spacing) * 0.5);
+        color: var(--otm-muted-color);
+        font-size: 0.85em;
+    }
+
+    [data-step-arg-field] {
+        margin: 0;
+    }
+
+    [data-arg-req] {
+        color: var(--otm-primary);
+        font-size: 0.8em;
+    }
+
+    [data-schedule-kind-pill] {
+        display: inline-block;
+        margin-inline-start: 0.4ch;
+        padding: 0.05rem 0.4rem;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: 999px;
+        background-color: var(--plurnk-pill-surface);
+        color: var(--otm-muted-color);
+        font-size: 0.78em;
+        font-weight: 400;
+    }
+
+    [data-schedule-row-kind="run"] [data-schedule-kind-pill] {
+        border-color: var(--otm-primary);
+        color: var(--otm-primary);
+    }
+
+    [data-schedule-next-line],
+    [data-schedule-fired-line] {
+        display: block;
+        color: var(--otm-muted-color);
+        font-size: 0.82em;
+    }
+
+    [data-schedule-row-form] {
+        margin: 0;
+    }
+
+    [data-schedule-row-form] > :where(fieldset) {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.3);
+        margin: 0;
+        padding: 0;
+    }
+
+    [data-schedule-row-form] :where(fieldset > button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.32) calc(var(--otm-form-element-spacing-inline) * 0.55);
+        font-size: 0.85em;
+        white-space: nowrap;
+    }
+
+    [data-schedule-receipt] {
+        margin-block: 0 var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.65) calc(var(--otm-spacing) * 0.85);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    [data-schedule-receipt][data-receipt-status="ok"] {
+        border-color: var(--otm-primary);
+    }
+
+    [data-schedule-receipt][data-receipt-status="error"] {
+        border-color: var(--plurnk-diff-del-color);
+    }
+
+    [data-schedule-receipt] :where(> header) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block-end: calc(var(--otm-spacing) * 0.45);
+        padding: 0;
+        background-color: transparent;
+    }
+
+    [data-schedule-receipt] :where(> header > p) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.5ch;
+        margin: 0;
+    }
+
+    [data-receipt-header-actions] {
+        display: inline-flex;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.35);
+    }
+
+    [data-receipt-header-actions] :where(button) {
+        inline-size: auto;
+        margin: 0;
+        padding: 0.2rem 0.55rem;
+        font-size: 0.85em;
+    }
+
+    [data-receipt-badge] {
+        padding: 0.05rem 0.45rem;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: 999px;
+        font-size: 0.82em;
+    }
+
+    [data-schedule-receipt-steps] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.45);
+        margin: calc(var(--otm-spacing) * 0.5) 0 0;
+        padding: 0;
+    }
+
+    [data-receipt-step] {
+        list-style: none;
+        padding: calc(var(--otm-spacing) * 0.45) calc(var(--otm-spacing) * 0.6);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-working-surface);
+    }
+
+    [data-receipt-step][data-receipt-step-ok="false"] {
+        border-color: var(--plurnk-diff-del-color);
+        background-color: var(--plurnk-diff-del-surface);
+    }
+
+    [data-receipt-step-head] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.6ch;
+    }
+
+    [data-receipt-step-status] {
+        font-weight: 700;
+        font-size: 0.85em;
+    }
+
+    [data-receipt-step-uri] {
+        color: var(--otm-muted-color);
+        font-size: 0.82em;
+        overflow-wrap: anywhere;
+    }
+
+    [data-receipt-step-preview] {
+        margin: calc(var(--otm-spacing) * 0.35) 0 0;
+        font-size: 0.85em;
+    }
+
+    [data-receipt-step-problem] {
+        margin: calc(var(--otm-spacing) * 0.35) 0 0;
+        color: var(--plurnk-diff-del-color);
+        font-size: 0.875em;
+    }
+
+    #workspace-settings [data-schedule-save-form][data-schedule-editing="false"] [data-schedule-editing-banner],
+    #workspace-settings [data-schedule-save-form][data-schedule-kind="prompt"] [data-schedule-run-fields],
+    #workspace-settings [data-schedule-save-form][data-schedule-kind="run"] [data-schedule-prompt-fields],
+    #workspace-settings [data-schedule-save-form]:not([data-schedule-mode="relative"]) [data-schedule-timing="relative"],
+    #workspace-settings [data-schedule-save-form]:not([data-schedule-mode="at"]) [data-schedule-timing="at"],
+    #workspace-settings [data-schedule-save-form]:not([data-schedule-mode="repeating"]) [data-schedule-timing="repeating"],
+    #workspace-settings [data-schedule-save-form]:not([data-schedule-mode="custom"]) [data-schedule-timing="custom"],
+    #workspace-settings [data-schedule-save-form]:is([data-schedule-mode="manual"], [data-schedule-mode="once"]) [data-schedule-preview-controls],
+    #workspace-settings [data-schedule-save-form]:not([data-schedule-repeat="every-minutes"], [data-schedule-repeat="every-hours"]) [data-schedule-repeat-field="interval"],
+    #workspace-settings [data-schedule-save-form]:is([data-schedule-repeat="every-minutes"], [data-schedule-repeat="every-hours"]) [data-schedule-repeat-field="time"],
+    #workspace-settings [data-schedule-save-form]:not([data-schedule-repeat="monthly"]) [data-schedule-repeat-field="dom"],
+    #workspace-settings [data-schedule-save-form]:not([data-schedule-repeat="weekly"]) [data-schedule-repeat-field="days"],
+    #workspace-settings tr[data-schedule-obligation]:not([data-schedule-obligation="open"]) [data-schedule-mark-done],
+    #workspace-settings tr[data-schedule-obligation="open"] [data-schedule-reopen],
+    #workspace-settings [data-schedule-clock-note]:empty,
+    #workspace-settings [data-schedule-next-line]:empty,
+    #workspace-settings [data-schedule-fired-line]:empty,
+    #workspace-settings [data-arg-req]:empty {
+        display: none;
     }
 
     [hidden] {

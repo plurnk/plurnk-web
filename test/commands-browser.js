@@ -226,6 +226,8 @@ export default async function verifyCommands(t) {
                     assert.deepEqual((await suggest("/mcp en")).items, ["enable"]);
                     assert.equal(await accept("/mcp en", "enable"), "/mcp enable ");
                     assert.deepEqual((await suggest("/mcp enable ")).items, ["svc-git", "remote-docs"]);
+                    assert.deepEqual((await suggest("/schedule inspect ")).items, ["nightly"]);
+                    assert.deepEqual((await suggest("/schedule run ")).items, ["nightly"]);
                     assert.deepEqual((await suggest("/env --scope ")).items, ["session", "workspace"]);
                     assert.equal(await accept("/env --scope ", "session"), "/env --scope session ");
                     assert.deepEqual((await suggest("/env unset ")).items, ["API_TOKEN"]);
@@ -302,6 +304,46 @@ export default async function verifyCommands(t) {
                     assert.match(await outputDialog.locator('[data-text="command-literal"]').textContent(), /sqlite-mcp {2}SQLite inspector/u);
                     await outputDialog.locator("button[data-dialog-close]").click();
                     await outputDialog.waitFor({ state: "hidden" });
+
+                    // /schedule run <alias> formats per-step macro receipts cleanly in #dialog-command-output; /schedule inspect <alias> shows definition JSON
+                    result = {
+                        alias: "repo-macro",
+                        status: "open",
+                        loopId: 7,
+                        results: [
+                            { index: 0, server: "plurnk", tool: "edit", status: 201, uri: "log:///7/1/1/edit" },
+                            { index: 1, server: "plurnk", tool: "sh", status: 200, uri: "exec:///sh/abc", preview: "macro-ok" },
+                        ],
+                    };
+                    assert.equal(await command("/schedule run repo-macro"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.schedule.run");
+                    await outputDialog.waitFor({ state: "visible" });
+                    assert.equal(await outputDialog.locator('[data-text="command-message"]').textContent(), "repo-macro  open (2 steps)");
+                    assert.match(await outputDialog.locator('[data-text="command-literal"]').textContent(), /\[1\] plurnk\.edit {2}201 {2}log:\/\/\/7\/1\/1\/edit[\s\S]*\[2\] plurnk\.sh {2}200 {2}exec:\/\/\/sh\/abc[\s\S]*macro-ok/u);
+                    await outputDialog.locator("button[data-dialog-close]").click();
+                    await outputDialog.waitFor({ state: "hidden" });
+
+                    result = {
+                        family: "schedule",
+                        definitions: [{
+                            alias: "repo-macro",
+                            state: "active",
+                            detail: { kind: "run", status: "open", rule: "manual" },
+                            definition: { rule: "manual", run: [{ server: "plurnk", tool: "sh", arguments: { text: "echo hi" } }] },
+                        }],
+                    };
+                    assert.equal(await command("/schedule inspect repo-macro"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.schedule.list");
+                    await outputDialog.waitFor({ state: "visible" });
+                    assert.equal(await outputDialog.locator('[data-text="command-message"]').textContent(), "repo-macro · run · open · manual");
+                    assert.match(await outputDialog.locator('[data-text="command-literal"]').textContent(), /"rule": "manual"/u);
+                    await outputDialog.locator("button[data-dialog-close]").click();
+                    await outputDialog.waitFor({ state: "hidden" });
+
+                    result = { alias: "nightly", status: "done" };
+                    assert.equal(await command("/schedule done nightly"), true);
+                    assert.equal(requests.at(-1).params.kind, "workspace.schedule.status");
+                    assert.equal(await statusText.textContent(), "nightly  done");
 
                     // Direct mutations confirm in #session-feedback without opening dialogs or leaking secrets.
                     result = { configOptions: [{ configId: "persona", name: "Persona", type: "select", currentValue: "reviewer", options: [{ value: "none", name: "none" }, { value: "reviewer", name: "reviewer" }] }] };

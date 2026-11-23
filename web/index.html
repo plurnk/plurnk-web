@@ -418,37 +418,179 @@
             </section>
             <section data-settings-panel="schedule" aria-label="Schedules" data-family-count="0" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
-                    <h2 data-i18n="ws-settings-schedules-heading">Schedules</h2>
+                    <h2 data-i18n="ws-settings-schedules-heading">Schedules &amp; Macros</h2>
+                    <small data-schedule-clock-note data-text="schedule-clock"></small>
                 </header>
                 <details data-family-disclosure="schedule">
-                    <summary data-i18n="ws-settings-add-schedule">+ Add schedule</summary>
-                    <form data-family-discover-form data-family="schedule">
-                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                            <input type="text" name="rule" aria-label="Preview schedule rule" placeholder="0 9 * * 1-5 or FREQ=DAILY;BYHOUR=9" autocomplete="off" spellcheck="false" required>
-                            <button type="submit" data-i18n="ws-settings-preview-rule">Preview</button>
-                        </fieldset>
-                    </form>
-                    <ul data-candidate-rows></ul>
-                    <form data-schedule-save-form>
+                    <summary data-i18n="ws-settings-add-schedule">+ Add schedule or macro</summary>
+                    <form data-schedule-save-form data-schedule-kind="prompt" data-schedule-mode="manual" data-schedule-repeat="daily" data-schedule-editing="false">
                         <fieldset data-bind="disabled:ws-settings-busy">
-                            <input type="text" name="alias" aria-label="Schedule name" placeholder="nightly-check" autocomplete="off" spellcheck="false" required>
-                            <input type="text" name="target" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false" required>
-                            <input type="text" name="rule" aria-label="Schedule rule" placeholder="0 9 * * 1-5 or FREQ=DAILY" autocomplete="off" spellcheck="false" required>
-                            <textarea name="prompt" aria-label="Scheduled prompt" placeholder="Message delivered at each occurrence" rows="2" required></textarea>
+                            <p data-schedule-editing-banner>
+                                <strong data-i18n="ws-settings-editing-schedule">Editing schedule:</strong>
+                                <code data-text="schedule-editing-alias"></code>
+                                <button type="button" data-schedule-cancel-edit data-i18n="cancel">Cancel</button>
+                            </p>
+                            <div data-schedule-identity-grid>
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-alias-label">Alias</span>
+                                    <input type="text" name="alias" aria-label="Schedule name" placeholder="nightly-check" autocomplete="off" spellcheck="false" required>
+                                </label>
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-kind-label">Action kind</span>
+                                    <select name="kind" aria-label="Schedule kind">
+                                        <option value="prompt" data-i18n="ws-settings-schedule-kind-prompt">Prompt session</option>
+                                        <option value="run" data-i18n="ws-settings-schedule-kind-run">Run steps (macro)</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-mode-label">When to run</span>
+                                    <select name="scheduleMode" aria-label="Schedule timing">
+                                        <option value="manual" data-i18n="ws-settings-schedule-mode-manual">Manual (reusable trigger)</option>
+                                        <option value="once" data-i18n="ws-settings-schedule-mode-once">Run once (unscheduled obligation)</option>
+                                        <option value="relative" data-i18n="ws-settings-schedule-mode-relative">In… (relative timer)</option>
+                                        <option value="at" data-i18n="ws-settings-schedule-mode-at">At date &amp; time</option>
+                                        <option value="repeating" data-i18n="ws-settings-schedule-mode-repeating">Repeating</option>
+                                        <option value="custom" data-i18n="ws-settings-schedule-mode-custom">Custom cron / RRULE</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div data-schedule-timing="relative">
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-rel-amount">Delay</span>
+                                    <input type="number" name="relativeAmount" aria-label="Relative delay amount" min="1" step="1" value="15">
+                                </label>
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-rel-unit">Unit</span>
+                                    <select name="relativeUnit" aria-label="Relative delay unit">
+                                        <option value="s" data-i18n="ws-settings-unit-seconds">Seconds</option>
+                                        <option value="m" selected data-i18n="ws-settings-unit-minutes">Minutes</option>
+                                        <option value="h" data-i18n="ws-settings-unit-hours">Hours</option>
+                                        <option value="d" data-i18n="ws-settings-unit-days">Days</option>
+                                        <option value="w" data-i18n="ws-settings-unit-weeks">Weeks</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div data-schedule-timing="at">
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-at-label">Date &amp; time (workspace zone)</span>
+                                    <input type="datetime-local" name="atLocal" aria-label="Scheduled date and time">
+                                </label>
+                            </div>
+                            <div data-schedule-timing="repeating">
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-repeat-preset">Frequency</span>
+                                    <select name="repeatPreset" aria-label="Repeat frequency">
+                                        <option value="daily" data-i18n="ws-settings-repeat-daily">Daily</option>
+                                        <option value="weekdays" data-i18n="ws-settings-repeat-weekdays">Weekdays (Mon–Fri)</option>
+                                        <option value="weekly" data-i18n="ws-settings-repeat-weekly">Weekly</option>
+                                        <option value="monthly" data-i18n="ws-settings-repeat-monthly">Monthly</option>
+                                        <option value="every-hours" data-i18n="ws-settings-repeat-hours">Every N hours</option>
+                                        <option value="every-minutes" data-i18n="ws-settings-repeat-minutes">Every N minutes</option>
+                                    </select>
+                                </label>
+                                <label data-schedule-repeat-field="interval">
+                                    <span data-i18n="ws-settings-schedule-repeat-interval">Every</span>
+                                    <input type="number" name="repeatInterval" aria-label="Repeat interval" min="1" max="59" step="1" value="1">
+                                </label>
+                                <label data-schedule-repeat-field="time">
+                                    <span data-i18n="ws-settings-schedule-repeat-time">Time</span>
+                                    <input type="time" name="repeatTime" aria-label="Repeat time" value="09:00">
+                                </label>
+                                <label data-schedule-repeat-field="dom">
+                                    <span data-i18n="ws-settings-schedule-repeat-dom">Day of month</span>
+                                    <input type="number" name="repeatDayOfMonth" aria-label="Day of month" min="1" max="31" step="1" value="1">
+                                </label>
+                                <fieldset data-schedule-repeat-field="days" aria-label="Days of week">
+                                    <legend data-i18n="ws-settings-schedule-repeat-days">Days</legend>
+                                    <label><input type="checkbox" name="repeatDay" value="1" checked> <span data-i18n="day-mon">Mon</span></label>
+                                    <label><input type="checkbox" name="repeatDay" value="2"> <span data-i18n="day-tue">Tue</span></label>
+                                    <label><input type="checkbox" name="repeatDay" value="3"> <span data-i18n="day-wed">Wed</span></label>
+                                    <label><input type="checkbox" name="repeatDay" value="4"> <span data-i18n="day-thu">Thu</span></label>
+                                    <label><input type="checkbox" name="repeatDay" value="5"> <span data-i18n="day-fri">Fri</span></label>
+                                    <label><input type="checkbox" name="repeatDay" value="6"> <span data-i18n="day-sat">Sat</span></label>
+                                    <label><input type="checkbox" name="repeatDay" value="0"> <span data-i18n="day-sun">Sun</span></label>
+                                </fieldset>
+                            </div>
+                            <div data-schedule-timing="custom">
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-custom-rule">Schedule rule</span>
+                                    <input type="text" name="rule" aria-label="Schedule rule" placeholder="0 9 * * 1-5, +15m, or FREQ=DAILY;BYHOUR=9" autocomplete="off" spellcheck="false">
+                                </label>
+                            </div>
+                            <div data-schedule-preview-bar>
+                                <p role="status" data-schedule-preview-text data-text="schedule-preview">Manual trigger — runs only when triggered on demand and stays open.</p>
+                                <div data-schedule-preview-controls>
+                                    <label data-schedule-catchup-wrap>
+                                        <span data-i18n="ws-settings-schedule-catchup">Catchup</span>
+                                        <select name="catchup" aria-label="Missed-window catchup">
+                                            <option value="default" data-i18n="ws-settings-catchup-default">Default</option>
+                                            <option value="true" data-i18n="ws-settings-catchup-on">Catch up once</option>
+                                            <option value="false" data-i18n="ws-settings-catchup-off">Skip missed</option>
+                                        </select>
+                                    </label>
+                                    <button type="button" data-schedule-preview-btn data-i18n="ws-settings-preview-rule">Preview</button>
+                                </div>
+                            </div>
+                            <div data-schedule-prompt-fields>
+                                <div data-schedule-target-grid>
+                                    <div data-schedule-combobox-wrap>
+                                        <span data-schedule-field-label data-i18n="ws-settings-schedule-target-label">Target session</span>
+                                        <div data-schedule-combobox="target" data-combobox-open="false">
+                                            <input type="text" name="target" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false">
+                                            <ul role="listbox" data-combobox-list hidden></ul>
+                                        </div>
+                                    </div>
+                                    <label>
+                                        <span data-i18n="ws-settings-schedule-persona-label">Auto-create persona (optional)</span>
+                                        <select name="persona" aria-label="Target session persona">
+                                            <option value="" data-i18n="ws-settings-schedule-persona-none">None (default)</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <label>
+                                    <span data-i18n="ws-settings-schedule-prompt-label">Prompt</span>
+                                    <textarea name="prompt" aria-label="Scheduled prompt" placeholder="Message delivered at each occurrence" rows="3"></textarea>
+                                </label>
+                            </div>
+                            <div data-schedule-run-fields>
+                                <div data-schedule-steps-header>
+                                    <strong data-i18n="ws-settings-schedule-steps-heading">Tool steps (executed sequentially in _plurnk)</strong>
+                                    <button type="button" data-schedule-add-step data-i18n="ws-settings-schedule-add-step">+ Add step</button>
+                                </div>
+                                <ol data-schedule-steps-list></ol>
+                            </div>
                             <footer>
+                                <button type="button" data-schedule-reset data-i18n="ws-settings-schedule-reset">Reset</button>
                                 <button type="submit" data-i18n="ws-settings-save-schedule">Save schedule</button>
                             </footer>
                         </fieldset>
                     </form>
                 </details>
-                <p data-family-empty data-i18n="ws-settings-schedule-empty">No schedules configured.</p>
+                <article data-schedule-receipt data-receipt-status="" hidden aria-label="Latest schedule execution receipt">
+                    <header>
+                        <p>
+                            <strong data-i18n="ws-settings-receipt-heading">Run receipt:</strong>
+                            <code data-text="receipt-alias"></code>
+                            <span data-receipt-badge data-text="receipt-status-label"></span>
+                            <small data-text="receipt-meta"></small>
+                        </p>
+                        <div data-receipt-header-actions>
+                            <button type="button" data-receipt-reopen hidden data-i18n="ws-settings-schedule-reopen">Reopen</button>
+                            <button type="button" data-receipt-dismiss aria-label="Dismiss receipt" data-i18n="dismiss">Dismiss</button>
+                        </div>
+                    </header>
+                    <p data-receipt-summary data-text="receipt-summary"></p>
+                    <p data-receipt-session-link hidden><a href="/" data-bind="href:receipt-session-href" data-text="receipt-session-label"></a></p>
+                    <ol data-schedule-receipt-steps hidden></ol>
+                </article>
+                <p data-family-empty data-i18n="ws-settings-schedule-empty">No schedules or macros configured.</p>
                 <figure data-family-table-wrap>
                     <table>
                         <thead><tr>
                             <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
-                            <th scope="col" data-i18n="ws-settings-col-origin">Origin</th>
-                            <th scope="col" data-i18n="ws-settings-col-details">Details</th>
-                            <th scope="col" data-i18n="ws-settings-col-state">State</th>
+                            <th scope="col" data-i18n="ws-settings-col-schedule">Schedule</th>
+                            <th scope="col" data-i18n="ws-settings-col-target-steps">Action</th>
+                            <th scope="col" data-i18n="ws-settings-col-state">Status</th>
                             <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
                         </tr></thead>
                         <tbody data-family-rows></tbody>
@@ -612,6 +754,95 @@
             </td>
         </tr>
     </template>
+    <template id="workspace-schedule-row">
+        <tr data-family-removable="true" data-family-state="active" data-schedule-obligation="open" data-schedule-can-run="true" data-schedule-row-kind="prompt">
+            <th scope="row"><code data-text="sched-alias">alias</code> <small data-schedule-kind-pill data-text="sched-kind">Prompt</small></th>
+            <td><span data-text="sched-rule-text"></span><small data-schedule-next-line data-text="sched-next"></small></td>
+            <td data-text="sched-action"></td>
+            <td><span data-text="sched-status">open</span><small data-schedule-fired-line data-text="sched-meta"></small></td>
+            <td>
+                <form data-schedule-row-form>
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <input type="hidden" name="alias" data-bind="value:sched-alias">
+                        <button type="submit" name="operation" value="run" data-schedule-run data-i18n="ws-settings-schedule-run-now">Run now</button>
+                        <button type="submit" name="operation" value="edit" data-schedule-edit data-i18n="edit">Edit</button>
+                        <button type="submit" name="operation" value="done" data-schedule-mark-done data-i18n="ws-settings-schedule-done">Done</button>
+                        <button type="submit" name="operation" value="reopen" data-schedule-reopen data-i18n="ws-settings-schedule-reopen">Reopen</button>
+                        <button type="submit" name="operation" value="enable" data-family-enable data-i18n="env-enable">Enable</button>
+                        <button type="submit" name="operation" value="enable" data-family-retry data-i18n="retry-body">Retry</button>
+                        <button type="submit" name="operation" value="disable" data-family-disable data-i18n="env-disable">Disable</button>
+                        <button type="submit" name="operation" value="remove" data-family-remove data-i18n="ws-settings-remove">Remove</button>
+                    </fieldset>
+                </form>
+            </td>
+        </tr>
+    </template>
+    <template id="schedule-step-card">
+        <li data-schedule-step>
+            <header data-step-header>
+                <strong data-text="step-number">Step 1</strong>
+                <div data-step-controls>
+                    <button type="button" data-step-up aria-label="Move step up" title="Move up">↑</button>
+                    <button type="button" data-step-down aria-label="Move step down" title="Move down">↓</button>
+                    <button type="button" data-step-duplicate data-i18n="ws-settings-step-duplicate">Duplicate</button>
+                    <button type="button" data-step-remove data-i18n="ws-settings-remove">Remove</button>
+                </div>
+            </header>
+            <div data-step-tool-grid>
+                <div data-schedule-combobox-wrap>
+                    <span data-schedule-field-label data-i18n="ws-settings-step-server">Server</span>
+                    <div data-schedule-combobox="server" data-combobox-open="false">
+                        <input type="text" name="stepServer" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Step server" placeholder="plurnk or MCP alias…" autocomplete="off" spellcheck="false">
+                        <ul role="listbox" data-combobox-list hidden></ul>
+                    </div>
+                </div>
+                <div data-schedule-combobox-wrap>
+                    <span data-schedule-field-label data-i18n="ws-settings-step-tool">Tool</span>
+                    <div data-schedule-combobox="tool" data-combobox-open="false">
+                        <input type="text" name="stepTool" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Step tool" placeholder="Search tool…" autocomplete="off" spellcheck="false">
+                        <ul role="listbox" data-combobox-list hidden></ul>
+                    </div>
+                </div>
+            </div>
+            <small data-step-tool-desc hidden></small>
+            <div data-step-guided-fields hidden></div>
+            <div data-step-raw-grid>
+                <label>
+                    <span data-i18n="ws-settings-step-args-json">Arguments (JSON)</span>
+                    <textarea name="stepArguments" aria-label="Step arguments JSON" rows="2" spellcheck="false" placeholder="{}">{}</textarea>
+                </label>
+                <label>
+                    <span data-i18n="ws-settings-step-aside">Aside label (optional)</span>
+                    <input type="text" name="stepAside" aria-label="Step aside label" placeholder="Optional step description" autocomplete="off">
+                </label>
+            </div>
+        </li>
+    </template>
+    <template id="schedule-step-arg-field">
+        <label data-step-arg-field data-arg-name="" data-arg-type="string">
+            <span><code data-text="arg-label">arg</code> <small data-arg-req data-text="arg-required"></small></span>
+            <input type="text" autocomplete="off" spellcheck="false">
+            <textarea rows="2" spellcheck="false"></textarea>
+        </label>
+    </template>
+    <template id="schedule-step-arg-select">
+        <label data-step-arg-field data-arg-name="" data-arg-type="enum">
+            <span><code data-text="arg-label">arg</code> <small data-arg-req data-text="arg-required"></small></span>
+            <select></select>
+        </label>
+    </template>
+    <template id="schedule-receipt-step">
+        <li data-receipt-step data-receipt-step-ok="true">
+            <div data-receipt-step-head>
+                <span data-receipt-step-index></span>
+                <code data-receipt-step-call></code>
+                <span data-receipt-step-status></span>
+                <code data-receipt-step-uri hidden></code>
+            </div>
+            <pre data-receipt-step-preview hidden><code></code></pre>
+            <p role="alert" data-receipt-step-problem hidden></p>
+        </li>
+    </template>
     <template id="workspace-candidate-row">
         <li data-candidate-addable="false">
             <code data-text="candidate-alias"></code> <span data-text="candidate-summary"></span>
@@ -743,7 +974,7 @@
             <li data-command-name="answer"><code data-i18n="command-answer-usage">/answer [@id] &lt;json&gt;</code> <span data-i18n="command-answer-summary">Submit a structured answer to a pending elicitation gate.</span></li>
             <li data-command-name="mcp"><code data-i18n="command-mcp-usage">/mcp [list|discover|add|replace|enable|disable|remove|oauth|skills|complete] …</code> <span data-i18n="command-mcp-summary">Inspect or manage workspace MCP servers.</span></li>
             <li data-command-name="skills"><code data-i18n="command-skills-usage">/skills [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-skills-summary">Inspect or manage workspace skills.</span></li>
-            <li data-command-name="schedule"><code data-i18n="command-schedule-usage">/schedule [list|discover|add|replace|run|done|reopen|enable|disable|remove] …</code> <span data-i18n="command-schedule-summary">Inspect or manage workspace schedules.</span></li>
+            <li data-command-name="schedule"><code data-i18n="command-schedule-usage">/schedule [list|inspect|discover|add|replace|run|done|reopen|enable|disable|remove] …</code> <span data-i18n="command-schedule-summary">Inspect, run, or manage workspace schedules and macros.</span></li>
             <li data-command-name="personas"><code data-i18n="command-personas-usage">/personas [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-personas-summary">Inspect or manage workspace personas.</span></li>
             <li data-command-name="members"><code data-i18n="command-members-usage">/members [list|discover|add|enable|disable|remove] …</code> <span data-i18n="command-members-summary">Inspect or manage workspace file membership.</span></li>
             <li data-command-name="env"><code data-i18n="command-env-usage">/env [--scope session|workspace] [list|set|unset] …</code> <span data-i18n="command-env-summary">Inspect or manage session or workspace environment variables.</span></li>
