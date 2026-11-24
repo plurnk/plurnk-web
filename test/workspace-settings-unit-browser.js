@@ -144,7 +144,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 ],
                             },
                             {
-                                configId: "spawn_model",
+                                configId: "child",
                                 name: "Child Session Model",
                                 type: "select",
                                 currentValue: activeSpawnModel,
@@ -241,7 +241,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 activeSessionModelPersisted = true;
                             }
                             if (input.params.configId === "thought_level") activeSessionEffort = input.params.value;
-                            if (input.params.configId === "spawn_model") activeSpawnModel = input.params.value;
+                            if (input.params.configId === "child") activeSpawnModel = input.params.value;
                             if (input.params.configId === "mode") activeSessionMode = input.params.value;
                             return {
                                 result: {
@@ -450,8 +450,8 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 return {
                                     result: {
                                         sessions: [
-                                            { id: 1, name: "user", origin: "model", archived_at: null },
-                                            { id: 2, name: "ops", origin: "model", archived_at: null },
+                                            { id: 1, name: "user", origin: "model", archivedAt: null },
+                                            { id: 2, name: "ops", origin: "model", archivedAt: null },
                                         ],
                                     },
                                 };
@@ -1077,7 +1077,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
 
                     // Child session model combobox finds models beyond row 100 (google/gemini-2.5-pro) as well as inherit & aliases
                     await spawnCombo.click();
-                    const spawnList = sessionConfigForm.locator('[data-model-combobox="spawnModel"] [data-combobox-list]');
+                    const spawnList = sessionConfigForm.locator('[data-model-combobox="childModel"] [data-combobox-list]');
                     await spawnList.waitFor({ state: "visible" });
                     assert.equal(await spawnList.locator('[role="option"]').first().getAttribute("data-combobox-option"), "inherit");
                     await spawnCombo.fill("gemini");

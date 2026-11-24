@@ -240,8 +240,8 @@
                 </label>
                 <label>
                     <span data-i18n="child-session-model">Child session model</span>
-                    <div data-model-combobox="spawnModel" data-combobox-open="false">
-                        <input type="text" name="spawnModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
+                    <div data-model-combobox="childModel" data-combobox-open="false">
+                        <input type="text" name="childModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
                         <ul role="listbox" data-combobox-list hidden></ul>
                     </div>
                 </label>
@@ -964,7 +964,6 @@
             <li data-command-name="rollback"><code data-i18n="command-rollback-usage">/rollback &lt;loop&gt;/&lt;turn&gt;/&lt;item&gt;</code> <span data-i18n="command-rollback-summary">Reverse this session's file mutations after a log coordinate.</span></li>
             <li data-command-name="share"><code data-i18n="command-share-usage">/share &lt;folder&gt;</code> <span data-i18n="command-share-summary">Write a consistent diagnostic digest snapshot on the daemon host.</span></li>
             <li data-command-name="update"><code data-i18n="command-update-usage">/update</code> <span data-i18n="command-update-summary">Refresh the model catalog and check service version status.</span></li>
-            <li data-command-name="script"><code data-i18n="command-script-usage">/script &lt;expression&gt;</code> <span data-i18n="command-script-summary">Execute client-authored MCP statements without waking inference.</span></li>
             <li data-command-name="review"><code data-i18n="command-review-usage">/review</code> <span data-i18n="command-review-summary">List pending permission and elicitation gates.</span></li>
             <li data-command-name="accept"><code data-i18n="command-accept-usage">/accept [@id]</code> <span data-i18n="command-accept-summary">Accept a pending gate (`/approve` is an alias).</span></li>
             <li data-command-name="approve"><code data-i18n="command-approve-usage">/approve [@id]</code> <span data-i18n="command-approve-summary">Approve a pending gate.</span></li>
@@ -981,6 +980,7 @@
             <li data-command-name="learn"><code data-i18n="command-learn-usage">/learn [--scope project|plurnk] [instructions]</code> <span data-i18n="command-learn-summary">Ask the session to distill reusable work into a project or Plurnk skill.</span></li>
             <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle session automatic approval (review / accept).</span></li>
             <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this session's active work.</span></li>
+            <li data-command-name="logout"><code data-i18n="command-logout-usage">/logout</code> <span data-i18n="command-logout-summary">Clear stored sign-in credentials for this browser.</span></li>
         </ul>
     </template>
     <template id="command-shortcuts">

@@ -8,12 +8,10 @@ import { isRecord } from "./session-translator.js";
  */
 export function extractEnvEntries(res, fallbackOrigin) {
     if (!isRecord(res)) return [];
-    const list = Array.isArray(res.definitions) ? res.definitions
-        : Array.isArray(res.items) ? res.items : [];
+    const list = Array.isArray(res.definitions) ? res.definitions : [];
     return list.flatMap((item) => {
         if (!isRecord(item)) return [];
-        const alias = typeof item.alias === "string" ? item.alias
-            : typeof item.name === "string" ? item.name : "";
+        const alias = typeof item.alias === "string" ? item.alias : "";
         if (!alias) return [];
         const origin = item.origin === "session" || item.origin === "workspace" || item.origin === "service"
             ? item.origin

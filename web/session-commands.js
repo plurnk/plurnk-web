@@ -3,6 +3,7 @@ import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses
 import { isRecord } from "./session-translator.js";
 import { sessionConfigOption, sessionEffort, sessionModel, modelLabel } from "./session-models.js";
 import { allowOptionId, rejectOptionId } from "./session-review.js";
+import { hasActiveOidcGrant, signOut } from "./oidc.js";
 import describeFailure from "./failure.js";
 
 /** @returns {"⌘" | "Ctrl"} */
@@ -37,7 +38,6 @@ const commands = new Set([
     "newer",
     "loops",
     "loop",
-    "script",
     "review",
     "accept",
     "approve",
@@ -45,6 +45,7 @@ const commands = new Set([
     "cancel",
     "edit",
     "answer",
+    "logout",
 ]);
 const helpCommands = new Set([...commands, "learn"]);
 
@@ -87,12 +88,13 @@ export const SLASH_COMMAND_NAMES = Object.freeze([
     "/enter",
     "/older",
     "/newer",
-    "/script",
+    "/logout",
 ]);
 
 const ZERO_ARG_COMMANDS = new Set([
     "/yolo",
     "/stop",
+    "/logout",
     "/update",
     "/workspaces",
     "/sessions",
@@ -654,7 +656,7 @@ export function parseCommand(text) {
     const rest = match[2].trim();
     const args = rest ? (familyCommands.has(name) ? tokenizeFamilyArgs(rest) : rest.split(/\s+/u)) : [];
     const zeroArg = new Set([
-        "yolo", "stop", "update", "workspaces", "sessions", "loops",
+        "yolo", "stop", "logout", "update", "workspaces", "sessions", "loops",
         "parent", "enter", "older", "newer", "review",
     ]);
     const singleOptionalArg = new Set([
@@ -667,7 +669,7 @@ export function parseCommand(text) {
         || (name === "rename" && rest.length === 0)
         || (name === "model" && args.length > 2)
         || (name === "loop" && args[0] !== undefined && !/^[1-9]\d*$/u.test(args[0]))
-        || ((name === "share" || name === "script") && rest.length === 0)) {
+        || (name === "share" && rest.length === 0)) {
         throw new Error(`Invalid arguments for /${name}. Use /help ${name}.`);
     }
     return { name, rest, args };
@@ -943,7 +945,18 @@ export default function sessionCommands(main, actions) {
                 return true;
             }
             if (name === "yolo") {
-                showStatus(`Approvals: ${await actions.toggleYolo() ? "Automatic" : "Manual"}.`);
+                showStatus(`Approval policy: ${await actions.toggleYolo() ? "accept" : "review"}.`);
+                return true;
+            }
+            if (name === "logout") {
+                const hadGrant = hasActiveOidcGrant();
+                signOut({ reload: false });
+                if (hadGrant) {
+                    if (actions.navigate) actions.navigate("/");
+                    else location.assign("/");
+                } else {
+                    showStatus("No stored sign-in credentials.");
+                }
                 return true;
             }
             if (name === "stop") {
@@ -985,8 +998,7 @@ export default function sessionCommands(main, actions) {
                     const alias = typeof params.alias === "string" ? params.alias : "";
                     const listed = await call("workspace.mcp.list", {});
                     if (isRecord(listed)) {
-                        const defs = Array.isArray(listed.definitions) ? listed.definitions
-                            : Array.isArray(listed.items) ? listed.items : [];
+                        const defs = Array.isArray(listed.definitions) ? listed.definitions : [];
                         const entry = defs.find((d) => isRecord(d) && d.alias === alias);
                         const def = isRecord(entry) && isRecord(entry.definition) ? entry.definition : null;
                         const auth = def?.type === "streamable-http" && isRecord(def.authorization) ? def.authorization : null;
@@ -1037,7 +1049,7 @@ export default function sessionCommands(main, actions) {
                     navigateToSettings("session");
                     return true;
                 }
-                const { currentValue } = await sessionConfigOption(call, "spawn_model", args[0]);
+                const { currentValue } = await sessionConfigOption(call, "child", args[0]);
                 showStatus(`Child model: ${currentValue || "inherit"}.`);
                 return true;
             }
@@ -1074,17 +1086,6 @@ export default function sessionCommands(main, actions) {
                 showStatus(`Rolled back to ${to} (${restored} restored, ${skipped} skipped).`);
                 return true;
             }
-            if (name === "script") {
-                const res = await call("op.exec", { text: rest });
-                signal.throwIfAborted();
-                const out = formatExecResults(res);
-                if (out) {
-                    showOutputModal(text.trim(), out);
-                } else {
-                    showStatus("Completed.");
-                }
-                return true;
-            }
             if (name === "workspaces" || (name === "workspace" && !rest)) {
                 const wsDialog = $("#dialog-workspaces");
                 if (wsDialog instanceof HTMLDialogElement) {
@@ -1100,8 +1101,7 @@ export default function sessionCommands(main, actions) {
                     const lines = items.map((w) => {
                         if (!isRecord(w)) return String(w);
                         const wsName = typeof w.name === "string" ? w.name : "";
-                        const root = typeof w.project_root === "string" ? w.project_root
-                            : typeof w.projectRoot === "string" ? w.projectRoot : "(folderless)";
+                        const root = typeof w.projectRoot === "string" ? w.projectRoot : "(folderless)";
                         return `${wsName}  ${root}`;
                     });
                     showOutputModal("/workspaces", lines.join("\n"));
@@ -1156,7 +1156,7 @@ export default function sessionCommands(main, actions) {
                 if (!exists && actions.hasSession !== undefined) {
                     const res = await call("workspace.sessions", {});
                     const items = isRecord(res) && Array.isArray(res.sessions) ? res.sessions : [];
-                    exists = items.some((s) => isRecord(s) && s.name === args[0] && s.origin === "model" && !s.archived_at);
+                    exists = items.some((s) => isRecord(s) && s.name === args[0] && s.origin === "model" && !s.archivedAt);
                 }
                 if (!exists) {
                     await call("session/new", { _meta: { plurnk: { workspace: workspaceName, session: args[0] } } });
@@ -1239,9 +1239,12 @@ export default function sessionCommands(main, actions) {
                 if (name === "loops") {
                     const lines = items.map((l) => {
                         const seq = String(l.sequence ?? "");
-                        const rawPrompt = typeof l.prompt === "string" ? l.prompt : "";
-                        const firstLine = rawPrompt.split(/\r?\n/u).map((s) => s.trim()).find(Boolean) ?? "";
-                        const clipped = firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
+                        const rawOpening = typeof l.opening === "string" ? l.opening : "";
+                        const firstLine = rawOpening.split(/\r?\n/u).map((s) => s.trim()).find(Boolean) ?? "";
+                        const withEllipsis = l.continued === true && firstLine && !firstLine.endsWith("…")
+                            ? `${firstLine}…`
+                            : firstLine;
+                        const clipped = withEllipsis.length > 160 ? `${withEllipsis.slice(0, 160)}…` : withEllipsis;
                         return `${seq}: ${clipped}`;
                     });
                     showOutputModal("/loops", lines.join("\n"));
@@ -1256,8 +1259,9 @@ export default function sessionCommands(main, actions) {
                 const detail = reqSeq !== undefined ? res : await call("session.loops", { loopSeq: targetSeq });
                 const updates = isRecord(detail) && Array.isArray(detail.updates) ? detail.updates : [];
                 const lines = [`── loop ${targetSeq} ──`];
-                if (typeof targetLoop.prompt === "string" && targetLoop.prompt) {
-                    lines.push(`> ${targetLoop.prompt}`);
+                if (typeof targetLoop.opening === "string" && targetLoop.opening) {
+                    const suffix = targetLoop.continued === true && !targetLoop.opening.endsWith("…") ? "…" : "";
+                    lines.push(`> ${targetLoop.opening}${suffix}`);
                 }
                 for (const u of updates) {
                     if (!isRecord(u)) continue;

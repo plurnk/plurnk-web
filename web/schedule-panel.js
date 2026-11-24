@@ -1731,8 +1731,7 @@ export function mountSchedulePanel(panel, host) {
      * @param {unknown} res
      */
     function renderList(res) {
-        const rawItems = isRecord(res) && Array.isArray(res.definitions) ? res.definitions
-            : isRecord(res) && Array.isArray(res.items) ? res.items : [];
+        const rawItems = isRecord(res) && Array.isArray(res.definitions) ? res.definitions : [];
         const items = rawItems.filter(isRecord);
         scheduleByAlias.clear();
         for (const item of items) {
@@ -1816,7 +1815,7 @@ export function mountSchedulePanel(panel, host) {
         // Sessions for target combobox + entry.read session hint
         if (isRecord(sessionsRes) && Array.isArray(sessionsRes.sessions)) {
             const activeModelSessions = sessionsRes.sessions
-                .filter((row) => isRecord(row) && typeof row.name === "string" && row.origin === "model" && !row.archived_at)
+                .filter((row) => isRecord(row) && typeof row.name === "string" && row.origin === "model" && !row.archivedAt)
                 .map((row) => String(/** @type {Record<string, unknown>} */ (row).name));
             workspaceSessions = activeModelSessions;
             readSessionName = ctx.sessionName ?? activeModelSessions[0] ?? null;

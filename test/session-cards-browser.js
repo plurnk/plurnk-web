@@ -13,7 +13,7 @@ export default async function verifySessionCards(t) {
         [path, { body: await readFile(new URL(`../dist/${file}`, import.meta.url)), contentType }])));
     const documents = new Documents(assets.get("/index.html").body.toString(), { overviewSessions: 128 });
 
-    /** @type {Array<{ id: number, name: string, project_root: string | null, project_label: string | null, archived_at: string | null }>} */
+    /** @type {Array<{ id: number, name: string, projectRoot: string | null, projectLabel: string | null, archivedAt: string | null }>} */
     let currentWorkspaces = [];
     /** @type {Array<Record<string, any>>} */
     let currentSessions = [];
@@ -127,7 +127,7 @@ export default async function verifySessionCards(t) {
                 const filtered = currentSessions.filter((s) => {
                     if (s.origin !== "model") return false;
                     const ws = wsById.get(s.workspaceId ?? 7);
-                    const isArch = Boolean(s.archived_at || ws?.archived_at);
+                    const isArch = Boolean(s.archivedAt || ws?.archivedAt);
                     if (archivedMode === "only") return isArch;
                     if (archivedMode === "exclude") return !isArch;
                     return true;
@@ -138,9 +138,9 @@ export default async function verifySessionCards(t) {
                         const ws = wsById.get(wsId);
                         return {
                             sessionId: `${wsId}#${s.name}`,
-                            cwd: ws?.project_root ?? "/",
+                            cwd: ws?.projectRoot ?? "/",
                             title: s.title ?? `${ws?.name ?? "work"}#${s.name}`,
-                            archived: Boolean(s.archived_at || ws?.archived_at),
+                            archived: Boolean(s.archivedAt || ws?.archivedAt),
                             _meta: {
                                 plurnk: {
                                     id: s.id,
@@ -160,7 +160,7 @@ export default async function verifySessionCards(t) {
                 };
             } else if (input.method === "session/unarchive") {
                 const targetName = String(input.params?.sessionId ?? "").split("#")[1] ?? "";
-                currentSessions = currentSessions.map((s) => s.name === targetName ? { ...s, archived_at: null } : s);
+                currentSessions = currentSessions.map((s) => s.name === targetName ? { ...s, archivedAt: null } : s);
                 rpcResult = {};
             } else if (input.method === "_plurnk/action") {
                 const { kind, params } = input.params;
@@ -177,7 +177,7 @@ export default async function verifySessionCards(t) {
                     };
                 } else if (kind === "workspace.archive") {
                     const wsId = params?.workspaceId ?? input.params.workspaceId;
-                    currentWorkspaces = currentWorkspaces.map((ws) => ws.id === wsId ? { ...ws, archived_at: params?.archived ? "2026-11-22T00:00:00Z" : null } : ws);
+                    currentWorkspaces = currentWorkspaces.map((ws) => ws.id === wsId ? { ...ws, archivedAt: params?.archived ? "2026-11-22T00:00:00Z" : null } : ws);
                     rpcResult = {};
                 }
             }
@@ -219,15 +219,15 @@ export default async function verifySessionCards(t) {
     const base = `http://127.0.0.1:${server.address().port}`;
 
     const baseSessions = [
-        { id: 1, workspaceId: 7, name: "_plurnk", parentSessionId: null, origin: "_plurnk", kind: "root", lifecycle: "idle", archived_at: null },
-        { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", archived_at: null },
-        { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", archived_at: null },
-        { id: 4, workspaceId: 7, name: "leaf", parentSessionId: 3, origin: "model", kind: "fork", lifecycle: "failed", archived_at: null },
-        { id: 5, workspaceId: 7, name: "background", parentSessionId: 1, origin: "model", kind: "work", lifecycle: "queued", archived_at: null },
-        { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", archived_at: null },
-        { id: 7, workspaceId: 7, name: "cancelled", parentSessionId: null, origin: "model", kind: "root", lifecycle: "cancelled", archived_at: null },
-        { id: 8, workspaceId: 7, name: "untouched-draft", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archived_at: null },
-        { id: 9, workspaceId: 7, name: "planned", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", title: "Planned task", archived_at: null },
+        { id: 1, workspaceId: 7, name: "_plurnk", parentSessionId: null, origin: "_plurnk", kind: "root", lifecycle: "idle", archivedAt: null },
+        { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", archivedAt: null },
+        { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", archivedAt: null },
+        { id: 4, workspaceId: 7, name: "leaf", parentSessionId: 3, origin: "model", kind: "fork", lifecycle: "failed", archivedAt: null },
+        { id: 5, workspaceId: 7, name: "background", parentSessionId: 1, origin: "model", kind: "work", lifecycle: "queued", archivedAt: null },
+        { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", archivedAt: null },
+        { id: 7, workspaceId: 7, name: "cancelled", parentSessionId: null, origin: "model", kind: "root", lifecycle: "cancelled", archivedAt: null },
+        { id: 8, workspaceId: 7, name: "untouched-draft", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", archivedAt: null },
+        { id: 9, workspaceId: 7, name: "planned", parentSessionId: null, origin: "model", kind: "root", lifecycle: "idle", title: "Planned task", archivedAt: null },
     ];
 
     for (const engine of engines) await t.test(engine.name(), async () => {
@@ -240,19 +240,19 @@ export default async function verifySessionCards(t) {
                 expectedAuth = null;
                 loopProvider = null;
                 const page = await context.newPage();
-                for (const project_root of [null, "/srv/project"]) {
+                for (const projectRoot of [null, "/srv/project"]) {
                     const name = `~/research/<script>&"${"long-".repeat(12)}`;
                     const workspacePath = directoryPath({ kind: "workspace", workspace: name });
-                    currentWorkspaces = [{ id: 7, name, project_root, project_label: project_root, archived_at: null }];
+                    currentWorkspaces = [{ id: 7, name, projectRoot, projectLabel: projectRoot, archivedAt: null }];
                     currentSessions = structuredClone(baseSessions);
 
                     await page.goto(new URL("/search/", base).href);
                     const wsArticle = page.locator('#search-workspaces > ul > li[data-directory-entry="workspace"][data-workspace-id="7"] > article');
                     await wsArticle.waitFor();
-                    assert.equal(await wsArticle.getAttribute("aria-label"), project_root === null ? "Folderless workspace" : "Project workspace");
+                    assert.equal(await wsArticle.getAttribute("aria-label"), projectRoot === null ? "Folderless workspace" : "Project workspace");
                     assert.match(
                         await wsArticle.locator(":scope > header").evaluate((el) => getComputedStyle(el, "::before").content),
-                        project_root === null ? /☁️/u : /🗂️/u,
+                        projectRoot === null ? /☁️/u : /🗂️/u,
                     );
                     assert.equal(await wsArticle.locator(':scope > header > a[data-text="name"]').textContent(), name);
                     assert.equal(await wsArticle.locator(':scope > header > a[data-text="name"]').getAttribute("href"), workspacePath);
@@ -328,14 +328,14 @@ export default async function verifySessionCards(t) {
                 expectedAuth = "Bearer overview-token";
                 const page = await liveContext.newPage();
                 currentWorkspaces = [
-                    { id: 7, name: "work", project_root: null, project_label: null, archived_at: null },
-                    { id: 8, name: "shelved", project_root: null, project_label: null, archived_at: "2026-11-20T00:00:00Z" },
+                    { id: 7, name: "work", projectRoot: null, projectLabel: null, archivedAt: null },
+                    { id: 8, name: "shelved", projectRoot: null, projectLabel: null, archivedAt: "2026-11-20T00:00:00Z" },
                 ];
                 currentSessions = [
-                    { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", gates: 1, title: "Root task", archived_at: null, reply: { id: 10, coordinate: "1/1/1/send:10", completion: /** @type {const} */ (200), at: Date.now() - 120_000, excerpt: "Parent preview line", continued: false } },
-                    { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", gates: 0, archived_at: null, reply: null },
-                    { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "fork", lifecycle: "completed", gates: 0, archived_at: null, reply: { id: 20, coordinate: "1/2/1/done:20", completion: /** @type {const} */ (200), at: Date.now() - 30_000, excerpt: "Delivered reply preview", continued: true } },
-                    { id: 12, workspaceId: 7, name: "archived-sess", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", gates: 0, archived_at: "2026-11-20T00:00:00Z", reply: null },
+                    { id: 2, workspaceId: 7, name: "parent", parentSessionId: null, origin: "model", kind: "root", lifecycle: "running", gates: 1, title: "Root task", archivedAt: null, reply: { id: 10, coordinate: "1/1/1/send:10", completion: /** @type {const} */ (200), at: Date.now() - 120_000, excerpt: "Parent preview line", continued: false } },
+                    { id: 3, workspaceId: 7, name: "child", parentSessionId: 2, origin: "model", kind: "work", lifecycle: "parked", gates: 0, archivedAt: null, reply: null },
+                    { id: 6, workspaceId: 7, name: "done", parentSessionId: null, origin: "model", kind: "fork", lifecycle: "completed", gates: 0, archivedAt: null, reply: { id: 20, coordinate: "1/2/1/done:20", completion: /** @type {const} */ (200), at: Date.now() - 30_000, excerpt: "Delivered reply preview", continued: true } },
+                    { id: 12, workspaceId: 7, name: "archived-sess", parentSessionId: null, origin: "model", kind: "root", lifecycle: "completed", gates: 0, archivedAt: "2026-11-20T00:00:00Z", reply: null },
                 ];
                 loopProvider = (sessionId) => sessionId === "7#done"
                     ? [{ opening: "Compare fork benchmark latency" }, { opening: "Inspect p99 tail spike in WebSocket pool" }]
@@ -431,15 +431,15 @@ export default async function verifySessionCards(t) {
                 emitNotification("log/entry", 7, 2, {
                     entry: {
                         id: 40,
-                        session_id: 2,
-                        loop_seq: 1,
-                        turn_seq: 1,
+                        sessionId: 2,
+                        loopSeq: 1,
+                        turnSeq: 1,
                         sequence: 3,
                         coordinate: "1/1/3/send:40",
                         origin: "model",
                         op: "send",
                         state: "resolved",
-                        status_rx: 200,
+                        statusRx: 200,
                         tx: { body: "Newest live reply excerpt" },
                         rx: { completion: 200 },
                     },

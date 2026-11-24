@@ -204,8 +204,8 @@ export default async function verifySessionCommands({ t, withDaemon }) {
                 "help", "models", "model", "effort", "persona", "child", "mode",
                 "workspaces", "workspace", "rename", "sessions", "session", "fork", "parent",
                 "enter", "older", "newer", "loops", "loop", "rollback", "share", "update",
-                "script", "review", "accept", "approve", "reject", "cancel", "edit", "answer",
-                "mcp", "skills", "schedule", "personas", "members", "env", "learn", "yolo", "stop",
+                "review", "accept", "approve", "reject", "cancel", "edit", "answer",
+                "mcp", "skills", "schedule", "personas", "members", "env", "learn", "yolo", "stop", "logout",
             ]);
             await page.locator("[data-settings-back]").click();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
