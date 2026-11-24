@@ -24,6 +24,7 @@ export { extractGuidedFields, parseRuleToTimingState, synthesizeScheduleRule };
  *   invokeForSession: (kind: string, params: Record<string, unknown>, sessionName: string, signal?: AbortSignal) => Promise<unknown>,
  *   runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
  *   setFeedback: (busy: boolean, message?: string, recovery?: string) => void,
+ *   refreshList?: () => Promise<void>,
  * }} host
  */
 export function mountSchedulePanel(panel, host) {
@@ -90,11 +91,21 @@ export function mountSchedulePanel(panel, host) {
         renderScheduleList(panel, tbody, res, scheduleByAlias);
     };
 
+    const reloadScheduleList = async () => {
+        if (host.refreshList) {
+            await host.refreshList();
+            return;
+        }
+        const fresh = await host.invoke("workspace.schedule.list", {});
+        renderList(fresh);
+    };
+
     const receipts = createScheduleReceiptController(receiptBox, {
         getContext: host.getContext,
         invoke: host.invoke,
         runMutation: host.runMutation,
         renderList,
+        refreshList: reloadScheduleList,
     });
 
     function updatePersonaChoices() {
@@ -312,8 +323,7 @@ export function mountSchedulePanel(panel, host) {
         }
         void host.runMutation(async () => {
             await host.invoke("workspace.schedule.replace", built.payload);
-            const fresh = await host.invoke("workspace.schedule.list", {});
-            renderList(fresh);
+            await reloadScheduleList();
             resetBuilder();
             disclosure.open = false;
             return `${built.alias}  saved`;
@@ -351,8 +361,7 @@ export function mountSchedulePanel(panel, host) {
             const nextStatus = operation === "done" ? "done" : "open";
             void host.runMutation(async () => {
                 await host.invoke("workspace.schedule.status", { alias, status: nextStatus });
-                const fresh = await host.invoke("workspace.schedule.list", {});
-                renderList(fresh);
+                await reloadScheduleList();
                 return `${alias}  ${nextStatus}`;
             });
             return;
@@ -361,8 +370,7 @@ export function mountSchedulePanel(panel, host) {
         if (["enable", "disable", "remove"].includes(operation)) {
             void host.runMutation(async () => {
                 await host.invoke(`workspace.schedule.${operation}`, { alias });
-                const fresh = await host.invoke("workspace.schedule.list", {});
-                renderList(fresh);
+                await reloadScheduleList();
                 const isRetry = submitter?.hasAttribute("data-family-retry") === true;
                 const verbLabel = operation === "remove" ? "removed" : isRetry ? "retried" : `${operation}d`;
                 return `${alias}  ${verbLabel}`;

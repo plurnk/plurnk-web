@@ -322,11 +322,12 @@
                     <summary data-i18n="ws-settings-add-mcp">+ Add server</summary>
                     <form data-family-discover-form data-family="mcp">
                         <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                            <input type="search" name="query" aria-label="Search MCP registry" placeholder="Search MCP registry…" autocomplete="off" required>
+                            <input type="search" name="query" aria-label="Search MCP registry" placeholder="Search MCP registry (or leave blank to browse)…" autocomplete="off">
                             <button type="submit" data-i18n="ws-settings-discover">Discover</button>
                         </fieldset>
                     </form>
                     <ul data-candidate-rows></ul>
+                    <div data-candidate-pager-outlet></div>
                     <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none">
                         <fieldset data-bind="disabled:ws-settings-busy">
                             <select name="transport" aria-label="MCP transport">
@@ -354,6 +355,7 @@
                         </fieldset>
                     </form>
                 </details>
+                <div data-collection-bar-outlet></div>
                 <p data-family-empty data-i18n="ws-settings-mcp-empty">No MCP servers configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -387,10 +389,12 @@
                     <form data-family-discover-form data-family="skills">
                         <fieldset role="group" data-bind="disabled:ws-settings-busy">
                             <input type="text" name="source" aria-label="Skill discovery source" placeholder="Git URL, folder, archive, or server:///skills" autocomplete="off" spellcheck="false" required>
+                            <input type="search" name="query" aria-label="Filter discovered skills" placeholder="Filter skills (optional)" autocomplete="off" spellcheck="false">
                             <button type="submit" data-i18n="ws-settings-discover">Discover</button>
                         </fieldset>
                     </form>
                     <ul data-candidate-rows></ul>
+                    <div data-candidate-pager-outlet></div>
                     <form data-skills-save-form>
                         <fieldset data-bind="disabled:ws-settings-busy">
                             <input type="text" name="alias" aria-label="Skill name" placeholder="skill-name" autocomplete="off" spellcheck="false" required>
@@ -402,6 +406,7 @@
                         </fieldset>
                     </form>
                 </details>
+                <div data-collection-bar-outlet></div>
                 <p data-family-empty data-i18n="ws-settings-skills-empty">No skills configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -583,6 +588,7 @@
                     <p data-receipt-session-link hidden><a href="/" data-bind="href:receipt-session-href" data-text="receipt-session-label"></a></p>
                     <ol data-schedule-receipt-steps hidden></ol>
                 </article>
+                <div data-collection-bar-outlet></div>
                 <p data-family-empty data-i18n="ws-settings-schedule-empty">No schedules or macros configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -606,10 +612,12 @@
                     <form data-family-discover-form data-family="personas">
                         <fieldset role="group" data-bind="disabled:ws-settings-busy">
                             <input type="text" name="source" aria-label="Persona discovery path" placeholder="Directory or file path (optional)" autocomplete="off" spellcheck="false">
+                            <input type="search" name="query" aria-label="Filter discovered personas" placeholder="Filter personas (optional)" autocomplete="off" spellcheck="false">
                             <button type="submit" data-i18n="ws-settings-discover">Discover</button>
                         </fieldset>
                     </form>
                     <ul data-candidate-rows></ul>
+                    <div data-candidate-pager-outlet></div>
                     <form data-personas-save-form data-persona-mode="inline">
                         <fieldset data-bind="disabled:ws-settings-busy">
                             <select name="personaMode" aria-label="Persona mode">
@@ -637,6 +645,7 @@
                         </fieldset>
                     </form>
                 </details>
+                <div data-collection-bar-outlet></div>
                 <p data-family-empty data-i18n="ws-settings-personas-empty">No personas configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -657,22 +666,20 @@
                 </header>
                 <details data-family-disclosure="members">
                     <summary data-i18n="ws-settings-add-members">+ Add rules</summary>
-                    <form data-family-discover-form data-family="members">
-                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
-                            <input type="text" name="query" aria-label="Inspect file or glob" placeholder="Path or glob (e.g. src/** or !dist/**)" autocomplete="off" spellcheck="false" required>
-                            <button type="submit" data-i18n="ws-settings-preview-rule">Preview</button>
-                        </fieldset>
-                    </form>
-                    <ul data-candidate-rows></ul>
                     <form data-members-save-form>
                         <fieldset data-bind="disabled:ws-settings-busy">
                             <input type="text" name="files" aria-label="Member globs" placeholder="docs/** !docs/drafts/**" autocomplete="off" spellcheck="false" required>
+                            <div data-members-preview data-members-preview-state="idle">
+                                <p role="status" data-members-preview-summary data-text="members-preview-summary"></p>
+                                <ul data-members-preview-list></ul>
+                            </div>
                             <footer>
                                 <button type="submit" data-i18n="ws-settings-save-members">Add rules</button>
                             </footer>
                         </fieldset>
                     </form>
                 </details>
+                <div data-collection-bar-outlet></div>
                 <p data-family-empty data-i18n="ws-settings-members-empty">No custom file member rules configured.</p>
                 <figure data-family-table-wrap>
                     <table>
@@ -687,7 +694,7 @@
                     </table>
                 </figure>
             </section>
-            <section data-settings-panel="env" aria-label="Environment" hidden>
+            <section data-settings-panel="env" aria-label="Environment" data-candidate-count="0" hidden>
                 <header data-panel-toolbar>
                     <h2 data-i18n="ws-settings-tab-env">Environment</h2>
                     <form data-ws-env-scope-form hidden>
@@ -701,8 +708,17 @@
                 </header>
                 <details data-family-disclosure="env">
                     <summary data-i18n="ws-settings-add-env">+ Set variable</summary>
+                    <form data-family-discover-form data-family="env">
+                        <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                            <input type="search" name="query" aria-label="Discover environment variables" placeholder="Filter declared variables (optional)" autocomplete="off" spellcheck="false">
+                            <button type="submit" data-i18n="ws-settings-discover">Discover</button>
+                        </fieldset>
+                    </form>
+                    <ul data-candidate-rows></ul>
+                    <div data-candidate-pager-outlet></div>
                     <div data-ws-env-form-outlet></div>
                 </details>
+                <div data-collection-bar-outlet></div>
                 <p data-env-empty data-i18n="ws-settings-env-empty">No environment variables configured.</p>
                 <div data-ws-env-outlet></div>
             </section>
@@ -852,6 +868,43 @@
                 </fieldset>
             </form>
         </li>
+    </template>
+    <template id="workspace-collection-bar">
+        <div data-collection-bar>
+            <form data-collection-filter-form>
+                <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                    <input type="search" name="query" aria-label="Filter items" placeholder="Filter…" autocomplete="off" spellcheck="false">
+                    <select name="state" aria-label="Filter by state">
+                        <option value="" data-i18n="ws-settings-state-all">All states</option>
+                        <option value="active" data-i18n="ws-settings-state-active">Active</option>
+                        <option value="dormant" data-i18n="ws-settings-state-dormant">Dormant</option>
+                        <option value="disabled" data-i18n="ws-settings-state-disabled">Disabled</option>
+                        <option value="unavailable" data-i18n="ws-settings-state-unavailable">Unavailable</option>
+                        <option value="authorization-required" data-i18n="ws-settings-state-auth">Authorization required</option>
+                    </select>
+                    <button type="submit" data-i18n="search">Search</button>
+                </fieldset>
+            </form>
+            <div data-collection-pagination>
+                <p data-collection-summary data-text="collection-summary"></p>
+                <div data-collection-page-controls>
+                    <button type="button" data-collection-prev disabled data-i18n="previous-page">Previous</button>
+                    <button type="button" data-collection-next disabled data-i18n="next-page">Next</button>
+                </div>
+            </div>
+        </div>
+    </template>
+    <template id="workspace-candidate-pager">
+        <div data-candidate-pagination hidden>
+            <p data-candidate-summary data-text="candidate-summary"></p>
+            <div data-candidate-page-controls>
+                <button type="button" data-candidate-prev disabled data-i18n="previous-page">Previous</button>
+                <button type="button" data-candidate-next disabled data-i18n="next-page">Next</button>
+            </div>
+        </div>
+    </template>
+    <template id="members-preview-path">
+        <li data-members-preview-item><code data-text="preview-path"></code></li>
     </template>
     <!-- {§web-session-status} Public state supplies literal list values, not document markup. -->
     <template id="session-descendant">

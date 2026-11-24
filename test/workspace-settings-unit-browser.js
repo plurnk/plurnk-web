@@ -252,6 +252,31 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         }
                         assert.equal(input.method, "_plurnk/action");
                         const { kind, params } = input.params;
+                        const pageFamilyList = (family, items, queryParams) => {
+                            const needle = typeof queryParams?.query === "string" ? queryParams.query.trim().toLowerCase() : "";
+                            const stateFilter = typeof queryParams?.state === "string" ? queryParams.state : "";
+                            const filtered = items.filter((item) => {
+                                if (stateFilter && item.state !== stateFilter) return false;
+                                if (needle) {
+                                    const hay = `${item.alias ?? ""} ${JSON.stringify(item.definition ?? {})} ${JSON.stringify(item.detail ?? {})}`.toLowerCase();
+                                    if (!hay.includes(needle)) return false;
+                                }
+                                return true;
+                            });
+                            const offset = typeof queryParams?.offset === "number" ? queryParams.offset : 0;
+                            const limit = typeof queryParams?.limit === "number" ? queryParams.limit : filtered.length || 100;
+                            const definitions = filtered.slice(offset, offset + limit);
+                            const nextOffset = offset + definitions.length < filtered.length ? offset + definitions.length : undefined;
+                            return {
+                                result: {
+                                    family,
+                                    definitions,
+                                    offset,
+                                    total: filtered.length,
+                                    ...(nextOffset !== undefined ? { nextOffset } : {}),
+                                },
+                            };
+                        };
                         switch (kind) {
                             case "models.list": {
                                 const limit = typeof params?.limit === "number" ? params.limit : 100;
@@ -383,11 +408,12 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                         offset,
                                         total: filtered.length,
                                         ...(nextOffset < filtered.length ? { nextOffset } : {}),
+                                        providers: [...new Set(allCatalog.map((m) => m.provider))].toSorted(),
                                     },
                                 };
                             }
                             case "workspace.mcp.list":
-                                return { result: { family: "mcp", definitions: mcpDefs } };
+                                return pageFamilyList("mcp", mcpDefs, params);
                             case "workspace.mcp.enable":
                             case "workspace.mcp.disable": {
                                 mcpDefs = mcpDefs.map((d) => d.alias === params.alias
@@ -398,7 +424,34 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                             case "workspace.mcp.remove":
                                 mcpDefs = mcpDefs.filter((d) => d.alias !== params.alias);
                                 return { result: { status: 200 } };
-                            case "workspace.mcp.discover":
+                            case "workspace.mcp.discover": {
+                                if (!params?.query) {
+                                    if (params?.cursor === "reg-page-2") {
+                                        return {
+                                            result: {
+                                                family: "mcp",
+                                                candidates: [{
+                                                    alias: "postgres-mcp",
+                                                    summary: "PostgreSQL inspector (page 2)",
+                                                    definition: { type: "stdio", command: "npx", args: ["-y", "postgres-mcp"] },
+                                                    provenance: { kind: "registry" },
+                                                }],
+                                            },
+                                        };
+                                    }
+                                    return {
+                                        result: {
+                                            family: "mcp",
+                                            candidates: [{
+                                                alias: "browse-mcp",
+                                                summary: "Registry catalog item (page 1)",
+                                                definition: { type: "stdio", command: "npx", args: ["-y", "browse-mcp"] },
+                                                provenance: { kind: "registry" },
+                                            }],
+                                            nextCursor: "reg-page-2",
+                                        },
+                                    };
+                                }
                                 return {
                                     result: {
                                         family: "mcp",
@@ -410,6 +463,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                         }],
                                     },
                                 };
+                            }
                             case "workspace.mcp.replace": {
                                 const { alias, ...def } = params;
                                 const filtered = mcpDefs.filter((d) => d.alias !== alias);
@@ -428,19 +482,32 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 mcpDefs = mcpDefs.map((d) => d.alias === params.alias ? { ...d, state: "active" } : d);
                                 return { result: { status: 200, alias: params.alias } };
                             case "workspace.skills.list":
-                                return { result: { family: "skills", definitions: skillDefs } };
-                            case "workspace.skills.discover":
+                                return pageFamilyList("skills", skillDefs, params);
+                            case "workspace.skills.discover": {
+                                const allSkills = [
+                                    {
+                                        alias: "lint-guide",
+                                        summary: "Linting conventions",
+                                        definition: { source: params.source, commit: "a".repeat(40) },
+                                        provenance: { kind: "git", source: params.source },
+                                    },
+                                    {
+                                        alias: "sql-guide",
+                                        summary: "SQL formatting rules",
+                                        definition: { source: params.source, commit: "b".repeat(40) },
+                                        provenance: { kind: "git", source: params.source },
+                                    },
+                                ];
+                                const q = typeof params?.query === "string" ? params.query.trim().toLowerCase() : "";
+                                const candidates = q ? allSkills.filter((c) => c.alias.includes(q) || c.summary.toLowerCase().includes(q)) : allSkills;
                                 return {
                                     result: {
                                         family: "skills",
-                                        candidates: [{
-                                            alias: "lint-guide",
-                                            summary: "Linting conventions",
-                                            definition: { source: params.source, commit: "a".repeat(40) },
-                                            provenance: { kind: "git", source: params.source },
-                                        }],
+                                        candidates,
+                                        total: candidates.length,
                                     },
                                 };
+                            }
                             case "workspace.skills.replace": {
                                 const { alias, ...def } = params;
                                 skillDefs = [...skillDefs.filter((d) => d.alias !== alias), { alias, origin: "workspace", state: "active", definition: def }];
@@ -530,7 +597,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 return { result: { status: 404, entry: null } };
                             }
                             case "workspace.schedule.list":
-                                return { result: { family: "schedule", definitions: scheduleDefs } };
+                                return pageFamilyList("schedule", scheduleDefs, params);
                             case "workspace.schedule.discover":
                                 return {
                                     result: {
@@ -642,26 +709,40 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 return { result: { alias: params.alias, status: params.status } };
                             }
                             case "workspace.personas.list":
-                                return { result: { family: "personas", definitions: personaDefs } };
+                                return pageFamilyList("personas", personaDefs, params);
                             case "workspace.personas.replace": {
                                 const { alias, ...def } = params;
                                 personaDefs = [...personaDefs.filter((d) => d.alias !== alias), { alias, origin: "workspace", state: "active", definition: def }];
                                 return { result: { status: 201 } };
                             }
                             case "workspace.members.list":
-                                return { result: { family: "members", definitions: memberDefs } };
-                            case "workspace.members.discover":
+                                return pageFamilyList("members", memberDefs, params);
+                            case "workspace.members.discover": {
+                                const limit = typeof params?.limit === "number" ? params.limit : 10;
+                                const allFiles = Array.from({ length: 12 }, (_, idx) => `docs/page-${idx + 1}.md`);
                                 return {
                                     result: {
                                         family: "members",
                                         candidates: [{
                                             alias: params.query,
-                                            summary: `Matches 2 files (${params.query})`,
+                                            summary: `would include 10 files (2 already members)`,
                                             definition: { glob: params.query },
                                             provenance: { kind: "preview", source: params.query },
+                                            detail: {
+                                                kind: "preview",
+                                                effect: String(params.query).startsWith("!") ? "exclude" : "include",
+                                                pattern: String(params.query).replace(/^!/u, ""),
+                                                matched: 12,
+                                                fresh: 10,
+                                                alreadyMembers: 2,
+                                                ignored: 0,
+                                                files: allFiles.slice(0, limit),
+                                            },
                                         }],
+                                        total: 1,
                                     },
                                 };
+                            }
                             case "workspace.members.add": {
                                 const files = Array.isArray(params.files) ? params.files : [];
                                 for (const glob of files) {
@@ -676,9 +757,23 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 memberDefs = memberDefs.filter((d) => d.alias !== params.file);
                                 return { result: { status: 200, family: "members", alias: params.file, removed: true } };
                             case "workspace.env.list":
-                                return { result: { family: "env", definitions: workspaceEnv } };
+                                return pageFamilyList("env", workspaceEnv, params);
                             case "session.env.list":
-                                return { result: { family: "env", definitions: [...workspaceEnv, ...sessionEnv] } };
+                                return pageFamilyList("env", [...workspaceEnv, ...sessionEnv], params);
+                            case "workspace.env.discover":
+                            case "session.env.discover":
+                                return {
+                                    result: {
+                                        family: "env",
+                                        candidates: [{
+                                            alias: "PLURNK_LOG_LEVEL",
+                                            summary: "Log verbosity level",
+                                            definition: { value: "info" },
+                                            provenance: { kind: "defaults", source: ".env.defaults" },
+                                        }],
+                                        total: 1,
+                                    },
+                                };
                             case "workspace.env.replace":
                                 workspaceEnv = [...workspaceEnv.filter((d) => d.alias !== params.alias), { alias: params.alias, origin: "workspace", state: "active", definition: { value: params.value } }];
                                 return { result: { status: 201 } };
@@ -752,12 +847,29 @@ export default async function verifyWorkspaceSettingsUnit(t) {
 
                     await mcpDisclosure.locator("> summary").click();
                     assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
-                    await mcpDisclosure.getByRole("searchbox", { name: "Search MCP registry", exact: true }).fill("sqlite");
+                    // Empty-query MCP Registry browsing + cursor Next/Previous pagination
                     await mcpDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
                     await mcpDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    assert.match(await mcpDisclosure.locator("[data-candidate-rows] li").first().textContent(), /browse-mcp/u);
+                    await mcpDisclosure.locator("[data-candidate-next]").click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-settings-panel="mcp"] [data-candidate-rows] li')?.textContent ?? "").includes("postgres-mcp"));
+                    await mcpDisclosure.locator("[data-candidate-prev]").click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-settings-panel="mcp"] [data-candidate-rows] li')?.textContent ?? "").includes("browse-mcp"));
+
+                    await mcpDisclosure.getByRole("searchbox", { name: "Search MCP registry", exact: true }).fill("sqlite");
+                    await mcpDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-settings-panel="mcp"] [data-candidate-rows] li')?.textContent ?? "").includes("sqlite-mcp"));
                     await mcpDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
                     assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false, "adding a candidate collapses the inline disclosure");
+
+                    // Always-available collection filter bar filters installed MCP servers live
+                    const mcpFilter = mcpPanel.getByRole("searchbox", { name: "Filter MCP servers", exact: true });
+                    await mcpFilter.fill("sqlite");
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 1);
+                    assert.equal(await mcpPanel.locator('[data-text="collection-summary"]').textContent(), "Showing 1–1 of 1");
+                    await mcpFilter.fill("");
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
 
                     await mcpDisclosure.locator("> summary").click();
                     await mcpDisclosure.getByRole("combobox", { name: "MCP transport", exact: true }).selectOption("streamable-http");
@@ -784,26 +896,34 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await mcpPanel.locator("[data-family-rows] tr").last().getByRole("button", { name: "Remove", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 3);
 
-                    // Skills: inline disclosure -> discover + candidate Add (stripping commit)
+                    // Skills: inline disclosure -> discover with optional query filter + candidate Add (stripping commit)
                     await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
                     const skillsPanel = settingsArticle.locator('[data-settings-panel="skills"]');
                     const skillsDisclosure = skillsPanel.locator('details[data-family-disclosure="skills"]');
                     await skillsDisclosure.locator("> summary").click();
                     await skillsDisclosure.getByRole("textbox", { name: "Skill discovery source", exact: true }).fill("https://git.example/skills.git");
+                    await skillsDisclosure.getByRole("searchbox", { name: "Filter discovered skills", exact: true }).fill("lint");
                     await skillsDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
                     await skillsDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    assert.equal(await skillsDisclosure.locator("[data-candidate-rows] li").count(), 1, "skills discovery filters candidates by query");
                     await skillsDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="skills"] [data-family-rows] tr').length === 1);
                     assert.equal(await skillsDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
                     const skillReplaceReq = requests.find((r) => r.params?.kind === "workspace.skills.replace");
                     assert.equal("commit" in skillReplaceReq.params.params, false, "client strips service-owned commit field when adding discovered skill");
 
-                    // Schedule & Macro Control Panel: guided timing dropdowns + live discover preview + session/persona pickers + MCP/tool autocomplete + step receipts + Edit round-trip
+                    // Schedule & Macro Control Panel: verify Reset matches Save schedule button height under Pico/OTM
                     await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();
                     const schedulePanel = settingsArticle.locator('[data-settings-panel="schedule"]');
                     const scheduleDisclosure = schedulePanel.locator('details[data-family-disclosure="schedule"]');
                     await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="schedule-clock"]')?.textContent ?? "").includes("UTC"));
                     await scheduleDisclosure.locator("> summary").click();
+                    const buttonHeightDelta = await page.evaluate(() => {
+                        const resetBtn = document.querySelector('#workspace-settings [data-schedule-reset]')?.getBoundingClientRect();
+                        const saveBtn = document.querySelector('#workspace-settings [data-schedule-save-form] footer button[type="submit"]')?.getBoundingClientRect();
+                        return resetBtn && saveBtn ? Math.abs(resetBtn.height - saveBtn.height) : 999;
+                    });
+                    assert.ok(buttonHeightDelta <= 2, `Schedule Reset button height matches Save schedule button (delta=${buttonHeightDelta}px)`);
                     await scheduleDisclosure.getByRole("textbox", { name: "Schedule name", exact: true }).fill("daily-audit");
                     await scheduleDisclosure.getByRole("combobox", { name: "Schedule timing", exact: true }).selectOption("repeating");
                     await scheduleDisclosure.getByRole("combobox", { name: "Repeat frequency", exact: true }).selectOption("weekdays");
@@ -924,18 +1044,21 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await scheduleDisclosure.getByRole("button", { name: "Cancel", exact: true }).click();
                     await scheduleDisclosure.locator("> summary").click();
 
-                    // Members: inline disclosure -> preview + candidate Add + batch add + row Remove ({ file })
+                    // Members: single Add rules form with debounced inline live preview (x matches + first 10 paths) + batch add + row Remove ({ file })
                     await settingsArticle.getByRole("link", { name: "Members", exact: true }).click();
                     const membersPanel = settingsArticle.locator('[data-settings-panel="members"]');
                     const membersDisclosure = membersPanel.locator('details[data-family-disclosure="members"]');
+                    assert.equal(await membersDisclosure.locator("[data-family-discover-form]").count(), 0, "Members has no separate preview form");
                     await membersDisclosure.locator("> summary").click();
-                    await membersDisclosure.getByRole("textbox", { name: "Inspect file or glob", exact: true }).fill("docs/**");
-                    await membersDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Preview", exact: true }).click();
-                    await membersDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    const membersFilesInput = membersDisclosure.getByRole("textbox", { name: "Member globs", exact: true });
+                    await membersFilesInput.fill("docs/**");
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="members-preview-summary"]')?.textContent ?? "").includes("12 matches"));
+                    assert.equal(await membersDisclosure.locator("[data-members-preview-list] li").count(), 10, "inline Members preview shows first 10 matching paths");
+                    await membersDisclosure.getByRole("button", { name: "Add rules", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     assert.equal(await membersDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
                     await membersDisclosure.locator("> summary").click();
-                    await membersDisclosure.getByRole("textbox", { name: "Member globs", exact: true }).fill("!docs/drafts/**");
+                    await membersFilesInput.fill("!docs/drafts/**");
                     await membersDisclosure.getByRole("button", { name: "Add rules", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 2);
                     assert.equal(await membersDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), false);
@@ -943,12 +1066,19 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     assert.deepEqual(requests.find((r) => r.params?.kind === "workspace.members.remove").params.params, { file: "docs/**" });
 
-                    // Workspace-only Environment: locked to workspace scope, hides session scope selector, never leaks secret values
+                    // Workspace-only Environment: locked to workspace scope, hides session scope selector, supports discovery prefill, never leaks secret values
                     await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();
                     const envSection = settingsArticle.locator('[data-settings-panel="env"]');
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="env"] tbody tr').length === 1);
                     assert.equal(await envSection.locator("[data-ws-env-scope-form]").isVisible(), false, "Workspace-only mode hides session env scope switcher");
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value/u);
+                    const envDisclosure = envSection.locator('details[data-family-disclosure="env"]');
+                    await envDisclosure.locator("> summary").click();
+                    await envDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
+                    await envDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
+                    await envDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
+                    assert.equal(await envDisclosure.locator('[data-env-set-form] input[name="alias"]').inputValue(), "PLURNK_LOG_LEVEL");
+                    await envDisclosure.locator("> summary").click();
 
                     // Help tab renders keyboard shortcuts and live-filterable slash commands
                     await settingsArticle.getByRole("link", { name: "Help", exact: true }).click();
@@ -1101,23 +1231,31 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.locator("#dialog-session-create [data-dialog-close]").first().click();
                     await page.locator("#dialog-session-create").waitFor({ state: "hidden" });
 
-                    // Models tab in Session mode: shows aliases + paginated 120-model catalog with provider filter and 1-click Use in session / Use as child on catalog rows!
+                    // Models tab in Session mode: shows aliases + paginated 120-model catalog (10 per page) with provider filter and 1-click Use in session / Use as child on catalog rows!
                     await settingsArticle.getByRole("link", { name: "Models", exact: true }).click();
                     const modelsPanel = settingsArticle.locator('[data-settings-panel="models"]');
                     await modelsPanel.waitFor({ state: "visible" });
                     assert.equal(await modelsPanel.locator("[data-session-model-form]").count(), 0, "session model selector moved to #session tab");
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 3);
-                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 100, "first page shows 100 of 120 catalog models");
+                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 10, "first page shows 10 of 120 catalog models");
                     assert.equal(await modelsPanel.locator('[data-text="model-total"]').textContent(), "120");
+                    assert.equal(
+                        await modelsPanel.locator('[data-text="model-more"]').textContent(),
+                        "More matches are available; narrow the search.",
+                        "model-more omits confusing 'or paginate.' jargon",
+                    );
                     const nextPageBtn = modelsPanel.locator("[data-models-next]");
                     const prevPageBtn = modelsPanel.locator("[data-models-prev]");
                     assert.equal(await prevPageBtn.isDisabled(), true);
                     assert.equal(await nextPageBtn.isDisabled(), false);
                     await nextPageBtn.click();
-                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-offset"]')?.textContent === "100");
-                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 20, "second page shows remaining 20 catalog models");
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-offset"]')?.textContent === "10");
+                    assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 10, "second page shows next 10 catalog models");
                     assert.equal(await prevPageBtn.isDisabled(), false);
-                    assert.equal(await nextPageBtn.isDisabled(), true);
+                    assert.equal(await nextPageBtn.isDisabled(), false);
+                    await prevPageBtn.click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-offset"]')?.textContent === "0");
+                    assert.equal(await prevPageBtn.isDisabled(), true);
 
                     // Provider filter narrows directly to anthropic and exposes 1-click Use in session & Use as child on catalog rows
                     const providerSelect = modelsPanel.getByRole("combobox", { name: "Filter by provider", exact: true });
