@@ -202,13 +202,13 @@
                 <p role="alert" data-text="model-dialog-error"></p>
                 <form data-session-model-quick-form>
                     <fieldset data-bind="disabled:model-dialog-busy">
-                        <label>
-                            <span data-i18n="model-label">Model</span>
-                            <div data-model-combobox="quickModel" data-combobox-open="false">
-                                <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
-                                <ul role="listbox" data-combobox-list hidden></ul>
+                        <div data-model-field>
+                            <label for="session-model-quick-input" data-i18n="model-label">Model</label>
+                            <div data-model-combobox="quickModel">
+                                <input id="session-model-quick-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-model-quick-listbox" aria-label="Session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
+                                <ul id="session-model-quick-listbox" role="listbox" aria-label="Session model choices" data-combobox-list hidden></ul>
                             </div>
-                        </label>
+                        </div>
                         <label>
                             <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
                             <select name="effort" aria-label="Reasoning effort"></select>
@@ -227,24 +227,24 @@
     <template id="session-config-controls">
         <form data-session-config-form hidden>
             <fieldset data-bind="disabled:ws-settings-busy">
-                <label>
-                    <span data-i18n="model-label">Model</span>
-                    <div data-model-combobox="model" data-combobox-open="false">
-                        <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
-                        <ul role="listbox" data-combobox-list hidden></ul>
+                <div data-model-field>
+                    <label for="session-config-model-input" data-i18n="model-label">Model</label>
+                    <div data-model-combobox="model">
+                        <input id="session-config-model-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-model-listbox" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
+                        <ul id="session-config-model-listbox" role="listbox" aria-label="Active session model choices" data-combobox-list hidden></ul>
                     </div>
-                </label>
+                </div>
                 <label>
                     <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
                     <select name="effort" aria-label="Reasoning effort"></select>
                 </label>
-                <label>
-                    <span data-i18n="child-session-model">Child session model</span>
-                    <div data-model-combobox="childModel" data-combobox-open="false">
-                        <input type="text" name="childModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
-                        <ul role="listbox" data-combobox-list hidden></ul>
+                <div data-model-field>
+                    <label for="session-config-child-model-input" data-i18n="child-session-model">Child session model</label>
+                    <div data-model-combobox="childModel">
+                        <input id="session-config-child-model-input" type="text" name="childModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-child-model-listbox" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
+                        <ul id="session-config-child-model-listbox" role="listbox" aria-label="Child session model choices" data-combobox-list hidden></ul>
                     </div>
-                </label>
+                </div>
                 <label>
                     <span data-i18n="persona-label">Persona</span>
                     <select name="persona" aria-label="Active session persona"></select>
@@ -540,9 +540,9 @@
                                 <div data-schedule-target-grid>
                                     <div data-schedule-combobox-wrap>
                                         <span data-schedule-field-label data-i18n="ws-settings-schedule-target-label">Target session</span>
-                                        <div data-schedule-combobox="target" data-combobox-open="false">
-                                            <input type="text" name="target" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false">
-                                            <ul role="listbox" data-combobox-list hidden></ul>
+                                        <div data-schedule-combobox="target">
+                                            <input type="text" name="target" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="schedule-target-listbox" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false">
+                                            <ul id="schedule-target-listbox" role="listbox" aria-label="Target session choices" data-combobox-list hidden></ul>
                                         </div>
                                     </div>
                                     <label>
@@ -632,9 +632,9 @@
                             <div data-persona-source-fields>
                                 <input type="text" name="source" aria-label="Persona file path" placeholder="./personas/reviewer.md" autocomplete="off" spellcheck="false">
                             </div>
-                            <div data-model-combobox="personaModel" data-combobox-open="false">
-                                <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
-                                <ul role="listbox" data-combobox-list hidden></ul>
+                            <div data-model-combobox="personaModel">
+                                <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="persona-model-listbox" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
+                                <ul id="persona-model-listbox" role="listbox" aria-label="Persona default model choices" data-combobox-list hidden></ul>
                             </div>
                             <select name="effort" aria-label="Persona default effort">
                                 <option value="" data-i18n="ws-settings-default-effort">Default effort (optional)</option>
@@ -807,16 +807,16 @@
             <div data-step-tool-grid>
                 <div data-schedule-combobox-wrap>
                     <span data-schedule-field-label data-i18n="ws-settings-step-server">Server</span>
-                    <div data-schedule-combobox="server" data-combobox-open="false">
-                        <input type="text" name="stepServer" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Step server" placeholder="plurnk or MCP alias…" autocomplete="off" spellcheck="false">
-                        <ul role="listbox" data-combobox-list hidden></ul>
+                    <div data-schedule-combobox="server">
+                        <input type="text" name="stepServer" role="combobox" data-otm-dynamic aria-autocomplete="list" aria-expanded="false" aria-label="Step server" placeholder="plurnk or MCP alias…" autocomplete="off" spellcheck="false">
+                        <ul role="listbox" aria-label="Step server choices" data-combobox-list hidden></ul>
                     </div>
                 </div>
                 <div data-schedule-combobox-wrap>
                     <span data-schedule-field-label data-i18n="ws-settings-step-tool">Tool</span>
-                    <div data-schedule-combobox="tool" data-combobox-open="false">
-                        <input type="text" name="stepTool" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Step tool" placeholder="Search tool…" autocomplete="off" spellcheck="false">
-                        <ul role="listbox" data-combobox-list hidden></ul>
+                    <div data-schedule-combobox="tool">
+                        <input type="text" name="stepTool" role="combobox" data-otm-dynamic aria-autocomplete="list" aria-expanded="false" aria-label="Step tool" placeholder="Search tool…" autocomplete="off" spellcheck="false">
+                        <ul role="listbox" aria-label="Step tool choices" data-combobox-list hidden></ul>
                     </div>
                 </div>
             </div>

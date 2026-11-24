@@ -1,4 +1,5 @@
-import { $, $$, on } from "on_the_money";
+import { $, on } from "on_the_money";
+import { combobox } from "on_the_money/combobox";
 
 const MODEL_SEARCH_DEBOUNCE_MS = 100;
 let comboboxCounter = 0;
@@ -16,7 +17,7 @@ let comboboxCounter = 0;
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
 
 /**
- * {§web-workspace-settings} {§web-session-commands} Shared ARIA combobox primitive over `#model-combobox-option` / `#model-combobox-hint`.
+ * {§web-workspace-settings} {§web-session-commands} Shared ARIA combobox primitive over `on_the_money/combobox` and `#model-combobox-option` / `#model-combobox-hint`.
  * @template {ComboboxItem} T
  * @param {HTMLElement} container
  * @param {{
@@ -53,39 +54,83 @@ export function attachCombobox(container, {
         comboboxCounter += 1;
         list.id = `${idPrefix}-${comboboxCounter}`;
     }
-    input.setAttribute("aria-controls", list.id);
+    if (input.getAttribute("aria-controls") !== list.id) {
+        input.setAttribute("aria-controls", list.id);
+    }
 
-    let open = false;
-    let suppressOpen = false;
     let committedValue = input.value.trim();
-    let activeIndex = -1;
     /** @type {T[]} */
     let currentItems = [];
     let disposed = false;
+    let reopeningInline = false;
+    let openedInThisTurn = false;
+    let closingViaEscape = false;
 
-    /** @param {number} index */
-    function setActiveIndex(index) {
-        if (currentItems.length === 0) {
-            activeIndex = -1;
-            input.removeAttribute("aria-activedescendant");
-            return;
-        }
-        activeIndex = ((index % currentItems.length) + currentItems.length) % currentItems.length;
-        const rows = $$(list, '[role="option"]');
-        let activeId = "";
-        for (let i = 0; i < rows.length; i += 1) {
-            const row = rows[i];
-            if (!(row instanceof HTMLElement)) continue;
-            const selected = i === activeIndex;
-            row.setAttribute("aria-selected", selected ? "true" : "false");
-            if (selected) {
-                activeId = row.id;
-                row.scrollIntoView({ block: "nearest" });
+    /**
+     * @param {string} query
+     * @param {boolean} immediate
+     */
+    function requestQuery(query, immediate) {
+        if (disposed) return;
+        onQuery(query, { immediate, render: renderItems });
+    }
+
+    const offKeydown = on(input, "keydown", '[role="combobox"]', (rawEvent) => {
+        if (!(rawEvent instanceof KeyboardEvent) || rawEvent.isComposing) return;
+        if (rawEvent.key === "Escape") {
+            if (!inline && input.getAttribute("aria-expanded") === "true") {
+                rawEvent.stopPropagation();
+            } else if (inline) {
+                closingViaEscape = true;
+                queueMicrotask(() => {
+                    closingViaEscape = false;
+                });
             }
         }
-        if (activeId) input.setAttribute("aria-activedescendant", activeId);
-        else input.removeAttribute("aria-activedescendant");
-    }
+    });
+
+    /** @type {import("on_the_money/combobox").ComboboxController} */
+    const controller = combobox(input, {
+        openOnFocus: true,
+        closeOnSelect: !inline,
+        clearOnEscape: false,
+        onOpen() {
+            if (reopeningInline || disposed) return;
+            openedInThisTurn = true;
+            queueMicrotask(() => {
+                openedInThisTurn = false;
+            });
+            const trimmed = input.value.trim();
+            requestQuery(trimmed === committedValue ? "" : trimmed, true);
+        },
+        onClose() {
+            if (inline && !disposed) {
+                if (closingViaEscape) {
+                    const dialog = input.closest("dialog");
+                    if (dialog instanceof HTMLDialogElement && dialog.open) {
+                        dialog.close();
+                        return;
+                    }
+                }
+                reopeningInline = true;
+                try {
+                    controller.open();
+                } finally {
+                    reopeningInline = false;
+                }
+                return;
+            }
+            onClose?.();
+        },
+        onSelect(option) {
+            const value = option.getAttribute("data-combobox-option") ?? "";
+            const chosen = currentItems.find((item) => item.value === value);
+            if (!chosen) return;
+            committedValue = chosen.value;
+            input.value = chosen.value;
+            onSelect?.(chosen.value, chosen);
+        },
+    });
 
     /**
      * @param {readonly T[]} items
@@ -98,7 +143,7 @@ export function attachCombobox(container, {
             li.id = `${list.id}-opt-${index}`;
             li.setAttribute("data-combobox-option", choice.value);
             li.setAttribute("data-combobox-kind", choice.kind ?? defaultKind);
-            li.setAttribute("aria-selected", "false");
+            li.setAttribute("aria-selected", choice.value === committedValue ? "true" : "false");
             const primaryEl = $(li, "[data-combobox-primary]");
             const secondaryEl = $(li, "[data-combobox-secondary]");
             if (primaryEl) primaryEl.textContent = choice.primary;
@@ -111,50 +156,7 @@ export function attachCombobox(container, {
             const hint = $.clone(list, "#model-combobox-hint");
             if (hint) hint.textContent = hintText;
         }
-        const currentIdx = committedValue
-            ? currentItems.findIndex((item) => item.value === committedValue)
-            : -1;
-        setActiveIndex(currentIdx >= 0 ? currentIdx : (currentItems.length > 0 ? 0 : -1));
-    }
-
-    function openList() {
-        if (disposed || input.disabled) return;
-        open = true;
-        list.hidden = false;
-        container.dataset.comboboxOpen = "true";
-        input.setAttribute("aria-expanded", "true");
-    }
-
-    function closeList() {
-        if (inline) return;
-        open = false;
-        list.hidden = true;
-        container.dataset.comboboxOpen = "false";
-        input.setAttribute("aria-expanded", "false");
-        input.removeAttribute("aria-activedescendant");
-        onClose?.();
-    }
-
-    /**
-     * @param {string} query
-     * @param {boolean} immediate
-     */
-    function requestQuery(query, immediate) {
-        if (disposed) return;
-        onQuery(query, { immediate, render: renderItems });
-    }
-
-    /** @param {T} choice */
-    function selectChoice(choice) {
-        committedValue = choice.value;
-        input.value = choice.value;
-        if (inline) {
-            const idx = currentItems.findIndex((item) => item.value === choice.value);
-            if (idx >= 0) setActiveIndex(idx);
-        } else {
-            closeList();
-        }
-        onSelect?.(choice.value, choice);
+        controller.sync();
     }
 
     /** @param {string} value */
@@ -163,117 +165,22 @@ export function attachCombobox(container, {
         input.value = committedValue;
     }
 
-    const offFocus = on(container, "focusin", 'input[role="combobox"]', () => {
-        if (input.disabled || suppressOpen) return;
-        openList();
-        const trimmed = input.value.trim();
-        requestQuery(trimmed === committedValue ? "" : trimmed, true);
-    });
-
-    const offClickInput = on(container, "click", 'input[role="combobox"]', () => {
-        if (input.disabled || open || suppressOpen) return;
-        openList();
-        const trimmed = input.value.trim();
-        requestQuery(trimmed === committedValue ? "" : trimmed, true);
-    });
-
     const offInput = on(container, "input", 'input[role="combobox"]', () => {
         const value = input.value;
-        if (!open) openList();
-        requestQuery(value, value.trim() === "");
+        if (!openedInThisTurn) {
+            requestQuery(value, value.trim() === "");
+        }
         onInput?.(value.trim());
-    });
-
-    const offKeydown = on(container, "keydown", 'input[role="combobox"]', (rawEvent) => {
-        if (!(rawEvent instanceof KeyboardEvent) || rawEvent.isComposing) return;
-        if (rawEvent.key === "ArrowDown") {
-            rawEvent.preventDefault();
-            if (!open) {
-                openList();
-                const trimmed = input.value.trim();
-                requestQuery(trimmed === committedValue ? "" : trimmed, true);
-            } else {
-                setActiveIndex(activeIndex + 1);
-            }
-            return;
-        }
-        if (rawEvent.key === "ArrowUp") {
-            rawEvent.preventDefault();
-            if (!open) {
-                openList();
-                const trimmed = input.value.trim();
-                requestQuery(trimmed === committedValue ? "" : trimmed, true);
-            } else {
-                setActiveIndex(activeIndex - 1);
-            }
-            return;
-        }
-        if (rawEvent.key === "Escape" && open && !inline) {
-            rawEvent.preventDefault();
-            rawEvent.stopPropagation();
-            closeList();
-            return;
-        }
-        if (rawEvent.key === "Enter" && open) {
-            const chosen = activeIndex >= 0 ? currentItems[activeIndex] : undefined;
-            if (chosen && (!inline || input.value.trim() !== committedValue || chosen.value !== committedValue)) {
-                rawEvent.preventDefault();
-                selectChoice(chosen);
-            } else if (!inline) {
-                closeList();
-            }
-            return;
-        }
-        if (rawEvent.key === "Tab" && open) {
-            const trimmed = input.value.trim();
-            if (trimmed !== committedValue && currentItems.length > 0) {
-                const chosen = activeIndex >= 0 ? currentItems[activeIndex] : currentItems[0];
-                if (chosen) {
-                    selectChoice(chosen);
-                    return;
-                }
-            }
-            closeList();
-        }
-    });
-
-    const offMousedownOption = on(list, "mousedown", '[role="option"]', (event) => {
-        event.preventDefault();
-    });
-
-    const offClickOption = on(list, "click", '[role="option"]', (event, option) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const value = option.getAttribute("data-combobox-option") ?? "";
-        const chosen = currentItems.find((item) => item.value === value);
-        if (chosen) {
-            suppressOpen = true;
-            try {
-                selectChoice(chosen);
-                if (document.activeElement !== input) input.focus();
-            } finally {
-                queueMicrotask(() => {
-                    suppressOpen = false;
-                });
-            }
-        }
     });
 
     const offFocusout = on(container, "focusout", "*", (rawEvent) => {
         const next = rawEvent instanceof FocusEvent ? rawEvent.relatedTarget : null;
         if (next instanceof Node && container.contains(next)) return;
-        closeList();
         const trimmed = input.value.trim();
         if (trimmed !== committedValue) {
             committedValue = trimmed;
             onSelect?.(trimmed, undefined);
         }
-    });
-
-    const offOutsidePointer = on.target(document, "pointerdown", (event) => {
-        if (!open) return;
-        if (event.target instanceof Node && container.contains(event.target)) return;
-        closeList();
     });
 
     return {
@@ -282,13 +189,19 @@ export function attachCombobox(container, {
         setValue,
         getValue: () => input.value.trim(),
         open: () => {
-            openList();
-            requestQuery("", true);
+            if (disposed || input.disabled) return;
+            if (!controller.expanded) {
+                controller.open();
+            } else {
+                requestQuery("", true);
+            }
         },
-        close: closeList,
-        isOpen: () => open,
+        close: () => {
+            if (!inline) controller.close();
+        },
+        isOpen: () => controller.expanded,
         refresh: () => {
-            if (open) {
+            if (controller.expanded) {
                 const trimmed = input.value.trim();
                 requestQuery(trimmed === committedValue ? "" : trimmed, true);
             }
@@ -296,14 +209,10 @@ export function attachCombobox(container, {
         dispose() {
             disposed = true;
             onDispose?.();
-            offFocus();
-            offClickInput();
             offInput();
             offKeydown();
-            offMousedownOption();
-            offClickOption();
             offFocusout();
-            offOutsidePointer();
+            controller.dispose();
         },
     };
 }

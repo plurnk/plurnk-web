@@ -227,7 +227,7 @@
             gap: calc(var(--otm-spacing) * 0.65) var(--otm-spacing);
         }
 
-        #workspace-settings [data-session-config-form] :where(fieldset > label) {
+        #workspace-settings [data-session-config-form] :where(fieldset > label, fieldset > [data-model-field]) {
             margin: 0;
         }
 
@@ -1312,6 +1312,10 @@
     }
 
     /* {§web-workspace-settings} {§web-session-commands} Model and schedule combobox popovers, dialog, catalog pagination, and composer menu. */
+    [data-model-field] {
+        margin-block-end: var(--otm-spacing);
+    }
+
     :is([data-model-combobox], [data-schedule-combobox]) {
         position: relative;
         min-inline-size: 0;
@@ -1360,6 +1364,7 @@
     }
 
     :is([data-model-combobox], [data-schedule-combobox]) [role="option"]:hover,
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"][data-active="true"],
     :is([data-model-combobox], [data-schedule-combobox]) [role="option"][aria-selected="true"] {
         background-color: var(--plurnk-user-surface);
         color: var(--otm-color);

@@ -1163,10 +1163,18 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await modelList.waitFor({ state: "visible" });
                     const initialFirstOption = await modelList.locator('[role="option"]').first().getAttribute("data-combobox-option");
                     assert.equal(initialFirstOption, "local", "declared aliases rank first before alibaba/* catalog entries");
+                    await modelCombo.press("ArrowDown");
+                    const activeFirstId = await modelList.locator('[role="option"]').first().getAttribute("id");
+                    assert.equal(await modelList.locator('[role="option"]').first().getAttribute("data-active"), "true", "ArrowDown highlights active option via data-active");
+                    assert.equal(await modelCombo.getAttribute("aria-activedescendant"), activeFirstId, "ArrowDown updates aria-activedescendant");
+                    await modelCombo.press("Escape");
+                    await modelList.waitFor({ state: "hidden" });
+                    assert.equal(await modelCombo.getAttribute("aria-expanded"), "false", "Escape closes combobox listbox");
                     await modelCombo.fill("claude");
                     const claudeOption = modelList.locator('[role="option"][data-combobox-option="anthropic/claude-sonnet-4-5"]');
                     await claudeOption.waitFor({ state: "visible" });
                     await claudeOption.click();
+                    await modelList.waitFor({ state: "hidden" });
                     assert.equal(await modelCombo.inputValue(), "anthropic/claude-sonnet-4-5");
                     assert.deepEqual(
                         await effortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
