@@ -3,6 +3,7 @@ import { onServiceVersion, serviceVersion, webVersion } from "./endpoints.js";
 import managementAction from "./management-action.js";
 import { primaryModifierLabel } from "./session-commands.js";
 import { listModels, modelLabel, sessionConfigOption, sessionModel } from "./session-models.js";
+import { COLLECTION_PAGE_SIZE } from "./workspace-collection.js";
 
 /** @typedef {import("./workspace-dialogs.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
@@ -108,20 +109,18 @@ export function mountModelsHelpAboutSections(article, {
                 managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", signal, {
                     workspaceId: ctx.workspaceId,
                 });
-            const { aliases, catalog } = await listModels(callModels, modelsSearchQuery, {
+            const { aliases, catalog, providers } = await listModels(callModels, modelsSearchQuery, {
                 offset: modelsOffset,
-                limit: 100,
+                limit: COLLECTION_PAGE_SIZE,
                 ...(modelsProviderFilter ? { provider: modelsProviderFilter } : {}),
                 signal,
             });
             signal.throwIfAborted();
             modelSearchCache.recordAliases(aliases);
             modelSearchCache.recordCatalogItems(catalog.items);
-            for (const alias of aliases) {
-                if (alias.provider) knownCatalogProviders.add(alias.provider);
-            }
-            for (const item of catalog.items) {
-                if (item.provider) knownCatalogProviders.add(item.provider);
+            modelSearchCache.recordProviders(providers);
+            for (const name of modelSearchCache.getKnownProviders()) {
+                knownCatalogProviders.add(name);
             }
             modelsNextOffset = catalog.nextOffset;
             const modelsPanel = $(article, '[data-settings-panel="models"]');
@@ -169,7 +168,7 @@ export function mountModelsHelpAboutSections(article, {
                     "model-offset": catalog.offset,
                     "model-count": catalog.items.length,
                     "model-total": catalog.total,
-                    "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search or paginate.",
+                    "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search.",
                 });
             }
             return { abortedByNewerLookup: false };
@@ -211,7 +210,7 @@ export function mountModelsHelpAboutSections(article, {
 
     on(article, "click", "[data-models-prev]", () => {
         if (modelsOffset <= 0) return;
-        modelsOffset = Math.max(0, modelsOffset - 100);
+        modelsOffset = Math.max(0, modelsOffset - COLLECTION_PAGE_SIZE);
         void onRefreshModels();
     });
 

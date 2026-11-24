@@ -143,9 +143,10 @@ export function renderScheduleList(panel, tbody, res, scheduleByAlias) {
  *   invoke: (kind: string, params?: Record<string, unknown>) => Promise<unknown>,
  *   runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
  *   renderList: (res: unknown) => void,
+ *   refreshList?: () => Promise<void>,
  * }} options
  */
-export function createScheduleReceiptController(receiptBox, { getContext, invoke, runMutation, renderList }) {
+export function createScheduleReceiptController(receiptBox, { getContext, invoke, runMutation, renderList, refreshList }) {
     /** @type {string | null} */
     let lastReceiptAlias = null;
 
@@ -237,8 +238,12 @@ export function createScheduleReceiptController(receiptBox, { getContext, invoke
         void runMutation(async () => {
             try {
                 const res = await invoke("workspace.schedule.run", { alias });
-                const fresh = await invoke("workspace.schedule.list", {});
-                renderList(fresh);
+                if (refreshList) {
+                    await refreshList();
+                } else {
+                    const fresh = await invoke("workspace.schedule.list", {});
+                    renderList(fresh);
+                }
                 const rec = isRecord(res) ? res : {};
                 const status = typeof rec.status === "string" ? rec.status : "open";
                 const loopId = typeof rec.loopId === "number" ? rec.loopId : null;
@@ -282,8 +287,12 @@ export function createScheduleReceiptController(receiptBox, { getContext, invoke
                     results,
                     showReopen: isAlreadyDone,
                 });
-                const fresh = await invoke("workspace.schedule.list", {}).catch(() => null);
-                if (fresh !== null) renderList(fresh);
+                if (refreshList) {
+                    await refreshList().catch(() => null);
+                } else {
+                    const fresh = await invoke("workspace.schedule.list", {}).catch(() => null);
+                    if (fresh !== null) renderList(fresh);
+                }
                 throw error;
             }
         });
@@ -298,8 +307,12 @@ export function createScheduleReceiptController(receiptBox, { getContext, invoke
         const alias = lastReceiptAlias;
         void runMutation(async () => {
             await invoke("workspace.schedule.status", { alias, status: "open" });
-            const fresh = await invoke("workspace.schedule.list", {});
-            renderList(fresh);
+            if (refreshList) {
+                await refreshList();
+            } else {
+                const fresh = await invoke("workspace.schedule.list", {});
+                renderList(fresh);
+            }
             receiptBox.hidden = true;
             return `${alias}  open`;
         });

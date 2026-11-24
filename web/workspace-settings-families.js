@@ -4,16 +4,36 @@ import { attachModelCombobox } from "./combobox.js";
 import { populateStaticEffortSelect } from "./effort-select.js";
 import { populateEnvPanel } from "./env-panel.js";
 import { isRecord } from "./session-translator.js";
+import {
+    mountCandidatePager,
+    mountCollectionBar,
+    mountMembersLivePreview,
+} from "./workspace-collection.js";
 
 /** @typedef {"mcp" | "skills" | "schedule" | "personas" | "members"} WorkspaceFamily */
+/** @typedef {WorkspaceFamily | "env"} BrowsableFamily */
+/** @typedef {"mcp" | "skills" | "personas" | "env"} DiscoverableFamily */
 /** @typedef {import("./workspace-dialogs.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
 
 const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members"]);
+const DISCOVERABLE_FAMILIES = /** @type {const} */ (["mcp", "skills", "personas", "env"]);
+const COLLECTION_LABELS = /** @type {Readonly<Record<BrowsableFamily, string>>} */ ({
+    mcp: "MCP servers",
+    skills: "skills",
+    schedule: "schedules",
+    personas: "personas",
+    members: "member rules",
+    env: "environment variables",
+});
 
 /** @param {unknown} value @returns {value is WorkspaceFamily} */
 export const isWorkspaceFamily = (value) =>
     typeof value === "string" && /** @type {readonly string[]} */ (FAMILIES).includes(value);
+
+/** @param {unknown} value @returns {value is DiscoverableFamily} */
+const isDiscoverableFamily = (value) =>
+    typeof value === "string" && /** @type {readonly string[]} */ (DISCOVERABLE_FAMILIES).includes(value);
 
 /**
  * @param {WorkspaceFamily} family
@@ -244,7 +264,7 @@ function collapseEnclosingDisclosure(form) {
  * @param {HTMLElement} article
  * @param {{
  *   readonly getContext: () => WorkspaceSettingsContext,
- *   readonly invoke: (kind: string, params?: Record<string, unknown>, opts?: { requireSession?: boolean }) => Promise<unknown>,
+ *   readonly invoke: (kind: string, params?: Record<string, unknown>, opts?: { requireSession?: boolean, signal?: AbortSignal }) => Promise<unknown>,
  *   readonly runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
  *   readonly setFeedback: (busy: boolean, message?: string, recovery?: string) => void,
  *   readonly isBusy: () => boolean,
@@ -252,6 +272,7 @@ function collapseEnclosingDisclosure(form) {
  *   readonly envPanel: Element | null,
  *   readonly initialEnvScope?: "workspace" | "session",
  *   readonly onRenderScheduleList: (res: unknown) => void,
+ *   readonly onRefreshSection: (section: WorkspaceFamily) => Promise<void>,
  *   readonly onRefreshEnv: () => Promise<void>,
  * }} host
  */
@@ -265,12 +286,19 @@ export function mountFamilyAndEnvSections(article, {
     envPanel,
     initialEnvScope = "workspace",
     onRenderScheduleList,
+    onRefreshSection,
     onRefreshEnv,
 }) {
     /** @type {"workspace" | "session"} */
     let envListScope = initialEnvScope === "session" ? "session" : "workspace";
-    /** @type {WeakMap<Element, { family: "mcp" | "skills" | "personas" | "members", alias: string, definition: Record<string, unknown> }>} */
+    /** @type {WeakMap<Element, { family: DiscoverableFamily, alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
+    /** @type {Map<BrowsableFamily, AbortController>} */
+    const listLookups = new Map();
+    /** @type {Map<BrowsableFamily, ReturnType<typeof mountCollectionBar>>} */
+    const collectionBars = new Map();
+    /** @type {Map<DiscoverableFamily, ReturnType<typeof mountCandidatePager>>} */
+    const candidatePagers = new Map();
 
     const personaEffortEl = $(article, '[data-personas-save-form] select[name="effort"]');
     populateStaticEffortSelect(personaEffortEl instanceof HTMLSelectElement ? personaEffortEl : null, EFFORTS);
@@ -282,6 +310,54 @@ export function mountFamilyAndEnvSections(article, {
             signal: getContext().signal,
         })
         : null;
+
+    const membersSaveForm = $(article, "form[data-members-save-form]");
+    const membersPreview = membersSaveForm instanceof HTMLFormElement
+        ? mountMembersLivePreview(membersSaveForm, {
+            invokeWithSignal: (kind, params, signal) => invoke(kind, params, { signal }),
+            signal: getContext().signal,
+        })
+        : null;
+
+    for (const family of [...FAMILIES, /** @type {const} */ ("env")]) {
+        const panel = $(article, `[data-settings-panel="${family}"]`);
+        if (panel instanceof HTMLElement) {
+            collectionBars.set(family, mountCollectionBar(panel, {
+                label: COLLECTION_LABELS[family],
+                onChange: () => {
+                    if (family === "env") void onRefreshEnv();
+                    else void onRefreshSection(family);
+                },
+                signal: getContext().signal,
+            }));
+        }
+    }
+
+    /**
+     * @param {DiscoverableFamily} family
+     * @param {Record<string, unknown>} params
+     */
+    async function runDiscovery(family, params) {
+        const action = family === "env" ? `${envListScope}.env.discover` : `workspace.${family}.discover`;
+        const res = await invoke(action, params, {
+            requireSession: family === "env" && envListScope === "session",
+        });
+        renderCandidates(family, res);
+        candidatePagers.get(family)?.applyResult(res);
+        const count = isRecord(res) && Array.isArray(res.candidates) ? res.candidates.length : 0;
+        return count === 0 ? `${family} discover: none` : `Found ${count} ${count === 1 ? "result" : "results"}.`;
+    }
+
+    for (const family of DISCOVERABLE_FAMILIES) {
+        const panel = $(article, `[data-settings-panel="${family}"]`);
+        if (panel instanceof HTMLElement) {
+            candidatePagers.set(family, mountCandidatePager(panel, {
+                onPageChange: (params) => {
+                    void runMutation(() => runDiscovery(family, params));
+                },
+            }));
+        }
+    }
 
     /**
      * @param {WorkspaceFamily} family
@@ -328,7 +404,7 @@ export function mountFamilyAndEnvSections(article, {
     }
 
     /**
-     * @param {WorkspaceFamily} family
+     * @param {DiscoverableFamily} family
      * @param {unknown} res
      */
     function renderCandidates(family, res) {
@@ -341,10 +417,7 @@ export function mountFamilyAndEnvSections(article, {
             const alias = typeof item.alias === "string" ? item.alias : "";
             const summary = typeof item.summary === "string" ? item.summary : "";
             const def = isRecord(item.definition) ? item.definition : null;
-            const provKind = isRecord(item.provenance) && typeof item.provenance.kind === "string" ? item.provenance.kind : "";
-            const addable = family === "members"
-                ? alias.length > 0 && def !== null && ["preview", "candidate", "ignored"].includes(provKind)
-                : family !== "schedule" && alias.length > 0 && def !== null;
+            const addable = alias.length > 0 && def !== null;
             the(li, {
                 "candidate-alias": alias || family,
                 "candidate-summary": summary,
@@ -353,13 +426,36 @@ export function mountFamilyAndEnvSections(article, {
             const form = $(li, "form[data-candidate-add-form]");
             if (addable && form && def) {
                 candidateData.set(form, {
-                    family: /** @type {"mcp" | "skills" | "personas" | "members"} */ (family),
+                    family,
                     alias,
                     definition: def,
                 });
             }
         });
         the(panel, { "candidate-count": candidates.length });
+    }
+
+    /** @param {WorkspaceFamily} family */
+    async function loadFamilySection(family) {
+        const ctx = getContext();
+        listLookups.get(family)?.abort();
+        const req = new AbortController();
+        listLookups.set(family, req);
+        const bar = collectionBars.get(family);
+        try {
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+                const params = bar ? bar.getParams() : {};
+                const res = await invoke(`workspace.${family}.list`, params, { signal: req.signal });
+                if (req.signal.aborted || ctx.signal.aborted) return;
+                const applied = bar ? bar.applyResult(res) : { clamped: false };
+                if (applied.clamped && attempt === 0) continue;
+                renderFamilyList(family, res);
+                return;
+            }
+        } catch (error) {
+            if (req.signal.aborted && !ctx.signal.aborted) return;
+            throw error;
+        }
     }
 
     function syncEnvScopeControls() {
@@ -385,11 +481,27 @@ export function mountFamilyAndEnvSections(article, {
     async function loadEnvSection() {
         syncEnvScopeControls();
         const ctx = getContext();
-        const res = await invoke(`${envListScope}.env.list`, {}, {
-            requireSession: envListScope === "session",
-        });
-        ctx.signal.throwIfAborted();
-        if (envPanel) populateEnvPanel(envPanel, res, envListScope);
+        listLookups.get("env")?.abort();
+        const req = new AbortController();
+        listLookups.set("env", req);
+        const bar = collectionBars.get("env");
+        try {
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+                const params = bar ? bar.getParams() : {};
+                const res = await invoke(`${envListScope}.env.list`, params, {
+                    requireSession: envListScope === "session",
+                    signal: req.signal,
+                });
+                if (req.signal.aborted || ctx.signal.aborted) return;
+                const applied = bar ? bar.applyResult(res) : { clamped: false };
+                if (applied.clamped && attempt === 0) continue;
+                if (envPanel) populateEnvPanel(envPanel, res, envListScope);
+                return;
+            }
+        } catch (error) {
+            if (req.signal.aborted && !ctx.signal.aborted) return;
+            throw error;
+        }
     }
 
     on(article, "change", '[data-mcp-save-form] select[name="transport"]', (_event, select) => {
@@ -413,6 +525,7 @@ export function mountFamilyAndEnvSections(article, {
     on(article, "change", '[data-ws-env-scope-form] select[name="listScope"]', (_event, select) => {
         if (!(select instanceof HTMLSelectElement)) return;
         envListScope = select.value === "session" ? "session" : "workspace";
+        collectionBars.get("env")?.resetOffset();
         syncEnvScopeControls();
         void onRefreshEnv();
     });
@@ -450,13 +563,11 @@ export function mountFamilyAndEnvSections(article, {
                     }
                     return `${alias}: open authorization link and submit the callback URL.`;
                 }
-                const fresh = await invoke("workspace.mcp.list", {});
-                renderFamilyList("mcp", fresh);
+                await loadFamilySection("mcp");
                 return `${alias}  active`;
             }
             await invoke(`workspace.${family}.${operation}`, family === "members" ? { file: alias } : { alias });
-            const fresh = await invoke(`workspace.${family}.list`, {});
-            renderFamilyList(family, fresh);
+            await loadFamilySection(family);
             const isRetry = submitter?.hasAttribute("data-family-retry") === true;
             const verbLabel = operation === "remove" ? "removed" : isRetry ? "retried" : `${operation}d`;
             return `${alias}  ${verbLabel}`;
@@ -472,8 +583,7 @@ export function mountFamilyAndEnvSections(article, {
         if (!alias || !callbackUrl) return;
         void runMutation(async () => {
             await invoke("workspace.mcp.oauth.complete", { alias, callbackUrl });
-            const fresh = await invoke("workspace.mcp.list", {});
-            renderFamilyList("mcp", fresh);
+            await loadFamilySection("mcp");
             const oauthBox = $(article, "[data-mcp-oauth-box]");
             if (oauthBox instanceof HTMLElement) oauthBox.hidden = true;
             const cbInput = $(form, 'input[name="callbackUrl"]');
@@ -486,27 +596,23 @@ export function mountFamilyAndEnvSections(article, {
         event.preventDefault();
         if (!(form instanceof HTMLFormElement)) return;
         const rawFamily = form.dataset.family ?? "";
-        if (!isWorkspaceFamily(rawFamily)) return;
+        if (!isDiscoverableFamily(rawFamily)) return;
         const family = rawFamily;
         const data = new FormData(form);
         /** @type {Record<string, unknown>} */
-        const params = {};
-        if (family === "mcp" || family === "members") {
+        const baseParams = {};
+        if (family === "mcp" || family === "env") {
             const query = String(data.get("query") ?? "").trim();
-            if (query) params.query = query;
-        } else if (family === "schedule") {
-            const rule = String(data.get("rule") ?? "").trim();
-            if (rule) params.rule = rule;
+            if (query) baseParams.query = query;
         } else {
             const source = String(data.get("source") ?? "").trim();
-            if (source) params.source = source;
+            const query = String(data.get("query") ?? "").trim();
+            if (source) baseParams.source = source;
+            if (query) baseParams.query = query;
         }
-        void runMutation(async () => {
-            const res = await invoke(`workspace.${family}.discover`, params);
-            renderCandidates(family, res);
-            const count = isRecord(res) && Array.isArray(res.candidates) ? res.candidates.length : 0;
-            return count === 0 ? `${family} discover: none` : `Found ${count} ${count === 1 ? "result" : "results"}.`;
-        });
+        const pager = candidatePagers.get(family);
+        const params = pager ? pager.startSearch(baseParams) : baseParams;
+        void runMutation(() => runDiscovery(family, params));
     });
 
     on(article, "submit", "[data-candidate-add-form]", (event, form) => {
@@ -514,17 +620,29 @@ export function mountFamilyAndEnvSections(article, {
         if (!(form instanceof HTMLFormElement)) return;
         const meta = candidateData.get(form);
         if (!meta) return;
-        void runMutation(async () => {
-            if (meta.family === "members") {
-                await invoke("workspace.members.add", { files: [meta.alias] });
-            } else {
-                /** @type {Record<string, unknown>} */
-                const payload = { alias: meta.alias, ...meta.definition };
-                if (meta.family === "skills") delete payload.commit;
-                await invoke(`workspace.${meta.family}.replace`, payload);
+        if (meta.family === "env") {
+            const envForm = $(article, "form[data-env-set-form]");
+            const aliasInput = envForm ? $(envForm, 'input[name="alias"]') : null;
+            const valueInput = envForm ? $(envForm, 'input[name="value"]') : null;
+            if (aliasInput instanceof HTMLInputElement) {
+                aliasInput.value = meta.alias;
+                aliasInput.setCustomValidity("");
             }
-            const fresh = await invoke(`workspace.${meta.family}.list`, {});
-            renderFamilyList(meta.family, fresh);
+            if (valueInput instanceof HTMLInputElement) {
+                const defaultVal = typeof meta.definition.value === "string" ? meta.definition.value : "";
+                valueInput.value = defaultVal;
+                valueInput.focus();
+            }
+            setFeedback(false, `Filled ${meta.alias}; enter a value and click Set.`, "");
+            return;
+        }
+        const targetFamily = meta.family;
+        void runMutation(async () => {
+            /** @type {Record<string, unknown>} */
+            const payload = { alias: meta.alias, ...meta.definition };
+            if (targetFamily === "skills") delete payload.commit;
+            await invoke(`workspace.${targetFamily}.replace`, payload);
+            await loadFamilySection(targetFamily);
             collapseEnclosingDisclosure(form);
             return `${meta.alias}  active`;
         });
@@ -543,9 +661,9 @@ export function mountFamilyAndEnvSections(article, {
             }
             void runMutation(async () => {
                 await invoke(spec.action, built.payload);
-                const fresh = await invoke(`workspace.${spec.family}.list`, {});
-                renderFamilyList(spec.family, fresh);
+                await loadFamilySection(spec.family);
                 spec.clear(form);
+                if (spec.family === "members") membersPreview?.clear();
                 collapseEnclosingDisclosure(form);
                 return `${built.label}  saved`;
             });
@@ -569,10 +687,7 @@ export function mountFamilyAndEnvSections(article, {
             await invoke(`${targetScope}.env.${operation}`, { alias }, {
                 requireSession: targetScope === "session",
             });
-            const fresh = await invoke(`${envListScope}.env.list`, {}, {
-                requireSession: envListScope === "session",
-            });
-            if (envPanel) populateEnvPanel(envPanel, fresh, envListScope);
+            await loadEnvSection();
             const verbLabel = operation === "remove" ? "unset" : `${operation}d`;
             return `${alias}  ${verbLabel}`;
         });
@@ -599,10 +714,7 @@ export function mountFamilyAndEnvSections(article, {
             await invoke(`${targetScope}.env.replace`, { alias, value }, {
                 requireSession: targetScope === "session",
             });
-            const fresh = await invoke(`${envListScope}.env.list`, {}, {
-                requireSession: envListScope === "session",
-            });
-            if (envPanel) populateEnvPanel(envPanel, fresh, envListScope);
+            await loadEnvSection();
             aliasInput.value = "";
             valueInput.value = "";
             collapseEnclosingDisclosure(form);
@@ -616,9 +728,14 @@ export function mountFamilyAndEnvSections(article, {
 
     return {
         renderFamilyList,
+        loadFamilySection,
         loadEnvSection,
         dispose() {
             personaModelCombobox?.dispose();
+            membersPreview?.dispose();
+            for (const controller of listLookups.values()) controller.abort();
+            listLookups.clear();
+            for (const bar of collectionBars.values()) bar.dispose();
         },
     };
 }

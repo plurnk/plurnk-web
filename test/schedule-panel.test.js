@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { extractGuidedFields, parseRuleToTimingState, synthesizeScheduleRule } from "../web/schedule-panel.js";
+import {
+    COLLECTION_PAGE_SIZE,
+    extractMembersPreviewToken,
+    formatCandidateSummary,
+    formatCollectionSummary,
+    formatMembersPreview,
+} from "../web/workspace-collection.js";
 
 test("{§web-workspace-settings} synthesizeScheduleRule and parseRuleToTimingState cover manual, once, relative, timestamp, repeating presets, RFC 5545 canonical round-trips, and custom fallback", () => {
     /** @type {import("../web/schedule-panel.js").ScheduleTimingState} */
@@ -132,4 +139,77 @@ test("{§web-workspace-settings} extractGuidedFields maps JSON Schema scalar, $r
         { name: "workspace", type: "string", required: false, description: "Workspace handle." },
     ]);
     assert.deepEqual(extractGuidedFields(undefined), []);
+});
+
+test("{§web-workspace-settings} workspace collection helpers format paged list/discover summaries and inline members previews", () => {
+    assert.equal(COLLECTION_PAGE_SIZE, 10);
+    assert.deepEqual(
+        formatCollectionSummary({ definitions: [{}, {}], offset: 0, total: 12, nextOffset: 2 }),
+        { offset: 0, total: 12, nextOffset: 2, count: 2, summary: "Showing 1–2 of 12", canPrev: false, canNext: true },
+    );
+    assert.deepEqual(
+        formatCollectionSummary({ definitions: [], offset: 0, total: 0 }),
+        { offset: 0, total: 0, nextOffset: undefined, count: 0, summary: "Showing 0 of 0", canPrev: false, canNext: false },
+    );
+
+    assert.deepEqual(
+        formatCandidateSummary({ candidates: Array.from({ length: 10 }, () => ({})), nextCursor: "c2" }, 0),
+        { count: 10, total: undefined, nextCursor: "c2", summary: "Showing 1–10", canPrev: false, canNext: true },
+    );
+    assert.deepEqual(
+        formatCandidateSummary({ candidates: [{}, {}], total: 12 }, 1),
+        { count: 2, total: 12, nextCursor: undefined, summary: "Showing 11–12 of 12", canPrev: true, canNext: false },
+    );
+
+    assert.equal(extractMembersPreviewToken("docs/** !docs/drafts/**", 4), "docs/**");
+    assert.equal(extractMembersPreviewToken("docs/** !docs/drafts/**", 15), "!docs/drafts/**");
+    assert.equal(extractMembersPreviewToken("docs/**   ", 10), "docs/**");
+    assert.equal(extractMembersPreviewToken("   ", 1), "");
+
+    assert.deepEqual(
+        formatMembersPreview({
+            candidates: [{
+                alias: "docs/**",
+                summary: "fallback",
+                detail: {
+                    kind: "preview",
+                    effect: "include",
+                    pattern: "docs/**",
+                    matched: 12,
+                    fresh: 10,
+                    alreadyMembers: 2,
+                    ignored: 0,
+                    files: Array.from({ length: 12 }, (_, i) => `docs/f${i + 1}.md`),
+                },
+            }],
+        }),
+        {
+            state: "matched",
+            summary: "12 matches (10 new, 2 already members)",
+            files: Array.from({ length: 10 }, (_, i) => `docs/f${i + 1}.md`),
+        },
+    );
+    assert.deepEqual(
+        formatMembersPreview({
+            candidates: [{
+                alias: "README.md",
+                summary: "member — tracked by git",
+                detail: {
+                    kind: "verdict",
+                    verdict: "member",
+                    path: "README.md",
+                    matched: 1,
+                    fresh: 0,
+                    alreadyMembers: 1,
+                    ignored: 0,
+                    files: ["README.md"],
+                },
+            }],
+        }),
+        {
+            state: "matched",
+            summary: "1 match — member — tracked by git",
+            files: ["README.md"],
+        },
+    );
 });

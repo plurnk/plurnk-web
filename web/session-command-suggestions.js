@@ -104,8 +104,21 @@ const FAMILY_SUBCOMMANDS = Object.freeze({
     schedule: ["list", "show", "inspect", "run", "enable", "disable", "done", "reopen", "remove", "discover", "add", "replace"],
     personas: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
     members: ["list", "enable", "disable", "remove", "discover", "add"],
-    env: ["list", "set", "unset", "enable", "disable", "remove", "--scope"],
+    env: ["list", "discover", "set", "unset", "enable", "disable", "remove", "--scope"],
 });
+
+const FAMILY_LIST_FLAGS = Object.freeze(["--query", "--state", "--origin", "--offset", "--limit"]);
+const FAMILY_LIST_STATES = Object.freeze(["active", "dormant", "disabled", "unavailable", "authorization-required"]);
+const FAMILY_LIST_ORIGINS = Object.freeze(["service", "workspace", "session"]);
+const FAMILY_DISCOVER_FLAGS = Object.freeze({
+    mcp: ["--query", "--cursor", "--limit"],
+    skills: ["--source", "--query", "--cursor", "--limit"],
+    personas: ["--source", "--query", "--cursor", "--limit"],
+    members: ["--query", "--limit"],
+    env: ["--query", "--source", "--cursor", "--limit"],
+    schedule: ["--rule", "--cursor", "--limit"],
+});
+const MODELS_FLAGS = Object.freeze(["--provider", "--all", "--offset", "--limit"]);
 
 const FAMILY_ALIAS_SUBS = new Set(["show", "inspect", "replace", "enable", "disable", "remove", "oauth", "run", "done", "reopen", "unset"]);
 
@@ -279,20 +292,33 @@ function resolveArgumentStage(cmd, completedArgs, sources) {
             ? { candidates: sources.gateIds ?? [], advances: true }
             : { candidates: [], advances: false };
     }
+    if (cmd === "models") {
+        return { candidates: MODELS_FLAGS, advances: true };
+    }
     if (cmd === "env") {
         const envVars = sources.familyAliases?.env ?? [];
-        if (completedArgs[0] === "--scope") {
-            if (completedArgs.length === 1) return { candidates: ["session", "workspace"], advances: true };
-            if (completedArgs.length === 2) return { candidates: ["list", "set", "unset", "enable", "disable", "remove"], advances: true };
-            if (completedArgs.length === 3 && FAMILY_ALIAS_SUBS.has(completedArgs[2] ?? "")) {
-                return { candidates: envVars, advances: false };
-            }
-            return { candidates: [], advances: false };
+        const hasScope = completedArgs[0] === "--scope";
+        if (hasScope && completedArgs.length === 1) {
+            return { candidates: ["session", "workspace"], advances: true };
         }
-        if (completedArgs.length === 0) {
-            return { candidates: FAMILY_SUBCOMMANDS.env, advances: true };
+        const effective = hasScope ? completedArgs.slice(2) : completedArgs;
+        if (effective.length === 0) {
+            return {
+                candidates: hasScope ? FAMILY_SUBCOMMANDS.env.filter((item) => item !== "--scope") : FAMILY_SUBCOMMANDS.env,
+                advances: true,
+            };
         }
-        if (completedArgs.length === 1 && FAMILY_ALIAS_SUBS.has(completedArgs[0] ?? "")) {
+        const envSub = effective[0] ?? "";
+        const prevTok = effective.at(-1) ?? "";
+        if (prevTok === "--state") return { candidates: FAMILY_LIST_STATES, advances: true };
+        if (prevTok === "--origin") return { candidates: FAMILY_LIST_ORIGINS, advances: true };
+        if (envSub === "list" || /^--(query|state|origin|offset|limit)\b/u.test(envSub)) {
+            return { candidates: FAMILY_LIST_FLAGS, advances: true };
+        }
+        if (envSub === "discover") {
+            return { candidates: FAMILY_DISCOVER_FLAGS.env, advances: true };
+        }
+        if (effective.length === 1 && FAMILY_ALIAS_SUBS.has(envSub)) {
             return { candidates: envVars, advances: false };
         }
         return { candidates: [], advances: false };
@@ -302,6 +328,15 @@ function resolveArgumentStage(cmd, completedArgs, sources) {
             return { candidates: FAMILY_SUBCOMMANDS[cmd], advances: true };
         }
         const sub = completedArgs[0] ?? "";
+        const prevTok = completedArgs.at(-1) ?? "";
+        if (prevTok === "--state") return { candidates: FAMILY_LIST_STATES, advances: true };
+        if (prevTok === "--origin") return { candidates: FAMILY_LIST_ORIGINS, advances: true };
+        if (sub === "list" || /^--(query|state|origin|offset|limit)\b/u.test(sub)) {
+            return { candidates: FAMILY_LIST_FLAGS, advances: true };
+        }
+        if (sub === "discover") {
+            return { candidates: FAMILY_DISCOVER_FLAGS[cmd], advances: true };
+        }
         const validAliasSub = ((sub !== "show" && sub !== "inspect") || cmd === "schedule")
             && (sub !== "replace" || cmd !== "members");
         if (completedArgs.length === 1 && FAMILY_ALIAS_SUBS.has(sub) && validAliasSub) {

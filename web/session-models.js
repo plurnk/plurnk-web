@@ -73,6 +73,29 @@ export async function listAliases(call, signal) {
 }
 
 /**
+ * Validate a `models.list` page while tolerating optional `providers` across contracts v9 and v10.
+ * @param {unknown} raw
+ * @param {(input: unknown) => ModelCatalogPage} assertPage
+ * @returns {{ readonly catalog: ModelCatalogPage, readonly providers: readonly string[] }}
+ */
+function parseModelCatalogResponse(raw, assertPage) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        return { catalog: assertPage(raw), providers: [] };
+    }
+    const rec = /** @type {Record<string, unknown>} */ (raw);
+    const providers = Array.isArray(rec.providers)
+        ? rec.providers.filter((entry) => typeof entry === "string" && entry.length > 0)
+        : [];
+    const core = {
+        items: rec.items,
+        offset: rec.offset,
+        total: rec.total,
+        ...(rec.nextOffset !== undefined ? { nextOffset: rec.nextOffset } : {}),
+    };
+    return { catalog: assertPage(core), providers };
+}
+
+/**
  * @param {Action} call
  * @param {string} [search]
  * @param {{
@@ -82,7 +105,7 @@ export async function listAliases(call, signal) {
  *   readonly availability?: "configured" | "all",
  *   readonly signal?: AbortSignal,
  * }} [options]
- * @returns {Promise<{ aliases: ModelAliasEntry[], catalog: ModelCatalogPage }>}
+ * @returns {Promise<{ aliases: ModelAliasEntry[], catalog: ModelCatalogPage, providers: readonly string[] }>}
  */
 export async function listModels(call, search = "", options = {}) {
     const { Validator } = await import("@plurnk/plurnk-contracts");
@@ -107,8 +130,8 @@ export async function listModels(call, search = "", options = {}) {
             || alias.alias.toLowerCase().includes(needle)
             || `${alias.provider}/${alias.model}`.toLowerCase().includes(needle);
     });
-    const catalog = Validator.assertModelCatalogPage(rawCatalog);
-    return { aliases, catalog };
+    const { catalog, providers } = parseModelCatalogResponse(rawCatalog, (v) => Validator.assertModelCatalogPage(v));
+    return { aliases, catalog, providers };
 }
 
 /**
@@ -252,10 +275,20 @@ export function createModelSearchCache(call) {
     const effortsBySelector = new Map();
     /** @type {Map<string, string>} */
     const aliasRouteByName = new Map();
+    /** @type {Set<string>} */
+    const knownProviders = new Set();
+
+    /** @param {readonly string[]} providers */
+    function recordProviders(providers) {
+        for (const provider of providers) {
+            if (provider) knownProviders.add(provider);
+        }
+    }
 
     /** @param {readonly ModelCatalogEntry[]} items */
     function recordCatalogItems(items) {
         for (const item of items) {
+            if (item.provider) knownProviders.add(item.provider);
             effortsBySelector.set(item.selector, {
                 efforts: item.capabilities.efforts,
                 defaultEffort: "",
@@ -278,6 +311,7 @@ export function createModelSearchCache(call) {
         cachedAliases = [...aliases];
         aliasRouteByName.clear();
         for (const alias of aliases) {
+            if (alias.provider) knownProviders.add(alias.provider);
             const route = `${alias.provider}/${alias.model}`;
             aliasRouteByName.set(alias.alias, route);
             const existing = effortsBySelector.get(alias.alias);
@@ -330,7 +364,8 @@ export function createModelSearchCache(call) {
             availability: "configured",
             limit,
         }, options.signal);
-        const page = Validator.assertModelCatalogPage(raw);
+        const { catalog: page, providers } = parseModelCatalogResponse(raw, (v) => Validator.assertModelCatalogPage(v));
+        recordProviders(providers);
         recordCatalogItems(page.items);
         if (catalogPages.size >= MODEL_SEARCH_CACHE_MAX) {
             const oldestKey = catalogPages.keys().next().value;
@@ -441,6 +476,8 @@ export function createModelSearchCache(call) {
         loadAliases,
         recordAliases,
         recordCatalogItems,
+        recordProviders,
+        getKnownProviders: () => [...knownProviders].toSorted(),
         seedEfforts,
         search,
         searchCached,

@@ -85,16 +85,17 @@ export function createWorkspaceSettingsController(article, getContext, {
     /**
      * @param {string} kind
      * @param {Record<string, unknown>} [params]
-     * @param {{ requireSession?: boolean }} [opts]
+     * @param {{ requireSession?: boolean, signal?: AbortSignal }} [opts]
      */
     async function invoke(kind, params = {}, opts = {}) {
         const ctx = getContext();
-        ctx.signal.throwIfAborted();
+        const combinedSignal = opts.signal ? AbortSignal.any([ctx.signal, opts.signal]) : ctx.signal;
+        combinedSignal.throwIfAborted();
         const sessionId = ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "";
         if (opts.requireSession && !sessionId) {
             throw new Error("Open a session tab to manage session-scoped settings.");
         }
-        return managementAction(kind, params, sessionId, ctx.signal, {
+        return managementAction(kind, params, sessionId, combinedSignal, {
             workspaceId: ctx.workspaceId,
         });
     }
@@ -164,9 +165,8 @@ export function createWorkspaceSettingsController(article, getContext, {
                 await familiesEnvController?.loadEnvSection();
                 return;
             }
-            const res = await invoke(`workspace.${section}.list`, {});
+            await familiesEnvController?.loadFamilySection(section);
             ctx.signal.throwIfAborted();
-            familiesEnvController?.renderFamilyList(section, res);
             if (section === "schedule" && schedulePanelController) {
                 void schedulePanelController.refreshAuxiliaryData();
             }
@@ -267,6 +267,7 @@ export function createWorkspaceSettingsController(article, getContext, {
                 },
                 runMutation,
                 setFeedback,
+                refreshList: () => familiesEnvController?.loadFamilySection("schedule") ?? Promise.resolve(),
             });
         }
 
@@ -280,6 +281,7 @@ export function createWorkspaceSettingsController(article, getContext, {
             envPanel,
             initialEnvScope,
             onRenderScheduleList: (res) => { schedulePanelController?.renderList(res); },
+            onRefreshSection: (section) => refreshSection(section),
             onRefreshEnv: () => refreshSection("env"),
         });
 
