@@ -1,0 +1,430 @@
+import { $, $$ } from "on_the_money";
+import managementAction from "./management-action.js";
+import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
+
+/**
+ * @typedef {{
+ *   readonly id: number,
+ *   readonly name: string,
+ *   readonly parentSessionId: number | null,
+ *   readonly parentName?: string | null,
+ *   readonly parentOrigin?: string | null,
+ *   readonly kind: "root" | "work" | "fork",
+ *   readonly lifecycle: string,
+ *   readonly gates: number,
+ *   readonly title?: string | null,
+ *   readonly replyId: number | null,
+ *   readonly archived: boolean,
+ * }} WorkbenchSession
+ */
+
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+export const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** @param {unknown} value @returns {"root" | "work" | "fork" | null} */
+export const asSessionKind = (value) => value === "root" || value === "work" || value === "fork" ? value : null;
+
+/** @param {WorkbenchSession} session @param {boolean} hasModelChildren */
+export function isUntouchedDraftWorkbenchSession(session, hasModelChildren) {
+    return session.parentSessionId === null
+        && session.kind === "root"
+        && session.lifecycle === "idle"
+        && session.replyId === null
+        && !(typeof session.title === "string" && session.title.trim() !== "")
+        && session.gates === 0
+        && !hasModelChildren;
+}
+
+/** @param {WorkbenchSession} session @param {string | null} selectedSession @param {boolean} isDraft */
+export function isVisibleInTabStrip(session, selectedSession, isDraft) {
+    if (session.name === selectedSession) return true;
+    if (session.archived || isDraft) return false;
+    if (session.parentSessionId === null || session.kind === "root" || session.kind === "fork") return true;
+    return ["queued", "running", "parked", "failed"].includes(session.lifecycle) || session.gates > 0;
+}
+
+/**
+ * {§web-workspace-tabs} Order unarchived model sessions by creation (`id ASC`) with children grouped immediately after their parent.
+ * @param {ReadonlyMap<number, WorkbenchSession>} sessionsById
+ * @returns {WorkbenchSession[]}
+ */
+export function computeOrderedUnarchived(sessionsById) {
+    const unarchived = [...sessionsById.values()]
+        .filter((entry) => {
+            if (entry.archived) return false;
+            const visited = new Set([entry.id]);
+            let cursor = entry;
+            while (cursor.parentSessionId !== null && cursor.parentSessionId !== 0) {
+                if (visited.has(cursor.parentSessionId)) return false;
+                visited.add(cursor.parentSessionId);
+                const parent = sessionsById.get(cursor.parentSessionId);
+                if (!parent) break;
+                if (parent.archived) return false;
+                cursor = parent;
+            }
+            return true;
+        })
+        .toSorted((a, b) => a.id - b.id);
+    const unarchivedIds = new Set(unarchived.map(({ id }) => id));
+    const childrenByParent = Map.groupBy(
+        unarchived,
+        (entry) => entry.parentSessionId !== null && unarchivedIds.has(entry.parentSessionId) ? entry.parentSessionId : null,
+    );
+    /** @type {WorkbenchSession[]} */
+    const ordered = [];
+    /** @param {number | null} parentId */
+    const visit = (parentId) => {
+        for (const entry of childrenByParent.get(parentId) ?? []) {
+            ordered.push(entry);
+            visit(entry.id);
+        }
+    };
+    visit(null);
+    return ordered;
+}
+
+/**
+ * {§web-directory-documents} Select the initial session when no `#<session>` fragment is provided.
+ * @param {readonly WorkbenchSession[]} allModelSessions
+ * @returns {WorkbenchSession | undefined}
+ */
+export function selectInitialWorkbenchSession(allModelSessions) {
+    const unarchivedModel = allModelSessions.filter(({ archived }) => !archived);
+    const childParents = new Set(unarchivedModel.flatMap(({ parentSessionId }) => parentSessionId === null ? [] : [parentSessionId]));
+    const withReplyShape = (/** @type {WorkbenchSession} */ entry) => ({
+        ...entry,
+        reply: entry.replyId !== null ? { id: entry.replyId } : null,
+    });
+    const unarchivedRoots = unarchivedModel
+        .filter(({ parentSessionId }) => parentSessionId === null)
+        .toSorted((a, b) => orderByReply(withReplyShape(a), withReplyShape(b)) || a.id - b.id);
+    const nonDraftRoots = unarchivedRoots.filter((entry) => !isUntouchedDraftSession(withReplyShape(entry), childParents.has(entry.id)));
+    const candidateRoots = nonDraftRoots.length > 0 ? nonDraftRoots : unarchivedRoots;
+    return candidateRoots.find(({ replyId }) => replyId !== null)
+        ?? candidateRoots.find(({ name }) => name === "session1")
+        ?? candidateRoots[0]
+        ?? unarchivedModel.toSorted((a, b) => orderByReply(withReplyShape(a), withReplyShape(b)) || a.id - b.id)[0]
+        ?? allModelSessions[0];
+}
+
+/**
+ * @param {ParentNode} listRoot
+ * @param {Map<number, WorkbenchSession>} sessionsById
+ * @param {Map<number, HTMLLIElement>} [tabRowsById]
+ */
+export function hydrateSessionsFromTabList(listRoot, sessionsById, tabRowsById) {
+    for (const item of $$(listRoot, ":scope > li[data-tab-id]")) {
+        if (!(item instanceof HTMLLIElement)) continue;
+        const idMatch = /^(\d+):(\d+)$/u.exec(item.dataset.tabId ?? "");
+        if (!idMatch) continue;
+        const id = Number(idMatch[2]);
+        tabRowsById?.set(id, item);
+        const link = $(item, "a[data-tab-session]");
+        const name = link instanceof HTMLElement ? (link.dataset.tabSession ?? String(id)) : String(id);
+        const rawParent = item.dataset.parentId;
+        const parentSessionId = rawParent && /^\d+$/u.test(rawParent) ? Number(rawParent) : null;
+        const parentName = item.dataset.parentName ?? null;
+        const parentOrigin = item.dataset.parentOrigin ?? null;
+        const kind = asSessionKind(item.dataset.sessionKind) ?? (parentSessionId === null ? "root" : "work");
+        const lifecycle = $(item, "[data-lifecycle]")?.getAttribute("data-lifecycle") ?? "idle";
+        const rawGates = $(item, "[data-session-gates]")?.getAttribute("data-session-gates");
+        const gates = rawGates && /^\d+$/u.test(rawGates) ? Number(rawGates) : 0;
+        const title = item.dataset.sessionTitle ?? null;
+        const rawReply = item.dataset.replyId;
+        const replyId = rawReply && /^\d+$/u.test(rawReply) ? Number(rawReply) : null;
+        const archived = item.dataset.archived === "true";
+        sessionsById.set(id, { id, name, parentSessionId, parentName, parentOrigin, kind, lifecycle, gates, title, replyId, archived });
+    }
+}
+
+/**
+ * @param {string | undefined} rawFolded
+ * @param {Map<number, WorkbenchSession>} sessionsById
+ */
+export function hydrateFoldedSessions(rawFolded, sessionsById) {
+    if (!rawFolded) return;
+    try {
+        const parsed = JSON.parse(rawFolded);
+        if (Array.isArray(parsed)) {
+            for (const raw of parsed) {
+                if (!isRecord(raw) || typeof raw.id !== "number" || typeof raw.name !== "string") continue;
+                const parentSessionId = typeof raw.parentSessionId === "number" ? raw.parentSessionId : null;
+                sessionsById.set(raw.id, {
+                    id: raw.id,
+                    name: raw.name,
+                    parentSessionId,
+                    parentName: typeof raw.parentName === "string" ? raw.parentName : null,
+                    parentOrigin: typeof raw.parentOrigin === "string" ? raw.parentOrigin : null,
+                    kind: asSessionKind(raw.kind) ?? (parentSessionId === null ? "root" : "work"),
+                    lifecycle: typeof raw.lifecycle === "string" ? raw.lifecycle : "idle",
+                    gates: typeof raw.gates === "number" ? raw.gates : 0,
+                    title: typeof raw.title === "string" ? raw.title : null,
+                    replyId: typeof raw.replyId === "number" ? raw.replyId : null,
+                    archived: raw.archived === true,
+                });
+            }
+        }
+    } catch { /* ignore malformed metadata */ }
+}
+
+/**
+ * {§web-directory-documents} Hydrate `sessionsById` from `/acp` (`session/list` + `workspace.sessions`) for `workspaceName`.
+ * @param {string} workspaceName
+ * @param {AbortSignal} signal
+ * @param {Map<number, WorkbenchSession>} sessionsById
+ */
+export async function loadWorkbenchSessionsFromAcp(workspaceName, signal, sessionsById) {
+    const [overviewRes, sessionsRes] = await Promise.all([
+        managementAction("session/list", {
+            archived: "include",
+            _meta: { plurnk: { workspaceName, limit: 1000 } },
+        }, "", signal),
+        managementAction("workspace.sessions", {
+            workspace: workspaceName,
+            includeArchived: true,
+        }, "", signal, { workspace: workspaceName }),
+    ]);
+
+    /** @type {Map<number, { kind?: string, gates: number, title?: string, replyId: number | null }>} */
+    const overviewById = new Map();
+    const rawOverviewSessions = isRecord(overviewRes) && Array.isArray(overviewRes.sessions) ? overviewRes.sessions : [];
+    for (const item of rawOverviewSessions) {
+        if (!isRecord(item)) continue;
+        const meta = isRecord(item._meta) && isRecord(item._meta.plurnk) ? item._meta.plurnk : null;
+        if (!meta || typeof meta.id !== "number") continue;
+        const replyId = isRecord(meta.reply) && typeof meta.reply.id === "number" ? meta.reply.id : null;
+        overviewById.set(meta.id, {
+            ...(typeof meta.kind === "string" ? { kind: meta.kind } : {}),
+            gates: typeof meta.gates === "number" ? meta.gates : 0,
+            ...(typeof meta.title === "string" ? { title: meta.title } : {}),
+            replyId,
+        });
+    }
+
+    const rawRows = isRecord(sessionsRes) && Array.isArray(sessionsRes.sessions) ? sessionsRes.sessions : [];
+    /** @type {Map<number, Record<string, unknown>>} */
+    const rawById = new Map();
+    for (const row of rawRows) {
+        if (isRecord(row) && typeof row.id === "number") rawById.set(row.id, row);
+    }
+
+    sessionsById.clear();
+    for (const row of rawRows) {
+        if (!isRecord(row) || typeof row.id !== "number" || typeof row.name !== "string") continue;
+        if (row.origin !== "model") continue;
+        const info = overviewById.get(row.id);
+        const parentSessionId = typeof row.parentSessionId === "number" ? row.parentSessionId : null;
+        const parentRow = parentSessionId !== null ? rawById.get(parentSessionId) : undefined;
+        const resolvedTitle = typeof info?.title === "string" && info.title.trim() !== ""
+            ? info.title.trim()
+            : typeof row.title === "string" && row.title.trim() !== ""
+                ? row.title.trim()
+                : null;
+        const isArchived = row.archivedAt !== null && row.archivedAt !== undefined;
+        sessionsById.set(row.id, {
+            id: row.id,
+            name: row.name,
+            parentSessionId,
+            parentName: typeof parentRow?.name === "string" ? parentRow.name : null,
+            parentOrigin: typeof parentRow?.origin === "string" ? parentRow.origin : null,
+            kind: asSessionKind(info?.kind ?? row.kind) ?? (parentSessionId === null ? "root" : "work"),
+            lifecycle: typeof row.lifecycle === "string" ? row.lifecycle : "idle",
+            gates: info?.gates ?? 0,
+            title: resolvedTitle,
+            replyId: info?.replyId ?? null,
+            archived: isArchived,
+        });
+    }
+}
+
+/**
+ * {§web-workspace-tabs} Apply a live `/notifications/<workspace>` SSE event to `sessionsById` and workspace metadata.
+ * @param {unknown} raw
+ * @param {{
+ *   readonly workspaceId: number,
+ *   readonly sessionsById: Map<number, WorkbenchSession>,
+ *   readonly onWorkspaceRenamed: (name: string) => void,
+ *   readonly onWorkspaceMetaFromSession: (meta: { workspaceName?: string, projectRoot?: string | null, projectLabel?: string | null }) => void,
+ *   readonly onSessionDeleted: (id: number, existing: WorkbenchSession | undefined) => void,
+ *   readonly onReconcileTabs: () => void,
+ *   readonly onSyncHeaderPlace: () => void,
+ *   readonly onResync: () => void,
+ * }} ctx
+ */
+export function applyWorkbenchNotification(raw, ctx) {
+    if (!isRecord(raw) || typeof raw.event !== "string" || !isRecord(raw.data)) return;
+    const { event, data } = raw;
+    const notifWorkspaceId = typeof raw.workspaceId === "number" ? raw.workspaceId : null;
+    const notifSessionId = typeof raw.sessionId === "number" ? raw.sessionId : null;
+    const { workspaceId, sessionsById } = ctx;
+
+    switch (event) {
+        case "workspace/renamed": {
+            const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
+            const name = typeof data.name === "string" ? data.name : null;
+            if (id !== workspaceId || name === null) return;
+            ctx.onWorkspaceRenamed(name);
+            ctx.onReconcileTabs();
+            return;
+        }
+        case "session/created": {
+            const id = typeof data.id === "number" ? data.id : notifSessionId;
+            const wsId = typeof data.workspaceId === "number" ? data.workspaceId : notifWorkspaceId;
+            if (id === null || wsId !== workspaceId || typeof data.name !== "string") return;
+            ctx.onWorkspaceMetaFromSession({
+                ...(typeof data.workspaceName === "string" ? { workspaceName: data.workspaceName } : {}),
+                ...(typeof data.projectRoot === "string" || data.projectRoot === null ? { projectRoot: data.projectRoot } : {}),
+                ...(typeof data.projectLabel === "string" || data.projectLabel === null ? { projectLabel: data.projectLabel } : {}),
+            });
+            if (data.origin !== "model") return;
+            const parentSessionId = typeof data.parentSessionId === "number" ? data.parentSessionId : null;
+            const kind = asSessionKind(data.kind) ?? (parentSessionId === null ? "root" : "work");
+            const lifecycle = typeof data.lifecycle === "string" ? data.lifecycle : "idle";
+            const title = typeof data.title === "string" && data.title.trim() !== "" ? data.title.trim() : null;
+            sessionsById.set(id, {
+                id,
+                name: data.name,
+                parentSessionId,
+                kind,
+                lifecycle,
+                gates: 0,
+                title,
+                replyId: null,
+                archived: false,
+            });
+            ctx.onReconcileTabs();
+            return;
+        }
+        case "session/titled": {
+            if (notifWorkspaceId !== workspaceId) return;
+            const sid = typeof data.id === "number" ? data.id : notifSessionId;
+            if (sid === null) return;
+            const cur = sessionsById.get(sid);
+            if (!cur) return;
+            const nextTitle = typeof data.title === "string" && data.title.trim() !== "" ? data.title.trim() : null;
+            if ((cur.title ?? null) === nextTitle) return;
+            sessionsById.set(sid, { ...cur, title: nextTitle });
+            ctx.onReconcileTabs();
+            ctx.onSyncHeaderPlace();
+            return;
+        }
+        case "session/archived": {
+            if (notifWorkspaceId !== workspaceId) return;
+            const isArchived = data.archivedAt !== null && data.archivedAt !== undefined;
+            const ids = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
+            let changed = false;
+            for (const sid of ids) {
+                if (typeof sid !== "number") continue;
+                const cur = sessionsById.get(sid);
+                if (cur && cur.archived !== isArchived) {
+                    sessionsById.set(sid, { ...cur, archived: isArchived });
+                    changed = true;
+                }
+            }
+            if (changed) ctx.onReconcileTabs();
+            return;
+        }
+        case "session/deleted": {
+            if (notifWorkspaceId !== workspaceId) return;
+            const ids = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
+            let changed = false;
+            for (const sid of ids) {
+                if (typeof sid !== "number") continue;
+                const existing = sessionsById.get(sid);
+                ctx.onSessionDeleted(sid, existing);
+                if (sessionsById.delete(sid)) {
+                    changed = true;
+                }
+            }
+            if (changed) ctx.onReconcileTabs();
+            return;
+        }
+        case "loop/proposal":
+        case "loop/interaction": {
+            if (notifWorkspaceId !== workspaceId || notifSessionId === null) return;
+            if (event === "loop/proposal" && isRecord(data.disposition) && data.disposition.decision !== "review") return;
+            const cur = sessionsById.get(notifSessionId);
+            if (!cur) return;
+            sessionsById.set(notifSessionId, { ...cur, lifecycle: "running", gates: cur.gates + 1 });
+            ctx.onReconcileTabs();
+            return;
+        }
+        case "loop/gate-settled": {
+            if (notifWorkspaceId !== workspaceId) return;
+            const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+            if (sid === null) return;
+            const cur = sessionsById.get(sid);
+            if (!cur || cur.gates <= 0) return;
+            sessionsById.set(sid, { ...cur, gates: Math.max(0, cur.gates - 1) });
+            ctx.onReconcileTabs();
+            return;
+        }
+        case "notifications/resync": {
+            ctx.onResync();
+            return;
+        }
+        case "log/entry": {
+            const entry = isRecord(data.entry) ? data.entry : null;
+            if (!entry || notifWorkspaceId !== workspaceId) return;
+            const sid = typeof entry.sessionId === "number" ? entry.sessionId : notifSessionId;
+            if (sid === null) return;
+            const cur = sessionsById.get(sid);
+            if (!cur) return;
+            let nextReplyId = cur.replyId;
+            let nextLifecycle = cur.lifecycle;
+            if (
+                entry.origin === "model"
+                && entry.state === "resolved"
+                && (typeof entry.statusRx !== "number" || entry.statusRx < 400)
+                && (entry.op === "send" || entry.op === "done" || entry.op === "fail")
+                && typeof entry.id === "number"
+            ) {
+                const rxCompletion = isRecord(entry.rx) && (entry.rx.completion === 200 || entry.rx.completion === 499)
+                    ? entry.rx.completion
+                    : (Array.isArray(entry.repliedToSources) && entry.repliedToSources.length > 0 ? 200 : null);
+                if (rxCompletion !== null) nextReplyId = entry.id;
+            }
+            if (entry.state !== "proposed" && entry.op !== "done" && entry.op !== "fail" && entry.op !== "wait") {
+                nextLifecycle = "running";
+            }
+            if (nextReplyId !== cur.replyId || nextLifecycle !== cur.lifecycle) {
+                sessionsById.set(sid, { ...cur, replyId: nextReplyId, lifecycle: nextLifecycle });
+                ctx.onReconcileTabs();
+            }
+            return;
+        }
+        case "loop/started":
+        case "loop/parked": {
+            if (notifWorkspaceId !== workspaceId) return;
+            const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+            if (sid === null) return;
+            const cur = sessionsById.get(sid);
+            if (!cur) return;
+            const lifecycle = event === "loop/parked" ? "parked" : "running";
+            if (cur.lifecycle !== lifecycle) {
+                sessionsById.set(sid, { ...cur, lifecycle });
+                ctx.onReconcileTabs();
+            }
+            return;
+        }
+        case "loop/terminated": {
+            if (notifWorkspaceId !== workspaceId) return;
+            const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+            if (sid === null) return;
+            const cur = sessionsById.get(sid);
+            if (!cur) return;
+            const status = isRecord(data.result) && typeof data.result.status === "number" ? data.result.status : 200;
+            const lifecycle = status === 200 ? "completed"
+                : status === 202 ? "parked"
+                    : status === 499 ? "cancelled"
+                        : status >= 400 ? "failed" : "completed";
+            if (cur.lifecycle !== lifecycle || cur.gates !== 0) {
+                sessionsById.set(sid, { ...cur, lifecycle, gates: 0 });
+                ctx.onReconcileTabs();
+            }
+            return;
+        }
+        default:
+            return;
+    }
+}

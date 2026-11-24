@@ -3,39 +3,55 @@ import { $, $$, on } from "on_the_money";
 const MODEL_SEARCH_DEBOUNCE_MS = 100;
 let comboboxCounter = 0;
 
+/**
+ * @typedef {{
+ *   readonly value: string,
+ *   readonly primary: string,
+ *   readonly secondary: string,
+ *   readonly kind?: string,
+ * }} ComboboxItem
+ */
+
 /** @typedef {import("./session-models.js").ModelChoice} ModelChoice */
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
 
 /**
- * {§web-workspace-settings} {§web-session-commands} Reusable ARIA combobox searching aliases + configured catalog.
+ * {§web-workspace-settings} {§web-session-commands} Shared ARIA combobox primitive over `#model-combobox-option` / `#model-combobox-hint`.
+ * @template {ComboboxItem} T
  * @param {HTMLElement} container
  * @param {{
- *   getCache: () => ModelSearchCache | null,
- *   includeInherit?: boolean,
- *   inline?: boolean,
- *   onSelect?: (value: string, choice?: ModelChoice) => void,
- *   onInput?: (value: string) => void,
- *   signal?: AbortSignal,
+ *   readonly idPrefix?: string,
+ *   readonly defaultKind?: string,
+ *   readonly inline?: boolean,
+ *   readonly errorMessage?: string,
+ *   readonly onQuery: (query: string, opts: { readonly immediate: boolean, readonly render: (items: readonly T[], hint?: string) => void }) => void,
+ *   readonly onSelect?: (value: string, choice?: T) => void,
+ *   readonly onInput?: (value: string) => void,
+ *   readonly onClose?: () => void,
+ *   readonly onDispose?: () => void,
  * }} options
  */
-export function attachModelCombobox(container, {
-    getCache,
-    includeInherit = false,
+export function attachCombobox(container, {
+    idPrefix = "combobox-list",
+    defaultKind = "catalog",
     inline = false,
+    errorMessage = "Combobox markup is incomplete.",
+    onQuery,
     onSelect,
     onInput,
-    signal,
+    onClose,
+    onDispose,
 }) {
     const rawInput = $(container, 'input[role="combobox"]');
     const rawList = $(container, '[role="listbox"][data-combobox-list]');
     if (!(rawInput instanceof HTMLInputElement) || !(rawList instanceof HTMLUListElement)) {
-        throw new Error("Model combobox markup is incomplete.");
+        throw new Error(errorMessage);
     }
     const input = rawInput;
     const list = rawList;
     if (!list.id) {
         comboboxCounter += 1;
-        list.id = `model-combobox-list-${comboboxCounter}`;
+        list.id = `${idPrefix}-${comboboxCounter}`;
     }
     input.setAttribute("aria-controls", list.id);
 
@@ -43,25 +59,9 @@ export function attachModelCombobox(container, {
     let suppressOpen = false;
     let committedValue = input.value.trim();
     let activeIndex = -1;
-    /** @type {ModelChoice[]} */
+    /** @type {T[]} */
     let currentItems = [];
-    /** @type {ReturnType<typeof setTimeout> | null} */
-    let debounceTimer = null;
-    /** @type {AbortController | null} */
-    let activeLookup = null;
     let disposed = false;
-
-    function clearTimer() {
-        if (debounceTimer !== null) {
-            clearTimeout(debounceTimer);
-            debounceTimer = null;
-        }
-    }
-
-    function abortLookup() {
-        activeLookup?.abort();
-        activeLookup = null;
-    }
 
     /** @param {number} index */
     function setActiveIndex(index) {
@@ -70,8 +70,7 @@ export function attachModelCombobox(container, {
             input.removeAttribute("aria-activedescendant");
             return;
         }
-        const bounded = ((index % currentItems.length) + currentItems.length) % currentItems.length;
-        activeIndex = bounded;
+        activeIndex = ((index % currentItems.length) + currentItems.length) % currentItems.length;
         const rows = $$(list, '[role="option"]');
         let activeId = "";
         for (let i = 0; i < rows.length; i += 1) {
@@ -89,15 +88,16 @@ export function attachModelCombobox(container, {
     }
 
     /**
-     * @param {readonly ModelChoice[]} items
-     * @param {{ readonly total?: number, readonly hasMore?: boolean, readonly loading?: boolean, readonly query?: string }} [meta]
+     * @param {readonly T[]} items
+     * @param {string} [hintText]
      */
-    function render(items, meta = {}) {
+    function renderItems(items, hintText) {
+        if (disposed) return;
         currentItems = [...items];
         $.cloneEach(list, "#model-combobox-option", currentItems, (li, choice, index) => {
             li.id = `${list.id}-opt-${index}`;
             li.setAttribute("data-combobox-option", choice.value);
-            li.setAttribute("data-combobox-kind", choice.kind);
+            li.setAttribute("data-combobox-kind", choice.kind ?? defaultKind);
             li.setAttribute("aria-selected", "false");
             const primaryEl = $(li, "[data-combobox-primary]");
             const secondaryEl = $(li, "[data-combobox-secondary]");
@@ -107,19 +107,10 @@ export function attachModelCombobox(container, {
                 if (secondaryEl instanceof HTMLElement) secondaryEl.hidden = choice.secondary.length === 0;
             }
         });
-
-        if (currentItems.length === 0) {
+        if (hintText) {
             const hint = $.clone(list, "#model-combobox-hint");
-            if (hint) {
-                hint.textContent = meta.loading ? "Searching models…" : "No matching configured models.";
-            }
-        } else if (meta.hasMore && typeof meta.total === "number" && meta.total > 0) {
-            const hint = $.clone(list, "#model-combobox-hint");
-            if (hint) {
-                hint.textContent = `Showing matches from ${meta.total} configured models — type to narrow.`;
-            }
+            if (hint) hint.textContent = hintText;
         }
-
         const currentIdx = committedValue
             ? currentItems.findIndex((item) => item.value === committedValue)
             : -1;
@@ -141,58 +132,19 @@ export function attachModelCombobox(container, {
         container.dataset.comboboxOpen = "false";
         input.setAttribute("aria-expanded", "false");
         input.removeAttribute("aria-activedescendant");
-        clearTimer();
-        abortLookup();
+        onClose?.();
     }
 
     /**
      * @param {string} query
-     * @param {{ readonly immediate?: boolean }} [opts]
+     * @param {boolean} immediate
      */
-    function triggerSearch(query, opts = {}) {
+    function requestQuery(query, immediate) {
         if (disposed) return;
-        const cache = getCache();
-        if (!cache) return;
-        const cached = cache.searchCached(query, { includeInherit });
-        render(cached, { loading: cached.length === 0, query });
-
-        const run = async () => {
-            abortLookup();
-            const controller = new AbortController();
-            activeLookup = controller;
-            const lookupSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-            try {
-                const result = await cache.search(query, {
-                    includeInherit,
-                    limit: 50,
-                    signal: lookupSignal,
-                });
-                if (disposed || controller.signal.aborted || !open) return;
-                render(result.items, {
-                    total: result.total,
-                    hasMore: result.hasMore,
-                    loading: false,
-                    query,
-                });
-            } catch {
-                if (controller.signal.aborted || disposed) return;
-            } finally {
-                if (activeLookup === controller) activeLookup = null;
-            }
-        };
-
-        clearTimer();
-        if (opts.immediate) {
-            void run();
-        } else {
-            debounceTimer = setTimeout(() => {
-                debounceTimer = null;
-                void run();
-            }, MODEL_SEARCH_DEBOUNCE_MS);
-        }
+        onQuery(query, { immediate, render: renderItems });
     }
 
-    /** @param {ModelChoice} choice */
+    /** @param {T} choice */
     function selectChoice(choice) {
         committedValue = choice.value;
         input.value = choice.value;
@@ -215,22 +167,20 @@ export function attachModelCombobox(container, {
         if (input.disabled || suppressOpen) return;
         openList();
         const trimmed = input.value.trim();
-        const query = trimmed === committedValue ? "" : trimmed;
-        triggerSearch(query, { immediate: true });
+        requestQuery(trimmed === committedValue ? "" : trimmed, true);
     });
 
     const offClickInput = on(container, "click", 'input[role="combobox"]', () => {
         if (input.disabled || open || suppressOpen) return;
         openList();
         const trimmed = input.value.trim();
-        const query = trimmed === committedValue ? "" : trimmed;
-        triggerSearch(query, { immediate: true });
+        requestQuery(trimmed === committedValue ? "" : trimmed, true);
     });
 
     const offInput = on(container, "input", 'input[role="combobox"]', () => {
         const value = input.value;
         if (!open) openList();
-        triggerSearch(value, { immediate: value.trim() === "" });
+        requestQuery(value, value.trim() === "");
         onInput?.(value.trim());
     });
 
@@ -241,7 +191,7 @@ export function attachModelCombobox(container, {
             if (!open) {
                 openList();
                 const trimmed = input.value.trim();
-                triggerSearch(trimmed === committedValue ? "" : trimmed, { immediate: true });
+                requestQuery(trimmed === committedValue ? "" : trimmed, true);
             } else {
                 setActiveIndex(activeIndex + 1);
             }
@@ -252,7 +202,7 @@ export function attachModelCombobox(container, {
             if (!open) {
                 openList();
                 const trimmed = input.value.trim();
-                triggerSearch(trimmed === committedValue ? "" : trimmed, { immediate: true });
+                requestQuery(trimmed === committedValue ? "" : trimmed, true);
             } else {
                 setActiveIndex(activeIndex - 1);
             }
@@ -333,20 +283,19 @@ export function attachModelCombobox(container, {
         getValue: () => input.value.trim(),
         open: () => {
             openList();
-            triggerSearch("", { immediate: true });
+            requestQuery("", true);
         },
         close: closeList,
         isOpen: () => open,
         refresh: () => {
             if (open) {
                 const trimmed = input.value.trim();
-                triggerSearch(trimmed === committedValue ? "" : trimmed, { immediate: true });
+                requestQuery(trimmed === committedValue ? "" : trimmed, true);
             }
         },
         dispose() {
             disposed = true;
-            clearTimer();
-            abortLookup();
+            onDispose?.();
             offFocus();
             offClickInput();
             offInput();
@@ -357,4 +306,173 @@ export function attachModelCombobox(container, {
             offOutsidePointer();
         },
     };
+}
+
+/**
+ * {§web-workspace-settings} Synchronous ARIA listbox combobox over a dynamic choice supplier.
+ * @template {ComboboxItem} T
+ * @param {HTMLElement} container
+ * @param {{
+ *   readonly getChoices: (query: string) => readonly T[],
+ *   readonly emptyHint: string,
+ *   readonly defaultKind?: string,
+ *   readonly onSelect?: (value: string, choice?: T) => void,
+ *   readonly onInput?: (value: string) => void,
+ * }} options
+ */
+export function attachListCombobox(container, {
+    getChoices,
+    emptyHint,
+    defaultKind = "tool",
+    onSelect,
+    onInput,
+}) {
+    return attachCombobox(container, {
+        idPrefix: "schedule-combobox-list",
+        defaultKind,
+        errorMessage: "Schedule combobox markup is incomplete.",
+        onSelect,
+        onInput,
+        onQuery(query, { render }) {
+            const needle = query.trim().toLowerCase();
+            const all = getChoices(query);
+            const matched = needle
+                ? [
+                    ...all.filter((c) => c.value.toLowerCase().startsWith(needle) || c.primary.toLowerCase().startsWith(needle)),
+                    ...all.filter((c) =>
+                        !c.value.toLowerCase().startsWith(needle)
+                        && !c.primary.toLowerCase().startsWith(needle)
+                        && (c.value.toLowerCase().includes(needle)
+                            || c.primary.toLowerCase().includes(needle)
+                            || c.secondary.toLowerCase().includes(needle))),
+                ]
+                : [...all];
+            render(matched, matched.length === 0 ? emptyHint : undefined);
+        },
+    });
+}
+
+/**
+ * {§web-workspace-settings} {§web-session-commands} Live-search ARIA combobox across declared aliases and `models.list` catalog.
+ * @param {HTMLElement} container
+ * @param {{
+ *   readonly getCache: () => ModelSearchCache | null,
+ *   readonly includeInherit?: boolean,
+ *   readonly inline?: boolean,
+ *   readonly onSelect?: (value: string, choice?: ModelChoice) => void,
+ *   readonly onInput?: (value: string) => void,
+ *   readonly signal?: AbortSignal,
+ * }} options
+ */
+export function attachModelCombobox(container, {
+    getCache,
+    includeInherit = false,
+    inline = false,
+    onSelect,
+    onInput,
+    signal,
+}) {
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let debounceTimer = null;
+    /** @type {AbortController | null} */
+    let activeLookup = null;
+    /** @type {ReturnType<typeof attachCombobox<ModelChoice>> | null} */
+    let instance = null;
+
+    const clearTimer = () => {
+        if (debounceTimer !== null) {
+            clearTimeout(debounceTimer);
+            debounceTimer = null;
+        }
+    };
+
+    const abortLookup = () => {
+        activeLookup?.abort();
+        activeLookup = null;
+    };
+
+    instance = attachCombobox(container, {
+        idPrefix: "model-combobox-list",
+        defaultKind: "catalog",
+        inline,
+        errorMessage: "Model combobox markup is incomplete.",
+        onSelect,
+        onInput,
+        onClose() {
+            clearTimer();
+            abortLookup();
+        },
+        onDispose() {
+            clearTimer();
+            abortLookup();
+        },
+        onQuery(query, { immediate, render }) {
+            const cache = getCache();
+            if (!cache) return;
+            const cached = cache.searchCached(query, { includeInherit });
+            render(cached, cached.length === 0 ? "Searching models…" : undefined);
+
+            const run = async () => {
+                abortLookup();
+                const controller = new AbortController();
+                activeLookup = controller;
+                const lookupSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+                try {
+                    const result = await cache.search(query, {
+                        includeInherit,
+                        limit: 50,
+                        signal: lookupSignal,
+                    });
+                    if (controller.signal.aborted || !instance?.isOpen()) return;
+                    const hint = result.items.length === 0
+                        ? "No matching configured models."
+                        : (result.hasMore && typeof result.total === "number" && result.total > 0
+                            ? `Showing matches from ${result.total} configured models — type to narrow.`
+                            : undefined);
+                    render(result.items, hint);
+                } catch {
+                    if (controller.signal.aborted) return;
+                } finally {
+                    if (activeLookup === controller) activeLookup = null;
+                }
+            };
+
+            clearTimer();
+            if (immediate) {
+                void run();
+            } else {
+                debounceTimer = setTimeout(() => {
+                    debounceTimer = null;
+                    void run();
+                }, MODEL_SEARCH_DEBOUNCE_MS);
+            }
+        },
+    });
+    return instance;
+}
+
+/**
+ * {§web-search} Populate a native `<datalist>` from unique candidate strings without DOM string injection.
+ * @param {HTMLDataListElement | null} datalist
+ * @param {Iterable<string>} terms
+ * @param {{ readonly limit?: number }} [options]
+ */
+export function populateDatalist(datalist, terms, { limit = 100 } = {}) {
+    if (!(datalist instanceof HTMLDataListElement)) return;
+    /** @type {string[]} */
+    const unique = [];
+    /** @type {Set<string>} */
+    const seen = new Set();
+    for (const raw of terms) {
+        if (!raw || seen.has(raw)) continue;
+        seen.add(raw);
+        unique.push(raw);
+        if (unique.length >= limit) break;
+    }
+    $.cloneEach(datalist, "#search-suggestion-option", unique, (opt, term) => {
+        if (opt instanceof HTMLOptionElement) {
+            opt.value = term;
+            opt.setAttribute("value", term);
+        }
+    });
 }

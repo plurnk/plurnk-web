@@ -7,41 +7,44 @@ import {
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
 import { createWebSocketStream } from "@agentclientprotocol/sdk/experimental/ws-client";
+import { acpUrl, recordServiceVersion } from "./endpoints.js";
+import {
+    SessionOutcomeQueue,
+    awaitRequestOrInterrupt,
+    executeGateResolutions,
+} from "./session-agent-runs.js";
+import { SessionUpdateTracker } from "./session-agent-updates.js";
+import {
+    buildElicitationGate,
+    buildPermissionGate,
+} from "./session-gates.js";
+import {
+    buildMonitoredWebSocketConfig,
+    buildPromptBlocks,
+    executeAgentAction,
+    normalizeSessionRunError,
+    probeWebSocketAuthFailure,
+} from "./session-rpc.js";
 import {
     SessionTranslator,
     isRecord,
     randomUUID,
 } from "./session-translator.js";
 import {
-    SessionGateBook,
-    buildElicitationGate,
-    buildPermissionGate,
-    gateSessionKey,
-    syncDescendantGatesInState,
-} from "./session-gates.js";
-import {
-    applyAvailableCommandsUpdate,
-    applyConfigOptionUpdate,
-    applyLifecycleStateUpdate,
-    applyNoticeStateUpdate,
-    applyPromptSuggestionsUpdate,
-    applyResponseState,
-    applySubagentState,
-    applyTerminalStreamUpdate,
-    applyUsageUpdate,
-} from "./session-state-projection.js";
-import { acpUrl, recordServiceVersion } from "./endpoints.js";
-import { withAccessTokenQuery } from "./oidc.js";
-import {
     createAcpFetch,
-    extractRpcFailure,
-    extractTerminalFailure,
     resolveAcpUrl,
 } from "./session-transport.js";
 
-export { PROTOCOL_VERSION, SessionTranslator, client, createHttpStream, createWebSocketStream, methods, randomUUID };
-
-const GATE_COALESCE_MS = 10;
+export {
+    PROTOCOL_VERSION,
+    SessionTranslator,
+    buildPromptBlocks,
+    client,
+    createHttpStream,
+    createWebSocketStream,
+    methods,
+    randomUUID,
+};
 
 /** @typedef {import("./session-translator.js").ToolCall} ToolCall */
 /** @typedef {import("./session-translator.js").MessagePart} MessagePart */
@@ -55,27 +58,8 @@ const GATE_COALESCE_MS = 10;
 /** @typedef {import("./session-gates.js").GateResolution} GateResolution */
 /** @typedef {import("./session-transport.js").SessionErrorPayload} SessionErrorPayload */
 /** @typedef {import("./session-transport.js").LiveOutcome} LiveOutcome */
-
-/**
- * @typedef {{
- *   onSessionUpdate?: (args: { update: AcpSessionUpdatePayload, sessionId: string }) => void | Promise<void>,
- *   onThoughtChunk?: (args: { update: AcpSessionUpdatePayload }) => void | Promise<void>,
- *   onMessagesChanged?: (args: { messages: Message[] }) => void | Promise<void>,
- *   onMessagesSnapshot?: (args: { snapshot: MessagesSnapshot }) => void | Promise<void>,
- *   onUserMessage?: (args: { messageId: string }) => void | Promise<void>,
- *   onStateChanged?: (args: { state: Record<string, unknown> }) => void | Promise<void>,
- *   onSettled?: (args: { stopReason: string, meta?: Record<string, unknown>, result?: unknown }) => void | Promise<void>,
- *   onError?: (args: SessionErrorPayload) => void | Promise<void>,
- * }} SessionSubscriber
- */
-
-/**
- * @typedef {{
- *   name: string,
- *   mimeType: string,
- *   data: string,
- * }} PromptImageAttachment
- */
+/** @typedef {import("./session-agent-updates.js").PromptImageAttachment} PromptImageAttachment */
+/** @typedef {import("./session-agent-updates.js").SessionSubscriber} SessionSubscriber */
 
 /**
  * @typedef {{
@@ -91,49 +75,7 @@ const GATE_COALESCE_MS = 10;
  * }} SessionRunOptions
  */
 
-/**
- * {§web-session-input} Split inline `$<name>` references matching advertised `type: "skill"` commands into ACP `skill` content blocks.
- * @param {string} promptText
- * @param {readonly unknown[]} [availableCommands]
- * @returns {import("@agentclientprotocol/sdk/experimental/v2/unstable").ContentBlock[]}
- */
-export function buildPromptBlocks(promptText, availableCommands = []) {
-    const skillNames = new Set(
-        availableCommands
-            .filter((cmd) => isRecord(cmd) && cmd.type === "skill" && typeof cmd.name === "string" && cmd.name.length > 0)
-            .map((cmd) => /** @type {string} */ (Reflect.get(Object(cmd), "name"))),
-    );
-    if (skillNames.size === 0 || !promptText.includes("$")) {
-        return [{ type: "text", text: promptText }];
-    }
-    /** @type {import("@agentclientprotocol/sdk/experimental/v2/unstable").ContentBlock[]} */
-    const blocks = [];
-    let cursor = 0;
-    const tokenPattern = /(?<=^|[\s([{,])\$([^\s,;:!?)\]}]+)/gu;
-    for (const match of promptText.matchAll(tokenPattern)) {
-        const rawBody = match[1] ?? "";
-        const dollarIndex = match.index ?? 0;
-        let candidate = rawBody;
-        while (candidate.length > 0 && !skillNames.has(candidate) && candidate.endsWith(".")) {
-            candidate = candidate.slice(0, -1);
-        }
-        if (!skillNames.has(candidate)) {
-            continue;
-        }
-        if (dollarIndex > cursor) {
-            blocks.push({ type: "text", text: promptText.slice(cursor, dollarIndex) });
-        }
-        blocks.push({ type: "skill", name: candidate });
-        cursor = dollarIndex + 1 + candidate.length;
-    }
-    if (blocks.length === 0) {
-        return [{ type: "text", text: promptText }];
-    }
-    if (cursor < promptText.length) {
-        blocks.push({ type: "text", text: promptText.slice(cursor) });
-    }
-    return blocks;
-}
+const CLIENT_INFO = Object.freeze({ name: "@plurnk/plurnk-web", version: "4.0.0" });
 
 /** {§web-session-observer} {§web-session-reasoning} Official ACP v2 client over `/acp`. */
 export default class SessionAgent {
@@ -147,36 +89,20 @@ export default class SessionAgent {
     #notificationChain = Promise.resolve();
     /** @type {SessionSubscriber} */
     #subscriber = {};
-    /** @type {boolean} */
-    #replaying = false;
-    /** @type {boolean} */
-    #resuming = false;
-    /** @type {AcpSessionUpdatePayload[]} */
-    #replayUpdates = [];
-    /** @type {AcpSessionUpdatePayload[]} */
-    #postReplayUpdates = [];
-    /** @type {Set<string>} */
-    #ambientCallIds = new Set();
     /** @type {AbortController | undefined} */
     #activeController = undefined;
-    /** @type {SessionGateBook} */
-    #gates = new SessionGateBook();
+    /** @type {SessionUpdateTracker} */
+    #updates;
+    /** @type {SessionOutcomeQueue} */
+    #outcomes = new SessionOutcomeQueue();
     /** @type {number} */
     #inFlightPostCount = 0;
     /** @type {Promise<void>} */
     #outboundPostChain = Promise.resolve();
-    /** @type {((outcome: LiveOutcome) => void) | undefined} */
-    #onLiveOutcome = undefined;
-    /** @type {LiveOutcome | undefined} */
-    #queuedLiveOutcome = undefined;
     /** @type {Promise<{ result: unknown, meta?: Record<string, unknown> }> | undefined} */
     #inFlightRequest = undefined;
     /** @type {SessionErrorPayload | undefined} */
     #streamProblem = undefined;
-    /** @type {{ messageId: string, body: Record<string, unknown> } | undefined} */
-    #pendingLiveThought = undefined;
-    /** @type {{ id: string, content: string, attachments?: readonly PromptImageAttachment[] } | undefined} */
-    #submittedPrompt = undefined;
     /** @type {boolean} */
     #needsConnectionSse = false;
     /** @type {string} */
@@ -217,6 +143,23 @@ export default class SessionAgent {
         /** @type {string | null} */
         this.serviceVersion = null;
         this.#fetch = config.fetch ?? ((url, init) => globalThis.fetch(url, init));
+        this.#updates = new SessionUpdateTracker({
+            getState: () => this.state,
+            setState: (next) => { this.state = next; },
+            getMessages: () => this.messages,
+            setMessages: (next) => { this.messages = next; },
+            getPendingGates: () => this.pendingGates,
+            setPendingGates: (next) => { this.pendingGates = next; },
+            getSessionId: () => this.sessionId,
+            isConnAborted: () => Boolean(this.#connController?.signal.aborted),
+            getNotificationChain: () => this.#notificationChain,
+            hasInFlightRequest: () => this.#inFlightRequest !== undefined,
+            getInFlightPostCount: () => this.#inFlightPostCount,
+            getStreamProblem: () => this.#streamProblem,
+            setStreamProblem: (problem) => { this.#streamProblem = problem; },
+            emitLiveOutcome: (outcome) => this.#outcomes.emit(outcome),
+            getSubscriber: () => this.#subscriber,
+        });
     }
 
     abortRun() {
@@ -225,17 +168,9 @@ export default class SessionAgent {
     }
 
     close() {
-        this.#gates.reset();
-        this.pendingGates = [];
-        this.#replaying = false;
-        this.#resuming = false;
-        this.#replayUpdates = [];
-        this.#postReplayUpdates = [];
-        this.#ambientCallIds.clear();
-        this.#onLiveOutcome = undefined;
-        this.#queuedLiveOutcome = undefined;
+        this.#updates.reset();
+        this.#outcomes.reset();
         this.#inFlightRequest = undefined;
-        this.#pendingLiveThought = undefined;
         this.#streamProblem = undefined;
         this.#connController?.abort();
         this.#connController = undefined;
@@ -247,136 +182,9 @@ export default class SessionAgent {
         }
     }
 
-    #syncDescendantGates() {
-        const synced = syncDescendantGatesInState(this.state, this.#gates.allPending);
-        if (synced.changed) {
-            this.state = synced.state;
-        }
-        return synced.changed;
-    }
-
-    #syncPendingGates() {
-        const synced = this.#gates.sync(this.state);
-        this.pendingGates = synced.pending;
-        if (synced.changed) {
-            this.state = synced.state;
-        }
-        return synced.changed;
-    }
-
-    /** @param {LiveOutcome} outcome */
-    #emitLiveOutcome(outcome) {
-        if (this.#onLiveOutcome !== undefined) {
-            this.#onLiveOutcome(outcome);
-        } else {
-            this.#queuedLiveOutcome = outcome;
-        }
-    }
-
-    #scheduleGateCoalesce() {
-        if (this.#gates.coalesceTimer !== undefined) {
-            clearTimeout(this.#gates.coalesceTimer);
-        }
-        this.#gates.coalesceTimer = setTimeout(() => {
-            this.#gates.coalesceTimer = undefined;
-            void this.#notificationChain.then(async () => {
-                if (this.#connController?.signal.aborted) return;
-                this.#syncPendingGates();
-                if (!this.#resuming) {
-                    await this.#subscriber.onStateChanged?.({ state: this.state });
-                }
-                this.#gates.onSettled?.();
-                const held = this.#gates.heldIds;
-                const currentIds = this.pendingGates.map(({ id }) => id);
-                const sameHeld = held !== undefined
-                    && held.length === currentIds.length
-                    && currentIds.every((id, idx) => id === held[idx]);
-                if (!sameHeld && this.pendingGates.length > 0) {
-                    this.#emitLiveOutcome({ stopReason: "interrupt" });
-                }
-            });
-        }, GATE_COALESCE_MS);
-    }
-
-    /** @param {string} gateId */
-    #cancelGateById = (gateId) => {
-        const existed = this.#gates.resolvers.has(gateId)
-            || this.#gates.allPending.some((item) => item.id === gateId);
-        if (!existed) return;
-        this.#gates.resolvers.delete(gateId);
-        this.#gates.allPending = this.#gates.allPending.filter((item) => item.id !== gateId);
-        const changed = this.#syncPendingGates();
-        if (this.#gates.submittedIds.has(gateId)) {
-            this.#gates.cancelledSubmitted.add(gateId);
-        }
-        if (this.#connController?.signal.aborted) {
-            return;
-        }
-        setTimeout(() => {
-            void this.#notificationChain.then(async () => {
-                if (this.#connController?.signal.aborted || this.#streamProblem !== undefined) return;
-                if (changed && !this.#resuming) {
-                    await this.#subscriber.onStateChanged?.({ state: this.state });
-                }
-                if (this.pendingGates.length > 0) {
-                    this.#emitLiveOutcome({ stopReason: "interrupt" });
-                } else if (this.#gates.heldIds !== undefined) {
-                    this.#emitLiveOutcome({ stopReason: "end_turn" });
-                } else if (this.#inFlightRequest === undefined) {
-                    const status = isRecord(this.state.plurnk) && isRecord(this.state.plurnk.status)
-                        ? this.state.plurnk.status
-                        : undefined;
-                    const lifecycle = typeof status?.lifecycle === "string" ? status.lifecycle : "idle";
-                    if (!["queued", "running", "parked"].includes(lifecycle)) {
-                        this.#emitLiveOutcome({ stopReason: "end_turn" });
-                    }
-                }
-            });
-        });
-    };
-
     async #drainNotifications() {
         await new Promise((resolve) => setTimeout(resolve));
         await this.#notificationChain;
-    }
-
-    async #awaitGateCoalesce() {
-        if (this.#gates.coalesceTimer === undefined) return;
-        await new Promise((r) => {
-            this.#gates.onSettled = () => {
-                this.#gates.onSettled = undefined;
-                r(undefined);
-            };
-        });
-    }
-
-    /**
-     * @param {"session/request_permission" | "elicitation/create"} method
-     * @param {SessionGate} entry
-     * @param {AbortSignal} signal
-     */
-    #registerGateRequest(method, entry, signal) {
-        this.#gates.allPending.push(entry);
-        this.#syncPendingGates();
-        return new Promise((resolve, reject) => {
-            this.#gates.resolvers.set(entry.id, {
-                method,
-                resolve: (res) => {
-                    signal.onabort = null;
-                    resolve(/** @type {never} */ (res));
-                },
-                reject: (err) => {
-                    signal.onabort = null;
-                    reject(err);
-                },
-            });
-            const onCancel = () => {
-                this.#cancelGateById(entry.id);
-                reject(new DOMException("The operation was aborted.", "AbortError"));
-            };
-            signal.onabort = onCancel;
-            this.#scheduleGateCoalesce();
-        });
     }
 
     /** @param {AbortSignal} signal */
@@ -403,65 +211,22 @@ export default class SessionAgent {
         let stream;
         let wsOpened = false;
         if (this.#transport === "ws") {
-            const authHeader = this.headers.Authorization ?? this.headers.authorization ?? "";
-            const bearerMatch = /^Bearer\s+(\S+)$/iu.exec(authHeader.trim());
-            const wsTarget = new URL(withAccessTokenQuery(resolveAcpUrl(this.url), bearerMatch ? bearerMatch[1] : null));
-            wsTarget.protocol = wsTarget.protocol === "https:" ? "wss:" : "ws:";
-            const getChain = () => this.#notificationChain;
-            const getProblem = () => this.#streamProblem;
-            const emitOutcome = (/** @type {LiveOutcome} */ outcome) => this.#emitLiveOutcome(outcome);
-            const markInFlightGatesCancelled = () => {
-                for (const id of this.#gates.submittedIds) {
-                    this.#gates.cancelledSubmitted.add(id);
-                }
-            };
-            /** @type {import("@agentclientprotocol/sdk/experimental/ws-client").WebSocketConstructor} */
-            const MonitoredWebSocket = /** @type {any} */ (class extends globalThis.WebSocket {
-                /**
-                 * @param {string | URL} url
-                 * @param {string | string[]} [protocols]
-                 */
-                constructor(url, protocols) {
-                    super(url, protocols);
-                    let opened = false;
-                    this.onopen = () => {
-                        opened = true;
-                        wsOpened = true;
-                    };
-                    /** @param {MessageEvent} event */
-                    this.onmessage = (event) => {
-                        if (typeof event.data !== "string" || !event.data.includes("$/cancel_request")) return;
-                        try {
-                            const parsed = JSON.parse(event.data);
-                            if (isRecord(parsed) && parsed.method === "$/cancel_request") {
-                                markInFlightGatesCancelled();
-                            }
-                        } catch { /* ignore */ }
-                    };
-                    /** @param {CloseEvent} event */
-                    this.onclose = (event) => {
-                        if (connController.signal.aborted) return;
-                        void getChain().then(() => {
-                            if (connController.signal.aborted) return;
-                            const problem = getProblem();
-                            if (problem !== undefined) {
-                                emitOutcome({ stopReason: "error", error: problem });
-                                return;
-                            }
-                            if (!opened || !event.wasClean || event.code !== 1000) {
-                                emitOutcome({
-                                    stopReason: "transport_error",
-                                    transportError: new Error(event.reason || "ACP WebSocket disconnected."),
-                                });
-                                return;
-                            }
-                            emitOutcome({ stopReason: "eof" });
-                        });
-                    };
-                }
+            const { href, WebSocketClass } = buildMonitoredWebSocketConfig({
+                baseUrl: this.url,
+                headers: this.headers,
+                connSignal: connController.signal,
+                getNotificationChain: () => this.#notificationChain,
+                getStreamProblem: () => this.#streamProblem,
+                emitLiveOutcome: (outcome) => this.#outcomes.emit(outcome),
+                onOpened: () => { wsOpened = true; },
+                onCancelRequest: () => {
+                    for (const id of this.#updates.gates.submittedIds) {
+                        this.#updates.gates.cancelledSubmitted.add(id);
+                    }
+                },
             });
-            stream = createWebSocketStream(wsTarget.href, {
-                WebSocket: MonitoredWebSocket,
+            stream = createWebSocketStream(href, {
+                WebSocket: WebSocketClass,
                 cookies: "omit",
             });
         } else {
@@ -474,7 +239,7 @@ export default class SessionAgent {
                 getNotificationChain: () => this.#notificationChain,
                 getStreamProblem: () => this.#streamProblem,
                 setStreamProblem: (problem) => { this.#streamProblem = problem; },
-                emitLiveOutcome: (outcome) => this.#emitLiveOutcome(outcome),
+                emitLiveOutcome: (outcome) => this.#outcomes.emit(outcome),
                 onPostStart: (fetchPromise) => {
                     this.#inFlightPostCount += 1;
                     this.#outboundPostChain = this.#outboundPostChain
@@ -511,7 +276,7 @@ export default class SessionAgent {
                         ? { ...rawUpdate, subagentRunId: plurnk.subagentRunId }
                         : rawUpdate
                 );
-                await this.#handleSessionUpdate(sessionId, update, this.#subscriber);
+                await this.#updates.handleSessionUpdate(sessionId, update, this.#subscriber);
             });
         });
 
@@ -519,19 +284,19 @@ export default class SessionAgent {
             const elicitationId = isRecord(ctx.params) && typeof ctx.params.elicitationId === "string"
                 ? ctx.params.elicitationId
                 : "";
-            this.#gates.completeElicitation(elicitationId, this.#cancelGateById);
+            this.#updates.gates.completeElicitation(elicitationId, this.#updates.cancelGateById);
         });
 
         app.onRequest(methods.client.session.requestPermission, async (ctx) => {
             await this.#notificationChain;
             const entry = buildPermissionGate(/** @type {Record<string, unknown>} */ (ctx.params));
-            return await this.#registerGateRequest("session/request_permission", entry, ctx.signal);
+            return await this.#updates.registerGateRequest("session/request_permission", entry, ctx.signal);
         });
 
         app.onRequest(methods.client.elicitation.create, async (ctx) => {
             await this.#notificationChain;
             const entry = buildElicitationGate(/** @type {Record<string, unknown>} */ (ctx.params));
-            return await this.#registerGateRequest("elicitation/create", entry, ctx.signal);
+            return await this.#updates.registerGateRequest("elicitation/create", entry, ctx.signal);
         });
 
         const conn = app.connect(stream);
@@ -571,27 +336,14 @@ export default class SessionAgent {
                 });
             }
             if (this.#transport === "ws" && !wsOpened && !signal.aborted) {
-                try {
-                    const probe = await this.#fetch(resolveAcpUrl(this.url), {
-                        method: "POST",
-                        headers: { "content-type": "application/json", ...this.headers },
-                        body: JSON.stringify({
-                            jsonrpc: "2.0",
-                            id: 0,
-                            method: "initialize",
-                            params: { protocolVersion: PROTOCOL_VERSION, info: { name: "@plurnk/plurnk-web", version: "4.0.0" } },
-                        }),
-                        cache: "no-store",
-                        signal,
-                    });
-                    if (probe.status === 401) {
-                        throw Object.assign(new Error("Sign in required."), { status: 401 });
-                    }
-                } catch (probeError) {
-                    if (Reflect.get(Object(probeError), "status") === 401) {
-                        throw probeError;
-                    }
-                }
+                await probeWebSocketAuthFailure({
+                    fetchImpl: this.#fetch,
+                    url: this.url,
+                    headers: this.headers,
+                    protocolVersion: PROTOCOL_VERSION,
+                    clientInfo: CLIENT_INFO,
+                    signal,
+                });
             }
             if (!(error instanceof Error)) {
                 throw new Error("ACP WebSocket connection failed.", { cause: error });
@@ -614,7 +366,7 @@ export default class SessionAgent {
         const heldGates = Array.isArray(options.gates) ? [...options.gates] : [];
 
         try {
-            this.#gates.heldIds = heldGates.length > 0 ? heldGates : undefined;
+            this.#updates.gates.heldIds = heldGates.length > 0 ? heldGates : undefined;
             if (heldGates.length > 0 && this.#conn !== undefined) {
                 const currentIds = this.pendingGates.map(({ id }) => id);
                 const sameSet = currentIds.length === heldGates.length
@@ -624,7 +376,7 @@ export default class SessionAgent {
                     await subscriber.onSettled?.({ stopReason, result: {} });
                     return { result: {}, stopReason };
                 }
-                const outcome = await this.#waitForLiveOutcome(signal);
+                const outcome = await this.#outcomes.waitForLiveOutcome(signal);
                 await this.#drainNotifications();
                 if (outcome.error || this.#streamProblem !== undefined) {
                     const sp = outcome.error ?? this.#streamProblem;
@@ -641,17 +393,13 @@ export default class SessionAgent {
                 return { result: {}, stopReason: outcome.stopReason, meta: outcome.meta };
             }
 
-            this.#gates.retainActive();
-            this.#syncPendingGates();
-            this.#queuedLiveOutcome = undefined;
-            this.#pendingLiveThought = undefined;
+            this.#updates.gates.retainActive();
+            this.#updates.syncPendingGates();
+            this.#outcomes.clearQueued();
+            this.#updates.pendingLiveThought = undefined;
             this.#needsConnectionSse = false;
             const conn = await this.#ensureConnection(signal);
-            this.#replaying = true;
-            this.#resuming = true;
-            this.#replayUpdates = [];
-            this.#postReplayUpdates = [];
-            this.#ambientCallIds.clear();
+            this.#updates.beginReplayWindow();
 
             const params = {
                 sessionId: this.sessionId ?? "",
@@ -678,52 +426,21 @@ export default class SessionAgent {
                 ? rawResult._meta.plurnk
                 : undefined;
 
-            this.#applyResponseState(rawResult, metaPlurnk);
+            this.#updates.applyResponseState(rawResult, metaPlurnk);
             if (Object.keys(this.state).length > 0) {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
 
-            if (this.#resuming) {
-                this.#replaying = false;
-                this.#resuming = false;
-                const replayed = this.#replayUpdates.splice(0);
-                const postReplay = this.#postReplayUpdates.splice(0);
-                const history = isRecord(metaPlurnk?.history) ? metaPlurnk.history : undefined;
-                if (history !== undefined) {
-                    this.messages = SessionTranslator.projectMessages(replayed, [], this.#ambientCallIds);
-                    const older = typeof history.older === "string" ? history.older : null;
-                    await subscriber.onMessagesSnapshot?.({
-                        snapshot: {
-                            messages: this.messages,
-                            older,
-                            hasMore: typeof history.hasMore === "boolean" ? history.hasMore : Boolean(older),
-                            beforeLoopSeq: typeof history.beforeLoopSeq === "number" ? history.beforeLoopSeq : null,
-                        },
-                    });
-                    await subscriber.onMessagesChanged?.({ messages: this.messages });
-                } else {
-                    for (const u of replayed) {
-                        await this.#applyLiveMessageUpdate(u, subscriber);
-                    }
-                }
-                for (const u of postReplay) {
-                    const uPlurnk = isRecord(u._meta) && isRecord(u._meta.plurnk) ? u._meta.plurnk : undefined;
-                    if (u.sessionUpdate === "tool_call_update" && (uPlurnk?.proposal !== undefined || uPlurnk?.interaction !== undefined)) {
-                        await subscriber.onSettled?.({ stopReason: "interrupt", meta: uPlurnk, result: {} });
-                    }
-                    await this.#applyLiveMessageUpdate(u, subscriber);
-                }
-            }
-
-            await this.#awaitGateCoalesce();
+            await this.#updates.flushResumeWindow(metaPlurnk, subscriber);
+            await this.#updates.awaitGateCoalesce();
 
             if (this.pendingGates.length > 0) {
-                this.#queuedLiveOutcome = undefined;
+                this.#outcomes.clearQueued();
                 await subscriber.onSettled?.({ stopReason: "interrupt", meta: metaPlurnk, result: rawResult });
                 return { result: rawResult, stopReason: "interrupt", meta: metaPlurnk };
             }
 
-            const outcome = await this.#waitForLiveOutcome(signal);
+            const outcome = await this.#outcomes.waitForLiveOutcome(signal);
             if (outcome.error) {
                 this.close();
                 await subscriber.onError?.(outcome.error);
@@ -746,9 +463,7 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
-            this.#replaying = false;
-            this.#resuming = false;
-            this.#submittedPrompt = undefined;
+            this.#updates.finishRun();
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
@@ -796,111 +511,26 @@ export default class SessionAgent {
 
         try {
             const conn = await this.#ensureConnection(signal);
-            let response;
-            if (actionKind === "session/new") {
-                response = await conn.agent.request(methods.agent.session.new, {
-                    cwd: "/",
-                    _meta: {
-                        plurnk: {
-                            ...(this.sessionId ? { session: this.sessionId } : {}),
-                            ...(options.workspace ? { workspace: options.workspace } : {}),
-                            ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-                        },
-                    },
-                });
-            } else if (actionKind === "session/set_config_option") {
-                const configId = String(actionParams.configId ?? "");
-                const value = String(actionParams.value ?? "");
-                response = await conn.agent.request(methods.agent.session.setConfigOption, {
-                    sessionId: this.sessionId ?? "session1",
-                    type: "id",
-                    configId,
-                    value,
-                    _meta: {
-                        plurnk: {
-                            ...(options.workspace ? { workspace: options.workspace } : {}),
-                            ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-                        },
-                    },
-                });
-            } else if (actionKind === "session/resume") {
-                response = await conn.agent.request(methods.agent.session.resume, {
-                    sessionId: this.sessionId ?? "session1",
-                    cwd: "/",
-                    ...(actionParams.replayFrom !== undefined
-                        ? { replayFrom: /** @type {import("@agentclientprotocol/sdk/experimental/v2/unstable").ReplayFrom | null} */ (actionParams.replayFrom) }
-                        : {}),
-                    _meta: {
-                        plurnk: {
-                            control: false,
-                            ...(options.workspace ? { workspace: options.workspace } : {}),
-                            ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-                        },
-                    },
-                });
-            } else if (actionKind === "session/fork") {
-                response = await conn.agent.request(methods.agent.session.fork, {
-                    sessionId: this.sessionId ?? "session1",
-                    cwd: "/",
-                    ...(typeof actionParams.name === "string" ? { title: actionParams.name } : {}),
-                    _meta: {
-                        plurnk: {
-                            ...(typeof actionParams.name === "string" ? { sessionName: actionParams.name, name: actionParams.name } : {}),
-                            ...(options.workspace ? { workspace: options.workspace } : {}),
-                            ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-                        },
-                    },
-                });
-            } else if (actionKind === "session/cancel") {
-                await conn.agent.notify(methods.agent.session.cancel, {
-                    sessionId: this.sessionId ?? "session1",
-                    ...(typeof actionParams.reason === "string"
-                        ? { _meta: { plurnk: { reason: actionParams.reason } } }
-                        : {}),
-                });
-                response = { cancelled: true };
-            } else if (actionKind === "session/list") {
-                response = await conn.agent.request(methods.agent.session.list, {
-                    ...(typeof actionParams.cwd === "string" ? { cwd: actionParams.cwd } : {}),
-                    ...(actionParams.archived === "exclude" || actionParams.archived === "include" || actionParams.archived === "only"
-                        ? { archived: actionParams.archived }
-                        : {}),
-                    ...(isRecord(actionParams._meta) ? { _meta: actionParams._meta } : {}),
-                });
-            } else if (actionKind === "session/set_title") {
-                response = await conn.agent.request(methods.agent.session.setTitle, {
-                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
-                    title: String(actionParams.title ?? ""),
-                });
-            } else if (actionKind === "session/archive") {
-                response = await conn.agent.request(methods.agent.session.archive, {
-                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
-                });
-            } else if (actionKind === "session/unarchive") {
-                response = await conn.agent.request(methods.agent.session.unarchive, {
-                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
-                });
-            } else if (actionKind === "session/delete") {
-                response = await conn.agent.request(methods.agent.session.delete, {
-                    sessionId: typeof actionParams.sessionId === "string" ? actionParams.sessionId : (this.sessionId ?? "session1"),
-                });
-            } else if (actionKind === "providers/list") {
-                response = await conn.agent.request(methods.agent.providers.list, {});
-            } else {
-                response = await conn.agent.request("_plurnk/action", {
-                    kind: actionKind,
-                    params: actionParams,
-                    ...(this.sessionId ? { sessionId: this.sessionId } : {}),
-                    ...(options.workspace ? { workspace: options.workspace } : {}),
-                    ...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-                });
-            }
+            const response = await executeAgentAction(
+                {
+                    request: (method, params) => conn.agent.request(method, params),
+                    notify: (method, params) => conn.agent.notify(method, params),
+                },
+                methods.agent,
+                {
+                    sessionId: this.sessionId,
+                    actionKind,
+                    actionParams,
+                    workspace: options.workspace,
+                    projectRoot: options.projectRoot,
+                },
+            );
             await this.#drainNotifications();
             const rawResult = isRecord(response) ? response : {};
             const metaPlurnk = isRecord(rawResult._meta) && isRecord(rawResult._meta.plurnk)
                 ? rawResult._meta.plurnk
                 : undefined;
-            this.#applyResponseState(rawResult, metaPlurnk);
+            this.#updates.applyResponseState(rawResult, metaPlurnk);
             if (Object.keys(this.state).length > 0) {
                 await subscriber.onStateChanged?.({ state: this.state });
             }
@@ -912,9 +542,7 @@ export default class SessionAgent {
         } catch (error) {
             return await this.#handleError(error, signal, subscriber, actionKind);
         } finally {
-            this.#replaying = false;
-            this.#resuming = false;
-            this.#submittedPrompt = undefined;
+            this.#updates.finishRun();
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
@@ -935,20 +563,8 @@ export default class SessionAgent {
         this.#activeController = controller;
         this.isRunning = true;
         this.#subscriber = subscriber;
-        this.#replaying = false;
-        this.#resuming = false;
-        this.#replayUpdates = [];
-        this.#postReplayUpdates = [];
-        this.#pendingLiveThought = undefined;
-        this.#submittedPrompt = {
-            id: message.id,
-            content: message.content,
-            ...(message.attachments?.length ? { attachments: message.attachments } : {}),
-        };
-        this.#queuedLiveOutcome = undefined;
-        this.#gates.heldIds = undefined;
-        this.#gates.retainActive();
-        this.#syncPendingGates();
+        this.#outcomes.clearQueued();
+        this.#updates.beginPromptRun(message);
         const { signal } = controller;
 
         try {
@@ -1013,13 +629,21 @@ export default class SessionAgent {
                 },
             );
 
-            return await this.#awaitRequestOrInterrupt(requestPromise, signal, subscriber);
+            return await awaitRequestOrInterrupt({
+                requestPromise,
+                signal,
+                subscriber,
+                outcomes: this.#outcomes,
+                updates: this.#updates,
+                drainNotifications: () => this.#drainNotifications(),
+                getState: () => this.state,
+                getPendingGates: () => this.pendingGates,
+                close: () => this.close(),
+            });
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
-            this.#replaying = false;
-            this.#resuming = false;
-            this.#submittedPrompt = undefined;
+            this.#updates.finishRun();
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
@@ -1037,294 +661,35 @@ export default class SessionAgent {
         this.#activeController = controller;
         this.isRunning = true;
         this.#subscriber = subscriber;
-        this.#replaying = false;
-        this.#resuming = false;
-        this.#replayUpdates = [];
-        this.#postReplayUpdates = [];
-        this.#gates.submittedIds.clear();
-        this.#gates.cancelledSubmitted.clear();
-        this.#queuedLiveOutcome = undefined;
-        this.#gates.heldIds = undefined;
+        this.#outcomes.clearQueued();
+        this.#updates.beginGateResolutionRun();
         const { signal } = controller;
 
         try {
             this.#needsConnectionSse = false;
             await this.#ensureConnection(signal);
-            let missingGate = false;
-            const plurnkState = isRecord(this.state.plurnk) ? this.state.plurnk : undefined;
-            const statusState = isRecord(plurnkState?.status) ? plurnkState.status : undefined;
-            const rawParts = typeof this.sessionId === "string" ? this.sessionId.split("#") : [];
-            const boundName = typeof statusState?.name === "string" ? statusState.name : (rawParts[1] || "session1");
-            const boundId = typeof statusState?.id === "number" ? String(statusState.id) : "";
-            let resolvedDescendantOnly = resolutions.length > 0;
-            for (const res of resolutions) {
-                const existing = this.#gates.allPending.find((item) => item.id === res.id);
-                if (existing) {
-                    const key = gateSessionKey(existing);
-                    if (!key || key === boundName || key === boundId) {
-                        resolvedDescendantOnly = false;
-                    }
-                } else {
-                    resolvedDescendantOnly = false;
-                }
-            }
-
-            for (const res of resolutions) {
-                const gate = this.#gates.resolvers.get(res.id);
-                this.#gates.allPending = this.#gates.allPending.filter((item) => item.id !== res.id);
-                if (!gate) {
-                    missingGate = true;
-                    continue;
-                }
-                this.#gates.resolvers.delete(res.id);
-                this.#gates.submittedIds.add(res.id);
-                gate.resolve(/** @type {Record<string, unknown>} */ (res.response));
-            }
-
-            const gatesChanged = this.#syncPendingGates();
-
-            if (missingGate) {
-                await subscriber.onError?.({
-                    message: "Request is no longer pending.",
-                    settled: true,
-                });
-            }
-
-            if (this.pendingGates.length === 0 && this.#inFlightRequest !== undefined) {
-                return await this.#awaitRequestOrInterrupt(this.#inFlightRequest, signal, subscriber);
-            }
-
-            const boundLifecycle = typeof statusState?.lifecycle === "string" ? statusState.lifecycle : "idle";
-            if (
-                (resolvedDescendantOnly && !["queued", "running", "parked"].includes(boundLifecycle))
-                || this.pendingGates.length > 0
-            ) {
-                await new Promise((r) => setTimeout(r));
-                await this.#outboundPostChain;
-                await this.#drainNotifications();
-                if (gatesChanged && !this.#resuming) {
-                    await subscriber.onStateChanged?.({ state: this.state });
-                }
-                if (this.#gates.cancelledSubmitted.size > 0 && !missingGate) {
-                    await subscriber.onError?.({
-                        message: "Request is no longer pending.",
-                        settled: true,
-                    });
-                }
-                const nextStop = this.pendingGates.length > 0 ? "interrupt" : "end_turn";
-                if (nextStop === "interrupt") {
-                    this.#queuedLiveOutcome = undefined;
-                }
-                await subscriber.onSettled?.({ stopReason: nextStop, result: {} });
-                return { result: {}, stopReason: nextStop };
-            }
-
-            const outcome = await this.#waitForLiveOutcome(signal);
-            await this.#outboundPostChain;
-            await this.#drainNotifications();
-            if (outcome.error) {
-                this.close();
-                await subscriber.onError?.(outcome.error);
-                return { result: undefined, stopReason: "error", meta: outcome.meta };
-            }
-            if (outcome.stopReason === "eof") {
-                this.close();
-                return { result: {}, stopReason: "end_turn", meta: outcome.meta };
-            }
-            if (this.#gates.cancelledSubmitted.size > 0 && !missingGate) {
-                await subscriber.onError?.({
-                    message: "Request is no longer pending.",
-                    settled: true,
-                });
-            }
-            const stopReason = outcome.stopReason;
-            const terminalFailure = extractTerminalFailure(outcome.meta, stopReason);
-            if (terminalFailure) {
-                await subscriber.onError?.(terminalFailure);
-            } else {
-                await subscriber.onSettled?.({ stopReason, meta: outcome.meta, result: {} });
-            }
-            return { result: {}, stopReason, meta: outcome.meta };
+            return await executeGateResolutions({
+                resolutions,
+                signal,
+                subscriber,
+                sessionId: this.sessionId,
+                outcomes: this.#outcomes,
+                updates: this.#updates,
+                getState: () => this.state,
+                getPendingGates: () => this.pendingGates,
+                getInFlightRequest: () => this.#inFlightRequest,
+                getOutboundPostChain: () => this.#outboundPostChain,
+                drainNotifications: () => this.#drainNotifications(),
+                close: () => this.close(),
+            });
         } catch (error) {
             return await this.#handleError(error, signal, subscriber);
         } finally {
-            this.#replaying = false;
-            this.#resuming = false;
-            this.#submittedPrompt = undefined;
+            this.#updates.finishRun();
             this.isRunning = false;
             if (this.#activeController === controller) {
                 this.#activeController = undefined;
             }
-        }
-    }
-
-    /**
-     * @param {Promise<{ result: unknown, meta?: Record<string, unknown> }>} requestPromise
-     * @param {AbortSignal} signal
-     * @param {SessionSubscriber} subscriber
-     */
-    async #awaitRequestOrInterrupt(requestPromise, signal, subscriber) {
-        const outcomePromise = this.#waitForLiveOutcome(signal);
-        const raced = await Promise.race([
-            requestPromise.then((res) => ({ kind: /** @type {const} */ ("response"), ...res })),
-            outcomePromise.then((out) => ({ kind: /** @type {const} */ ("outcome"), ...out })),
-        ]);
-
-        if (raced.kind === "outcome") {
-            void requestPromise.catch(() => undefined);
-            this.#onLiveOutcome = undefined;
-            if (raced.error) {
-                this.close();
-                await subscriber.onError?.(raced.error);
-                return { result: undefined, stopReason: "error", meta: raced.meta };
-            }
-            if (raced.stopReason === "interrupt") {
-                if (this.#queuedLiveOutcome?.stopReason === "interrupt") {
-                    this.#queuedLiveOutcome = undefined;
-                }
-                await subscriber.onSettled?.({ stopReason: "interrupt", meta: raced.meta, result: {} });
-                return { result: {}, stopReason: "interrupt", meta: raced.meta };
-            }
-            if (raced.stopReason === "eof") {
-                this.close();
-                return { result: undefined, stopReason: "end_turn", meta: raced.meta };
-            }
-        }
-
-        const { result, meta: initialMeta } = raced.kind === "response"
-            ? raced
-            : await requestPromise;
-        await this.#drainNotifications();
-        const rawResult = isRecord(result) ? result : {};
-        let metaPlurnk = initialMeta;
-        this.#applyResponseState(rawResult, metaPlurnk);
-        if (Object.keys(this.state).length > 0) {
-            await subscriber.onStateChanged?.({ state: this.state });
-        }
-
-        await this.#awaitGateCoalesce();
-
-        /** @type {Awaited<typeof outcomePromise> | undefined} */
-        let liveOutcome = raced.kind === "outcome" ? raced : undefined;
-        const hasImmediateOutcome = typeof rawResult.stopReason === "string"
-            || typeof metaPlurnk?.stopReason === "string"
-            || metaPlurnk?.terminal !== undefined
-            || this.pendingGates.length > 0;
-        if (liveOutcome === undefined && !hasImmediateOutcome) {
-            liveOutcome = await outcomePromise;
-        }
-        this.#onLiveOutcome = undefined;
-
-        if (liveOutcome !== undefined) {
-            if (liveOutcome.error) {
-                this.close();
-                await subscriber.onError?.(liveOutcome.error);
-                return { result: undefined, stopReason: "error", meta: liveOutcome.meta };
-            }
-            if (liveOutcome.meta) {
-                metaPlurnk = metaPlurnk ? { ...metaPlurnk, ...liveOutcome.meta } : liveOutcome.meta;
-                this.#applyResponseState(rawResult, metaPlurnk);
-                if (Object.keys(this.state).length > 0) {
-                    await subscriber.onStateChanged?.({ state: this.state });
-                }
-            }
-        }
-
-        if (this.#gates.cancelledSubmitted.size > 0) {
-            await subscriber.onError?.({
-                message: "Request is no longer pending.",
-                settled: true,
-            });
-        }
-
-        if (liveOutcome?.stopReason === "eof" && !hasImmediateOutcome) {
-            this.close();
-            return { result: rawResult, stopReason: "end_turn", meta: metaPlurnk };
-        }
-        const rawStopReason = this.pendingGates.length > 0
-            ? "interrupt"
-            : typeof liveOutcome?.stopReason === "string"
-                ? liveOutcome.stopReason
-                : typeof metaPlurnk?.stopReason === "string"
-                    ? metaPlurnk.stopReason
-                    : typeof rawResult.stopReason === "string"
-                        ? rawResult.stopReason
-                        : "end_turn";
-        const stopReason = rawStopReason === "eof" ? "end_turn" : rawStopReason;
-        if (stopReason === "interrupt" && this.#queuedLiveOutcome?.stopReason === "interrupt") {
-            this.#queuedLiveOutcome = undefined;
-        }
-        const terminalFailure = extractTerminalFailure(metaPlurnk, stopReason);
-        if (terminalFailure) {
-            await subscriber.onError?.(terminalFailure);
-        } else {
-            await subscriber.onSettled?.({
-                stopReason,
-                meta: metaPlurnk,
-                result: rawResult,
-            });
-        }
-        return { result: rawResult, stopReason, meta: metaPlurnk };
-    }
-
-    /**
-     * @param {AbortSignal} signal
-     * @returns {Promise<{ stopReason: string, meta?: Record<string, unknown>, error?: SessionErrorPayload }>}
-     */
-    #waitForLiveOutcome(signal) {
-        if (this.#queuedLiveOutcome !== undefined) {
-            const outcome = this.#queuedLiveOutcome;
-            this.#queuedLiveOutcome = undefined;
-            if (outcome.transportError !== undefined) {
-                return Promise.reject(outcome.transportError);
-            }
-            return Promise.resolve(outcome);
-        }
-        return new Promise((resolve, reject) => {
-            const onAbort = () => {
-                if (this.#onLiveOutcome === settle) {
-                    this.#onLiveOutcome = undefined;
-                }
-                reject(
-                    signal.reason instanceof Error
-                        ? signal.reason
-                        : new DOMException("The operation was aborted.", "AbortError"),
-                );
-            };
-            /** @param {LiveOutcome} outcome */
-            const settle = (outcome) => {
-                signal.onabort = null;
-                if (this.#onLiveOutcome === settle) {
-                    this.#onLiveOutcome = undefined;
-                }
-                if (outcome.transportError !== undefined) {
-                    reject(outcome.transportError);
-                    return;
-                }
-                resolve(outcome);
-            };
-            this.#onLiveOutcome = settle;
-            signal.onabort = onAbort;
-            if (signal.aborted) {
-                onAbort();
-            }
-        });
-    }
-
-    /**
-     * @param {Record<string, unknown>} rawResult
-     * @param {Record<string, unknown> | undefined} metaPlurnk
-     */
-    #applyResponseState(rawResult, metaPlurnk) {
-        const projected = applyResponseState(
-            this.state,
-            rawResult,
-            metaPlurnk,
-            (descendants) => this.#gates.pruneFromDescendants(descendants, this.#cancelGateById),
-        );
-        this.state = projected.state;
-        if (projected.appliedMeta) {
-            this.#syncDescendantGates();
         }
     }
 
@@ -1335,386 +700,18 @@ export default class SessionAgent {
      * @param {string} [actionKind]
      */
     async #handleError(error, signal, subscriber, actionKind) {
-        if (signal.aborted && this.#streamProblem === undefined) {
-            throw signal.reason instanceof Error
-                ? signal.reason
-                : new DOMException("The operation was aborted.", "AbortError");
-        }
-        await this.#drainNotifications();
-        if (signal.aborted && this.#streamProblem === undefined) {
-            throw signal.reason instanceof Error
-                ? signal.reason
-                : new DOMException("The operation was aborted.", "AbortError");
-        }
-        if (this.#streamProblem === undefined && error instanceof Error && error.message === "ACP session SSE stream closed") {
-            this.close();
-            return { result: undefined, stopReason: "end_turn" };
-        }
-        if (this.#streamProblem !== undefined) {
-            const sp = this.#streamProblem;
-            this.#streamProblem = undefined;
-            if (sp.status === 401) {
-                throw Object.assign(new Error(sp.message, { cause: sp.problem }), {
-                    status: 401,
-                    problem: sp.problem,
-                });
-            }
-            if (sp.problem !== undefined) {
-                await subscriber.onError?.(sp);
-                const errorResult = actionKind !== undefined
-                    ? { kind: actionKind, ok: false, problem: sp.problem }
-                    : undefined;
-                return { result: errorResult, stopReason: "error" };
-            }
-            throw Object.assign(new Error(sp.message), { status: sp.status });
-        }
-        const { message, status, problem, terminal } = extractRpcFailure(error);
-        if (status === 401) {
-            throw Object.assign(new Error(message, { cause: problem }), { status: 401, problem });
-        }
-        if (problem !== undefined || terminal !== undefined) {
-            await subscriber.onError?.({ message, status, problem, terminal });
-            const errorResult = actionKind !== undefined && problem !== undefined
-                ? { kind: actionKind, ok: false, problem }
-                : undefined;
-            return { result: errorResult, stopReason: "error" };
-        }
-        if (!(error instanceof Error)) {
-            throw new Error("ACP WebSocket connection failed.", { cause: error });
-        }
-        throw error;
-    }
-
-    /** @param {SessionSubscriber} subscriber */
-    async #finalizeLiveThought(subscriber) {
-        const pending = this.#pendingLiveThought;
-        this.#pendingLiveThought = undefined;
-        let changed = false;
-        const nextMessages = this.messages.map((item) => {
-            if (item.role !== "reasoning") return item;
-            const itemPlurnk = isRecord(item._meta?.plurnk) ? item._meta.plurnk : undefined;
-            const matchesPending = pending !== undefined && item.id === pending.messageId && itemPlurnk?.body === undefined;
-            const wasStreaming = itemPlurnk?.streaming === true;
-            if (!matchesPending && !wasStreaming) return item;
-            changed = true;
-            const { streaming: _streaming, ...restPlurnk } = itemPlurnk ?? {};
-            return {
-                ...item,
-                _meta: {
-                    ...item._meta,
-                    plurnk: {
-                        ...restPlurnk,
-                        ...(matchesPending ? { body: pending.body } : {}),
-                    },
-                },
-            };
+        return await normalizeSessionRunError(error, {
+            signal,
+            drainNotifications: () => this.#drainNotifications(),
+            getStreamProblem: () => this.#streamProblem,
+            takeStreamProblem: () => {
+                const sp = this.#streamProblem;
+                this.#streamProblem = undefined;
+                return sp;
+            },
+            closeConnection: () => this.close(),
+            onError: subscriber.onError,
+            actionKind,
         });
-        if (changed) {
-            this.messages = nextMessages;
-            await subscriber.onMessagesChanged?.({ messages: this.messages });
-        }
-    }
-
-    /**
-     * @param {AcpSessionUpdatePayload} update
-     * @param {SessionSubscriber} subscriber
-     */
-    async #applyLiveMessageUpdate(update, subscriber) {
-        const kind = update.sessionUpdate;
-        const plurnk = isRecord(update._meta) && isRecord(update._meta.plurnk)
-            ? update._meta.plurnk
-            : undefined;
-        if (kind === "user_message_chunk" && typeof update.messageId === "string") {
-            await subscriber.onUserMessage?.({ messageId: update.messageId });
-        }
-        let projectedUpdate = update;
-        if (kind === "agent_thought_chunk") {
-            const id = typeof update.messageId === "string" && update.messageId.length > 0
-                ? update.messageId
-                : typeof plurnk?.coordinate === "string"
-                    ? `${plurnk.coordinate}/reasoning`
-                    : "";
-            if (this.#pendingLiveThought && this.#pendingLiveThought.messageId !== id) {
-                await this.#finalizeLiveThought(subscriber);
-            }
-            const isResourceLink = isRecord(update.content) && update.content.type === "resource_link";
-            if (isResourceLink) {
-                this.#pendingLiveThought = undefined;
-            } else if (id && isRecord(plurnk?.body)) {
-                this.#pendingLiveThought = { messageId: id, body: structuredClone(plurnk.body) };
-                const { body: _body, ...restPlurnk } = plurnk;
-                projectedUpdate = {
-                    ...update,
-                    _meta: {
-                        ...(isRecord(update._meta) ? update._meta : {}),
-                        plurnk: { ...restPlurnk, streaming: true },
-                    },
-                };
-            } else if (
-                isRecord(update.content)
-                && update.content.type === "text"
-                && typeof update.content.text === "string"
-                && update.content.text.length > 0
-            ) {
-                projectedUpdate = {
-                    ...update,
-                    _meta: {
-                        ...(isRecord(update._meta) ? update._meta : {}),
-                        plurnk: { ...(plurnk ?? {}), streaming: true },
-                    },
-                };
-            }
-            if (
-                isRecord(update.content)
-                && update.content.type === "text"
-                && typeof update.content.text === "string"
-                && update.content.text.length > 0
-            ) {
-                await subscriber.onThoughtChunk?.({ update });
-            }
-        } else if (
-            kind === "agent_message_chunk"
-            || kind === "tool_call"
-            || kind === "tool_call_update"
-        ) {
-            await this.#finalizeLiveThought(subscriber);
-        }
-        this.messages = SessionTranslator.projectMessages([projectedUpdate], this.messages, this.#ambientCallIds);
-        await subscriber.onMessagesChanged?.({ messages: this.messages });
-    }
-
-    /**
-     * @param {string} sessionId
-     * @param {AcpSessionUpdatePayload} update
-     * @param {SessionSubscriber} subscriber
-     */
-    async #handleSessionUpdate(sessionId, update, subscriber) {
-        const kind = update.sessionUpdate;
-        if (!(this.#replaying && kind === "agent_thought_chunk")) {
-            await subscriber.onSessionUpdate?.({ update, sessionId });
-        }
-        if (kind === "replay_complete") {
-            this.#replaying = false;
-            return;
-        }
-        const plurnk = isRecord(update._meta) && isRecord(update._meta.plurnk)
-            ? update._meta.plurnk
-            : undefined;
-
-        if (kind === "config_option_update") {
-            this.state = applyConfigOptionUpdate(this.state, update, plurnk);
-            if (!this.#resuming) {
-                await subscriber.onStateChanged?.({ state: this.state });
-            }
-            return;
-        }
-
-        if (kind === "available_commands_update" && Array.isArray(update.availableCommands)) {
-            this.state = applyAvailableCommandsUpdate(this.state, update.availableCommands);
-            if (!this.#resuming) {
-                await subscriber.onStateChanged?.({ state: this.state });
-            }
-            return;
-        }
-
-        if (kind === "prompt_suggestions_update" && Array.isArray(update.suggestions)) {
-            this.state = applyPromptSuggestionsUpdate(this.state, update.suggestions);
-            if (!this.#resuming) {
-                await subscriber.onStateChanged?.({ state: this.state });
-            }
-            return;
-        }
-
-        if (kind === "usage_update") {
-            this.state = applyUsageUpdate(this.state, update, plurnk);
-            if (!this.#resuming) {
-                await subscriber.onStateChanged?.({ state: this.state });
-            }
-            return;
-        }
-
-        if (kind === "subagent_update") {
-            const childId = typeof plurnk?.id === "number" ? plurnk.id : undefined;
-            const childName = typeof plurnk?.name === "string"
-                ? plurnk.name
-                : typeof update.title === "string"
-                    ? update.title
-                    : undefined;
-            if (childId === undefined || childName === undefined) return;
-            const stateObj = isRecord(update.state) ? update.state : {};
-            const rawLifecycle = typeof plurnk?.lifecycle === "string"
-                ? plurnk.lifecycle
-                : stateObj.state === "running" || stateObj.state === "requires_action"
-                    ? "running"
-                    : stateObj.stopReason === "cancelled"
-                        ? "cancelled"
-                        : stateObj.stopReason === "refusal" || stateObj.stopReason === "error"
-                            ? "failed"
-                            : "completed";
-            const coord = typeof plurnk?.coordinate === "string"
-                ? plurnk.coordinate.split("#")[1]
-                : undefined;
-            this.#gates.cancelForSubagent(childId, childName, stateObj.state, coord, this.#cancelGateById);
-            if (Array.isArray(plurnk?.gates)) {
-                this.#gates.pruneFromDescendants([{ id: childId, name: childName, gates: plurnk.gates }], this.#cancelGateById);
-            }
-            this.state = applySubagentState(this.state, childId, childName, rawLifecycle, plurnk);
-            this.#syncDescendantGates();
-            if (!this.#resuming) {
-                await subscriber.onStateChanged?.({ state: this.state });
-            }
-            return;
-        }
-
-        if (kind === "state_update") {
-            if (update.state === "running" || update.state === "idle") {
-                this.#gates.cancelForBoundSession(
-                    this.state,
-                    this.sessionId,
-                    this.#resuming,
-                    this.#inFlightPostCount,
-                    this.#cancelGateById,
-                );
-            }
-            await this.#finalizeLiveThought(subscriber);
-            const projected = applyLifecycleStateUpdate(this.state, update, plurnk);
-            if (projected.changed) {
-                this.state = projected.state;
-                if (!this.#resuming) {
-                    await subscriber.onStateChanged?.({ state: this.state });
-                }
-            }
-            if (update.state === "idle" && isRecord(plurnk?.terminal)) {
-                const stopReason = typeof update.stopReason === "string" ? update.stopReason : "end_turn";
-                const terminalFailure = extractTerminalFailure(plurnk, stopReason);
-                if (terminalFailure) {
-                    this.#emitLiveOutcome({
-                        stopReason: "error",
-                        meta: plurnk,
-                        error: terminalFailure,
-                    });
-                } else {
-                    this.#emitLiveOutcome({
-                        stopReason,
-                        meta: plurnk,
-                    });
-                }
-            }
-            return;
-        }
-
-        if (kind === "notice" || kind === "_plurnk_telemetry") {
-            const notice = isRecord(plurnk?.notice) ? plurnk.notice : undefined;
-            if (notice?.kind === "turn_generated" || typeof plurnk?.id === "number") {
-                await this.#finalizeLiveThought(subscriber);
-            }
-            if (isRecord(plurnk?.status)) {
-                if (Array.isArray(plurnk.status.descendants)) {
-                    this.#gates.pruneFromDescendants(plurnk.status.descendants, this.#cancelGateById);
-                }
-                if (Array.isArray(plurnk.status.inbox) && this.#submittedPrompt !== undefined) {
-                    const submitted = this.#submittedPrompt;
-                    const inboxItem = plurnk.status.inbox.find((item) => isRecord(item) && item.id === submitted.id);
-                    if (isRecord(inboxItem) && !this.messages.some((m) => m.id === submitted.id && m.role === "user")) {
-                        const unobservedPlurnk = {
-                            loopId: inboxItem.loopId,
-                            lifecycle: inboxItem.lifecycle,
-                            published: false,
-                            ...(isRecord(inboxItem.body) ? { body: structuredClone(inboxItem.body) } : {}),
-                        };
-                        /** @type {AcpSessionUpdatePayload[]} */
-                        const unobservedUpdates = [];
-                        if (submitted.content.length > 0 || !submitted.attachments?.length) {
-                            unobservedUpdates.push({
-                                sessionUpdate: "user_message_chunk",
-                                messageId: submitted.id,
-                                content: { type: "text", text: submitted.content },
-                                _meta: { plurnk: unobservedPlurnk },
-                            });
-                        }
-                        for (const attachment of submitted.attachments ?? []) {
-                            unobservedUpdates.push({
-                                sessionUpdate: "user_message_chunk",
-                                messageId: submitted.id,
-                                content: {
-                                    type: "image",
-                                    mimeType: attachment.mimeType,
-                                    data: attachment.data,
-                                    uri: `file:///${encodeURIComponent(attachment.name)}`,
-                                },
-                                _meta: { plurnk: unobservedPlurnk },
-                            });
-                        }
-                        this.messages = SessionTranslator.projectMessages(unobservedUpdates, this.messages, this.#ambientCallIds);
-                        if (!this.#resuming) {
-                            await subscriber.onMessagesChanged?.({ messages: this.messages });
-                        }
-                    }
-                }
-            }
-            const projected = applyNoticeStateUpdate(this.state, plurnk);
-            if (projected.changed) {
-                this.state = projected.state;
-                this.#syncDescendantGates();
-                if (!this.#resuming) {
-                    await subscriber.onStateChanged?.({ state: this.state });
-                }
-            }
-            if (update.severity === "error" && isRecord(plurnk?.problem)) {
-                const problem = plurnk.problem;
-                const status = typeof problem.status === "number" ? problem.status : undefined;
-                const message = typeof problem.detail === "string"
-                    ? problem.detail
-                    : typeof problem.title === "string"
-                        ? problem.title
-                        : "Stream error.";
-                if (!this.#replaying) {
-                    this.#streamProblem = { message, status, problem };
-                }
-                if (status === 401 || this.#gates.submittedIds.size > 0) {
-                    this.#streamProblem = { message, status, problem };
-                    this.#emitLiveOutcome({
-                        stopReason: "error",
-                        error: { message, status, problem },
-                    });
-                }
-            }
-            return;
-        }
-
-        if (kind === "terminal_update") {
-            const projected = applyTerminalStreamUpdate(this.state, update, plurnk);
-            if (projected.changed) {
-                this.state = projected.state;
-                if (!this.#resuming) {
-                    await subscriber.onStateChanged?.({ state: this.state });
-                }
-            }
-            return;
-        }
-
-        if (
-            kind === "user_message_chunk"
-            || kind === "agent_message_chunk"
-            || kind === "agent_thought_chunk"
-            || kind === "tool_call"
-            || kind === "tool_call_update"
-        ) {
-            if (kind === "tool_call" || kind === "tool_call_update") {
-                this.#gates.cancelForToolUpdate(update, this.#cancelGateById);
-            }
-            if (this.#replaying) {
-                this.#replayUpdates.push(update);
-                return;
-            }
-            if (this.#resuming) {
-                this.#postReplayUpdates.push(update);
-                return;
-            }
-            if (kind === "tool_call_update" && (plurnk?.proposal !== undefined || plurnk?.interaction !== undefined)) {
-                await subscriber.onSettled?.({ stopReason: "interrupt", meta: plurnk, result: {} });
-            }
-            await this.#applyLiveMessageUpdate(update, subscriber);
-        }
     }
 }
