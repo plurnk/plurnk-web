@@ -9,6 +9,15 @@ const isRecord = (value) => typeof value === "object" && value !== null && !Arra
 
 /**
  * @typedef {{
+ *   readonly workspaceId: number,
+ *   readonly workspaceName: string,
+ *   readonly sessionName: string | null,
+ *   readonly signal: AbortSignal,
+ * }} WorkspaceSettingsContext
+ */
+
+/**
+ * @typedef {{
  *   readonly id: number,
  *   readonly name: string,
  *   readonly projectRoot: string | null,
