@@ -88,19 +88,22 @@ function extractActorInfo(inbound, facts, receipt, args) {
         }
         const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
         if (messageMatch !== null) {
-            const principal = (messageMatch[1] ?? "").trim();
-            if (
-                principal.length > 0 &&
-                principal !== "operator" &&
-                principal !== "anonymous" &&
-                principal !== "client" &&
-                principal !== "owner"
-            ) {
-                return { actor: principal, sessionTarget: null };
-            }
+            try {
+                const principal = decodeURIComponent(messageMatch[1] ?? "").trim();
+                if (
+                    principal.length > 0 &&
+                    principal !== "_plurnk" &&
+                    principal !== "operator" &&
+                    principal !== "anonymous" &&
+                    principal !== "client" &&
+                    principal !== "owner"
+                ) {
+                    return { actor: principal, sessionTarget: null };
+                }
+            } catch { /* fall through */ }
             continue;
         }
-        const scheduleMatch = /^schedule:\/\/\/([^/?#]+)/u.exec(candidate);
+        const scheduleMatch = /^schedule:\/\/\/?([^/?#]+)/u.exec(candidate);
         if (scheduleMatch !== null) {
             try {
                 const alias = decodeURIComponent(scheduleMatch[1] ?? "").trim();
@@ -114,6 +117,7 @@ function extractActorInfo(inbound, facts, receipt, args) {
         const direct = facts.actor.trim();
         if (
             direct.length > 0 &&
+            direct !== "_plurnk" &&
             direct !== "operator" &&
             direct !== "anonymous" &&
             direct !== "client" &&

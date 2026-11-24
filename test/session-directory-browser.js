@@ -4,7 +4,7 @@ import verifyPageShell from "./page-shell.js";
 
 function isUntouchedDraft(session, allSessions) {
     const kind = session.kind ?? (session.parentSessionId === null ? "root" : "work");
-    const hasModelChildren = allSessions.some((s) => s.origin === "model" && s.archived_at === null && s.parentSessionId === session.id);
+    const hasModelChildren = allSessions.some((s) => s.origin === "model" && (s.archivedAt ?? null) === null && s.parentSessionId === session.id);
     return session.parentSessionId === null
         && kind === "root"
         && session.lifecycle === "idle"

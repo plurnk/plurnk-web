@@ -46,11 +46,11 @@ export default function sessionState(element, main = $("#main")) {
             }
         }
     };
-    /** @param {{plurnk?: Partial<import("@plurnk/plurnk-acp/client").AcpPlusState["plurnk"]> & {budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState, configOptions?: readonly {configId?: string, currentValue?: unknown}[], laneQueue?: { readonly position?: number | null, readonly depth?: number | null, readonly laneLimit?: number | null } | null}, budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}} state
+    /** @param {{plurnk?: Partial<import("@plurnk/plurnk-acp/client").AcpPlusState["plurnk"]> & {budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState, configOptions?: readonly {configId?: string, currentValue?: unknown}[], laneQueue?: { readonly position?: number | null, readonly depth?: number | null, readonly laneLimit?: number | null } | null, turnPhase?: string | null}, budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}} state
      * @param {number} now
      */
     const present = (state, now) => {
-        const { workspace, status, providers, configOptions, laneQueue } = state.plurnk ?? {};
+        const { workspace, status, providers, configOptions, laneQueue, turnPhase } = state.plurnk ?? {};
         if (workspace) {
             if (`${workspace.id}#${sessionName}` !== sessionId) throw new Error("Session state identifies a different workspace.");
             const identity = workspaceIdentity(workspace, sessionName);
@@ -76,7 +76,7 @@ export default function sessionState(element, main = $("#main")) {
         }
         if (status) {
             if (!workspace || !latestIdentity) throw new Error("Session state has no workspace identity.");
-            const gaugeValues = gauges(status, state.budget ?? state.plurnk?.budget, { providers, configOptions, laneQueue });
+            const gaugeValues = gauges(status, state.budget ?? state.plurnk?.budget, { providers, configOptions, laneQueue, turnPhase });
             hasConfiguredModel = gaugeValues.model !== "No model";
             the(element, {
                 ...gaugeValues,

@@ -12,7 +12,7 @@ import { hasActiveOidcGrant, onOidcGrantChange, recoverFromUnauthorized } from "
 import readBody from "./read-body.js";
 import readHistory from "./read-history.js";
 import managementAction from "./management-action.js";
-import { createModelSearchCache, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import { createModelSearchCache, flattenSelectOptions, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
 import { attachModelCombobox } from "./model-combobox.js";
 import sessionCommands, {
     acceptCommandSuggestion,
@@ -389,8 +389,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const providers = Array.isArray(plurnk?.providers) ? plurnk.providers : [];
         const readOptionValues = (/** @type {string} */ id) => {
             const opt = configOptions.find((entry) => isRecord(entry) && entry.configId === id);
-            return isRecord(opt) && Array.isArray(opt.options)
-                ? opt.options.flatMap((o) => isRecord(o) && typeof o.value === "string" && o.value ? [o.value] : [])
+            return isRecord(opt)
+                ? flattenSelectOptions(opt.options).flatMap((o) => typeof o.value === "string" && o.value ? [o.value] : [])
                 : [];
         };
         const providerAliases = providers.flatMap((p) => isRecord(p) && typeof p.alias === "string" && p.alias ? [p.alias] : []);
@@ -410,7 +410,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const personas = personaOptions.length > 0
             ? personaOptions
             : ["none", ...(familyAliases.personas ?? [])];
-        const childModels = [...readOptionValues("spawn_model"), ...models];
+        const childModels = [...readOptionValues("child"), ...models];
         const modes = readOptionValues("mode");
         const wb = getWorkbenchSnapshot?.();
         const workspaces = wb
@@ -918,7 +918,7 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             void toggleYolo().then(
                 (enabled) => {
                     if (!resources.signal.aborted) {
-                        the(feedback, { "message-status": `Approvals: ${enabled ? "Automatic" : "Manual"}.`, "command-error": "" });
+                        the(feedback, { "message-status": `Approval policy: ${enabled ? "accept" : "review"}.`, "command-error": "" });
                     }
                 },
                 async (error) => {
@@ -1177,8 +1177,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
         const liveEffortVal = isRecord(liveThoughtOpt) && typeof liveThoughtOpt.currentValue === "string"
             ? liveThoughtOpt.currentValue
             : (status?.model?.effort ?? "");
-        const liveSupportedEfforts = isRecord(liveThoughtOpt) && Array.isArray(liveThoughtOpt.options)
-            ? liveThoughtOpt.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
+        const liveSupportedEfforts = isRecord(liveThoughtOpt)
+            ? flattenSelectOptions(liveThoughtOpt.options).flatMap((entry) => typeof entry.value === "string" && entry.value ? [entry.value] : [])
             : [];
         if (liveModelVal && liveSupportedEfforts.length > 0) {
             modelSearchCache.seedEfforts(liveModelVal, liveSupportedEfforts);
@@ -1211,8 +1211,8 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
                 ? modelOpt.currentValue
                 : (aliases.find((a) => a.active)?.alias ?? "");
             const currentEffort = isRecord(thoughtOpt) && typeof thoughtOpt.currentValue === "string" ? thoughtOpt.currentValue : "";
-            const supported = isRecord(thoughtOpt) && Array.isArray(thoughtOpt.options)
-                ? thoughtOpt.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
+            const supported = isRecord(thoughtOpt)
+                ? flattenSelectOptions(thoughtOpt.options).flatMap((entry) => typeof entry.value === "string" && entry.value ? [entry.value] : [])
                 : [];
             if (currentModel && supported.length > 0) {
                 modelSearchCache.seedEfforts(currentModel, supported);

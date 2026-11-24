@@ -18,7 +18,7 @@ export default async function verifyCommands(t) {
                     const requests = [];
                     let acpStatus = 200;
                     let expectedAuthHeader = "Bearer command-fixture-token";
-                    const modelResponse = (model) => ({ configOptions: [], availableCommands: [], _meta: { plurnk: { status: { model, spawnModel: null } } } });
+                    const modelResponse = (model) => ({ configOptions: [], availableCommands: [], _meta: { plurnk: { status: { model, childModel: null } } } });
                     /** @type {any} */
                     let result = modelResponse(null);
                     let held = undefined;
@@ -250,6 +250,7 @@ export default async function verifyCommands(t) {
                         ["/", "/settings/?workspace=conversation&session=session1#help"],
                         ["  /help /model \n", "/settings/?workspace=conversation&session=session1&cmd=model#help"],
                         ["/help learn", "/settings/?workspace=conversation&session=session1&cmd=learn#help"],
+                        ["/help logout", "/settings/?workspace=conversation&session=session1&cmd=logout#help"],
                         ["/models", "/settings/?workspace=conversation&session=session1#models"],
                         ["/models fixture", "/settings/?workspace=conversation&session=session1&q=fixture#models"],
                         ["/model", "/settings/?workspace=conversation&session=session1#session"],
@@ -272,7 +273,7 @@ export default async function verifyCommands(t) {
                     }
 
                     assert.equal(await command("/yolo"), true);
-                    assert.equal(await statusText.textContent(), "Approvals: Automatic.");
+                    assert.equal(await statusText.textContent(), "Approval policy: accept.");
 
                     for (const text of ["/quit", "/help unknown", "/stop now", "/model a b c", "/effort a b"]) {
                         assert.equal(await command(text), false, text);
@@ -361,15 +362,15 @@ export default async function verifyCommands(t) {
                     assert.equal(await statusText.textContent(), "nightly  done");
 
                     // Direct mutations confirm in #session-feedback without opening dialogs or leaking secrets.
-                    result = { configOptions: [{ configId: "persona", name: "Persona", type: "select", currentValue: "reviewer", options: [{ value: "none", name: "none" }, { value: "reviewer", name: "reviewer" }] }] };
+                    result = { configOptions: [{ configId: "persona", name: "Persona", type: "select", currentValue: "reviewer", options: [{ groupId: "workspace", name: "Workspace", options: [{ value: "none", name: "none" }, { value: "reviewer", name: "reviewer" }] }] }] };
                     assert.equal(await command("/persona reviewer"), true);
                     assert.equal(requests.at(-1).method, "session/set_config_option");
                     assert.equal(requests.at(-1).params.configId, "persona");
                     assert.equal(await statusText.textContent(), "Persona: reviewer. Supported: none, reviewer.");
 
-                    result = { configOptions: [{ configId: "spawn_model", name: "Child Session Model", type: "select", currentValue: "inherit", options: [{ value: "inherit", name: "inherit" }] }] };
+                    result = { configOptions: [{ configId: "child", name: "Child Session Model", type: "select", currentValue: "inherit", options: [{ value: "inherit", name: "inherit" }] }] };
                     assert.equal(await command("/child inherit"), true);
-                    assert.equal(requests.at(-1).params.configId, "spawn_model");
+                    assert.equal(requests.at(-1).params.configId, "child");
                     assert.equal(await statusText.textContent(), "Child model: inherit.");
 
                     result = { to: "1/1/2", restored: ["a.ts"], skipped: [] };

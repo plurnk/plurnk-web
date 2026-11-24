@@ -7,7 +7,7 @@ import describeFailure from "./failure.js";
 import { populateEnvPanel } from "./env-panel.js";
 import managementAction from "./management-action.js";
 import { primaryModifierLabel } from "./session-commands.js";
-import { createModelSearchCache, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import { createModelSearchCache, flattenSelectOptions, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
 import { attachModelCombobox } from "./model-combobox.js";
 import { mountSchedulePanel } from "./schedule-panel.js";
 import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
@@ -379,8 +379,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         const panel = $(article, `[data-settings-panel="${family}"]`);
         const tbody = panel ? $(panel, "[data-family-rows]") : null;
         if (!panel || !tbody) return;
-        const rawItems = isRecord(res) && Array.isArray(res.definitions) ? res.definitions
-            : isRecord(res) && Array.isArray(res.items) ? res.items : [];
+        const rawItems = isRecord(res) && Array.isArray(res.definitions) ? res.definitions : [];
         const items = rawItems.filter(isRecord);
         $.cloneEach(tbody, "#workspace-family-row", items, (tr, item) => {
             const alias = typeof item.alias === "string" ? item.alias : "";
@@ -447,8 +446,8 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         the(panel, { "candidate-count": candidates.length });
     }
 
-    /** @type {{ model: string, effort: string, spawnModel: string, persona: string, mode: string }} */
-    let currentSessionValues = { model: "", effort: "", spawnModel: "inherit", persona: "none", mode: "review" };
+    /** @type {{ model: string, effort: string, childModel: string, persona: string, mode: string }} */
+    let currentSessionValues = { model: "", effort: "", childModel: "inherit", persona: "none", mode: "review" };
     let hasPersistedSessionModel = false;
 
     /**
@@ -535,15 +534,15 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         }
         const modelOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "model");
         const thoughtOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "thought_level");
-        const spawnOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "spawn_model");
+        const childOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "child");
         const personaOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "persona");
         const modeOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "mode");
 
         modelSearchCache.recordAliases(aliases);
         modelSearchCache.recordCatalogItems(catalogItems);
 
-        const thoughtSupported = isRecord(thoughtOption) && Array.isArray(thoughtOption.options)
-            ? thoughtOption.options.flatMap((entry) => isRecord(entry) && typeof entry.value === "string" && entry.value ? [entry.value] : [])
+        const thoughtSupported = isRecord(thoughtOption)
+            ? flattenSelectOptions(thoughtOption.options).flatMap((entry) => typeof entry.value === "string" && entry.value ? [entry.value] : [])
             : [];
         const currentModel = isRecord(modelOption) && typeof modelOption.currentValue === "string" && modelOption.currentValue && modelOption.currentValue !== "none"
             ? modelOption.currentValue
@@ -564,14 +563,15 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         const currentEffort = isRecord(thoughtOption) && typeof thoughtOption.currentValue === "string" ? thoughtOption.currentValue : "";
         const resolvedEffort = syncSessionEffortSelect(effortSelect, resolvedModel, currentEffort);
 
-        const currentSpawn = isRecord(spawnOption) && typeof spawnOption.currentValue === "string" && spawnOption.currentValue
-            ? spawnOption.currentValue
+        const currentChild = isRecord(childOption) && typeof childOption.currentValue === "string" && childOption.currentValue
+            ? childOption.currentValue
             : "inherit";
-        sessionSpawnCombobox.setValue(currentSpawn);
+        sessionSpawnCombobox.setValue(currentChild);
 
-        const personaChoices = isRecord(personaOption) && Array.isArray(personaOption.options) && personaOption.options.length > 0
-            ? personaOption.options.flatMap((entry) => {
-                if (!isRecord(entry) || typeof entry.value !== "string" || typeof entry.name !== "string") return [];
+        const rawPersonaOptions = isRecord(personaOption) ? flattenSelectOptions(personaOption.options) : [];
+        const personaChoices = rawPersonaOptions.length > 0
+            ? rawPersonaOptions.flatMap((entry) => {
+                if (typeof entry.value !== "string" || typeof entry.name !== "string") return [];
                 const desc = typeof entry.description === "string" && entry.description.length > 0 ? ` — ${entry.description}` : "";
                 return [{ value: entry.value, label: `${entry.name}${desc}` }];
             })
@@ -589,9 +589,10 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             { value: "accept", label: "Auto-approve all operations (accept)" },
             { value: "reject", label: "Deny gated operations (reject)" },
         ];
-        const modeChoices = isRecord(modeOption) && Array.isArray(modeOption.options) && modeOption.options.length > 0
-            ? modeOption.options.flatMap((entry) =>
-                isRecord(entry) && typeof entry.value === "string" && typeof entry.name === "string"
+        const rawModeOptions = isRecord(modeOption) ? flattenSelectOptions(modeOption.options) : [];
+        const modeChoices = rawModeOptions.length > 0
+            ? rawModeOptions.flatMap((entry) =>
+                typeof entry.value === "string" && typeof entry.name === "string"
                     ? [{ value: entry.value, label: `${entry.name} (${entry.value})` }]
                     : [])
             : fallbackModes;
@@ -607,7 +608,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
         currentSessionValues = {
             model: resolvedModel,
             effort: resolvedEffort,
-            spawnModel: currentSpawn,
+            childModel: currentChild,
             persona: personaSelect.value,
             mode: resolvedMode,
         };
@@ -929,7 +930,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 },
             });
         }
-        const sessionSpawnBox = $(article, '[data-session-config-form] [data-model-combobox="spawnModel"]');
+        const sessionSpawnBox = $(article, '[data-session-config-form] [data-model-combobox="childModel"]');
         if (sessionSpawnBox instanceof HTMLElement) {
             sessionSpawnCombobox = attachModelCombobox(sessionSpawnBox, {
                 getCache: () => modelSearchCache,
@@ -1053,7 +1054,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                             && typeof row.id === "number"
                             && typeof row.name === "string"
                             && row.origin === "model"
-                            && (row.archived_at === null || row.archived_at === undefined);
+                            && (row.archivedAt === null || row.archivedAt === undefined);
                     })
                     .map((row) => {
                         const r = /** @type {Record<string, unknown>} */ (row);
@@ -1178,7 +1179,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                 const callSession = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
                     invoke(kind, params, { requireSession: true });
                 if (operation === "child") {
-                    const { currentValue } = await sessionConfigOption(callSession, "spawn_model", selector);
+                    const { currentValue } = await sessionConfigOption(callSession, "child", selector);
                     await refreshSection("models");
                     return `Child model: ${currentValue || selector}.`;
                 }
@@ -1224,7 +1225,7 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
             const data = new FormData(form);
             const selectedModel = String(data.get("model") ?? "").trim();
             const selectedEffort = String(data.get("effort") ?? "").trim();
-            const selectedSpawn = String(data.get("spawnModel") ?? "inherit").trim() || "inherit";
+            const selectedChild = String(data.get("childModel") ?? "inherit").trim() || "inherit";
             const selectedPersona = String(data.get("persona") ?? "none").trim() || "none";
             const selectedMode = String(data.get("mode") ?? "review").trim() || "review";
             void runMutation(async () => {
@@ -1245,9 +1246,9 @@ export function createWorkspaceSettingsController(article, getContext, { updateH
                     const effRes = await sessionEffort(callSession, selectedEffort);
                     summaries.push(`Effort: ${effRes.effort ?? selectedEffort}`);
                 }
-                if (selectedSpawn !== currentSessionValues.spawnModel) {
-                    const { currentValue } = await sessionConfigOption(callSession, "spawn_model", selectedSpawn);
-                    summaries.push(`Child model: ${currentValue || selectedSpawn}`);
+                if (selectedChild !== currentSessionValues.childModel) {
+                    const { currentValue } = await sessionConfigOption(callSession, "child", selectedChild);
+                    summaries.push(`Child model: ${currentValue || selectedChild}`);
                 }
                 if (selectedPersona !== currentSessionValues.persona) {
                     const { currentValue } = await sessionConfigOption(callSession, "persona", selectedPersona);
@@ -1660,7 +1661,7 @@ export default async function observeWorkspaceSettings(main) {
 
             const matchedWorkspace = currentWorkspaceName !== ""
                 ? listedWorkspaces.find(({ name }) => name === currentWorkspaceName)
-                : (listedWorkspaces.find(({ archived_at }) => archived_at === null) ?? listedWorkspaces[0]);
+                : (listedWorkspaces.find(({ archivedAt }) => archivedAt === null) ?? listedWorkspaces[0]);
 
             if (!matchedWorkspace) {
                 const initialSec = parseSettingsHash(location.hash);
@@ -1675,11 +1676,11 @@ export default async function observeWorkspaceSettings(main) {
                 main.dataset.workspaceName = currentWorkspaceName;
                 main.dataset.live = "true";
 
-                const wsArchived = matchedWorkspace.archived_at !== null;
+                const wsArchived = matchedWorkspace.archivedAt !== null;
                 if (wsArchived) article.dataset.workspaceArchived = "true";
                 else delete article.dataset.workspaceArchived;
 
-                const effectiveProject = matchedWorkspace.project_label ?? matchedWorkspace.project_root;
+                const effectiveProject = matchedWorkspace.projectLabel ?? matchedWorkspace.projectRoot;
                 const iconGlyph = effectiveProject !== null ? "🗂️" : "☁️";
                 const iconLabel = effectiveProject !== null ? "Project workspace" : "Folderless workspace";
 
@@ -1720,9 +1721,9 @@ export default async function observeWorkspaceSettings(main) {
 
                 const folderLine = $(article, "[data-settings-folder]");
                 if (folderLine instanceof HTMLElement) {
-                    if (matchedWorkspace.project_label !== null) {
+                    if (matchedWorkspace.projectLabel !== null) {
                         folderLine.hidden = false;
-                        the(folderLine, "project-label", matchedWorkspace.project_label);
+                        the(folderLine, "project-label", matchedWorkspace.projectLabel);
                     } else {
                         folderLine.hidden = true;
                     }
@@ -1765,7 +1766,7 @@ export default async function observeWorkspaceSettings(main) {
                         if (titleInput instanceof HTMLInputElement) {
                             titleInput.value = typeof activeRow.title === "string" ? activeRow.title : "";
                         }
-                        const sessArchived = activeRow.archived_at !== null && activeRow.archived_at !== undefined;
+                        const sessArchived = activeRow.archivedAt !== null && activeRow.archivedAt !== undefined;
                         const sessArchBtn = $(titleForm, "[data-session-archive-btn]");
                         const sessUnarchBtn = $(titleForm, "[data-session-unarchive-btn]");
                         if (sessArchBtn instanceof HTMLElement) sessArchBtn.hidden = sessArchived;

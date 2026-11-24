@@ -561,11 +561,11 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.ok(await page.locator("main").evaluate((main) => main.scrollHeight > 2 * main.clientHeight), "the conversation is longer than the view");
         await text.fill("/yolo");
         await send.click();
-        await page.locator('[aria-label="Message feedback"] [role="status"]').filter({ hasText: "Approvals: Automatic." }).waitFor();
+        await page.locator('[aria-label="Message feedback"] [role="status"]').filter({ hasText: "Approval policy: accept." }).waitFor();
         assert.equal(await afterConversation('[aria-label="Message feedback"]'), true, "command feedback follows the conversation in main");
         await text.fill("/yolo");
         await send.click();
-        await page.locator('[aria-label="Message feedback"] [role="status"]').filter({ hasText: "Approvals: Manual." }).waitFor();
+        await page.locator('[aria-label="Message feedback"] [role="status"]').filter({ hasText: "Approval policy: review." }).waitFor();
         await text.fill("Lifecycle fixture: approval-input.");
         await send.click();
         const review = page.getByRole("form", { name: "Review requests", exact: true });

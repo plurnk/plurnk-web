@@ -11,9 +11,9 @@ const isRecord = (value) => typeof value === "object" && value !== null && !Arra
  * @typedef {{
  *   readonly id: number,
  *   readonly name: string,
- *   readonly project_root: string | null,
- *   readonly project_label: string | null,
- *   readonly archived_at: string | null,
+ *   readonly projectRoot: string | null,
+ *   readonly projectLabel: string | null,
+ *   readonly archivedAt: string | null,
  * }} WorkspaceSummary
  */
 
@@ -28,27 +28,15 @@ export function parseWorkspaceList(raw) {
     const out = [];
     for (const item of list) {
         if (!isRecord(item) || typeof item.id !== "number" || typeof item.name !== "string" || item.name === "") continue;
-        const projectRoot = typeof item.project_root === "string"
-            ? item.project_root
-            : typeof item.projectRoot === "string"
-                ? item.projectRoot
-                : null;
-        const projectLabel = typeof item.project_label === "string"
-            ? item.project_label
-            : typeof item.projectLabel === "string"
-                ? item.projectLabel
-                : null;
-        const archivedAt = typeof item.archived_at === "string"
-            ? item.archived_at
-            : typeof item.archivedAt === "string"
-                ? item.archivedAt
-                : null;
+        const projectRoot = typeof item.projectRoot === "string" ? item.projectRoot : null;
+        const projectLabel = typeof item.projectLabel === "string" ? item.projectLabel : null;
+        const archivedAt = typeof item.archivedAt === "string" ? item.archivedAt : null;
         out.push({
             id: item.id,
             name: item.name,
-            project_root: projectRoot,
-            project_label: projectLabel,
-            archived_at: archivedAt,
+            projectRoot,
+            projectLabel,
+            archivedAt,
         });
     }
     return out;
@@ -64,7 +52,7 @@ export function renderWorkspacesDialog(allWorkspaces, currentWorkspaceName = nul
     if (!(dialog instanceof HTMLElement)) return;
     const list = $(dialog, "[data-workspaces-list]");
     const empty = $(dialog, "[data-workspaces-empty]");
-    const unarchived = allWorkspaces.filter(({ archived_at }) => archived_at === null);
+    const unarchived = allWorkspaces.filter(({ archivedAt }) => archivedAt === null);
     const archivedCount = allWorkspaces.length - unarchived.length;
     the(dialog, "archived-workspaces-count", String(archivedCount));
 
@@ -80,8 +68,8 @@ export function renderWorkspacesDialog(allWorkspaces, currentWorkspaceName = nul
                 const link = $(li, "a");
                 const glyphEl = $(li, "[data-workspace-item-glyph]");
                 const nameEl = $(li, "[data-workspace-item-name]");
-                const effectiveProject = ws.project_label ?? ws.project_root;
-                const separateFolder = ws.project_label !== null && ws.project_label !== ws.name;
+                const effectiveProject = ws.projectLabel ?? ws.projectRoot;
+                const separateFolder = ws.projectLabel !== null && ws.projectLabel !== ws.name;
                 if (glyphEl) glyphEl.textContent = effectiveProject !== null ? "🗂️" : "☁️";
                 if (nameEl) nameEl.textContent = ws.name;
                 const path = directoryPath({ kind: "workspace", workspace: ws.name });
@@ -92,10 +80,10 @@ export function renderWorkspacesDialog(allWorkspaces, currentWorkspaceName = nul
                     else link.removeAttribute("aria-current");
                     const existingTag = $(link, "[data-workspace-item-project]");
                     existingTag?.remove();
-                    if (separateFolder && ws.project_label !== null) {
+                    if (separateFolder && ws.projectLabel !== null) {
                         link.append(" ");
                         const tag = $.clone(link, "#workspace-project-tag");
-                        if (tag) tag.textContent = ws.project_label;
+                        if (tag) tag.textContent = ws.projectLabel;
                     }
                 }
             });

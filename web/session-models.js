@@ -491,10 +491,23 @@ export async function sessionModel(call, selector, effort) {
         : activeProviderRoute(plurnk?.providers, Validator.assertModelRoute);
 }
 
+/** @param {unknown} options @returns {Record<string, unknown>[]} */
+export function flattenSelectOptions(options) {
+    if (!Array.isArray(options)) return [];
+    return options.flatMap((entry) => {
+        if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
+        const rec = /** @type {Record<string, unknown>} */ (entry);
+        if (Array.isArray(rec.options)) {
+            return rec.options.filter((item) => typeof item === "object" && item !== null && !Array.isArray(item));
+        }
+        return [rec];
+    });
+}
+
 /** @param {Action} call @param {string} [selection] */
 export async function sessionEffort(call, selection) {
     const { Validator } = await import("@plurnk/plurnk-contracts");
-    const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: Array<{value?: unknown}>}>, _meta?: {plurnk?: {status?: Record<string, unknown>, providers?: unknown}}}} */ (
+    const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: unknown}>, _meta?: {plurnk?: {status?: Record<string, unknown>, providers?: unknown}}}} */ (
         await call(
             selection === undefined ? "session/resume" : "session/set_config_option",
             selection === undefined ? { replayFrom: null } : { configId: "thought_level", value: selection },
@@ -510,8 +523,8 @@ export async function sessionEffort(call, selection) {
     const model = status.model !== null
         ? Validator.assertModelRoute(status.model)
         : activeProviderRoute(response?._meta?.plurnk?.providers, Validator.assertModelRoute);
-    const supported = thought && Array.isArray(thought.options) && model !== null
-        ? thought.options.map((option) => Validator.assertEffort(option?.value))
+    const supported = thought && model !== null
+        ? flattenSelectOptions(thought.options).map((option) => Validator.assertEffort(option.value))
         : [];
     const rawEffort = model?.effort ?? (typeof thought?.currentValue === "string" && thought.currentValue ? thought.currentValue : undefined);
     if (model === null || rawEffort === undefined) {
@@ -524,9 +537,9 @@ export async function sessionEffort(call, selection) {
     };
 }
 
-/** @param {Action} call @param {"persona" | "spawn_model" | "mode"} configId @param {string} [selection] */
+/** @param {Action} call @param {"persona" | "child" | "mode"} configId @param {string} [selection] */
 export async function sessionConfigOption(call, configId, selection) {
-    const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: Array<{value?: unknown}>}>}} */ (
+    const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: unknown}>}} */ (
         await call(
             selection === undefined ? "session/options" : "session/set_config_option",
             selection === undefined ? {} : { configId, value: selection },
@@ -537,8 +550,7 @@ export async function sessionConfigOption(call, configId, selection) {
     }
     const option = response.configOptions.find((entry) => entry?.configId === configId);
     const currentValue = typeof option?.currentValue === "string" ? option.currentValue : "";
-    const supported = Array.isArray(option?.options)
-        ? option.options.flatMap((item) => typeof item?.value === "string" && item.value ? [item.value] : [])
-        : [];
+    const supported = flattenSelectOptions(option?.options)
+        .flatMap((item) => typeof item.value === "string" && item.value ? [item.value] : []);
     return { currentValue, supported };
 }

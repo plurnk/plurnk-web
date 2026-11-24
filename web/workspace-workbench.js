@@ -1047,7 +1047,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 : typeof row.title === "string" && row.title.trim() !== ""
                     ? row.title.trim()
                     : null;
-            const isArchived = row.archived_at !== null && row.archived_at !== undefined;
+            const isArchived = row.archivedAt !== null && row.archivedAt !== undefined;
             sessionsById.set(row.id, {
                 id: row.id,
                 name: row.name,
@@ -1071,7 +1071,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
         if (pageLifetime.signal.aborted) return;
 
         for (const ws of listedWorkspaces) {
-            if (ws.archived_at === null) suggestionWorkspaces.add(ws.name);
+            if (ws.archivedAt === null) suggestionWorkspaces.add(ws.name);
         }
         renderWorkspacesDialog(listedWorkspaces, currentWorkspaceName);
 
@@ -1084,14 +1084,14 @@ export default async function observeWorkspaceWorkbench(tabs) {
         workspaceId = matchedWorkspace.id;
         currentWorkspaceName = matchedWorkspace.name;
         knownWorkspaceNames.add(currentWorkspaceName);
-        hasProjectRoot = (matchedWorkspace.project_label ?? matchedWorkspace.project_root) !== null;
-        projectLabel = matchedWorkspace.project_label;
+        hasProjectRoot = (matchedWorkspace.projectLabel ?? matchedWorkspace.projectRoot) !== null;
+        projectLabel = matchedWorkspace.projectLabel;
         recomputeWorkspaceMarker();
 
         tabs.dataset.workspaceId = String(workspaceId);
         tabs.dataset.workspaceName = currentWorkspaceName;
         tabs.dataset.live = "true";
-        if (matchedWorkspace.archived_at !== null) {
+        if (matchedWorkspace.archivedAt !== null) {
             tabs.dataset.workspaceArchived = "true";
         } else {
             delete tabs.dataset.workspaceArchived;
@@ -1206,7 +1206,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             }
             case "session/archived": {
                 if (notifWorkspaceId !== workspaceId) return;
-                const isArchived = data.archived_at !== null && data.archived_at !== undefined;
+                const isArchived = data.archivedAt !== null && data.archivedAt !== undefined;
                 const ids = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
                 let changed = false;
                 for (const sid of ids) {
@@ -1276,7 +1276,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             case "log/entry": {
                 const entry = isRecord(data.entry) ? data.entry : null;
                 if (!entry || notifWorkspaceId !== workspaceId) return;
-                const sid = typeof entry.session_id === "number" ? entry.session_id : notifSessionId;
+                const sid = typeof entry.sessionId === "number" ? entry.sessionId : notifSessionId;
                 if (sid === null) return;
                 const cur = sessionsById.get(sid);
                 if (!cur) return;
@@ -1285,13 +1285,13 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 if (
                     entry.origin === "model"
                     && entry.state === "resolved"
-                    && (typeof entry.status_rx !== "number" || entry.status_rx < 400)
+                    && (typeof entry.statusRx !== "number" || entry.statusRx < 400)
                     && (entry.op === "send" || entry.op === "done" || entry.op === "fail")
                     && typeof entry.id === "number"
                 ) {
                     const rxCompletion = isRecord(entry.rx) && (entry.rx.completion === 200 || entry.rx.completion === 499)
                         ? entry.rx.completion
-                        : (Array.isArray(entry.replied_to_sources) && entry.replied_to_sources.length > 0 ? 200 : null);
+                        : (Array.isArray(entry.repliedToSources) && entry.repliedToSources.length > 0 ? 200 : null);
                     if (rxCompletion !== null) nextReplyId = entry.id;
                 }
                 if (entry.state !== "proposed" && entry.op !== "done" && entry.op !== "fail" && entry.op !== "wait") {

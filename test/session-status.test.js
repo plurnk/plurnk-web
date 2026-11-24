@@ -175,5 +175,17 @@ test("{§web-session-status} turn_queued telemetry projects lane queue position 
     const runningPlurnk = /** @type {any} */ (running.state.plurnk);
     assert.equal(runningPlurnk.status.lifecycle, "running");
     assert.equal(runningPlurnk.laneQueue, null);
-    assert.equal(gauges(runningPlurnk.status, emptyBudget, { laneQueue: runningPlurnk.laneQueue }).queue, "");
+    assert.equal(runningPlurnk.turnPhase, "awaiting-model");
+    const awaitingGauges = gauges(runningPlurnk.status, emptyBudget, { laneQueue: runningPlurnk.laneQueue, turnPhase: runningPlurnk.turnPhase });
+    assert.equal(awaitingGauges.queue, "");
+    assert.equal(awaitingGauges["turn-phase"], "awaiting-model");
+
+    const generated = applyNoticeStateUpdate(
+        running.state,
+        { notice: { source: "engine:turn", kind: "turn_generated" } },
+    );
+    assert.equal(generated.changed, true);
+    const generatedPlurnk = /** @type {any} */ (generated.state.plurnk);
+    assert.equal(generatedPlurnk.turnPhase, null);
+    assert.equal(gauges(generatedPlurnk.status, emptyBudget, { turnPhase: generatedPlurnk.turnPhase })["turn-phase"], null);
 });

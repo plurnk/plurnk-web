@@ -158,9 +158,9 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                         await wsEntry.waitFor();
                         assert.equal(
                             await wsEntry.locator(":scope > header").evaluate((el) => getComputedStyle(el, "::before").content.match(/☁️|🗂️/u)?.[0]),
-                            ws.project_root === null ? "☁️" : "🗂️",
+                            ws.projectRoot === null ? "☁️" : "🗂️",
                         );
-                        assert.equal(await wsEntry.getAttribute("aria-label"), ws.project_root === null ? "Folderless workspace" : "Project workspace");
+                        assert.equal(await wsEntry.getAttribute("aria-label"), ws.projectRoot === null ? "Folderless workspace" : "Project workspace");
                     }
 
                     const primaryWs = initial.find((ws) => ws.name === names[0]);

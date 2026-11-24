@@ -75,8 +75,8 @@ export default async function resolveArrival(main) {
         const listedWorkspaces = parseWorkspaceList(
             await managementAction("workspace.list", { includeArchived: true }, "", signal, { returnTo: "/" }),
         );
-        const existingWs = listedWorkspaces.find(({ archived_at, project_root }) => archived_at === null && project_root === null)
-            ?? listedWorkspaces.find(({ archived_at }) => archived_at === null);
+        const existingWs = listedWorkspaces.find(({ archivedAt, projectRoot }) => archivedAt === null && projectRoot === null)
+            ?? listedWorkspaces.find(({ archivedAt }) => archivedAt === null);
 
         /** @type {string} */
         let wsName;
@@ -96,7 +96,7 @@ export default async function resolveArrival(main) {
             for (const s of rawWsSessions) {
                 if (!isRecord(s) || typeof s.name !== "string") continue;
                 seenSessions.add(s.name);
-                if (s.origin === "model" && (s.archived_at === null || s.archived_at === undefined)) {
+                if (s.origin === "model" && (s.archivedAt === null || s.archivedAt === undefined)) {
                     const existingLoc = directoryPath({ kind: "session", workspace: wsName, session: s.name });
                     if (existingLoc !== null) {
                         location.replace(existingLoc);

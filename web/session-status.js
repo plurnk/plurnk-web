@@ -159,6 +159,7 @@ function resolveDisplayModel(statusModel, defaults) {
  *   providers?: readonly Partial<import("@plurnk/plurnk-acp/client").AcpProviderRoute>[],
  *   configOptions?: readonly { configId?: string, currentValue?: unknown }[],
  *   laneQueue?: { readonly position?: number | null, readonly depth?: number | null, readonly laneLimit?: number | null } | null,
+ *   turnPhase?: string | null,
  * }} [defaults]
  */
 export function gauges(status, budget, defaults) {
@@ -192,8 +193,12 @@ export function gauges(status, budget, defaults) {
             ? `Queued for inference lane: position ${queuePos} of ${queueDepth}`
             : `Queued for inference lane: position ${queuePos}`)
         : "";
+    const turnPhase = status.lifecycle === "running" && defaults?.turnPhase === "awaiting-model"
+        ? "awaiting-model"
+        : null;
     return {
         lifecycle: status.lifecycle,
+        "turn-phase": turnPhase,
         queue: queueText,
         "queue-label": queueLabel,
         "approval-mode": approvalMode,

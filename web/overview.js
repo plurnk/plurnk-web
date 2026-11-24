@@ -868,9 +868,9 @@ export default function observeOverview(main) {
                 nextWorkspaces.set(ws.id, {
                     id: ws.id,
                     name: ws.name,
-                    projectRoot: ws.project_root,
-                    projectLabel: ws.project_label,
-                    archived: ws.archived_at !== null,
+                    projectRoot: ws.projectRoot,
+                    projectLabel: ws.projectLabel,
+                    archived: ws.archivedAt !== null,
                     order: nextOrder++,
                 });
             }
@@ -916,7 +916,7 @@ export default function observeOverview(main) {
 
             const targetWorkspaces = listedWorkspaces.filter((ws) => {
                 if (filterWorkspace && ws.name !== filterWorkspace) return false;
-                return showArchived ? true : ws.archived_at === null;
+                return showArchived ? true : ws.archivedAt === null;
             });
 
             const perWsSessions = await mapWithConcurrency(
@@ -948,7 +948,7 @@ export default function observeOverview(main) {
                     if (!isRecord(row) || typeof row.id !== "number" || typeof row.name !== "string") continue;
                     if (row.origin !== "model") continue;
                     const key = `${ws.id}:${row.id}`;
-                    const isRowArchived = (row.archived_at !== null && row.archived_at !== undefined) || ws.archived_at !== null;
+                    const isRowArchived = (row.archivedAt !== null && row.archivedAt !== undefined) || ws.archivedAt !== null;
                     if (showArchived ? !isRowArchived : isRowArchived) continue;
                     if (!showArchived && !isNarrowing && omittedCount > 0 && !overviewOrderedKeys.has(key)) continue;
 
@@ -975,7 +975,7 @@ export default function observeOverview(main) {
                         id: row.id,
                         workspaceId: ws.id,
                         workspaceName: ws.name,
-                        projectRoot: ws.project_root,
+                        projectRoot: ws.projectRoot,
                         name: row.name,
                         parentSessionId,
                         parentName,
@@ -1142,16 +1142,8 @@ export default function observeOverview(main) {
                 const name = typeof data.name === "string" ? data.name : null;
                 if (id === null || name === null) return;
                 const prev = workspacesById.get(id);
-                const projRoot = typeof data.project_root === "string"
-                    ? data.project_root
-                    : typeof data.projectRoot === "string"
-                        ? data.projectRoot
-                        : null;
-                const projLabel = typeof data.project_label === "string"
-                    ? data.project_label
-                    : typeof data.projectLabel === "string"
-                        ? data.projectLabel
-                        : projRoot;
+                const projRoot = typeof data.projectRoot === "string" ? data.projectRoot : null;
+                const projLabel = typeof data.projectLabel === "string" ? data.projectLabel : projRoot;
                 workspacesById.set(id, {
                     id,
                     name,
@@ -1187,7 +1179,7 @@ export default function observeOverview(main) {
             case "workspace/archived": {
                 const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
                 if (id === null) return;
-                const isArchived = data.archived_at !== null && data.archived_at !== undefined;
+                const isArchived = data.archivedAt !== null && data.archivedAt !== undefined;
                 const prev = workspacesById.get(id);
                 if (prev) {
                     workspacesById.set(id, { ...prev, archived: isArchived });
@@ -1248,7 +1240,7 @@ export default function observeOverview(main) {
             }
             case "session/archived":
             case "session/deleted": {
-                if (event === "session/archived" && (data.archived_at === null || data.archived_at === undefined)) return;
+                if (event === "session/archived" && (data.archivedAt === null || data.archivedAt === undefined)) return;
                 const wsId = notifWorkspaceId;
                 const ids = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
                 if (wsId === null || ids.length === 0) return;
@@ -1303,7 +1295,7 @@ export default function observeOverview(main) {
                 const entry = isRecord(data.entry) ? data.entry : null;
                 if (!entry) return;
                 const wsId = notifWorkspaceId;
-                const sid = typeof entry.session_id === "number" ? entry.session_id : notifSessionId;
+                const sid = typeof entry.sessionId === "number" ? entry.sessionId : notifSessionId;
                 if (wsId === null || sid === null) return;
                 const key = `${wsId}:${sid}`;
                 const cur = sessionsByKey.get(key);
@@ -1323,13 +1315,13 @@ export default function observeOverview(main) {
                 if (
                     entry.origin === "model"
                     && entry.state === "resolved"
-                    && (typeof entry.status_rx !== "number" || entry.status_rx < 400)
+                    && (typeof entry.statusRx !== "number" || entry.statusRx < 400)
                     && (entry.op === "send" || entry.op === "done" || entry.op === "fail")
                     && typeof entry.id === "number"
                 ) {
                     const rxCompletion = isRecord(entry.rx) && (entry.rx.completion === 200 || entry.rx.completion === 499)
                         ? entry.rx.completion
-                        : (Array.isArray(entry.replied_to_sources) && entry.replied_to_sources.length > 0 ? 200 : null);
+                        : (Array.isArray(entry.repliedToSources) && entry.repliedToSources.length > 0 ? 200 : null);
                     if (rxCompletion !== null) {
                         const tx = isRecord(entry.tx) ? entry.tx : null;
                         const rawWords = typeof tx?.body === "string" ? tx.body

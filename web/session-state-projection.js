@@ -263,6 +263,7 @@ export function applyLifecycleStateUpdate(state, update, plurnk) {
         prevStatus.lifecycle = termStatus === 499 ? "cancelled" : termStatus >= 400 ? "failed" : "completed";
         prevStatus.waitUntil = null;
         prevPlurnk.laneQueue = null;
+        prevPlurnk.turnPhase = null;
     }
     if (Object.keys(prevStatus).length === 0 && !suggestionsCleared) {
         return { changed: false, state };
@@ -299,11 +300,17 @@ export function applyNoticeStateUpdate(state, plurnk) {
             depth: typeof notice.queueDepth === "number" ? notice.queueDepth : null,
             laneLimit: typeof notice.laneLimit === "number" ? notice.laneLimit : null,
         };
+        prevPlurnk.turnPhase = null;
         stateChanged = true;
     }
     if (notice?.source === "engine:turn" && (notice.kind === "turn_awaiting_model" || notice.kind === "turn_generated")) {
         if (prevPlurnk.laneQueue !== null && prevPlurnk.laneQueue !== undefined) {
             prevPlurnk.laneQueue = null;
+            stateChanged = true;
+        }
+        const nextPhase = notice.kind === "turn_awaiting_model" ? "awaiting-model" : null;
+        if ((prevPlurnk.turnPhase ?? null) !== nextPhase) {
+            prevPlurnk.turnPhase = nextPhase;
             stateChanged = true;
         }
         if (prevStatus.lifecycle === "queued") {
@@ -316,6 +323,7 @@ export function applyNoticeStateUpdate(state, plurnk) {
         const code = typeof notice.status === "number" ? notice.status : 102;
         prevStatus.lifecycle = code === 100 ? "queued" : code === 202 ? "parked" : "running";
         if (code !== 100) prevPlurnk.laneQueue = null;
+        if (code !== 102) prevPlurnk.turnPhase = null;
         if (typeof notice.loopSeq === "number") prevStatus.loopSeq = notice.loopSeq;
         if (typeof notice.packetCount === "number") prevStatus.packetCount = notice.packetCount;
         if (notice.waitUntil === null || typeof notice.waitUntil === "number") {
@@ -403,8 +411,8 @@ export function applyTerminalStreamUpdate(state, update, plurnk) {
                 entryId,
                 sessionId: typeof plurnk?.sessionId === "number" ? plurnk.sessionId : 1,
                 target,
-                ...(typeof plurnk?.loop_seq === "number" ? { loop_seq: plurnk.loop_seq } : {}),
-                ...(typeof plurnk?.turn_seq === "number" ? { turn_seq: plurnk.turn_seq } : {}),
+                ...(typeof plurnk?.loopSeq === "number" ? { loopSeq: plurnk.loopSeq } : {}),
+                ...(typeof plurnk?.turnSeq === "number" ? { turnSeq: plurnk.turnSeq } : {}),
                 ...(typeof plurnk?.sequence === "number" ? { sequence: plurnk.sequence } : {}),
                 channels: [{ channel: chName, state: chState, mimetype: chMime }],
             });
