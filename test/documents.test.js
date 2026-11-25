@@ -217,3 +217,31 @@ test("{§web-settings-extensions} {§web-workspace-settings} {§web-document} Do
         assert.doesNotMatch(nonSettings, /\/brand\/tabs\/|data-settings-extension/u, "extension markup and scripts are emitted only on /settings/");
     }
 });
+
+test("{§web-bff-auth} {§web-document} Documents stamps optional BFF auth data-* attributes only when configured", () => {
+    const defaultHtml = new Documents(SHELL).home().toString();
+    assert.doesNotMatch(defaultHtml, /data-auth-login-url|data-auth-logout-url|data-auth-logout-method/u);
+
+    const bffDocs = new Documents(SHELL, {
+        auth: {
+            loginUrl: "/oauth2/start?rd={returnTo}&prompt=login",
+            logoutUrl: "/auth/logout",
+            logoutMethod: "POST",
+        },
+    });
+    const html = bffDocs.home().toString();
+    assert.ok(html.includes('data-auth-login-url="/oauth2/start?rd={returnTo}&amp;prompt=login"'));
+    assert.ok(html.includes('data-auth-logout-url="/auth/logout"'));
+    assert.ok(html.includes('data-auth-logout-method="POST"'));
+
+    const getLogoutHtml = new Documents(SHELL, {
+        auth: {
+            loginUrl: null,
+            logoutUrl: "/oauth2/sign_out",
+            logoutMethod: "GET",
+        },
+    }).settings().toString();
+    assert.doesNotMatch(getLogoutHtml, /data-auth-login-url/u);
+    assert.ok(getLogoutHtml.includes('data-auth-logout-url="/oauth2/sign_out"'));
+    assert.ok(getLogoutHtml.includes('data-auth-logout-method="GET"'));
+});

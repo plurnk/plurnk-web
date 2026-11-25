@@ -1,7 +1,7 @@
 // {§web-document} One OTM boot; localStorage holds only plurnk_oidc_grant when OIDC is active.
 import { $, on, the } from "on_the_money";
 import initDialogs from "./dialogs.js";
-import { formatPageTitle, isModuleDocument } from "./endpoints.js";
+import { authLogoutUrl, formatPageTitle, isModuleDocument } from "./endpoints.js";
 import {
     completeOidcCallback,
     hasActiveOidcGrant,
@@ -43,7 +43,7 @@ function syncSignOutControl() {
     const navList = $('header nav[aria-label="Main navigation"] > ul');
     if (!(navList instanceof HTMLUListElement)) return;
     const existing = $(navList, "[data-oidc-sign-out]");
-    if (hasActiveOidcGrant()) {
+    if (hasActiveOidcGrant() || (authLogoutUrl() !== null && page !== "callback")) {
         if (!existing) $.clone(navList, "#oidc-sign-out-item");
     } else {
         existing?.remove();

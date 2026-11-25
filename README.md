@@ -19,7 +19,8 @@ Native OTM browser module for [`@plurnk/plurnk-service`](https://github.com/plur
 
 | Posture | Configuration |
 | --- | --- |
-| Loopback / trusted proxy | No OIDC issuer configured: `accessHeaders()` returns `{}` with zero preflight and connects directly to `/acp` and `/notifications` with no `Sign out` control. |
+| Loopback / unauthenticated | No auth knobs or OIDC issuer configured: `accessHeaders()` returns `{}` with zero preflight and connects directly to `/acp` and `/notifications` with no `Sign out` control. |
+| BFF reverse proxy (`HttpOnly` cookie) | Set `PLURNK_WEB_AUTH_LOGIN_URL` (e.g. `/auth/login` or `/oauth2/start?rd={returnTo}`) and `PLURNK_WEB_AUTH_LOGOUT_URL` (e.g. `/auth/logout`, `PLURNK_WEB_AUTH_LOGOUT_METHOD=POST` default or `GET`): all same-origin transports carry `HttpOnly` cookies (`credentials: "same-origin"`), `401` routes to the BFF login URL without browser OIDC discovery, and header `Sign out` / `/logout` submit to the BFF logout endpoint with zero tokens in browser storage. |
 | OIDC resource server | Configure `PLURNK_AUTH_ISSUER` and `PLURNK_AUTH_CLIENT_ID` on the daemon: a `401` on `/acp` discovers `/.well-known/oauth-protected-resource` + OIDC metadata, runs PKCE `S256` to `/auth/callback`, attaches `Authorization: Bearer` (and `?access_token=` on WebSockets), and exposes `Sign out` in the header. |
 | Cross-origin / split host | Set `PLURNK_ACP_URL` (e.g. `https://acp.example/acp`): the HTML shell stamps `data-acp-url` and expands `Content-Security-Policy` `connect-src` (`http(s):` + `ws(s):`) and `img-src` automatically while keeping `script-src 'self'`. |
 | Installable app | Browser **Install app** / **Add to Home Screen** uses the bundled web manifest (requires localhost HTTP or proxy HTTPS; online-only, no offline service-worker cache). |

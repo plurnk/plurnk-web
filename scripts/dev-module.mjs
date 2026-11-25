@@ -7,6 +7,7 @@ import { parseEnv, promisify } from "node:util";
 import { brotliCompress, gzip } from "node:zlib";
 import { build } from "vite";
 import { DEFAULT_BRAND, loadBrandAssets } from "../src/brand.js";
+import { DEFAULT_AUTH_CONFIG } from "../src/http.js";
 import createModule from "../src/module.js";
 import prepareAssets from "./assets.mjs";
 
@@ -140,7 +141,13 @@ export default function createDevModule(options = {}) {
             if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
             }
-            const activeKnobs = knobs ?? { acpUrl: "/acp", overviewSessions: null, overviewExcerptChars: null, brand: DEFAULT_BRAND };
+            const activeKnobs = knobs ?? {
+                acpUrl: "/acp",
+                overviewSessions: null,
+                overviewExcerptChars: null,
+                brand: DEFAULT_BRAND,
+                auth: DEFAULT_AUTH_CONFIG,
+            };
             const settingsTabs = await loadBrandAssets(activeKnobs.brand, resources);
             const documents = new DocumentsClass(root.body.toString("utf8"), { ...activeKnobs, settingsTabs });
             compiled = { documents, resources, stylesheetPath };

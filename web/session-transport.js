@@ -73,8 +73,10 @@ export function createAcpFetch(hooks) {
             ? AbortSignal.any([init.signal, hooks.connSignal])
             : hooks.connSignal;
         if (init?.method === "GET") {
+            // {§web-bff-auth} Preserve same-origin browser cookies on HTTP /acp SSE streams.
             const fetchPromise = hooks.fetchImpl(input, {
                 ...init,
+                credentials: "same-origin",
                 cache: "no-store",
                 headers: mergedHeaders,
                 signal: fetchSignal,
@@ -151,6 +153,7 @@ export function createAcpFetch(hooks) {
         try {
             const fetchPromise = hooks.fetchImpl(input, {
                 ...init,
+                credentials: "same-origin",
                 cache: "no-store",
                 headers: mergedHeaders,
                 signal: fetchSignal,

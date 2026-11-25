@@ -7,6 +7,7 @@ import { parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
 import {
     parseAcpEndpoint,
+    parseAuthConfig,
     privateHeaders,
     privateHeadersFor,
     redirect,
@@ -26,6 +27,7 @@ import Diagrams from "./diagrams.js";
  *   readonly overviewSessions: number | null,
  *   readonly overviewExcerptChars: number | null,
  *   readonly brand: import("./brand.js").BrandConfig,
+ *   readonly auth: import("./http.js").AuthConfig,
  * }} DocumentKnobs
  */
 /**
@@ -52,7 +54,7 @@ function productionAssets() {
     /** @type {{ documents: Documents, resources: ReadonlyMap<string, LoadedAsset> } | null} */
     let loaded = null;
     return {
-        async start({ acpUrl, overviewSessions, overviewExcerptChars, brand }) {
+        async start({ acpUrl, overviewSessions, overviewExcerptChars, brand, auth }) {
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
@@ -74,6 +76,7 @@ function productionAssets() {
                 overviewExcerptChars,
                 brand,
                 settingsTabs,
+                auth,
             });
             loaded = { documents, resources };
         },
@@ -101,6 +104,7 @@ export default function createModule(assets = productionAssets()) {
         }
     };
     const brand = parseBrandConfig(process.env);
+    const auth = parseAuthConfig(process.env);
     const acpEndpoint = contain(() => parseAcpEndpoint(process.env.PLURNK_ACP_URL));
     const overviewSessions = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_SESSIONS", 1));
     const overviewExcerptChars = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", 1));
@@ -120,6 +124,7 @@ export default function createModule(assets = productionAssets()) {
                 overviewSessions,
                 overviewExcerptChars,
                 brand,
+                auth,
             });
 
             /** @param {import("node:http").IncomingMessage} req */

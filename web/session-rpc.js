@@ -150,6 +150,7 @@ export async function probeWebSocketAuthFailure({
     try {
         const probe = await fetchImpl(resolveAcpUrl(url), {
             method: "POST",
+            credentials: "same-origin",
             headers: { "content-type": "application/json", ...headers },
             body: JSON.stringify({
                 jsonrpc: "2.0",

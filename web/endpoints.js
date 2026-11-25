@@ -169,6 +169,32 @@ export function formatPageTitle(title) {
 }
 
 /**
+ * {§web-bff-auth} Configured origin-relative BFF login URL (`data-auth-login-url`), or `null` when using browser OIDC PKCE.
+ * @returns {string | null}
+ */
+export function authLoginUrl() {
+    const raw = (rootDataset()?.authLoginUrl ?? "").trim();
+    return raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : null;
+}
+
+/**
+ * {§web-bff-auth} Configured origin-relative BFF logout URL (`data-auth-logout-url`), or `null`.
+ * @returns {string | null}
+ */
+export function authLogoutUrl() {
+    const raw = (rootDataset()?.authLogoutUrl ?? "").trim();
+    return raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : null;
+}
+
+/**
+ * {§web-bff-auth} Configured HTTP method for BFF logout (`"POST"` default, or `"GET"`).
+ * @returns {"POST" | "GET"}
+ */
+export function authLogoutMethod() {
+    return (rootDataset()?.authLogoutMethod ?? "").trim().toUpperCase() === "GET" ? "GET" : "POST";
+}
+
+/**
  * {§web-workspace-settings} Record `@plurnk/plurnk-service` version observed from `/acp` `initialize` `response.info.version`.
  * @param {unknown} version
  */

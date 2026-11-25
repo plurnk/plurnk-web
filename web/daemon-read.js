@@ -15,13 +15,13 @@ export default async function daemonRead(address, signal) {
     }
     let headers = await accessHeaders(signal);
     signal.throwIfAborted();
-    let response = await fetch(url, { headers, signal, redirect: "error", cache: "no-store" });
+    let response = await fetch(url, { headers, credentials: "same-origin", signal, redirect: "error", cache: "no-store" });
     if (response.status === 401) {
         const recovery = await recoverFromUnauthorized({ signal, redirectOnDiscovery: false });
         if (recovery.status === "refreshed") {
             headers = await accessHeaders(signal);
             signal.throwIfAborted();
-            response = await fetch(url, { headers, signal, redirect: "error", cache: "no-store" });
+            response = await fetch(url, { headers, credentials: "same-origin", signal, redirect: "error", cache: "no-store" });
         }
     }
     const refused = await refusal(response);

@@ -1,6 +1,7 @@
 import { $, on, the } from "on_the_money";
 import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
 import describeFailure from "./failure.js";
+import { authLogoutMethod, authLogoutUrl } from "./endpoints.js";
 import { hasActiveOidcGrant, signOut } from "./oidc.js";
 import {
     expandPromptCommand,
@@ -181,6 +182,12 @@ export default function sessionCommands(main, actions) {
                 return true;
             }
             if (name === "logout") {
+                if (authLogoutUrl() !== null) {
+                    signOut(actions.navigate && authLogoutMethod() === "GET"
+                        ? { navigate: actions.navigate }
+                        : {});
+                    return true;
+                }
                 const hadGrant = hasActiveOidcGrant();
                 signOut({ reload: false });
                 if (hadGrant) {
