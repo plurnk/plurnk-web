@@ -1,5 +1,20 @@
 # @plurnk/plurnk-web
 
+## 4.0.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
+
+### Upgrade
+
+Upgrade this module, `@plurnk/plurnk-service` (`9.0.0`), and `@plurnk/plurnk` (`9.0.0`) together. When deploying standalone or behind a reverse proxy, point `PLURNK_ACP_URL` at the daemon's ACP endpoint and configure external OIDC (`PLURNK_AUTH_*`) instead of retired in-daemon passwords.
+
+### Major Changes
+
+- **Pure ACP v2 Workbench & OIDC PKCE:** Converge on a pure ACP v2 client surface over `PLURNK_ACP_URL` with OIDC PKCE sign-in, `no-store` cache headers on `/acp` and `/auth/token`, linked ACP bodies, and remembered arrival routing (`#143`, `#150`, `#151`, `#152`).
+- **Singular Chat Workbench, Settings, & Schedule Panel:** Introduce browser-style session tabs, workspace-grouped `/search/`, `/settings/` tabs and dialogs, interactive `/schedule` macro and receipt inspection, unified multi-token autocomplete and APG comboboxes (`on_the_money@0.16.0`), `turn_queued` status indicators, and full Plurnk Term parity (`#141`, `#142`, `#144`, `#145`, `#146`, `#148`, `#149`, `#153`, `#156`, `#161`).
+- **Unified Collection Browsing & Wire Freeze:** Unify search, filtering, and pagination across collection panels with inline `members` preview (`#158`), align camelCase wire projections, `actor` attribution, `child` / `childModel`, `review | accept | reject` approval mode, and erase retired kill-note distillation (`#141`, `#154`, `#157`).
+- **Architecture & Dependencies:** Extract shared widgets and decompose web monoliths (`#157`), fix reading-slate scroll anchoring and inter-session inbox reconciliation (`#141`, `#147`), bump `on_the_money` (`0.16.0`), `@agentclientprotocol/sdk` (`2.12.0`), and `@types/node` (`^26.6.7`), and widen `@plurnk/plurnk-meta` (`^3.0.0 || ^4.0.0`), `@plurnk/plurnk-acp` (`^3.0.0 || ^4.0.0`), `@plurnk/plurnk-contracts` (`^9.0.0 || ^10.0.0`), `@plurnk/plurnk-modules` (`^4.3.0 || ^5.0.0`), and `@plurnk/plurnk-spec-check` (`^0.2.0 || ^0.3.0`) ranges for `9.0.0` (`#157`).
+
 ## 3.0.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
