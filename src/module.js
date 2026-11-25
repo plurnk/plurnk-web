@@ -67,12 +67,13 @@ function productionAssets() {
             if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
             }
-            await loadBrandAssets(brand, resources);
+            const settingsTabs = await loadBrandAssets(brand, resources);
             const documents = new Documents(root.body.toString("utf8"), {
                 acpUrl,
                 overviewSessions,
                 overviewExcerptChars,
                 brand,
+                settingsTabs,
             });
             loaded = { documents, resources };
         },

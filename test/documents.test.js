@@ -150,6 +150,7 @@ test("{§web-brand} {§web-document} Documents stamps custom brand identity, the
         themeCssHref: "/brand/theme.css",
         icon: { filePath: "/etc/acme/logo.png", href: "/brand/icon.png", mediaType: /** @type {const} */ ("image/png"), sizes: null },
         maskableIcon: null,
+        settingsTabs: [],
     };
     const docs = new Documents(brandedShell, { brand });
     const home = docs.home().toString();
@@ -171,4 +172,48 @@ test("{§web-brand} {§web-document} Documents stamps custom brand identity, the
 
     const noLinks = new Documents(brandedShell, { brand: { ...brand, aboutLinks: [] } }).settings().toString();
     assert.doesNotMatch(noLinks, /Support &amp; Help|github\.com\/plurnk/u);
+});
+
+test("{§web-settings-extensions} {§web-workspace-settings} {§web-document} Documents inserts host Settings tabs before Help/About and loads tab scripts only on /settings/", () => {
+    const docs = new Documents(SHELL, {
+        settingsTabs: [
+            {
+                id: "account",
+                label: 'Account & "Keys"',
+                html: '<header data-panel-toolbar><h2>Account</h2></header><p data-account-status>Ready</p>',
+                scriptHref: "/brand/tabs/account.js",
+            },
+            {
+                id: "billing",
+                label: "Billing",
+                html: "<p>Free tier.</p>",
+                scriptHref: null,
+            },
+        ],
+    });
+
+    const settingsHtml = docs.settings({ workspace: "alpha" }).toString();
+    const envPos = settingsHtml.indexOf('data-settings-section="env"');
+    const accountPos = settingsHtml.indexOf('data-settings-section="account"');
+    const billingPos = settingsHtml.indexOf('data-settings-section="billing"');
+    const helpPos = settingsHtml.indexOf('data-settings-section="help"');
+    const aboutPos = settingsHtml.indexOf('data-settings-section="about"');
+    assert.ok(envPos > 0 && accountPos > envPos && billingPos > accountPos && helpPos > billingPos && aboutPos > helpPos,
+        "extension nav links appear in declaration order immediately before Help and About");
+    assert.ok(settingsHtml.includes('<li><a href="#account" data-settings-section="account" data-settings-extension="true">Account &amp; &quot;Keys&quot;</a></li>'));
+    assert.ok(settingsHtml.includes('<li><a href="#billing" data-settings-section="billing" data-settings-extension="true">Billing</a></li>'));
+    assert.ok(settingsHtml.includes('<section id="account" data-settings-panel="account" data-settings-extension="true" aria-label="Account &amp; &quot;Keys&quot;" hidden><header data-panel-toolbar><h2>Account</h2></header><p data-account-status>Ready</p></section>'));
+    assert.ok(settingsHtml.includes('<section id="billing" data-settings-panel="billing" data-settings-extension="true" aria-label="Billing" hidden><p>Free tier.</p></section>'));
+    assert.ok(settingsHtml.includes('<script type="module" src="/brand/tabs/account.js"></script></head>'));
+    assert.doesNotMatch(settingsHtml, /\/brand\/tabs\/billing\.js/u);
+
+    for (const nonSettings of [
+        docs.home().toString(),
+        docs.search().toString(),
+        docs.session("alpha").toString(),
+        docs.callback().toString(),
+        docs.error(404, "Missing").toString(),
+    ]) {
+        assert.doesNotMatch(nonSettings, /\/brand\/tabs\/|data-settings-extension/u, "extension markup and scripts are emitted only on /settings/");
+    }
 });

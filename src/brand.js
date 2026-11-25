@@ -18,13 +18,43 @@ export const DEFAULT_MASKABLE_ICON_HREF = "/icons/plurnk-maskable.svg";
 export const BUG_REPORT_URL = "https://github.com/plurnk/plurnk-service/issues";
 export const BRAND_THEME_CSS_PATH = "/brand/theme.css";
 export const MAX_BRAND_FILE_BYTES = 1024 * 1024;
+export const BUILTIN_SETTINGS_SECTIONS = Object.freeze([
+    "workspace",
+    "session",
+    "models",
+    "mcp",
+    "skills",
+    "schedule",
+    "personas",
+    "members",
+    "env",
+    "help",
+    "about",
+]);
+const BUILTIN_SETTINGS_SECTION_SET = new Set(BUILTIN_SETTINGS_SECTIONS);
 const MAX_APP_NAME_CHARS = 100;
 const MAX_APP_DESCRIPTION_CHARS = 300;
 const MAX_ABOUT_LINKS = 20;
 const MAX_ABOUT_LABEL_CHARS = 80;
+const MAX_SETTINGS_TABS = 20;
+const MAX_SETTINGS_TAB_LABEL_CHARS = 80;
+const SETTINGS_TAB_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/u;
 
 /**
  * @typedef {{ readonly label: string, readonly url: string }} AboutLink
+ * @typedef {{
+ *   readonly id: string,
+ *   readonly label: string,
+ *   readonly htmlFile: string,
+ *   readonly scriptFile: string | null,
+ *   readonly scriptHref: string | null,
+ * }} SettingsTabSpec
+ * @typedef {{
+ *   readonly id: string,
+ *   readonly label: string,
+ *   readonly html: string,
+ *   readonly scriptHref: string | null,
+ * }} LoadedSettingsTab
  * @typedef {{
  *   readonly filePath: string,
  *   readonly href: string,
@@ -40,6 +70,7 @@ const MAX_ABOUT_LABEL_CHARS = 80;
  *   readonly themeCssHref: string | null,
  *   readonly icon: BrandIconAsset | null,
  *   readonly maskableIcon: BrandIconAsset | null,
+ *   readonly settingsTabs: readonly SettingsTabSpec[],
  * }} BrandConfig
  */
 
@@ -58,6 +89,7 @@ export const DEFAULT_BRAND = Object.freeze({
     themeCssHref: null,
     icon: null,
     maskableIcon: null,
+    settingsTabs: Object.freeze([]),
 });
 
 /**
@@ -196,7 +228,97 @@ function parseOptionalIconFile(raw, key, slot) {
 }
 
 /**
- * {§web-configuration} {§web-brand} Validate brand identity, theme stylesheet, icon files, and About links strictly.
+ * {§web-settings-extensions} Validate `PLURNK_WEB_SETTINGS_TABS` strictly at module creation.
+ * @param {string} raw
+ * @returns {readonly SettingsTabSpec[]}
+ */
+function parseSettingsTabs(raw) {
+    /** @type {unknown} */
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        throw new ConfigurationError(
+            "PLURNK_WEB_SETTINGS_TABS",
+            "must be a valid JSON array of { id, label, htmlFile, scriptFile? } objects",
+        );
+    }
+    if (!Array.isArray(parsed)) {
+        throw new ConfigurationError(
+            "PLURNK_WEB_SETTINGS_TABS",
+            "must be a JSON array of { id, label, htmlFile, scriptFile? } objects",
+        );
+    }
+    if (parsed.length > MAX_SETTINGS_TABS) {
+        throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `must contain at most ${MAX_SETTINGS_TABS} tabs`);
+    }
+    /** @type {SettingsTabSpec[]} */
+    const out = [];
+    /** @type {Set<string>} */
+    const seenIds = new Set();
+    for (let i = 0; i < parsed.length; i += 1) {
+        const entry = parsed[i];
+        if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} must be an object`);
+        }
+        const rec = /** @type {Record<string, unknown>} */ (entry);
+        const extraKeys = Object.keys(rec).filter((k) => k !== "id" && k !== "label" && k !== "htmlFile" && k !== "scriptFile");
+        if (extraKeys.length > 0) {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} has unsupported key: ${extraKeys[0]}`);
+        }
+        if (typeof rec.id !== "string" || typeof rec.label !== "string" || typeof rec.htmlFile !== "string") {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} must provide string id, label, and htmlFile fields`);
+        }
+        const id = rec.id.trim();
+        if (!SETTINGS_TAB_ID_PATTERN.test(id)) {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} id must be a lowercase slug of 1–32 ASCII letters, digits, or hyphens`);
+        }
+        if (BUILTIN_SETTINGS_SECTION_SET.has(id)) {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} id '${id}' collides with a built-in Settings section`);
+        }
+        if (seenIds.has(id)) {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `duplicate tab id '${id}'`);
+        }
+        seenIds.add(id);
+
+        const label = parseLabelText(rec.label, "PLURNK_WEB_SETTINGS_TABS", MAX_SETTINGS_TAB_LABEL_CHARS);
+        const htmlFile = rec.htmlFile.trim();
+        if (htmlFile === "" || !isAbsolute(htmlFile)) {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} htmlFile must be an absolute file path`);
+        }
+        if (extname(htmlFile).toLowerCase() !== ".html") {
+            throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} htmlFile must reference an .html file`);
+        }
+
+        /** @type {string | null} */
+        let scriptFile = null;
+        if (rec.scriptFile !== undefined && rec.scriptFile !== null) {
+            if (typeof rec.scriptFile !== "string") {
+                throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} scriptFile must be a string path when provided`);
+            }
+            const trimmedScript = rec.scriptFile.trim();
+            if (trimmedScript === "" || !isAbsolute(trimmedScript)) {
+                throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} scriptFile must be a non-empty absolute file path`);
+            }
+            if (extname(trimmedScript).toLowerCase() !== ".js") {
+                throw new ConfigurationError("PLURNK_WEB_SETTINGS_TABS", `entry ${i} scriptFile must reference a .js file`);
+            }
+            scriptFile = trimmedScript;
+        }
+
+        out.push(Object.freeze({
+            id,
+            label,
+            htmlFile,
+            scriptFile,
+            scriptHref: scriptFile === null ? null : `/brand/tabs/${id}.js`,
+        }));
+    }
+    return Object.freeze(out);
+}
+
+/**
+ * {§web-configuration} {§web-brand} {§web-settings-extensions} Validate brand identity, theme stylesheet, icon files, About links, and Settings extension tabs strictly.
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {BrandConfig}
  */
@@ -212,6 +334,7 @@ export function parseBrandConfig(env = process.env) {
     const themeCssFile = parseOptionalAbsoluteCssFile(env.PLURNK_WEB_THEME_CSS_FILE, "PLURNK_WEB_THEME_CSS_FILE");
     const icon = parseOptionalIconFile(env.PLURNK_WEB_ICON_FILE, "PLURNK_WEB_ICON_FILE", "icon");
     const maskableIcon = parseOptionalIconFile(env.PLURNK_WEB_MASKABLE_ICON_FILE, "PLURNK_WEB_MASKABLE_ICON_FILE", "maskable");
+    const settingsTabs = parseSettingsTabs(requireFloor(env, "PLURNK_WEB_SETTINGS_TABS"));
 
     return Object.freeze({
         appName,
@@ -222,6 +345,7 @@ export function parseBrandConfig(env = process.env) {
         themeCssHref: themeCssFile === null ? null : BRAND_THEME_CSS_PATH,
         icon,
         maskableIcon,
+        settingsTabs,
     });
 }
 
@@ -303,9 +427,8 @@ export async function encodeBrandAsset(body, mediaType) {
 /**
  * @param {string} key
  * @param {string} filePath
- * @param {"text/css" | "image/svg+xml" | "image/png"} mediaType
  */
-async function readBrandFile(key, filePath, mediaType) {
+async function readRegularFileBytes(key, filePath) {
     const info = await stat(filePath);
     if (!info.isFile()) {
         throw new Error(`${key}: '${filePath}' is not a regular file.`);
@@ -316,7 +439,54 @@ async function readBrandFile(key, filePath, mediaType) {
     if (info.size > MAX_BRAND_FILE_BYTES) {
         throw new Error(`${key}: '${filePath}' exceeds the ${MAX_BRAND_FILE_BYTES}-byte brand asset limit.`);
     }
-    const bytes = await readFile(filePath);
+    return await readFile(filePath);
+}
+
+/**
+ * @param {string} key
+ * @param {string} filePath
+ * @returns {Promise<string>}
+ */
+async function readUtf8TextFile(key, filePath) {
+    const bytes = await readRegularFileBytes(key, filePath);
+    try {
+        return UTF8_STRICT.decode(bytes);
+    } catch (cause) {
+        throw new Error(`${key}: '${filePath}' is not valid UTF-8.`, { cause });
+    }
+}
+
+/**
+ * {§web-settings-extensions} Reject CSP-incompatible or unsafe markup in startup-loaded Settings extension fragments.
+ * @param {string} id
+ * @param {string} html
+ */
+function validateSettingsTabHtml(id, html) {
+    if (/<script\b/iu.test(html)) {
+        throw new Error(`PLURNK_WEB_SETTINGS_TABS[${id}]: htmlFile must not contain <script> tags; configure scriptFile instead.`);
+    }
+    if (/<style\b/iu.test(html) || /<[a-z][^>]*\sstyle\s*=/iu.test(html)) {
+        throw new Error(`PLURNK_WEB_SETTINGS_TABS[${id}]: htmlFile must not contain inline styles; configure PLURNK_WEB_THEME_CSS_FILE instead.`);
+    }
+    const forbiddenTag = /<(iframe|object|embed|base|meta|link|html|head|body)\b/iu.exec(html);
+    if (forbiddenTag !== null) {
+        throw new Error(`PLURNK_WEB_SETTINGS_TABS[${id}]: htmlFile must be an HTML fragment without <${forbiddenTag[1].toLowerCase()}> elements.`);
+    }
+    if (/<[a-z][^>]*\son[a-z]+\s*=/iu.test(html)) {
+        throw new Error(`PLURNK_WEB_SETTINGS_TABS[${id}]: htmlFile must not contain inline event handlers; attach listeners in scriptFile instead.`);
+    }
+    if (/<[a-z][^>]*\bjavascript\s*:/iu.test(html)) {
+        throw new Error(`PLURNK_WEB_SETTINGS_TABS[${id}]: htmlFile must not contain javascript: URLs.`);
+    }
+}
+
+/**
+ * @param {string} key
+ * @param {string} filePath
+ * @param {"text/css" | "text/javascript" | "image/svg+xml" | "image/png"} mediaType
+ */
+async function readBrandFile(key, filePath, mediaType) {
+    const bytes = await readRegularFileBytes(key, filePath);
     if (mediaType === "image/png") {
         if (bytes.byteLength < PNG_SIGNATURE.byteLength || !bytes.subarray(0, PNG_SIGNATURE.byteLength).equals(PNG_SIGNATURE)) {
             throw new Error(`${key}: '${filePath}' is not a valid PNG file.`);
@@ -332,9 +502,10 @@ async function readBrandFile(key, filePath, mediaType) {
 }
 
 /**
- * {§web-brand} {§web-assets} Load configured brand CSS/icon files once at startup and synthesize `/manifest.webmanifest` when customized.
+ * {§web-brand} {§web-settings-extensions} {§web-assets} Load configured brand CSS/icon files and Settings extension tabs once at startup, and synthesize `/manifest.webmanifest` when customized.
  * @param {BrandConfig} brand
  * @param {Map<string, import("./module.js").LoadedAsset>} resources
+ * @returns {Promise<readonly LoadedSettingsTab[]>}
  */
 export async function loadBrandAssets(brand, resources) {
     if (brand.themeCssFile !== null && brand.themeCssHref !== null) {
@@ -359,4 +530,23 @@ export async function loadBrandAssets(brand, resources) {
         const manifestBytes = Buffer.from(buildWebManifest(brand), "utf8");
         resources.set("/manifest.webmanifest", await encodeBrandAsset(manifestBytes, "application/manifest+json"));
     }
+    /** @type {LoadedSettingsTab[]} */
+    const loadedTabs = [];
+    for (const tab of brand.settingsTabs) {
+        const html = await readUtf8TextFile(`PLURNK_WEB_SETTINGS_TABS[${tab.id}].htmlFile`, tab.htmlFile);
+        validateSettingsTabHtml(tab.id, html);
+        if (tab.scriptFile !== null && tab.scriptHref !== null) {
+            resources.set(
+                tab.scriptHref,
+                await readBrandFile(`PLURNK_WEB_SETTINGS_TABS[${tab.id}].scriptFile`, tab.scriptFile, "text/javascript"),
+            );
+        }
+        loadedTabs.push(Object.freeze({
+            id: tab.id,
+            label: tab.label,
+            html,
+            scriptHref: tab.scriptHref,
+        }));
+    }
+    return Object.freeze(loadedTabs);
 }

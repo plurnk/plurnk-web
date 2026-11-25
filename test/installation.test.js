@@ -55,7 +55,7 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
     assert.ok(archive.files.some(({ path }) => path === "dist/vendor/DEPENDENCIES-LICENSE.txt"));
     assert.ok(archive.files.some(({ path }) => path === "dist/assets.json"));
     assert.ok(archive.files.some(({ path }) => path === ".env.defaults"));
-    for (const name of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
+    for (const name of ["brand.js", "module.js", "index-document.js", "directory-addresses.js", "documents.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
         assert.ok(archive.files.some(({ path }) => path === `src/${name}`), `expected src/${name} in packed package`);
     }
     for (const path of ["manifest.webmanifest", "icons/plurnk.svg", "icons/plurnk-maskable.svg", "icons/NOTO-NOTICE.txt", "icons/APACHE-2.0.txt"]) {
@@ -300,6 +300,118 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
             (/** @type {any} */ error) => {
                 assert.equal(error.kind, "exited");
                 assert.match(error.stdout + error.stderr, /ENOENT|does-not-exist\.css/u);
+                return true;
+            },
+        );
+    });
+
+    await t.test("{§web-settings-extensions} {§web-workspace-settings} {§web-browser-security} host Settings extension tabs render under strict CSP, support zero workspaces, hydrate via plurnk:settings-section, and fail hard on unsafe HTML", async () => {
+        const accountHtml = join(directory, "account-tab.html");
+        const accountJs = join(directory, "account-tab.js");
+        const billingHtml = join(directory, "billing-tab.html");
+        const unsafeHtml = join(directory, "unsafe-tab.html");
+        await writeFile(accountHtml, '<header data-panel-toolbar><h2>Account</h2></header><p data-ext-rendered>pending</p><p data-ext-count>0</p>\n');
+        await writeFile(accountJs, [
+            'const article = document.getElementById("workspace-settings");',
+            'const output = article?.querySelector("[data-ext-rendered]");',
+            'const counter = article?.querySelector("[data-ext-count]");',
+            "let activations = 0;",
+            "function handle(detail) {",
+            '    if (!detail || detail.section !== "account") return;',
+            "    activations += 1;",
+            '    if (output) output.textContent = `${detail.section}|ws=${detail.workspaceName || ""}|sess=${detail.sessionName ?? "none"}`;',
+            "    if (counter) counter.textContent = String(activations);",
+            "}",
+            "if (article) {",
+            '    article.addEventListener("plurnk:settings-section", (event) => handle(event.detail));',
+            '    if (article.dataset.activeSection === "account") {',
+            '        const main = document.getElementById("main");',
+            '        handle({ section: "account", workspaceName: main?.dataset.workspaceName ?? "", sessionName: main?.dataset.sessionName || null });',
+            "    }",
+            "}",
+            "",
+        ].join("\n"));
+        await writeFile(billingHtml, '<header data-panel-toolbar><h2>Billing</h2></header><p data-billing-copy>Self-hosted plan</p>\n');
+        await writeFile(unsafeHtml, '<p>Bad</p><script>window.__xss = 1;</script>\n');
+
+        await withDaemon({
+            PLURNK_WEB_SETTINGS_TABS: JSON.stringify([
+                { id: "account", label: "Account", htmlFile: accountHtml, scriptFile: accountJs },
+                { id: "billing", label: "Billing", htmlFile: billingHtml },
+            ]),
+        }, async (base) => {
+            const settingsRes = await fetch(new URL("/settings/", base));
+            assert.equal(settingsRes.status, 200);
+            assert.equal(settingsRes.headers.get("x-frame-options"), "DENY");
+            assert.match(settingsRes.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*frame-ancestors 'none'/u);
+            const searchHtml = await (await fetch(new URL("/search/", base))).text();
+            assert.doesNotMatch(searchHtml, /\/brand\/tabs\/account\.js/u, "non-settings pages never load extension scripts");
+
+            const browser = await launchBrowser(chromium);
+            try {
+                const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+                const checkBrowser = browserDiagnostics(context);
+                try {
+                    const page = await context.newPage();
+
+                    // 1. Works cleanly with zero workspaces when deep-linked directly to an extension tab.
+                    await page.goto(new URL("/settings/#account", base).href);
+                    const accountPanel = page.locator('#workspace-settings [data-settings-panel="account"]');
+                    await accountPanel.waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelector("[data-ext-rendered]")?.textContent === "account|ws=|sess=none");
+                    assert.equal(await page.locator('#workspace-settings [data-settings-section="account"]').getAttribute("aria-current"), "true");
+
+                    const navOrder = await page.locator("#workspace-settings [data-settings-nav] a[data-settings-section]").evaluateAll(
+                        (els) => els.map((el) => el.getAttribute("data-settings-section")),
+                    );
+                    assert.ok(navOrder.indexOf("env") < navOrder.indexOf("account"));
+                    assert.ok(navOrder.indexOf("account") < navOrder.indexOf("billing"));
+                    assert.ok(navOrder.indexOf("billing") < navOrder.indexOf("help"));
+                    assert.ok(navOrder.indexOf("help") < navOrder.indexOf("about"));
+
+                    // 2. HTML-only extension tab renders and updates hash without errors.
+                    await page.locator('#workspace-settings [data-settings-section="billing"]').click();
+                    const billingPanel = page.locator('#workspace-settings [data-settings-panel="billing"]');
+                    await billingPanel.waitFor({ state: "visible" });
+                    assert.equal(await billingPanel.locator("[data-billing-copy]").textContent(), "Self-hosted plan");
+                    assert.equal(new URL(page.url()).hash, "#billing");
+
+                    // 3. Create starter workspace1#session1 via arrival, then open /settings/?workspace=workspace1&session=session1#account.
+                    await page.goto(base);
+                    await page.waitForURL((url) => new URL(url).pathname === "/~/workspace1");
+                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+
+                    await page.goto(new URL("/settings/?workspace=workspace1&session=session1#account", base).href);
+                    await accountPanel.waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelector("[data-ext-rendered]")?.textContent === "account|ws=workspace1|sess=session1");
+                    assert.equal(await accountPanel.locator("[data-ext-count]").textContent(), "1");
+
+                    // 4. Switch to native Workspace tab and back to Account without errors.
+                    await page.locator('#workspace-settings [data-settings-section="workspace"]').click();
+                    await page.locator('#workspace-settings [data-settings-panel="workspace"]').waitFor({ state: "visible" });
+                    await page.locator('#workspace-settings [data-settings-section="account"]').click();
+                    await accountPanel.waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelector("[data-ext-count]")?.textContent === "2");
+                    assert.equal(new URL(page.url()).hash, "#account");
+
+                    checkBrowser();
+                } finally {
+                    await context.close();
+                }
+            } finally {
+                await browser.close();
+            }
+        });
+
+        await assert.rejects(
+            start({
+                PLURNK_WEB_SETTINGS_TABS: JSON.stringify([
+                    { id: "unsafe", label: "Unsafe", htmlFile: unsafeHtml },
+                ]),
+            }),
+            (/** @type {any} */ error) => {
+                assert.equal(error.kind, "exited");
+                assert.match(error.stdout + error.stderr, /PLURNK_WEB_SETTINGS_TABS|<script>/u);
                 return true;
             },
         );

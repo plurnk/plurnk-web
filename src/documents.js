@@ -16,7 +16,7 @@ export { BUG_REPORT_URL };
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
 const WORKSPACES_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>';
 
-/** @typedef {"htmlAttrs" | "themeColor" | "appName" | "description" | "title" | "icon" | "themeStylesheet" | "headerLead" | "main" | "afterMain"} DocumentSlotName */
+/** @typedef {"htmlAttrs" | "themeColor" | "appName" | "description" | "title" | "icon" | "themeStylesheet" | "pageScripts" | "headerLead" | "main" | "afterMain"} DocumentSlotName */
 /** @typedef {{ readonly literal: string } | { readonly slot: DocumentSlotName }} DocumentToken */
 
 /**
@@ -103,6 +103,7 @@ function compileDocumentSlots(document) {
         : headCloseMatch !== null
             ? headCloseMatch.index
             : null;
+    const pageScriptsIndex = headCloseMatch !== null ? headCloseMatch.index : null;
 
     /** @type {readonly { readonly name: DocumentSlotName, readonly start: number, readonly end: number }[]} */
     const spans = [
@@ -113,6 +114,7 @@ function compileDocumentSlots(document) {
         { name: /** @type {const} */ ("title"), start: title.start, end: title.end },
         ...(iconSpan ? [{ name: /** @type {const} */ ("icon"), ...iconSpan }] : []),
         ...(themeStylesheetIndex !== null ? [{ name: /** @type {const} */ ("themeStylesheet"), start: themeStylesheetIndex, end: themeStylesheetIndex }] : []),
+        ...(pageScriptsIndex !== null ? [{ name: /** @type {const} */ ("pageScripts"), start: pageScriptsIndex, end: pageScriptsIndex }] : []),
         { name: /** @type {const} */ ("headerLead"), start: headerLeadIndex, end: headerLeadIndex },
         { name: /** @type {const} */ ("main"), start: main.start, end: main.end },
         { name: /** @type {const} */ ("afterMain"), start: main.end, end: main.end },
@@ -148,16 +150,18 @@ function compileDocumentSlots(document) {
  *   readonly overviewSessions?: number | null,
  *   readonly overviewExcerptChars?: number | null,
  *   readonly brand?: import("./brand.js").BrandConfig,
+ *   readonly settingsTabs?: readonly import("./brand.js").LoadedSettingsTab[],
  * }} DocumentBootOptions
  */
 
-/** {§web-document} {§web-directory-documents} {§web-page-shell} {§web-brand} Static HTML shell compiler stamping boot data attributes without daemon seams or inline scripts. */
+/** {§web-document} {§web-directory-documents} {§web-page-shell} {§web-brand} {§web-settings-extensions} Static HTML shell compiler stamping boot data attributes without daemon seams or inline scripts. */
 export default class Documents {
     #template;
     #acpUrl;
     #overviewSessions;
     #overviewExcerptChars;
     #brand;
+    #settingsTabs;
 
     /** {§web-assets} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -179,11 +183,13 @@ export default class Documents {
         overviewSessions = 200,
         overviewExcerptChars = 160,
         brand = DEFAULT_BRAND,
+        settingsTabs = [],
     } = {}) {
         this.#acpUrl = acpUrl;
         this.#overviewSessions = overviewSessions;
         this.#overviewExcerptChars = overviewExcerptChars;
         this.#brand = brand;
+        this.#settingsTabs = settingsTabs;
         this.#template = compileDocumentSlots(document);
     }
 
@@ -209,9 +215,9 @@ export default class Documents {
      * @param {string} title
      * @param {string} body
      * @param {"home" | "search" | "session" | "settings" | "callback" | "error"} kind
-     * @param {{ headerLead?: string, footer?: string, dialogs?: string, mainAttributes?: string }} [slots]
+     * @param {{ headerLead?: string, footer?: string, dialogs?: string, mainAttributes?: string, pageScripts?: string }} [slots]
      */
-    #render(title, body, kind, { headerLead = "", footer = "", dialogs = "", mainAttributes = "" } = {}) {
+    #render(title, body, kind, { headerLead = "", footer = "", dialogs = "", mainAttributes = "", pageScripts = "" } = {}) {
         const label = kind === "home" ? title : `${title} — ${this.#brand.appName}`;
         const themeStylesheet = this.#brand.themeCssHref !== null
             ? `<link rel="stylesheet" href="${escapeHtml(this.#brand.themeCssHref)}">`
@@ -224,6 +230,7 @@ export default class Documents {
             title: `<title data-text="page-title">${escapeHtml(label)}</title>`,
             icon: this.#iconLinkTag(),
             themeStylesheet,
+            pageScripts,
             headerLead,
             main: `<main id="main" data-page="${kind}"${mainAttributes}>${body}</main>`,
             afterMain: footer + dialogs,
@@ -379,6 +386,10 @@ export default class Documents {
         const addWorkspaceBtn = '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="ws-settings-add-workspace">+ Add workspace</button>';
         const addSessionBtn = '<button type="button" data-dialog-target="dialog-session-create" data-settings-add-session data-i18n="ws-settings-add-session">+ Add session</button>';
 
+        const extensionNavHtml = this.#settingsTabs.map(({ id, label }) =>
+            `<li><a href="#${escapeHtml(id)}" data-settings-section="${escapeHtml(id)}" data-settings-extension="true">${escapeHtml(label)}</a></li>`,
+        ).join("");
+
         const navHtml = '<nav aria-label="Settings sections"><ul data-settings-nav>'
             + '<li><a href="#workspace" data-settings-section="workspace" aria-current="true" data-i18n="ws-settings-tab-workspace">Workspace</a></li>'
             + '<li><a href="#session" data-settings-section="session" data-i18n="ws-settings-tab-session">Session</a></li>'
@@ -389,6 +400,7 @@ export default class Documents {
             + '<li><a href="#personas" data-settings-section="personas" data-i18n="ws-settings-tab-personas">Personas</a></li>'
             + '<li><a href="#members" data-settings-section="members" data-i18n="ws-settings-tab-members">Members</a></li>'
             + '<li><a href="#env" data-settings-section="env" data-i18n="ws-settings-tab-env">Environment</a></li>'
+            + extensionNavHtml
             + '<li><a href="#help" data-settings-section="help" data-i18n="ws-settings-tab-help">Help</a></li>'
             + '<li><a href="#about" data-settings-section="about" data-i18n="about">About</a></li>'
             + "</ul></nav>";
@@ -447,6 +459,15 @@ export default class Documents {
             + aboutLinksHtml
             + "</dl></section>";
 
+        const extensionPanelsHtml = this.#settingsTabs.map(({ id, label, html }) =>
+            `<section id="${escapeHtml(id)}" data-settings-panel="${escapeHtml(id)}" data-settings-extension="true" aria-label="${escapeHtml(label)}" hidden>${html}</section>`,
+        ).join("");
+
+        const pageScripts = this.#settingsTabs
+            .filter((tab) => tab.scriptHref !== null)
+            .map((tab) => `<script type="module" src="${escapeHtml(/** @type {string} */ (tab.scriptHref))}"></script>`)
+            .join("");
+
         const body = '<article id="workspace-settings" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">'
             + '<header><h1 id="workspace-settings-title" data-i18n="settings">Settings</h1></header>'
             + navHtml
@@ -455,6 +476,7 @@ export default class Documents {
             + workspacePanel
             + sessionPanel
             + '<div data-settings-subsystems></div>'
+            + extensionPanelsHtml
             + aboutPanel
             + "</article>";
 
@@ -466,6 +488,7 @@ export default class Documents {
             headerLead,
             dialogs,
             mainAttributes,
+            pageScripts,
         });
     }
 
