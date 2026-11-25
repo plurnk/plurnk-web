@@ -5,6 +5,7 @@ import { createServer, request } from "node:http";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import createModule from "../src/module.js";
+import { resolveIssuerOrigin } from "../src/http.js";
 import verifyDirectories from "./directories.js";
 import verifyStaticAssets from "./static-assets.js";
 
@@ -684,4 +685,65 @@ test("{§web-bff-auth} {§web-configuration} {§web-browser-security} PLURNK_WEB
         assert.ok(html.includes('data-auth-logout-url="/oauth2/sign_out"'), path);
         assert.ok(html.includes('data-auth-logout-method="GET"'), path);
     }
+});
+
+test("{§web-browser-security} resolveIssuerOrigin honors loopback X-Forwarded-Host and ignores spoofed non-loopback headers", async (t) => {
+    const face = { issuer: () => "https://bot.example.com/oauth" };
+    assert.equal(
+        resolveIssuerOrigin(face, {
+            headers: { host: "127.0.0.1:1066", "x-forwarded-host": "bot.example.com" },
+            socket: { remoteAddress: "127.0.0.1" },
+        }),
+        null,
+        "same-origin issuer over loopback X-Forwarded-Host needs no external CSP entry",
+    );
+    assert.equal(
+        resolveIssuerOrigin(face, {
+            headers: { host: "127.0.0.1:1066", "x-forwarded-host": "BOT.Example.COM:443, internal.proxy" },
+            socket: { remoteAddress: "::1" },
+        }),
+        null,
+        "multi-hop, case-insensitive, default-port loopback X-Forwarded-Host matches same-origin issuer",
+    );
+    assert.equal(
+        resolveIssuerOrigin(face, {
+            headers: { host: "127.0.0.1:1066", "x-forwarded-host": "app.example.com" },
+            socket: { remoteAddress: "127.0.0.1" },
+        }),
+        "https://bot.example.com",
+        "distinct issuer over loopback X-Forwarded-Host remains an external CSP origin",
+    );
+    assert.equal(
+        resolveIssuerOrigin(face, {
+            headers: { host: "app.example.com", "x-forwarded-host": "bot.example.com" },
+            socket: { remoteAddress: "203.0.113.5" },
+        }),
+        "https://bot.example.com",
+        "non-loopback sockets ignore spoofed X-Forwarded-Host when evaluating issuer same-origin",
+    );
+
+    const mod = createModule();
+    let handler;
+    await mod.start({
+        credentials: { face: () => face, verify: () => null },
+        registerHttpRoute(_prefix, serve) { handler = serve; },
+    });
+    const server = createServer(handler);
+    t.after(async () => {
+        await mod.close();
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    const sameOriginRes = await fetch(`${base}/`, { headers: { "x-forwarded-host": "bot.example.com" } });
+    assert.equal(sameOriginRes.status, 200);
+    assert.match(sameOriginRes.headers.get("content-security-policy") ?? "", /connect-src 'self';/u);
+    await sameOriginRes.text();
+
+    const crossOriginRes = await fetch(`${base}/`, { headers: { "x-forwarded-host": "other.example.com" } });
+    assert.equal(crossOriginRes.status, 200);
+    assert.match(crossOriginRes.headers.get("content-security-policy") ?? "", /connect-src 'self' https:\/\/bot\.example\.com;/u);
+    await crossOriginRes.text();
 });

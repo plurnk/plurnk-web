@@ -1,4 +1,63 @@
+import { isLoopbackHost } from "@plurnk/plurnk-contracts";
 import { ConfigurationError } from "@plurnk/plurnk-meta";
+
+/**
+ * @param {string | readonly string[] | undefined} raw
+ * @returns {string | undefined}
+ */
+function firstHeader(raw) {
+    return typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
+}
+
+/**
+ * {§web-diagram-service} {§web-browser-security} Resolve the effective target `Host` for a request,
+ * honoring the first hop of `X-Forwarded-Host` when delivered over a loopback reverse proxy
+ * (matching `@plurnk/plurnk-contracts` `HttpOrigin`), and falling back to `Host` otherwise.
+ * @param {import("@plurnk/plurnk-contracts").RequestHeaders | undefined} req
+ * @returns {string}
+ */
+function resolveEffectiveRequestHost(req) {
+    const rawHost = firstHeader(req?.headers?.host)?.trim() ?? "";
+    const remoteAddress = req?.socket?.remoteAddress;
+    const onLoopbackSocket = remoteAddress !== undefined
+        ? isLoopbackHost(remoteAddress)
+        : (() => {
+            if (rawHost === "") return false;
+            try { return isLoopbackHost(new URL(`http://${rawHost}`).hostname); }
+            catch { return false; }
+        })();
+    if (onLoopbackSocket) {
+        const forwardedHost = firstHeader(req?.headers?.["x-forwarded-host"])?.split(",", 1)[0]?.trim();
+        if (forwardedHost) return forwardedHost;
+    }
+    return rawHost;
+}
+
+/**
+ * Normalize a `Host` or `X-Forwarded-Host` authority under `protocol`, rejecting credentials, paths,
+ * queries, or fragments.
+ * @param {string} protocol
+ * @param {string} rawAuthority
+ * @returns {string | null}
+ */
+function normalizeAuthorityHost(protocol, rawAuthority) {
+    if (rawAuthority === "") return null;
+    try {
+        const parsed = new URL(`${protocol}//${rawAuthority}`);
+        if (
+            parsed.username !== ""
+            || parsed.password !== ""
+            || parsed.pathname !== "/"
+            || parsed.search !== ""
+            || parsed.hash !== ""
+        ) {
+            return null;
+        }
+        return parsed.host.toLowerCase();
+    } catch {
+        return null;
+    }
+}
 
 /** @param {string} value */
 export const escapeHtml = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -126,7 +185,7 @@ export function parseAcpEndpoint(raw = process.env.PLURNK_ACP_URL) {
 /**
  * {§web-browser-security} Extract an external `http(s):` OIDC issuer origin from `PLURNK_AUTH_ISSUER` or the credential authority face.
  * @param {unknown} face
- * @param {import("node:http").IncomingMessage} [req]
+ * @param {import("@plurnk/plurnk-contracts").RequestHeaders} [req]
  * @returns {string | null}
  */
 export function resolveIssuerOrigin(face, req) {
@@ -155,8 +214,8 @@ export function resolveIssuerOrigin(face, req) {
     try {
         const parsed = new URL(trimmed);
         if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-        const reqHost = typeof req?.headers?.host === "string" ? req.headers.host.trim().toLowerCase() : "";
-        if (reqHost !== "" && parsed.host.toLowerCase() === reqHost) return null;
+        const reqHost = normalizeAuthorityHost(parsed.protocol, resolveEffectiveRequestHost(req));
+        if (reqHost !== null && parsed.host.toLowerCase() === reqHost) return null;
         return parsed.origin;
     } catch {
         return null;
@@ -211,21 +270,27 @@ export function privateHeadersFor(options = {}) {
 export const privateHeaders = privateHeadersFor();
 
 /**
- * {§web-diagram-service} Enforce same-origin browser requests (`Origin` host matches `Host` and `Sec-Fetch-Site` is `same-origin` or `none`).
+ * {§web-diagram-service} Enforce same-origin browser requests (`Origin` host matches effective target host,
+ * honoring loopback `X-Forwarded-Host` before `Host`, and `Sec-Fetch-Site` is `same-origin` or `none`).
  * @param {import("@plurnk/plurnk-contracts").RequestHeaders} req
  */
 export function sameOriginRequest(req) {
-    const origin = req.headers.origin;
-    if (typeof origin !== "string" || typeof req.headers.host !== "string" || req.headers.host === "") {
+    const origin = firstHeader(req.headers.origin)?.trim();
+    const targetHost = resolveEffectiveRequestHost(req);
+    if (origin === undefined || origin === "" || origin === "null" || targetHost === "") {
         throw new RequestError(403, "Same-origin request required.");
     }
-    let host;
-    try { host = new URL(origin).host; }
+    let originUrl;
+    try { originUrl = new URL(origin); }
     catch (cause) { throw new RequestError(403, "Same-origin request required.", { cause }); }
-    if (host !== req.headers.host) {
+    if (originUrl.protocol !== "http:" && originUrl.protocol !== "https:") {
         throw new RequestError(403, "Same-origin request required.");
     }
-    const site = req.headers["sec-fetch-site"];
+    const expectedHost = normalizeAuthorityHost(originUrl.protocol, targetHost);
+    if (expectedHost === null || originUrl.host.toLowerCase() !== expectedHost) {
+        throw new RequestError(403, "Same-origin request required.");
+    }
+    const site = firstHeader(req.headers["sec-fetch-site"])?.trim().toLowerCase();
     if (site !== undefined && site !== "same-origin" && site !== "none") {
         throw new RequestError(403, "Same-origin request required.");
     }
