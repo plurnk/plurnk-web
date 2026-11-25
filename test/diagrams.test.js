@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { Piscina } from "piscina";
 import createModule from "../src/module.js";
+import { RequestError, sameOriginRequest } from "../src/http.js";
 
 async function fixture(t, overrides = {}, { requireAuth = false } = {}) {
     const original = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
@@ -123,6 +124,51 @@ test("{§web-diagram-service} HTTP admission enforces same-origin Origin + Sec-F
     const valid = await post(simple, { headers: { "content-type": 'Application/JSON; charset="UTF-8"', "sec-fetch-site": "same-origin" } });
     assert.equal(valid.status, 200);
     await valid.text();
+});
+
+test("{§web-diagram-service} loopback reverse-proxy X-Forwarded-Host admission aligns with @plurnk/plurnk-contracts and rejects non-loopback spoofing", async (t) => {
+    const { base, post } = await fixture(t);
+    for (const [label, headers] of /** @type {const} */ ([
+        ["https default port", { origin: "https://bot.example.com", "x-forwarded-host": "bot.example.com", "sec-fetch-site": "same-origin" }],
+        ["multi-hop forwarded host", { origin: "https://bot.example.com", "x-forwarded-host": "bot.example.com, internal.proxy", "sec-fetch-site": "same-origin" }],
+        ["case and default :443 normalization", { origin: "https://bot.example.com", "x-forwarded-host": "BOT.Example.COM:443", "sec-fetch-site": "same-origin" }],
+        ["explicit custom port", { origin: "https://bot.example.com:8443", "x-forwarded-host": "bot.example.com:8443", "sec-fetch-site": "none" }],
+    ])) {
+        const res = await post(simple, { headers });
+        assert.equal(res.status, 200, label);
+        assert.match(await res.text(), /^<svg\b/u, label);
+    }
+
+    for (const [label, headers] of /** @type {const} */ ([
+        ["mismatched origin against X-Forwarded-Host", { origin: "https://evil.example", "x-forwarded-host": "bot.example.com" }],
+        ["loopback origin rejected when X-Forwarded-Host names public host", { origin: base, "x-forwarded-host": "bot.example.com" }],
+        ["null origin rejected", { origin: "null", "x-forwarded-host": "bot.example.com" }],
+        ["cross-site rejected even with matching X-Forwarded-Host", { origin: "https://bot.example.com", "x-forwarded-host": "bot.example.com", "sec-fetch-site": "cross-site" }],
+        ["crafted X-Forwarded-Host path rejected", { origin: "https://bot.example.com", "x-forwarded-host": "bot.example.com/extra" }],
+    ])) {
+        const rejected = await post(simple, { headers });
+        assert.equal(rejected.status, 403, label);
+        await problem(rejected, 403, /Same-origin/u);
+    }
+
+    for (const remoteAddress of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
+        assert.doesNotThrow(() => sameOriginRequest({
+            headers: { host: "127.0.0.1:1066", "x-forwarded-host": "bot.example.com", origin: "https://bot.example.com", "sec-fetch-site": "same-origin" },
+            socket: { remoteAddress },
+        }), `loopback socket ${remoteAddress} honors X-Forwarded-Host`);
+    }
+    assert.throws(
+        () => sameOriginRequest({
+            headers: { host: "daemon.example.com:1066", "x-forwarded-host": "evil.example", origin: "https://evil.example", "sec-fetch-site": "same-origin" },
+            socket: { remoteAddress: "203.0.113.5" },
+        }),
+        (error) => error instanceof RequestError && error.status === 403,
+        "non-loopback sockets ignore spoofed X-Forwarded-Host",
+    );
+    assert.doesNotThrow(() => sameOriginRequest({
+        headers: { host: "daemon.example.com:1066", "x-forwarded-host": "evil.example", origin: "https://daemon.example.com:1066", "sec-fetch-site": "same-origin" },
+        socket: { remoteAddress: "203.0.113.5" },
+    }), "non-loopback sockets continue comparing Origin against Host");
 });
 
 test("{§web-diagram-service} {§web-oidc} published credential authority requires a verified Authorization Bearer token", async (t) => {
