@@ -28,6 +28,7 @@
     "files": [
         ".env.defaults",
         "types/module.d.ts",
+        "src/brand.js",
         "src/module.js",
         "src/index-document.js",
         "src/directory-addresses.js",

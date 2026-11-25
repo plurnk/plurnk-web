@@ -1,4 +1,5 @@
 import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
+import { formatPageTitle } from "./endpoints.js";
 
 /** @typedef {Omit<import("@plurnk/plurnk-acp/client").AcpDescendantState, "gates"> & {gates: import("@plurnk/plurnk-acp/client").AcpDescendantState["gates"] | number}} DescendantItem */
 /** @typedef {{session: DescendantItem, children: DescendantNode[]}} DescendantNode */
@@ -239,6 +240,6 @@ export function workspaceIdentity({ name, projectLabel }, session) {
         projectLabel: namedFolder ? projectLabel : "",
         workspaceIcon: projectLabel !== null ? "🗂️" : "☁️",
         workspaceIconLabel: projectLabel === null ? "Folderless workspace" : "Project workspace",
-        pageTitle: `${name}#${session} — Plurnk`,
+        pageTitle: formatPageTitle(`${name}#${session}`),
     };
 }

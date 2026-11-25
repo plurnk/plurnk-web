@@ -1,6 +1,6 @@
 import { $, $$, on, the } from "on_the_money";
 import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
-import { daemonPolicy, onDaemonPolicy, serviceVersion } from "./endpoints.js";
+import { daemonPolicy, formatPageTitle, onDaemonPolicy, serviceVersion } from "./endpoints.js";
 import renderInPageError from "./error-view.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
@@ -495,7 +495,7 @@ export default async function observeWorkspaceSettings(main) {
                 if (!activeRow) sessionName = null;
                 main.dataset.sessionName = sessionName ?? "";
 
-                the("page-title", `${currentWorkspaceName} · Settings — Plurnk`);
+                the("page-title", formatPageTitle(`${currentWorkspaceName} · Settings`));
                 const backLink = $("[data-settings-back]");
                 const backPath = sessionName !== null
                     ? directoryPath({ kind: "session", workspace: currentWorkspaceName, session: sessionName })
@@ -635,7 +635,7 @@ export default async function observeWorkspaceSettings(main) {
                 if (id !== workspaceId || name === null) return;
                 currentWorkspaceName = name;
                 main.dataset.workspaceName = name;
-                the("page-title", `${name} · Settings — Plurnk`);
+                the("page-title", formatPageTitle(`${name} · Settings`));
                 const backLink = $("[data-settings-back]");
                 const backPath = sessionName !== null
                     ? directoryPath({ kind: "session", workspace: name, session: sessionName })
