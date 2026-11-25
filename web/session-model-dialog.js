@@ -71,6 +71,8 @@ export function createSessionModelDialogController({
         let initialModelValue = "";
         let initialEffortValue = "";
         let initialPersistedModel = false;
+        let modelTouched = false;
+        let effortTouched = false;
         /** @type {ReturnType<typeof attachModelCombobox> | null} */
         let combobox = null;
 
@@ -86,14 +88,20 @@ export function createSessionModelDialogController({
             inline: true,
             signal: combinedSignal,
             onSelect: (selector, choice) => {
+                modelTouched = true;
                 effortSync.sync(selector, effortSelect.value, choice?.efforts, choice?.defaultEffort);
             },
             onInput: (selector) => {
+                modelTouched = true;
                 const cached = modelSearchCache.getCachedEfforts(selector);
                 if (cached) effortSync.sync(selector, effortSelect.value, cached.efforts, cached.defaultEffort);
             },
         });
         combobox = mountedCombobox;
+
+        on(dialog, "change", 'select[name="effort"]', () => {
+            effortTouched = true;
+        });
 
         const cleanup = () => {
             if (cleanupModelDialog === cleanup) cleanupModelDialog = null;
@@ -122,7 +130,7 @@ export function createSessionModelDialogController({
             void (async () => {
                 try {
                     const modelChanged = selectedModel !== initialModelValue || !initialPersistedModel;
-                    const effortChanged = Boolean(selectedEffort && selectedEffort !== initialEffortValue);
+                    const effortChanged = Boolean(selectedEffort && (effortTouched || selectedEffort !== initialEffortValue));
                     if (modelChanged) {
                         await sessionModel(
                             (kind, params = {}) => action(kind, params, combinedSignal),
@@ -170,9 +178,10 @@ export function createSessionModelDialogController({
             modelSearchCache.seedEfforts(liveModelVal, liveSupportedEfforts);
         }
         initialModelValue = liveModelVal;
+        initialEffortValue = liveEffortVal;
         initialPersistedModel = Boolean(status?.model);
         mountedCombobox.setValue(liveModelVal);
-        initialEffortValue = effortSync.sync(liveModelVal, liveEffortVal, liveSupportedEfforts.length > 0 ? liveSupportedEfforts : undefined);
+        effortSync.sync(liveModelVal, liveEffortVal, liveSupportedEfforts.length > 0 ? liveSupportedEfforts : undefined);
 
         dialog.showModal();
         mountedCombobox.open();
@@ -206,11 +215,15 @@ export function createSessionModelDialogController({
             initialPersistedModel = optStatus !== null && Object.hasOwn(optStatus, "model")
                 ? optStatus.model !== null
                 : Boolean(currentModel);
-            const untouched = mountedCombobox.getValue() === initialModelValue;
+            const untouchedModel = !modelTouched && mountedCombobox.getValue() === initialModelValue;
             initialModelValue = currentModel;
-            if (untouched) {
+            initialEffortValue = currentEffort;
+            if (untouchedModel) {
                 mountedCombobox.setValue(currentModel);
-                initialEffortValue = effortSync.sync(currentModel, currentEffort, supported.length > 0 ? supported : undefined);
+                const preferredEffort = effortTouched ? effortSelect.value : currentEffort;
+                effortSync.sync(currentModel, preferredEffort, supported.length > 0 ? supported : undefined);
+            } else if (effortTouched) {
+                effortSync.sync(mountedCombobox.getValue(), effortSelect.value, supported.length > 0 ? supported : undefined);
             }
             mountedCombobox.refresh();
         }).catch(async (error) => {
