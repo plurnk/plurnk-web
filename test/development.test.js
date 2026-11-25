@@ -60,12 +60,25 @@ test("{§web-build} development reloads HTML and hot-updates CSS without the dae
             "on_the_money/css/schemes/green",
             "./app-structure.css",
             "./app-style.css",
-            "./app-state.css",
+            "./overview-state.css",
+            "./conversation-state.css",
+            "./session-state.css",
+            "./settings-state.css",
+            "./schedule-state.css",
+            "./shell-state.css",
         ]);
+        assert.equal(await page.locator("template#workspace-card").count(), 1, "build/dev HTML partial assembly inlines overview templates");
+        assert.equal(await page.locator("template#workspace-settings-schedule").count(), 1, "build/dev HTML partial assembly inlines schedule templates");
 
         const html = join(root, "index.html");
         await writeFile(html, (await readFile(html, "utf8")).replace("</main>", '<p data-text="reload">Live reload works</p></main>'));
         await page.waitForFunction(() => document.querySelector("main p")?.textContent === "Live reload works");
+        const partial = join(root, "templates", "overview.html");
+        await writeFile(partial, (await readFile(partial, "utf8")).replace("No matching sessions.", "No matching partial sessions."));
+        await page.waitForFunction(() => {
+            const tpl = document.querySelector("template#overview-empty");
+            return tpl instanceof HTMLTemplateElement && Boolean(tpl.content.textContent?.includes("No matching partial sessions."));
+        });
         await page.evaluate(() => { document.body.dataset.reloadSentinel = "unchanged"; });
         const styles = join(root, "styles", "app-style.css");
         await writeFile(styles, (await readFile(styles, "utf8")) + "\n:root { --live-test: ready; }\n");

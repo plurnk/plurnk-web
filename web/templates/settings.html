@@ -1,0 +1,413 @@
+<!-- {§web-workspace-settings} Dedicated settings page templates for session policy, models, MCP, skills, schedules, personas, members, env, and help. -->
+<template id="session-config-controls">
+    <form data-session-config-form hidden>
+        <fieldset data-bind="disabled:ws-settings-busy">
+            <div data-model-field>
+                <label for="session-config-model-input" data-i18n="model-label">Model</label>
+                <div data-model-combobox="model">
+                    <input id="session-config-model-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-model-listbox" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
+                    <ul id="session-config-model-listbox" role="listbox" aria-label="Active session model choices" data-combobox-list hidden></ul>
+                </div>
+            </div>
+            <label>
+                <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
+                <select name="effort" aria-label="Reasoning effort"></select>
+            </label>
+            <div data-model-field>
+                <label for="session-config-child-model-input" data-i18n="child-session-model">Child session model</label>
+                <div data-model-combobox="childModel">
+                    <input id="session-config-child-model-input" type="text" name="childModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-child-model-listbox" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
+                    <ul id="session-config-child-model-listbox" role="listbox" aria-label="Child session model choices" data-combobox-list hidden></ul>
+                </div>
+            </div>
+            <label>
+                <span data-i18n="persona-label">Persona</span>
+                <select name="persona" aria-label="Active session persona"></select>
+            </label>
+            <label>
+                <span data-i18n="approval-policy">Approval policy</span>
+                <select name="mode" aria-label="Approval policy"></select>
+            </label>
+            <footer>
+                <button type="submit" data-i18n="ws-settings-apply-persona">Apply to session</button>
+            </footer>
+        </fieldset>
+    </form>
+</template>
+<template id="workspace-settings-subsystems">
+    <div data-settings-panels>
+        <section data-settings-panel="models" aria-label="Models" data-alias-count="0" hidden>
+            <header data-panel-toolbar>
+                <h2 data-i18n="ws-settings-tab-models">Models</h2>
+            </header>
+            <p data-models-aliases-empty data-i18n="no-aliases">No matching aliases.</p>
+            <figure data-models-aliases-wrap>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
+                        <th scope="col" data-i18n="model-label">Model</th>
+                        <th scope="col" data-i18n="model-efforts">Efforts</th>
+                        <th scope="col" data-i18n="ws-settings-col-state">State</th>
+                        <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                    </tr></thead>
+                    <tbody data-models-alias-rows></tbody>
+                </table>
+            </figure>
+            <h3 data-i18n="model-catalog">Model catalog</h3>
+            <form data-models-search-form>
+                <fieldset role="group">
+                    <input type="search" name="q" aria-label="Search model catalog" placeholder="Search model catalog…" autocomplete="off" spellcheck="false">
+                    <select name="provider" aria-label="Filter by provider">
+                        <option value="" data-i18n="all-providers">All providers</option>
+                    </select>
+                    <button type="submit" data-i18n="search">Search</button>
+                </fieldset>
+            </form>
+            <div data-models-pagination>
+                <p data-models-summary>
+                    <span data-i18n="model-offset">Offset:</span> <span data-text="model-offset">0</span>
+                    <span data-i18n="models-shown">Shown:</span> <span data-text="model-count">0</span>
+                    <span data-i18n="models-total">Total:</span> <span data-text="model-total">0</span>
+                </p>
+                <div data-models-page-controls>
+                    <button type="button" data-models-prev disabled data-i18n="previous-page">Previous</button>
+                    <button type="button" data-models-next disabled data-i18n="next-page">Next</button>
+                </div>
+            </div>
+            <p data-text="model-more"></p>
+            <figure>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="model-selector">Selector</th>
+                        <th scope="col" data-i18n="model-name">Name</th>
+                        <th scope="col" data-i18n="model-context">Context</th>
+                        <th scope="col" data-i18n="model-efforts">Efforts</th>
+                        <th scope="col" data-i18n="model-readiness">Readiness</th>
+                        <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                    </tr></thead>
+                    <tbody data-models-catalog-rows></tbody>
+                </table>
+            </figure>
+        </section>
+        <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0" hidden>
+            <header data-panel-toolbar>
+                <h2 data-i18n="ws-settings-mcp-heading">MCP servers</h2>
+            </header>
+            <details data-family-disclosure="mcp">
+                <summary data-i18n="ws-settings-add-mcp">+ Add server</summary>
+                <form data-family-discover-form data-family="mcp">
+                    <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                        <input type="search" name="query" aria-label="Search MCP registry" placeholder="Search MCP registry (or leave blank to browse)…" autocomplete="off">
+                        <button type="submit" data-i18n="ws-settings-discover">Discover</button>
+                    </fieldset>
+                </form>
+                <ul data-candidate-rows></ul>
+                <div data-candidate-pager-outlet></div>
+                <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none">
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <select name="transport" aria-label="MCP transport">
+                            <option value="stdio" data-i18n="ws-settings-mcp-stdio">Local command (stdio)</option>
+                            <option value="streamable-http" data-i18n="ws-settings-mcp-http">Remote endpoint (Streamable HTTP)</option>
+                        </select>
+                        <input type="text" name="alias" aria-label="Server alias" placeholder="server-alias" autocomplete="off" spellcheck="false" required>
+                        <div data-mcp-stdio-fields>
+                            <input type="text" name="command" aria-label="Server command" placeholder="Command (e.g. npx)" autocomplete="off" spellcheck="false">
+                            <input type="text" name="args" aria-label="Server arguments" placeholder="Arguments (space-separated)" autocomplete="off" spellcheck="false">
+                            <input type="text" name="cwd" aria-label="Working directory" placeholder="Working directory (optional)" autocomplete="off" spellcheck="false">
+                        </div>
+                        <div data-mcp-http-fields>
+                            <input type="url" name="url" aria-label="Endpoint URL" placeholder="https://mcp.example.com/mcp" autocomplete="off" spellcheck="false">
+                            <select name="authMode" aria-label="Endpoint authentication">
+                                <option value="none" data-i18n="ws-settings-auth-none">No authorization</option>
+                                <option value="bearer" data-i18n="ws-settings-auth-bearer">Bearer token reference</option>
+                                <option value="oauth" data-i18n="ws-settings-auth-oauth">OAuth 2.1</option>
+                            </select>
+                            <input type="text" name="bearerToken" data-mcp-bearer-field aria-label="Bearer token reference" placeholder="${MCP_TOKEN}" autocomplete="off" spellcheck="false">
+                        </div>
+                        <footer>
+                            <button type="submit" data-i18n="ws-settings-save-server">Save server</button>
+                        </footer>
+                    </fieldset>
+                </form>
+            </details>
+            <div data-collection-bar-outlet></div>
+            <p data-family-empty data-i18n="ws-settings-mcp-empty">No MCP servers configured.</p>
+            <figure data-family-table-wrap>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
+                        <th scope="col" data-i18n="ws-settings-col-origin">Origin</th>
+                        <th scope="col" data-i18n="ws-settings-col-details">Details</th>
+                        <th scope="col" data-i18n="ws-settings-col-state">State</th>
+                        <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                    </tr></thead>
+                    <tbody data-family-rows></tbody>
+                </table>
+            </figure>
+            <section data-mcp-oauth-box aria-label="MCP OAuth authorization" hidden>
+                <p><span data-i18n="ws-settings-oauth-open">Authorize server:</span> <a data-mcp-oauth-link href="/" target="_blank" rel="noopener noreferrer" data-bind="href:mcp-oauth-url" data-text="mcp-oauth-url"></a></p>
+                <form data-mcp-oauth-complete-form>
+                    <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                        <input type="hidden" name="alias" data-bind="value:mcp-oauth-alias">
+                        <input type="url" name="callbackUrl" aria-label="OAuth callback URL" placeholder="Callback URL from authorization" autocomplete="off" required>
+                        <button type="submit" data-i18n="ws-settings-oauth-complete">Complete authorization</button>
+                    </fieldset>
+                </form>
+            </section>
+        </section>
+        <section data-settings-panel="skills" aria-label="Skills" data-family-count="0" data-candidate-count="0" hidden>
+            <header data-panel-toolbar>
+                <h2 data-i18n="ws-settings-tab-skills">Skills</h2>
+            </header>
+            <details data-family-disclosure="skills">
+                <summary data-i18n="ws-settings-add-skill">+ Add skill</summary>
+                <form data-family-discover-form data-family="skills">
+                    <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                        <input type="text" name="source" aria-label="Skill discovery source" placeholder="Git URL, folder, archive, or server:///skills" autocomplete="off" spellcheck="false" required>
+                        <input type="search" name="query" aria-label="Filter discovered skills" placeholder="Filter skills (optional)" autocomplete="off" spellcheck="false">
+                        <button type="submit" data-i18n="ws-settings-discover">Discover</button>
+                    </fieldset>
+                </form>
+                <ul data-candidate-rows></ul>
+                <div data-candidate-pager-outlet></div>
+                <form data-skills-save-form>
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <input type="text" name="alias" aria-label="Skill name" placeholder="skill-name" autocomplete="off" spellcheck="false" required>
+                        <input type="text" name="source" aria-label="Skill source" placeholder="https://git.example/skills.git or /path/to/skill" autocomplete="off" spellcheck="false" required>
+                        <input type="text" name="ref" aria-label="Git ref" placeholder="Branch or tag (optional)" autocomplete="off" spellcheck="false">
+                        <footer>
+                            <button type="submit" data-i18n="ws-settings-save-skill">Save skill</button>
+                        </footer>
+                    </fieldset>
+                </form>
+            </details>
+            <div data-collection-bar-outlet></div>
+            <p data-family-empty data-i18n="ws-settings-skills-empty">No skills configured.</p>
+            <figure data-family-table-wrap>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
+                        <th scope="col" data-i18n="ws-settings-col-origin">Origin</th>
+                        <th scope="col" data-i18n="ws-settings-col-details">Details</th>
+                        <th scope="col" data-i18n="ws-settings-col-state">State</th>
+                        <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                    </tr></thead>
+                    <tbody data-family-rows></tbody>
+                </table>
+            </figure>
+        </section>
+        <div data-schedule-panel-outlet></div>
+        <section data-settings-panel="personas" aria-label="Personas" data-family-count="0" data-candidate-count="0" hidden>
+            <header data-panel-toolbar>
+                <h2 data-i18n="ws-settings-tab-personas">Personas</h2>
+            </header>
+            <details data-family-disclosure="personas">
+                <summary data-i18n="ws-settings-add-persona">+ Add persona</summary>
+                <form data-family-discover-form data-family="personas">
+                    <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                        <input type="text" name="source" aria-label="Persona discovery path" placeholder="Directory or file path (optional)" autocomplete="off" spellcheck="false">
+                        <input type="search" name="query" aria-label="Filter discovered personas" placeholder="Filter personas (optional)" autocomplete="off" spellcheck="false">
+                        <button type="submit" data-i18n="ws-settings-discover">Discover</button>
+                    </fieldset>
+                </form>
+                <ul data-candidate-rows></ul>
+                <div data-candidate-pager-outlet></div>
+                <form data-personas-save-form data-persona-mode="inline">
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <select name="personaMode" aria-label="Persona mode">
+                            <option value="inline" data-i18n="ws-settings-persona-inline">Inline instructions</option>
+                            <option value="source" data-i18n="ws-settings-persona-source">Markdown file path</option>
+                        </select>
+                        <input type="text" name="alias" aria-label="Persona name" placeholder="reviewer" autocomplete="off" spellcheck="false" required>
+                        <div data-persona-inline-fields>
+                            <input type="text" name="description" aria-label="Persona description" placeholder="Concise role summary" autocomplete="off">
+                            <textarea name="body" aria-label="Persona instructions" placeholder="System instructions for this persona" rows="3"></textarea>
+                        </div>
+                        <div data-persona-source-fields>
+                            <input type="text" name="source" aria-label="Persona file path" placeholder="./personas/reviewer.md" autocomplete="off" spellcheck="false">
+                        </div>
+                        <div data-model-combobox="personaModel">
+                            <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="persona-model-listbox" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
+                            <ul id="persona-model-listbox" role="listbox" aria-label="Persona default model choices" data-combobox-list hidden></ul>
+                        </div>
+                        <select name="effort" aria-label="Persona default effort">
+                            <option value="" data-i18n="ws-settings-default-effort">Default effort (optional)</option>
+                        </select>
+                        <footer>
+                            <button type="submit" data-i18n="ws-settings-save-persona">Save persona</button>
+                        </footer>
+                    </fieldset>
+                </form>
+            </details>
+            <div data-collection-bar-outlet></div>
+            <p data-family-empty data-i18n="ws-settings-personas-empty">No personas configured.</p>
+            <figure data-family-table-wrap>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
+                        <th scope="col" data-i18n="ws-settings-col-origin">Origin</th>
+                        <th scope="col" data-i18n="ws-settings-col-details">Details</th>
+                        <th scope="col" data-i18n="ws-settings-col-state">State</th>
+                        <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                    </tr></thead>
+                    <tbody data-family-rows></tbody>
+                </table>
+            </figure>
+        </section>
+        <section data-settings-panel="members" aria-label="Members" data-family-count="0" data-candidate-count="0" hidden>
+            <header data-panel-toolbar>
+                <h2 data-i18n="ws-settings-tab-members">Members</h2>
+            </header>
+            <details data-family-disclosure="members">
+                <summary data-i18n="ws-settings-add-members">+ Add rules</summary>
+                <form data-members-save-form>
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <input type="text" name="files" aria-label="Member globs" placeholder="docs/** !docs/drafts/**" autocomplete="off" spellcheck="false" required>
+                        <div data-members-preview data-members-preview-state="idle">
+                            <p role="status" data-members-preview-summary data-text="members-preview-summary"></p>
+                            <ul data-members-preview-list></ul>
+                        </div>
+                        <footer>
+                            <button type="submit" data-i18n="ws-settings-save-members">Add rules</button>
+                        </footer>
+                    </fieldset>
+                </form>
+            </details>
+            <div data-collection-bar-outlet></div>
+            <p data-family-empty data-i18n="ws-settings-members-empty">No custom file member rules configured.</p>
+            <figure data-family-table-wrap>
+                <table>
+                    <thead><tr>
+                        <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
+                        <th scope="col" data-i18n="ws-settings-col-origin">Origin</th>
+                        <th scope="col" data-i18n="ws-settings-col-details">Details</th>
+                        <th scope="col" data-i18n="ws-settings-col-state">State</th>
+                        <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                    </tr></thead>
+                    <tbody data-family-rows></tbody>
+                </table>
+            </figure>
+        </section>
+        <section data-settings-panel="env" aria-label="Environment" data-candidate-count="0" hidden>
+            <header data-panel-toolbar>
+                <h2 data-i18n="ws-settings-tab-env">Environment</h2>
+                <form data-ws-env-scope-form hidden>
+                    <fieldset role="group">
+                        <select name="listScope" aria-label="Environment listing scope">
+                            <option value="workspace" data-i18n="env-scope-workspace">Workspace</option>
+                            <option value="session" data-i18n="env-scope-session">Session</option>
+                        </select>
+                    </fieldset>
+                </form>
+            </header>
+            <details data-family-disclosure="env">
+                <summary data-i18n="ws-settings-add-env">+ Set variable</summary>
+                <form data-family-discover-form data-family="env">
+                    <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                        <input type="search" name="query" aria-label="Discover environment variables" placeholder="Filter declared variables (optional)" autocomplete="off" spellcheck="false">
+                        <button type="submit" data-i18n="ws-settings-discover">Discover</button>
+                    </fieldset>
+                </form>
+                <ul data-candidate-rows></ul>
+                <div data-candidate-pager-outlet></div>
+                <div data-ws-env-form-outlet></div>
+            </details>
+            <div data-collection-bar-outlet></div>
+            <p data-env-empty data-i18n="ws-settings-env-empty">No environment variables configured.</p>
+            <div data-ws-env-outlet></div>
+        </section>
+        <section data-settings-panel="help" aria-label="Help" hidden>
+            <header data-panel-toolbar>
+                <h2 data-i18n="ws-settings-tab-help">Help</h2>
+            </header>
+            <h3 data-i18n="keyboard-shortcuts">Keyboard shortcuts</h3>
+            <div data-help-shortcuts-outlet></div>
+            <h3 data-i18n="slash-commands">Slash commands</h3>
+            <input type="search" data-help-filter aria-label="Filter commands" placeholder="Filter commands…" autocomplete="off" spellcheck="false">
+            <div data-help-commands-outlet></div>
+        </section>
+    </div>
+</template>
+<template id="workspace-model-alias-row">
+    <tr data-model-session-usable="false">
+        <th scope="row"><code data-text="alias-name">alias</code></th>
+        <td><code data-text="alias-route">provider/model</code></td>
+        <td data-text="alias-effort">Unspecified</td>
+        <td data-text="alias-active">Configured</td>
+        <td>
+            <form data-model-alias-row-form>
+                <fieldset data-bind="disabled:ws-settings-busy">
+                    <input type="hidden" name="alias" data-bind="value:alias-name">
+                    <button type="submit" name="operation" value="select" data-model-use-session data-i18n="ws-settings-use-in-session">Use in session</button>
+                </fieldset>
+            </form>
+        </td>
+    </tr>
+</template>
+<template id="workspace-family-row">
+    <tr data-family-removable="true" data-family-state="active" data-family-auth="false">
+        <th scope="row"><code data-text="family-alias">alias</code></th>
+        <td data-text="family-origin">workspace</td>
+        <td data-text="family-summary"></td>
+        <td data-text="family-status">active</td>
+        <td>
+            <form data-family-row-form>
+                <fieldset data-bind="disabled:ws-settings-busy">
+                    <input type="hidden" name="alias" data-bind="value:family-alias">
+                    <button type="submit" name="operation" value="enable" data-family-enable data-i18n="env-enable">Enable</button>
+                    <button type="submit" name="operation" value="enable" data-family-retry data-i18n="retry-body">Retry</button>
+                    <button type="submit" name="operation" value="disable" data-family-disable data-i18n="env-disable">Disable</button>
+                    <button type="submit" name="operation" value="oauth" data-family-authorize data-i18n="ws-settings-authorize">Authorize</button>
+                    <button type="submit" name="operation" value="remove" data-family-remove data-i18n="ws-settings-remove">Remove</button>
+                </fieldset>
+            </form>
+        </td>
+    </tr>
+</template>
+<template id="workspace-candidate-row">
+    <li data-candidate-addable="false">
+        <code data-text="candidate-alias"></code> <span data-text="candidate-summary"></span>
+        <form data-candidate-add-form>
+            <fieldset data-bind="disabled:ws-settings-busy">
+                <button type="submit" data-i18n="ws-settings-use-candidate">Add</button>
+            </fieldset>
+        </form>
+    </li>
+</template>
+<template id="workspace-collection-bar">
+    <div data-collection-bar>
+        <form data-collection-filter-form>
+            <fieldset role="group" data-bind="disabled:ws-settings-busy">
+                <input type="search" name="query" aria-label="Filter items" placeholder="Filter…" autocomplete="off" spellcheck="false">
+                <select name="state" aria-label="Filter by state">
+                    <option value="" data-i18n="ws-settings-state-all">All states</option>
+                    <option value="active" data-i18n="ws-settings-state-active">Active</option>
+                    <option value="dormant" data-i18n="ws-settings-state-dormant">Dormant</option>
+                    <option value="disabled" data-i18n="ws-settings-state-disabled">Disabled</option>
+                    <option value="unavailable" data-i18n="ws-settings-state-unavailable">Unavailable</option>
+                    <option value="authorization-required" data-i18n="ws-settings-state-auth">Authorization required</option>
+                </select>
+                <button type="submit" data-i18n="search">Search</button>
+            </fieldset>
+        </form>
+        <div data-collection-pagination>
+            <p data-collection-summary data-text="collection-summary"></p>
+            <div data-collection-page-controls>
+                <button type="button" data-collection-prev disabled data-i18n="previous-page">Previous</button>
+                <button type="button" data-collection-next disabled data-i18n="next-page">Next</button>
+            </div>
+        </div>
+    </div>
+</template>
+<template id="workspace-candidate-pager">
+    <div data-candidate-pagination hidden>
+        <p data-candidate-summary data-text="candidate-summary"></p>
+        <div data-candidate-page-controls>
+            <button type="button" data-candidate-prev disabled data-i18n="previous-page">Previous</button>
+            <button type="button" data-candidate-next disabled data-i18n="next-page">Next</button>
+        </div>
+    </div>
+</template>
+<template id="members-preview-path">
+    <li data-members-preview-item><code data-text="preview-path"></code></li>
+</template>

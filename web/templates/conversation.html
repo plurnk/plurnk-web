@@ -1,0 +1,102 @@
+<!-- {§web-session-conversation} Inert document-owned structure; the ACP client supplies its values. -->
+<template id="conversation-history">
+    <li data-history-boundary>
+        <form data-bind="aria-busy:history-pending">
+            <button type="submit" data-bind="disabled:history-pending" data-i18n="load-earlier-messages">Load earlier messages</button>
+            <p role="alert" data-text="history-error"></p>
+        </form>
+    </li>
+</template>
+<template id="prompt-work">
+    <details data-prompt-work>
+        <summary data-bind="aria-label:operations-label"><span data-prompt-pills></span></summary>
+        <ul data-work-items></ul>
+    </details>
+</template>
+<template id="conversation-operations">
+    <li data-operations="">
+        <details data-prompt-work>
+            <summary data-bind="aria-label:operations-label"><span data-prompt-pills></span></summary>
+            <ul data-work-items></ul>
+        </details>
+    </li>
+</template>
+<template id="operation-tally">
+    <span data-operation-tally><span data-plurnk-field="heading"></span><span data-plurnk-field="count"></span></span>
+</template>
+<template id="prompt-replies">
+    <ul data-prompt-replies></ul>
+</template>
+<template id="conversation-message">
+    <li>
+        <article data-bind="aria-label:message-label"></article>
+    </li>
+</template>
+<template id="message-actor-text">
+    <small data-message-actor><span data-text="actor-name"></span></small>
+</template>
+<template id="message-actor-link">
+    <small data-message-actor><a data-workspace-route="session" data-bind="href:actor-href" data-text="actor-name"></a></small>
+</template>
+<template id="reading-slate-jump">
+    <div data-jump-slot><button type="button" data-jump-bottom aria-label="Jump to latest" title="Jump to latest" hidden></button></div>
+</template>
+<template id="reading-slate-spacer">
+    <svg data-slate-spacer width="1" height="0" aria-hidden="true"></svg>
+</template>
+<!-- {§web-card-disclosure} Summary fields are phrasing content, not nested headers or paragraphs. -->
+<template id="card-disclosure">
+    <details><summary></summary></details>
+</template>
+<template id="card-header">
+    <header></header>
+</template>
+<template id="conversation-literal">
+    <pre></pre>
+</template>
+<!-- {§web-operation-summary} Shared summary; the stylesheet owns operation glyphs. -->
+<template id="operation-header">
+    <span data-plurnk-field="heading"></span>
+</template>
+<template id="operation-operands">
+    <span data-plurnk-operands></span>
+</template>
+<template id="operation-operand">
+    <span data-plurnk-operand></span>
+</template>
+<template id="operation-field">
+    <span></span>
+</template>
+<template id="operation-outcome">
+    <span data-plurnk-field="outcome"></span>
+</template>
+<!-- {§web-diagram-content} Only the generated data-URI image enters this template. -->
+<template id="diagram-retry">
+    <button type="button" data-diagram-retry data-i18n="diagram-retry">Retry diagram</button>
+</template>
+<template id="conversation-diagram">
+    <figure data-diagram hidden>
+        <div data-diagram-viewport><img alt="Mermaid diagram; source below."></div>
+        <details>
+            <summary data-i18n="diagram-source">Diagram source</summary>
+            <pre><code data-diagram-source></code></pre>
+        </details>
+    </figure>
+</template>
+<template id="conversation-body-reference">
+    <pre data-body-reference data-bind="aria-busy:body-pending"></pre>
+</template>
+<template id="conversation-image-reference">
+    <div data-body-reference data-image-reference data-bind="aria-busy:body-pending"></div>
+</template>
+<template id="conversation-inline-image">
+    <figure data-inline-image hidden>
+        <div data-inline-image-viewport><img alt="Attached image"></div>
+    </figure>
+</template>
+<template id="conversation-body-retry">
+    <form><button type="submit" data-i18n="retry-body">Retry</button></form>
+</template>
+<template id="conversation-body-read">
+    <form><button type="submit" data-i18n="read-body">Read</button></form>
+</template>

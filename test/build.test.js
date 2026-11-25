@@ -192,7 +192,10 @@ test("{§web-build} production HTML references compiled assets, not development 
     const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
     assert.match(html, /src="\/assets\/[^"]+\.js"/u);
     assert.match(html, /href="\/assets\/[^"]+\.css"/u);
-    assert.doesNotMatch(html, /@vite\/client|\/app\.js|\/styles\/app-/u);
+    assert.doesNotMatch(html, /@vite\/client|\/app\.js|\/styles\/app-|@include\s/u);
+    for (const id of ["workspace-card", "workspace-tab-item", "workspace-settings-subsystems", "workspace-settings-schedule", "session-controls", "conversation-diagram"]) {
+        assert.match(html, new RegExp(`<template id="${id}">`, "u"), `production HTML inlines static partial template #${id}`);
+    }
     const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
     for (const asset of [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/gu)].map((match) => match[1])) {
         assert.ok(inventory.some(([path]) => path === asset), `inventory includes ${asset}`);

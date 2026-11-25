@@ -223,7 +223,12 @@ export function createWorkspaceSettingsController(article, getContext, {
         }
         if (!$(article, '[data-settings-panel="mcp"]')) {
             const host = $(article, "[data-settings-subsystems]") ?? article;
-            $.clone(host, "#workspace-settings-subsystems");
+            const panels = $.clone(host, "#workspace-settings-subsystems");
+            const scheduleOutlet = panels ? $(panels, "[data-schedule-panel-outlet]") : null;
+            if (scheduleOutlet) {
+                const schedulePanel = $.clone(scheduleOutlet, "#workspace-settings-schedule", { position: "beforebegin" });
+                if (schedulePanel) scheduleOutlet.remove();
+            }
         }
         const envOutlet = $(article, "[data-ws-env-outlet]");
         if (envOutlet && !envPanel) {

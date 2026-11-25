@@ -1,0 +1,138 @@
+@layer state {
+    /* {§web-page-shell} Intrinsic header/footer tracks and full-height scroller on chat, search, settings, and callback pages. */
+    body:has(> main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="callback"])) {
+        block-size: 100dvh;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+    }
+
+    @media (width >= 48rem), (scripting: none) {
+        body:has(> #session-status):has(> #workspace-tabs:not([data-tab-count="0"])):has(> main:is([data-page="workspace"], [data-page="session"])) {
+            grid-template-rows: auto minmax(0, 1fr) auto auto;
+        }
+
+        body:has(> #workspace-tabs:not([data-tab-count="0"])) > #session-status {
+            padding-block-end: calc(var(--otm-spacing) * 0.65);
+        }
+    }
+
+    body > main:is([data-page="home"], [data-page="search"], [data-page="workspace"], [data-page="session"], [data-page="settings"], [data-page="callback"]) {
+        max-inline-size: none;
+        min-block-size: 0;
+        padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2));
+        overflow: auto;
+    }
+
+    body > main:is([data-page="search"], [data-page="settings"], [data-page="callback"]) {
+        padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-search-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-search-measure)) / 2));
+    }
+
+    [data-workspaces-actions],
+    [data-switcher-actions] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin: 0 0 var(--otm-spacing);
+        padding: 0;
+    }
+
+    [data-switcher-actions] {
+        grid-template-columns: repeat(auto-fit, minmax(14ch, 1fr));
+    }
+
+    [data-workspaces-actions] button,
+    [data-switcher-actions] button {
+        --otm-primary-background: var(--plurnk-working-surface);
+        --otm-primary-hover-background: var(--plurnk-user-surface);
+        --otm-primary-inverse: var(--otm-color);
+
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+        inline-size: 100%;
+        margin: 0;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        text-align: start;
+        cursor: pointer;
+    }
+
+    [data-workspaces-actions] > form {
+        margin: 0;
+    }
+
+    @container (width < 62em) {
+        body > header [data-header-label] {
+            display: none;
+        }
+    }
+
+    body > header > nav[aria-label="breadcrumb"] [aria-current="page"] {
+        display: inline-block;
+    }
+
+    header :is(#header-place a, #header-place button, nav button, nav a, > a):is(:hover, :focus-visible) {
+        text-decoration: underline;
+    }
+
+    #workspace-create:not(:has(input[data-toggle-project-folder]:checked)) input[data-project-folder-input] {
+        display: none;
+    }
+
+    #dialog-workspaces [data-workspaces-list] > li > a[aria-current="page"] {
+        background-color: var(--plurnk-user-surface);
+        font-weight: 700;
+    }
+
+    #dialog-workspaces [data-workspaces-list] > li > a:is(:hover, :focus-visible) {
+        text-decoration: underline;
+    }
+
+    /* {§web-page-shell} Keep keyboard focus inside header and workspace tab scroll areas. */
+    details > summary:is(:focus, :focus-visible) {
+        outline: var(--otm-outline-width) solid var(--otm-primary-focus);
+        outline-offset: 0.125rem;
+        border-radius: var(--otm-border-radius);
+    }
+
+    body > header :is(a, button):focus-visible,
+    #workspace-tabs :is(a, button):focus-visible {
+        box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
+    }
+
+    @media (scripting: none) {
+        dialog:not([open]) {
+            display: block;
+            position: static;
+            inline-size: auto;
+            min-inline-size: 0;
+            block-size: auto;
+            min-block-size: 0;
+            margin-block: var(--otm-spacing);
+            padding: 0;
+            border: 0;
+            background-color: transparent;
+            backdrop-filter: none;
+            opacity: 1;
+        }
+
+        button[data-dialog-target] {
+            display: none;
+        }
+    }
+
+    /* {§web-page-shell} An ordinary input interrupt is still a live connection. */
+    body:not(:has(:is(#session-status, #main):is([data-connection="disconnected"], [data-connection="signed-out"]))) [data-connection-indicator] {
+        display: none;
+    }
+
+    /* {§web-workspace-settings} {§web-session-commands} Empty feedback occupies no page space. */
+    :is(#workspace-settings, [data-settings-panel], #dialog-workspace-create > article, #dialog-session-create > article, #dialog-command-output > article) > p:empty {
+        display: none;
+    }
+
+    [hidden] {
+        display: none;
+    }
+}

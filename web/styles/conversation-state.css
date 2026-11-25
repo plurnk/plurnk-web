@@ -1,0 +1,417 @@
+@layer state {
+    /* {§web-session-conversation} Prompt-top tiny glyph pill strip and inline operation drilldown. */
+    #session-conversation [data-prompt-replies] {
+        padding: 0;
+    }
+
+    #session-conversation [data-prompt-replies] > li {
+        list-style: none;
+    }
+
+    #main li > details[data-prompt-work] {
+        --otm-card-background-color: var(--plurnk-working-surface);
+
+        margin-block: 0 var(--otm-spacing);
+        padding: 0;
+        border: 0;
+    }
+
+    #main li > details[data-prompt-work] > summary {
+        display: inline-flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.35rem;
+        max-inline-size: 100%;
+        padding: 0;
+        border-block-end: 0;
+        line-height: 1.2;
+    }
+
+    #main li > details[data-prompt-work] > summary::after {
+        content: "▸" / "";
+        color: var(--otm-muted-color);
+        font-size: 0.75em;
+    }
+
+    #main li > details[data-prompt-work][open] > summary::after {
+        content: "▾" / "";
+    }
+
+    [data-prompt-pills] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.3rem;
+        min-inline-size: 0;
+    }
+
+    [data-prompt-pills] > [data-operation-tally] {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2ch;
+        padding: 0.12rem 0.45rem;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: 999px;
+        background-color: var(--plurnk-pill-surface);
+        font-size: 0.8125em;
+        line-height: 1.25;
+        white-space: nowrap;
+    }
+
+    [data-operation-tally] > [data-plurnk-field="heading"]:not(:empty) {
+        margin-inline-end: 0.45ch;
+    }
+
+    [data-prompt-work][data-work-running="true"] > summary [data-operation-tally] {
+        border-color: var(--otm-primary);
+    }
+
+    [data-prompt-work] > [data-work-items] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.35);
+        margin-block: calc(var(--otm-spacing) * 0.5) 0;
+        padding: 0;
+    }
+
+    #session-conversation [data-prompt-work] > [data-work-items] > li {
+        margin: 0;
+    }
+
+    /* {§web-conversation-surfaces} Authorship alone does not make a tool call a reply. */
+    #session-conversation:has([data-message-id]),
+    #session-conversation[data-conversation-empty] {
+        --otm-card-background-color: var(--plurnk-working-surface);
+        --otm-primary: var(--otm-primary-hover);
+    }
+
+    [data-prompt-work] > [data-work-items] > li > article {
+        --otm-spacing: 0.6rem;
+
+        margin: 0;
+        background-color: var(--plurnk-working-surface);
+        box-shadow: 0 0 0 var(--otm-border-width) var(--otm-muted-border-color);
+    }
+
+    #session-conversation [data-message-id] > article {
+        --otm-card-sectioning-background-color: var(--otm-card-background-color);
+    }
+
+    #session-conversation [data-message-role="user"] {
+        --otm-card-background-color: var(--plurnk-user-surface);
+    }
+
+    #session-conversation :is([data-message-role="assistant"]:not([data-call-id], [data-plurnk-type]), [data-plurnk-type="send"]:not([data-message-role="user"]), [data-plurnk-type="done"]:not([data-message-role="user"]), [data-plurnk-type="fail"]:not([data-message-role="user"])) {
+        --otm-card-background-color: var(--plurnk-reply-surface);
+    }
+
+    #session-conversation [data-message-role="user"] > article {
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-user-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"]:has(> [data-prompt-work]) {
+        margin-block-end: var(--otm-spacing);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-user-surface);
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-user-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"] > [data-prompt-work] {
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.55) var(--otm-spacing) 0;
+    }
+
+    #session-conversation [data-message-role="user"] > [data-prompt-work][open] {
+        padding-block-end: calc(var(--otm-spacing) * 0.5);
+        border-block-end: var(--otm-border-width) solid var(--plurnk-user-border);
+    }
+
+    #session-conversation [data-message-role="user"] > [data-prompt-work] + article {
+        margin-block-end: 0;
+        padding-block-start: calc(var(--otm-spacing) * 0.45);
+        border-start-start-radius: 0;
+        border-start-end-radius: 0;
+        box-shadow: none;
+    }
+
+    /* {§web-session-history} Reading Slate trailing spacer and floating jump-to-latest pill. */
+    svg[data-slate-spacer] {
+        display: block;
+        inline-size: 1px;
+        pointer-events: none;
+    }
+
+    [data-jump-slot] {
+        position: sticky;
+        inset-block-end: 0.65rem;
+        z-index: 2;
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-end;
+        block-size: 0;
+        overflow: visible;
+        pointer-events: none;
+    }
+
+    svg[data-slate-spacer][height="0"],
+    [data-jump-slot]:has(> button[hidden]) {
+        display: none;
+    }
+
+    button[data-jump-bottom] {
+        --otm-primary-background: var(--otm-card-background-color);
+        --otm-primary-hover-background: var(--plurnk-working-surface);
+        --otm-primary-inverse: var(--otm-primary);
+
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        inline-size: auto;
+        margin: 0;
+        padding: 0.3rem 0.7rem;
+        border: var(--otm-border-width) solid var(--otm-primary);
+        border-radius: 999px;
+        box-shadow: var(--otm-card-box-shadow);
+        font-size: 0.85em;
+        font-weight: 700;
+        line-height: 1.2;
+        pointer-events: auto;
+        cursor: pointer;
+    }
+
+    button[data-jump-bottom]:not([data-jump-gate])::before {
+        content: "↓" / "";
+    }
+
+    button[data-jump-bottom][data-jump-gate="true"]::before {
+        content: "↓ Review waiting";
+    }
+
+    #session-conversation [data-message-actor] > a {
+        color: inherit;
+        text-decoration: underline;
+    }
+
+    #main li > article > :where([data-image-reference]:last-child) > :where([data-inline-image]:last-child),
+    #main li > article > details > :where([data-image-reference]:last-child) > :where([data-inline-image]:last-child),
+    #session-conversation [data-prompt-work] > [data-work-items],
+    #session-conversation [data-prompt-replies] > li:last-child > article {
+        margin-block-end: 0;
+    }
+
+    /* {§web-session-conversation} {§web-conversation-surfaces} Warm amber surfaces and directional attribution for non-operator actors. */
+    #session-conversation [data-message-role="user"][data-actor] {
+        --otm-card-background-color: var(--plurnk-actor-surface);
+    }
+
+    #session-conversation [data-actor-direction="outbound"][data-actor] {
+        --otm-card-background-color: var(--plurnk-actor-reply-surface);
+    }
+
+    #session-conversation :is([data-message-role="user"][data-actor]:not(:has(> [data-prompt-work])), [data-actor-direction="outbound"][data-actor]) > article {
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-actor-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"][data-actor]:has(> [data-prompt-work]) {
+        background-color: var(--plurnk-actor-surface);
+        box-shadow: 0 0 0 var(--otm-border-width) var(--plurnk-actor-border), var(--otm-card-box-shadow);
+    }
+
+    #session-conversation [data-message-role="user"][data-actor] > [data-prompt-work][open] {
+        border-block-end-color: var(--plurnk-actor-border);
+    }
+
+    #session-conversation [data-message-actor] {
+        display: flex;
+        align-items: center;
+        gap: 0.35ch;
+        margin-block-end: calc(var(--otm-spacing) * 0.35);
+        color: var(--plurnk-actor-ink);
+        font-weight: 700;
+    }
+
+    #session-conversation [data-actor-direction="inbound"] [data-message-actor]::before {
+        content: "✉️ " / "";
+    }
+
+    #session-conversation [data-actor-direction="inbound"] [data-message-actor]::after {
+        content: " →" / "";
+    }
+
+    #session-conversation [data-actor-direction="outbound"] [data-message-actor]::before {
+        content: "✉️ → " / "";
+    }
+
+    #session-conversation [data-message-id] > article > header:only-child {
+        margin-block-end: calc(var(--otm-spacing) * -1);
+        border-block-end: 0;
+        border-end-start-radius: var(--otm-border-radius);
+        border-end-end-radius: var(--otm-border-radius);
+    }
+
+    #main :is(li > article, li) > details:not([data-prompt-work])[open] > summary::after {
+        content: "▾" / "";
+    }
+
+    :is(header, summary) > :is([data-plurnk-field="outcome"], [data-plurnk-operands]) {
+        display: block;
+    }
+
+    #session-conversation [data-math],
+    #session-conversation [data-diagram-viewport] {
+        max-inline-size: 100%;
+        overflow-x: auto;
+    }
+
+    /* {§web-diagram-content} Preserve readable intrinsic labels and center diagrams; wide images scroll locally. */
+    #session-conversation [data-diagram-viewport] > img {
+        display: block;
+        max-inline-size: none;
+        margin-inline: auto;
+    }
+
+    /* {§web-inline-images} Verified raster attachments scale within the card width and bounded height. */
+    #session-conversation [data-inline-image] {
+        margin-block: 0 var(--otm-spacing);
+    }
+
+    #session-conversation [data-inline-image-viewport] > img {
+        display: block;
+        max-inline-size: 100%;
+        max-block-size: 60dvh;
+        block-size: auto;
+        border-radius: var(--otm-border-radius);
+    }
+
+    /* {§web-content-reflow} Only inherently two-dimensional content owns horizontal scrolling. */
+    #session-conversation [data-math="inline"] {
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    #session-conversation [data-math="block"] {
+        display: block;
+        margin-block: var(--otm-spacing);
+    }
+
+    #session-conversation [data-math] > math {
+        inline-size: max-content;
+        min-inline-size: 100%;
+    }
+
+    /* {§web-operation-summary} {§web-session-reasoning} Decorative glyphs never supply the accessible operation name. */
+    :is([data-plurnk-type], [data-operation-tally], [data-diagnostic-level], [data-message-role="reasoning"]) {
+        --plurnk-operation-glyph: "⚙️";
+    }
+
+    :is([data-plurnk-type], [data-operation-tally], [data-diagnostic-level], [data-message-role="reasoning"]) [data-plurnk-field="heading"]::before {
+        content: var(--plurnk-operation-glyph, "⚙️") / "";
+        margin-inline-end: 0.35ch;
+    }
+
+    :is([data-plurnk-type="note"], [data-operation-tally="note"]) {
+        --plurnk-operation-glyph: "🗒️";
+    }
+
+    :is([data-plurnk-type="find"], [data-operation-tally="find"]) {
+        --plurnk-operation-glyph: "🔎";
+    }
+
+    :is([data-plurnk-type="read"], [data-operation-tally="read"]) {
+        --plurnk-operation-glyph: "📖";
+    }
+
+    :is([data-plurnk-type="edit"], [data-operation-tally="edit"]) {
+        --plurnk-operation-glyph: "📝";
+    }
+
+    :is([data-plurnk-type="copy"], [data-operation-tally="copy"]) {
+        --plurnk-operation-glyph: "🖨️";
+    }
+
+    :is([data-plurnk-type="move"], [data-operation-tally="move"]) {
+        --plurnk-operation-glyph: "📦";
+    }
+
+    :is([data-plurnk-type="kill"], [data-operation-tally="kill"]) {
+        --plurnk-operation-glyph: "🗑️";
+    }
+
+    :is([data-plurnk-type="work"], [data-operation-tally="work"]) {
+        --plurnk-operation-glyph: "🐜";
+    }
+
+    :is([data-plurnk-type="fork"], [data-operation-tally="fork"]) {
+        --plurnk-operation-glyph: "🔱";
+    }
+
+    :is([data-plurnk-type="bare"], [data-operation-tally="bare"]) {
+        --plurnk-operation-glyph: "☁️";
+    }
+
+    :is([data-plurnk-type="wait"], [data-operation-tally="wait"]) {
+        --plurnk-operation-glyph: "⏳";
+    }
+
+    [data-plurnk-type="send"]:not([data-message-role="user"]) {
+        --plurnk-operation-glyph: "✉️";
+    }
+
+    [data-plurnk-type="done"] {
+        --plurnk-operation-glyph: "🐹";
+    }
+
+    [data-plurnk-type="fail"][data-plurnk-signal="499"] {
+        --plurnk-operation-glyph: "❌";
+    }
+
+    :is([data-plurnk-type="warn"], [data-operation-tally="warn"]) {
+        --plurnk-operation-glyph: "⚠️";
+    }
+
+    [data-plurnk-type="fail"],
+    :is([data-plurnk-type="error"], [data-operation-tally="error"]) {
+        --plurnk-operation-glyph: "⛔";
+    }
+
+    :is([data-plurnk-type="info"], [data-operation-tally="info"]) {
+        --plurnk-operation-glyph: "📌";
+    }
+
+    [data-diagnostic-level="info"] {
+        --plurnk-operation-glyph: "📌";
+    }
+
+    [data-diagnostic-level="warn"] {
+        --plurnk-operation-glyph: "⚠️";
+    }
+
+    [data-diagnostic-level="error"] {
+        --plurnk-operation-glyph: "⛔";
+    }
+
+    :is([data-message-role="reasoning"], [data-operation-tally="reasoning"]) {
+        --plurnk-operation-glyph: "💭";
+    }
+
+    /* {§web-math-content} {§web-diagram-content} Failed renderers retain source and local diagnostics. */
+    #session-conversation [data-math-error]::after {
+        content: " (" attr(data-math-error) ")";
+    }
+
+    #session-conversation [data-diagram-error]::after {
+        content: " (" attr(data-diagram-error) ")";
+    }
+
+    /* {§web-code-content} An unavailable highlighter leaves literal code and says so. */
+    #session-conversation [data-code-error]::after {
+        content: "(" attr(data-code-error) ")";
+    }
+
+    #session-conversation:not([data-conversation-empty="true"]) > [data-empty-conversation] {
+        display: none;
+    }
+
+    [data-history-boundary] [data-text="history-error"]:empty {
+        display: none;
+    }
+}
