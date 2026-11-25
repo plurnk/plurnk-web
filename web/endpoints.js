@@ -3,10 +3,81 @@ const DEFAULT_OVERVIEW_SESSIONS = 200;
 const DEFAULT_OVERVIEW_EXCERPT_CHARS = 160;
 const DEFAULT_WEB_VERSION = "4.0.0";
 
+/**
+ * @typedef {"unrestricted" | "confined" | "none"} ProjectRootPolicyMode
+ * @typedef {{
+ *   readonly workspaceTransports: readonly ("stdio" | "streamable-http")[],
+ *   readonly publicOnly: boolean,
+ * }} McpDaemonPolicy
+ * @typedef {{
+ *   readonly workspaceSources: readonly ("mcp" | "git" | "local")[],
+ *   readonly publicOnly: boolean,
+ * }} SkillsDaemonPolicy
+ * @typedef {{
+ *   readonly projectRoot?: ProjectRootPolicyMode,
+ *   readonly families?: readonly string[],
+ *   readonly mcp?: McpDaemonPolicy,
+ *   readonly skills?: SkillsDaemonPolicy,
+ * }} DaemonPolicy
+ */
+
 /** @type {string | null} */
 let cachedServiceVersion = null;
 /** @type {Set<(version: string) => void>} */
 const serviceVersionListeners = new Set();
+
+/** @type {DaemonPolicy | null} */
+let cachedDaemonPolicy = null;
+let cachedDaemonPolicyKey = "";
+/** @type {Set<(policy: DaemonPolicy) => void>} */
+const daemonPolicyListeners = new Set();
+
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * {§web-workspace-settings} {§web-workspace-creation} Normalize `_meta.plurnk.policy` advertised by `/acp` `initialize`.
+ * @param {unknown} raw
+ * @returns {DaemonPolicy | null}
+ */
+export function parseDaemonPolicy(raw) {
+    if (!isRecord(raw)) return null;
+    /** @type {{
+     *   projectRoot?: ProjectRootPolicyMode,
+     *   families?: readonly string[],
+     *   mcp?: McpDaemonPolicy,
+     *   skills?: SkillsDaemonPolicy,
+     * }} */
+    const next = {};
+    if (raw.projectRoot === "unrestricted" || raw.projectRoot === "confined" || raw.projectRoot === "none") {
+        next.projectRoot = raw.projectRoot;
+    }
+    if (Array.isArray(raw.families)) {
+        const families = raw.families.filter((item) => typeof item === "string" && item.length > 0);
+        next.families = Object.freeze([...new Set(families)]);
+    }
+    if (isRecord(raw.mcp) && Array.isArray(raw.mcp.workspaceTransports)) {
+        const workspaceTransports = raw.mcp.workspaceTransports.filter(
+            /** @returns {value is "stdio" | "streamable-http"} */
+            (value) => value === "stdio" || value === "streamable-http",
+        );
+        next.mcp = Object.freeze({
+            workspaceTransports: Object.freeze([...new Set(workspaceTransports)]),
+            publicOnly: raw.mcp.publicOnly === true,
+        });
+    }
+    if (isRecord(raw.skills) && Array.isArray(raw.skills.workspaceSources)) {
+        const workspaceSources = raw.skills.workspaceSources.filter(
+            /** @returns {value is "mcp" | "git" | "local"} */
+            (value) => value === "mcp" || value === "git" || value === "local",
+        );
+        next.skills = Object.freeze({
+            workspaceSources: Object.freeze([...new Set(workspaceSources)]),
+            publicOnly: raw.skills.publicOnly === true,
+        });
+    }
+    return Object.keys(next).length > 0 ? Object.freeze(next) : null;
+}
 
 function currentOrigin() {
     const raw = globalThis.location?.origin;
@@ -54,21 +125,6 @@ export function notificationsUrl(suffix = "") {
  */
 export function mermaidUrl() {
     return new URL("/render/mermaid", currentOrigin()).href;
-}
-
-/**
- * {§web-workspace-creation} True when project-folder binding is enabled (`data-allow-project-folder` is not `"0"` or `"invalid"`).
- */
-export function allowProjectFolder() {
-    const raw = rootDataset()?.allowProjectFolder;
-    return raw !== "0" && raw !== "invalid";
-}
-
-/**
- * {§web-workspace-creation} True when workspace creation is not withheld by an invalid `PLURNK_WEB_ALLOW_PROJECT_FOLDER`.
- */
-export function allowWorkspaceCreation() {
-    return rootDataset()?.allowProjectFolder !== "invalid";
 }
 
 /**
@@ -120,4 +176,36 @@ export function onServiceVersion(listener) {
     serviceVersionListeners.add(listener);
     if (cachedServiceVersion !== null) listener(cachedServiceVersion);
     return () => { serviceVersionListeners.delete(listener); };
+}
+
+/**
+ * {§web-workspace-settings} {§web-workspace-creation} Record daemon confinement policy observed from `/acp` `initialize` `response._meta.plurnk.policy`.
+ * @param {unknown} raw
+ */
+export function recordDaemonPolicy(raw) {
+    const parsed = parseDaemonPolicy(raw);
+    if (parsed === null) return;
+    const key = JSON.stringify(parsed);
+    if (key === cachedDaemonPolicyKey) return;
+    cachedDaemonPolicy = parsed;
+    cachedDaemonPolicyKey = key;
+    for (const listener of daemonPolicyListeners) listener(parsed);
+}
+
+/**
+ * {§web-workspace-settings} {§web-workspace-creation} Read the most recently observed daemon confinement policy, if any.
+ * @returns {DaemonPolicy | null}
+ */
+export function daemonPolicy() {
+    return cachedDaemonPolicy;
+}
+
+/**
+ * @param {(policy: DaemonPolicy) => void} listener
+ * @returns {() => void}
+ */
+export function onDaemonPolicy(listener) {
+    daemonPolicyListeners.add(listener);
+    if (cachedDaemonPolicy !== null) listener(cachedDaemonPolicy);
+    return () => { daemonPolicyListeners.delete(listener); };
 }

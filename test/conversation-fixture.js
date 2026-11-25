@@ -147,6 +147,8 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     };
     let acpHandler = null;
     let capabilities = {};
+    /** @type {Record<string, unknown> | null} */
+    let daemonPolicy = null;
     let connSeq = 0;
     const sseStreams = new Map();
     const getStream = (key) => {
@@ -217,6 +219,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
                     protocolVersion: 2,
                     capabilities,
                     info: { name: "@plurnk/plurnk-service", version: "1.0.0" },
+                    ...(daemonPolicy === null ? {} : { _meta: { plurnk: { policy: daemonPolicy } } }),
                 },
             }));
             return;
@@ -280,6 +283,7 @@ export default async function conversationFixture(entryURL = new URL("./conversa
     return {
         onAcp: (handler) => { acpHandler = handler; },
         setCapabilities: (next) => { capabilities = next ?? {}; },
+        setPolicy: (next) => { daemonPolicy = next ?? null; },
         push: (update, sessionId = "7#session1") => {
             for (const [key, entry] of sseStreams) {
                 if (!entry.closed) {

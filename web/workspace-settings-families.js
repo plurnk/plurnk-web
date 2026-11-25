@@ -726,7 +726,161 @@ export function mountFamilyAndEnvSections(article, {
         if (target instanceof HTMLInputElement) target.setCustomValidity("");
     });
 
+    /**
+     * {§web-workspace-settings} Adapt `#mcp`, `#skills`, and `#personas` creation/discovery forms to daemon policy.
+     * @param {import("./endpoints.js").DaemonPolicy | null} policy
+     */
+    function applyDaemonPolicy(policy) {
+        const projectRootMode = policy?.projectRoot ?? "unrestricted";
+        const hasProjectRoot = getContext().hasProjectRoot;
+        const localUsable = projectRootMode !== "none" && !(projectRootMode === "confined" && hasProjectRoot === false);
+
+        // 1. MCP transport allowlist & publicOnly posture
+        const mcpDisclosure = $(article, 'details[data-family-disclosure="mcp"]');
+        const mcpForm = $(article, "form[data-mcp-save-form]");
+        const transportSelect = mcpForm ? $(mcpForm, 'select[name="transport"]') : null;
+        const mcpHttpNote = $(article, '[data-policy-note="mcp-http"]');
+        const allowedTransports = policy?.mcp ? policy.mcp.workspaceTransports : /** @type {const} */ (["stdio", "streamable-http"]);
+        if (allowedTransports.length === 0) {
+            if (mcpDisclosure instanceof HTMLDetailsElement) {
+                mcpDisclosure.hidden = true;
+                mcpDisclosure.open = false;
+            }
+        } else {
+            if (mcpDisclosure instanceof HTMLDetailsElement) mcpDisclosure.hidden = false;
+            if (transportSelect instanceof HTMLSelectElement) {
+                for (const opt of transportSelect.options) {
+                    const admitted = /** @type {readonly string[]} */ (allowedTransports).includes(opt.value);
+                    opt.hidden = !admitted;
+                    opt.disabled = !admitted;
+                }
+                if (!/** @type {readonly string[]} */ (allowedTransports).includes(transportSelect.value)) {
+                    transportSelect.value = allowedTransports[0];
+                }
+                if (mcpForm instanceof HTMLFormElement) {
+                    mcpForm.dataset.mcpTransport = transportSelect.value;
+                }
+            }
+        }
+        if (mcpHttpNote instanceof HTMLElement) {
+            const publicOnly = policy?.mcp?.publicOnly === true;
+            mcpHttpNote.hidden = !publicOnly;
+            mcpHttpNote.textContent = publicOnly
+                ? "Public HTTP(S) endpoints only (private and loopback addresses are refused)."
+                : "";
+        }
+
+        // 2. Skills source allowlist, publicOnly posture, and projectRoot local containment
+        const admittedSources = policy?.skills ? policy.skills.workspaceSources : /** @type {const} */ (["mcp", "git", "local"]);
+        const usableSources = admittedSources.filter((kind) => kind !== "local" || localUsable);
+        const skillsDisclosure = $(article, 'details[data-family-disclosure="skills"]');
+        const skillsNote = $(article, '[data-policy-note="skills"]');
+        const skillsDiscoverSource = $(article, '[data-family-discover-form][data-family="skills"] input[name="source"]');
+        const skillsSaveSource = $(article, '[data-skills-save-form] input[name="source"]');
+        const skillsSaveRef = $(article, '[data-skills-save-form] input[name="ref"]');
+        if (usableSources.length === 0) {
+            if (skillsDisclosure instanceof HTMLDetailsElement) {
+                skillsDisclosure.hidden = true;
+                skillsDisclosure.open = false;
+            }
+        } else {
+            if (skillsDisclosure instanceof HTMLDetailsElement) skillsDisclosure.hidden = false;
+            const allowGit = usableSources.includes("git");
+            const allowLocal = usableSources.includes("local");
+            const allowMcp = usableSources.includes("mcp");
+            const publicOnly = policy?.skills?.publicOnly === true;
+            if (skillsSaveRef instanceof HTMLInputElement) {
+                skillsSaveRef.hidden = !allowGit;
+                if (!allowGit) skillsSaveRef.value = "";
+            }
+            const defaultUnrestricted = allowGit && allowLocal && allowMcp && projectRootMode === "unrestricted" && !publicOnly;
+            if (skillsDiscoverSource instanceof HTMLInputElement) {
+                if (defaultUnrestricted) {
+                    skillsDiscoverSource.placeholder = "Git URL, folder, archive, or server:///skills";
+                } else {
+                    const parts = [
+                        ...(allowGit ? [publicOnly ? "https://git.example/skills.git" : "Git URL"] : []),
+                        ...(allowLocal ? [projectRootMode === "confined" ? "./skills/my-skill" : "folder or archive"] : []),
+                        ...(allowMcp ? ["server:///skills"] : []),
+                    ];
+                    skillsDiscoverSource.placeholder = parts.join(" or ");
+                }
+            }
+            if (skillsSaveSource instanceof HTMLInputElement) {
+                if (defaultUnrestricted) {
+                    skillsSaveSource.placeholder = "https://git.example/skills.git or /path/to/skill";
+                } else {
+                    const parts = [
+                        ...(allowGit ? ["https://git.example/skills.git"] : []),
+                        ...(allowLocal ? [projectRootMode === "confined" ? "./skills/my-skill" : "/path/to/skill"] : []),
+                        ...(allowMcp ? ["server:///skills"] : []),
+                    ];
+                    skillsSaveSource.placeholder = parts.join(" or ");
+                }
+            }
+            if (skillsNote instanceof HTMLElement) {
+                /** @type {string[]} */
+                const notes = [];
+                if (allowGit && publicOnly) {
+                    notes.push("Public HTTPS Git sources only.");
+                }
+                if (allowLocal && projectRootMode === "confined") {
+                    notes.push("Local paths must stay inside this workspace's project folder (archives disabled).");
+                } else if (!allowLocal && admittedSources.includes("local")) {
+                    notes.push("Local filesystem skill sources are unavailable for this workspace.");
+                }
+                if (policy?.skills && usableSources.length < 3) {
+                    notes.push(`Allowed skill sources: ${usableSources.join(", ")}.`);
+                }
+                skillsNote.hidden = notes.length === 0;
+                skillsNote.textContent = notes.join(" ");
+            }
+        }
+
+        // 3. Personas local file-path mode driven by projectRoot confinement
+        const personaForm = $(article, "form[data-personas-save-form]");
+        const personaModeSelect = personaForm ? $(personaForm, 'select[name="personaMode"]') : null;
+        const personaSourceOpt = personaModeSelect ? $(personaModeSelect, 'option[value="source"]') : null;
+        const personaDiscoverSource = $(article, '[data-family-discover-form][data-family="personas"] input[name="source"]');
+        const personaSourceNote = $(article, '[data-policy-note="personas-source"]');
+        if (!localUsable) {
+            if (personaSourceOpt instanceof HTMLOptionElement) {
+                personaSourceOpt.hidden = true;
+                personaSourceOpt.disabled = true;
+            }
+            if (personaModeSelect instanceof HTMLSelectElement) personaModeSelect.value = "inline";
+            if (personaForm instanceof HTMLFormElement) personaForm.dataset.personaMode = "inline";
+            if (personaDiscoverSource instanceof HTMLInputElement) {
+                personaDiscoverSource.hidden = true;
+                personaDiscoverSource.value = "";
+            }
+            if (personaSourceNote instanceof HTMLElement) {
+                personaSourceNote.hidden = true;
+                personaSourceNote.textContent = "";
+            }
+        } else {
+            if (personaSourceOpt instanceof HTMLOptionElement) {
+                personaSourceOpt.hidden = false;
+                personaSourceOpt.disabled = false;
+            }
+            if (personaDiscoverSource instanceof HTMLInputElement) {
+                personaDiscoverSource.hidden = false;
+                personaDiscoverSource.placeholder = projectRootMode === "confined"
+                    ? "Project-relative folder or file (optional)"
+                    : "Directory or file path (optional)";
+            }
+            if (personaSourceNote instanceof HTMLElement) {
+                const confined = projectRootMode === "confined";
+                personaSourceNote.hidden = !confined;
+                personaSourceNote.textContent = confined
+                    ? "Path must stay inside this workspace's project folder."
+                    : "";
+            }
+        }
+    }
+
     return {
+        applyDaemonPolicy,
         renderFamilyList,
         loadFamilySection,
         loadEnvSection,

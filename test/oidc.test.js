@@ -4,14 +4,16 @@ import accessHeaders from "../web/access-headers.js";
 import {
     acpOrigin,
     acpUrl,
-    allowProjectFolder,
-    allowWorkspaceCreation,
+    daemonPolicy,
     isModuleDocument,
     mermaidUrl,
     notificationsUrl,
+    onDaemonPolicy,
     onServiceVersion,
     overviewExcerptCharsLimit,
     overviewSessionsLimit,
+    parseDaemonPolicy,
+    recordDaemonPolicy,
     recordServiceVersion,
     serviceVersion,
     webVersion,
@@ -134,12 +136,11 @@ function installBrowserEnv(t, {
     return { localStorage, sessionStorage, assigned, replaced, getReloaded: () => reloaded };
 }
 
-test("{§web-configuration} endpoints resolve data-acp-url, notificationsUrl, mermaidUrl, limits, and versions", (t) => {
+test("{§web-configuration} {§web-workspace-settings} endpoints resolve data-acp-url, notificationsUrl, mermaidUrl, limits, versions, and daemon policy", (t) => {
     installBrowserEnv(t, {
         origin: "http://127.0.0.1:4100",
         dataset: {
             acpUrl: "https://acp.example:8443/acp",
-            allowProjectFolder: "0",
             overviewSessions: "75",
             overviewExcerptChars: "120",
             webVersion: "4.0.0",
@@ -151,8 +152,6 @@ test("{§web-configuration} endpoints resolve data-acp-url, notificationsUrl, me
     assert.equal(notificationsUrl(), "https://acp.example:8443/notifications");
     assert.equal(notificationsUrl("/42"), "https://acp.example:8443/notifications/42");
     assert.equal(mermaidUrl(), "http://127.0.0.1:4100/render/mermaid");
-    assert.equal(allowProjectFolder(), false);
-    assert.equal(allowWorkspaceCreation(), true);
     assert.equal(overviewSessionsLimit(), 75);
     assert.equal(overviewExcerptCharsLimit(), 120);
     assert.equal(webVersion(), "4.0.0");
@@ -162,8 +161,33 @@ test("{§web-configuration} endpoints resolve data-acp-url, notificationsUrl, me
     const unsubscribe = onServiceVersion((v) => observed.push(v));
     recordServiceVersion("9.1.0");
     assert.equal(serviceVersion(), "9.1.0");
-    assert.equal( observed.at(-1), "9.1.0");
+    assert.equal(observed.at(-1), "9.1.0");
     unsubscribe();
+
+    assert.equal(parseDaemonPolicy(null), null);
+    assert.equal(parseDaemonPolicy({}), null);
+    assert.deepEqual(
+        parseDaemonPolicy({
+            projectRoot: "confined",
+            families: ["env", "mcp", "mcp", 42],
+            mcp: { workspaceTransports: ["streamable-http", "bogus"], publicOnly: true },
+            skills: { workspaceSources: ["mcp", "local", "bad"], publicOnly: false },
+        }),
+        {
+            projectRoot: "confined",
+            families: ["env", "mcp"],
+            mcp: { workspaceTransports: ["streamable-http"], publicOnly: true },
+            skills: { workspaceSources: ["mcp", "local"], publicOnly: false },
+        },
+    );
+    /** @type {import("../web/endpoints.js").DaemonPolicy[]} */
+    const policies = [];
+    const unsubPolicy = onDaemonPolicy((p) => policies.push(p));
+    recordDaemonPolicy({ projectRoot: "none", families: ["env", "personas"] });
+    recordDaemonPolicy({ projectRoot: "none", families: ["env", "personas"] });
+    assert.deepEqual(daemonPolicy(), { projectRoot: "none", families: ["env", "personas"] });
+    assert.equal(policies.length, 1, "identical policy handshakes deduplicate listener delivery");
+    unsubPolicy();
 });
 
 test("{§web-oidc} loopback unauthenticated fast path returns empty accessHeaders with zero network preflight", async (t) => {

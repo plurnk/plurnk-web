@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION, client, createHttpStream, methods } from "./session-agent.js";
 import accessHeaders from "./access-headers.js";
-import { acpUrl, recordServiceVersion } from "./endpoints.js";
+import { acpUrl, recordDaemonPolicy, recordServiceVersion } from "./endpoints.js";
 import { recoverFromUnauthorized } from "./oidc.js";
 import problemFromResponse from "./problem-response.js";
 
@@ -150,8 +150,11 @@ export default async function managementAction(kind, params, sessionId, signal, 
                 protocolVersion: PROTOCOL_VERSION,
                 info: { name: "@plurnk/plurnk-web", version: "4.0.0" },
             }));
-            if (isRecord(initRes) && isRecord(initRes.info)) {
-                recordServiceVersion(initRes.info.version);
+            if (isRecord(initRes)) {
+                if (isRecord(initRes.info)) recordServiceVersion(initRes.info.version);
+                if (isRecord(initRes._meta) && isRecord(initRes._meta.plurnk)) {
+                    recordDaemonPolicy(initRes._meta.plurnk.policy);
+                }
             }
             connected = true;
             signal.throwIfAborted();

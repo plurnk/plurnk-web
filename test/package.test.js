@@ -37,7 +37,8 @@ test("{§web-package} the package exports its native module and ships root defau
     assert.ok(manifest.files.includes(".env.defaults"));
     assert.ok(manifest.files.includes("types/module.d.ts"));
     assert.ok(manifest.files.includes("dist/"));
-    assert.match(await readFile(new URL("../.env.defaults", import.meta.url), "utf8"), /^PLURNK_WEB_ALLOW_PROJECT_FOLDER=1$/mu);
+    const defaults = await readFile(new URL("../.env.defaults", import.meta.url), "utf8");
+    assert.match(defaults, /^PLURNK_WEB_OVERVIEW_SESSIONS=200$/mu);
 });
 
 test("{§web-package} browser ACP client info versions stay in lockstep with package.json and ondine stays zero-dependency", async () => {

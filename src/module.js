@@ -24,7 +24,6 @@ import Diagrams from "./diagrams.js";
  *   readonly acpUrl: string | null,
  *   readonly overviewSessions: number | null,
  *   readonly overviewExcerptChars: number | null,
- *   readonly allowProjectFolder: boolean | null,
  * }} DocumentKnobs
  */
 /**
@@ -51,7 +50,7 @@ function productionAssets() {
     /** @type {{ documents: Documents, resources: ReadonlyMap<string, LoadedAsset> } | null} */
     let loaded = null;
     return {
-        async start({ acpUrl, overviewSessions, overviewExcerptChars, allowProjectFolder }) {
+        async start({ acpUrl, overviewSessions, overviewExcerptChars }) {
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
@@ -70,7 +69,6 @@ function productionAssets() {
                 acpUrl,
                 overviewSessions,
                 overviewExcerptChars,
-                allowProjectFolder,
             });
             loaded = { documents, resources };
         },
@@ -98,7 +96,6 @@ export default function createModule(assets = productionAssets()) {
         }
     };
     const acpEndpoint = contain(() => parseAcpEndpoint(process.env.PLURNK_ACP_URL));
-    const allowProjectFolder = contain(() => Knob.flag("PLURNK_WEB_ALLOW_PROJECT_FOLDER"));
     const overviewSessions = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_SESSIONS", 1));
     const overviewExcerptChars = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", 1));
     const diagrams = Diagrams.create(contain);
@@ -116,7 +113,6 @@ export default function createModule(assets = productionAssets()) {
                 acpUrl: acpEndpoint?.acpUrl ?? null,
                 overviewSessions,
                 overviewExcerptChars,
-                allowProjectFolder,
             });
 
             /** @param {import("node:http").IncomingMessage} req */

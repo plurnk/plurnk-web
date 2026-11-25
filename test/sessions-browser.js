@@ -276,7 +276,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
             }
         });
 
-        await withDaemon({ PLURNK_WEB_ALLOW_PROJECT_FOLDER: "0" }, async (base) => {
+        await withDaemon({ PLURNK_SERVICE_PROJECT_ROOT_BASE: "none" }, async (base) => {
             const browser = await launchBrowser(chromium);
             try {
                 const context = await browser.newContext();
@@ -289,8 +289,8 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     await page.locator("#dialog-workspaces").getByRole("button", { name: "New workspace…", exact: true }).click();
                     const wsCreateDialog = page.locator("#dialog-workspace-create");
                     await wsCreateDialog.waitFor({ state: "visible" });
-                    assert.equal(await wsCreateDialog.locator("[data-toggle-project-folder]").count(), 0, "PLURNK_WEB_ALLOW_PROJECT_FOLDER=0 omits project folder toggle");
-                    assert.equal(await wsCreateDialog.locator("[data-project-folder-input]").count(), 0, "PLURNK_WEB_ALLOW_PROJECT_FOLDER=0 omits project folder input");
+                    assert.equal(await wsCreateDialog.locator("[data-project-folder-toggle]").isVisible(), false, "PLURNK_SERVICE_PROJECT_ROOT_BASE=none hides project folder toggle");
+                    assert.equal(await wsCreateDialog.locator("[data-project-folder-input]").isVisible(), false, "PLURNK_SERVICE_PROJECT_ROOT_BASE=none hides project folder input");
                     checkBrowser();
                 } finally {
                     await context.close();

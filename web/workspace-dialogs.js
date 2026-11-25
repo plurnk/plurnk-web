@@ -1,6 +1,6 @@
 import { $, on, the } from "on_the_money";
 import { DEFAULT_SESSION_NAME, directoryPath, nextSequentialName } from "../src/directory-addresses.js";
-import { allowProjectFolder } from "./endpoints.js";
+import { daemonPolicy, onDaemonPolicy } from "./endpoints.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
 
@@ -12,6 +12,7 @@ const isRecord = (value) => typeof value === "object" && value !== null && !Arra
  *   readonly workspaceId: number,
  *   readonly workspaceName: string,
  *   readonly sessionName: string | null,
+ *   readonly hasProjectRoot?: boolean | null,
  *   readonly signal: AbortSignal,
  * }} WorkspaceSettingsContext
  */
@@ -116,13 +117,52 @@ export function wireWorkspaceCreateDialog({
     const dialog = $("#dialog-workspace-create");
     if (!(dialog instanceof HTMLElement)) return () => {};
 
-    if (!allowProjectFolder()) {
-        $(dialog, "[data-project-folder-toggle]")?.remove();
-        $(dialog, "[data-project-folder-input]")?.remove();
-    }
+    const applyProjectRootPolicy = (/** @type {import("./endpoints.js").DaemonPolicy | null} */ policy) => {
+        const mode = policy?.projectRoot ?? "unrestricted";
+        const formEl = $(dialog, "form#workspace-create");
+        if (formEl instanceof HTMLFormElement) {
+            formEl.dataset.projectRootPolicy = mode;
+        }
+        const toggleLabel = $(dialog, "[data-project-folder-toggle]");
+        const toggleInput = $(dialog, "[data-toggle-project-folder]");
+        const rootInput = $(dialog, "[data-project-folder-input]");
+        const noteEl = $(dialog, "[data-project-folder-note]");
+        if (mode === "none") {
+            if (toggleLabel instanceof HTMLElement) toggleLabel.hidden = true;
+            if (toggleInput instanceof HTMLInputElement) toggleInput.checked = false;
+            if (rootInput instanceof HTMLInputElement) {
+                rootInput.hidden = true;
+                rootInput.value = "";
+            }
+            if (noteEl instanceof HTMLElement) {
+                noteEl.hidden = true;
+                noteEl.textContent = "";
+            }
+        } else {
+            if (toggleLabel instanceof HTMLElement) toggleLabel.hidden = false;
+            if (rootInput instanceof HTMLInputElement) {
+                rootInput.hidden = false;
+                rootInput.placeholder = mode === "confined"
+                    ? "Path inside configured workspace directory"
+                    : "/path/to/project";
+            }
+            if (noteEl instanceof HTMLElement) {
+                if (mode === "confined") {
+                    noteEl.hidden = false;
+                    noteEl.textContent = "Paths must stay inside the daemon's configured workspace directory.";
+                } else {
+                    noteEl.hidden = true;
+                    noteEl.textContent = "";
+                }
+            }
+        }
+    };
+    applyProjectRootPolicy(daemonPolicy());
+    const offPolicy = onDaemonPolicy((policy) => { applyProjectRootPolicy(policy); });
+    on.target(signal, "abort", () => { offPolicy(); });
 
     let busy = false;
-    return on(dialog, "submit", "form#workspace-create", (event, form) => {
+    const offSubmit = on(dialog, "submit", "form#workspace-create", (event, form) => {
         if (!(form instanceof HTMLFormElement)) return;
         event.preventDefault();
         if (busy) return;
@@ -132,8 +172,8 @@ export function wireWorkspaceCreateDialog({
         const useProjectFolder = data.get("useProjectFolder") === "1";
         const rawProjectRoot = String(data.get("projectRoot") ?? "").trim();
 
-        if (!allowProjectFolder() && (useProjectFolder || rawProjectRoot !== "")) {
-            the(dialog, "workspace-create-error", "Project folder workspaces are disabled on this web interface.");
+        if (daemonPolicy()?.projectRoot === "none" && (useProjectFolder || rawProjectRoot !== "")) {
+            the(dialog, "workspace-create-error", "Project folder workspaces are disabled by daemon policy.");
             return;
         }
         if (useProjectFolder && rawProjectRoot === "") {
@@ -211,4 +251,8 @@ export function wireWorkspaceCreateDialog({
             }
         })();
     });
+    return () => {
+        offPolicy();
+        offSubmit();
+    };
 }

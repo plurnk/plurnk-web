@@ -113,7 +113,6 @@ function compileDocumentSlots(document) {
  *   readonly acpUrl?: string | null,
  *   readonly overviewSessions?: number | null,
  *   readonly overviewExcerptChars?: number | null,
- *   readonly allowProjectFolder?: boolean | null,
  * }} DocumentBootOptions
  */
 
@@ -123,7 +122,6 @@ export default class Documents {
     #acpUrl;
     #overviewSessions;
     #overviewExcerptChars;
-    #allowProjectFolder;
 
     /** {§web-assets} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -144,22 +142,18 @@ export default class Documents {
         acpUrl = DEFAULT_ACP_URL,
         overviewSessions = 200,
         overviewExcerptChars = 160,
-        allowProjectFolder = true,
     } = {}) {
         this.#acpUrl = acpUrl;
         this.#overviewSessions = overviewSessions;
         this.#overviewExcerptChars = overviewExcerptChars;
-        this.#allowProjectFolder = allowProjectFolder;
         this.#template = compileDocumentSlots(document);
     }
 
     #htmlBootAttributes() {
         const acpAttr = this.#acpUrl === null ? "invalid" : this.#acpUrl;
-        const folderAttr = this.#allowProjectFolder === null ? "invalid" : this.#allowProjectFolder ? "1" : "0";
         const sessionsAttr = this.#overviewSessions === null ? "invalid" : String(this.#overviewSessions);
         const excerptAttr = this.#overviewExcerptChars === null ? "invalid" : String(this.#overviewExcerptChars);
         return ` data-acp-url="${escapeHtml(acpAttr)}"`
-            + ` data-allow-project-folder="${escapeHtml(folderAttr)}"`
             + ` data-overview-sessions="${escapeHtml(sessionsAttr)}"`
             + ` data-overview-excerpt-chars="${escapeHtml(excerptAttr)}"`
             + ` data-web-version="${escapeHtml(WEB_VERSION)}"`;
@@ -184,11 +178,9 @@ export default class Documents {
 
     /** {§web-page-shell} {§web-workspace-creation} Workspace switcher modal shell populated over `/acp`. */
     #workspacesDialog() {
-        const actionsHtml = this.#allowProjectFolder !== null
-            ? '<div data-workspaces-actions>'
-                + '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="new-workspace">New workspace…</button>'
-                + "</div>"
-            : "";
+        const actionsHtml = '<div data-workspaces-actions>'
+            + '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="new-workspace">New workspace…</button>'
+            + "</div>";
         return '<dialog id="dialog-workspaces" aria-label="Workspaces"><article>'
             + '<header><p><strong data-i18n="workspaces">Workspaces</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
@@ -201,11 +193,9 @@ export default class Documents {
 
     /** {§web-workspace-creation} Native dialog modal for workspace creation submitted over `/acp`. */
     #creationDialog() {
-        if (this.#allowProjectFolder === null) return "";
-        const projectControls = this.#allowProjectFolder === true
-            ? '<label data-project-folder-toggle><input type="checkbox" name="useProjectFolder" value="1" data-toggle-project-folder> <span data-i18n="project-folder">Project folder</span></label>'
-                + '<input type="text" name="projectRoot" value="" placeholder="/path/to/project" aria-label="Project path" data-project-folder-input>'
-            : "";
+        const projectControls = '<label data-project-folder-toggle><input type="checkbox" name="useProjectFolder" value="1" data-toggle-project-folder> <span data-i18n="project-folder">Project folder</span></label>'
+            + '<input type="text" name="projectRoot" value="" placeholder="/path/to/project" aria-label="Project path" data-project-folder-input>'
+            + '<small data-project-folder-note hidden></small>';
         return '<dialog id="dialog-workspace-create" aria-label="New workspace"><article>'
             + '<header><p><strong data-i18n="new-workspace-title">New workspace</strong></p>'
             + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
@@ -332,9 +322,7 @@ export default class Documents {
             + `<li>${backItem}</li>`
             + '<li><span aria-current="page" data-i18n="settings">Settings</span></li></ul></nav>';
 
-        const addWorkspaceBtn = this.#allowProjectFolder !== null
-            ? '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="ws-settings-add-workspace">+ Add workspace</button>'
-            : "";
+        const addWorkspaceBtn = '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="ws-settings-add-workspace">+ Add workspace</button>';
         const addSessionBtn = '<button type="button" data-dialog-target="dialog-session-create" data-settings-add-session data-i18n="ws-settings-add-session">+ Add session</button>';
 
         const navHtml = '<nav aria-label="Settings sections"><ul data-settings-nav>'

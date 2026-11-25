@@ -48,32 +48,12 @@ test("{§web-configuration} missing and invalid limits never select code default
     }
 });
 
-test("{§web-configuration} {§web-workspace-creation} PLURNK_WEB_ALLOW_PROJECT_FOLDER and PLURNK_ACP_URL validate at startup", (t) => {
-    const keys = ["PLURNK_WEB_ALLOW_PROJECT_FOLDER", "PLURNK_ACP_URL"];
-    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+test("{§web-configuration} PLURNK_ACP_URL validates at startup", (t) => {
+    const original = process.env.PLURNK_ACP_URL;
     t.after(() => {
-        for (const [key, value] of Object.entries(original)) {
-            if (value === undefined) delete process.env[key];
-            else process.env[key] = value;
-        }
+        if (original === undefined) delete process.env.PLURNK_ACP_URL;
+        else process.env.PLURNK_ACP_URL = original;
     });
-    assert.equal(original.PLURNK_WEB_ALLOW_PROJECT_FOLDER, "1");
-    for (const value of ["0", "1"]) {
-        process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = value;
-        const mod = createModule();
-        assert.deepEqual(mod.mounts, ["/"]);
-        assert.deepEqual(mod.contained, []);
-    }
-    for (const value of ["", "true", "2"]) {
-        process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = value;
-        const mod = createModule();
-        assert.equal(mod.contained?.length, 1);
-        assert.equal(mod.contained?.[0]?.key, "PLURNK_WEB_ALLOW_PROJECT_FOLDER");
-        assert.match(mod.contained?.[0]?.message ?? "", /must be 0 or 1/u);
-    }
-    delete process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER;
-    assert.throws(createModule, { message: "PLURNK_WEB_ALLOW_PROJECT_FOLDER is missing from the assembled environment floor." });
-    process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = "1";
 
     for (const validUrl of ["", "/acp", "http://127.0.0.1:4321/acp", "https://acp.example/acp"]) {
         process.env.PLURNK_ACP_URL = validUrl;
@@ -100,7 +80,7 @@ test("{§web-configuration} diagram deadlines cannot overflow Node's timer range
 });
 
 test("{§web-configuration} {§web-browser-security} PLURNK_ACP_URL stamps boot data-* attributes and expands CSP connect-src/img-src without inline scripts", async (t) => {
-    const keys = ["PLURNK_ACP_URL", "PLURNK_WEB_ALLOW_PROJECT_FOLDER", "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", "PLURNK_WEB_DIAGRAM_THREADS"];
+    const keys = ["PLURNK_ACP_URL", "PLURNK_WEB_OVERVIEW_SESSIONS", "PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", "PLURNK_WEB_DIAGRAM_THREADS"];
     const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
     t.after(() => {
         for (const [key, value] of Object.entries(original)) {
@@ -109,7 +89,6 @@ test("{§web-configuration} {§web-browser-security} PLURNK_ACP_URL stamps boot 
         }
     });
     process.env.PLURNK_ACP_URL = "https://acp.example:8443/acp";
-    process.env.PLURNK_WEB_ALLOW_PROJECT_FOLDER = "0";
     process.env.PLURNK_WEB_OVERVIEW_SESSIONS = "42";
     process.env.PLURNK_WEB_OVERVIEW_EXCERPT_CHARS = "96";
     process.env.PLURNK_WEB_DIAGRAM_THREADS = "0";
@@ -158,7 +137,6 @@ test("{§web-configuration} {§web-browser-security} PLURNK_ACP_URL stamps boot 
         );
         const html = await res.text();
         assert.match(html, /<html\b[^>]*\bdata-acp-url="https:\/\/acp\.example:8443\/acp"/u);
-        assert.match(html, /\bdata-allow-project-folder="0"/u);
         assert.match(html, /\bdata-overview-sessions="42"/u);
         assert.match(html, /\bdata-overview-excerpt-chars="96"/u);
         assert.match(html, /\bdata-web-version="\d+\.\d+\.\d+"/u);

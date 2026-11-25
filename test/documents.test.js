@@ -28,10 +28,9 @@ test("{§web-document} {§web-configuration} {§web-arrival} {§web-oidc} home a
         acpUrl: "https://acp.example/acp",
         overviewSessions: 150,
         overviewExcerptChars: 120,
-        allowProjectFolder: false,
     });
     const home = documents.home().toString();
-    assert.match(home, /<html lang="en" data-acp-url="https:\/\/acp\.example\/acp" data-allow-project-folder="0" data-overview-sessions="150" data-overview-excerpt-chars="120" data-web-version="\d+\.\d+\.\d+">/u);
+    assert.match(home, /<html lang="en" data-acp-url="https:\/\/acp\.example\/acp" data-overview-sessions="150" data-overview-excerpt-chars="120" data-web-version="\d+\.\d+\.\d+">/u);
     assert.match(home, /<title data-text="page-title">Plurnk<\/title>/u);
     assert.match(home, /<main id="main" data-page="home">Home<\/main>/u);
     assert.doesNotMatch(home, /<script|PLURNK_|process\.env/iu);
@@ -42,8 +41,8 @@ test("{§web-document} {§web-configuration} {§web-arrival} {§web-oidc} home a
     assert.doesNotMatch(callback, /<script/iu);
 });
 
-test("{§web-directory-documents} {§web-page-shell} {§web-workspace-tabs} {§web-workspace-creation} {§web-session-creation} {§web-workspace-folder} session shell escapes workspace identities, mounts bottom tab bar, and gates project-folder controls", () => {
-    const documents = new Documents(SHELL, { allowProjectFolder: true });
+test("{§web-directory-documents} {§web-page-shell} {§web-workspace-tabs} {§web-workspace-creation} {§web-session-creation} {§web-workspace-folder} session shell escapes workspace identities, mounts bottom tab bar, and renders workspace-creation dialog shell", () => {
+    const documents = new Documents(SHELL);
     for (const name of ["~/project", 'research<&>"', "42#alice"]) {
         const html = documents.session(name).toString();
         const escaped = name
@@ -57,17 +56,10 @@ test("{§web-directory-documents} {§web-page-shell} {§web-workspace-tabs} {§w
         assert.ok(html.includes(`<main id="main" data-page="session" data-requested-workspace="${escaped}"><p id="session-folder" data-project-label=""><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label"></span></p></main>`));
         assert.ok(html.includes(`<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-name="${escaped}" data-tab-count="0"><button type="button" data-action="new-session" data-tab-new aria-label="New session" title="New session">+</button><button type="button" data-open-sessions aria-label="Sessions and archives" title="Sessions and archives (Ctrl+K)">☰</button><ul></ul></nav>`));
         assert.match(html, /<dialog id="dialog-workspaces"[\s\S]*data-dialog-target="dialog-workspace-create"[^>]*>New workspace…<\/button>/u);
-        assert.match(html, /<dialog id="dialog-workspace-create"[\s\S]*<form id="workspace-create" data-workspace-create-form>[\s\S]*name="useProjectFolder"[\s\S]*name="projectRoot"/u);
+        assert.match(html, /<dialog id="dialog-workspace-create"[\s\S]*<form id="workspace-create" data-workspace-create-form>[\s\S]*name="useProjectFolder"[\s\S]*name="projectRoot"[\s\S]*data-project-folder-note/u);
         assert.match(html, /<dialog id="dialog-session-create"[\s\S]*<form id="session-create" data-session-create-form>[\s\S]*name="name"[\s\S]*name="title"/u);
         assert.doesNotMatch(html, /<h1\b|<script>/u);
     }
-
-    const folderlessOnly = new Documents(SHELL, { allowProjectFolder: false }).session("work").toString();
-    assert.match(folderlessOnly, /<dialog id="dialog-workspace-create"/u);
-    assert.doesNotMatch(folderlessOnly, /useProjectFolder|projectRoot/u, "allowProjectFolder=false omits project-folder controls");
-
-    const containedFolder = new Documents(SHELL, { allowProjectFolder: null }).session("work").toString();
-    assert.doesNotMatch(containedFolder, /dialog-workspace-create|data-workspaces-actions/u, "invalid allowProjectFolder withholds workspace creation trigger and modal");
 });
 
 test("{§web-search} {§web-session-directory} search shell escapes filter parameters and mounts overview controls without server-side session scraping", () => {

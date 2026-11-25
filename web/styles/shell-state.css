@@ -76,7 +76,14 @@
         text-decoration: underline;
     }
 
-    #workspace-create:not(:has(input[data-toggle-project-folder]:checked)) input[data-project-folder-input] {
+    [data-project-folder-note] {
+        display: block;
+        margin-block: calc(var(--otm-spacing) * -0.5) var(--otm-spacing);
+        color: var(--otm-muted-color);
+    }
+
+    #workspace-create:not(:has(input[data-toggle-project-folder]:checked)) input[data-project-folder-input],
+    #workspace-create:not(:has(input[data-toggle-project-folder]:checked)) [data-project-folder-note] {
         display: none;
     }
 
