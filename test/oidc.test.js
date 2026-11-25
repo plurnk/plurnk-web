@@ -5,6 +5,9 @@ import {
     acpOrigin,
     acpUrl,
     appName,
+    authLoginUrl,
+    authLogoutMethod,
+    authLogoutUrl,
     daemonPolicy,
     formatPageTitle,
     isModuleDocument,
@@ -23,6 +26,8 @@ import {
 import {
     OIDC_GRANT_KEY,
     OIDC_PKCE_KEY,
+    buildBffLoginUrl,
+    canSignOut,
     clearOidcState,
     completeOidcCallback,
     computePkceChallenge,
@@ -358,6 +363,79 @@ test("{§web-oidc} PKCE S256 challenge, protected-resource discovery, callback c
     assert.equal(env.localStorage.getItem(OIDC_GRANT_KEY), null);
     assert.equal(env.assigned.length, beforeSignOutAssigned + 1);
     assert.equal(env.assigned.at(-1), "/");
+});
+
+test("{§web-bff-auth} BFF login URLs, {returnTo} substitution, 401 redirect without OIDC discovery, and POST/GET signOut", async (t) => {
+    assert.equal(buildBffLoginUrl("/auth/login", "/~/alpha#session1"), "/auth/login?returnTo=%2F%7E%2Falpha%23session1");
+    assert.equal(
+        buildBffLoginUrl("/auth/login?prompt=select_account", "/search/?q=test"),
+        "/auth/login?prompt=select_account&returnTo=%2Fsearch%2F%3Fq%3Dtest",
+    );
+    assert.equal(
+        buildBffLoginUrl("/oauth2/start?rd={returnTo}", "/~/alpha#session1"),
+        "/oauth2/start?rd=%2F~%2Falpha%23session1",
+    );
+    assert.equal(buildBffLoginUrl("/auth/login", "https://evil.example/phish"), "/auth/login?returnTo=%2F");
+    assert.equal(buildBffLoginUrl("/auth/login", "/auth/callback?code=1"), "/auth/login?returnTo=%2F");
+
+    const env = installBrowserEnv(t, {
+        origin: "https://app.example",
+        pathname: "/~/alpha",
+        hash: "#session1",
+        dataset: {
+            acpUrl: "/acp",
+            authLoginUrl: "/oauth2/start?rd={returnTo}",
+            authLogoutUrl: "/auth/logout",
+            authLogoutMethod: "POST",
+        },
+    });
+    assert.equal(authLoginUrl(), "/oauth2/start?rd={returnTo}");
+    assert.equal(authLogoutUrl(), "/auth/logout");
+    assert.equal(authLogoutMethod(), "POST");
+    assert.equal(hasActiveOidcGrant(), false);
+    assert.equal(canSignOut(), true);
+
+    let fetchCalls = 0;
+    t.mock.method(globalThis, "fetch", async () => {
+        fetchCalls += 1;
+        throw new Error("BFF mode must not perform OIDC well-known discovery fetches");
+    });
+
+    // Stale browser grant is cleared and 401 with redirectOnDiscovery=false stays signed-out without navigating.
+    writeOidcGrant({
+        acpOrigin: "https://app.example",
+        issuer: "https://idp.example",
+        clientId: "plurnk-web",
+        tokenEndpoint: "https://idp.example/token",
+        accessToken: "stale.jwt.token",
+    });
+    const passive = await recoverFromUnauthorized({ redirectOnDiscovery: false });
+    assert.deepEqual(passive, { status: "signed-out" });
+    assert.equal(hasActiveOidcGrant(), false);
+    assert.equal(env.assigned.length, 0);
+    assert.equal(fetchCalls, 0);
+
+    // 401 with redirectOnDiscovery=true routes straight to the BFF login URL with normalized returnTo.
+    const active = await recoverFromUnauthorized({ redirectOnDiscovery: true });
+    assert.deepEqual(active, {
+        status: "redirecting",
+        authorizationUrl: "/oauth2/start?rd=%2F~%2Falpha%23session1",
+    });
+    assert.deepEqual(env.assigned, ["/oauth2/start?rd=%2F~%2Falpha%23session1"]);
+    assert.equal(fetchCalls, 0);
+
+    // POST logout uses submitPost (not location.assign) and clears any OIDC storage.
+    /** @type {string[]} */
+    const posted = [];
+    signOut({ submitPost: (action) => { posted.push(action); } });
+    assert.deepEqual(posted, ["/auth/logout"]);
+    assert.equal(env.assigned.length, 1);
+
+    // GET logout navigates directly via location.assign.
+    globalThis.document.documentElement.dataset.authLogoutMethod = "GET";
+    assert.equal(authLogoutMethod(), "GET");
+    signOut({ submitPost: () => { throw new Error("GET logout must not POST"); } });
+    assert.deepEqual(env.assigned, ["/oauth2/start?rd=%2F~%2Falpha%23session1", "/auth/logout"]);
 });
 
 test("{§web-arrival} {§web-search} session selection orders replies newest-first, detects untouched drafts, and extracts bounded snippets", () => {

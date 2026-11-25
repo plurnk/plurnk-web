@@ -15,6 +15,81 @@ export class RequestError extends Error {
 export const DEFAULT_ACP_URL = "/acp";
 
 /**
+ * @typedef {{
+ *   readonly loginUrl: string | null,
+ *   readonly logoutUrl: string | null,
+ *   readonly logoutMethod: "POST" | "GET",
+ * }} AuthConfig
+ */
+
+/** @type {AuthConfig} */
+export const DEFAULT_AUTH_CONFIG = Object.freeze({
+    loginUrl: null,
+    logoutUrl: null,
+    logoutMethod: "POST",
+});
+
+/**
+ * @param {string | undefined} raw
+ * @param {string} key
+ * @param {{ readonly allowReturnToPlaceholder?: boolean }} [options]
+ * @returns {string | null}
+ */
+function parseOptionalOriginRelativeAuthPath(raw, key, { allowReturnToPlaceholder = false } = {}) {
+    const trimmed = (raw ?? "").trim();
+    if (trimmed === "") return null;
+    if (/\p{Cc}|\s/u.test(trimmed)) {
+        throw new ConfigurationError(key, "must not contain whitespace or control characters");
+    }
+    if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.startsWith("/\\") || trimmed.includes("#")) {
+        throw new ConfigurationError(key, "must be an origin-relative path starting with '/' without fragments");
+    }
+    const probe = allowReturnToPlaceholder ? trimmed.replaceAll("{returnTo}", "RETURN_TO") : trimmed;
+    let parsed;
+    try { parsed = new URL(probe, "http://plurnk.local"); }
+    catch {
+        throw new ConfigurationError(key, "must be a valid origin-relative path");
+    }
+    if (parsed.origin !== "http://plurnk.local" || parsed.hash !== "" || parsed.username !== "" || parsed.password !== "") {
+        throw new ConfigurationError(key, "must be an origin-relative path without embedded credentials or fragments");
+    }
+    if (allowReturnToPlaceholder && parsed.pathname === "/auth/callback") {
+        throw new ConfigurationError(key, "must not target /auth/callback");
+    }
+    return trimmed;
+}
+
+/**
+ * {§web-configuration} {§web-bff-auth} Validate optional Backend-for-Frontend (BFF) login/logout handoff knobs fail-hard.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {AuthConfig}
+ */
+export function parseAuthConfig(env = process.env) {
+    const loginUrl = parseOptionalOriginRelativeAuthPath(
+        env.PLURNK_WEB_AUTH_LOGIN_URL,
+        "PLURNK_WEB_AUTH_LOGIN_URL",
+        { allowReturnToPlaceholder: true },
+    );
+    const logoutUrl = parseOptionalOriginRelativeAuthPath(
+        env.PLURNK_WEB_AUTH_LOGOUT_URL,
+        "PLURNK_WEB_AUTH_LOGOUT_URL",
+    );
+    const rawMethod = env.PLURNK_WEB_AUTH_LOGOUT_METHOD;
+    if (rawMethod === undefined) {
+        throw new Error("PLURNK_WEB_AUTH_LOGOUT_METHOD is missing from the assembled environment floor.");
+    }
+    const logoutMethod = rawMethod.trim().toUpperCase();
+    if (logoutMethod !== "POST" && logoutMethod !== "GET") {
+        throw new ConfigurationError("PLURNK_WEB_AUTH_LOGOUT_METHOD", "must be POST or GET");
+    }
+    return Object.freeze({
+        loginUrl,
+        logoutUrl,
+        logoutMethod: /** @type {"POST" | "GET"} */ (logoutMethod),
+    });
+}
+
+/**
  * {§web-configuration} {§web-browser-security} Validate `PLURNK_ACP_URL` as either a same-origin path (empty -> `/acp`)
  * or an `http(s):` endpoint URL without credentials or fragments, deriving its HTTP and WebSocket origins for CSP.
  * @param {string | undefined} raw

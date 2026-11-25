@@ -28,6 +28,9 @@
     <template id="oidc-sign-out-item">
         <li data-oidc-sign-out><button type="button" data-action="sign-out" aria-label="Sign out" title="Sign out"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 2.75H3.75A1.25 1.25 0 0 0 2.5 4v8a1.25 1.25 0 0 0 1.25 1.25H6.5M10.5 11.25 13.75 8 10.5 4.75M13.5 8H6.5"/></svg> <span data-header-label data-i18n="sign-out">Sign out</span></button></li>
     </template>
+    <template id="auth-logout-form">
+        <form method="post" hidden></form>
+    </template>
     <!-- @include templates/overview.html -->
     <!-- @include templates/workbench.html -->
     <!-- @include templates/settings.html -->

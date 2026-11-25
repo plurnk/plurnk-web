@@ -1,5 +1,5 @@
-import { on } from "on_the_money";
-import { acpOrigin } from "./endpoints.js";
+import { $, on } from "on_the_money";
+import { acpOrigin, authLoginUrl, authLogoutMethod, authLogoutUrl } from "./endpoints.js";
 
 export const OIDC_GRANT_KEY = "plurnk_oidc_grant";
 export const OIDC_PKCE_KEY = "plurnk_oidc_pkce";
@@ -249,6 +249,31 @@ export function hasActiveOidcGrant(origin = acpOrigin()) {
 }
 
 /**
+ * {§web-oidc} {§web-bff-auth} True when either a browser OIDC grant or a configured BFF logout URL supports Sign out.
+ * @param {string} [origin]
+ */
+export function canSignOut(origin = acpOrigin()) {
+    return hasActiveOidcGrant(origin) || authLogoutUrl() !== null;
+}
+
+/**
+ * {§web-bff-auth} Build an origin-relative BFF login URL carrying a normalized `returnTo` path.
+ * Substitutes `{returnTo}` when present in `loginTemplate`, otherwise appends `returnTo` as a query parameter.
+ * @param {string} loginTemplate
+ * @param {unknown} [returnTo]
+ * @returns {string}
+ */
+export function buildBffLoginUrl(loginTemplate, returnTo = currentReturnTo()) {
+    const safeReturnTo = normalizeReturnTo(returnTo);
+    if (loginTemplate.includes("{returnTo}")) {
+        return loginTemplate.replaceAll("{returnTo}", encodeURIComponent(safeReturnTo));
+    }
+    const parsed = new URL(loginTemplate, "http://plurnk.local");
+    parsed.searchParams.set("returnTo", safeReturnTo);
+    return `${parsed.pathname}${parsed.search}`;
+}
+
+/**
  * @param {OidcGrant} grant
  */
 export function writeOidcGrant(grant) {
@@ -390,6 +415,17 @@ export async function recoverFromUnauthorized(options = {}) {
         fetchImpl = globalThis.fetch,
         navigate = (url) => { globalThis.location.assign(url); },
     } = options;
+
+    const bffLogin = authLoginUrl();
+    if (bffLogin !== null) {
+        clearOidcState();
+        if (!redirectOnDiscovery) {
+            return { status: "signed-out" };
+        }
+        const target = buildBffLoginUrl(bffLogin, returnTo);
+        navigate(target);
+        return { status: "redirecting", authorizationUrl: target };
+    }
 
     const current = readOidcGrant();
     if (current !== null && typeof current.refreshToken === "string" && current.refreshToken !== "") {
@@ -607,12 +643,43 @@ export async function completeOidcCallback(options = {}) {
 }
 
 /**
- * {§web-oidc} Clear OIDC storage and reload / trigger fresh sign-in.
- * @param {{ reload?: (() => void) | boolean }} [options]
+ * {§web-bff-auth} Submit a CSRF-safe top-level `POST` logout form to a same-origin BFF logout endpoint.
+ * @param {string} action
+ */
+function submitBffLogoutForm(action) {
+    if (typeof document === "undefined" || !document.body) return;
+    const form = $.clone(document.body, "#auth-logout-form");
+    if (form instanceof HTMLFormElement) {
+        form.action = action;
+        form.submit();
+    }
+}
+
+/**
+ * {§web-oidc} {§web-bff-auth} Clear browser OIDC storage and trigger BFF logout (when configured) or return to `/`.
+ * @param {{
+ *   reload?: (() => void) | boolean,
+ *   navigate?: (url: string) => void,
+ *   submitPost?: (action: string) => void,
+ * }} [options]
  */
 export function signOut(options = {}) {
-    const { reload = true } = options;
+    const {
+        reload = true,
+        navigate = (url) => { globalThis.location.assign(url); },
+        submitPost = submitBffLogoutForm,
+    } = options;
     clearOidcState();
+    const logoutUrl = authLogoutUrl();
+    if (logoutUrl !== null) {
+        if (typeof reload === "function") {
+            reload();
+        } else if (reload !== false) {
+            if (authLogoutMethod() === "GET") navigate(logoutUrl);
+            else submitPost(logoutUrl);
+        }
+        return;
+    }
     if (typeof reload === "function") reload();
-    else if (reload !== false) globalThis.location.assign("/");
+    else if (reload !== false) navigate("/");
 }

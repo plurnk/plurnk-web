@@ -6,7 +6,7 @@ import {
     DEFAULT_ICON_HREF,
 } from "./brand.js";
 import { directoryPath, workspaceSettingsPath } from "./directory-addresses.js";
-import { DEFAULT_ACP_URL, escapeHtml } from "./http.js";
+import { DEFAULT_ACP_URL, DEFAULT_AUTH_CONFIG, escapeHtml } from "./http.js";
 
 const WEB_MANIFEST = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 export const WEB_VERSION = typeof WEB_MANIFEST.version === "string" && WEB_MANIFEST.version.length > 0 ? WEB_MANIFEST.version : "4.0.0";
@@ -151,10 +151,11 @@ function compileDocumentSlots(document) {
  *   readonly overviewExcerptChars?: number | null,
  *   readonly brand?: import("./brand.js").BrandConfig,
  *   readonly settingsTabs?: readonly import("./brand.js").LoadedSettingsTab[],
+ *   readonly auth?: import("./http.js").AuthConfig,
  * }} DocumentBootOptions
  */
 
-/** {§web-document} {§web-directory-documents} {§web-page-shell} {§web-brand} {§web-settings-extensions} Static HTML shell compiler stamping boot data attributes without daemon seams or inline scripts. */
+/** {§web-document} {§web-directory-documents} {§web-page-shell} {§web-brand} {§web-settings-extensions} {§web-bff-auth} Static HTML shell compiler stamping boot data attributes without daemon seams or inline scripts. */
 export default class Documents {
     #template;
     #acpUrl;
@@ -162,6 +163,7 @@ export default class Documents {
     #overviewExcerptChars;
     #brand;
     #settingsTabs;
+    #auth;
 
     /** {§web-assets} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -184,12 +186,14 @@ export default class Documents {
         overviewExcerptChars = 160,
         brand = DEFAULT_BRAND,
         settingsTabs = [],
+        auth = DEFAULT_AUTH_CONFIG,
     } = {}) {
         this.#acpUrl = acpUrl;
         this.#overviewSessions = overviewSessions;
         this.#overviewExcerptChars = overviewExcerptChars;
         this.#brand = brand;
         this.#settingsTabs = settingsTabs;
+        this.#auth = auth;
         this.#template = compileDocumentSlots(document);
     }
 
@@ -201,7 +205,11 @@ export default class Documents {
             + ` data-app-name="${escapeHtml(this.#brand.appName)}"`
             + ` data-overview-sessions="${escapeHtml(sessionsAttr)}"`
             + ` data-overview-excerpt-chars="${escapeHtml(excerptAttr)}"`
-            + ` data-web-version="${escapeHtml(WEB_VERSION)}"`;
+            + ` data-web-version="${escapeHtml(WEB_VERSION)}"`
+            + (this.#auth.loginUrl !== null ? ` data-auth-login-url="${escapeHtml(this.#auth.loginUrl)}"` : "")
+            + (this.#auth.logoutUrl !== null
+                ? ` data-auth-logout-url="${escapeHtml(this.#auth.logoutUrl)}" data-auth-logout-method="${escapeHtml(this.#auth.logoutMethod)}"`
+                : "");
     }
 
     #iconLinkTag() {

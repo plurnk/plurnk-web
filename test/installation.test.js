@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { createRequire } from "node:module";
+import { connect as netConnect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
-import browserDiagnostics from "./browser-diagnostics.js";
+import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import verifyWebApp from "./web-app.js";
 import verifyDocument from "./document.js";
 import candidatePackages from "./candidate-packages.js";
@@ -415,6 +418,206 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                 return true;
             },
         );
+    });
+
+    await t.test("{§web-bff-auth} {§web-browser-security} BFF reverse-proxy cookie auth carries HttpOnly cookies across HTTP/WS/SSE, routes 401 to BFF login without OIDC discovery, preserves drafts, and POSTs logout", async () => {
+        await withDaemon({
+            PLURNK_WEB_AUTH_LOGIN_URL: "/bff/login?next={returnTo}",
+            PLURNK_WEB_AUTH_LOGOUT_URL: "/bff/logout",
+            PLURNK_WEB_AUTH_LOGOUT_METHOD: "POST",
+        }, async (base) => {
+            const daemonUrl = new URL(base);
+            let sessionValid = false;
+            let wellKnownHits = 0;
+            let authenticatedAcpHttp = 0;
+            let authenticatedAcpWs = 0;
+            let authenticatedNotifications = 0;
+            /** @type {string[]} */
+            const loginCalls = [];
+            /** @type {Array<{ method: string | undefined, hasCookie: boolean }>} */
+            const logoutCalls = [];
+            /** @type {Set<import("node:stream").Duplex>} */
+            const wsSockets = new Set();
+            /** @type {Set<import("node:net").Socket>} */
+            const httpSockets = new Set();
+
+            const hasValidCookie = (/** @type {import("node:http").IncomingMessage} */ req) =>
+                sessionValid && typeof req.headers.cookie === "string" && req.headers.cookie.includes("bff_session=valid-token");
+
+            const proxy = createHttpServer((req, res) => {
+                const rawUrl = req.url ?? "/";
+                const parsed = new URL(rawUrl, "http://bff.local");
+                if (parsed.pathname.startsWith("/.well-known/")) {
+                    wellKnownHits += 1;
+                    res.writeHead(404, { "content-type": "text/plain" });
+                    res.end("not found");
+                    return;
+                }
+                if (parsed.pathname === "/bff/login" && req.method === "GET") {
+                    loginCalls.push(rawUrl);
+                    sessionValid = true;
+                    const nextTarget = parsed.searchParams.get("next") || "/";
+                    res.writeHead(303, {
+                        "set-cookie": "bff_session=valid-token; HttpOnly; SameSite=Lax; Path=/",
+                        location: nextTarget,
+                    });
+                    res.end();
+                    return;
+                }
+                if (parsed.pathname === "/bff/logout") {
+                    logoutCalls.push({ method: req.method, hasCookie: hasValidCookie(req) });
+                    sessionValid = false;
+                    res.writeHead(303, {
+                        "set-cookie": "bff_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/",
+                        location: "/bff/signed-out",
+                    });
+                    res.end();
+                    return;
+                }
+                if (parsed.pathname === "/bff/signed-out") {
+                    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+                    res.end('<!doctype html><title>Signed out</title><p id="bff-signed-out">Signed out by BFF</p>');
+                    return;
+                }
+                const isProtectedApi = parsed.pathname === "/acp"
+                    || parsed.pathname.startsWith("/acp/")
+                    || parsed.pathname === "/notifications"
+                    || parsed.pathname.startsWith("/notifications/")
+                    || parsed.pathname === "/render/mermaid";
+                if (isProtectedApi) {
+                    if (!hasValidCookie(req)) {
+                        const body = Buffer.from(JSON.stringify({
+                            type: "https://problems.plurnk.xyz/auth/unauthorized",
+                            title: "Unauthorized",
+                            status: 401,
+                            detail: "BFF session expired.",
+                        }));
+                        res.writeHead(401, {
+                            "content-type": "application/problem+json",
+                            "content-length": body.byteLength,
+                        });
+                        res.end(body);
+                        req.resume();
+                        return;
+                    }
+                    if (parsed.pathname === "/acp") authenticatedAcpHttp += 1;
+                    if (parsed.pathname.startsWith("/notifications")) authenticatedNotifications += 1;
+                }
+                const upstream = httpRequest({
+                    hostname: daemonUrl.hostname,
+                    port: Number(daemonUrl.port),
+                    path: rawUrl,
+                    method: req.method,
+                    headers: req.headers,
+                }, (upRes) => {
+                    res.writeHead(upRes.statusCode ?? 502, upRes.headers);
+                    upRes.pipe(res);
+                });
+                upstream.on("error", () => {
+                    if (!res.headersSent) res.writeHead(502);
+                    res.end();
+                });
+                req.pipe(upstream);
+            });
+            proxy.on("connection", (socket) => {
+                httpSockets.add(socket);
+                socket.on("close", () => { httpSockets.delete(socket); });
+            });
+            proxy.on("upgrade", (req, socket, head) => {
+                if (!hasValidCookie(req)) {
+                    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+                    socket.destroy();
+                    return;
+                }
+                authenticatedAcpWs += 1;
+                wsSockets.add(socket);
+                const upstream = netConnect(Number(daemonUrl.port), daemonUrl.hostname, () => {
+                    let rawRequest = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`;
+                    for (let i = 0; i < req.rawHeaders.length; i += 2) {
+                        rawRequest += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
+                    }
+                    rawRequest += "\r\n";
+                    upstream.write(rawRequest);
+                    if (head.byteLength > 0) upstream.write(head);
+                    socket.pipe(upstream);
+                    upstream.pipe(socket);
+                });
+                wsSockets.add(upstream);
+                const cleanup = () => {
+                    wsSockets.delete(socket);
+                    wsSockets.delete(upstream);
+                    socket.destroy();
+                    upstream.destroy();
+                };
+                socket.on("error", cleanup);
+                upstream.on("error", cleanup);
+                socket.on("close", cleanup);
+                upstream.on("close", cleanup);
+            });
+            proxy.listen(0, "127.0.0.1");
+            await once(proxy, "listening");
+            const proxyBase = `http://127.0.0.1:${/** @type {import("node:net").AddressInfo} */ (proxy.address()).port}`;
+
+            const browser = await launchBrowser(chromium);
+            try {
+                const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+                const checkBrowser = browserDiagnostics(context);
+                try {
+                    const page = await context.newPage();
+
+                    // 1. Initial visit with no cookie -> 401 on /acp -> BFF login redirect -> HttpOnly cookie -> starter session connected.
+                    await page.goto(`${proxyBase}/`);
+                    await page.waitForURL((url) => new URL(url).pathname === "/~/workspace1");
+                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                    assert.deepEqual(loginCalls, ["/bff/login?next=%2F"]);
+                    assert.equal(wellKnownHits, 0, "BFF login handoff never probes /.well-known/oauth-protected-resource");
+                    assert.ok(authenticatedAcpHttp >= 1, "HTTP /acp carries HttpOnly same-origin cookie");
+                    assert.ok(authenticatedAcpWs >= 1, "WebSocket /acp carries HttpOnly same-origin cookie");
+                    assert.ok(authenticatedNotifications >= 1, "SSE /notifications carries HttpOnly same-origin cookie");
+                    assert.deepEqual(
+                        await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]),
+                        [[], []],
+                        "BFF mode stores zero tokens in browser storage",
+                    );
+                    const signOutBtn = page.locator('header [data-oidc-sign-out] button[data-action="sign-out"]');
+                    await signOutBtn.waitFor({ state: "visible" });
+
+                    // 2. Mid-session cookie expiry preserves unsaved draft, enters signed-out, and Sign in restores session via BFF.
+                    await page.locator("#session-message").fill("Keep this BFF draft.");
+                    sessionValid = false;
+                    for (const sock of [...wsSockets]) sock.destroy();
+                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
+                    assert.equal(await page.locator("#session-message").inputValue(), "Keep this BFF draft.");
+                    assert.equal(loginCalls.length, 1, "mid-session 401 does not auto-redirect over an active draft");
+
+                    await page.locator('#session-connection [data-action="sign-in"]').click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/~/workspace1");
+                    await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                    assert.equal(loginCalls.length, 2);
+                    assert.equal(loginCalls[1], "/bff/login?next=%2F~%2Fworkspace1%23session1");
+                    assert.equal(wellKnownHits, 0);
+
+                    // 3. Header Sign out submits a CSRF-safe top-level POST to /bff/logout with the session cookie.
+                    await signOutBtn.click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/bff/signed-out");
+                    assert.equal(await page.locator("#bff-signed-out").textContent(), "Signed out by BFF");
+                    assert.deepEqual(logoutCalls, [{ method: "POST", hasCookie: true }]);
+
+                    checkBrowser([
+                        Object.assign(httpFailure("/acp", 401), { optional: true }),
+                        Object.assign(httpFailure("/notifications/1", 401), { optional: true }),
+                        networkFailure("/acp"),
+                        Object.assign(networkFailure("/notifications"), { optional: true }),
+                    ]);
+                } finally {
+                    await context.close();
+                }
+            } finally {
+                await browser.close();
+                for (const sock of [...wsSockets, ...httpSockets]) sock.destroy();
+                await new Promise((resolve) => proxy.close(resolve));
+            }
+        });
     });
 
     await t.test("{§web-assets} missing packaged bytes fail startup", async () => {

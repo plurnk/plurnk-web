@@ -59,7 +59,7 @@ export default async function managementAction(kind, params, sessionId, signal, 
             if (init?.method === "DELETE") {
                 if (connected && !deleteSent && !signal.aborted && httpFailure === undefined && kind !== "session/cancel") {
                     deleteSent = true;
-                    await fetch(input, { ...init, cache: "no-store" }).catch(() => {});
+                    await fetch(input, { ...init, credentials: "same-origin", cache: "no-store" }).catch(() => {});
                 }
                 return new Response(null, { status: 204 });
             }
@@ -80,7 +80,7 @@ export default async function managementAction(kind, params, sessionId, signal, 
             }
             const fetchSignal = AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]);
             if (init?.method === "GET" && navigator.userAgent.includes("Firefox")) {
-                const fetchPromise = fetch(input, { ...init, cache: "no-store", signal: fetchSignal });
+                const fetchPromise = fetch(input, { ...init, credentials: "same-origin", cache: "no-store", signal: fetchSignal });
                 const initial = await Promise.race([
                     fetchPromise,
                     new Promise((resolve) => setTimeout(() => resolve(null), SSE_HEADERS_FLUSH_MS)),
@@ -122,8 +122,10 @@ export default async function managementAction(kind, params, sessionId, signal, 
                     headers: { "Content-Type": "text/event-stream" },
                 });
             }
+            // {§web-bff-auth} Keep same-origin browser cookies on HTTP /acp while leaving SDK cookie-jar emulation disabled (`cookies: "omit"`).
             const response = await fetch(input, {
                 ...init,
+                credentials: "same-origin",
                 cache: "no-store",
                 signal: fetchSignal,
             });

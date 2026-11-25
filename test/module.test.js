@@ -613,3 +613,75 @@ test("{§web-settings-extensions} {§web-configuration} {§web-assets} PLURNK_WE
     assert.equal((await fetch(`${base}/brand/tabs/account.js`, { method: "POST" })).status, 405);
     assert.equal((await fetch(`${base}/brand/tabs/billing.js`)).status, 404);
 });
+
+test("{§web-bff-auth} {§web-configuration} {§web-browser-security} PLURNK_WEB_AUTH_* validates fail-hard and stamps BFF attributes without weakening CSP", async (t) => {
+    const keys = [
+        "PLURNK_WEB_AUTH_LOGIN_URL",
+        "PLURNK_WEB_AUTH_LOGOUT_URL",
+        "PLURNK_WEB_AUTH_LOGOUT_METHOD",
+    ];
+    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    t.after(() => {
+        for (const [key, value] of Object.entries(original)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    });
+
+    delete process.env.PLURNK_WEB_AUTH_LOGOUT_METHOD;
+    assert.throws(createModule, { message: "PLURNK_WEB_AUTH_LOGOUT_METHOD is missing from the assembled environment floor." });
+    process.env.PLURNK_WEB_AUTH_LOGOUT_METHOD = original.PLURNK_WEB_AUTH_LOGOUT_METHOD;
+
+    const invalidCases = /** @type {const} */ ([
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "https://idp.example/login"],
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "//evil.example/login"],
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "/\\evil.example/login"],
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "relative/login"],
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "/login#frag"],
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "/login with space"],
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "/login\nnext"],
+        ["PLURNK_WEB_AUTH_LOGIN_URL", "/auth/callback"],
+        ["PLURNK_WEB_AUTH_LOGOUT_URL", "https://idp.example/logout"],
+        ["PLURNK_WEB_AUTH_LOGOUT_URL", "//evil.example/logout"],
+        ["PLURNK_WEB_AUTH_LOGOUT_URL", "relative/logout"],
+        ["PLURNK_WEB_AUTH_LOGOUT_URL", "/logout#frag"],
+        ["PLURNK_WEB_AUTH_LOGOUT_URL", "/logout space"],
+        ["PLURNK_WEB_AUTH_LOGOUT_METHOD", ""],
+        ["PLURNK_WEB_AUTH_LOGOUT_METHOD", "DELETE"],
+        ["PLURNK_WEB_AUTH_LOGOUT_METHOD", "PUT"],
+    ]);
+    for (const [key, badValue] of invalidCases) {
+        process.env[key] = badValue;
+        assert.throws(
+            createModule,
+            (/** @type {any} */ error) => error?.name === "ConfigurationError" && error?.key === key,
+            `expected ConfigurationError for ${key}=${badValue}`,
+        );
+        process.env[key] = original[key];
+    }
+
+    process.env.PLURNK_WEB_AUTH_LOGIN_URL = "/oauth2/start?rd={returnTo}";
+    process.env.PLURNK_WEB_AUTH_LOGOUT_URL = "/oauth2/sign_out";
+    process.env.PLURNK_WEB_AUTH_LOGOUT_METHOD = "get";
+    const mod = createModule();
+    let handler;
+    await mod.start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
+    const server = createServer(handler);
+    t.after(async () => {
+        await mod.close();
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    for (const path of ["/", "/search/", "/settings/", "/~/work"]) {
+        const res = await fetch(`${base}${path}`);
+        assert.equal(res.status, 200, path);
+        assert.match(res.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*form-action 'self'[\s\S]*frame-ancestors 'none'/u);
+        const html = await res.text();
+        assert.ok(html.includes('data-auth-login-url="/oauth2/start?rd={returnTo}"'), path);
+        assert.ok(html.includes('data-auth-logout-url="/oauth2/sign_out"'), path);
+        assert.ok(html.includes('data-auth-logout-method="GET"'), path);
+    }
+});
