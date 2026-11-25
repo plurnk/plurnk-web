@@ -13,32 +13,26 @@ export default function sessionDescendants(element) {
      * @param {Element} target @param {import("./session-status.js").DescendantNode[]} nodes @param {string} workspace
      */
     const fill = (target, nodes, workspace) => {
-        const rows = new Map(Array.from(target.children, (row) => [row.getAttribute("data-descendant-id"), row]));
-        const kept = new Set(nodes.map(({ session }) => String(session.id)));
-        for (const [id, row] of rows) if (!kept.has(id ?? "")) row.remove();
-        /** @type {Element | null} */
-        let previous = null;
-        for (const { session, children } of nodes) {
-            const row = rows.get(String(session.id)) ?? $.clone(target, "#session-descendant");
-            const path = directoryPath({ kind: "session", workspace, session: session.name });
-            if (path === null) throw new Error("Descendant has no directory address.");
-            the(row, {
-                "descendant-id": session.id, "descendant-name": session.name, "descendant-path": path,
-                "descendant-kind": session.kind, "descendant-lifecycle": session.lifecycle, "descendant-gates": gateCount(session.gates),
-            });
-            let branch = $(row, ":scope > details");
-            if (children.length) {
-                branch ??= $.clone(row, "#session-descendant-children");
-                the(branch, "descendant-children", children.length);
-                const nested = $(branch, ":scope > ul");
-                if (!nested) throw new Error("Descendant branch has no list.");
-                fill(nested, children, workspace);
-            } else branch?.remove();
-            /** @type {Element | null} */
-            const position = previous === null ? target.firstElementChild : previous.nextElementSibling;
-            if (position !== row) target.insertBefore(row, position);
-            previous = row;
-        }
+        $.reconcile(target, "#session-descendant", nodes, {
+            attr: "data-descendant-id",
+            key: ({ session }) => session.id,
+            fill(row, { session, children }) {
+                const path = directoryPath({ kind: "session", workspace, session: session.name });
+                if (path === null) throw new Error("Descendant has no directory address.");
+                the(row, {
+                    "descendant-name": session.name, "descendant-path": path,
+                    "descendant-kind": session.kind, "descendant-lifecycle": session.lifecycle, "descendant-gates": gateCount(session.gates),
+                });
+                let branch = $(row, ":scope > details");
+                if (children.length) {
+                    branch ??= $.clone(row, "#session-descendant-children");
+                    the(branch, "descendant-children", children.length);
+                    const nested = $(branch, ":scope > ul");
+                    if (!nested) throw new Error("Descendant branch has no list.");
+                    fill(nested, children, workspace);
+                } else branch?.remove();
+            },
+        });
     };
     /** @param {readonly import("./session-status.js").DescendantItem[]} sessions @param {string} workspace */
     return (sessions, workspace) => {

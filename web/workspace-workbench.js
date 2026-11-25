@@ -113,11 +113,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
 
     /** @type {Map<number, WorkbenchSession>} */
     const sessionsById = new Map();
-    /** @type {Map<number, HTMLLIElement>} */
-    const tabRowsById = new Map();
 
     if (isPreseededFixture) {
-        hydrateSessionsFromTabList(tabsList, sessionsById, tabRowsById);
+        hydrateSessionsFromTabList(tabsList, sessionsById);
         hydrateFoldedSessions(tabs.dataset.foldedSessions, sessionsById);
     }
 
@@ -210,7 +208,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
     const workbenchUi = createWorkbenchTabsAndSwitcher({
         tabs,
         tabsList,
-        tabRowsById,
         sessionsById,
         pageLifetime,
         live,
@@ -497,7 +494,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 else if (meta.projectLabel === null) projectLabel = null;
                 recomputeWorkspaceMarker();
             },
-            onSessionDeleted(sid, existing) {
+            onSessionDeleted(_sid, existing) {
                 if (existing) {
                     const pane = panesBySession.get(existing.name);
                     if (pane && pane !== activePane) {
@@ -505,7 +502,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
                         panesBySession.delete(existing.name);
                     }
                 }
-                tabRowsById.delete(sid);
             },
             onReconcileTabs: () => workbenchUi.reconcileTabs(),
             onSyncHeaderPlace: syncHeaderPlace,

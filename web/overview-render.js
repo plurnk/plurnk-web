@@ -40,25 +40,6 @@ function formatRelativeAge(timestampMs) {
 }
 
 /**
- * Move or insert `node` before `ref` inside `parent` while preserving focus and details state.
- * @param {Element} parent
- * @param {HTMLElement} node
- * @param {Node | null} ref
- */
-function placeBefore(parent, node, ref) {
-    if (node.isConnected && node.parentElement === parent && typeof /** @type {{ moveBefore?: unknown }} */ (parent).moveBefore === "function") {
-        /** @type {{ moveBefore(child: Node, before: Node | null): void }} */ (/** @type {unknown} */ (parent)).moveBefore(node, ref);
-        return;
-    }
-    const active = document.activeElement;
-    const preserveFocus = active instanceof HTMLElement && node.contains(active) ? active : null;
-    parent.insertBefore(node, ref);
-    if (preserveFocus && document.activeElement !== preserveFocus) {
-        preserveFocus.focus({ preventScroll: true });
-    }
-}
-
-/**
  * {§web-search} {§web-session-directory} {§web-workspace-folder} {§web-page-shell}
  * Keyed DOM reconciler and in-place filter for `#search-workspaces` cards and nested session trees.
  * @param {Element} workspacesOutlet
@@ -66,10 +47,6 @@ function placeBefore(parent, node, ref) {
  */
 export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
     const suggestionsList = suggestionsElement instanceof HTMLDataListElement ? suggestionsElement : null;
-    /** @type {Map<number, HTMLLIElement>} */
-    const workspaceRowsById = new Map();
-    /** @type {Map<string, HTMLLIElement>} */
-    const sessionRowsByKey = new Map();
 
     /**
      * @param {OverviewStore} store
@@ -299,37 +276,7 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
             return a.order - b.order;
         });
 
-        /** @type {Set<HTMLLIElement>} */
-        const claimedSessionRows = new Set();
-        /** @type {Set<HTMLLIElement>} */
-        const claimedWsRows = new Set();
         const queryLower = filters.filterQuery.trim().toLowerCase();
-
-        /** @param {Element} list @param {OverviewSession} session @param {OverviewWorkspace} ws */
-        const findOrCloneSessionRow = (list, session, ws) => {
-            const key = `${session.workspaceId}:${session.id}`;
-            let row = sessionRowsByKey.get(key);
-            if (!row || !row.isConnected || claimedSessionRows.has(row)) {
-                const byKey = $(workspacesOutlet, `li[data-directory-entry="session"][data-session-key="${CSS.escape(key)}"]`);
-                if (byKey instanceof HTMLLIElement && !claimedSessionRows.has(byKey)) {
-                    row = byKey;
-                } else {
-                    row = /** @type {HTMLLIElement} */ ($.clone(list, "#session-card"));
-                }
-                sessionRowsByKey.set(key, row);
-            }
-            row.dataset.sessionKey = key;
-            row.dataset.sessionKind = session.kind;
-            row.dataset.workspaceName = ws.name;
-            row.dataset.lifecycleState = session.lifecycle;
-            row.dataset.gateCount = String(session.gates);
-            if (session.reply !== null) row.dataset.replyId = String(session.reply.id);
-            else delete row.dataset.replyId;
-            if (session.archived || ws.archived) row.dataset.archived = "true";
-            else delete row.dataset.archived;
-            claimedSessionRows.add(row);
-            return row;
-        };
 
         /**
          * @param {HTMLLIElement} row
@@ -385,16 +332,11 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
                         ? directoryPath({ kind: "session", workspace: ws.name, session: pName })
                         : null;
                     if (parentPath !== null) {
-                        let parentLink = parentSpan ? $(parentSpan, "a") : null;
-                        if (!parentSpan || !parentLink) {
+                        if (!parentSpan || !$(parentSpan, "a")) {
                             parentSpan?.remove();
                             parentSpan = $.clone(link, "#session-parent-link", { position: "beforebegin" });
-                            parentLink = $(parentSpan, "a");
                         }
-                        if (parentLink) {
-                            if (parentLink.getAttribute("href") !== parentPath) parentLink.setAttribute("href", parentPath);
-                            if (parentLink.textContent !== pName) parentLink.textContent = pName;
-                        }
+                        the(parentSpan, { name: pName, "session-path": parentPath });
                     } else {
                         let parentText = parentSpan && !$(parentSpan, "a") ? $(parentSpan, "span") : null;
                         if (!parentSpan || !parentText) {
@@ -513,16 +455,22 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
          * @param {ReadonlyMap<number, OverviewSession>} byId
          */
         function reconcileSessionList(list, entries, ws, children, byId) {
-            for (const [index, session] of entries.entries()) {
-                const row = findOrCloneSessionRow(list, session, ws);
-                if (list.children[index] !== row) {
-                    placeBefore(list, row, list.children[index] ?? null);
-                }
-                reconcileSessionCard(row, session, ws, children, byId);
-            }
-            while (list.children.length > entries.length) {
-                list.lastElementChild?.remove();
-            }
+            $.reconcile(list, "#session-card", entries, {
+                attr: "data-session-key",
+                key: (session) => `${session.workspaceId}:${session.id}`,
+                fill(row, session) {
+                    if (!(row instanceof HTMLLIElement)) return;
+                    row.dataset.sessionKind = session.kind;
+                    row.dataset.workspaceName = ws.name;
+                    row.dataset.lifecycleState = session.lifecycle;
+                    row.dataset.gateCount = String(session.gates);
+                    if (session.reply !== null) row.dataset.replyId = String(session.reply.id);
+                    else delete row.dataset.replyId;
+                    if (session.archived || ws.archived) row.dataset.archived = "true";
+                    else delete row.dataset.archived;
+                    reconcileSessionCard(row, session, ws, children, byId);
+                },
+            });
         }
 
         const omittedEl = $(workspacesOutlet, ":scope > p[data-overview-omitted]");
@@ -538,30 +486,18 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
                 : $.clone(workspacesOutlet, "#overview-list");
         }
 
-        for (const [wsIndex, ws] of orderedWorkspaces.entries()) {
-            let wsRow = workspaceRowsById.get(ws.id);
-            if (!wsRow || !wsRow.isConnected || claimedWsRows.has(wsRow)) {
-                const byIdEl = $(workspacesOutlet, `li[data-directory-entry="workspace"][data-workspace-id="${CSS.escape(String(ws.id))}"]`);
-                if (byIdEl instanceof HTMLLIElement && !claimedWsRows.has(byIdEl)) {
-                    wsRow = byIdEl;
-                } else {
-                    wsRow = /** @type {HTMLLIElement} */ ($.clone(wsList, "#workspace-card"));
-                }
-                workspaceRowsById.set(ws.id, wsRow);
-            }
-            claimedWsRows.add(wsRow);
-            if (wsList.children[wsIndex] !== wsRow) {
-                placeBefore(wsList, wsRow, wsList.children[wsIndex] ?? null);
-            }
+        $.reconcile(wsList, "#workspace-card", orderedWorkspaces, {
+            attr: "data-workspace-id",
+            key: (ws) => ws.id,
+            fill(wsRow, ws) {
+                if (!(wsRow instanceof HTMLLIElement)) return;
+                wsRow.dataset.workspaceName = ws.name;
+                wsRow.dataset.folder = String(ws.projectRoot !== null);
+                if (ws.archived) wsRow.dataset.archived = "true";
+                else delete wsRow.dataset.archived;
 
-            wsRow.dataset.workspaceId = String(ws.id);
-            wsRow.dataset.workspaceName = ws.name;
-            wsRow.dataset.folder = String(ws.projectRoot !== null);
-            if (ws.archived) wsRow.dataset.archived = "true";
-            else delete wsRow.dataset.archived;
-
-            const wsArticle = $(wsRow, ":scope > article");
-            if (wsArticle) {
+                const wsArticle = $(wsRow, ":scope > article");
+                if (!wsArticle) return;
                 const wsAriaLabel = ws.projectRoot === null ? "Folderless workspace" : "Project workspace";
                 if (wsArticle.getAttribute("aria-label") !== wsAriaLabel) wsArticle.setAttribute("aria-label", wsAriaLabel);
                 const wsHeader = $(wsArticle, ":scope > header");
@@ -624,11 +560,8 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
                 } else {
                     bgDetails?.remove();
                 }
-            }
-        }
-        while (wsList.children.length > orderedWorkspaces.length) {
-            wsList.lastElementChild?.remove();
-        }
+            },
+        });
         applyFilter(store, filters);
     }
 

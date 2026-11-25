@@ -110,15 +110,13 @@ export function selectInitialWorkbenchSession(allModelSessions) {
 /**
  * @param {ParentNode} listRoot
  * @param {Map<number, WorkbenchSession>} sessionsById
- * @param {Map<number, HTMLLIElement>} [tabRowsById]
  */
-export function hydrateSessionsFromTabList(listRoot, sessionsById, tabRowsById) {
+export function hydrateSessionsFromTabList(listRoot, sessionsById) {
     for (const item of $$(listRoot, ":scope > li[data-tab-id]")) {
         if (!(item instanceof HTMLLIElement)) continue;
         const idMatch = /^(\d+):(\d+)$/u.exec(item.dataset.tabId ?? "");
         if (!idMatch) continue;
         const id = Number(idMatch[2]);
-        tabRowsById?.set(id, item);
         const link = $(item, "a[data-tab-session]");
         const name = link instanceof HTMLElement ? (link.dataset.tabSession ?? String(id)) : String(id);
         const rawParent = item.dataset.parentId;
