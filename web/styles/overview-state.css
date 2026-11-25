@@ -1,0 +1,146 @@
+@layer state {
+    /* {§web-session-directory} Directory entry lists, inline archive actions, excerpts, and identity layout. */
+    form[data-inline-unarchive],
+    form[data-inline-unarchive] > button {
+        display: inline-flex;
+        inline-size: auto;
+        margin: 0 0 0 0.5ch;
+        padding: 0.1rem 0.45rem;
+        font-size: 0.85em;
+    }
+
+    ul:has(> [data-directory-entry]) {
+        padding: 0;
+    }
+
+    [data-directory-entry] {
+        list-style: none;
+    }
+
+    @media (scripting: enabled) {
+        #search-controls > button[data-search-submit] {
+            display: none;
+        }
+    }
+
+    [data-session-excerpt] {
+        display: block;
+        margin-block-start: 0.2rem;
+        color: var(--otm-muted-color);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    [data-session-link] {
+        display: inline-flex;
+        flex: 0 1 auto;
+        align-items: baseline;
+        gap: 0.35ch;
+        min-inline-size: 0;
+        max-inline-size: calc(100% - 2.5ch);
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    [data-session-link]:is(:hover, :focus-visible),
+    [data-directory-entry="workspace"] > article > header > a[data-text="name"]:is(:hover, :focus-visible) {
+        text-decoration: underline;
+    }
+
+    :is(header, summary) > [data-session-identity] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.45ch;
+        min-inline-size: 0;
+    }
+
+    [data-session-headline] {
+        min-inline-size: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    [data-session-handle],
+    [data-session-meta] > time[data-session-time] {
+        color: var(--otm-muted-color);
+        font-size: 0.85em;
+    }
+
+    [data-session-meta] {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5ch;
+        margin-inline-start: auto;
+    }
+
+    [data-session-identity] > small:is([data-session-gates], [data-session-children]) {
+        margin-inline-start: 0.35ch;
+    }
+
+    /* {§web-session-directory} The directory and live statusline share one lifecycle vocabulary. */
+    #session-status [data-status-field="lifecycle"]::before,
+    :is([data-session-identity], #workspace-tabs, #dialog-workspace-switcher) [data-lifecycle]::before {
+        content: var(--session-lifecycle-glyph, "○") / "";
+    }
+
+    [data-lifecycle="running"] {
+        --session-lifecycle-glyph: "⌛";
+    }
+
+    [data-lifecycle="queued"] {
+        --session-lifecycle-glyph: "⏳";
+    }
+
+    [data-lifecycle="parked"] {
+        --session-lifecycle-glyph: "💤";
+    }
+
+    [data-lifecycle="cancelled"] {
+        --session-lifecycle-glyph: "🛑";
+    }
+
+    [data-lifecycle="failed"] {
+        --session-lifecycle-glyph: "❌";
+    }
+
+    [data-lifecycle="completed"] {
+        --session-lifecycle-glyph: "✓";
+    }
+
+    /* {§web-page-shell} {§web-session-directory} Directory identity remains accessible without decorative glyphs. */
+    [data-directory-entry="workspace"] > article > header::before {
+        content: var(--directory-glyph) / "";
+        margin-inline-end: 0.5ch;
+    }
+
+    :is([data-session-link], #workspace-tabs a[data-workspace-route="session"], #dialog-workspace-switcher a[data-workspace-route="session"])::before {
+        content: var(--session-kind-glyph, "💬") / "";
+    }
+
+    [data-session-kind="work"] {
+        --session-kind-glyph: "🐜";
+    }
+
+    [data-session-kind="fork"] {
+        --session-kind-glyph: "🔱";
+    }
+
+    [data-session-gates]::before {
+        content: "🚦 " / "";
+    }
+
+    [data-session-children]::before {
+        content: "🐜 " / "";
+    }
+
+    [data-folder="true"] {
+        --directory-glyph: "🗂️";
+    }
+
+    [data-folder="false"] {
+        --directory-glyph: "☁️";
+    }
+}

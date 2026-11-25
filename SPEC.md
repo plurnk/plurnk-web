@@ -656,7 +656,7 @@ compilation may combine them without changing their cascade:
 | `on_the_money/css/schemes/green` (`@layer scheme`) | Green palette scheme. |
 | `app-structure.css` (`@layer structure`) | Readable page width, gutters, grouped controls and wrapping. |
 | `app-style.css` (`@layer style`) | Presentation through `--otm-*` substrate tokens; brand accents, system monospace and conversation surface colors. |
-| `app-state.css` (`@layer state`) | Session page width, semantic background selection, observer connection/error presentation and native focus visibility. |
+| `*-state.css` (`@layer state`) | Domain-scoped state stylesheets (`shell-state.css`, `overview-state.css`, `conversation-state.css`, `session-state.css`, `settings-state.css`, `schedule-state.css`) for page layout, semantic background selection, observer connection/error presentation, interactive controls and native focus visibility. |
 
 Session content, diagnostics and status inherit the substrate's typography and colors.
 Additional session CSS supplies geometry, overflow containment, declared glyphs,
@@ -714,7 +714,7 @@ checkout. This checks traceability, not whether a cited test proves its contract
 | `npm run preview` | Locally preview the last build through Vite; not a production server. |
 | Daemon startup | Load the inventory and every listed production asset; serve them through the module's existing mount. No Vite runtime or development server in the published module. |
 
-`web/index.html` owns the document, `web/app.js` imports OTM's npm entry,
+`web/index.html` owns the document shell and assembles static `web/templates/*.html` partials at build and dev time, `web/app.js` imports OTM's npm entry,
 and `web/public/` supplies unchanged public assets. The application CSS source
 layers remain under `web/styles/`. Generated output is packed, not committed.
 Production contains no development-client injection, frontend sources, or source maps.

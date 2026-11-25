@@ -4,4 +4,11 @@
 @import url("on_the_money/css/schemes/green");
 @import url("./app-structure.css");
 @import url("./app-style.css");
-@import url("./app-state.css");
+@import url("./overview-state.css");
+@import url("./conversation-state.css");
+@import url("./session-state.css");
+@import url("./settings-state.css");
+@import url("./schedule-state.css");
+
+/* Keep shell-state.css last so document-wide [hidden] beats domain display rules in @layer state. */
+@import url("./shell-state.css");

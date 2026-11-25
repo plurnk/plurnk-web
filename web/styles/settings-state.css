@@ -1,0 +1,412 @@
+@layer state {
+    /* {§web-workspace-settings} Settings navigation, panels, disclosures, row forms, comboboxes, and pagination. */
+    #workspace-settings :where([data-candidate-rows]) {
+        padding: 0;
+    }
+
+    #workspace-settings [data-settings-nav] a[aria-current="true"] {
+        border-block-end-color: var(--otm-primary);
+        font-weight: 700;
+    }
+
+    #workspace-settings [data-settings-nav] a:is(:hover, :focus-visible) {
+        text-decoration: underline;
+    }
+
+    [data-panel-toolbar] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.65);
+        margin-block: 0 var(--otm-spacing);
+    }
+
+    [data-panel-toolbar] > :where(h2) {
+        margin: 0;
+        font-size: 1.05rem;
+    }
+
+    [data-settings-panel] > :where(h3) {
+        margin-block: var(--otm-spacing) calc(var(--otm-spacing) * 0.5);
+        font-size: 0.95rem;
+    }
+
+    [data-family-disclosure] {
+        margin-block: 0 var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.5) calc(var(--otm-spacing) * 0.75);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-working-surface);
+    }
+
+    [data-family-disclosure] > :where(summary) {
+        margin-block-end: 0;
+    }
+
+    [data-family-disclosure]:not([open]) > :where(summary) {
+        border-block-end: 0;
+    }
+
+    [data-family-disclosure][open] > :where(summary) {
+        margin-block-end: calc(var(--otm-spacing) * 0.75);
+    }
+
+    @media (width >= 48rem) {
+        #workspace-settings [data-session-config-form] > :where(fieldset) {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: calc(var(--otm-spacing) * 0.65) var(--otm-spacing);
+        }
+
+        #workspace-settings [data-session-config-form] :where(fieldset > label, fieldset > [data-model-field]) {
+            margin: 0;
+        }
+
+        #workspace-settings [data-session-config-form] :where(fieldset > footer) {
+            grid-column: 1 / -1;
+        }
+
+        [data-settings-panel="help"] :where(dl) {
+            display: grid;
+            grid-template-columns: max-content minmax(0, 1fr);
+            align-items: baseline;
+            gap: calc(var(--otm-spacing) * 0.5) calc(var(--otm-spacing) * 1.25);
+            margin-block: 0 var(--otm-spacing);
+        }
+
+        [data-settings-panel="help"] :where(dt, dd) {
+            margin: 0;
+        }
+    }
+
+    #workspace-settings [data-session-fork] {
+        --otm-primary-background: var(--otm-secondary-background);
+        --otm-primary-hover-background: var(--otm-secondary-hover-background);
+        --otm-primary-inverse: var(--otm-secondary-inverse);
+        --otm-primary-focus: var(--otm-secondary-focus);
+    }
+
+    [data-panel-toolbar] > :where(button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0 0 0 auto;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.45) calc(var(--otm-form-element-spacing-inline) * 0.75);
+    }
+
+    [data-panel-toolbar] > :where(form) {
+        flex: 0 1 auto;
+        margin: 0;
+    }
+
+    [data-panel-toolbar] :where(form > fieldset) {
+        inline-size: auto;
+        margin: 0;
+    }
+
+    [data-panel-toolbar] :where(select, form button) {
+        inline-size: auto;
+        margin: 0;
+        padding-block: calc(var(--otm-form-element-spacing-block) * 0.4);
+    }
+
+    [data-toolbar-actions] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-inline-start: auto;
+    }
+
+    [data-toolbar-actions] :where(form) {
+        margin: 0;
+    }
+
+    [data-toolbar-actions] :where(button) {
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.45) calc(var(--otm-form-element-spacing-inline) * 0.75);
+    }
+
+    #workspace-settings :where([data-candidate-rows] > li) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        list-style: none;
+        padding-block: calc(var(--otm-spacing) * 0.25);
+    }
+
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) {
+        margin: 0;
+    }
+
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) > :where(fieldset) {
+        display: inline-flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.35);
+        margin: 0;
+        padding: 0;
+    }
+
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) :where(fieldset > button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.6);
+        font-size: 0.875em;
+        white-space: nowrap;
+    }
+
+    #workspace-settings :where(td[data-text="family-summary"], td[data-text="family-status"]) {
+        overflow-wrap: anywhere;
+    }
+
+    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form]), td:has(> [data-model-alias-row-form]), td:has(> [data-model-catalog-row-form])) {
+        white-space: nowrap;
+    }
+
+    tr[data-model-session-usable="false"] [data-model-catalog-row-form],
+    tr[data-model-ready="false"] [data-model-catalog-row-form] {
+        display: none;
+    }
+
+    #dialog-session-model [data-text="model-dialog-error"]:empty {
+        display: none;
+    }
+
+    @media (scripting: none) {
+        #workspace-settings [data-session-fork],
+        #workspace-settings [data-settings-nav] > li:nth-child(n+3) {
+            display: none;
+        }
+
+        #workspace-settings:not(:has(> #session:target)) > #session,
+        #workspace-settings:has(> #session:target) > #workspace {
+            display: none;
+        }
+
+        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="workspace"] {
+            border-block-end-color: transparent;
+            font-weight: 400;
+        }
+
+        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="session"] {
+            border-block-end-color: var(--otm-primary);
+            font-weight: 700;
+        }
+    }
+
+    :is([data-env-set-form], [data-env-row-form]) > :where(fieldset) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin: 0;
+    }
+
+    [data-env-set-form] :where(fieldset > select, fieldset > button),
+    [data-env-row-form] :where(fieldset > button) {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+    }
+
+    [data-env-row-form] :where(fieldset > button) {
+        padding: calc(var(--otm-form-element-spacing-block) * 0.4) calc(var(--otm-form-element-spacing-inline) * 0.65);
+    }
+
+    [data-env-set-form] :where(fieldset > input) {
+        flex: 1 1 12ch;
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    /* {§web-session-commands} {§web-workspace-settings} Settings and modal controls reflect explicit state. */
+    [data-alias-choices]:empty,
+    #workspace-settings [data-env-panel][data-env-count="0"] > figure,
+    #workspace-settings [data-env-enabled="true"] [data-env-enable],
+    #workspace-settings [data-env-enabled="false"] [data-env-disable],
+    #workspace-settings [data-env-removable="false"] [data-env-unset],
+    #workspace-settings [data-settings-panel="models"][data-alias-count="0"] > [data-models-aliases-wrap],
+    #workspace-settings [data-settings-panel="models"]:not([data-alias-count="0"]) > [data-models-aliases-empty],
+    #workspace-settings tr[data-model-session-usable="false"] [data-model-use-session],
+    #workspace-settings [data-family-count="0"] > [data-family-table-wrap],
+    #workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
+    #workspace-settings [data-settings-panel="env"]:has([data-env-panel]:not([data-env-count="0"])) > [data-env-empty],
+    #workspace-settings [data-candidate-count="0"] [data-candidate-rows],
+    #workspace-settings tr[data-family-state]:not([data-family-state="disabled"]) [data-family-enable],
+    #workspace-settings tr[data-family-state]:not([data-family-state="retryable"]) [data-family-retry],
+    #workspace-settings tr[data-family-state="disabled"] [data-family-disable],
+    #workspace-settings tr[data-family-removable="false"] [data-family-remove],
+    #workspace-settings tr[data-family-auth="false"] [data-family-authorize],
+    #workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],
+    #workspace-settings [data-personas-save-form]:not([data-persona-mode="inline"]) [data-persona-inline-fields],
+    #workspace-settings [data-personas-save-form]:not([data-persona-mode="source"]) [data-persona-source-fields] {
+        display: none;
+    }
+
+    /* {§web-workspace-settings} {§web-session-commands} Model and schedule combobox popovers, dialog, and catalog pagination. */
+    [data-model-field] {
+        margin-block-end: var(--otm-spacing);
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) {
+        position: relative;
+        min-inline-size: 0;
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) > input[role="combobox"] {
+        margin-block-end: 0;
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) > [data-combobox-list] {
+        position: absolute;
+        z-index: 20;
+        inset-block-start: 100%;
+        inset-inline: 0;
+        max-block-size: 16rem;
+        margin: calc(var(--otm-spacing) * 0.2) 0 0;
+        padding: calc(var(--otm-spacing) * 0.25);
+        overflow-y: auto;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+        box-shadow: var(--otm-card-box-shadow);
+    }
+
+    #dialog-session-model [data-model-combobox] > [data-combobox-list] {
+        position: static;
+        max-block-size: 12rem;
+        box-shadow: none;
+    }
+
+    [data-combobox-list] > [role="option"],
+    [data-combobox-list] > [data-combobox-hint] {
+        list-style: none;
+        margin: 0;
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.2) 1ch;
+        padding: calc(var(--otm-spacing) * 0.35) calc(var(--otm-spacing) * 0.5);
+        border-radius: var(--otm-border-radius);
+        cursor: pointer;
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"]:hover,
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"][data-active="true"],
+    :is([data-model-combobox], [data-schedule-combobox]) [role="option"][aria-selected="true"] {
+        background-color: var(--plurnk-user-surface);
+        color: var(--otm-color);
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) [data-combobox-primary] {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) :is([data-combobox-kind="alias"], [data-combobox-kind="builtin"]) [data-combobox-primary] {
+        font-weight: 700;
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) [data-combobox-secondary] {
+        color: var(--otm-muted-color);
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
+    }
+
+    :is([data-model-combobox], [data-schedule-combobox]) [data-combobox-hint] {
+        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.5);
+        color: var(--otm-muted-color);
+        font-size: 0.85em;
+    }
+
+    #dialog-session-model [data-model-dialog-catalog] {
+        margin-inline-end: auto;
+    }
+
+    [data-models-pagination],
+    [data-collection-pagination],
+    [data-candidate-pagination] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-collection-bar] {
+        margin-block: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-collection-filter-form] {
+        margin: 0;
+    }
+
+    [data-models-summary],
+    [data-collection-summary],
+    [data-candidate-summary] {
+        margin: 0;
+        color: var(--otm-muted-color);
+        font-size: 0.875em;
+    }
+
+    [data-models-page-controls],
+    [data-collection-page-controls],
+    [data-candidate-page-controls] {
+        display: inline-flex;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.35);
+    }
+
+    :is([data-models-page-controls], [data-collection-page-controls], [data-candidate-page-controls]) > :is([data-models-prev], [data-models-next], [data-collection-prev], [data-collection-next], [data-candidate-prev], [data-candidate-next]) {
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.65);
+    }
+
+    #workspace-settings [data-members-preview] {
+        margin-block: calc(var(--otm-spacing) * 0.45) calc(var(--otm-spacing) * 0.65);
+        padding: calc(var(--otm-spacing) * 0.45) calc(var(--otm-spacing) * 0.65);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    #workspace-settings [data-members-preview-summary] {
+        margin: 0;
+        color: var(--otm-muted-color);
+        font-size: 0.875em;
+        overflow-wrap: anywhere;
+    }
+
+    #workspace-settings [data-members-preview-list] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.2);
+        margin: calc(var(--otm-spacing) * 0.4) 0 0;
+        padding: 0;
+    }
+
+    #workspace-settings [data-members-preview-item] {
+        list-style: none;
+        margin: 0;
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
+    }
+
+    #workspace-settings [data-members-preview][data-members-preview-state="idle"],
+    #workspace-settings [data-members-preview-list]:empty {
+        display: none;
+    }
+}

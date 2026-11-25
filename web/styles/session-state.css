@@ -1,0 +1,458 @@
+@layer state {
+    /* {§web-workspace-tabs} Empty tab bars hide; <768px moves session switching to #session-controls. */
+    #workspace-tabs[data-tab-count="0"],
+    #workspace-tabs[data-workspace-archived="true"] [data-tab-new] {
+        display: none;
+    }
+
+    @media (scripting: enabled) and (width < 48rem) {
+        #workspace-tabs[data-tab-count] {
+            display: none;
+        }
+    }
+
+    @media (width >= 48rem) {
+        [aria-label="Session controls"] button[data-open-sessions] {
+            display: none;
+        }
+    }
+
+    @media (width >= 48rem), (scripting: none) {
+        #session-status [data-status-field="session"] {
+            display: none;
+        }
+    }
+
+    #dialog-workspace-switcher [data-switcher-archived] {
+        margin-block-start: calc(var(--otm-spacing) * 0.65);
+    }
+
+    #dialog-workspace-switcher [data-switcher-archived-list] > li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.4);
+    }
+
+    #workspace-tabs > ul > li:has(> a[aria-current="true"]) {
+        border-color: var(--otm-primary);
+        border-block-start-color: var(--otm-primary);
+        background-color: var(--otm-card-background-color);
+    }
+
+    #workspace-tabs > ul > li > a[aria-current="true"] {
+        border-block-end-color: var(--otm-primary);
+        font-weight: 700;
+    }
+
+    #dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"] {
+        background-color: var(--plurnk-user-surface);
+        font-weight: 700;
+    }
+
+    #workspace-tabs :is([data-tab-new] > button, > button):is(:hover, :focus-visible) {
+        --otm-primary-inverse: var(--otm-color);
+    }
+
+    @media (scripting: none) {
+        #workspace-tabs button[data-open-sessions] {
+            display: none;
+        }
+    }
+
+    [aria-label="Message feedback"][data-command-error=""] > article,
+    [aria-label="Message feedback"][data-message-status=""] > [role="status"],
+    [aria-label="Message feedback"][data-message-status=""][data-command-error=""] {
+        display: none;
+    }
+
+    /* {§web-session-input} Native controls and document state own their presentation. */
+    #session-message:focus {
+        box-shadow: inset 0 0 0 var(--otm-outline-width) var(--otm-primary-focus);
+    }
+
+    #session-status [data-status-line] button,
+    #session-compose [data-remove-attachment] {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: transparent;
+        --otm-primary-inverse: var(--otm-primary);
+
+        cursor: pointer;
+    }
+
+    button[data-attach-image],
+    button[data-insert-command],
+    [aria-label="Session controls"] button[data-open-sessions],
+    button[data-accept-suggestion],
+    dialog button[data-dialog-close]:not([rel="prev"]) {
+        --otm-primary-background: var(--otm-secondary-background);
+        --otm-primary-hover-background: var(--otm-secondary-hover-background);
+        --otm-primary-inverse: var(--otm-secondary-inverse);
+        --otm-primary-focus: var(--otm-secondary-focus);
+    }
+
+    button[data-attach-image]::before {
+        content: "📎" / "";
+    }
+
+    button[data-insert-command]::before {
+        content: "/" / "";
+        font-weight: 700;
+    }
+
+    [aria-label="Session controls"] button[data-open-sessions]::before {
+        content: "☰" / "";
+        font-weight: 700;
+    }
+
+    #session-compose [data-remove-attachment]::before {
+        content: "✕" / "";
+    }
+
+    #session-compose [data-compose-suggestions],
+    #session-compose [data-compose-attachments] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin: 0 0 calc(var(--otm-spacing) * 0.4);
+        padding: 0;
+    }
+
+    #session-compose [data-suggestion-item] {
+        list-style: none;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        margin: 0;
+    }
+
+    #session-compose [data-accept-suggestion] {
+        --otm-form-element-spacing-block: 0.2rem;
+        --otm-form-element-spacing-inline: 0.5rem;
+
+        inline-size: auto;
+        max-inline-size: 100%;
+        margin: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #session-compose [data-attachment-item] {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4ch;
+        list-style: none;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.5);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+    }
+
+    #session-compose [data-remove-attachment] {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        inline-size: auto;
+        margin: 0;
+        padding: 0 0.2ch;
+        border-width: 0;
+        line-height: inherit;
+    }
+
+    #session-status [data-status-telemetry] {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: flex-end;
+        gap: calc(var(--otm-spacing) * 0.65);
+        min-inline-size: 0;
+        margin-inline-start: auto;
+    }
+
+    #session-status [data-status-line] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+        padding: 0;
+        margin: 0;
+    }
+
+    #session-status [data-status-line] > ul,
+    #session-status [data-status-telemetry] > ul {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: var(--otm-spacing);
+        padding: 0;
+        margin: 0;
+    }
+
+    #session-status :is([data-status-line], [data-status-telemetry]) > ul {
+        min-inline-size: 0;
+        max-inline-size: 100%;
+    }
+
+    #session-status [data-status-field] {
+        list-style: none;
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    #session-status [data-status-field="model"] {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.45ch;
+        max-inline-size: 100%;
+    }
+
+    #session-status [data-status-field="model"] > a {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
+    }
+
+    :is(#session-model, #session-effort):is(:hover, :focus-visible),
+    #dialog-workspace-switcher [data-switcher-list] > li > a:is(:hover, :focus-visible) {
+        text-decoration: underline;
+    }
+
+    #session-status [data-status-line] button {
+        --otm-form-element-spacing-block: 0;
+        --otm-form-element-spacing-inline: 0;
+
+        margin: 0;
+    }
+
+    #session-usage [data-usage-context]:empty {
+        display: none;
+    }
+
+    [aria-label="Session controls"]:not([data-live-work]) button[form="session-stop"],
+    [aria-label="Session controls"]:not([data-prompt-image="true"]) button[data-attach-image],
+    #session-compose [data-compose-suggestions]:empty,
+    #session-compose [data-compose-attachments]:empty {
+        display: none;
+    }
+
+    [aria-label="Session controls"]:not([data-live-work])[data-prompt-image="true"] button[data-attach-image] {
+        margin-inline-start: 0;
+        border-start-start-radius: var(--otm-border-radius);
+        border-end-start-radius: var(--otm-border-radius);
+    }
+
+    [aria-label="Session controls"]:not([data-live-work], [data-prompt-image="true"]) button[data-insert-command] {
+        margin-inline-start: 0;
+        border-start-start-radius: var(--otm-border-radius);
+        border-end-start-radius: var(--otm-border-radius);
+    }
+
+    /* {§web-session-commands} Composer slash-command and skill completion menu. */
+    #session-compose [data-compose-suggestions][data-suggestions-mode="menu"] {
+        flex-flow: column nowrap;
+        align-items: stretch;
+        gap: calc(var(--otm-spacing) * 0.15);
+        max-block-size: 16rem;
+        padding: calc(var(--otm-spacing) * 0.25);
+        overflow-y: auto;
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    #session-compose [data-compose-suggestions][data-suggestions-mode="menu"] [data-accept-suggestion] {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: var(--plurnk-user-surface);
+        --otm-primary-inverse: var(--otm-color);
+
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1ch;
+        inline-size: 100%;
+        border-width: 0;
+        text-align: start;
+    }
+
+    #session-compose [data-suggestion-item][data-suggestion-active="true"] > [data-accept-suggestion] {
+        outline: var(--otm-outline-width) solid var(--otm-primary-focus);
+        outline-offset: calc(var(--otm-outline-width) * -1);
+    }
+
+    #session-compose [data-compose-suggestions][data-suggestions-mode="menu"] [data-suggestion-item][data-suggestion-active="true"] > [data-accept-suggestion] {
+        background-color: var(--plurnk-user-surface);
+    }
+
+    #session-compose [data-accept-suggestion] > small {
+        color: var(--otm-muted-color);
+    }
+
+    #session-compose [data-accept-suggestion] > small:empty {
+        display: none;
+    }
+
+    #session-compose [data-accept-suggestion] > small:not(:empty) {
+        margin-inline-start: 0.6ch;
+        font-size: 0.85em;
+    }
+
+    #dialog-command-output [data-command-literal-wrap]:has(> code:empty) {
+        display: none;
+    }
+
+    /* {§web-session-approval} No review is implied by an empty or unsupported interrupt set. */
+    [aria-label="Review requests"][data-request-count="0"] {
+        display: none;
+    }
+
+    [data-proposal-target-line] {
+        margin-block-end: calc(var(--otm-spacing) * 0.5);
+    }
+
+    [data-proposal-target] {
+        max-inline-size: 100%;
+        overflow-wrap: anywhere;
+    }
+
+    [data-proposal-diff] > code {
+        inline-size: max-content;
+        min-inline-size: 100%;
+        padding-block: calc(var(--otm-spacing) * 0.5);
+        padding-inline: 0;
+    }
+
+    [data-proposal-diff] [data-diff-line] {
+        display: inline-block;
+        min-inline-size: 100%;
+        padding-inline: var(--otm-spacing);
+    }
+
+    /* {§web-session-approval} A proposal's deadline, and the notice once it has passed, show only when they apply. */
+    [aria-label="Review requests"]:not([data-deadline-passed]) [data-deadline-notice],
+    [data-proposal-deadline=""] > [data-proposal-deadline-line],
+    [data-proposal-target-empty="true"] > [data-proposal-target-line],
+    [data-proposal-has-diff="false"] > [data-proposal-diff],
+    [data-proposal-has-diff="true"] > [data-proposal-body-block],
+    [data-proposal-body-empty="true"] > [data-proposal-body-block],
+    [data-proposal-editable="false"] > [data-proposal-edit-choice],
+    [data-proposal-editable="false"] > [data-proposal-edit-field],
+    fieldset:not(:has(> [data-proposal-edit-choice] > input[type="radio"][value="edit"]:checked)) > [data-proposal-edit-field] {
+        display: none;
+    }
+
+    [data-proposal-diff] [data-diff-line="add"] {
+        background-color: var(--plurnk-diff-add-surface);
+        color: var(--plurnk-diff-add-color);
+        text-decoration: none;
+    }
+
+    [data-proposal-diff] [data-diff-line="del"] {
+        background-color: var(--plurnk-diff-del-surface);
+        color: var(--plurnk-diff-del-color);
+        text-decoration: none;
+    }
+
+    [data-proposal-diff] [data-diff-line="hunk"] {
+        background-color: var(--plurnk-diff-hunk-surface);
+        color: var(--plurnk-diff-hunk-color);
+    }
+
+    [data-proposal-diff] [data-diff-line="meta"] {
+        color: var(--plurnk-diff-meta-color);
+    }
+
+    /* {§web-session-questions} Omission and diagnostics are explicit document state. */
+    [data-field-optional="false"] > [data-optional-answer],
+    [data-field-description=""] > [data-text="field-description"],
+    [data-request-session=""] [data-request-origin],
+    [data-question][data-response-error=""] > [data-response-error] {
+        display: none;
+    }
+
+    /* {§web-session-observer} Failed connections expose native recovery, never stale live indicators. */
+    body:not(:has(#session-status:is([data-connection="disconnected"], [data-connection="signed-out"], [data-connection="interrupted"]))) #session-connection,
+    body:not(:has(#session-status[data-connection="signed-out"])) [data-sign-in],
+    body:has(#session-status[data-connection="signed-out"]) [data-reconnect] {
+        display: none;
+    }
+
+    @keyframes plurnk-telemetry-dwell {
+        0% {
+            opacity: 0;
+        }
+
+        100% {
+            opacity: 1;
+        }
+    }
+
+    #session-status :is([data-status-field="preparation"], [data-status-field="activity"], [data-status-field="inbox"]) {
+        animation: plurnk-telemetry-dwell 220ms steps(1, end);
+    }
+
+    /* {§web-session-identity} {§web-session-status} Optional supplied facts, not guessed activity; steady control strip once connected. */
+    #session-folder[data-project-label=""],
+    #session-status:not([data-lifecycle]) > [data-status-line],
+    #session-status:is([data-connection="disconnected"], [data-connection="signed-out"]) > [data-status-line],
+    #session-status[data-connection="connected"] > [role="status"],
+    #session-status[data-lifecycle][data-connection="connecting"] > [role="status"],
+    #session-status[data-lifecycle="completed"] [data-status-field="lifecycle"],
+    #session-status:not([data-queue]) [data-status-field="queue"],
+    #session-status[data-queue=""] [data-status-field="queue"],
+    #session-status:not([data-elapsed]) [data-status-field="elapsed"],
+    #session-status[data-elapsed=""] [data-status-field="elapsed"],
+    #session-status[data-context=""] [data-status-field="context"],
+    #session-status[data-descendants="0"] [data-status-field="descendants"],
+    #session-status[data-gated="0"] [data-status-field="gated"],
+    #session-status[data-wait=""] [data-status-field="wait"],
+    #session-status[data-inbox="0"] [data-status-field="inbox"],
+    #session-status[data-preparation=""] [data-status-field="preparation"],
+    #session-status[data-activity=""] [data-status-field="activity"] {
+        display: none;
+    }
+
+    /* {§web-session-status} {§web-session-input} {§web-session-approval} Status fields and Send posture remain semantic; CSS owns their compact notation. */
+    #session-status[data-approval-mode="accept"] button[form="session-compose"]::before {
+        content: "🔥" / "";
+    }
+
+    #session-status [data-text="input"]::before {
+        content: "↓" / "";
+    }
+
+    #session-status [data-text="output"]::before {
+        content: "↑" / "";
+    }
+
+    #session-status [data-text="effort"]:not(:empty)::before {
+        content: "(" / "";
+    }
+
+    #session-status [data-text="effort"]:not(:empty)::after {
+        content: ")" / "";
+    }
+
+    #session-effort:has([data-text="effort"]:empty)::before {
+        content: "(—)" / "";
+    }
+
+    #session-status [data-status-field="gated"]::before {
+        content: "🚦 " / "";
+    }
+
+    #session-status [data-status-field="inbox"]::before {
+        content: "✉️ " / "";
+    }
+
+    #session-status [data-status-field="activity"]::before {
+        content: "🧮 " / "";
+    }
+
+    #session-status [data-status-field="preparation"]::before {
+        content: "⚙️ " / "";
+    }
+}

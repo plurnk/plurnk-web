@@ -1,0 +1,92 @@
+<!-- {§web-session-directory} Inert directory card templates; the overview subscription reconciles them in place. -->
+<template id="overview-list">
+    <ul></ul>
+</template>
+<template id="overview-workspace-list">
+    <ul data-workspace-sessions></ul>
+</template>
+<template id="overview-empty">
+    <p data-i18n="no-sessions">No matching sessions.</p>
+</template>
+<template id="workspaces-empty">
+    <p data-i18n="no-workspaces">No matching workspaces.</p>
+</template>
+<template id="overview-background">
+    <details data-workspace-background><summary data-i18n="background-work">Background work</summary><ul></ul></details>
+</template>
+<template id="workspace-card">
+    <li data-directory-entry="workspace" data-workspace-id="" data-workspace-name="" data-folder="false">
+        <article aria-label="Folderless workspace">
+            <header><a data-text="name"></a></header>
+        </article>
+    </li>
+</template>
+<template id="workspace-project-note">
+    <small data-text="project-label"></small>
+</template>
+<template id="workspace-unarchive-form">
+    <form data-inline-unarchive="workspace"><input type="hidden" name="workspace" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
+</template>
+<template id="session-card">
+    <li data-otm-scope data-directory-entry="session" data-session-key="" data-session-kind="root">
+        <article aria-label="Session">
+            <header>
+                <span data-session-identity><span data-lifecycle="idle" role="img" aria-label="idle" title="idle"></span> <a data-session-link><span data-session-headline></span></a></span>
+            </header>
+        </article>
+    </li>
+</template>
+<template id="session-parent-link">
+    <span data-otm-scope data-session-parent><a data-text="name" data-bind="href:session-path"></a> &gt; </span>
+</template>
+<template id="session-parent-text">
+    <span data-session-parent><span></span> &gt; </span>
+</template>
+<template id="session-handle-badge">
+    <small data-session-handle></small>
+</template>
+<template id="session-gates-badge">
+    <small data-session-gates=""></small>
+</template>
+<template id="session-children-badge">
+    <small data-session-children=""></small>
+</template>
+<template id="session-meta-group">
+    <span data-session-meta></span>
+</template>
+<template id="session-time-badge">
+    <time data-session-time datetime=""></time>
+</template>
+<template id="session-unarchive-form">
+    <form data-inline-unarchive="session"><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
+</template>
+<template id="session-excerpt-line">
+    <small data-session-excerpt></small>
+</template>
+<template id="overview-omitted-note">
+    <p data-overview-omitted><small><span data-text="overview-omitted">0</span> <span data-i18n="older-sessions-omitted">older sessions omitted — search to narrow.</span></small></p>
+</template>
+<template id="search-suggestion-option">
+    <option value=""></option>
+</template>
+<template id="model-combobox-option">
+    <li role="option" aria-selected="false" data-combobox-option="" data-combobox-kind="catalog">
+        <span data-combobox-primary></span>
+        <small data-combobox-secondary></small>
+    </li>
+</template>
+<template id="model-combobox-hint">
+    <li role="presentation" data-combobox-hint></li>
+</template>
+<template id="workspace-list-item">
+    <li><a><span data-workspace-item-glyph></span> <span data-workspace-item-name></span></a></li>
+</template>
+<template id="workspace-project-tag">
+    <small data-workspace-item-project></small>
+</template>
+<template id="workspace-empty-card">
+    <article id="workspace-empty"><p data-i18n="no-sessions">No sessions in this workspace yet.</p><button type="button" data-action="new-session" data-workspace-empty-new data-i18n="start-conversation">New session</button></article>
+</template>
+<template id="error-view">
+    <article aria-labelledby="error-title"><header><h1 id="error-title"><span aria-hidden="true">⚠️</span> <span data-text="error-title">404 Not Found</span></h1></header><p data-text="error-message"></p><p data-text="error-recovery" hidden></p><footer><a href="/" data-i18n="home">Home</a></footer></article>
+</template>
