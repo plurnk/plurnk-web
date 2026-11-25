@@ -18,7 +18,6 @@ import {
  * @param {{
  *   readonly tabs: HTMLElement,
  *   readonly tabsList: HTMLUListElement,
- *   readonly tabRowsById: Map<number, HTMLLIElement>,
  *   readonly sessionsById: Map<number, WorkbenchSession>,
  *   readonly pageLifetime: AbortController,
  *   readonly live: boolean,
@@ -32,7 +31,6 @@ import {
 export function createWorkbenchTabsAndSwitcher({
     tabs,
     tabsList,
-    tabRowsById,
     sessionsById,
     pageLifetime,
     live,
@@ -89,59 +87,66 @@ export function createWorkbenchTabsAndSwitcher({
             const direct = [...sessionsById.values()].find(({ name }) => name === selectedSessionName);
             if (direct) switcherSessions.push(direct);
         }
-        switcherList.replaceChildren();
-        for (const session of switcherSessions) {
-            const item = /** @type {HTMLLIElement} */ ($.clone(switcherList, "#workspace-switcher-item"));
-            const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
-            item.dataset.switcherEntry = `${workspaceId}:${session.id}`;
-            item.dataset.sessionKind = session.kind;
-            item.dataset.switcherSearchText = `#${session.name} ${session.name} ${titleText ?? ""} ${session.kind} ${session.lifecycle}`;
-            const link = $(item, "a[data-workspace-route]");
-            const lifecycleEl = $(item, "[data-lifecycle]");
-            const labelEl = $(item, "[data-switcher-label]");
-            if (link) {
-                link.setAttribute("data-workspace-route", "session");
-                link.setAttribute("data-tab-session", session.name);
-                link.setAttribute("href", `#${encodeURIComponent(session.name)}`);
-                if (session.name === selectedSessionName) link.setAttribute("aria-current", "true");
-                else link.removeAttribute("aria-current");
-                if (session.gates > 0) {
-                    const gatesBadge = $.clone(link, "#session-gates-badge");
-                    const label = `${session.gates} awaiting input`;
-                    gatesBadge.setAttribute("data-session-gates", String(session.gates));
-                    gatesBadge.setAttribute("aria-label", label);
-                    gatesBadge.setAttribute("title", label);
-                    gatesBadge.textContent = String(session.gates);
+        $.reconcile(switcherList, "#workspace-switcher-item", switcherSessions, {
+            attr: "data-switcher-entry",
+            key: (session) => `${workspaceId}:${session.id}`,
+            fill(item, session) {
+                if (!(item instanceof HTMLLIElement)) return;
+                const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
+                item.dataset.sessionKind = session.kind;
+                item.dataset.switcherSearchText = `#${session.name} ${session.name} ${titleText ?? ""} ${session.kind} ${session.lifecycle}`;
+                const link = $(item, "a[data-workspace-route]");
+                const lifecycleEl = $(item, "[data-lifecycle]");
+                const labelEl = $(item, "[data-switcher-label]");
+                if (link) {
+                    link.setAttribute("data-workspace-route", "session");
+                    link.setAttribute("data-tab-session", session.name);
+                    const href = `#${encodeURIComponent(session.name)}`;
+                    if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+                    if (session.name === selectedSessionName) link.setAttribute("aria-current", "true");
+                    else link.removeAttribute("aria-current");
+                    let gatesBadge = $(link, "[data-session-gates]");
+                    if (session.gates > 0) {
+                        gatesBadge ??= $.clone(link, "#session-gates-badge");
+                        const label = `${session.gates} awaiting input`;
+                        gatesBadge.setAttribute("data-session-gates", String(session.gates));
+                        gatesBadge.setAttribute("aria-label", label);
+                        gatesBadge.setAttribute("title", label);
+                        if (gatesBadge.textContent !== String(session.gates)) gatesBadge.textContent = String(session.gates);
+                    } else {
+                        gatesBadge?.remove();
+                    }
                 }
-            }
-            if (lifecycleEl) lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
-            if (labelEl) labelEl.textContent = titleText ? `${titleText} (#${session.name})` : `#${session.name}`;
-        }
+                if (lifecycleEl && lifecycleEl.getAttribute("data-lifecycle") !== session.lifecycle) {
+                    lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
+                }
+                const labelText = titleText ? `${titleText} (#${session.name})` : `#${session.name}`;
+                if (labelEl && labelEl.textContent !== labelText) labelEl.textContent = labelText;
+            },
+        });
 
         if (switcherArchivedDetails && switcherArchivedList) {
             const archivedSessions = [...sessionsById.values()]
                 .filter(({ archived }) => archived)
                 .toSorted((a, b) => b.id - a.id);
-            switcherArchivedList.replaceChildren();
-            if (archivedSessions.length === 0) {
-                switcherArchivedDetails.hidden = true;
-                the(switcherArchivedDetails, "archived-session-count", 0);
-            } else {
-                switcherArchivedDetails.hidden = false;
-                the(switcherArchivedDetails, "archived-session-count", archivedSessions.length);
-                for (const session of archivedSessions) {
-                    const item = /** @type {HTMLLIElement} */ ($.clone(switcherArchivedList, "#workspace-switcher-archived-item"));
+            switcherArchivedDetails.hidden = archivedSessions.length === 0;
+            the(switcherArchivedDetails, "archived-session-count", archivedSessions.length);
+            $.reconcile(switcherArchivedList, "#workspace-switcher-archived-item", archivedSessions, {
+                attr: "data-switcher-archived-entry",
+                key: (session) => `${workspaceId}:${session.id}`,
+                fill(item, session) {
+                    if (!(item instanceof HTMLLIElement)) return;
                     const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
-                    item.dataset.switcherArchivedEntry = `${workspaceId}:${session.id}`;
                     item.dataset.switcherSearchText = `#${session.name} ${session.name} ${titleText ?? ""} archived`;
                     const labelEl = $(item, "[data-switcher-archived-label]");
-                    if (labelEl) labelEl.textContent = titleText ? `${titleText} (#${session.name})` : `#${session.name}`;
+                    const labelText = titleText ? `${titleText} (#${session.name})` : `#${session.name}`;
+                    if (labelEl && labelEl.textContent !== labelText) labelEl.textContent = labelText;
                     const wsInput = $(item, 'input[name="workspace"]');
                     if (wsInput instanceof HTMLInputElement) wsInput.value = currentWorkspaceName;
                     const sessInput = $(item, 'input[name="session"]');
                     if (sessInput instanceof HTMLInputElement) sessInput.value = session.name;
-                }
-            }
+                },
+            });
         }
         applySwitcherFilter();
     }
@@ -162,71 +167,62 @@ export function createWorkbenchTabsAndSwitcher({
             if (direct) visible.push(direct);
         }
 
-        for (const [index, session] of visible.entries()) {
-            const sessionHash = `#${encodeURIComponent(session.name)}`;
-            let row = tabRowsById.get(session.id);
-            if (!row) {
-                row = /** @type {HTMLLIElement} */ ($.clone(tabsList, "#workspace-tab-item"));
-                tabRowsById.set(session.id, row);
-            }
-            const isDraft = isUntouchedDraftWorkbenchSession(session, childParents.has(session.id));
-            const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
-            row.dataset.tabId = `${workspaceId}:${session.id}`;
-            row.dataset.sessionKind = session.kind;
-            if (isDraft) row.dataset.tabDraft = "true";
-            else delete row.dataset.tabDraft;
-            if (titleText !== null) row.dataset.sessionTitle = titleText;
-            else delete row.dataset.sessionTitle;
-            if (session.parentSessionId !== null) row.dataset.parentId = String(session.parentSessionId);
-            else delete row.dataset.parentId;
-            if (session.replyId !== null) row.dataset.replyId = String(session.replyId);
-            else delete row.dataset.replyId;
-            if (session.archived) row.dataset.archived = "true";
-            else delete row.dataset.archived;
+        $.reconcile(tabsList, "#workspace-tab-item", visible, {
+            attr: "data-tab-id",
+            key: (session) => `${workspaceId}:${session.id}`,
+            fill(row, session) {
+                if (!(row instanceof HTMLLIElement)) return;
+                const sessionHash = `#${encodeURIComponent(session.name)}`;
+                const isDraft = isUntouchedDraftWorkbenchSession(session, childParents.has(session.id));
+                const titleText = typeof session.title === "string" && session.title.trim() !== "" ? session.title.trim() : null;
+                row.dataset.sessionKind = session.kind;
+                if (isDraft) row.dataset.tabDraft = "true";
+                else delete row.dataset.tabDraft;
+                if (titleText !== null) row.dataset.sessionTitle = titleText;
+                else delete row.dataset.sessionTitle;
+                if (session.parentSessionId !== null) row.dataset.parentId = String(session.parentSessionId);
+                else delete row.dataset.parentId;
+                if (session.replyId !== null) row.dataset.replyId = String(session.replyId);
+                else delete row.dataset.replyId;
+                if (session.archived) row.dataset.archived = "true";
+                else delete row.dataset.archived;
 
-            const link = $(row, 'a[data-workspace-route="session"]');
-            if (link instanceof HTMLAnchorElement) {
-                link.dataset.tabSession = session.name;
-                const nextHref = session.name === selectedSessionName
-                    ? (workspaceSettingsPath(currentWorkspaceName, session.name, "session") ?? sessionHash)
-                    : sessionHash;
-                if (link.getAttribute("href") !== nextHref) link.setAttribute("href", nextHref);
-                const hoverTitle = titleText !== null
-                    ? `${titleText} (#${session.name} · ${session.lifecycle})`
-                    : `#${session.name} (${session.lifecycle})`;
-                if (link.getAttribute("title") !== hoverTitle) link.setAttribute("title", hoverTitle);
-                if (session.name === selectedSessionName) link.setAttribute("aria-current", "true");
-                else link.removeAttribute("aria-current");
+                const link = $(row, 'a[data-workspace-route="session"]');
+                if (link instanceof HTMLAnchorElement) {
+                    link.dataset.tabSession = session.name;
+                    const nextHref = session.name === selectedSessionName
+                        ? (workspaceSettingsPath(currentWorkspaceName, session.name, "session") ?? sessionHash)
+                        : sessionHash;
+                    if (link.getAttribute("href") !== nextHref) link.setAttribute("href", nextHref);
+                    const hoverTitle = titleText !== null
+                        ? `${titleText} (#${session.name} · ${session.lifecycle})`
+                        : `#${session.name} (${session.lifecycle})`;
+                    if (link.getAttribute("title") !== hoverTitle) link.setAttribute("title", hoverTitle);
+                    if (session.name === selectedSessionName) link.setAttribute("aria-current", "true");
+                    else link.removeAttribute("aria-current");
 
-                const lifecycleEl = $(link, "[data-lifecycle]");
-                if (lifecycleEl && lifecycleEl.getAttribute("data-lifecycle") !== session.lifecycle) {
-                    lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
+                    const lifecycleEl = $(link, "[data-lifecycle]");
+                    if (lifecycleEl && lifecycleEl.getAttribute("data-lifecycle") !== session.lifecycle) {
+                        lifecycleEl.setAttribute("data-lifecycle", session.lifecycle);
+                    }
+                    const labelEl = $(link, "[data-tab-label]");
+                    const tabText = titleText ?? `#${session.name}`;
+                    if (labelEl && labelEl.textContent !== tabText) labelEl.textContent = tabText;
+
+                    let gatesBadge = $(link, "[data-session-gates]");
+                    if (session.gates > 0) {
+                        gatesBadge ??= $.clone(link, "#session-gates-badge");
+                        const gateLabel = `${session.gates} awaiting input`;
+                        gatesBadge.setAttribute("data-session-gates", String(session.gates));
+                        gatesBadge.setAttribute("aria-label", gateLabel);
+                        gatesBadge.setAttribute("title", gateLabel);
+                        if (gatesBadge.textContent !== String(session.gates)) gatesBadge.textContent = String(session.gates);
+                    } else {
+                        gatesBadge?.remove();
+                    }
                 }
-                const labelEl = $(link, "[data-tab-label]");
-                const tabText = titleText ?? `#${session.name}`;
-                if (labelEl && labelEl.textContent !== tabText) labelEl.textContent = tabText;
-
-                let gatesBadge = $(link, "[data-session-gates]");
-                if (session.gates > 0) {
-                    gatesBadge ??= $.clone(link, "#session-gates-badge");
-                    const gateLabel = `${session.gates} awaiting input`;
-                    gatesBadge.setAttribute("data-session-gates", String(session.gates));
-                    gatesBadge.setAttribute("aria-label", gateLabel);
-                    gatesBadge.setAttribute("title", gateLabel);
-                    if (gatesBadge.textContent !== String(session.gates)) gatesBadge.textContent = String(session.gates);
-                } else {
-                    gatesBadge?.remove();
-                }
-            }
-
-            if (tabsList.children[index] !== row) {
-                tabsList.insertBefore(row, tabsList.children[index] ?? null);
-            }
-        }
-
-        while (tabsList.children.length > visible.length) {
-            tabsList.lastElementChild?.remove();
-        }
+            },
+        });
 
         tabs.dataset.tabCount = String(visible.length);
 

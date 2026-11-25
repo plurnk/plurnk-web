@@ -58,7 +58,7 @@
         <form data-inline-unarchive="workspace"><input type="hidden" name="workspace" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form>
     </template>
     <template id="session-card">
-        <li data-directory-entry="session" data-session-key="" data-session-kind="root">
+        <li data-otm-scope data-directory-entry="session" data-session-key="" data-session-kind="root">
             <article aria-label="Session">
                 <header>
                     <span data-session-identity><span data-lifecycle="idle" role="img" aria-label="idle" title="idle"></span> <a data-session-link><span data-session-headline></span></a></span>
@@ -67,7 +67,7 @@
         </li>
     </template>
     <template id="session-parent-link">
-        <span data-session-parent><a data-text="name" data-bind="href:session-path"></a> &gt; </span>
+        <span data-otm-scope data-session-parent><a data-text="name" data-bind="href:session-path"></a> &gt; </span>
     </template>
     <template id="session-parent-text">
         <span data-session-parent><span></span> &gt; </span>
@@ -908,7 +908,7 @@
     </template>
     <!-- {§web-session-status} Public state supplies literal list values, not document markup. -->
     <template id="session-descendant">
-      <li>
+      <li data-otm-scope>
         <a data-text="descendant-name" data-bind="href:descendant-path"></a>
         <small><span data-text="descendant-kind"></span> <span data-i18n="descendant-separator">·</span> <span data-text="descendant-lifecycle"></span>
           <span data-i18n="descendant-pending-gates">· Pending requests:</span> <span data-text="descendant-gates"></span></small>
