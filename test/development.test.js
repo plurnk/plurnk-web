@@ -181,7 +181,7 @@ test("{§web-build} {§web-assets} dev-loader and dev-module serve live source e
     let browser;
     try {
         const root = await copySources(directory);
-        for (const name of ["documents.js", "http.js"]) {
+        for (const name of ["brand.js", "documents.js", "http.js"]) {
             await cp(new URL(`../src/${name}`, import.meta.url), join(directory, "src", name));
         }
         const documentsFile = join(directory, "src", "documents.js");

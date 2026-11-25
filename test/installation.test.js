@@ -24,7 +24,7 @@ import verifyWorkspaceTabs from "./workspace-tabs-browser.js";
 import verifyWorkspaceSettings from "./workspace-settings-browser.js";
 import verifyStaticAssets from "./static-assets.js";
 import verifyRouteSettlement from "./route-settlement.js";
-import { closeSharedBrowsers } from "./engines.js";
+import { closeSharedBrowsers, launchBrowser } from "./engines.js";
 
 const run = promisify(execFile);
 const root = new URL("../", import.meta.url);
@@ -236,6 +236,73 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
             })).status, 503);
             assert.match(daemon.stdout() + daemon.stderr(), /PLURNK_WEB_DIAGRAM_THREADS/u);
         });
+    });
+
+    await t.test("{§web-brand} {§web-assets} {§web-browser-security} custom brand CSS, icon, manifest, and About links render under strict CSP and fail hard on missing brand files", async () => {
+        const brandTheme = join(directory, "acme-theme.css");
+        const brandIcon = join(directory, "acme-icon.svg");
+        await writeFile(brandTheme, "@layer scheme { :root { --acme-brand-probe: 23px; --otm-primary: #0055aa; } }\n");
+        await writeFile(brandIcon, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="#0055aa"/></svg>\n');
+
+        await withDaemon({
+            PLURNK_WEB_APP_NAME: "Acme Studio",
+            PLURNK_WEB_APP_DESCRIPTION: "Acme hosted agent workspace.",
+            PLURNK_WEB_THEME_COLOR: "#0055aa",
+            PLURNK_WEB_ABOUT_LINKS: JSON.stringify([
+                { label: "Support", url: "https://support.acme.example" },
+                { label: "Terms", url: "https://acme.example/terms" },
+            ]),
+            PLURNK_WEB_THEME_CSS_FILE: brandTheme,
+            PLURNK_WEB_ICON_FILE: brandIcon,
+        }, async (base) => {
+            const manifest = await (await fetch(new URL("/manifest.webmanifest", base))).json();
+            assert.equal(manifest.name, "Acme Studio");
+            assert.equal(manifest.theme_color, "#0055aa");
+            assert.deepEqual(manifest.icons, [
+                { src: "/brand/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+            ]);
+
+            const browser = await launchBrowser(chromium);
+            try {
+                const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+                const checkBrowser = browserDiagnostics(context);
+                try {
+                    const page = await context.newPage();
+                    await page.goto(new URL("/search/", base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    assert.equal(await page.title(), "Search — Acme Studio");
+                    assert.equal(await page.locator('meta[name="theme-color"]').getAttribute("content"), "#0055aa");
+                    assert.equal(await page.locator('link[rel="icon"]').getAttribute("href"), "/brand/icon.svg");
+                    assert.equal(
+                        await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--acme-brand-probe").trim()),
+                        "23px",
+                        "startup-loaded /brand/theme.css applies under strict 'self' CSP",
+                    );
+
+                    await page.goto(new URL("/settings/#about", base).href);
+                    const aboutPanel = page.locator('#workspace-settings [data-settings-panel="about"]');
+                    await aboutPanel.waitFor({ state: "visible" });
+                    assert.equal(await page.title(), "Settings — Acme Studio");
+                    assert.equal(await aboutPanel.locator('a[href="https://support.acme.example/"]').count(), 1);
+                    assert.equal(await aboutPanel.locator('a[href="https://acme.example/terms"]').count(), 1);
+                    assert.match(await aboutPanel.textContent(), /MIT/u);
+                    checkBrowser();
+                } finally {
+                    await context.close();
+                }
+            } finally {
+                await browser.close();
+            }
+        });
+
+        await assert.rejects(
+            start({ PLURNK_WEB_THEME_CSS_FILE: join(directory, "does-not-exist.css") }),
+            (/** @type {any} */ error) => {
+                assert.equal(error.kind, "exited");
+                assert.match(error.stdout + error.stderr, /ENOENT|does-not-exist\.css/u);
+                return true;
+            },
+        );
     });
 
     await t.test("{§web-assets} missing packaged bytes fail startup", async () => {

@@ -1,7 +1,7 @@
 // {§web-document} One OTM boot; localStorage holds only plurnk_oidc_grant when OIDC is active.
 import { $, on, the } from "on_the_money";
 import initDialogs from "./dialogs.js";
-import { isModuleDocument } from "./endpoints.js";
+import { formatPageTitle, isModuleDocument } from "./endpoints.js";
 import {
     completeOidcCallback,
     hasActiveOidcGrant,
@@ -83,7 +83,7 @@ if (main instanceof HTMLElement && isArrivalHome) {
     const callbackCard = $(main, "#auth-callback");
     const result = await completeOidcCallback();
     if (!result.ok && callbackCard instanceof HTMLElement) {
-        the("page-title", "Sign-in failed — Plurnk");
+        the("page-title", formatPageTitle("Sign-in failed"));
         the(callbackCard, {
             "callback-title": "⚠️ Sign-in failed",
             "callback-message": result.message,

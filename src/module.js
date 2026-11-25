@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { ConfigurationError, Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
+import { loadBrandAssets, parseBrandConfig } from "./brand.js";
 import indexDocument from "./index-document.js";
 import { parseDirectory } from "./directory-addresses.js";
 import Documents from "./documents.js";
@@ -24,6 +25,7 @@ import Diagrams from "./diagrams.js";
  *   readonly acpUrl: string | null,
  *   readonly overviewSessions: number | null,
  *   readonly overviewExcerptChars: number | null,
+ *   readonly brand: import("./brand.js").BrandConfig,
  * }} DocumentKnobs
  */
 /**
@@ -50,7 +52,7 @@ function productionAssets() {
     /** @type {{ documents: Documents, resources: ReadonlyMap<string, LoadedAsset> } | null} */
     let loaded = null;
     return {
-        async start({ acpUrl, overviewSessions, overviewExcerptChars }) {
+        async start({ acpUrl, overviewSessions, overviewExcerptChars, brand }) {
             // {§web-assets} Requests select entries, never filesystem paths.
             /** @type {import("./static-assets.js").AssetEntry[]} */
             const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
@@ -65,10 +67,12 @@ function productionAssets() {
             if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
             }
+            await loadBrandAssets(brand, resources);
             const documents = new Documents(root.body.toString("utf8"), {
                 acpUrl,
                 overviewSessions,
                 overviewExcerptChars,
+                brand,
             });
             loaded = { documents, resources };
         },
@@ -95,6 +99,7 @@ export default function createModule(assets = productionAssets()) {
             return null;
         }
     };
+    const brand = parseBrandConfig(process.env);
     const acpEndpoint = contain(() => parseAcpEndpoint(process.env.PLURNK_ACP_URL));
     const overviewSessions = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_SESSIONS", 1));
     const overviewExcerptChars = contain(() => Knob.integer("PLURNK_WEB_OVERVIEW_EXCERPT_CHARS", 1));
@@ -113,6 +118,7 @@ export default function createModule(assets = productionAssets()) {
                 acpUrl: acpEndpoint?.acpUrl ?? null,
                 overviewSessions,
                 overviewExcerptChars,
+                brand,
             });
 
             /** @param {import("node:http").IncomingMessage} req */

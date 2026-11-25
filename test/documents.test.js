@@ -30,7 +30,7 @@ test("{§web-document} {§web-configuration} {§web-arrival} {§web-oidc} home a
         overviewExcerptChars: 120,
     });
     const home = documents.home().toString();
-    assert.match(home, /<html lang="en" data-acp-url="https:\/\/acp\.example\/acp" data-overview-sessions="150" data-overview-excerpt-chars="120" data-web-version="\d+\.\d+\.\d+">/u);
+    assert.match(home, /<html lang="en" data-acp-url="https:\/\/acp\.example\/acp" data-app-name="Plurnk" data-overview-sessions="150" data-overview-excerpt-chars="120" data-web-version="\d+\.\d+\.\d+">/u);
     assert.match(home, /<title data-text="page-title">Plurnk<\/title>/u);
     assert.match(home, /<main id="main" data-page="home">Home<\/main>/u);
     assert.doesNotMatch(home, /<script|PLURNK_|process\.env/iu);
@@ -127,4 +127,48 @@ test("{§web-page-shell} error shell escapes untrusted failure text and validate
     const rendered = withTemplates.home().toString();
     assert.ok(rendered.includes('<template id="lead"><span>Lead</span></template>'));
     assert.ok(rendered.includes('<template id="tail"><a>Tab</a></template>'));
+});
+
+test("{§web-brand} {§web-document} Documents stamps custom brand identity, theme stylesheet, icon, and About links with strict escaping", () => {
+    const brandedShell = '<!doctype html><html lang="en"><head>'
+        + '<meta name="theme-color" content="#148800">'
+        + '<meta name="application-name" content="Plurnk">'
+        + '<meta name="description" content="Plurnk agent workspace.">'
+        + '<title data-text="page-title">Plurnk</title>'
+        + '<link rel="icon" href="/icons/plurnk.svg" type="image/svg+xml" sizes="any">'
+        + '<link rel="stylesheet" href="/assets/app.css">'
+        + '</head><body><header><nav></nav></header><main id="main" data-page="home"></main></body></html>';
+    const brand = {
+        appName: 'Acme & "Co"',
+        appDescription: "Acme <AI> workbench.",
+        themeColor: "#0055aa",
+        aboutLinks: [
+            { label: "Support & Help", url: "https://support.acme.example/help?a=1&b=2" },
+            { label: "Terms", url: "https://acme.example/terms" },
+        ],
+        themeCssFile: "/etc/acme/theme.css",
+        themeCssHref: "/brand/theme.css",
+        icon: { filePath: "/etc/acme/logo.png", href: "/brand/icon.png", mediaType: /** @type {const} */ ("image/png"), sizes: null },
+        maskableIcon: null,
+    };
+    const docs = new Documents(brandedShell, { brand });
+    const home = docs.home().toString();
+    assert.ok(home.includes('data-app-name="Acme &amp; &quot;Co&quot;"'));
+    assert.ok(home.includes('<meta name="theme-color" content="#0055aa">'));
+    assert.ok(home.includes('<meta name="application-name" content="Acme &amp; &quot;Co&quot;">'));
+    assert.ok(home.includes('<meta name="description" content="Acme &lt;AI&gt; workbench.">'));
+    assert.ok(home.includes('<title data-text="page-title">Acme &amp; &quot;Co&quot;</title>'));
+    assert.ok(home.includes('<link rel="icon" href="/brand/icon.png" type="image/png">'));
+    assert.ok(home.includes('<link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/brand/theme.css">'));
+
+    const settings = docs.settings().toString();
+    assert.ok(settings.includes('<title data-text="page-title">Settings — Acme &amp; &quot;Co&quot;</title>'));
+    assert.ok(settings.includes('<span data-text="workspace-name">Acme &amp; &quot;Co&quot;</span>'));
+    assert.ok(settings.includes('<dt>Support &amp; Help</dt><dd><a href="https://support.acme.example/help?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">support.acme.example/help?a=1&amp;b=2</a></dd>'));
+    assert.ok(settings.includes('<dt>Terms</dt><dd><a href="https://acme.example/terms" target="_blank" rel="noopener noreferrer">acme.example/terms</a></dd>'));
+    assert.doesNotMatch(settings, /github\.com\/plurnk\/plurnk-service\/issues/u);
+    assert.ok(settings.includes(`<dt data-i18n="license">License</dt><dd>${WEB_LICENSE}</dd>`));
+
+    const noLinks = new Documents(brandedShell, { brand: { ...brand, aboutLinks: [] } }).settings().toString();
+    assert.doesNotMatch(noLinks, /Support &amp; Help|github\.com\/plurnk/u);
 });

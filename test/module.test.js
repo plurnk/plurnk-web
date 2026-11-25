@@ -137,6 +137,7 @@ test("{§web-configuration} {§web-browser-security} PLURNK_ACP_URL stamps boot 
         );
         const html = await res.text();
         assert.match(html, /<html\b[^>]*\bdata-acp-url="https:\/\/acp\.example:8443\/acp"/u);
+        assert.match(html, /\bdata-app-name="Plurnk"/u);
         assert.match(html, /\bdata-overview-sessions="42"/u);
         assert.match(html, /\bdata-overview-excerpt-chars="96"/u);
         assert.match(html, /\bdata-web-version="\d+\.\d+\.\d+"/u);
@@ -247,7 +248,7 @@ test("{§web-index-documents} production resolves only admitted directory indexe
     const base = pathToFileURL(`${directory}/`);
     await copyFile(new URL("../package.json", import.meta.url), new URL("package.json", base));
     await mkdir(new URL("src/", base));
-    for (const file of ["module.js", "index-document.js", "directory-addresses.js", "documents.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
+    for (const file of ["brand.js", "module.js", "index-document.js", "directory-addresses.js", "documents.js", "http.js", "static-assets.js", "diagrams.js", "diagram-compiler.js"]) {
         await copyFile(new URL(`../src/${file}`, import.meta.url), new URL(`src/${file}`, base));
     }
     await mkdir(new URL("dist/", base));
@@ -302,4 +303,162 @@ test("{§web-asset-encoding} static negotiation preserves exact bytes and HTTP s
     assert.equal(varied.headers.get("vary"), "Origin, Accept-Encoding");
     assert.equal(varied.headers.get("content-encoding"), "gzip");
     assert.equal((await varied.json()).id, "/");
+});
+
+test("{§web-brand} {§web-configuration} brand knobs fail hard on missing/invalid values and serve startup-loaded CSS, icons, and manifest", async (t) => {
+    const keys = [
+        "PLURNK_WEB_APP_NAME",
+        "PLURNK_WEB_APP_DESCRIPTION",
+        "PLURNK_WEB_THEME_COLOR",
+        "PLURNK_WEB_ABOUT_LINKS",
+        "PLURNK_WEB_THEME_CSS_FILE",
+        "PLURNK_WEB_ICON_FILE",
+        "PLURNK_WEB_MASKABLE_ICON_FILE",
+    ];
+    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    t.after(() => {
+        for (const [key, value] of Object.entries(original)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    });
+
+    // 1. Missing required floor knobs throw immediately.
+    for (const key of ["PLURNK_WEB_APP_NAME", "PLURNK_WEB_APP_DESCRIPTION", "PLURNK_WEB_THEME_COLOR", "PLURNK_WEB_ABOUT_LINKS"]) {
+        delete process.env[key];
+        assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
+        process.env[key] = original[key];
+    }
+
+    // 2. Invalid brand knob values throw ConfigurationError immediately (no silent fallback).
+    const invalidCases = /** @type {const} */ ([
+        ["PLURNK_WEB_APP_NAME", ""],
+        ["PLURNK_WEB_APP_NAME", "Bad\nName"],
+        ["PLURNK_WEB_APP_NAME", "a".repeat(101)],
+        ["PLURNK_WEB_APP_DESCRIPTION", "   "],
+        ["PLURNK_WEB_THEME_COLOR", "green"],
+        ["PLURNK_WEB_THEME_COLOR", "#1234"],
+        ["PLURNK_WEB_ABOUT_LINKS", "not-json"],
+        ["PLURNK_WEB_ABOUT_LINKS", "{}"],
+        ["PLURNK_WEB_ABOUT_LINKS", JSON.stringify([{ label: "XSS", url: "javascript:alert(1)" }])],
+        ["PLURNK_WEB_ABOUT_LINKS", JSON.stringify([{ label: "Creds", url: "https://u:p@example.com" }])],
+        ["PLURNK_WEB_ABOUT_LINKS", JSON.stringify([{ label: "Extra", url: "https://example.com", extra: 1 }])],
+        ["PLURNK_WEB_THEME_CSS_FILE", "relative/theme.css"],
+        ["PLURNK_WEB_THEME_CSS_FILE", "/etc/theme.js"],
+        ["PLURNK_WEB_ICON_FILE", "relative/icon.svg"],
+        ["PLURNK_WEB_ICON_FILE", "/etc/icon.gif"],
+        ["PLURNK_WEB_MASKABLE_ICON_FILE", "/etc/icon.jpg"],
+    ]);
+    for (const [key, value] of invalidCases) {
+        process.env[key] = value;
+        assert.throws(
+            createModule,
+            (/** @type {any} */ error) => error?.name === "ConfigurationError" && error?.key === key,
+            `expected ConfigurationError for ${key}=${value}`,
+        );
+        process.env[key] = original[key];
+    }
+
+    // 3. Startup-loaded files fail hard when missing, empty, non-regular, invalid UTF-8, or invalid PNG.
+    const dir = await mkdtemp(new URL("../.brand-test-", import.meta.url));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    const cssPath = new URL("theme.css", pathToFileURL(`${dir}/`)).pathname;
+    const svgPath = new URL("icon.svg", pathToFileURL(`${dir}/`)).pathname;
+    const pngPath = new URL("maskable.png", pathToFileURL(`${dir}/`)).pathname;
+    const emptyCss = new URL("empty.css", pathToFileURL(`${dir}/`)).pathname;
+    const badPng = new URL("bad.png", pathToFileURL(`${dir}/`)).pathname;
+    const badUtf8Css = new URL("bad-utf8.css", pathToFileURL(`${dir}/`)).pathname;
+    await writeFile(cssPath, "@layer scheme { :root { --otm-primary: #0055aa; } }\n".repeat(12));
+    await writeFile(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#0055aa"/></svg>\n');
+    // Minimal valid 1x1 PNG header + bytes
+    await writeFile(pngPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00]));
+    await writeFile(emptyCss, "");
+    await writeFile(badPng, "not a png");
+    await writeFile(badUtf8Css, Buffer.from([0xff, 0xfe, 0x80]));
+
+    for (const [key, badPath, pattern] of /** @type {const} */ ([
+        ["PLURNK_WEB_THEME_CSS_FILE", `${dir}/missing.css`, /ENOENT/u],
+        ["PLURNK_WEB_THEME_CSS_FILE", emptyCss, /must not be empty/u],
+        ["PLURNK_WEB_THEME_CSS_FILE", badUtf8Css, /not valid UTF-8/u],
+        ["PLURNK_WEB_ICON_FILE", badPng, /not a valid PNG/u],
+    ])) {
+        process.env[key] = badPath;
+        const broken = createModule();
+        await assert.rejects(async () => { await broken.start({ registerHttpRoute() {} }); }, pattern, `${key}=${badPath}`);
+        process.env[key] = original[key];
+    }
+
+    // 4. Valid custom brand serves synthesized manifest, compressed /brand/* assets, and stamped HTML shells.
+    process.env.PLURNK_WEB_APP_NAME = "Acme Bot";
+    process.env.PLURNK_WEB_APP_DESCRIPTION = "Acme hosted workspace.";
+    process.env.PLURNK_WEB_THEME_COLOR = "#0055AA";
+    process.env.PLURNK_WEB_ABOUT_LINKS = JSON.stringify([{ label: "Docs", url: "https://docs.acme.example" }]);
+    process.env.PLURNK_WEB_THEME_CSS_FILE = cssPath;
+    process.env.PLURNK_WEB_ICON_FILE = svgPath;
+    process.env.PLURNK_WEB_MASKABLE_ICON_FILE = "";
+
+    const mod = createModule();
+    let handler;
+    await mod.start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
+    const server = createServer(handler);
+    t.after(async () => {
+        await mod.close();
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    const html = await (await fetch(`${base}/settings/`)).text();
+    assert.ok(html.includes('data-app-name="Acme Bot"'));
+    assert.ok(html.includes('<meta name="theme-color" content="#0055aa">'));
+    assert.ok(html.includes('<meta name="application-name" content="Acme Bot">'));
+    assert.ok(html.includes('<meta name="description" content="Acme hosted workspace.">'));
+    assert.ok(html.includes('<link rel="icon" href="/brand/icon.svg" type="image/svg+xml" sizes="any">'));
+    assert.ok(html.includes('<link rel="stylesheet" href="/brand/theme.css">'));
+    assert.ok(html.includes('<dt>Docs</dt><dd><a href="https://docs.acme.example/" target="_blank" rel="noopener noreferrer">docs.acme.example/</a></dd>'));
+
+    const cssRes = await fetch(`${base}/brand/theme.css`, { headers: { "accept-encoding": "gzip" } });
+    assert.equal(cssRes.status, 200);
+    assert.equal(cssRes.headers.get("content-type"), "text/css; charset=utf-8");
+    assert.equal(cssRes.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(cssRes.headers.get("content-encoding"), "gzip");
+    assert.match(await cssRes.text(), /--otm-primary: #0055aa/u);
+    assert.equal((await fetch(`${base}/brand/theme.css`, { method: "POST" })).status, 405);
+
+    const iconRes = await fetch(`${base}/brand/icon.svg`);
+    assert.equal(iconRes.status, 200);
+    assert.equal(iconRes.headers.get("content-type"), "image/svg+xml");
+    assert.equal(iconRes.headers.get("x-content-type-options"), "nosniff");
+
+    const manifest = await (await fetch(`${base}/manifest.webmanifest`)).json();
+    assert.equal(manifest.name, "Acme Bot");
+    assert.equal(manifest.short_name, "Acme Bot");
+    assert.equal(manifest.description, "Acme hosted workspace.");
+    assert.equal(manifest.theme_color, "#0055aa");
+    assert.deepEqual(manifest.icons, [
+        { src: "/brand/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+    ], "custom icon without maskable icon omits the default Plurnk maskable icon");
+
+    // 5. Adding a PNG maskable icon serves /brand/maskable.png and includes it in manifest without sizes:"any".
+    process.env.PLURNK_WEB_MASKABLE_ICON_FILE = pngPath;
+    const mod2 = createModule();
+    let handler2;
+    await mod2.start({ registerHttpRoute(_prefix, serve) { handler2 = serve; } });
+    const server2 = createServer(handler2);
+    t.after(async () => {
+        await mod2.close();
+        await new Promise((resolve, reject) => server2.close((error) => error ? reject(error) : resolve()));
+    });
+    server2.listen(0, "127.0.0.1");
+    await once(server2, "listening");
+    const base2 = `http://127.0.0.1:${server2.address().port}`;
+    const maskRes = await fetch(`${base2}/brand/maskable.png`);
+    assert.equal(maskRes.status, 200);
+    assert.equal(maskRes.headers.get("content-type"), "image/png");
+    const manifest2 = await (await fetch(`${base2}/manifest.webmanifest`)).json();
+    assert.deepEqual(manifest2.icons, [
+        { src: "/brand/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+        { src: "/brand/maskable.png", type: "image/png", purpose: "maskable" },
+    ]);
 });

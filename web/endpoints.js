@@ -1,4 +1,5 @@
 const DEFAULT_ACP_PATH = "/acp";
+const DEFAULT_APP_NAME = "Plurnk";
 const DEFAULT_OVERVIEW_SESSIONS = 200;
 const DEFAULT_OVERVIEW_EXCERPT_CHARS = 160;
 const DEFAULT_WEB_VERSION = "4.0.0";
@@ -149,6 +150,22 @@ export function overviewExcerptCharsLimit() {
 export function webVersion() {
     const raw = (rootDataset()?.webVersion ?? "").trim();
     return raw !== "" ? raw : DEFAULT_WEB_VERSION;
+}
+
+/**
+ * {§web-brand} Configured brand application name stamped on `<html>` (`data-app-name`, default `"Plurnk"`).
+ */
+export function appName() {
+    const raw = (rootDataset()?.appName ?? "").trim();
+    return raw !== "" ? raw : DEFAULT_APP_NAME;
+}
+
+/**
+ * {§web-brand} Format a browser `<title>` using the configured brand suffix.
+ * @param {string} title
+ */
+export function formatPageTitle(title) {
+    return `${title} — ${appName()}`;
 }
 
 /**

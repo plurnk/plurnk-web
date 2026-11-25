@@ -1,18 +1,34 @@
 import { readFileSync } from "node:fs";
 import { STATUS_CODES } from "node:http";
+import {
+    BUG_REPORT_URL,
+    DEFAULT_BRAND,
+    DEFAULT_ICON_HREF,
+} from "./brand.js";
 import { directoryPath, workspaceSettingsPath } from "./directory-addresses.js";
 import { DEFAULT_ACP_URL, escapeHtml } from "./http.js";
 
 const WEB_MANIFEST = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 export const WEB_VERSION = typeof WEB_MANIFEST.version === "string" && WEB_MANIFEST.version.length > 0 ? WEB_MANIFEST.version : "4.0.0";
 export const WEB_LICENSE = typeof WEB_MANIFEST.license === "string" && WEB_MANIFEST.license.length > 0 ? WEB_MANIFEST.license : "MIT";
-export const BUG_REPORT_URL = "https://github.com/plurnk/plurnk-service/issues";
+export { BUG_REPORT_URL };
 
 const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
 const WORKSPACES_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>';
 
-/** @typedef {"htmlAttrs" | "title" | "headerLead" | "main" | "afterMain"} DocumentSlotName */
+/** @typedef {"htmlAttrs" | "themeColor" | "appName" | "description" | "title" | "icon" | "themeStylesheet" | "headerLead" | "main" | "afterMain"} DocumentSlotName */
 /** @typedef {{ readonly literal: string } | { readonly slot: DocumentSlotName }} DocumentToken */
+
+/**
+ * @param {string} source
+ * @param {RegExp} pattern
+ */
+function locateOptionalTag(source, pattern) {
+    const matches = [...source.matchAll(pattern)];
+    if (matches.length !== 1) return null;
+    const [match] = matches;
+    return { start: match.index, end: match.index + match[0].length };
+}
 
 /**
  * @param {string} source
@@ -75,10 +91,28 @@ function compileDocumentSlots(document) {
         ? header.start + headerOpenLen + mainNavMatch.index
         : header.end - "</header>".length;
 
+    const headCloseMatch = /<\/head>/u.exec(beforeMain);
+    const headSection = headCloseMatch ? beforeMain.slice(0, headCloseMatch.index) : beforeMain;
+    const themeColorSpan = locateOptionalTag(headSection, /<meta\b[^>]*\bname="theme-color"[^>]*>/gu);
+    const appNameSpan = locateOptionalTag(headSection, /<meta\b[^>]*\bname="application-name"[^>]*>/gu);
+    const descriptionSpan = locateOptionalTag(headSection, /<meta\b[^>]*\bname="description"[^>]*>/gu);
+    const iconSpan = locateOptionalTag(headSection, /<link\b[^>]*\brel="icon"[^>]*>/gu);
+    const stylesheetSpan = locateOptionalTag(headSection, /<link\b(?=[^>]*\brel="stylesheet")[^>]*>/gu);
+    const themeStylesheetIndex = stylesheetSpan !== null
+        ? stylesheetSpan.end
+        : headCloseMatch !== null
+            ? headCloseMatch.index
+            : null;
+
     /** @type {readonly { readonly name: DocumentSlotName, readonly start: number, readonly end: number }[]} */
     const spans = [
         { name: /** @type {const} */ ("htmlAttrs"), start: htmlAttrsIndex, end: htmlAttrsIndex },
+        ...(themeColorSpan ? [{ name: /** @type {const} */ ("themeColor"), ...themeColorSpan }] : []),
+        ...(appNameSpan ? [{ name: /** @type {const} */ ("appName"), ...appNameSpan }] : []),
+        ...(descriptionSpan ? [{ name: /** @type {const} */ ("description"), ...descriptionSpan }] : []),
         { name: /** @type {const} */ ("title"), start: title.start, end: title.end },
+        ...(iconSpan ? [{ name: /** @type {const} */ ("icon"), ...iconSpan }] : []),
+        ...(themeStylesheetIndex !== null ? [{ name: /** @type {const} */ ("themeStylesheet"), start: themeStylesheetIndex, end: themeStylesheetIndex }] : []),
         { name: /** @type {const} */ ("headerLead"), start: headerLeadIndex, end: headerLeadIndex },
         { name: /** @type {const} */ ("main"), start: main.start, end: main.end },
         { name: /** @type {const} */ ("afterMain"), start: main.end, end: main.end },
@@ -113,15 +147,17 @@ function compileDocumentSlots(document) {
  *   readonly acpUrl?: string | null,
  *   readonly overviewSessions?: number | null,
  *   readonly overviewExcerptChars?: number | null,
+ *   readonly brand?: import("./brand.js").BrandConfig,
  * }} DocumentBootOptions
  */
 
-/** {§web-document} {§web-directory-documents} {§web-page-shell} Static HTML shell compiler stamping boot data attributes without daemon seams or inline scripts. */
+/** {§web-document} {§web-directory-documents} {§web-page-shell} {§web-brand} Static HTML shell compiler stamping boot data attributes without daemon seams or inline scripts. */
 export default class Documents {
     #template;
     #acpUrl;
     #overviewSessions;
     #overviewExcerptChars;
+    #brand;
 
     /** {§web-assets} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
      * @param {string} document
@@ -142,10 +178,12 @@ export default class Documents {
         acpUrl = DEFAULT_ACP_URL,
         overviewSessions = 200,
         overviewExcerptChars = 160,
+        brand = DEFAULT_BRAND,
     } = {}) {
         this.#acpUrl = acpUrl;
         this.#overviewSessions = overviewSessions;
         this.#overviewExcerptChars = overviewExcerptChars;
+        this.#brand = brand;
         this.#template = compileDocumentSlots(document);
     }
 
@@ -154,9 +192,17 @@ export default class Documents {
         const sessionsAttr = this.#overviewSessions === null ? "invalid" : String(this.#overviewSessions);
         const excerptAttr = this.#overviewExcerptChars === null ? "invalid" : String(this.#overviewExcerptChars);
         return ` data-acp-url="${escapeHtml(acpAttr)}"`
+            + ` data-app-name="${escapeHtml(this.#brand.appName)}"`
             + ` data-overview-sessions="${escapeHtml(sessionsAttr)}"`
             + ` data-overview-excerpt-chars="${escapeHtml(excerptAttr)}"`
             + ` data-web-version="${escapeHtml(WEB_VERSION)}"`;
+    }
+
+    #iconLinkTag() {
+        const href = this.#brand.icon?.href ?? DEFAULT_ICON_HREF;
+        const mediaType = this.#brand.icon?.mediaType ?? "image/svg+xml";
+        const sizesAttr = (this.#brand.icon ? this.#brand.icon.sizes : "any") === "any" ? ' sizes="any"' : "";
+        return `<link rel="icon" href="${escapeHtml(href)}" type="${escapeHtml(mediaType)}"${sizesAttr}>`;
     }
 
     /**
@@ -166,10 +212,18 @@ export default class Documents {
      * @param {{ headerLead?: string, footer?: string, dialogs?: string, mainAttributes?: string }} [slots]
      */
     #render(title, body, kind, { headerLead = "", footer = "", dialogs = "", mainAttributes = "" } = {}) {
-        const label = kind === "home" ? title : `${title} — Plurnk`;
+        const label = kind === "home" ? title : `${title} — ${this.#brand.appName}`;
+        const themeStylesheet = this.#brand.themeCssHref !== null
+            ? `<link rel="stylesheet" href="${escapeHtml(this.#brand.themeCssHref)}">`
+            : "";
         return Buffer.from(this.#template.render({
             htmlAttrs: this.#htmlBootAttributes(),
+            themeColor: `<meta name="theme-color" content="${escapeHtml(this.#brand.themeColor)}">`,
+            appName: `<meta name="application-name" content="${escapeHtml(this.#brand.appName)}">`,
+            description: `<meta name="description" content="${escapeHtml(this.#brand.appDescription)}">`,
             title: `<title data-text="page-title">${escapeHtml(label)}</title>`,
+            icon: this.#iconLinkTag(),
+            themeStylesheet,
             headerLead,
             main: `<main id="main" data-page="${kind}"${mainAttributes}>${body}</main>`,
             afterMain: footer + dialogs,
@@ -226,7 +280,7 @@ export default class Documents {
 
     /** {§web-arrival} Static arrival shell (`/` and `/index.html`). */
     home() {
-        return this.#render("Plurnk", this.#template.home, "home");
+        return this.#render(this.#brand.appName, this.#template.home, "home");
     }
 
     /** {§web-oidc} Static OIDC PKCE callback shell (`/auth/callback`). */
@@ -314,7 +368,7 @@ export default class Documents {
                 ? directoryPath({ kind: "session", workspace: workspaceName, session: sessionName })
                 : directoryPath({ kind: "workspace", workspace: workspaceName }))
             : "/";
-        const backLabel = workspaceName || "Plurnk";
+        const backLabel = workspaceName || this.#brand.appName;
         const backItem = backPath !== null
             ? `<a href="${escapeHtml(backPath)}" data-settings-back data-bind="href:workspace-back-path">${marker} <span data-text="workspace-name">${escapeHtml(backLabel)}</span></a>`
             : `<span>${marker} <span data-text="workspace-name">${escapeHtml(backLabel)}</span></span>`;
@@ -377,6 +431,12 @@ export default class Documents {
             + '<div data-session-config-outlet></div>'
             + "</section>";
 
+        const aboutLinksHtml = this.#brand.aboutLinks.map(({ label, url }) => {
+            const i18nAttr = label === "Report an issue" && url === BUG_REPORT_URL ? ' data-i18n="report-issue"' : "";
+            const display = url.replace(/^https?:\/\//iu, "");
+            return `<dt${i18nAttr}>${escapeHtml(label)}</dt><dd><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(display)}</a></dd>`;
+        }).join("");
+
         const aboutPanel = '<section id="about" data-settings-panel="about" aria-label="About" hidden>'
             + '<header data-panel-toolbar><h2 data-i18n="about">About</h2></header>'
             + '<dl data-about-facts>'
@@ -384,7 +444,7 @@ export default class Documents {
             + `<dt>@plurnk/plurnk-web</dt><dd><code data-text="about-web-version">${escapeHtml(WEB_VERSION)}</code></dd>`
             + '<dt data-about-desktop-term hidden>plurnk-desktop</dt><dd data-about-desktop-value hidden><code data-text="about-desktop-version"></code></dd>'
             + `<dt data-i18n="license">License</dt><dd>${escapeHtml(WEB_LICENSE)}</dd>`
-            + `<dt data-i18n="report-issue">Report an issue</dt><dd><a href="${BUG_REPORT_URL}" target="_blank" rel="noopener noreferrer">github.com/plurnk/plurnk-service/issues</a></dd>`
+            + aboutLinksHtml
             + "</dl></section>";
 
         const body = '<article id="workspace-settings" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">'

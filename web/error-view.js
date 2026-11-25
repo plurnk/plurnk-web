@@ -1,4 +1,5 @@
 import { $, the } from "on_the_money";
+import { formatPageTitle } from "./endpoints.js";
 
 /** @type {Readonly<Record<number, string>>} */
 const STATUS_TITLES = {
@@ -20,7 +21,7 @@ const STATUS_TITLES = {
  */
 export default function renderInPageError(main, status, message, recovery = "") {
     const title = STATUS_TITLES[status] ?? `${status} Error`;
-    the("page-title", `${title} — Plurnk`);
+    the("page-title", formatPageTitle(title));
     main.dataset.page = "error";
     delete main.dataset.connection;
     const place = $("#header-place");

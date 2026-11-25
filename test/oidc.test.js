@@ -4,7 +4,9 @@ import accessHeaders from "../web/access-headers.js";
 import {
     acpOrigin,
     acpUrl,
+    appName,
     daemonPolicy,
+    formatPageTitle,
     isModuleDocument,
     mermaidUrl,
     notificationsUrl,
@@ -141,6 +143,7 @@ test("{§web-configuration} {§web-workspace-settings} endpoints resolve data-ac
         origin: "http://127.0.0.1:4100",
         dataset: {
             acpUrl: "https://acp.example:8443/acp",
+            appName: "Acme Bot",
             overviewSessions: "75",
             overviewExcerptChars: "120",
             webVersion: "4.0.0",
@@ -152,6 +155,8 @@ test("{§web-configuration} {§web-workspace-settings} endpoints resolve data-ac
     assert.equal(notificationsUrl(), "https://acp.example:8443/notifications");
     assert.equal(notificationsUrl("/42"), "https://acp.example:8443/notifications/42");
     assert.equal(mermaidUrl(), "http://127.0.0.1:4100/render/mermaid");
+    assert.equal(appName(), "Acme Bot");
+    assert.equal(formatPageTitle("Search"), "Search — Acme Bot");
     assert.equal(overviewSessionsLimit(), 75);
     assert.equal(overviewExcerptCharsLimit(), 120);
     assert.equal(webVersion(), "4.0.0");
