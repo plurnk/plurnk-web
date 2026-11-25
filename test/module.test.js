@@ -462,3 +462,154 @@ test("{§web-brand} {§web-configuration} brand knobs fail hard on missing/inval
         { src: "/brand/maskable.png", type: "image/png", purpose: "maskable" },
     ]);
 });
+
+test("{§web-settings-extensions} {§web-configuration} {§web-assets} PLURNK_WEB_SETTINGS_TABS validates strictly, rejects unsafe HTML, and serves tab scripts only on /settings/", async (t) => {
+    const key = "PLURNK_WEB_SETTINGS_TABS";
+    const original = process.env[key];
+    t.after(() => {
+        if (original === undefined) delete process.env[key];
+        else process.env[key] = original;
+    });
+
+    // 1. Missing floor knob throws immediately.
+    delete process.env[key];
+    assert.throws(createModule, { message: `${key} is missing from the assembled environment floor.` });
+    process.env[key] = original;
+
+    // 2. Invalid tab declarations fail fast with ConfigurationError.
+    const invalidConfigs = [
+        "not-json",
+        "{}",
+        JSON.stringify(Array.from({ length: 21 }, (_, i) => ({ id: `tab-${i}`, label: `Tab ${i}`, htmlFile: `/tmp/t${i}.html` }))),
+        JSON.stringify(["not-an-object"]),
+        JSON.stringify([{ id: "account", label: "Account", htmlFile: "/tmp/a.html", extra: true }]),
+        JSON.stringify([{ id: "Account", label: "Account", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "bad_slug", label: "Bad", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "-leading", label: "Bad", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "a".repeat(33), label: "Too Long", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "about", label: "About", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "mcp", label: "MCP", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "workspace", label: "Workspace", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([
+            { id: "account", label: "Account", htmlFile: "/tmp/a.html" },
+            { id: "account", label: "Duplicate", htmlFile: "/tmp/b.html" },
+        ]),
+        JSON.stringify([{ id: "account", label: "   ", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "account", label: "Bad\nLabel", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "account", label: "Account", htmlFile: "relative/account.html" }]),
+        JSON.stringify([{ id: "account", label: "Account", htmlFile: "/tmp/account.txt" }]),
+        JSON.stringify([{ id: "account", label: "Account", htmlFile: "/tmp/account.html", scriptFile: "" }]),
+        JSON.stringify([{ id: "account", label: "Account", htmlFile: "/tmp/account.html", scriptFile: 42 }]),
+        JSON.stringify([{ id: "account", label: "Account", htmlFile: "/tmp/account.html", scriptFile: "relative.js" }]),
+        JSON.stringify([{ id: "account", label: "Account", htmlFile: "/tmp/account.html", scriptFile: "/tmp/account.mjs" }]),
+    ];
+    for (const badValue of invalidConfigs) {
+        process.env[key] = badValue;
+        assert.throws(
+            createModule,
+            (/** @type {any} */ error) => error?.name === "ConfigurationError" && error?.key === key,
+            `expected ConfigurationError for ${badValue}`,
+        );
+    }
+    process.env[key] = original;
+
+    // 3. Startup loading rejects missing, empty, non-regular, invalid UTF-8, or CSP-incompatible HTML/JS files.
+    const dir = await mkdtemp(new URL("../.tabs-test-", import.meta.url));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    const filePath = (/** @type {string} */ name) => new URL(name, pathToFileURL(`${dir}/`)).pathname;
+    const validHtml = filePath("account.html");
+    const billingHtml = filePath("billing.html");
+    const validJs = filePath("account.js");
+    const emptyHtml = filePath("empty.html");
+    const badUtf8Html = filePath("bad-utf8.html");
+    const emptyJs = filePath("empty.js");
+    const badUtf8Js = filePath("bad-utf8.js");
+    const dirAsHtml = filePath("subdir.html");
+    await mkdir(dirAsHtml);
+    await writeFile(validHtml, '<header data-panel-toolbar><h2>Account</h2></header><p data-account-state>Ready</p>\n');
+    await writeFile(billingHtml, '<header data-panel-toolbar><h2>Billing</h2></header><p>Plan details.</p>\n');
+    await writeFile(validJs, 'export const loaded = "account-tab-ready";\n'.repeat(10));
+    await writeFile(emptyHtml, "");
+    await writeFile(badUtf8Html, Buffer.from([0xff, 0xfe, 0x80]));
+    await writeFile(emptyJs, "");
+    await writeFile(badUtf8Js, Buffer.from([0xff, 0xfe, 0x80]));
+
+    const unsafeHtmlFixtures = /** @type {const} */ ([
+        ["inline-script.html", "<p>Hi</p><script>alert(1)</script>", /<script>/u],
+        ["inline-style-tag.html", "<style>p { color: red; }</style><p>Hi</p>", /inline styles/u],
+        ["inline-style-attr.html", '<p style="color:red">Hi</p>', /inline styles/u],
+        ["iframe.html", '<iframe src="/other"></iframe>', /<iframe>/u],
+        ["object.html", '<object data="/other"></object>', /<object>/u],
+        ["embed.html", '<embed src="/other">', /<embed>/u],
+        ["body.html", "<body><p>Doc</p></body>", /<body>/u],
+        ["onclick.html", '<button type="button" onclick="alert(1)">Go</button>', /inline event handlers/u],
+        ["javascript-url.html", '<a href="javascript:alert(1)">Go</a>', /javascript: URLs/u],
+    ]);
+    for (const [name, content, pattern] of unsafeHtmlFixtures) {
+        const unsafePath = filePath(name);
+        await writeFile(unsafePath, content);
+        process.env[key] = JSON.stringify([{ id: "account", label: "Account", htmlFile: unsafePath }]);
+        const broken = createModule();
+        let registered = false;
+        await assert.rejects(
+            async () => { await broken.start({ registerHttpRoute() { registered = true; } }); },
+            pattern,
+            name,
+        );
+        assert.equal(registered, false, `${name} fails before route registration`);
+    }
+
+    for (const [spec, pattern] of /** @type {const} */ ([
+        [{ id: "account", label: "Account", htmlFile: filePath("missing.html") }, /ENOENT/u],
+        [{ id: "account", label: "Account", htmlFile: dirAsHtml }, /not a regular file/u],
+        [{ id: "account", label: "Account", htmlFile: emptyHtml }, /must not be empty/u],
+        [{ id: "account", label: "Account", htmlFile: badUtf8Html }, /not valid UTF-8/u],
+        [{ id: "account", label: "Account", htmlFile: validHtml, scriptFile: filePath("missing.js") }, /ENOENT/u],
+        [{ id: "account", label: "Account", htmlFile: validHtml, scriptFile: emptyJs }, /must not be empty/u],
+        [{ id: "account", label: "Account", htmlFile: validHtml, scriptFile: badUtf8Js }, /not valid UTF-8/u],
+    ])) {
+        process.env[key] = JSON.stringify([spec]);
+        const broken = createModule();
+        await assert.rejects(async () => { await broken.start({ registerHttpRoute() {} }); }, pattern);
+    }
+
+    // 4. Valid extension tabs serve compressed /brand/tabs/<id>.js and emit scripts/markup only on /settings/.
+    process.env[key] = JSON.stringify([
+        { id: "account", label: "Account", htmlFile: validHtml, scriptFile: validJs },
+        { id: "billing", label: "Billing", htmlFile: billingHtml, scriptFile: null },
+    ]);
+    const mod = createModule();
+    let handler;
+    await mod.start({ registerHttpRoute(_prefix, serve) { handler = serve; } });
+    const server = createServer(handler);
+    t.after(async () => {
+        await mod.close();
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    const settingsRes = await fetch(`${base}/settings/`);
+    assert.equal(settingsRes.status, 200);
+    assert.equal(settingsRes.headers.get("x-frame-options"), "DENY");
+    assert.match(settingsRes.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*frame-ancestors 'none'/u);
+    const settingsHtml = await settingsRes.text();
+    assert.ok(settingsHtml.includes('<script type="module" src="/brand/tabs/account.js"></script>'));
+    assert.ok(settingsHtml.includes('data-settings-panel="account" data-settings-extension="true"'));
+    assert.ok(settingsHtml.includes('data-settings-panel="billing" data-settings-extension="true"'));
+
+    for (const nonSettingsPath of ["/", "/search/", "/~/work", "/auth/callback", "/missing"]) {
+        const html = await (await fetch(`${base}${nonSettingsPath}`)).text();
+        assert.doesNotMatch(html, /\/brand\/tabs\/|data-settings-extension/u, nonSettingsPath);
+    }
+
+    const jsRes = await fetch(`${base}/brand/tabs/account.js`, { headers: { "accept-encoding": "gzip" } });
+    assert.equal(jsRes.status, 200);
+    assert.equal(jsRes.headers.get("content-type"), "text/javascript; charset=utf-8");
+    assert.equal(jsRes.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(jsRes.headers.get("content-encoding"), "gzip");
+    assert.match(await jsRes.text(), /account-tab-ready/u);
+    assert.equal((await fetch(`${base}/brand/tabs/account.js`, { method: "POST" })).status, 405);
+    assert.equal((await fetch(`${base}/brand/tabs/billing.js`)).status, 404);
+});

@@ -141,8 +141,8 @@ export default function createDevModule(options = {}) {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
             }
             const activeKnobs = knobs ?? { acpUrl: "/acp", overviewSessions: null, overviewExcerptChars: null, brand: DEFAULT_BRAND };
-            await loadBrandAssets(activeKnobs.brand, resources);
-            const documents = new DocumentsClass(root.body.toString("utf8"), activeKnobs);
+            const settingsTabs = await loadBrandAssets(activeKnobs.brand, resources);
+            const documents = new DocumentsClass(root.body.toString("utf8"), { ...activeKnobs, settingsTabs });
             compiled = { documents, resources, stylesheetPath };
             currentSignature = (await sourceSignature()).signature;
         })();
@@ -169,9 +169,10 @@ export default function createDevModule(options = {}) {
                 await ensureCurrent();
                 return;
             }
+            const settingsTabs = await loadBrandAssets(initialKnobs.brand, compiled.resources);
             compiled = {
                 ...compiled,
-                documents: new DocumentsClass(root.body.toString("utf8"), initialKnobs),
+                documents: new DocumentsClass(root.body.toString("utf8"), { ...initialKnobs, settingsTabs }),
             };
         },
         async snapshot() {

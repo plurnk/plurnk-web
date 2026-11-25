@@ -28,7 +28,22 @@ export const isSettingsSection = (value) =>
     typeof value === "string" && /** @type {readonly string[]} */ (SECTIONS).includes(value);
 
 /**
- * {§web-workspace-settings} Mounts workspace and session management inside `<article id="workspace-settings">`.
+ * {§web-settings-extensions} Collect built-in and server-rendered host Settings section ids inside `#workspace-settings`.
+ * @param {HTMLElement} article
+ * @returns {Set<string>}
+ */
+function declaredSettingsSections(article) {
+    /** @type {Set<string>} */
+    const sections = new Set(SECTIONS);
+    for (const item of $$(article, "[data-settings-section]")) {
+        const raw = item.getAttribute("data-settings-section");
+        if (raw !== null && raw !== "") sections.add(raw);
+    }
+    return sections;
+}
+
+/**
+ * {§web-workspace-settings} {§web-settings-extensions} Mounts workspace and session management inside `<article id="workspace-settings">`.
  * @param {HTMLElement} article
  * @param {() => WorkspaceSettingsContext} getContext
  * @param {{ updateHash?: boolean, initialQuery?: string, initialHelpFilter?: string, initialEnvScope?: "workspace" | "session" }} [options]
@@ -39,9 +54,10 @@ export function createWorkspaceSettingsController(article, getContext, {
     initialHelpFilter = "",
     initialEnvScope = "workspace",
 } = {}) {
+    const declaredSections = declaredSettingsSections(article);
     /** @type {Element | null} */
     let envPanel = null;
-    /** @type {SettingsSection} */
+    /** @type {string} */
     let activeSection = "workspace";
     let busy = false;
     let refreshDepth = 0;
@@ -117,9 +133,9 @@ export function createWorkspaceSettingsController(article, getContext, {
         }
     }
 
-    /** @param {SettingsSection} section */
+    /** @param {string} section */
     async function refreshSection(section) {
-        if (section === "workspace") {
+        if (!isSettingsSection(section) || section === "workspace") {
             if (!busy) setFeedback(false, "", "");
             return;
         }
@@ -186,8 +202,10 @@ export function createWorkspaceSettingsController(article, getContext, {
         schedulePanelController?.prefillTarget();
     }
 
-    /** @param {SettingsSection} section */
+    /** @param {string} section */
     function isSectionAvailable(section) {
+        if (!declaredSections.has(section)) return false;
+        if (!isSettingsSection(section)) return true;
         const policy = daemonPolicy();
         if (FAMILY_SECTIONS.has(section) && Array.isArray(policy?.families) && !policy.families.includes(section)) {
             return false;
@@ -203,7 +221,7 @@ export function createWorkspaceSettingsController(article, getContext, {
         const policy = daemonPolicy();
         for (const item of $$(article, "[data-settings-section]")) {
             const raw = item.getAttribute("data-settings-section");
-            if (!isSettingsSection(raw)) continue;
+            if (raw === null || !declaredSections.has(raw)) continue;
             const navItem = item.parentElement;
             if (navItem instanceof HTMLElement) {
                 navItem.hidden = !isSectionAvailable(raw);
@@ -215,11 +233,12 @@ export function createWorkspaceSettingsController(article, getContext, {
         }
     }
 
-    /** @param {SettingsSection} section @param {boolean} [pushHash] */
+    /** @param {string} section @param {boolean} [pushHash] */
     function selectSection(section, pushHash = false) {
         ensureMounted();
         const resolved = isSectionAvailable(section) ? section : "workspace";
         activeSection = resolved;
+        article.dataset.activeSection = resolved;
         for (const item of $$(article, "[data-settings-section]")) {
             if (item.getAttribute("data-settings-section") === resolved) {
                 item.setAttribute("aria-current", "true");
@@ -241,6 +260,15 @@ export function createWorkspaceSettingsController(article, getContext, {
             }
         }
         if (resolved === "schedule") prefillScheduleTarget();
+        const ctx = getContext();
+        // {§web-settings-extensions} Notify host extension scripts of active section transitions alongside `data-active-section`.
+        article.dispatchEvent(new CustomEvent("plurnk:settings-section", {
+            detail: {
+                section: resolved,
+                workspaceName: ctx.workspaceName,
+                sessionName: ctx.sessionName,
+            },
+        }));
         void refreshSection(resolved);
     }
 
@@ -342,7 +370,7 @@ export function createWorkspaceSettingsController(article, getContext, {
 
         on(article, "click", "[data-settings-section]", (event, link) => {
             const raw = link.getAttribute("data-settings-section");
-            if (isSettingsSection(raw)) {
+            if (raw !== null && declaredSections.has(raw)) {
                 event.preventDefault();
                 selectSection(raw, true);
             }
@@ -352,18 +380,18 @@ export function createWorkspaceSettingsController(article, getContext, {
     ensureMounted();
 
     return {
-        /** @param {SettingsSection} [initialSection] */
+        /** @param {string} [initialSection] */
         open(initialSection = activeSection) {
-            const targetSection = isSettingsSection(initialSection) ? initialSection : "workspace";
+            const targetSection = declaredSections.has(initialSection) ? initialSection : "workspace";
             selectSection(targetSection, false);
         },
-        /** @param {SettingsSection} section @param {boolean} [pushHash] */
+        /** @param {string} section @param {boolean} [pushHash] */
         selectSection(section, pushHash = false) {
             selectSection(section, pushHash);
         },
         /** @param {string} familyOrTopic */
         notifyChanged(familyOrTopic) {
-            if (busy || activeSection === "help" || activeSection === "about") return;
+            if (busy || !isSettingsSection(activeSection) || activeSection === "help" || activeSection === "about") return;
             if (
                 familyOrTopic === "resync"
                 || familyOrTopic === activeSection
@@ -377,12 +405,12 @@ export function createWorkspaceSettingsController(article, getContext, {
     };
 }
 
-/** @param {string} hash @returns {SettingsSection} */
-function parseSettingsHash(hash) {
+/** @param {string} hash @param {HTMLElement} article @returns {string} */
+function parseSettingsHash(hash, article) {
     const raw = hash.startsWith("#") ? hash.slice(1) : hash;
     try {
         const decoded = decodeURIComponent(raw);
-        return isSettingsSection(decoded) ? decoded : "workspace";
+        return declaredSettingsSections(article).has(decoded) ? decoded : "workspace";
     } catch {
         return "workspace";
     }
@@ -452,8 +480,11 @@ export default async function observeWorkspaceSettings(main) {
                 : (listedWorkspaces.find(({ archivedAt }) => archivedAt === null) ?? listedWorkspaces[0]);
 
             if (!matchedWorkspace) {
-                const initialSec = parseSettingsHash(location.hash);
-                if (currentWorkspaceName !== "" || (initialSec !== "about" && initialSec !== "help")) {
+                const initialSec = parseSettingsHash(location.hash, article);
+                const allowWithoutWorkspace = initialSec === "about"
+                    || initialSec === "help"
+                    || !isSettingsSection(initialSec);
+                if (currentWorkspaceName !== "" || !allowWithoutWorkspace) {
                     renderInPageError(main, 404, "Workspace not found.");
                     return;
                 }
@@ -615,10 +646,10 @@ export default async function observeWorkspaceSettings(main) {
         initialEnvScope: queryParams.get("envScope") === "session" ? "session" : "workspace",
     });
 
-    controller.selectSection(parseSettingsHash(location.hash), false);
+    controller.selectSection(parseSettingsHash(location.hash, article), false);
 
     on.target(window, "hashchange", () => {
-        controller.selectSection(parseSettingsHash(location.hash), false);
+        controller.selectSection(parseSettingsHash(location.hash, article), false);
     });
 
     if (isPreseededFixture || workspaceId <= 0) return;
