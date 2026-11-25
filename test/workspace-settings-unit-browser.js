@@ -18,6 +18,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
 
                     /** @type {any[]} */
                     const requests = [];
+                    fixture.setPolicy(null);
                     let activeWork = false;
                     let failNextSessionOptions = false;
                     let failNextScheduleAlreadyRunning = false;
@@ -1315,6 +1316,95 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="env"] tbody tr').length === 2);
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value|sess-secret-value/u);
 
+                    // 3. Daemon confinement policy reflection:
+                    //    (a) projectRoot="none", missing families ["schedule", "env"], MCP streamable-http+publicOnly, skills mcp-only
+                    fixture.setPolicy({
+                        projectRoot: "none",
+                        families: ["mcp", "members", "personas", "skills"],
+                        mcp: { workspaceTransports: ["streamable-http"], publicOnly: true },
+                        skills: { workspaceSources: ["mcp"], publicOnly: true },
+                    });
+                    await page.goto(`${new URL("/settings/?workspace=conversation#schedule", fixture.url).href}`);
+                    await settingsArticle.waitFor({ state: "visible" });
+                    // Trigger an ACP initialize handshake (click MCP tab) so the preseeded fixture ingests the policy
+                    await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
+                    await page.waitForFunction(() => {
+                        const schedLink = document.querySelector('#workspace-settings [data-settings-section="schedule"]');
+                        return schedLink?.parentElement?.hidden === true;
+                    });
+                    assert.equal(await settingsArticle.locator('[data-settings-section="schedule"]').isVisible(), false, "unregistered schedule family tab is hidden");
+                    assert.equal(await settingsArticle.locator('[data-settings-section="env"]').isVisible(), false, "unregistered env family tab is hidden");
+                    assert.equal(await settingsArticle.locator('[data-settings-section="members"]').isVisible(), false, "projectRoot=none hides Members tab");
+
+                    // Deep-linking to a hidden family falls back to Workspace
+                    await page.evaluate(() => { location.hash = "#schedule"; });
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-section="workspace"]')?.getAttribute("aria-current") === "true");
+
+                    // #dialog-workspace-create hides project folder controls under projectRoot="none"
+                    await settingsArticle.getByRole("button", { name: "+ Add workspace", exact: true }).click();
+                    const createDlg = page.locator("#dialog-workspace-create");
+                    await createDlg.waitFor({ state: "visible" });
+                    assert.equal(await createDlg.locator("[data-project-folder-toggle]").isVisible(), false);
+                    assert.equal(await createDlg.locator("[data-project-folder-input]").isVisible(), false);
+                    await createDlg.locator("[data-dialog-close]").first().click();
+                    await createDlg.waitFor({ state: "hidden" });
+
+                    // #mcp disables stdio, defaults to streamable-http, and displays publicOnly note
+                    await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
+                    await mcpDisclosure.locator("> summary").click();
+                    assert.equal(await mcpDisclosure.locator('select[name="transport"] option[value="stdio"]').isDisabled(), true);
+                    assert.equal(await mcpDisclosure.locator('select[name="transport"]').inputValue(), "streamable-http");
+                    assert.equal(await mcpDisclosure.locator("[data-mcp-http-fields]").isVisible(), true);
+                    assert.equal(await mcpDisclosure.locator("[data-mcp-stdio-fields]").isVisible(), false);
+                    assert.match(await mcpDisclosure.locator('[data-policy-note="mcp-http"]').textContent(), /Public HTTP\(S\) endpoints only/u);
+
+                    // #skills hides Git-only ref input when only mcp source is allowed
+                    await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
+                    await skillsDisclosure.locator("> summary").click();
+                    assert.equal(await skillsDisclosure.locator('input[name="ref"]').isVisible(), false, "Git-only ref input hides when git skill sources are disabled");
+                    assert.match(await skillsDisclosure.locator('[data-policy-note="skills"]').textContent(), /Allowed skill sources: mcp/u);
+
+                    // #personas hides file-path mode under projectRoot="none" while keeping inline creation usable
+                    await settingsArticle.getByRole("link", { name: "Personas", exact: true }).click();
+                    const personasDisc = settingsArticle.locator('details[data-family-disclosure="personas"]');
+                    await personasDisc.locator("> summary").click();
+                    assert.equal(await personasDisc.locator('select[name="personaMode"] option[value="source"]').isDisabled(), true);
+                    assert.equal(await personasDisc.locator('select[name="personaMode"]').inputValue(), "inline");
+                    assert.equal(await personasDisc.locator('[data-family-discover-form] input[name="source"]').isVisible(), false);
+
+                    //    (b) confined mode with empty MCP transports + empty skill sources hides + Add disclosures while keeping tables visible,
+                    //        and confined mode keeps local personas/skills notes visible when admitted
+                    fixture.setPolicy({
+                        projectRoot: "confined",
+                        families: ["env", "mcp", "members", "personas", "schedule", "skills"],
+                        mcp: { workspaceTransports: [], publicOnly: true },
+                        skills: { workspaceSources: ["mcp", "local"], publicOnly: true },
+                    });
+                    await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings details[data-family-disclosure="mcp"]')?.hasAttribute("hidden") === true);
+                    assert.equal(await mcpDisclosure.isVisible(), false, "empty workspaceTransports hides + Add server disclosure");
+                    assert.equal(await mcpPanel.locator("[data-family-rows] tr").count(), 3, "existing MCP servers remain visible when workspace creation is disabled");
+                    assert.equal(await settingsArticle.locator('[data-settings-section="members"]').isVisible(), true, "confined rooted workspace keeps Members tab visible");
+
+                    await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
+                    assert.equal(await skillsDisclosure.isVisible(), true, "confined workspace with local+mcp keeps + Add skill visible");
+                    assert.match(await skillsDisclosure.locator('[data-policy-note="skills"]').textContent(), /inside this workspace's project folder/u);
+
+                    await settingsArticle.getByRole("link", { name: "Personas", exact: true }).click();
+                    assert.equal(await personasDisc.locator('select[name="personaMode"] option[value="source"]').isDisabled(), false, "confined rooted workspace keeps persona file-path mode available");
+                    await personasDisc.locator('select[name="personaMode"]').selectOption("source");
+                    assert.match(await personasDisc.locator('[data-policy-note="personas-source"]').textContent(), /inside this workspace's project folder/u);
+
+                    await settingsArticle.getByRole("link", { name: "Workspace", exact: true }).click();
+                    await settingsArticle.getByRole("button", { name: "+ Add workspace", exact: true }).click();
+                    await createDlg.waitFor({ state: "visible" });
+                    await createDlg.locator("[data-toggle-project-folder]").check();
+                    assert.equal(await createDlg.locator("[data-project-folder-input]").isVisible(), true);
+                    assert.match(await createDlg.locator("[data-project-folder-note]").textContent(), /configured workspace directory/u);
+                    await createDlg.locator("[data-dialog-close]").first().click();
+                    await createDlg.waitFor({ state: "hidden" });
+
+                    fixture.setPolicy(null);
                     checkBrowser();
                 } finally {
                     await browser.close();

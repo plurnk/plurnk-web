@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromium } from "playwright";
 import { directoryPath } from "../src/directory-addresses.js";
 import SessionAgent from "../web/session-agent.js";
@@ -185,6 +188,80 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             checkBrowser();
         } finally {
             await browser.close();
+        }
+    });
+
+    await t.test("{§web-workspace-settings} {§web-workspace-creation} confined packed daemon projects projectRoot, MCP, skills, and personas policy into /settings/ and #dialog-workspace-create", { timeout: 60_000 }, async () => {
+        const scratch = await mkdtemp(join(tmpdir(), "plurnk-web-confined-"));
+        const tenantDir = join(scratch, "tenant-a");
+        await mkdir(tenantDir, { recursive: true });
+        try {
+            await withDaemon({
+                PLURNK_SERVICE_PROJECT_ROOT_BASE: scratch,
+                PLURNK_MCP_WORKSPACE_TRANSPORTS: "streamable-http",
+                PLURNK_MCP_PUBLIC_ONLY: "1",
+                PLURNK_SKILLS_WORKSPACE_SOURCES: "mcp,local",
+                PLURNK_SKILLS_PUBLIC_ONLY: "1",
+            }, async (base) => {
+                const wsCreator = createAgent(base);
+                const created = await wsCreator.send({
+                    action: { kind: "workspace.create", params: { name: "confined-ws", projectRoot: tenantDir } },
+                });
+                assert.equal(created.result.ok, true, JSON.stringify(created.result));
+                wsCreator.close();
+
+                const browser = await launchBrowser(chromium);
+                try {
+                    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+                    const checkBrowser = browserDiagnostics(context);
+                    const page = await context.newPage();
+                    page.setDefaultTimeout(10_000);
+
+                    await page.goto(new URL("/settings/?workspace=confined-ws", base).href);
+                    const settingsArticle = page.locator("#workspace-settings");
+                    await settingsArticle.waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
+
+                    // Rooted workspace under confined mode keeps Members visible and notes confined workspace folder in #dialog-workspace-create
+                    assert.equal(await settingsArticle.locator('[data-settings-section="members"]').isVisible(), true);
+                    await settingsArticle.getByRole("button", { name: "+ Add workspace", exact: true }).click();
+                    const createDlg = page.locator("#dialog-workspace-create");
+                    await createDlg.waitFor({ state: "visible" });
+                    await createDlg.locator("[data-toggle-project-folder]").check();
+                    assert.match(await createDlg.locator("[data-project-folder-note]").textContent(), /configured workspace directory/u);
+                    assert.doesNotMatch(await createDlg.textContent(), new RegExp(scratch.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"), "must not leak host base path");
+                    await createDlg.locator("[data-dialog-close]").first().click();
+
+                    // #mcp exposes streamable-http only and notes publicOnly
+                    await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
+                    const mcpDisclosure = settingsArticle.locator('details[data-family-disclosure="mcp"]');
+                    await mcpDisclosure.locator("> summary").click();
+                    assert.equal(await mcpDisclosure.locator('select[name="transport"] option[value="stdio"]').isDisabled(), true);
+                    assert.equal(await mcpDisclosure.locator('select[name="transport"]').inputValue(), "streamable-http");
+                    assert.match(await mcpDisclosure.locator('[data-policy-note="mcp-http"]').textContent(), /Public HTTP\(S\) endpoints only/u);
+
+                    // #skills keeps local+mcp usable with confined-folder note and hides Git ref
+                    await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
+                    const skillsDisclosure = settingsArticle.locator('details[data-family-disclosure="skills"]');
+                    await skillsDisclosure.locator("> summary").click();
+                    assert.equal(await skillsDisclosure.locator('input[name="ref"]').isVisible(), false);
+                    assert.match(await skillsDisclosure.locator('[data-policy-note="skills"]').textContent(), /inside this workspace's project folder/u);
+
+                    // #personas keeps local file-path mode usable under confined rooted workspace
+                    await settingsArticle.getByRole("link", { name: "Personas", exact: true }).click();
+                    const personasDisclosure = settingsArticle.locator('details[data-family-disclosure="personas"]');
+                    await personasDisclosure.locator("> summary").click();
+                    assert.equal(await personasDisclosure.locator('select[name="personaMode"] option[value="source"]').isDisabled(), false);
+                    await personasDisclosure.locator('select[name="personaMode"]').selectOption("source");
+                    assert.match(await personasDisclosure.locator('[data-policy-note="personas-source"]').textContent(), /inside this workspace's project folder/u);
+
+                    checkBrowser();
+                } finally {
+                    await browser.close();
+                }
+            });
+        } finally {
+            await rm(scratch, { recursive: true, force: true });
         }
     });
 }

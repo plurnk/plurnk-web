@@ -139,7 +139,7 @@ export default function createDevModule(options = {}) {
             if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
             }
-            const activeKnobs = knobs ?? { acpUrl: "/acp", overviewSessions: null, overviewExcerptChars: null, allowProjectFolder: true };
+            const activeKnobs = knobs ?? { acpUrl: "/acp", overviewSessions: null, overviewExcerptChars: null };
             const documents = new DocumentsClass(root.body.toString("utf8"), activeKnobs);
             compiled = { documents, resources, stylesheetPath };
             currentSignature = (await sourceSignature()).signature;

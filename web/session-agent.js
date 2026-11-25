@@ -7,7 +7,7 @@ import {
 } from "@agentclientprotocol/sdk/experimental/v2/unstable";
 import { createHttpStream } from "@agentclientprotocol/sdk/experimental/http-client";
 import { createWebSocketStream } from "@agentclientprotocol/sdk/experimental/ws-client";
-import { acpUrl, recordServiceVersion } from "./endpoints.js";
+import { acpUrl, recordDaemonPolicy, recordServiceVersion } from "./endpoints.js";
 import {
     SessionOutcomeQueue,
     awaitRequestOrInterrupt,
@@ -319,6 +319,12 @@ export default class SessionAgent {
             if (typeof infoRecord.version === "string" && infoRecord.version.trim() !== "") {
                 this.serviceVersion = infoRecord.version.trim();
                 recordServiceVersion(this.serviceVersion);
+            }
+            const initMeta = isRecord(initRecord._meta) && isRecord(initRecord._meta.plurnk)
+                ? initRecord._meta.plurnk
+                : null;
+            if (initMeta) {
+                recordDaemonPolicy(initMeta.policy);
             }
             const capabilities = isRecord(initRecord.capabilities) ? initRecord.capabilities : {};
             const sessionCaps = isRecord(capabilities.session) ? capabilities.session : {};

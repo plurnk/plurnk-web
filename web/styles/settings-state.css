@@ -52,6 +52,12 @@
         margin-block-end: calc(var(--otm-spacing) * 0.75);
     }
 
+    [data-policy-note] {
+        display: block;
+        margin-block: 0 calc(var(--otm-spacing) * 0.5);
+        color: var(--otm-muted-color);
+    }
+
     @media (width >= 48rem) {
         #workspace-settings [data-session-config-form] > :where(fieldset) {
             display: grid;

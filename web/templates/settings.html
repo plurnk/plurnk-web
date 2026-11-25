@@ -116,6 +116,7 @@
                             <input type="text" name="cwd" aria-label="Working directory" placeholder="Working directory (optional)" autocomplete="off" spellcheck="false">
                         </div>
                         <div data-mcp-http-fields>
+                            <small data-policy-note="mcp-http" hidden></small>
                             <input type="url" name="url" aria-label="Endpoint URL" placeholder="https://mcp.example.com/mcp" autocomplete="off" spellcheck="false">
                             <select name="authMode" aria-label="Endpoint authentication">
                                 <option value="none" data-i18n="ws-settings-auth-none">No authorization</option>
@@ -161,6 +162,7 @@
             </header>
             <details data-family-disclosure="skills">
                 <summary data-i18n="ws-settings-add-skill">+ Add skill</summary>
+                <small data-policy-note="skills" hidden></small>
                 <form data-family-discover-form data-family="skills">
                     <fieldset role="group" data-bind="disabled:ws-settings-busy">
                         <input type="text" name="source" aria-label="Skill discovery source" placeholder="Git URL, folder, archive, or server:///skills" autocomplete="off" spellcheck="false" required>
@@ -224,6 +226,7 @@
                             <textarea name="body" aria-label="Persona instructions" placeholder="System instructions for this persona" rows="3"></textarea>
                         </div>
                         <div data-persona-source-fields>
+                            <small data-policy-note="personas-source" hidden></small>
                             <input type="text" name="source" aria-label="Persona file path" placeholder="./personas/reviewer.md" autocomplete="off" spellcheck="false">
                         </div>
                         <div data-model-combobox="personaModel">

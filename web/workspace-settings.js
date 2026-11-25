@@ -1,6 +1,6 @@
 import { $, $$, on, the } from "on_the_money";
 import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
-import { serviceVersion } from "./endpoints.js";
+import { daemonPolicy, onDaemonPolicy, serviceVersion } from "./endpoints.js";
 import renderInPageError from "./error-view.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
@@ -21,6 +21,7 @@ import { mountWorkspaceAndSessionSettings, wireSettingsSessionCreateDialog } fro
 /** @typedef {import("./workspace-dialogs.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
 
 const SECTIONS = /** @type {const} */ (["workspace", "session", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help", "about"]);
+const FAMILY_SECTIONS = new Set(["mcp", "skills", "schedule", "personas", "members", "env"]);
 
 /** @param {unknown} value @returns {value is SettingsSection} */
 export const isSettingsSection = (value) =>
@@ -185,12 +186,42 @@ export function createWorkspaceSettingsController(article, getContext, {
         schedulePanelController?.prefillTarget();
     }
 
+    /** @param {SettingsSection} section */
+    function isSectionAvailable(section) {
+        const policy = daemonPolicy();
+        if (FAMILY_SECTIONS.has(section) && Array.isArray(policy?.families) && !policy.families.includes(section)) {
+            return false;
+        }
+        if (section === "members") {
+            if (policy?.projectRoot === "none") return false;
+            if (getContext().hasProjectRoot === false) return false;
+        }
+        return true;
+    }
+
+    function syncPolicyVisibility() {
+        const policy = daemonPolicy();
+        for (const item of $$(article, "[data-settings-section]")) {
+            const raw = item.getAttribute("data-settings-section");
+            if (!isSettingsSection(raw)) continue;
+            const navItem = item.parentElement;
+            if (navItem instanceof HTMLElement) {
+                navItem.hidden = !isSectionAvailable(raw);
+            }
+        }
+        familiesEnvController?.applyDaemonPolicy(policy);
+        if (!isSectionAvailable(activeSection)) {
+            selectSection("workspace", false);
+        }
+    }
+
     /** @param {SettingsSection} section @param {boolean} [pushHash] */
     function selectSection(section, pushHash = false) {
         ensureMounted();
-        activeSection = section;
+        const resolved = isSectionAvailable(section) ? section : "workspace";
+        activeSection = resolved;
         for (const item of $$(article, "[data-settings-section]")) {
-            if (item.getAttribute("data-settings-section") === section) {
+            if (item.getAttribute("data-settings-section") === resolved) {
                 item.setAttribute("aria-current", "true");
             } else {
                 item.removeAttribute("aria-current");
@@ -198,19 +229,19 @@ export function createWorkspaceSettingsController(article, getContext, {
         }
         for (const panel of $$(article, "[data-settings-panel]")) {
             if (panel instanceof HTMLElement) {
-                panel.hidden = panel.dataset.settingsPanel !== section;
+                panel.hidden = panel.dataset.settingsPanel !== resolved;
             }
         }
         if (pushHash && updateHash && typeof history === "object") {
-            const nextUrl = section === "workspace"
+            const nextUrl = resolved === "workspace"
                 ? `${location.pathname}${location.search}`
-                : `${location.pathname}${location.search}#${section}`;
+                : `${location.pathname}${location.search}#${resolved}`;
             if (`${location.pathname}${location.search}${location.hash}` !== nextUrl) {
                 history.replaceState(null, "", nextUrl);
             }
         }
-        if (section === "schedule") prefillScheduleTarget();
-        void refreshSection(section);
+        if (resolved === "schedule") prefillScheduleTarget();
+        void refreshSection(resolved);
     }
 
     function ensureMounted() {
@@ -290,7 +321,11 @@ export function createWorkspaceSettingsController(article, getContext, {
             onRefreshEnv: () => refreshSection("env"),
         });
 
+        const offPolicy = onDaemonPolicy(() => { syncPolicyVisibility(); });
+        syncPolicyVisibility();
+
         on.target(getContext().signal, "abort", () => {
+            offPolicy();
             sessionController?.dispose();
             modelsHelpAboutController?.dispose();
             familiesEnvController?.dispose();
@@ -377,6 +412,12 @@ export default async function observeWorkspaceSettings(main) {
     let workspaceId = isPreseededFixture ? Number(preseededWorkspaceId) : 0;
     let currentWorkspaceName = queryParams.get("workspace") ?? main.dataset.workspaceName ?? "";
     let sessionName = queryParams.get("session") || main.dataset.sessionName || null;
+    /** @type {boolean | null} */
+    let hasProjectRoot = main.dataset.hasProjectRoot === "false"
+        ? false
+        : main.dataset.hasProjectRoot === "true"
+            ? true
+            : null;
     /** @type {Set<string>} */
     const knownWorkspaceNames = new Set(currentWorkspaceName ? [currentWorkspaceName] : []);
     /** @type {Set<string>} */
@@ -419,8 +460,10 @@ export default async function observeWorkspaceSettings(main) {
             } else {
                 workspaceId = matchedWorkspace.id;
                 currentWorkspaceName = matchedWorkspace.name;
+                hasProjectRoot = matchedWorkspace.projectRoot !== null;
                 main.dataset.workspaceId = String(workspaceId);
                 main.dataset.workspaceName = currentWorkspaceName;
+                main.dataset.hasProjectRoot = String(hasProjectRoot);
                 main.dataset.live = "true";
 
                 const wsArchived = matchedWorkspace.archivedAt !== null;
@@ -563,6 +606,7 @@ export default async function observeWorkspaceSettings(main) {
         workspaceId,
         workspaceName: currentWorkspaceName,
         sessionName,
+        hasProjectRoot,
         signal: pageLifetime.signal,
     }), {
         updateHash: true,

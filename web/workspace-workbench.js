@@ -1,6 +1,5 @@
 import { $, $$, on, the } from "on_the_money";
 import { directoryPath, parseDirectory, parseSessionHash, workspaceSettingsPath } from "../src/directory-addresses.js";
-import { allowWorkspaceCreation } from "./endpoints.js";
 import renderInPageError from "./error-view.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
@@ -529,7 +528,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
         if (!$(initialMain, "#workspace-empty")) {
             const emptyCard = $.clone(initialMain, "#workspace-empty-card");
             const startBtn = $(emptyCard, "[data-workspace-empty-new]");
-            if (startBtn instanceof HTMLElement && (tabs.dataset.workspaceArchived === "true" || !allowWorkspaceCreation())) {
+            if (startBtn instanceof HTMLElement && tabs.dataset.workspaceArchived === "true") {
                 startBtn.remove();
             }
         }
