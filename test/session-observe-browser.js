@@ -575,6 +575,115 @@ export default async function verifySessionObserve(t) {
                         assert.equal(gateResolutions.at(-1)?.result?._meta?.plurnk?.body, "echo edited-via-shortcut\n");
                     });
 
+                    await t.test("{§web-workspace-settings} {§web-session-commands} quick model dialog preserves user effort choice while async session/options hydration is in flight", async () => {
+                        /** @type {Array<{ configId: string, value: string }>} */
+                        const configWrites = [];
+                        let releaseOptions;
+                        const optionsGate = new Promise((resolve) => { releaseOptions = resolve; });
+                        const modelOptions = () => [
+                            {
+                                configId: "model",
+                                name: "Model",
+                                type: "select",
+                                currentValue: "browser",
+                                options: [{ value: "browser", name: "browser — fixture/browser" }],
+                            },
+                            {
+                                configId: "thought_level",
+                                name: "Reasoning Effort",
+                                type: "select",
+                                currentValue: "high",
+                                options: [
+                                    { value: "low", name: "low" },
+                                    { value: "high", name: "high" },
+                                ],
+                            },
+                        ];
+                        fixture.onAcp(async (input) => {
+                            if (input.method === "session/resume") {
+                                const meta = sessionMeta("idle");
+                                return {
+                                    updates: [],
+                                    result: {
+                                        configOptions: modelOptions(),
+                                        availableCommands: [],
+                                        _meta: {
+                                            plurnk: {
+                                                ...meta,
+                                                status: {
+                                                    ...meta.status,
+                                                    model: { alias: "browser", provider: "fixture", model: "browser", effort: "high", effortSource: "default" },
+                                                },
+                                            },
+                                        },
+                                    },
+                                };
+                            }
+                            if (input.method === "providers/list") {
+                                return {
+                                    result: {
+                                        providers: [{
+                                            providerId: "browser",
+                                            supported: ["fixture"],
+                                            required: false,
+                                            _meta: { plurnk: { alias: "browser", provider: "fixture", model: "browser", effort: "high", effortSource: "default", active: true } },
+                                        }],
+                                    },
+                                };
+                            }
+                            if (input.method === "_plurnk/action" && input.params?.kind === "models.list") {
+                                return { result: { items: [], offset: 0, total: 0, providers: ["fixture"] } };
+                            }
+                            if (input.method === "session/options") {
+                                await optionsGate;
+                                return {
+                                    result: {
+                                        configOptions: modelOptions(),
+                                        availableCommands: [],
+                                        _meta: {
+                                            plurnk: {
+                                                status: { model: { alias: "browser", provider: "fixture", model: "browser", effort: "high", effortSource: "default" } },
+                                            },
+                                        },
+                                    },
+                                };
+                            }
+                            if (input.method === "session/set_config_option") {
+                                configWrites.push({ configId: String(input.params.configId), value: String(input.params.value) });
+                                return {
+                                    result: {
+                                        configOptions: modelOptions(),
+                                        _meta: {
+                                            plurnk: {
+                                                status: { model: { alias: "browser", provider: "fixture", model: "browser", effort: String(input.params.value), effortSource: "explicit" } },
+                                            },
+                                        },
+                                    },
+                                };
+                            }
+                            return { result: {} };
+                        });
+
+                        await page.goto(fixture.url);
+                        await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
+                        await page.getByRole("link", { name: "Model", exact: true }).click();
+                        const quickDialog = page.locator("#dialog-session-model");
+                        await quickDialog.waitFor({ state: "visible" });
+                        const effortSelect = quickDialog.getByRole("combobox", { name: "Reasoning effort", exact: true });
+                        assert.equal(await effortSelect.inputValue(), "high");
+
+                        // Pick "low" BEFORE delayed session/options resolves with currentValue: "high".
+                        await effortSelect.selectOption("low");
+                        assert.equal(await effortSelect.inputValue(), "low");
+                        releaseOptions();
+                        await page.waitForTimeout(100);
+                        assert.equal(await effortSelect.inputValue(), "low", "late session/options hydration must not overwrite user effort selection");
+
+                        await quickDialog.getByRole("button", { name: "Apply", exact: true }).click();
+                        await quickDialog.waitFor({ state: "hidden" });
+                        assert.deepEqual(configWrites, [{ configId: "thought_level", value: "low" }]);
+                    });
+
                     checkBrowser();
                 } finally { await browser.close(); }
             });
