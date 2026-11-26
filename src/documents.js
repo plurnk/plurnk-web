@@ -9,7 +9,7 @@ import { directoryPath, workspaceSettingsPath } from "./directory-addresses.js";
 import { DEFAULT_ACP_URL, DEFAULT_AUTH_CONFIG, escapeHtml } from "./http.js";
 
 const WEB_MANIFEST = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-export const WEB_VERSION = typeof WEB_MANIFEST.version === "string" && WEB_MANIFEST.version.length > 0 ? WEB_MANIFEST.version : "4.0.0";
+export const WEB_VERSION = typeof WEB_MANIFEST.version === "string" && WEB_MANIFEST.version.length > 0 ? WEB_MANIFEST.version : "4.1.0";
 export const WEB_LICENSE = typeof WEB_MANIFEST.license === "string" && WEB_MANIFEST.license.length > 0 ? WEB_MANIFEST.license : "MIT";
 export { BUG_REPORT_URL };
 

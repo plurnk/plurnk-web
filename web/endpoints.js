@@ -2,7 +2,7 @@ const DEFAULT_ACP_PATH = "/acp";
 const DEFAULT_APP_NAME = "Plurnk";
 const DEFAULT_OVERVIEW_SESSIONS = 200;
 const DEFAULT_OVERVIEW_EXCERPT_CHARS = 160;
-const DEFAULT_WEB_VERSION = "4.0.0";
+const DEFAULT_WEB_VERSION = "4.1.0";
 
 /**
  * @typedef {"unrestricted" | "confined" | "none"} ProjectRootPolicyMode
