@@ -109,7 +109,7 @@ const FAMILY_SUBCOMMANDS = Object.freeze({
 
 const FAMILY_LIST_FLAGS = Object.freeze(["--query", "--state", "--origin", "--offset", "--limit"]);
 const FAMILY_LIST_STATES = Object.freeze(["active", "dormant", "disabled", "unavailable", "authorization-required"]);
-const FAMILY_LIST_ORIGINS = Object.freeze(["service", "workspace", "session"]);
+const FAMILY_LIST_ORIGINS = Object.freeze(["host", "service", "workspace", "session"]);
 const FAMILY_DISCOVER_FLAGS = Object.freeze({
     mcp: ["--query", "--cursor", "--limit"],
     skills: ["--source", "--query", "--cursor", "--limit"],

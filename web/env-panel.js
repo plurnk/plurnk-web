@@ -13,7 +13,7 @@ export function extractEnvEntries(res, fallbackOrigin) {
         if (!isRecord(item)) return [];
         const alias = typeof item.alias === "string" ? item.alias : "";
         if (!alias) return [];
-        const origin = item.origin === "session" || item.origin === "workspace" || item.origin === "service"
+        const origin = item.origin === "session" || item.origin === "workspace" || item.origin === "service" || item.origin === "host"
             ? item.origin
             : fallbackOrigin;
         const state = typeof item.state === "string" ? item.state : "active";
