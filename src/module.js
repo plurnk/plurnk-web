@@ -15,12 +15,12 @@ import {
     resolveIssuerOrigin,
     sameOriginRequest,
 } from "./http.js";
-import { readAsset, sendAsset } from "./static-assets.js";
+import { readAsset, readAssetBytes, sendAsset } from "./static-assets.js";
 import Diagrams from "./diagrams.js";
 
 /** @typedef {import("../types/module.js").MermaidCredentialVerifier} MermaidCredentialVerifier */
 /** @typedef {import("../types/module.js").WebModulePort} WebModulePort */
-/** @typedef {Awaited<ReturnType<typeof readAsset>>} LoadedAsset */
+/** @typedef {import("./static-assets.js").LoadedAsset} LoadedAsset */
 /**
  * @typedef {{
  *   readonly acpUrl: string | null,
@@ -64,13 +64,14 @@ function productionAssets() {
             ]))));
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const stylesheetPath = Documents.stylesheet(root.body.toString("utf8"));
+            const rootHtml = (await readAssetBytes(root)).toString("utf8");
+            const stylesheetPath = Documents.stylesheet(rootHtml);
             const stylesheetAsset = resources.get(stylesheetPath);
             if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
             }
             const settingsTabs = await loadBrandAssets(brand, resources);
-            const documents = new Documents(root.body.toString("utf8"), {
+            const documents = new Documents(rootHtml, {
                 acpUrl,
                 overviewSessions,
                 overviewExcerptChars,
@@ -218,7 +219,7 @@ export default function createModule(assets = productionAssets()) {
                     }
                     const resource = resources.get(indexDocument(pathname));
                     if (resource === undefined) throw new RequestError(404, "The requested page or resource does not exist.");
-                    sendAsset(req, res, resource);
+                    await sendAsset(req, res, resource);
                 } catch (error) {
                     if (!(error instanceof RequestError)) throw error;
                     const body = diagram

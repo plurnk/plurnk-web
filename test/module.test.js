@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import createModule from "../src/module.js";
 import { resolveIssuerOrigin } from "../src/http.js";
+import { readAsset } from "../src/static-assets.js";
 import verifyDirectories from "./directories.js";
 import verifyStaticAssets from "./static-assets.js";
 
@@ -304,6 +305,16 @@ test("{§web-asset-encoding} static negotiation preserves exact bytes and HTTP s
     assert.equal(varied.headers.get("vary"), "Origin, Accept-Encoding");
     assert.equal(varied.headers.get("content-encoding"), "gzip");
     assert.equal((await varied.json()).id, "/");
+
+    // Packaged dist/ representations record file URLs and byte lengths without pinning private Buffers in heap.
+    const inventory = JSON.parse(await readFile(new URL("../dist/assets.json", import.meta.url), "utf8"));
+    const [, file, mediaType, encoded] = inventory.find(([, , , map]) => Object.keys(map).length > 0);
+    const descriptor = await readAsset(file, mediaType, encoded);
+    for (const [encoding, rep] of descriptor.representations) {
+        assert.equal("body" in rep, false, `${encoding} representation does not pin Buffer bytes in private heap`);
+        assert.equal("file" in rep, true, `${encoding} representation points to a packaged file URL`);
+        assert.ok(rep.byteLength > 0, `${encoding} representation records exact byte length`);
+    }
 });
 
 test("{§web-brand} {§web-configuration} brand knobs fail hard on missing/invalid values and serve startup-loaded CSS, icons, and manifest", async (t) => {
