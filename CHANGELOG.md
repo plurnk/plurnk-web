@@ -1,5 +1,15 @@
 # @plurnk/plurnk-web
 
+## 4.1.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
+
+### Minor Changes
+
+- **Daemon Policy, Branding & Host Extension Tabs:** Reflect daemon confinement policy (`projectRoot`, registered `families`, MCP/skills policy) in Settings and workspace dialogs (`#163`), add configurable brand identity, startup CSS/icons, and About links (`#164`), and support declarative startup-loaded host Settings extension tabs (`#165`).
+- **BFF Reverse-Proxy Cookie Auth & Origin Alignment:** Send `credentials: "same-origin"` across HTTP/WS/SSE transports with configurable BFF login/logout handoff (`PLURNK_WEB_AUTH_*`, `#166`), and honor loopback `X-Forwarded-Host` in `sameOriginRequest()` (`POST /render/mermaid`) and `resolveIssuerOrigin()` while ignoring spoofed non-loopback headers (`#168`).
+- **UI Architecture & Fixes:** Adopt OTM `$.reconcile` for keyed directory/tab/descendant lists (`#159`), decompose shell HTML templates and CSS into domain partials (`#160`), and preserve quick model dialog effort during `session/options` hydration (`#167`).
+
 ## 4.0.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
