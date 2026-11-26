@@ -4,18 +4,18 @@ import assert from "node:assert/strict";
 export default async function verifyPageShell(page, { title, kind }) {
     assert.equal(await page.title(), title);
     assert.equal(await page.locator("main").count(), 1);
-    assert.equal(await page.locator("main h1").count(), ["home", "search", "workspace", "session"].includes(kind) ? 0 : 1);
+    assert.equal(await page.locator("main h1").count(), ["home", "workspace", "session"].includes(kind) ? 0 : 1);
     assert.equal(await page.locator("main").getAttribute("data-page"), kind);
     const navigation = page.getByRole("navigation", { name: "Main navigation", exact: true });
     const searchLink = page.getByRole("banner").getByRole("link", { name: "Search", exact: true });
-    assert.equal(await searchLink.getAttribute("href"), "/search/");
+    assert.match((await searchLink.getAttribute("href")) ?? "", /^\/settings\/search(?:\?|$)/u);
     assert.equal(await searchLink.getAttribute("title"), "Search (Ctrl+K)");
     assert.equal(await searchLink.locator("svg").count(), 1);
     assert.equal(await page.getByRole("banner").locator("img").count(), 0, "top bar carries no mascot image");
     assert.equal(await page.locator("[style], [class]").count(), 0);
     if (kind === "error" || kind === "callback" || kind === "settings") {
-        const card = page.getByRole("article");
-        assert.equal(await card.count(), 1);
+        const card = page.locator("main > article").first();
+        assert.equal(await page.locator("main > article").count(), 1);
         if (kind === "error") {
             assert.equal(await card.locator('[aria-hidden="true"]').innerText(), "⚠️");
             assert.equal(await card.getByRole("link", { name: "Home", exact: true }).getAttribute("href"), "/");
@@ -47,7 +47,7 @@ export default async function verifyPageShell(page, { title, kind }) {
             };
         });
         assert.equal(bounds.overflow, false, `${kind} fits ${width}px without horizontal scrolling`);
-        const expected = ["home", "search", "workspace", "session", "settings", "callback"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
+        const expected = ["home", "workspace", "session", "settings", "callback"].includes(kind) ? bounds.viewport : Math.min(bounds.readable, bounds.viewport);
         assert.ok(Math.abs(bounds.content - expected) < 1, `${kind} main width ${bounds.content} should be ${expected}`);
         assert.ok(Math.abs(bounds.header - bounds.viewport) < 1, `${kind} header spans the full viewport width`);
         const centers = await navigation.locator("li > a:visible, li > button:visible").evaluateAll((elements) => elements.map((element) => {

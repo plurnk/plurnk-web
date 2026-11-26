@@ -39,9 +39,11 @@ export function buildPreseededSessionDocument(documents, template, {
     const encodedWs = encodeURIComponent(workspaceName);
     const encodedSess = encodeURIComponent(sessionName);
     const sessionPath = `/~/${encodedWs}#${encodedSess}`;
-    const sessionSettingsHref = `/settings/?workspace=${encodedWs}&amp;session=${encodedSess}#session`;
-    const modelsSettingsHref = `/settings/?workspace=${encodedWs}&amp;session=${encodedSess}#models`;
-    const wsSettingsHref = `/settings/?workspace=${encodedWs}&amp;session=${encodedSess}`;
+    const searchSettingsHref = `/settings/search?workspace=${encodedWs}&amp;session=${encodedSess}`;
+    const wsSettingsHref = `/settings/workspaces?workspace=${encodedWs}&amp;session=${encodedSess}`;
+    const sessionSettingsHref = `/settings/sessions?workspace=${encodedWs}&amp;session=${encodedSess}`;
+    const newSessionHref = `/settings/sessions?workspace=${encodedWs}&amp;session=${encodedSess}&amp;new=1`;
+    const modelsSettingsHref = `/settings/models?workspace=${encodedWs}&amp;session=${encodedSess}`;
 
     const sessionMain = readTemplateInner(template, "workspace-session-main")
         .replace(
@@ -59,13 +61,8 @@ export function buildPreseededSessionDocument(documents, template, {
             'data-workspace-id="" data-session-id="" data-session-name=""',
             `data-workspace-id="${workspaceId}" data-session-id="${workspaceId}#${sessionName}" data-session-name="${sessionName}"`,
         )
-        .replace(
-            'href="/settings/" data-bind="href:session-settings-path"',
-            `href="${sessionSettingsHref}" data-bind="href:session-settings-path"`,
-        )
-        .replace('<span data-text="session-name"></span>', `<span data-text="session-name">${sessionName}</span>`)
         .replaceAll(
-            'href="/settings/" data-bind="href:models-settings-path"',
+            'href="/settings/models" data-bind="href:models-settings-path"',
             `href="${modelsSettingsHref}" data-bind="href:models-settings-path"`,
         );
 
@@ -83,8 +80,24 @@ export function buildPreseededSessionDocument(documents, template, {
             `<title data-text="page-title">${workspaceName}#${sessionName} — Plurnk</title>`,
         )
         .replace(
-            `href="/settings/?workspace=${encodedWs}"`,
+            'href="/settings/search" data-nav="search"',
+            `href="${searchSettingsHref}" data-nav="search"`,
+        )
+        .replace(
+            `href="/settings/workspaces?workspace=${encodedWs}"`,
             `href="${wsSettingsHref}"`,
+        )
+        .replace(
+            `<a id="header-session" href="/settings/sessions?workspace=${encodedWs}" data-bind="href:header-session-settings-path" aria-label="Sessions" title="Sessions" hidden><span data-header-glyph aria-hidden="true" data-text="header-session-icon">💬</span> <span data-header-session-label>#<span data-text="header-session-name"></span></span></a>`,
+            `<a id="header-session" href="${sessionSettingsHref}" data-bind="href:header-session-settings-path" aria-label="Sessions" title="Sessions"><span data-header-glyph aria-hidden="true" data-text="header-session-icon">💬</span> <span data-header-session-label>#<span data-text="header-session-name">${sessionName}</span></span></a>`,
+        )
+        .replace(
+            `<a id="header-model" href="/settings/models?workspace=${encodedWs}" data-bind="href:header-models-settings-path title:header-model-label" aria-label="Models" title="Models" hidden>`,
+            `<a id="header-model" href="${modelsSettingsHref}" data-bind="href:header-models-settings-path title:header-model-label" aria-label="Models" title="Models">`,
+        )
+        .replace(
+            `href="/settings/sessions?workspace=${encodedWs}&amp;new=1" data-tab-new`,
+            `href="${newSessionHref}" data-tab-new`,
         )
         .replace(/<main id="main" data-page="session"[^>]*>[\s\S]*?<\/main>/u, sessionMain)
         .replace(
@@ -259,7 +272,13 @@ export default async function conversationFixture(entryURL = new URL("./conversa
         if (routes.has(path)) { routes.get(path)(request, response); return; }
         if (path === "/acp" && acpHandler) { void handleAcp(request, response).catch(() => {}); return; }
         if (path === "/render/mermaid") { void ensureModule().then((handler) => handler(request, response)); return; }
-        if (path === "/settings/" || path === "/settings/index.html") {
+        if (path.startsWith("/settings/")) {
+            const rawSec = path.slice("/settings/".length).replace(/\/$/u, "");
+            if (!documents.settingsSections.has(rawSec)) {
+                response.writeHead(404, { ...privateHeaders, "content-type": "text/plain" });
+                response.end("Not found");
+                return;
+            }
             const wsName = parsed.searchParams.get("workspace") ?? "";
             const sessName = parsed.searchParams.get("session");
             const validSession = !sessName || sessName === "session1" || sessName === "user";
@@ -268,7 +287,11 @@ export default async function conversationFixture(entryURL = new URL("./conversa
                 response.end("Not found");
                 return;
             }
-            const body = documents.settings({ workspace: wsName, session: sessName })
+            const body = documents.settings(rawSec, {
+                workspace: wsName,
+                session: sessName,
+                openCreate: parsed.searchParams.get("new") === "1",
+            })
                 .toString()
                 .replace('<main id="main" data-page="settings"', '<main id="main" data-page="settings" data-workspace-id="7"');
             response.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8" });

@@ -239,7 +239,7 @@ export default async function verifySessionQuestions({ t, withDaemon }) {
         await ask(page, "question-revoked");
         await answer(page);
         const otherTab = await context.newPage();
-        await otherTab.goto(new URL("/search/", base).href);
+        await otherTab.goto(new URL("/settings/search", base).href);
         await otherTab.getByRole("button", { name: "Sign out", exact: true }).click();
         await otherTab.close();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");

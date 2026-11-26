@@ -1,27 +1,36 @@
 import { $, $$, on, the } from "on_the_money";
-import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
+import { directoryPath, settingsPath } from "../src/directory-addresses.js";
 import { daemonPolicy, formatPageTitle, onDaemonPolicy, serviceVersion } from "./endpoints.js";
 import renderInPageError from "./error-view.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
-import { mountSchedulePanel } from "./schedule-panel.js";
-import { createModelSearchCache } from "./session-models.js";
-import { isRecord } from "./session-translator.js";
-import { parseWorkspaceList, wireWorkspaceCreateDialog } from "./workspace-dialogs.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
-import { mountFamilyAndEnvSections } from "./workspace-settings-families.js";
-import { mountModelsHelpAboutSections } from "./workspace-settings-models.js";
-import { mountWorkspaceAndSessionSettings, wireSettingsSessionCreateDialog } from "./workspace-settings-session.js";
+import { isRecord, parseWorkspaceList } from "./workspace-records.js";
 
 /**
- * @typedef {"workspace" | "session" | "models" | "mcp" | "skills" | "schedule" | "personas" | "members" | "env" | "help" | "about"} SettingsSection
+ * @typedef {"search" | "workspaces" | "sessions" | "models" | "mcp" | "skills" | "schedule" | "personas" | "members" | "env" | "help" | "about"} SettingsSection
  */
 
 /** @typedef {import("./workspace-settings-families.js").WorkspaceFamily} WorkspaceFamily */
-/** @typedef {import("./workspace-dialogs.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
+/** @typedef {import("./workspace-records.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
+/** @typedef {import("./workspace-records.js").WorkspaceSummary} WorkspaceSummary */
 
-const SECTIONS = /** @type {const} */ (["workspace", "session", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help", "about"]);
+const SECTIONS = /** @type {const} */ ([
+    "search",
+    "workspaces",
+    "sessions",
+    "models",
+    "mcp",
+    "skills",
+    "schedule",
+    "personas",
+    "members",
+    "env",
+    "help",
+    "about",
+]);
 const FAMILY_SECTIONS = new Set(["mcp", "skills", "schedule", "personas", "members", "env"]);
+const SUBSYSTEM_TEMPLATE_SECTIONS = new Set(["models", "mcp", "skills", "personas", "members", "env", "help"]);
 
 /** @param {unknown} value @returns {value is SettingsSection} */
 export const isSettingsSection = (value) =>
@@ -43,42 +52,51 @@ function declaredSettingsSections(article) {
 }
 
 /**
- * {§web-workspace-settings} {§web-settings-extensions} Mounts workspace and session management inside `<article id="workspace-settings">`.
+ * {§web-workspace-settings} {§web-settings-extensions} Mounts one active section panel inside `<article id="workspace-settings">`.
  * @param {HTMLElement} article
  * @param {() => WorkspaceSettingsContext} getContext
- * @param {{ updateHash?: boolean, initialQuery?: string, initialHelpFilter?: string, initialEnvScope?: "workspace" | "session" }} [options]
+ * @param {{
+ *   readonly activeSection?: string,
+ *   readonly initialQuery?: string,
+ *   readonly initialHelpFilter?: string,
+ *   readonly initialEnvScope?: "workspace" | "session",
+ *   readonly openCreate?: boolean,
+ *   readonly preloadedWorkspaces?: readonly WorkspaceSummary[],
+ * }} [options]
  */
-export function createWorkspaceSettingsController(article, getContext, {
-    updateHash = false,
+export async function createWorkspaceSettingsController(article, getContext, {
+    activeSection: suppliedSection,
     initialQuery = "",
     initialHelpFilter = "",
     initialEnvScope = "workspace",
+    openCreate = false,
+    preloadedWorkspaces,
 } = {}) {
     const declaredSections = declaredSettingsSections(article);
+    const activeSection = suppliedSection ?? article.dataset.activeSection ?? "search";
     /** @type {Element | null} */
     let envPanel = null;
-    /** @type {string} */
-    let activeSection = "workspace";
     let busy = false;
     let refreshDepth = 0;
     let mounted = false;
 
-    /** @type {ReturnType<typeof mountWorkspaceAndSessionSettings> | null} */
+    /** @type {ReturnType<typeof import("./workspace-settings-session.js").mountWorkspaceAndSessionSettings> | null} */
     let sessionController = null;
-    /** @type {ReturnType<typeof mountModelsHelpAboutSections> | null} */
+    /** @type {ReturnType<typeof import("./workspace-settings-models.js").mountModelsHelpAboutSections> | null} */
     let modelsHelpAboutController = null;
-    /** @type {ReturnType<typeof mountFamilyAndEnvSections> | null} */
+    /** @type {ReturnType<typeof import("./workspace-settings-families.js").mountFamilyAndEnvSections> | null} */
     let familiesEnvController = null;
-    /** @type {ReturnType<typeof mountSchedulePanel> | null} */
+    /** @type {ReturnType<typeof import("./schedule-panel.js").mountSchedulePanel> | null} */
     let schedulePanelController = null;
 
-    const modelSearchCache = createModelSearchCache((kind, params = {}, signal) => {
+    /** @param {string} kind @param {Record<string, unknown>} [params] @param {AbortSignal} [signal] */
+    const invokeModelSearch = (kind, params = {}, signal) => {
         const ctx = getContext();
         const combinedSignal = signal ? AbortSignal.any([ctx.signal, signal]) : ctx.signal;
         return managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", combinedSignal, {
             workspaceId: ctx.workspaceId,
         });
-    });
+    };
 
     function syncLoadingState() {
         the(article, "ws-settings-loading", busy || refreshDepth > 0 ? "true" : null);
@@ -134,17 +152,41 @@ export function createWorkspaceSettingsController(article, getContext, {
     }
 
     /** @param {string} section */
-    async function refreshSection(section) {
-        if (!isSettingsSection(section) || section === "workspace") {
+    function isSectionAvailable(section) {
+        if (!declaredSections.has(section)) return false;
+        if (!isSettingsSection(section)) return true;
+        const policy = daemonPolicy();
+        if (FAMILY_SECTIONS.has(section) && Array.isArray(policy?.families) && !policy.families.includes(section)) {
+            return false;
+        }
+        if (section === "members") {
+            if (policy?.projectRoot === "none") return false;
+            if (getContext().hasProjectRoot === false) return false;
+        }
+        return true;
+    }
+
+    /** @param {boolean} [usePreloaded] */
+    async function refreshActiveSection(usePreloaded = false) {
+        if (!isSectionAvailable(activeSection)) {
+            const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
+            if (activePanel instanceof HTMLElement) activePanel.hidden = true;
+            if (!busy) setFeedback(false, "This settings section is unavailable for this workspace.", "");
+            return;
+        }
+        const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
+        if (activePanel instanceof HTMLElement) activePanel.hidden = false;
+
+        if (!isSettingsSection(activeSection) || activeSection === "search") {
             if (!busy) setFeedback(false, "", "");
             return;
         }
-        if (section === "help") {
+        if (activeSection === "help") {
             modelsHelpAboutController?.applyHelpFilter();
             if (!busy) setFeedback(false, "", "");
             return;
         }
-        if (section === "about") {
+        if (activeSection === "about") {
             modelsHelpAboutController?.syncAboutPanel();
             if (serviceVersion() === null) {
                 const ctx = getContext();
@@ -155,12 +197,7 @@ export function createWorkspaceSettingsController(article, getContext, {
             return;
         }
         const ctx = getContext();
-        if (ctx.workspaceId <= 0) {
-            if (!busy) setFeedback(false, "", "");
-            return;
-        }
-        if (section === "session" && ctx.sessionName === null) {
-            sessionController?.renderSessionConfigControls(null, [], []);
+        if (activeSection !== "workspaces" && ctx.workspaceId <= 0) {
             if (!busy) setFeedback(false, "", "");
             return;
         }
@@ -170,21 +207,25 @@ export function createWorkspaceSettingsController(article, getContext, {
         refreshDepth += 1;
         syncLoadingState();
         try {
-            if (section === "session") {
-                await sessionController?.hydrateSessionConfig();
+            if (activeSection === "workspaces") {
+                await sessionController?.loadWorkspacesSection(usePreloaded ? preloadedWorkspaces : undefined);
                 return;
             }
-            if (section === "models") {
+            if (activeSection === "sessions") {
+                await sessionController?.loadSessionsSection();
+                return;
+            }
+            if (activeSection === "models") {
                 await modelsHelpAboutController?.loadModelsCatalog();
                 return;
             }
-            if (section === "env") {
+            if (activeSection === "env") {
                 await familiesEnvController?.loadEnvSection();
                 return;
             }
-            await familiesEnvController?.loadFamilySection(section);
+            await familiesEnvController?.loadFamilySection(activeSection);
             ctx.signal.throwIfAborted();
-            if (section === "schedule" && schedulePanelController) {
+            if (activeSection === "schedule" && schedulePanelController) {
                 void schedulePanelController.refreshAuxiliaryData();
             }
         } catch (error) {
@@ -202,21 +243,6 @@ export function createWorkspaceSettingsController(article, getContext, {
         schedulePanelController?.prefillTarget();
     }
 
-    /** @param {string} section */
-    function isSectionAvailable(section) {
-        if (!declaredSections.has(section)) return false;
-        if (!isSettingsSection(section)) return true;
-        const policy = daemonPolicy();
-        if (FAMILY_SECTIONS.has(section) && Array.isArray(policy?.families) && !policy.families.includes(section)) {
-            return false;
-        }
-        if (section === "members") {
-            if (policy?.projectRoot === "none") return false;
-            if (getContext().hasProjectRoot === false) return false;
-        }
-        return true;
-    }
-
     function syncPolicyVisibility() {
         const policy = daemonPolicy();
         for (const item of $$(article, "[data-settings-section]")) {
@@ -228,126 +254,127 @@ export function createWorkspaceSettingsController(article, getContext, {
             }
         }
         familiesEnvController?.applyDaemonPolicy(policy);
+        const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
         if (!isSectionAvailable(activeSection)) {
-            selectSection("workspace", false);
+            if (activePanel instanceof HTMLElement) activePanel.hidden = true;
+            if (!busy) setFeedback(false, "This settings section is unavailable for this workspace.", "");
+        } else if (activePanel instanceof HTMLElement) {
+            activePanel.hidden = false;
         }
     }
 
-    /** @param {string} section @param {boolean} [pushHash] */
-    function selectSection(section, pushHash = false) {
-        ensureMounted();
-        const resolved = isSectionAvailable(section) ? section : "workspace";
-        activeSection = resolved;
-        article.dataset.activeSection = resolved;
-        for (const item of $$(article, "[data-settings-section]")) {
-            if (item.getAttribute("data-settings-section") === resolved) {
-                item.setAttribute("aria-current", "true");
-            } else {
-                item.removeAttribute("aria-current");
-            }
-        }
-        for (const panel of $$(article, "[data-settings-panel]")) {
-            if (panel instanceof HTMLElement) {
-                panel.hidden = panel.dataset.settingsPanel !== resolved;
-            }
-        }
-        if (pushHash && updateHash && typeof history === "object") {
-            const nextUrl = resolved === "workspace"
-                ? `${location.pathname}${location.search}`
-                : `${location.pathname}${location.search}#${resolved}`;
-            if (`${location.pathname}${location.search}${location.hash}` !== nextUrl) {
-                history.replaceState(null, "", nextUrl);
-            }
-        }
-        if (resolved === "schedule") prefillScheduleTarget();
-        const ctx = getContext();
-        // {§web-settings-extensions} Notify host extension scripts of active section transitions alongside `data-active-section`.
-        article.dispatchEvent(new CustomEvent("plurnk:settings-section", {
-            detail: {
-                section: resolved,
-                workspaceName: ctx.workspaceName,
-                sessionName: ctx.sessionName,
-            },
-        }));
-        void refreshSection(resolved);
-    }
-
-    function ensureMounted() {
+    async function ensureMounted() {
         if (mounted) return;
         mounted = true;
-        const sessionConfigOutlet = $(article, "[data-session-config-outlet]");
-        if (sessionConfigOutlet) {
-            const clonedSessionCfg = $.clone(sessionConfigOutlet, "#session-config-controls", { position: "beforebegin" });
-            if (clonedSessionCfg) sessionConfigOutlet.remove();
-        }
-        if (!$(article, '[data-settings-panel="mcp"]')) {
+        article.dataset.activeSection = activeSection;
+
+        if (activeSection === "sessions") {
+            const sessionConfigOutlet = $(article, "[data-session-config-outlet]");
+            if (sessionConfigOutlet) {
+                const clonedSessionCfg = $.clone(sessionConfigOutlet, "#session-config-controls", { position: "beforebegin" });
+                if (clonedSessionCfg) sessionConfigOutlet.remove();
+            }
+        } else if (activeSection === "schedule") {
             const host = $(article, "[data-settings-subsystems]") ?? article;
-            const panels = $.clone(host, "#workspace-settings-subsystems");
-            const scheduleOutlet = panels ? $(panels, "[data-schedule-panel-outlet]") : null;
-            if (scheduleOutlet) {
-                const schedulePanel = $.clone(scheduleOutlet, "#workspace-settings-schedule", { position: "beforebegin" });
-                if (schedulePanel) scheduleOutlet.remove();
+            if (!$(article, '[data-settings-panel="schedule"]')) {
+                const schedulePanel = $.clone(host, "#workspace-settings-schedule");
+                if (schedulePanel instanceof HTMLElement) schedulePanel.hidden = false;
+            }
+        } else if (SUBSYSTEM_TEMPLATE_SECTIONS.has(activeSection)) {
+            const host = $(article, "[data-settings-subsystems]") ?? article;
+            if (!$(article, `[data-settings-panel="${activeSection}"]`)) {
+                const panels = $.clone(host, "#workspace-settings-subsystems");
+                if (panels instanceof HTMLElement) {
+                    const outlet = $(panels, "[data-schedule-panel-outlet]");
+                    outlet?.remove();
+                    for (const panel of $$(panels, "[data-settings-panel]")) {
+                        if (panel instanceof HTMLElement) {
+                            if (panel.dataset.settingsPanel !== activeSection) {
+                                panel.remove();
+                            } else {
+                                panel.hidden = false;
+                            }
+                        }
+                    }
+                }
             }
         }
-        const envOutlet = $(article, "[data-ws-env-outlet]");
-        if (envOutlet && !envPanel) {
-            envPanel = $.clone(envOutlet, "#command-env");
-            const envSetForm = $(envPanel, "form[data-env-set-form]");
-            const envFormOutlet = $(article, "[data-ws-env-form-outlet]");
-            if (envSetForm && envFormOutlet) {
-                envFormOutlet.replaceWith(envSetForm);
+
+        if (activeSection === "env") {
+            const envOutlet = $(article, "[data-ws-env-outlet]");
+            if (envOutlet && !envPanel) {
+                envPanel = $.clone(envOutlet, "#command-env");
+                const envSetForm = $(envPanel, "form[data-env-set-form]");
+                const envFormOutlet = $(article, "[data-ws-env-form-outlet]");
+                if (envSetForm && envFormOutlet) {
+                    envFormOutlet.replaceWith(envSetForm);
+                }
             }
         }
 
-        sessionController = mountWorkspaceAndSessionSettings(article, {
-            getContext,
-            invoke,
-            runMutation,
-            modelSearchCache,
-            refreshSessionSection: () => refreshSection("session"),
-        });
-
-        modelsHelpAboutController = mountModelsHelpAboutSections(article, {
-            getContext,
-            invoke,
-            runMutation,
-            modelSearchCache,
-            initialQuery,
-            initialHelpFilter,
-            onRefreshModels: () => refreshSection("models"),
-        });
-
-        const schedulePanelEl = $(article, '[data-settings-panel="schedule"]');
-        if (schedulePanelEl instanceof HTMLElement) {
-            schedulePanelController = mountSchedulePanel(schedulePanelEl, {
+        if (activeSection === "workspaces" || activeSection === "sessions") {
+            const { mountWorkspaceAndSessionSettings } = await import("./workspace-settings-session.js");
+            if (getContext().signal.aborted) return;
+            sessionController = mountWorkspaceAndSessionSettings(article, {
                 getContext,
                 invoke,
-                invokeForSession: (kind, params, targetSession, signal) => {
-                    const ctx = getContext();
-                    const combinedSignal = signal ? AbortSignal.any([ctx.signal, signal]) : ctx.signal;
-                    return managementAction(kind, params, `${ctx.workspaceId}#${targetSession}`, combinedSignal, {
-                        workspaceId: ctx.workspaceId,
+                runMutation,
+                invokeModelSearch,
+                refreshSessionsSection: () => refreshActiveSection(false),
+                refreshWorkspacesSection: () => refreshActiveSection(false),
+                openCreate,
+            });
+        } else if (activeSection === "models" || activeSection === "help" || activeSection === "about") {
+            const { mountModelsHelpAboutSections } = await import("./workspace-settings-models.js");
+            if (getContext().signal.aborted) return;
+            modelsHelpAboutController = mountModelsHelpAboutSections(article, {
+                getContext,
+                invoke,
+                runMutation,
+                invokeModelSearch,
+                initialQuery,
+                initialHelpFilter,
+                onRefreshModels: () => refreshActiveSection(false),
+            });
+        } else if (FAMILY_SECTIONS.has(activeSection)) {
+            const [{ mountFamilyAndEnvSections }, scheduleMod] = await Promise.all([
+                import("./workspace-settings-families.js"),
+                activeSection === "schedule" ? import("./schedule-panel.js") : Promise.resolve(null),
+            ]);
+            if (getContext().signal.aborted) return;
+            if (activeSection === "schedule" && scheduleMod) {
+                const schedulePanelEl = $(article, '[data-settings-panel="schedule"]');
+                if (schedulePanelEl instanceof HTMLElement) {
+                    schedulePanelController = scheduleMod.mountSchedulePanel(schedulePanelEl, {
+                        getContext,
+                        invoke,
+                        invokeForSession: (kind, params, targetSession, signal) => {
+                            const ctx = getContext();
+                            const combinedSignal = signal ? AbortSignal.any([ctx.signal, signal]) : ctx.signal;
+                            return managementAction(kind, params, `${ctx.workspaceId}#${targetSession}`, combinedSignal, {
+                                workspaceId: ctx.workspaceId,
+                            });
+                        },
+                        runMutation,
+                        setFeedback,
+                        refreshList: () => familiesEnvController?.loadFamilySection("schedule") ?? Promise.resolve(),
                     });
-                },
+                }
+            }
+            familiesEnvController = mountFamilyAndEnvSections(article, {
+                getContext,
+                invoke,
                 runMutation,
                 setFeedback,
-                refreshList: () => familiesEnvController?.loadFamilySection("schedule") ?? Promise.resolve(),
+                isBusy: () => busy,
+                invokeModelSearch,
+                envPanel,
+                initialEnvScope,
+                onRenderScheduleList: (res) => { schedulePanelController?.renderList(res); },
+                onRefreshSection: () => refreshActiveSection(false),
+                onRefreshEnv: () => refreshActiveSection(false),
             });
         }
-
-        familiesEnvController = mountFamilyAndEnvSections(article, {
-            getContext,
-            invoke,
-            runMutation,
-            setFeedback,
-            isBusy: () => busy,
-            modelSearchCache,
-            envPanel,
-            initialEnvScope,
-            onRenderScheduleList: (res) => { schedulePanelController?.renderList(res); },
-            onRefreshSection: (section) => refreshSection(section),
-            onRefreshEnv: () => refreshSection("env"),
-        });
 
         const offPolicy = onDaemonPolicy(() => { syncPolicyVisibility(); });
         syncPolicyVisibility();
@@ -367,64 +394,53 @@ export function createWorkspaceSettingsController(article, getContext, {
                 prefillScheduleTarget();
             }
         });
-
-        on(article, "click", "[data-settings-section]", (event, link) => {
-            const raw = link.getAttribute("data-settings-section");
-            if (raw !== null && declaredSections.has(raw)) {
-                event.preventDefault();
-                selectSection(raw, true);
-            }
-        });
     }
 
-    ensureMounted();
+    await ensureMounted();
 
     return {
-        /** @param {string} [initialSection] */
-        open(initialSection = activeSection) {
-            const targetSection = declaredSections.has(initialSection) ? initialSection : "workspace";
-            selectSection(targetSection, false);
-        },
-        /** @param {string} section @param {boolean} [pushHash] */
-        selectSection(section, pushHash = false) {
-            selectSection(section, pushHash);
+        /** Hydrate the mounted active section and dispatch `plurnk:settings-section`. */
+        open() {
+            if (activeSection === "schedule") prefillScheduleTarget();
+            const ctx = getContext();
+            // {§web-settings-extensions} Notify host extension scripts of the active section alongside `data-active-section`.
+            article.dispatchEvent(new CustomEvent("plurnk:settings-section", {
+                detail: {
+                    section: activeSection,
+                    workspaceName: ctx.workspaceName,
+                    sessionName: ctx.sessionName,
+                },
+            }));
+            void refreshActiveSection(true);
         },
         /** @param {string} familyOrTopic */
         notifyChanged(familyOrTopic) {
-            if (busy || !isSettingsSection(activeSection) || activeSection === "help" || activeSection === "about") return;
+            if (busy || !isSettingsSection(activeSection) || activeSection === "search" || activeSection === "help" || activeSection === "about") return;
             if (
                 familyOrTopic === "resync"
                 || familyOrTopic === activeSection
-                || (familyOrTopic === "policy" && (activeSection === "session" || activeSection === "models"))
-                || (familyOrTopic === "personas" && (activeSection === "session" || activeSection === "schedule"))
+                || (familyOrTopic === "workspaces" && activeSection === "workspaces")
+                || (familyOrTopic === "sessions" && activeSection === "sessions")
+                || (familyOrTopic === "policy" && (activeSection === "sessions" || activeSection === "models"))
+                || (familyOrTopic === "personas" && (activeSection === "sessions" || activeSection === "schedule"))
                 || (familyOrTopic === "mcp" && activeSection === "schedule")
             ) {
-                void refreshSection(activeSection);
+                void refreshActiveSection(false);
             }
         },
     };
 }
 
-/** @param {string} hash @param {HTMLElement} article @returns {string} */
-function parseSettingsHash(hash, article) {
-    const raw = hash.startsWith("#") ? hash.slice(1) : hash;
-    try {
-        const decoded = decodeURIComponent(raw);
-        return declaredSettingsSections(article).has(decoded) ? decoded : "workspace";
-    } catch {
-        return "workspace";
-    }
-}
-
 /**
- * {§web-workspace-settings} Dedicated `/settings/?workspace=<name>` page entrypoint loaded over `/acp`.
+ * {§web-workspace-settings} {§web-search} Path-based `/settings/<section>` hub entrypoint loaded over `/acp`.
  * @param {HTMLElement} main
  */
 export default async function observeWorkspaceSettings(main) {
-    const article = $(main, "#workspace-settings");
-    if (!(article instanceof HTMLElement)) {
+    const rawArticle = $(main, "#workspace-settings");
+    if (!(rawArticle instanceof HTMLElement)) {
         throw new Error("Workspace settings article is missing.");
     }
+    const article = rawArticle;
 
     const pageLifetime = new AbortController();
     on.target(window, "pagehide", (event) => {
@@ -434,6 +450,8 @@ export default async function observeWorkspaceSettings(main) {
     });
 
     const queryParams = new URLSearchParams(location.search);
+    const activeSection = article.dataset.activeSection || main.dataset.settingsSection || "search";
+    const openCreate = main.dataset.openCreate === "true" || queryParams.get("new") === "1";
     const preseededWorkspaceId = main.dataset.workspaceId ?? "";
     const isPreseededFixture = /^[1-9]\d*$/u.test(preseededWorkspaceId) && main.dataset.live !== "true";
 
@@ -446,24 +464,55 @@ export default async function observeWorkspaceSettings(main) {
         : main.dataset.hasProjectRoot === "true"
             ? true
             : null;
-    /** @type {Set<string>} */
-    const knownWorkspaceNames = new Set(currentWorkspaceName ? [currentWorkspaceName] : []);
-    /** @type {Set<string>} */
-    const knownSessionNames = new Set(sessionName ? [sessionName] : []);
+    /** @type {WorkspaceSummary[] | undefined} */
+    let preloadedWorkspaces;
 
-    wireWorkspaceCreateDialog({
-        signal: pageLifetime.signal,
-        getKnownWorkspaceNames: () => knownWorkspaceNames,
-    });
+    const sectionLabel = $(article, `[data-settings-section="${activeSection}"]`)?.textContent?.trim() || activeSection;
 
-    wireSettingsSessionCreateDialog({
-        signal: pageLifetime.signal,
-        getWorkspaceId: () => workspaceId,
-        getWorkspaceName: () => currentWorkspaceName,
-        getKnownSessionNames: () => knownSessionNames,
-    });
+    /**
+     * @param {string} wsName
+     * @param {string | null} sessName
+     * @param {{ icon?: string, iconLabel?: string }} [marker]
+     */
+    function syncNavigationLinks(wsName, sessName, marker) {
+        const searchHref = settingsPath("search", { workspace: wsName || null, session: sessName }) ?? "/settings/search";
+        const searchNav = $('header a[data-nav="search"]');
+        if (searchNav instanceof HTMLAnchorElement) {
+            the(searchNav, { "search-settings-path": searchHref });
+            if (activeSection === "search") searchNav.setAttribute("aria-current", "page");
+            else searchNav.removeAttribute("aria-current");
+        }
+        for (const tabLink of $$(article, "ul[data-settings-nav] a[data-settings-section]")) {
+            if (!(tabLink instanceof HTMLAnchorElement)) continue;
+            const sec = tabLink.dataset.settingsSection;
+            if (!sec) continue;
+            const nextHref = settingsPath(sec, { workspace: wsName || null, session: sessName }) ?? `/settings/${sec}`;
+            if (tabLink.getAttribute("href") !== nextHref) tabLink.setAttribute("href", nextHref);
+        }
+        const backLink = $("[data-settings-back]");
+        if (backLink && wsName) {
+            const backPath = sessName !== null
+                ? directoryPath({ kind: "session", workspace: wsName, session: sessName })
+                : directoryPath({ kind: "workspace", workspace: wsName });
+            if (backPath !== null) {
+                the(backLink, {
+                    "workspace-name": wsName,
+                    "workspace-back-path": backPath,
+                    ...(marker?.icon ? { "workspace-icon": marker.icon } : {}),
+                    ...(marker?.iconLabel ? { "workspace-icon-label": marker.iconLabel } : {}),
+                });
+            }
+            const backSess = $(backLink, "[data-settings-back-session]");
+            if (sessName !== null && backSess instanceof HTMLElement) {
+                backSess.hidden = false;
+                the(backSess, "active-session-name", sessName);
+            } else if (backSess instanceof HTMLElement) {
+                backSess.hidden = true;
+            }
+        }
+    }
 
-    if (!isPreseededFixture) {
+    if (!isPreseededFixture && !(activeSection === "search" && currentWorkspaceName === "")) {
         if (currentWorkspaceName !== "" && directoryPath({ kind: "workspace", workspace: currentWorkspaceName }) === null) {
             renderInPageError(main, 404, "Workspace not found.");
             return;
@@ -473,21 +522,25 @@ export default async function observeWorkspaceSettings(main) {
                 await managementAction("workspace.list", { includeArchived: true }, "", pageLifetime.signal),
             );
             if (pageLifetime.signal.aborted) return;
-            for (const ws of listedWorkspaces) knownWorkspaceNames.add(ws.name);
+            preloadedWorkspaces = listedWorkspaces;
 
             const matchedWorkspace = currentWorkspaceName !== ""
                 ? listedWorkspaces.find(({ name }) => name === currentWorkspaceName)
                 : (listedWorkspaces.find(({ archivedAt }) => archivedAt === null) ?? listedWorkspaces[0]);
 
             if (!matchedWorkspace) {
-                const initialSec = parseSettingsHash(location.hash, article);
-                const allowWithoutWorkspace = initialSec === "about"
-                    || initialSec === "help"
-                    || !isSettingsSection(initialSec);
+                const allowWithoutWorkspace = activeSection === "search"
+                    || activeSection === "workspaces"
+                    || activeSection === "help"
+                    || activeSection === "about"
+                    || !isSettingsSection(activeSection);
                 if (currentWorkspaceName !== "" || !allowWithoutWorkspace) {
                     renderInPageError(main, 404, "Workspace not found.");
                     return;
                 }
+                syncNavigationLinks("", null);
+                const activeWsCard = $(article, "[data-active-workspace-card]");
+                if (activeWsCard instanceof HTMLElement) activeWsCard.hidden = true;
             } else {
                 workspaceId = matchedWorkspace.id;
                 currentWorkspaceName = matchedWorkspace.name;
@@ -517,7 +570,6 @@ export default async function observeWorkspaceSettings(main) {
                 for (const row of rawRows) {
                     if (isRecord(row) && typeof row.id === "number") {
                         rowById.set(row.id, row);
-                        if (typeof row.name === "string") knownSessionNames.add(row.name);
                     }
                 }
                 const activeRow = sessionName
@@ -526,19 +578,14 @@ export default async function observeWorkspaceSettings(main) {
                 if (!activeRow) sessionName = null;
                 main.dataset.sessionName = sessionName ?? "";
 
-                the("page-title", formatPageTitle(`${currentWorkspaceName} · Settings`));
-                const backLink = $("[data-settings-back]");
-                const backPath = sessionName !== null
-                    ? directoryPath({ kind: "session", workspace: currentWorkspaceName, session: sessionName })
-                    : directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
-                if (backLink && backPath !== null) {
-                    the(backLink, {
-                        "workspace-name": currentWorkspaceName,
-                        "workspace-back-path": backPath,
-                        "workspace-icon": iconGlyph,
-                        "workspace-icon-label": iconLabel,
-                    });
+                const explicitWorkspace = queryParams.get("workspace") !== null && queryParams.get("workspace") !== "";
+                if (explicitWorkspace || activeSection !== "search") {
+                    the("page-title", formatPageTitle(`${currentWorkspaceName} · ${sectionLabel}`));
                 }
+                syncNavigationLinks(currentWorkspaceName, sessionName, { icon: iconGlyph, iconLabel });
+
+                const activeWsCard = $(article, "[data-active-workspace-card]");
+                if (activeWsCard instanceof HTMLElement) activeWsCard.hidden = false;
 
                 const folderLine = $(article, "[data-settings-folder]");
                 if (folderLine instanceof HTMLElement) {
@@ -556,16 +603,16 @@ export default async function observeWorkspaceSettings(main) {
                 const wsUnarchBtn = $(article, "[data-workspace-unarchive-btn]");
                 if (wsArchBtn instanceof HTMLElement) wsArchBtn.hidden = wsArchived;
                 if (wsUnarchBtn instanceof HTMLElement) wsUnarchBtn.hidden = !wsArchived;
-                const addSessionBtn = $(article, "[data-settings-add-session]");
-                if (addSessionBtn instanceof HTMLElement) addSessionBtn.hidden = wsArchived;
+                const addSessionDisclosure = $(article, "[data-settings-add-session]");
+                if (addSessionDisclosure instanceof HTMLElement) addSessionDisclosure.hidden = wsArchived;
 
                 for (const input of $$('input[name="workspace"]')) {
-                    if (input instanceof HTMLInputElement && input.type === "hidden") {
+                    if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-workspace-row-form]")) {
                         input.value = currentWorkspaceName;
                     }
                 }
                 for (const input of $$('input[name="session"]')) {
-                    if (input instanceof HTMLInputElement && input.type === "hidden") {
+                    if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-session-row-form]")) {
                         input.value = sessionName ?? "";
                     }
                 }
@@ -631,26 +678,43 @@ export default async function observeWorkspaceSettings(main) {
             renderInPageError(main, status, message, recovery);
             return;
         }
+    } else {
+        syncNavigationLinks(currentWorkspaceName, sessionName);
     }
 
-    const controller = createWorkspaceSettingsController(article, () => ({
+    const controller = await createWorkspaceSettingsController(article, () => ({
         workspaceId,
         workspaceName: currentWorkspaceName,
         sessionName,
         hasProjectRoot,
         signal: pageLifetime.signal,
     }), {
-        updateHash: true,
+        activeSection,
         initialQuery: queryParams.get("q") ?? "",
         initialHelpFilter: queryParams.get("cmd") ?? "",
         initialEnvScope: queryParams.get("envScope") === "session" ? "session" : "workspace",
+        openCreate,
+        preloadedWorkspaces,
     });
+    if (pageLifetime.signal.aborted) return;
 
-    controller.selectSection(parseSettingsHash(location.hash, article), false);
+    controller.open();
 
-    on.target(window, "hashchange", () => {
-        controller.selectSection(parseSettingsHash(location.hash, article), false);
-    });
+    if (activeSection === "search") {
+        const searchPanel = $(article, '[data-settings-panel="search"]');
+        if (searchPanel instanceof HTMLElement) {
+            const { default: observeOverview } = await import("./overview.js");
+            const overviewHandle = observeOverview(searchPanel, {
+                connectionTarget: main,
+                contextWorkspace: currentWorkspaceName,
+                contextSession: sessionName,
+            });
+            on.target(pageLifetime.signal, "abort", () => {
+                overviewHandle.dispose();
+            });
+        }
+        return;
+    }
 
     if (isPreseededFixture || workspaceId <= 0) return;
 
@@ -666,30 +730,28 @@ export default async function observeWorkspaceSettings(main) {
                 if (id !== workspaceId || name === null) return;
                 currentWorkspaceName = name;
                 main.dataset.workspaceName = name;
-                the("page-title", formatPageTitle(`${name} · Settings`));
-                const backLink = $("[data-settings-back]");
-                const backPath = sessionName !== null
-                    ? directoryPath({ kind: "session", workspace: name, session: sessionName })
-                    : directoryPath({ kind: "workspace", workspace: name });
-                if (backLink && backPath !== null) {
-                    the(backLink, {
-                        "workspace-name": name,
-                        "workspace-back-path": backPath,
-                    });
-                }
+                the("page-title", formatPageTitle(`${name} · ${sectionLabel}`));
+                syncNavigationLinks(name, sessionName);
                 for (const input of $$('input[name="workspace"]')) {
-                    if (input instanceof HTMLInputElement && input.type === "hidden") {
+                    if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-workspace-row-form]")) {
                         input.value = name;
                     }
                 }
-                const nextSettingsPath = workspaceSettingsPath(name, sessionName, location.hash.slice(1) || null);
+                const nextSettingsPath = settingsPath(activeSection, { workspace: name, session: sessionName });
                 if (nextSettingsPath !== null && typeof history === "object") {
                     history.replaceState(null, "", nextSettingsPath);
                 }
+                controller.notifyChanged("workspaces");
+                return;
+            }
+            if (event === "workspace/created" || event === "workspace/archived") {
+                controller.notifyChanged("workspaces");
                 return;
             }
             if (notifWorkspaceId !== workspaceId && event !== "notifications/resync") return;
-            if (event === "functionality/changed" && typeof data.family === "string") {
+            if (event === "session/created" || event === "session/archived" || event === "session/deleted" || event === "session/titled") {
+                controller.notifyChanged("sessions");
+            } else if (event === "functionality/changed" && typeof data.family === "string") {
                 controller.notifyChanged(data.family);
             } else if (event === "session/policy") {
                 controller.notifyChanged("policy");

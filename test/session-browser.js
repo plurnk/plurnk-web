@@ -963,7 +963,7 @@ export default async function verifySessionPage({ t, withDaemon }) {
                         ]);
                         assert.equal(await value(page, "lifecycle"), "running");
                         const second = await context.newPage();
-                        await second.goto(new URL("/search/", base).href);
+                        await second.goto(new URL("/settings/search", base).href);
                         await second.getByRole("button", { name: "Sign out", exact: true }).click();
                         await second.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");
@@ -1018,8 +1018,12 @@ export default async function verifySessionPage({ t, withDaemon }) {
                                 observations.push(body);
                             }
                         });
-                        await page.goto(new URL("/search/", proxy.url).href);
-                        assert.equal(requests.some((request) => /session-.*\.js/u.test(request.url())), false, "directory navigation needs no session runtime");
+                        await page.goto(new URL("/settings/search", proxy.url).href);
+                        assert.equal(
+                            requests.some((request) => /\/(?:session-[A-Za-z0-9_-]{8}|session-commands-[^/]+|workspace-workbench-[^/]+)\.js$/u.test(new URL(request.url()).pathname)),
+                            false,
+                            "directory navigation needs no session runtime",
+                        );
                         await page.goto(new URL("/~/observer-approval#user", proxy.url).href);
                         await connection(page, "interrupted");
                         assert.equal(await page.getByRole("img", { name: "Disconnected", exact: true }).isVisible(), false,

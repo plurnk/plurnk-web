@@ -70,19 +70,28 @@ export function nextSequentialName(prefix, existingNames) {
     return `${prefix}${max + 1}`;
 }
 
+const SETTINGS_SECTION_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/u;
+
 /**
- * {§web-workspace-settings} Build `/settings/?workspace=<workspace>[&session=<session>][#<section>]` for representable workspace names.
- * @param {string} workspace
- * @param {string | null} [session]
- * @param {string | null} [section]
- * @param {Readonly<Record<string, string | null | undefined>>} [extra]
+ * {§web-workspace-settings} Build `/settings/<section>[?workspace=<workspace>[&session=<session>][&...]]`.
+ * Returns `null` when `section` is invalid or a non-empty `workspace` has no representable directory address.
+ * @param {string} section
+ * @param {{
+ *   readonly workspace?: string | null,
+ *   readonly session?: string | null,
+ *   readonly extra?: Readonly<Record<string, string | null | undefined>>,
+ * }} [options]
  * @returns {string | null}
  */
-export function workspaceSettingsPath(workspace, session = null, section = null, extra = undefined) {
-    if (directoryPath({ kind: "workspace", workspace }) === null) return null;
-    const params = new URLSearchParams({ workspace });
-    if (session !== null && session !== "" && session.isWellFormed()) {
-        params.set("session", session);
+export function settingsPath(section, { workspace = null, session = null, extra = undefined } = {}) {
+    if (!SETTINGS_SECTION_PATTERN.test(section)) return null;
+    const params = new URLSearchParams();
+    if (workspace !== null && workspace !== "") {
+        if (directoryPath({ kind: "workspace", workspace }) === null) return null;
+        params.set("workspace", workspace);
+        if (session !== null && session !== "" && session.isWellFormed()) {
+            params.set("session", session);
+        }
     }
     if (extra) {
         for (const [key, value] of Object.entries(extra)) {
@@ -91,8 +100,20 @@ export function workspaceSettingsPath(workspace, session = null, section = null,
             }
         }
     }
-    const hash = section ? `#${encodeURIComponent(section)}` : "";
-    return `/settings/?${params}${hash}`;
+    const query = params.toString();
+    return query ? `/settings/${section}?${query}` : `/settings/${section}`;
+}
+
+/**
+ * {§web-workspace-settings} Decode `/settings/<section>` against the admitted built-in and extension sections.
+ * @param {string} pathname
+ * @param {ReadonlySet<string>} allowedSections
+ * @returns {string | null}
+ */
+export function parseSettingsSection(pathname, allowedSections) {
+    const match = /^\/settings\/([a-z0-9][a-z0-9-]{0,31})\/?$/u.exec(pathname);
+    if (!match) return null;
+    return allowedSections.has(match[1]) ? match[1] : null;
 }
 
 /**

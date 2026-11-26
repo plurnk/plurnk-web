@@ -534,7 +534,7 @@ export default async function verifySessionApproval({ t, withDaemon: startDaemon
         await requestApproval(page, "approval-revoked");
         await page.getByRole("radio", { name: "Accept", exact: true }).check();
         const otherTab = await context.newPage();
-        await otherTab.goto(new URL("/search/", base).href);
+        await otherTab.goto(new URL("/settings/search", base).href);
         await otherTab.getByRole("button", { name: "Sign out", exact: true }).click();
         await otherTab.close();
         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "signed-out");

@@ -1,7 +1,7 @@
 import { $, $$, on } from "on_the_money";
 
 /** @param {Element} form */
-function syncProjectFolderField(form) {
+export function syncProjectFolderField(form) {
     const toggle = $(form, "input[data-toggle-project-folder]");
     const input = $(form, "input[data-project-folder-input]");
     if (toggle instanceof HTMLInputElement && input instanceof HTMLInputElement) {
@@ -11,7 +11,7 @@ function syncProjectFolderField(form) {
 }
 
 /**
- * {§web-page-shell} {§web-workspace-creation} Wires native <dialog> modals and project-folder creation toggle.
+ * {§web-page-shell} {§web-workspace-creation} Wires native <dialog> dismissal and the inline project-folder toggle.
  * @param {HTMLElement} [root]
  */
 export default function initDialogs(root = document.body) {
@@ -33,26 +33,6 @@ export default function initDialogs(root = document.body) {
         }
     });
 
-    on(root, "click", "[data-dialog-target]", (_event, openButton) => {
-        if (!(openButton instanceof HTMLButtonElement)) return;
-        const id = openButton.dataset.dialogTarget;
-        const dialog = id ? $(`#${id}`) : null;
-        if (dialog instanceof HTMLDialogElement) {
-            const enclosing = openButton.closest("dialog");
-            if (enclosing instanceof HTMLDialogElement && enclosing !== dialog && enclosing.open) {
-                enclosing.close();
-            }
-            for (const form of $$(dialog, "form#workspace-create")) {
-                syncProjectFolderField(form);
-            }
-            dialog.showModal();
-            const input = $(dialog, 'input[type="text"]:not(:disabled)');
-            if (input instanceof HTMLInputElement) {
-                input.focus();
-                input.select();
-            }
-        }
-    });
     on(root, "click", "[data-dialog-close]", (_event, closeButton) => {
         const dialog = closeButton.closest("dialog");
         if (dialog instanceof HTMLDialogElement) dialog.close();

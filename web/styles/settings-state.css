@@ -4,7 +4,7 @@
         padding: 0;
     }
 
-    #workspace-settings [data-settings-nav] a[aria-current="true"] {
+    #workspace-settings [data-settings-nav] a[aria-current="page"] {
         border-block-end-color: var(--otm-primary);
         font-weight: 700;
     }
@@ -59,17 +59,17 @@
     }
 
     @media (width >= 48rem) {
-        #workspace-settings [data-session-config-form] > :where(fieldset) {
+        #workspace-settings :is([data-session-config-form], [data-models-session-form]) > :where(fieldset) {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: calc(var(--otm-spacing) * 0.65) var(--otm-spacing);
         }
 
-        #workspace-settings [data-session-config-form] :where(fieldset > label, fieldset > [data-model-field]) {
+        #workspace-settings :is([data-session-config-form], [data-models-session-form]) :where(fieldset > label, fieldset > [data-model-field]) {
             margin: 0;
         }
 
-        #workspace-settings [data-session-config-form] :where(fieldset > footer) {
+        #workspace-settings :is([data-session-config-form], [data-models-session-form]) :where(fieldset > footer) {
             grid-column: 1 / -1;
         }
 
@@ -144,11 +144,11 @@
         padding-block: calc(var(--otm-spacing) * 0.25);
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form], [data-workspace-row-form], [data-session-row-form]) {
         margin: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) > :where(fieldset) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form], [data-workspace-row-form], [data-session-row-form]) > :where(fieldset) {
         display: inline-flex;
         flex-wrap: nowrap;
         align-items: center;
@@ -157,7 +157,7 @@
         padding: 0;
     }
 
-    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form]) :where(fieldset > button) {
+    :is([data-family-row-form], [data-env-row-form], [data-model-alias-row-form], [data-model-catalog-row-form], [data-candidate-add-form], [data-workspace-row-form], [data-session-row-form]) :where(fieldset > button) {
         flex: 0 0 auto;
         inline-size: auto;
         margin: 0;
@@ -166,43 +166,33 @@
         white-space: nowrap;
     }
 
-    #workspace-settings :where(td[data-text="family-summary"], td[data-text="family-status"]) {
+    #workspace-settings :where(td[data-text="family-summary"], td[data-text="family-status"], td[data-text="sess-row-details"]) {
         overflow-wrap: anywhere;
     }
 
-    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form]), td:has(> [data-model-alias-row-form]), td:has(> [data-model-catalog-row-form])) {
+    #workspace-settings :where(th[scope="row"], td[data-text="family-origin"], td[data-text="env-origin"], td:has(> [data-family-row-form]), td:has(> [data-env-row-form]), td:has(> [data-model-alias-row-form]), td:has(> [data-model-catalog-row-form]), td:has(> [data-workspace-row-form]), td:has(> [data-session-row-form])) {
         white-space: nowrap;
     }
 
     tr[data-model-session-usable="false"] [data-model-catalog-row-form],
-    tr[data-model-ready="false"] [data-model-catalog-row-form] {
+    tr[data-model-ready="false"] [data-model-catalog-row-form],
+    tr[data-ws-row-archived="false"] [data-ws-row-unarchive],
+    tr[data-ws-row-archived="true"] [data-ws-row-archive],
+    tr[data-sess-row-archived="false"] [data-sess-row-unarchive],
+    tr[data-sess-row-archived="true"] [data-sess-row-archive] {
         display: none;
     }
 
-    #dialog-session-model [data-text="model-dialog-error"]:empty {
-        display: none;
+    tr:is([data-ws-row-current="true"], [data-sess-row-current="true"]) {
+        background-color: var(--plurnk-user-surface);
+        font-weight: 700;
     }
 
-    @media (scripting: none) {
-        #workspace-settings [data-session-fork],
-        #workspace-settings [data-settings-nav] > li:nth-child(n+3) {
-            display: none;
-        }
-
-        #workspace-settings:not(:has(> #session:target)) > #session,
-        #workspace-settings:has(> #session:target) > #workspace {
-            display: none;
-        }
-
-        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="workspace"] {
-            border-block-end-color: transparent;
-            font-weight: 400;
-        }
-
-        #workspace-settings:has(> #session:target) [data-settings-nav] a[data-settings-section="session"] {
-            border-block-end-color: var(--otm-primary);
-            font-weight: 700;
-        }
+    #workspace-settings [data-settings-panel="workspaces"][data-collection-count="0"] > [data-workspaces-table-wrap],
+    #workspace-settings [data-settings-panel="workspaces"]:not([data-collection-count="0"]) > [data-workspaces-empty],
+    #workspace-settings [data-settings-panel="sessions"][data-collection-count="0"] > [data-sessions-table-wrap],
+    #workspace-settings [data-settings-panel="sessions"]:not([data-collection-count="0"]) > [data-sessions-empty] {
+        display: none;
     }
 
     :is([data-env-set-form], [data-env-row-form]) > :where(fieldset) {
@@ -286,12 +276,6 @@
         box-shadow: var(--otm-card-box-shadow);
     }
 
-    #dialog-session-model [data-model-combobox] > [data-combobox-list] {
-        position: static;
-        max-block-size: 12rem;
-        box-shadow: none;
-    }
-
     [data-combobox-list] > [role="option"],
     [data-combobox-list] > [data-combobox-hint] {
         list-style: none;
@@ -335,10 +319,6 @@
         padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.5);
         color: var(--otm-muted-color);
         font-size: 0.85em;
-    }
-
-    #dialog-session-model [data-model-dialog-catalog] {
-        margin-inline-end: auto;
     }
 
     [data-models-pagination],

@@ -116,18 +116,25 @@ test("{§web-configuration} {§web-browser-security} PLURNK_ACP_URL stamps boot 
     const base = `http://127.0.0.1:${server.address().port}`;
 
     const daemonDir = await fetch(`${base}/~/`, { redirect: "manual" });
-    assert.equal(daemonDir.status, 303, "{§web-search} GET /~/ redirects to /search/");
-    assert.equal(daemonDir.headers.get("location"), "/search/");
+    assert.equal(daemonDir.status, 303, "{§web-search} GET /~/ redirects to /settings/search");
+    assert.equal(daemonDir.headers.get("location"), "/settings/search");
+
+    const settingsRoot = await fetch(`${base}/settings/?workspace=work`, { redirect: "manual" });
+    assert.equal(settingsRoot.status, 303, "{§web-workspace-settings} GET /settings/ redirects to /settings/search preserving query");
+    assert.equal(settingsRoot.headers.get("location"), "/settings/search?workspace=work");
+
+    assert.equal((await fetch(`${base}/unknown/`)).status, 404, "unknown directory route returns 404");
+    assert.equal((await fetch(`${base}/settings/bogus`)).status, 404, "unknown settings section returns 404");
 
     for (const [path, expectedPage] of /** @type {const} */ ([
         ["/", "home"],
         ["/index.html", "home"],
         ["/~/work", "session"],
         ["/~/team/project", "session"],
-        ["/search/", "search"],
-        ["/search/index.html", "search"],
-        ["/settings/?workspace=work", "settings"],
-        ["/settings/", "settings"],
+        ["/settings/search", "settings"],
+        ["/settings/workspaces?workspace=work", "settings"],
+        ["/settings/sessions?workspace=work", "settings"],
+        ["/settings/about", "settings"],
         ["/auth/callback", "callback"],
     ])) {
         const res = await fetch(`${base}${path}`);
@@ -421,7 +428,7 @@ test("{§web-brand} {§web-configuration} brand knobs fail hard on missing/inval
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
 
-    const html = await (await fetch(`${base}/settings/`)).text();
+    const html = await (await fetch(`${base}/settings/about`)).text();
     assert.ok(html.includes('data-app-name="Acme Bot"'));
     assert.ok(html.includes('<meta name="theme-color" content="#0055aa">'));
     assert.ok(html.includes('<meta name="application-name" content="Acme Bot">'));
@@ -501,7 +508,8 @@ test("{§web-settings-extensions} {§web-configuration} {§web-assets} PLURNK_WE
         JSON.stringify([{ id: "a".repeat(33), label: "Too Long", htmlFile: "/tmp/a.html" }]),
         JSON.stringify([{ id: "about", label: "About", htmlFile: "/tmp/a.html" }]),
         JSON.stringify([{ id: "mcp", label: "MCP", htmlFile: "/tmp/a.html" }]),
-        JSON.stringify([{ id: "workspace", label: "Workspace", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "workspaces", label: "Workspaces", htmlFile: "/tmp/a.html" }]),
+        JSON.stringify([{ id: "search", label: "Search", htmlFile: "/tmp/a.html" }]),
         JSON.stringify([
             { id: "account", label: "Account", htmlFile: "/tmp/a.html" },
             { id: "account", label: "Duplicate", htmlFile: "/tmp/b.html" },
@@ -602,16 +610,22 @@ test("{§web-settings-extensions} {§web-configuration} {§web-assets} PLURNK_WE
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
 
-    const settingsRes = await fetch(`${base}/settings/`);
-    assert.equal(settingsRes.status, 200);
-    assert.equal(settingsRes.headers.get("x-frame-options"), "DENY");
-    assert.match(settingsRes.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*frame-ancestors 'none'/u);
-    const settingsHtml = await settingsRes.text();
-    assert.ok(settingsHtml.includes('<script type="module" src="/brand/tabs/account.js"></script>'));
-    assert.ok(settingsHtml.includes('data-settings-panel="account" data-settings-extension="true"'));
-    assert.ok(settingsHtml.includes('data-settings-panel="billing" data-settings-extension="true"'));
+    const accountRes = await fetch(`${base}/settings/account`);
+    assert.equal(accountRes.status, 200);
+    assert.equal(accountRes.headers.get("x-frame-options"), "DENY");
+    assert.match(accountRes.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*frame-ancestors 'none'/u);
+    const accountHtml = await accountRes.text();
+    assert.ok(accountHtml.includes('<script type="module" src="/brand/tabs/account.js"></script>'));
+    assert.ok(accountHtml.includes('data-settings-panel="account" data-settings-extension="true"'));
+    assert.doesNotMatch(accountHtml, /data-settings-panel="billing"/u);
 
-    for (const nonSettingsPath of ["/", "/search/", "/~/work", "/auth/callback", "/missing"]) {
+    const billingRes = await fetch(`${base}/settings/billing`);
+    assert.equal(billingRes.status, 200);
+    const billingPageHtml = await billingRes.text();
+    assert.ok(billingPageHtml.includes('data-settings-panel="billing" data-settings-extension="true"'));
+    assert.doesNotMatch(billingPageHtml, /\/brand\/tabs\/account\.js/u);
+
+    for (const nonSettingsPath of ["/", "/~/work", "/auth/callback", "/missing"]) {
         const html = await (await fetch(`${base}${nonSettingsPath}`)).text();
         assert.doesNotMatch(html, /\/brand\/tabs\/|data-settings-extension/u, nonSettingsPath);
     }
@@ -687,7 +701,7 @@ test("{§web-bff-auth} {§web-configuration} {§web-browser-security} PLURNK_WEB
     await once(server, "listening");
     const base = `http://127.0.0.1:${server.address().port}`;
 
-    for (const path of ["/", "/search/", "/settings/", "/~/work"]) {
+    for (const path of ["/", "/settings/search", "/settings/workspaces", "/~/work"]) {
         const res = await fetch(`${base}${path}`);
         assert.equal(res.status, 200, path);
         assert.match(res.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*form-action 'self'[\s\S]*frame-ancestors 'none'/u);

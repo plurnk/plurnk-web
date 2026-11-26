@@ -81,10 +81,11 @@ export default async function verifyRouteSettlement(t, createModule) {
         for (const [path, method] of [
             ["/", "GET"],
             ["/manifest.webmanifest", "GET"],
-            ["/search/", "GET"],
+            ["/settings/search", "GET"],
             ["/~/", "GET"],
             ["/~/example", "GET"],
             ["/settings/", "GET"],
+            ["/settings/workspaces", "GET"],
             ["/auth/callback", "GET"],
             ["/render/mermaid", "POST"],
             ["/missing", "GET"],

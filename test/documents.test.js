@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import Documents, { BUG_REPORT_URL, WEB_LICENSE, WEB_VERSION } from "../src/documents.js";
 
-const SHELL = '<!doctype html><html lang="en"><head><title data-text="page-title">Plurnk</title></head><body><header><a href="/search/">Search</a><nav aria-label="Main navigation"><ul></ul></nav></header><main id="main" data-page="home">Home</main></body></html>';
+const SHELL = '<!doctype html><html lang="en"><head><title data-text="page-title">Plurnk</title></head><body><header><a href="/settings/search" data-nav="search" data-bind="href:search-settings-path">Search</a><nav aria-label="Main navigation"><ul></ul></nav></header><main id="main" data-page="home">Home</main></body></html>';
 
 test("{§web-assets} the compiled head names one origin-relative application stylesheet", () => {
     assert.equal(
@@ -41,7 +41,7 @@ test("{§web-document} {§web-configuration} {§web-arrival} {§web-oidc} home a
     assert.doesNotMatch(callback, /<script/iu);
 });
 
-test("{§web-directory-documents} {§web-page-shell} {§web-workspace-tabs} {§web-workspace-creation} {§web-session-creation} {§web-workspace-folder} session shell escapes workspace identities, mounts bottom tab bar, and renders workspace-creation dialog shell", () => {
+test("{§web-directory-documents} {§web-page-shell} {§web-workspace-tabs} {§web-session-creation} {§web-workspace-folder} session shell escapes workspace identities, renders broad-to-narrow top bar, and links + to /settings/sessions?new=1", () => {
     const documents = new Documents(SHELL);
     for (const name of ["~/project", 'research<&>"', "42#alice"]) {
         const html = documents.session(name).toString();
@@ -50,59 +50,74 @@ test("{§web-directory-documents} {§web-page-shell} {§web-workspace-tabs} {§w
             .replaceAll("<", "&lt;")
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;");
-        const settingsHref = `/settings/?${new URLSearchParams({ workspace: name })}`.replaceAll("&", "&amp;");
+        const workspacesHref = `/settings/workspaces?${new URLSearchParams({ workspace: name })}`.replaceAll("&", "&amp;");
+        const sessionsHref = `/settings/sessions?${new URLSearchParams({ workspace: name })}`.replaceAll("&", "&amp;");
+        const newSessionHref = `/settings/sessions?${new URLSearchParams({ workspace: name, new: "1" })}`.replaceAll("&", "&amp;");
+        const modelsHref = `/settings/models?${new URLSearchParams({ workspace: name })}`.replaceAll("&", "&amp;");
         assert.ok(html.includes(`<title data-text="page-title">${escaped} — Plurnk</title>`));
-        assert.ok(html.includes(`<a id="session-workspace" href="${settingsHref}" data-bind="href:workspace-settings-path" aria-label="Workspace settings" title="Workspace settings"><span role="img" aria-label="Folderless workspace" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">☁️</span> <span data-text="workspace-name">${escaped}</span></a>`));
+        assert.ok(html.includes(`<a id="session-workspace" href="${workspacesHref}" data-bind="href:workspace-settings-path" aria-label="Workspaces" title="Workspaces">`));
+        assert.ok(html.includes(`<a id="header-session" href="${sessionsHref}" data-bind="href:header-session-settings-path" aria-label="Sessions" title="Sessions" hidden>`));
+        assert.ok(html.includes(`<a id="header-model" href="${modelsHref}" data-bind="href:header-models-settings-path title:header-model-label" aria-label="Models" title="Models" hidden>`));
         assert.ok(html.includes(`<main id="main" data-page="session" data-requested-workspace="${escaped}"><p id="session-folder" data-project-label=""><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label"></span></p></main>`));
-        assert.ok(html.includes(`<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-name="${escaped}" data-tab-count="0"><button type="button" data-action="new-session" data-tab-new aria-label="New session" title="New session">+</button><button type="button" data-open-sessions aria-label="Sessions and archives" title="Sessions and archives (Ctrl+K)">☰</button><ul></ul></nav>`));
-        assert.match(html, /<dialog id="dialog-workspaces"[\s\S]*data-dialog-target="dialog-workspace-create"[^>]*>New workspace…<\/button>/u);
-        assert.match(html, /<dialog id="dialog-workspace-create"[\s\S]*<form id="workspace-create" data-workspace-create-form>[\s\S]*name="useProjectFolder"[\s\S]*name="projectRoot"[\s\S]*data-project-folder-note/u);
-        assert.match(html, /<dialog id="dialog-session-create"[\s\S]*<form id="session-create" data-session-create-form>[\s\S]*name="name"[\s\S]*name="title"/u);
-        assert.doesNotMatch(html, /<h1\b|<script>/u);
+        assert.ok(html.includes(`<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-name="${escaped}" data-tab-count="0"><a href="${newSessionHref}" data-tab-new data-bind="href:new-session-path" aria-label="New session" title="New session (Alt+N)">+</a><ul></ul></nav>`));
+        assert.doesNotMatch(html, /<dialog\b|<h1\b|<script>/u);
     }
 });
 
-test("{§web-search} {§web-session-directory} search shell escapes filter parameters and mounts overview controls without server-side session scraping", () => {
+test("{§web-search} {§web-session-directory} /settings/search escapes filter parameters and preserves active context without server-side session scraping", () => {
     const documents = new Documents(SHELL);
-    const html = documents.search({
+    const html = documents.settings("search", {
+        workspace: "alpha",
+        session: "session1",
         q: 'wal_sender & <script>"x"',
-        workspace: '~/team&"ws"',
+        filterWorkspace: '~/team&"ws"',
         status: "archived",
         kind: "work",
     }).toString();
-    assert.match(html, /<title data-text="page-title">Search — Plurnk<\/title>/u);
-    assert.match(html, /<div id="header-place"><button type="button" data-dialog-target="dialog-workspaces"[\s\S]*<span aria-current="page" data-i18n="search">Search<\/span><\/div>/u);
-    assert.match(html, /<main id="main" data-page="search" data-connection="initial">/u);
-    assert.match(html, /<form id="search-controls" method="get" action="\/search\/"/u);
+    assert.match(html, /<title data-text="page-title">alpha · Search — Plurnk<\/title>/u);
+    assert.match(html, /<a href="\/~\/alpha#session1" data-settings-back/u);
+    assert.match(html, /<main id="main" data-page="settings" data-settings-section="search" data-workspace-name="alpha" data-session-name="session1" data-connection="initial">/u);
+    assert.match(html, /<form id="search-controls" method="get" action="\/settings\/search"/u);
     assert.ok(html.includes('value="wal_sender &amp; &lt;script&gt;&quot;x&quot;"'));
-    assert.ok(html.includes('<input type="hidden" name="workspace" value="~/team&amp;&quot;ws&quot;" data-search-workspace>'));
+    assert.ok(html.includes('<input type="hidden" name="filterWorkspace" value="~/team&amp;&quot;ws&quot;" data-search-workspace>'));
     assert.ok(html.includes('<input type="hidden" name="kind" value="work" data-search-kind>'));
     assert.ok(html.includes('<option value="archived" selected>Archived</option>'));
     assert.ok(html.includes('<section id="search-workspaces" aria-label="Workspaces"></section>'));
-    assert.doesNotMatch(html, /<script>|<h1\b/u);
+    assert.doesNotMatch(html, /<script>/u);
 });
 
-test("{§web-workspace-settings} {§web-workspace-rename} {§web-workspace-archive} {§web-session-archive} settings shell renders 11 tabs including folded-in About and pure /acp forms", () => {
+test("{§web-workspace-settings} {§web-workspace-creation} {§web-workspace-rename} {§web-workspace-archive} {§web-session-creation} {§web-session-archive} path-based settings sections render 12 tabs and only the active panel", () => {
     const documents = new Documents(SHELL);
-    const html = documents.settings({ workspace: "alpha", session: "session1" }).toString();
-    assert.match(html, /<title data-text="page-title">alpha · Settings — Plurnk<\/title>/u);
-    assert.match(html, /<nav id="header-place" aria-label="breadcrumb">[\s\S]*href="\/~\/alpha#session1"[\s\S]*>alpha<[\s\S]*>Settings<[\s\S]*<\/nav>/u);
-    assert.match(html, /<main id="main" data-page="settings" data-workspace-name="alpha" data-session-name="session1">/u);
-    for (const section of ["workspace", "session", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help", "about"]) {
-        assert.match(html, new RegExp(`href="#${section}" data-settings-section="${section}"`, "u"));
+    const wsHtml = documents.settings("workspaces", { workspace: "alpha", session: "session1" }).toString();
+    assert.match(wsHtml, /<title data-text="page-title">alpha · Workspaces — Plurnk<\/title>/u);
+    assert.match(wsHtml, /<a href="\/~\/alpha#session1" data-settings-back/u);
+    assert.match(wsHtml, /<main id="main" data-page="settings" data-settings-section="workspaces" data-workspace-name="alpha" data-session-name="session1">/u);
+    for (const section of ["search", "workspaces", "sessions", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help", "about"]) {
+        assert.match(wsHtml, new RegExp(`href="/settings/${section}\\?workspace=alpha&amp;session=session1" data-settings-section="${section}"`, "u"));
     }
-    assert.match(html, /<form id="workspace-rename" data-workspace-rename-form>/u);
-    assert.match(html, /<form id="workspace-archive" data-workspace-archive-form>/u);
-    assert.match(html, /<form id="workspace-unarchive" data-workspace-unarchive-form>/u);
-    assert.match(html, /<form id="session-title" data-session-title-form>/u);
-    assert.match(html, /<form id="session-archive" data-session-archive-form>/u);
-    assert.match(html, /<form id="session-unarchive" data-session-unarchive-form>/u);
-    assert.ok(html.includes(`<dt>@plurnk/plurnk-web</dt><dd><code data-text="about-web-version">${WEB_VERSION}</code></dd>`));
-    assert.ok(html.includes('<dt data-about-service-term hidden>@plurnk/plurnk-service</dt>'));
-    assert.ok(html.includes('<dt data-about-desktop-term hidden>plurnk-desktop</dt>'));
-    assert.ok(html.includes(`<dt data-i18n="license">License</dt><dd>${WEB_LICENSE}</dd>`));
-    assert.ok(html.includes(`href="${BUG_REPORT_URL}"`));
-    assert.doesNotMatch(html, /method="post"/iu, "settings mutations dispatch over /acp rather than server form POST routes");
+    assert.match(wsHtml, /data-settings-section="workspaces" aria-current="page"/u);
+    assert.match(wsHtml, /<form id="workspace-create" data-workspace-create-form>/u);
+    assert.match(wsHtml, /<form id="workspace-rename" data-workspace-rename-form>/u);
+    assert.match(wsHtml, /<form id="workspace-archive" data-workspace-archive-form>/u);
+    assert.match(wsHtml, /<form id="workspace-unarchive" data-workspace-unarchive-form>/u);
+    assert.doesNotMatch(wsHtml, /data-settings-panel="sessions"|data-settings-panel="about"/u);
+    assert.doesNotMatch(wsHtml, /method="post"/iu);
+
+    const sessHtml = documents.settings("sessions", { workspace: "alpha", session: "session1", openCreate: true }).toString();
+    assert.match(sessHtml, /<details data-family-disclosure="sessions" data-settings-add-session open>/u);
+    assert.match(sessHtml, /<form id="session-create" data-session-create-form>/u);
+    assert.match(sessHtml, /<form id="session-title" data-session-title-form>/u);
+    assert.match(sessHtml, /<form id="session-archive" data-session-archive-form>/u);
+    assert.match(sessHtml, /<form id="session-unarchive" data-session-unarchive-form>/u);
+
+    const aboutHtml = documents.settings("about", { workspace: "alpha", session: "session1" }).toString();
+    assert.ok(aboutHtml.includes(`<dt>@plurnk/plurnk-web</dt><dd><code data-text="about-web-version">${WEB_VERSION}</code></dd>`));
+    assert.ok(aboutHtml.includes('<dt data-about-service-term hidden>@plurnk/plurnk-service</dt>'));
+    assert.ok(aboutHtml.includes('<dt data-about-desktop-term hidden>plurnk-desktop</dt>'));
+    assert.ok(aboutHtml.includes(`<dt data-i18n="license">License</dt><dd>${WEB_LICENSE}</dd>`));
+    assert.ok(aboutHtml.includes(`href="${BUG_REPORT_URL}"`));
+
+    assert.throws(() => documents.settings("unknown"), /Unknown settings section/u);
 });
 
 test("{§web-page-shell} error shell escapes untrusted failure text and validates document slots at construction", () => {
@@ -162,19 +177,19 @@ test("{§web-brand} {§web-document} Documents stamps custom brand identity, the
     assert.ok(home.includes('<link rel="icon" href="/brand/icon.png" type="image/png">'));
     assert.ok(home.includes('<link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/brand/theme.css">'));
 
-    const settings = docs.settings().toString();
-    assert.ok(settings.includes('<title data-text="page-title">Settings — Acme &amp; &quot;Co&quot;</title>'));
+    const settings = docs.settings("about").toString();
+    assert.ok(settings.includes('<title data-text="page-title">About — Acme &amp; &quot;Co&quot;</title>'));
     assert.ok(settings.includes('<span data-text="workspace-name">Acme &amp; &quot;Co&quot;</span>'));
     assert.ok(settings.includes('<dt>Support &amp; Help</dt><dd><a href="https://support.acme.example/help?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">support.acme.example/help?a=1&amp;b=2</a></dd>'));
     assert.ok(settings.includes('<dt>Terms</dt><dd><a href="https://acme.example/terms" target="_blank" rel="noopener noreferrer">acme.example/terms</a></dd>'));
     assert.doesNotMatch(settings, /github\.com\/plurnk\/plurnk-service\/issues/u);
     assert.ok(settings.includes(`<dt data-i18n="license">License</dt><dd>${WEB_LICENSE}</dd>`));
 
-    const noLinks = new Documents(brandedShell, { brand: { ...brand, aboutLinks: [] } }).settings().toString();
+    const noLinks = new Documents(brandedShell, { brand: { ...brand, aboutLinks: [] } }).settings("about").toString();
     assert.doesNotMatch(noLinks, /Support &amp; Help|github\.com\/plurnk/u);
 });
 
-test("{§web-settings-extensions} {§web-workspace-settings} {§web-document} Documents inserts host Settings tabs before Help/About and loads tab scripts only on /settings/", () => {
+test("{§web-settings-extensions} {§web-workspace-settings} {§web-document} Documents inserts host Settings tabs before Help/About and loads each extension script only on its own /settings/<id> page", () => {
     const docs = new Documents(SHELL, {
         settingsTabs: [
             {
@@ -192,29 +207,37 @@ test("{§web-settings-extensions} {§web-workspace-settings} {§web-document} Do
         ],
     });
 
-    const settingsHtml = docs.settings({ workspace: "alpha" }).toString();
-    const envPos = settingsHtml.indexOf('data-settings-section="env"');
-    const accountPos = settingsHtml.indexOf('data-settings-section="account"');
-    const billingPos = settingsHtml.indexOf('data-settings-section="billing"');
-    const helpPos = settingsHtml.indexOf('data-settings-section="help"');
-    const aboutPos = settingsHtml.indexOf('data-settings-section="about"');
+    const accountHtml = docs.settings("account", { workspace: "alpha" }).toString();
+    const navMatch = /<ul data-settings-nav>[\s\S]*?<\/ul>/u.exec(accountHtml);
+    assert.ok(navMatch, "settings nav list is rendered");
+    const navHtml = navMatch[0];
+    const envPos = navHtml.indexOf('data-settings-section="env"');
+    const accountPos = navHtml.indexOf('data-settings-section="account"');
+    const billingPos = navHtml.indexOf('data-settings-section="billing"');
+    const helpPos = navHtml.indexOf('data-settings-section="help"');
+    const aboutPos = navHtml.indexOf('data-settings-section="about"');
     assert.ok(envPos > 0 && accountPos > envPos && billingPos > accountPos && helpPos > billingPos && aboutPos > helpPos,
         "extension nav links appear in declaration order immediately before Help and About");
-    assert.ok(settingsHtml.includes('<li><a href="#account" data-settings-section="account" data-settings-extension="true">Account &amp; &quot;Keys&quot;</a></li>'));
-    assert.ok(settingsHtml.includes('<li><a href="#billing" data-settings-section="billing" data-settings-extension="true">Billing</a></li>'));
-    assert.ok(settingsHtml.includes('<section id="account" data-settings-panel="account" data-settings-extension="true" aria-label="Account &amp; &quot;Keys&quot;" hidden><header data-panel-toolbar><h2>Account</h2></header><p data-account-status>Ready</p></section>'));
-    assert.ok(settingsHtml.includes('<section id="billing" data-settings-panel="billing" data-settings-extension="true" aria-label="Billing" hidden><p>Free tier.</p></section>'));
-    assert.ok(settingsHtml.includes('<script type="module" src="/brand/tabs/account.js"></script></head>'));
-    assert.doesNotMatch(settingsHtml, /\/brand\/tabs\/billing\.js/u);
+    assert.ok(accountHtml.includes('<li><a href="/settings/account?workspace=alpha" data-settings-section="account" data-settings-extension="true" aria-current="page">Account &amp; &quot;Keys&quot;</a></li>'));
+    assert.ok(accountHtml.includes('<li><a href="/settings/billing?workspace=alpha" data-settings-section="billing" data-settings-extension="true">Billing</a></li>'));
+    assert.ok(accountHtml.includes('<section id="account" data-settings-panel="account" data-settings-extension="true" aria-label="Account &amp; &quot;Keys&quot;"><header data-panel-toolbar><h2>Account</h2></header><p data-account-status>Ready</p></section>'));
+    assert.ok(accountHtml.includes('<script type="module" src="/brand/tabs/account.js"></script></head>'));
+    assert.doesNotMatch(accountHtml, /data-settings-panel="billing"|\/brand\/tabs\/billing\.js/u);
+
+    const billingHtml = docs.settings("billing", { workspace: "alpha" }).toString();
+    assert.ok(billingHtml.includes('<section id="billing" data-settings-panel="billing" data-settings-extension="true" aria-label="Billing"><p>Free tier.</p></section>'));
+    assert.doesNotMatch(billingHtml, /\/brand\/tabs\/account\.js/u);
+
+    const searchHtml = docs.settings("search").toString();
+    assert.doesNotMatch(searchHtml, /\/brand\/tabs\/account\.js/u, "other settings pages do not load extension scripts");
 
     for (const nonSettings of [
         docs.home().toString(),
-        docs.search().toString(),
         docs.session("alpha").toString(),
         docs.callback().toString(),
         docs.error(404, "Missing").toString(),
     ]) {
-        assert.doesNotMatch(nonSettings, /\/brand\/tabs\/|data-settings-extension/u, "extension markup and scripts are emitted only on /settings/");
+        assert.doesNotMatch(nonSettings, /\/brand\/tabs\/|data-settings-extension/u, "extension markup and scripts are emitted only on /settings/<section>");
     }
 });
 
@@ -240,7 +263,7 @@ test("{§web-bff-auth} {§web-document} Documents stamps optional BFF auth data-
             logoutUrl: "/oauth2/sign_out",
             logoutMethod: "GET",
         },
-    }).settings().toString();
+    }).settings("search").toString();
     assert.doesNotMatch(getLogoutHtml, /data-auth-login-url/u);
     assert.ok(getLogoutHtml.includes('data-auth-logout-url="/oauth2/sign_out"'));
     assert.ok(getLogoutHtml.includes('data-auth-logout-method="GET"'));

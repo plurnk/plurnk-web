@@ -1,11 +1,12 @@
 import { $, $$, on, the } from "on_the_money";
-import { directoryPath, parseDirectory, parseSessionHash, workspaceSettingsPath } from "../src/directory-addresses.js";
+import { directoryPath, parseDirectory, parseSessionHash, settingsPath } from "../src/directory-addresses.js";
+import { formatPageTitle } from "./endpoints.js";
 import renderInPageError from "./error-view.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
 import { hasActiveOidcGrant, onOidcGrantChange } from "./oidc.js";
-import { parseWorkspaceList, renderWorkspacesDialog, wireWorkspaceCreateDialog } from "./workspace-dialogs.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
+import { parseWorkspaceList } from "./workspace-records.js";
 import {
     applyWorkbenchNotification,
     computeOrderedUnarchived,
@@ -14,7 +15,7 @@ import {
     loadWorkbenchSessionsFromAcp,
     selectInitialWorkbenchSession,
 } from "./workspace-workbench-state.js";
-import { createWorkbenchTabsAndSwitcher } from "./workspace-workbench-ui.js";
+import { createWorkbenchTabs } from "./workspace-workbench-ui.js";
 
 /** @typedef {import("./workspace-workbench-state.js").WorkbenchSession} WorkbenchSession */
 
@@ -37,7 +38,7 @@ import { createWorkbenchTabsAndSwitcher } from "./workspace-workbench-ui.js";
 
 /**
  * {§web-directory-documents} {§web-workspace-tabs} {§web-workspace-folder}
- * Unified browser-style session tab strip, `#<session>` hash routing, quick-switcher modal, and resident WebSocket `/acp` panes.
+ * Unified browser-style session tab strip, `#<session>` hash routing, and resident WebSocket `/acp` panes.
  * @param {HTMLElement} tabs
  */
 export default async function observeWorkspaceWorkbench(tabs) {
@@ -71,10 +72,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
     const knownWorkspaceNames = new Set(currentWorkspaceName ? [currentWorkspaceName] : []);
     /** @type {Set<string>} */
     const suggestionWorkspaces = new Set(currentWorkspaceName ? [currentWorkspaceName] : []);
-    for (const link of $$("#dialog-workspaces [data-workspaces-list] > li > a[href]")) {
-        const dir = parseDirectory(link.getAttribute("href") ?? "");
-        if (dir && "workspace" in dir) suggestionWorkspaces.add(dir.workspace);
-    }
 
     /** @returns {{ icon: string, label: string }} */
     function readWorkspaceMarker() {
@@ -119,18 +116,60 @@ export default async function observeWorkspaceWorkbench(tabs) {
     }
 
     function syncHeaderPlace() {
-        const wsControl = $("#session-workspace");
         const workspacePath = directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
-        const settingsPath = workspaceSettingsPath(currentWorkspaceName, selectedSessionName);
+        const searchHref = settingsPath("search", { workspace: currentWorkspaceName, session: selectedSessionName }) ?? "/settings/search";
+        const workspacesHref = settingsPath("workspaces", { workspace: currentWorkspaceName, session: selectedSessionName }) ?? "/settings/workspaces";
+        const sessionsHref = settingsPath("sessions", { workspace: currentWorkspaceName, session: selectedSessionName }) ?? "/settings/sessions";
+        const modelsHref = settingsPath("models", { workspace: currentWorkspaceName, session: selectedSessionName }) ?? "/settings/models";
+        const newSessionHref = settingsPath("sessions", {
+            workspace: currentWorkspaceName,
+            session: selectedSessionName,
+            extra: { new: "1" },
+        }) ?? "/settings/sessions?new=1";
+
+        const searchNav = $('header a[data-nav="search"]');
+        if (searchNav) {
+            the(searchNav, { "search-settings-path": searchHref });
+        }
+        const wsControl = $("#session-workspace");
         if (wsControl && workspacePath !== null) {
             the(wsControl, {
                 "workspace-name": currentWorkspaceName,
                 "workspace-path": workspacePath,
-                ...(settingsPath !== null ? { "workspace-settings-path": settingsPath } : {}),
+                "workspace-settings-path": workspacesHref,
                 "workspace-icon": workspaceMarker.icon,
                 "workspace-icon-label": workspaceMarker.label,
             });
         }
+        const headerSession = $("#header-session");
+        const headerModel = $("#header-model");
+        if (selectedSessionName !== null) {
+            const selectedEntry = [...sessionsById.values()].find(({ name }) => name === selectedSessionName);
+            const sessionGlyph = selectedEntry?.kind === "fork" ? "🔱"
+                : selectedEntry?.kind === "work" ? "🐜"
+                    : "💬";
+            if (headerSession instanceof HTMLElement) {
+                headerSession.hidden = false;
+                the(headerSession, {
+                    "header-session-icon": sessionGlyph,
+                    "header-session-name": selectedSessionName,
+                    "header-session-settings-path": sessionsHref,
+                });
+            }
+            if (headerModel instanceof HTMLElement) {
+                headerModel.hidden = false;
+                the(headerModel, { "header-models-settings-path": modelsHref });
+            }
+        } else {
+            if (headerSession instanceof HTMLElement) headerSession.hidden = true;
+            if (headerModel instanceof HTMLElement) headerModel.hidden = true;
+        }
+        the(tabs, "new-session-path", newSessionHref);
+        const emptyCard = $("#workspace-empty");
+        if (emptyCard instanceof HTMLElement) {
+            the(emptyCard, "new-session-path", newSessionHref);
+        }
+
         const folderLabel = projectLabel !== null && projectLabel !== currentWorkspaceName ? projectLabel : "";
         const currentFolderEl = $("#main #session-folder");
         if (currentFolderEl instanceof HTMLElement) {
@@ -138,7 +177,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             the(currentFolderEl, "project-label", folderLabel);
         }
         if (selectedSessionName !== null) {
-            the("page-title", `${currentWorkspaceName}#${selectedSessionName} — Plurnk`);
+            the("page-title", formatPageTitle(`${currentWorkspaceName}#${selectedSessionName}`));
             for (const el of $$('[data-text="active-session-name"]')) {
                 if (el.textContent !== selectedSessionName) el.textContent = selectedSessionName;
             }
@@ -148,7 +187,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
                 }
             }
         } else {
-            the("page-title", `${currentWorkspaceName} — Plurnk`);
+            the("page-title", formatPageTitle(currentWorkspaceName));
         }
         for (const input of $$('input[name="workspace"]')) {
             if (input instanceof HTMLInputElement && input.type === "hidden" && !input.closest("[data-inline-unarchive]")) {
@@ -172,11 +211,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
         }
     });
     on.target(pageLifetime.signal, "abort", offGrantChange);
-
-    wireWorkspaceCreateDialog({
-        signal: pageLifetime.signal,
-        getKnownWorkspaceNames: () => suggestionWorkspaces,
-    });
 
     /** @param {string} targetPath */
     function navigateHref(targetPath) {
@@ -204,12 +238,10 @@ export default async function observeWorkspaceWorkbench(tabs) {
         location.assign(targetPath);
     }
 
-    const workbenchUi = createWorkbenchTabsAndSwitcher({
+    const workbenchUi = createWorkbenchTabs({
         tabs,
         tabsList,
         sessionsById,
-        pageLifetime,
-        live,
         getWorkspaceId: () => workspaceId,
         getWorkspaceName: () => currentWorkspaceName,
         getSelectedSessionName: () => selectedSessionName,
@@ -286,7 +318,8 @@ export default async function observeWorkspaceWorkbench(tabs) {
         nextFooter.dataset.sessionName = sessionName;
         the(nextFooter, {
             "session-name": sessionName,
-            "session-settings-path": workspaceSettingsPath(currentWorkspaceName, sessionName, "session") ?? sessionPath,
+            "session-settings-path": settingsPath("sessions", { workspace: currentWorkspaceName, session: sessionName }) ?? sessionPath,
+            "models-settings-path": settingsPath("models", { workspace: currentWorkspaceName, session: sessionName }) ?? "/settings/models",
         });
 
         const controller = observeSession(nextFooter, {
@@ -312,7 +345,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
      * @param {{ updateHistory: "push" | "replace" | "none" }} options
      */
     async function selectSession(sessionName, { updateHistory }) {
-        workbenchUi.closeSwitcherIfOpen();
         const seq = ++selectSeq;
         selectedSessionName = sessionName;
 
@@ -400,6 +432,7 @@ export default async function observeWorkspaceWorkbench(tabs) {
             const entry = { sessionName: serverSessionName, main: initialMain, footer: statusFooter, controller };
             panesBySession.set(serverSessionName, entry);
             activePane = entry;
+            syncHeaderPlace();
             const hashSession = parseSessionHash(location.hash);
             if (hashSession !== null && hashSession !== serverSessionName) {
                 await selectSession(hashSession, { updateHistory: "none" });
@@ -419,7 +452,6 @@ export default async function observeWorkspaceWorkbench(tabs) {
         for (const ws of listedWorkspaces) {
             if (ws.archivedAt === null) suggestionWorkspaces.add(ws.name);
         }
-        renderWorkspacesDialog(listedWorkspaces, currentWorkspaceName);
 
         const matchedWorkspace = listedWorkspaces.find(({ name }) => name === currentWorkspaceName);
         if (!matchedWorkspace) {
@@ -527,6 +559,9 @@ export default async function observeWorkspaceWorkbench(tabs) {
         workbenchUi.reconcileTabs();
         if (!$(initialMain, "#workspace-empty")) {
             const emptyCard = $.clone(initialMain, "#workspace-empty-card");
+            if (emptyCard instanceof HTMLElement) {
+                the(emptyCard, "new-session-path", workbenchUi.newSessionHref());
+            }
             const startBtn = $(emptyCard, "[data-workspace-empty-new]");
             if (startBtn instanceof HTMLElement && tabs.dataset.workspaceArchived === "true") {
                 startBtn.remove();

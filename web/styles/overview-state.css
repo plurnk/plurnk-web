@@ -82,7 +82,7 @@
 
     /* {§web-session-directory} The directory and live statusline share one lifecycle vocabulary. */
     #session-status [data-status-field="lifecycle"]::before,
-    :is([data-session-identity], #workspace-tabs, #dialog-workspace-switcher) [data-lifecycle]::before {
+    :is([data-session-identity], #workspace-tabs) [data-lifecycle]::before {
         content: var(--session-lifecycle-glyph, "○") / "";
     }
 
@@ -116,7 +116,7 @@
         margin-inline-end: 0.5ch;
     }
 
-    :is([data-session-link], #workspace-tabs a[data-workspace-route="session"], #dialog-workspace-switcher a[data-workspace-route="session"])::before {
+    :is([data-session-link], #workspace-tabs a[data-workspace-route="session"])::before {
         content: var(--session-kind-glyph, "💬") / "";
     }
 

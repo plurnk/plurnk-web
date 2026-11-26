@@ -74,7 +74,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
     await mkdir(projectRoot, { recursive: true });
     t.after(() => rm(projectRoot, { recursive: true, force: true }));
 
-    await t.test("{§web-arrival} {§web-directory-documents} {§web-search} {§web-workspace-creation} {§web-session-creation} {§web-workspace-rename} {§web-workspace-settings} pure-ACP arrival, /search/ directory, workspace/session modals, rename/archive, #about, and 404 safety", { timeout: 120_000 }, async () => {
+    await t.test("{§web-arrival} {§web-directory-documents} {§web-search} {§web-workspace-creation} {§web-session-creation} {§web-workspace-rename} {§web-workspace-settings} pure-ACP arrival, /settings/search directory, inline create disclosures, rename/archive, /settings/about, and 404 safety", { timeout: 120_000 }, async () => {
         await withDaemon({ PLURNK_WEB_OVERVIEW_SESSIONS: "6" }, async (base) => {
             const names = ['~/repo with space/@%2F/<script>&"', "folderless", "分析", `~/project/${"long-name-".repeat(8)}`];
             for (const name of names) {
@@ -136,7 +136,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     const page = await context.newPage();
                     page.setDefaultTimeout(10_000);
 
-                    // 1. GET / arrives over /acp; GET /~/ redirects 303 to /search/
+                    // 1. GET / arrives over /acp; GET /~/ redirects 303 to /settings/search
                     await page.goto(base);
                     await page.waitForURL((url) => new URL(url).pathname.startsWith("/~/"));
                     await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
@@ -145,14 +145,17 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
 
                     const tildeRes = await fetch(new URL("/~/", base), { redirect: "manual" });
                     assert.equal(tildeRes.status, 303);
-                    assert.equal(tildeRes.headers.get("location"), "/search/");
+                    assert.equal(tildeRes.headers.get("location"), "/settings/search");
 
-                    // 2. /search/ directory bounded overview, workspace markers, and tree verification
+                    // 2. /settings/search directory bounded overview, workspace markers, and tree verification
                     await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
-                    await page.waitForURL(new URL("/search/", base).href);
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/search");
                     await page.locator('main[data-connection="connected"]').waitFor();
-                    await verifyPageShell(page, { title: "Search — Plurnk", kind: "search" });
-                    assert.equal(await page.locator("main h1").count(), 0);
+                    assert.ok(new URL(page.url()).searchParams.get("workspace"), "banner Search preserves active workspace return context");
+                    await page.goto(new URL("/settings/search", base).href);
+                    await page.locator('main[data-connection="connected"]').waitFor();
+                    await verifyPageShell(page, { title: "Search — Plurnk", kind: "settings" });
+                    assert.equal(await page.locator("main h1").count(), 1);
 
                     for (const ws of initial) {
                         const wsEntry = page.locator(`#search-workspaces > ul > li[data-workspace-id="${ws.id}"] > article`);
@@ -166,7 +169,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
 
                     const primaryWs = initial.find((ws) => ws.name === names[0]);
                     assert.ok(primaryWs);
-                    await page.goto(new URL(`/search/?${new URLSearchParams({ workspace: primaryWs.name })}`, base).href);
+                    await page.goto(new URL(`/settings/search?${new URLSearchParams({ filterWorkspace: primaryWs.name })}`, base).href);
                     await page.locator('main[data-connection="connected"]').waitFor();
                     await verifySessionDirectory(page, primaryWs);
 
@@ -178,19 +181,19 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     const afterMissing = await readAcpCensus(base);
                     assert.equal(afterMissing.some((ws) => ws.name === "missing"), false, "missing /~/<workspace> never allocates a workspace");
 
-                    // 4. Archive & inline Unarchive over /acp on /search/?status=archived
+                    // 4. Archive & inline Unarchive over /acp on /settings/search?status=archived
                     const shelved = initial.find((ws) => ws.name === "folderless");
                     assert.ok(shelved);
                     const archiver = createAgent(base);
                     assert.equal((await archiver.send({ workspace: shelved.name, action: { kind: "workspace.archive", workspaceId: shelved.id, archived: true } })).result.ok, true);
                     archiver.close();
 
-                    await page.goto(new URL("/search/", base).href);
+                    await page.goto(new URL("/settings/search", base).href);
                     await page.locator('main[data-connection="connected"]').waitFor();
                     const activeNames = await page.locator("#search-workspaces > ul > li > article > header > a[data-text='name']").allTextContents();
-                    assert.equal(activeNames.includes("folderless"), false, "archived workspace leaves active /search/");
+                    assert.equal(activeNames.includes("folderless"), false, "archived workspace leaves active /settings/search");
 
-                    await page.goto(new URL("/search/?status=archived", base).href);
+                    await page.goto(new URL("/settings/search?status=archived", base).href);
                     await page.locator('main[data-connection="connected"]').waitFor();
                     const unarchiveForm = page.locator('#search-workspaces form[data-inline-unarchive="workspace"]').filter({
                         has: page.locator('input[name="workspace"][value="folderless"]'),
@@ -199,55 +202,58 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     await unarchiveForm.getByRole("button", { name: "Unarchive", exact: true }).click();
                     await page.waitForFunction(() => document.querySelectorAll('#search-workspaces form[data-inline-unarchive="workspace"]').length === 0);
 
-                    // 5. New workspace modal, New session modal, /settings/ Rename, 409 inline error recovery, and #about
-                    await page.goto(new URL("/search/", base).href);
-                    await page.locator('main[data-connection="connected"]').waitFor();
-                    await page.getByRole("button", { name: "Change workspace", exact: true }).click();
-                    const wsDialog = page.locator("#dialog-workspaces");
-                    await wsDialog.waitFor({ state: "visible" });
-                    await wsDialog.getByRole("button", { name: "New workspace…", exact: true }).click();
-                    const wsCreateDialog = page.locator("#dialog-workspace-create");
-                    await wsCreateDialog.waitFor({ state: "visible" });
-                    assert.equal(await wsCreateDialog.locator("input[data-toggle-project-folder]").isChecked(), false);
-                    assert.equal(await wsCreateDialog.locator("input[data-project-folder-input]").isVisible(), false);
+                    // 5. Inline + New workspace on /settings/workspaces, inline + New session on /settings/sessions, rename, 409 error recovery, and /settings/about
+                    await page.goto(new URL("/settings/workspaces", base).href);
+                    const settingsArticle = page.locator("#workspace-settings");
+                    await settingsArticle.waitFor({ state: "visible" });
+                    await settingsArticle.locator("[data-workspaces-rows] tr").first().waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
+                    const wsCreateDisclosure = settingsArticle.locator('details[data-family-disclosure="workspaces"]');
+                    await wsCreateDisclosure.locator("> summary").click();
+                    assert.equal(await wsCreateDisclosure.locator("input[data-toggle-project-folder]").isChecked(), false);
+                    assert.equal(await wsCreateDisclosure.locator("input[data-project-folder-input]").isVisible(), false);
 
-                    // 409 duplicate workspace name keeps draft in modal and displays inline Problem
-                    await wsCreateDialog.locator('input[name="name"]').fill("folderless");
-                    await wsCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector('#dialog-workspace-create [data-text="workspace-create-error"]')?.textContent ?? "").length > 0);
-                    assert.match(await wsCreateDialog.locator('[data-text="workspace-create-error"]').innerText(), /already in use/u);
-                    assert.equal(await wsCreateDialog.locator('input[name="name"]').inputValue(), "folderless");
+                    // 409 duplicate workspace name keeps draft in disclosure and displays inline Problem
+                    await wsCreateDisclosure.locator('input[name="name"]').fill("folderless");
+                    await wsCreateDisclosure.getByRole("button", { name: "Create workspace", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
+                    assert.equal(await wsCreateDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
+                    assert.equal(await wsCreateDisclosure.locator('input[name="name"]').inputValue(), "folderless");
 
                     // Clear name -> sequential workspace1 + #session1 over /acp
-                    await wsCreateDialog.locator('input[name="name"]').fill("");
-                    await wsCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+                    await wsCreateDisclosure.locator('input[name="name"]').fill("");
+                    await wsCreateDisclosure.getByRole("button", { name: "Create workspace", exact: true }).click();
                     await page.waitForURL((url) => /^\/~\/workspace\d+$/u.test(new URL(url).pathname));
                     await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
                     const createdWsName = new URL(page.url()).pathname.slice(3);
                     assert.match(createdWsName, /^workspace\d+$/u);
 
-                    // New session modal: 409 conflict recovery + sequential session2
-                    await page.locator('#workspace-tabs button[data-tab-new]').click();
-                    const sessCreateDialog = page.locator("#dialog-session-create");
-                    await sessCreateDialog.waitFor({ state: "visible" });
-                    await sessCreateDialog.locator('input[name="name"]').fill("session1");
-                    await sessCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector('#dialog-session-create [data-text="session-create-error"]')?.textContent ?? "").length > 0);
-                    assert.match(await sessCreateDialog.locator('[data-text="session-create-error"]').innerText(), /already in use/u);
-                    await sessCreateDialog.locator('input[name="name"]').fill("added-session");
-                    await sessCreateDialog.locator('input[name="title"]').fill("Added title");
-                    await sessCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+                    // + button -> /settings/sessions?…&new=1: 409 conflict recovery + added-session
+                    await page.locator("#workspace-tabs a[data-tab-new]").click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/sessions" && new URL(url).searchParams.get("new") === "1");
+                    const sessCreateDisclosure = page.locator('#workspace-settings details[data-family-disclosure="sessions"]');
+                    await sessCreateDisclosure.waitFor({ state: "visible" });
+                    await page.locator("#workspace-settings [data-sessions-rows] tr").first().waitFor({ state: "visible" });
+                    assert.equal(await sessCreateDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
+                    await sessCreateDisclosure.locator('input[name="name"]').fill("session1");
+                    await sessCreateDisclosure.getByRole("button", { name: "Create session", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
+                    await sessCreateDisclosure.locator('input[name="name"]').fill("added-session");
+                    await sessCreateDisclosure.locator('input[name="title"]').fill("Added title");
+                    await sessCreateDisclosure.getByRole("button", { name: "Create session", exact: true }).click();
+                    await page.waitForURL((url) => new URL(url).pathname === `/~/${createdWsName}` && new URL(url).hash === "#added-session");
                     await page.waitForFunction(() => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "added-session");
 
-                    // /settings/ Rename + #about section (service version, package web version, desktop UA 1.4.2, MIT, issues link)
+                    // /settings/workspaces Rename + /settings/about (service version, package web version, desktop UA 1.4.2, MIT, issues link)
                     await page.locator("#session-workspace").click();
-                    await page.waitForURL((url) => new URL(url).pathname === "/settings/");
-                    const settingsArticle = page.locator("#workspace-settings");
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/workspaces");
                     await settingsArticle.waitFor({ state: "visible" });
 
                     await settingsArticle.getByRole("link", { name: "About", exact: true }).click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/about");
                     const aboutPanel = settingsArticle.locator('[data-settings-panel="about"]');
                     await aboutPanel.waitFor({ state: "visible" });
+                    await page.waitForFunction(() => /^\d+\.\d+\.\d+/u.test(document.querySelector('#workspace-settings [data-text="about-service-version"]')?.textContent ?? ""));
                     assert.equal(await aboutPanel.locator('[data-text="about-web-version"]').textContent(), WEB_VERSION);
                     assert.match((await aboutPanel.locator('[data-text="about-service-version"]').textContent()) ?? "", /^\d+\.\d+\.\d+/u);
                     assert.equal(await aboutPanel.locator("[data-about-desktop-term]").isVisible(), true);
@@ -259,7 +265,9 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                         1,
                     );
 
-                    await settingsArticle.getByRole("link", { name: "Workspace", exact: true }).click();
+                    await settingsArticle.getByRole("link", { name: "Workspaces", exact: true }).click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/workspaces");
+                    await settingsArticle.locator("[data-workspaces-rows] tr").first().waitFor({ state: "visible" });
                     const renameForm = settingsArticle.locator("form#workspace-rename");
                     await renameForm.locator('input[name="name"]').fill("folderless");
                     await renameForm.getByRole("button", { name: "Rename", exact: true }).click();
@@ -284,14 +292,13 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                 const checkBrowser = browserDiagnostics(context);
                 try {
                     const page = await context.newPage();
-                    await page.goto(new URL("/search/", base).href);
-                    await page.locator('main[data-connection="connected"]').waitFor();
-                    await page.getByRole("button", { name: "Change workspace", exact: true }).click();
-                    await page.locator("#dialog-workspaces").getByRole("button", { name: "New workspace…", exact: true }).click();
-                    const wsCreateDialog = page.locator("#dialog-workspace-create");
-                    await wsCreateDialog.waitFor({ state: "visible" });
-                    assert.equal(await wsCreateDialog.locator("[data-project-folder-toggle]").isVisible(), false, "PLURNK_SERVICE_PROJECT_ROOT_BASE=none hides project folder toggle");
-                    assert.equal(await wsCreateDialog.locator("[data-project-folder-input]").isVisible(), false, "PLURNK_SERVICE_PROJECT_ROOT_BASE=none hides project folder input");
+                    await page.goto(new URL("/settings/workspaces", base).href);
+                    await page.locator("#workspace-settings").waitFor({ state: "visible" });
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
+                    const wsCreateDisclosure = page.locator('#workspace-settings details[data-family-disclosure="workspaces"]');
+                    await wsCreateDisclosure.locator("> summary").click();
+                    assert.equal(await wsCreateDisclosure.locator("[data-project-folder-toggle]").isVisible(), false, "PLURNK_SERVICE_PROJECT_ROOT_BASE=none hides project folder toggle");
+                    assert.equal(await wsCreateDisclosure.locator("[data-project-folder-input]").isVisible(), false, "PLURNK_SERVICE_PROJECT_ROOT_BASE=none hides project folder input");
                     checkBrowser();
                 } finally {
                     await context.close();
@@ -385,15 +392,16 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                         assert.deepEqual(mermaidOrigins, [originA], "POST /render/mermaid stays same-origin on port A");
 
                         await page.getByRole("banner").getByRole("link", { name: "Search", exact: true }).click();
-                        await page.waitForURL(`${originA}/search/`);
+                        await page.waitForURL(`${originA}/settings/search?workspace=workspace1&session=session1`);
                         await page.locator('main[data-connection="connected"]').waitFor();
                         const session1Card = page.locator('#search-workspaces a[data-session-link][aria-label="session1"]');
                         await session1Card.waitFor();
                         assert.equal(await session1Card.count(), 1);
 
-                        await page.goto(`${originA}/settings/?workspace=workspace1&session=session1#about`);
+                        await page.goto(`${originA}/settings/about?workspace=workspace1&session=session1`);
                         const aboutPanel = page.locator('#workspace-settings [data-settings-panel="about"]');
                         await aboutPanel.waitFor({ state: "visible" });
+                        await page.waitForFunction(() => /^\d+\.\d+\.\d+/u.test(document.querySelector('#workspace-settings [data-text="about-service-version"]')?.textContent ?? ""));
                         assert.equal(await aboutPanel.locator("[data-about-desktop-term]").isHidden(), true, "desktop row hidden on standard browser UA");
                         assert.equal(await aboutPanel.locator("[data-about-desktop-value]").isHidden(), true, "desktop value hidden on standard browser UA");
                         assert.match((await aboutPanel.locator('[data-text="about-service-version"]').textContent()) ?? "", /^\d+\.\d+\.\d+/u);
@@ -480,13 +488,13 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                         await figure.waitFor();
                         assert.equal(await figure.locator("img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
 
-                        // Browser 2 signs into /search/ independently
+                        // Browser 2 signs into /settings/search independently
                         const second = await other.newPage();
                         second.setDefaultTimeout(10_000);
-                        await second.goto(new URL("/search/", base).href);
+                        await second.goto(new URL("/settings/search", base).href);
                         await second.waitForURL((url) => new URL(url).origin === idp.issuer && new URL(url).pathname === "/authorize");
                         await second.getByRole("button", { name: "Continue", exact: true }).click();
-                        await second.waitForURL(new URL("/search/", base).href);
+                        await second.waitForURL(new URL("/settings/search", base).href);
                         await second.locator('main[data-connection="connected"]').waitFor();
                         checkOther([
                             Object.assign(httpFailure("/acp", 401), { optional: true }),
@@ -505,7 +513,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
 
                         await second.reload();
                         await second.locator('main[data-connection="connected"]').waitFor();
-                        assert.equal(new URL(second.url()).pathname, "/search/", "independent browser context retains its own OIDC grant");
+                        assert.equal(new URL(second.url()).pathname, "/settings/search", "independent browser context retains its own OIDC grant");
 
                         checkBrowser();
                         checkOther();

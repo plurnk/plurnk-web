@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createServer, preview } from "vite";
-import { DEFAULT_SESSION_NAME, directoryPath, nextSequentialName, parseDirectory, parseSessionHash, workspaceSettingsPath } from "../src/directory-addresses.js";
+import { DEFAULT_SESSION_NAME, directoryPath, nextSequentialName, parseDirectory, parseSessionHash, parseSettingsSection, settingsPath } from "../src/directory-addresses.js";
 import createModule from "../src/module.js";
 import browserDiagnostics from "./browser-diagnostics.js";
 
@@ -102,19 +102,29 @@ test("{§web-directory-addresses} unrepresentable legacy names are not repaired 
     }
 });
 
-test("{§web-workspace-creation} {§web-session-creation} {§web-workspace-settings} sequential workspaceX/sessionX allocation and workspaceSettingsPath preserve representable names", () => {
+test("{§web-workspace-creation} {§web-session-creation} {§web-workspace-settings} sequential workspaceX/sessionX allocation and settingsPath/parseSettingsSection preserve representable names", () => {
     assert.equal(DEFAULT_SESSION_NAME, "session1");
     assert.equal(nextSequentialName("workspace", []), "workspace1");
     assert.equal(nextSequentialName("workspace", ["workspace1", "workspace3"]), "workspace4");
     assert.equal(nextSequentialName("session", ["session1", "session2", "session0", "session01", "session-1", "custom"]), "session3");
 
-    assert.equal(workspaceSettingsPath("workspace1"), "/settings/?workspace=workspace1");
-    assert.equal(workspaceSettingsPath("~/ptl/project", "session1"), "/settings/?workspace=%7E%2Fptl%2Fproject&session=session1");
-    assert.equal(workspaceSettingsPath("work", "session1", "personas"), "/settings/?workspace=work&session=session1#personas");
-    assert.equal(workspaceSettingsPath("work", "session1", "models", { setup: "1" }), "/settings/?workspace=work&session=session1&setup=1#models");
-    assert.equal(workspaceSettingsPath("work", "session1", "help", { cmd: "model" }), "/settings/?workspace=work&session=session1&cmd=model#help");
-    assert.equal(workspaceSettingsPath(""), null);
-    assert.equal(workspaceSettingsPath("../legacy"), null);
+    assert.equal(settingsPath("search"), "/settings/search");
+    assert.equal(settingsPath("workspaces", { workspace: "workspace1" }), "/settings/workspaces?workspace=workspace1");
+    assert.equal(settingsPath("workspaces", { workspace: "~/ptl/project", session: "session1" }), "/settings/workspaces?workspace=%7E%2Fptl%2Fproject&session=session1");
+    assert.equal(settingsPath("personas", { workspace: "work", session: "session1" }), "/settings/personas?workspace=work&session=session1");
+    assert.equal(settingsPath("models", { workspace: "work", session: "session1", extra: { q: "gpt" } }), "/settings/models?workspace=work&session=session1&q=gpt");
+    assert.equal(settingsPath("help", { workspace: "work", session: "session1", extra: { cmd: "model" } }), "/settings/help?workspace=work&session=session1&cmd=model");
+    assert.equal(settingsPath("sessions", { workspace: "work", extra: { new: "1" } }), "/settings/sessions?workspace=work&new=1");
+    assert.equal(settingsPath("workspaces", { workspace: "../legacy" }), null);
+    assert.equal(settingsPath("BadSlug"), null);
+
+    const allowed = new Set(["search", "workspaces", "sessions", "account"]);
+    assert.equal(parseSettingsSection("/settings/search", allowed), "search");
+    assert.equal(parseSettingsSection("/settings/search/", allowed), "search");
+    assert.equal(parseSettingsSection("/settings/account", allowed), "account");
+    assert.equal(parseSettingsSection("/settings/bogus", allowed), null);
+    assert.equal(parseSettingsSection("/settings/", allowed), null);
+    assert.equal(parseSettingsSection("/settings/search/extra", allowed), null);
 });
 
 test("{§web-directory-addresses} native links round-trip through production, Vite dev and preview fixtures", { timeout: 90_000 }, async (t) => {

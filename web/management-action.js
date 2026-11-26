@@ -1,3 +1,4 @@
+import { on } from "on_the_money";
 import { PROTOCOL_VERSION, client, createHttpStream, methods } from "./session-agent.js";
 import accessHeaders from "./access-headers.js";
 import { acpUrl, recordDaemonPolicy, recordServiceVersion } from "./endpoints.js";
@@ -68,9 +69,11 @@ export default async function managementAction(kind, params, sessionId, signal, 
                 return new Response(new ReadableStream({
                     start(controller) {
                         if (init.signal) {
-                            init.signal.onabort = () => {
+                            const closeStream = () => {
                                 try { controller.close(); } catch { /* ignore */ }
                             };
+                            if (init.signal.aborted) closeStream();
+                            else on.target(init.signal, "abort", closeStream, { once: true });
                         }
                     },
                 }), {
@@ -145,7 +148,7 @@ export default async function managementAction(kind, params, sessionId, signal, 
         const app = client({ name: "@plurnk/plurnk-web" });
         const conn = app.connect(stream);
         const onAbort = () => { conn.close(); };
-        signal.onabort = onAbort;
+        const offAbort = on.target(signal, "abort", onAbort, { once: true });
         if (signal.aborted) onAbort();
         try {
             const initRes = /** @type {unknown} */ (await conn.agent.request(methods.agent.initialize, {
@@ -266,7 +269,7 @@ export default async function managementAction(kind, params, sessionId, signal, 
             }
             throw error;
         } finally {
-            signal.onabort = null;
+            offAbort();
             conn.close();
         }
     };

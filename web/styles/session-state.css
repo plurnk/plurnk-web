@@ -1,5 +1,5 @@
 @layer state {
-    /* {§web-workspace-tabs} Empty tab bars hide; <768px moves session switching to #session-controls. */
+    /* {§web-workspace-tabs} Empty tab bars hide; <768px collapses bottom tab bar and keeps model readout in status strip. */
     #workspace-tabs[data-tab-count="0"],
     #workspace-tabs[data-workspace-archived="true"] [data-tab-new] {
         display: none;
@@ -9,30 +9,6 @@
         #workspace-tabs[data-tab-count] {
             display: none;
         }
-    }
-
-    @media (width >= 48rem) {
-        [aria-label="Session controls"] button[data-open-sessions] {
-            display: none;
-        }
-    }
-
-    @media (width >= 48rem), (scripting: none) {
-        #session-status [data-status-field="session"] {
-            display: none;
-        }
-    }
-
-    #dialog-workspace-switcher [data-switcher-archived] {
-        margin-block-start: calc(var(--otm-spacing) * 0.65);
-    }
-
-    #dialog-workspace-switcher [data-switcher-archived-list] > li {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--otm-spacing);
-        padding: calc(var(--otm-spacing) * 0.3) calc(var(--otm-spacing) * 0.4);
     }
 
     #workspace-tabs > ul > li:has(> a[aria-current="true"]) {
@@ -46,19 +22,8 @@
         font-weight: 700;
     }
 
-    #dialog-workspace-switcher [data-switcher-list] > li > a[aria-current="true"] {
-        background-color: var(--plurnk-user-surface);
-        font-weight: 700;
-    }
-
-    #workspace-tabs :is([data-tab-new] > button, > button):is(:hover, :focus-visible) {
+    #workspace-tabs :is([data-tab-new], > button):is(:hover, :focus-visible) {
         --otm-primary-inverse: var(--otm-color);
-    }
-
-    @media (scripting: none) {
-        #workspace-tabs button[data-open-sessions] {
-            display: none;
-        }
     }
 
     [aria-label="Message feedback"][data-command-error=""] > article,
@@ -83,7 +48,6 @@
 
     button[data-attach-image],
     button[data-insert-command],
-    [aria-label="Session controls"] button[data-open-sessions],
     button[data-accept-suggestion],
     dialog button[data-dialog-close]:not([rel="prev"]) {
         --otm-primary-background: var(--otm-secondary-background);
@@ -98,11 +62,6 @@
 
     button[data-insert-command]::before {
         content: "/" / "";
-        font-weight: 700;
-    }
-
-    [aria-label="Session controls"] button[data-open-sessions]::before {
-        content: "☰" / "";
         font-weight: 700;
     }
 
@@ -211,13 +170,18 @@
         max-inline-size: 100%;
     }
 
+    @media (width >= 48rem), (scripting: none) {
+        #session-status [data-status-field="model"] {
+            display: none;
+        }
+    }
+
     #session-status [data-status-field="model"] > a {
         min-inline-size: 0;
         overflow-wrap: anywhere;
     }
 
-    :is(#session-model, #session-effort):is(:hover, :focus-visible),
-    #dialog-workspace-switcher [data-switcher-list] > li > a:is(:hover, :focus-visible) {
+    :is(#session-model, #session-effort):is(:hover, :focus-visible) {
         text-decoration: underline;
     }
 

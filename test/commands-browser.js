@@ -64,7 +64,6 @@ export default async function verifyCommands(t) {
                         ["Stop", "⏹️", "Stop"],
                         ["Attach image", "📎", "Attach image"],
                         ["Commands and skills", "/", "Commands and skills (/)"],
-                        ["Sessions", "☰", "Sessions"],
                     ]) {
                         const button = page.getByRole("button", { name, exact: true, includeHidden: true });
                         assert.equal(await button.getAttribute("title"), expectedTitle);
@@ -79,7 +78,7 @@ export default async function verifyCommands(t) {
                     assert.equal(await attach.isVisible(), false, "no Attach image is presented without prompt.image capability");
                     assert.equal(await insertCmd.isVisible(), true);
                     const actions = page.getByRole("group", { name: "Session actions", exact: true });
-                    assert.equal(await actions.locator("button").count(), 5);
+                    assert.equal(await actions.locator("button").count(), 4);
                     assert.equal(await send.evaluate((button) => button.form.id), "session-compose");
                     assert.equal(await stop.evaluate((button) => button.form.id), "session-stop", "Stop has independent native submission, not reset semantics");
                     assert.equal(await stop.getAttribute("type"), "submit");
@@ -247,25 +246,29 @@ export default async function verifyCommands(t) {
                     const outputDialog = page.locator("#dialog-command-output");
 
                     for (const [cmd, expectedTarget] of [
-                        ["/", "/settings/?workspace=conversation&session=session1#help"],
-                        ["  /help /model \n", "/settings/?workspace=conversation&session=session1&cmd=model#help"],
-                        ["/help learn", "/settings/?workspace=conversation&session=session1&cmd=learn#help"],
-                        ["/help logout", "/settings/?workspace=conversation&session=session1&cmd=logout#help"],
-                        ["/models", "/settings/?workspace=conversation&session=session1#models"],
-                        ["/models fixture", "/settings/?workspace=conversation&session=session1&q=fixture#models"],
-                        ["/model", "/settings/?workspace=conversation&session=session1#session"],
-                        ["/effort", "/settings/?workspace=conversation&session=session1#session"],
-                        ["/child", "/settings/?workspace=conversation&session=session1#session"],
-                        ["/persona", "/settings/?workspace=conversation&session=session1#session"],
-                        ["/mode", "/settings/?workspace=conversation&session=session1#session"],
-                        ["/mcp", "/settings/?workspace=conversation&session=session1#mcp"],
-                        ["/mcp list", "/settings/?workspace=conversation&session=session1#mcp"],
-                        ["/skills list", "/settings/?workspace=conversation&session=session1#skills"],
-                        ["/schedule list", "/settings/?workspace=conversation&session=session1#schedule"],
-                        ["/personas list", "/settings/?workspace=conversation&session=session1#personas"],
-                        ["/members list", "/settings/?workspace=conversation&session=session1#members"],
-                        ["/env list", "/settings/?workspace=conversation&session=session1&envScope=session#env"],
-                        ["/env --scope workspace list", "/settings/?workspace=conversation&session=session1#env"],
+                        ["/", "/settings/help?workspace=conversation&session=session1"],
+                        ["  /help /model \n", "/settings/help?workspace=conversation&session=session1&cmd=model"],
+                        ["/help learn", "/settings/help?workspace=conversation&session=session1&cmd=learn"],
+                        ["/help logout", "/settings/help?workspace=conversation&session=session1&cmd=logout"],
+                        ["/workspaces", "/settings/workspaces?workspace=conversation&session=session1"],
+                        ["/workspace", "/settings/workspaces?workspace=conversation&session=session1"],
+                        ["/sessions", "/settings/sessions?workspace=conversation&session=session1"],
+                        ["/session", "/settings/sessions?workspace=conversation&session=session1"],
+                        ["/models", "/settings/models?workspace=conversation&session=session1"],
+                        ["/models fixture", "/settings/models?workspace=conversation&session=session1&q=fixture"],
+                        ["/model", "/settings/models?workspace=conversation&session=session1"],
+                        ["/effort", "/settings/models?workspace=conversation&session=session1"],
+                        ["/child", "/settings/sessions?workspace=conversation&session=session1"],
+                        ["/persona", "/settings/sessions?workspace=conversation&session=session1"],
+                        ["/mode", "/settings/sessions?workspace=conversation&session=session1"],
+                        ["/mcp", "/settings/mcp?workspace=conversation&session=session1"],
+                        ["/mcp list", "/settings/mcp?workspace=conversation&session=session1"],
+                        ["/skills list", "/settings/skills?workspace=conversation&session=session1"],
+                        ["/schedule list", "/settings/schedule?workspace=conversation&session=session1"],
+                        ["/personas list", "/settings/personas?workspace=conversation&session=session1"],
+                        ["/members list", "/settings/members?workspace=conversation&session=session1"],
+                        ["/env list", "/settings/env?workspace=conversation&session=session1&envScope=session"],
+                        ["/env --scope workspace list", "/settings/env?workspace=conversation&session=session1"],
                     ]) {
                         await page.evaluate(() => { window.lastNavigated = null; });
                         assert.equal(await command(cmd), true, cmd);

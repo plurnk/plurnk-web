@@ -2,34 +2,93 @@ import { $, on, the } from "on_the_money";
 import { directoryPath, nextSequentialName } from "../src/directory-addresses.js";
 import { attachModelCombobox } from "./combobox.js";
 import { createModelEffortSync } from "./effort-select.js";
-import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
-import { flattenSelectOptions, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import { createModelSearchCache, flattenSelectOptions, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
 import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
 import { isRecord } from "./session-translator.js";
+import { COLLECTION_PAGE_SIZE, mountCollectionBar } from "./workspace-collection.js";
+import { parseWorkspaceList, wireWorkspaceCreateForm } from "./workspace-records.js";
 
-/** @typedef {import("./workspace-dialogs.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
+/** @typedef {import("./workspace-records.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
+/** @typedef {import("./workspace-records.js").WorkspaceSummary} WorkspaceSummary */
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
 
 /**
- * {§web-workspace-settings} {§web-workspace-rename} {§web-workspace-archive} {§web-session-archive}
- * Mount `#workspace` and `#session` lifecycle forms plus active-session policy controls.
+ * @typedef {{
+ *   readonly id: number,
+ *   readonly name: string,
+ *   readonly title: string | null,
+ *   readonly kind: "root" | "work" | "fork",
+ *   readonly lifecycle: string,
+ *   readonly parentName: string | null,
+ *   readonly archived: boolean,
+ * }} SessionDirectoryRow
+ */
+
+const ARCHIVE_STATE_OPTIONS = Object.freeze([
+    { value: "active", label: "Active" },
+    { value: "archived", label: "Archived" },
+    { value: "all", label: "All" },
+]);
+
+/**
+ * @template T
+ * @param {readonly T[]} items
+ * @param {ReturnType<typeof mountCollectionBar>} bar
+ * @returns {readonly T[]}
+ */
+function paginateLocalCollection(items, bar) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const params = bar.getParams();
+        const rawOffset = typeof params.offset === "number" ? params.offset : 0;
+        const limit = typeof params.limit === "number" ? params.limit : COLLECTION_PAGE_SIZE;
+        const page = items.slice(rawOffset, rawOffset + limit);
+        const nextOffset = rawOffset + page.length < items.length ? rawOffset + page.length : undefined;
+        const applied = bar.applyResult({
+            definitions: page,
+            offset: rawOffset,
+            total: items.length,
+            ...(nextOffset !== undefined ? { nextOffset } : {}),
+        });
+        if (!applied.clamped) return page;
+    }
+    return items.slice(0, COLLECTION_PAGE_SIZE);
+}
+
+/**
+ * {§web-workspace-settings} {§web-workspace-creation} {§web-workspace-rename} {§web-workspace-archive} {§web-session-creation} {§web-session-archive}
+ * Mount the standardized `workspaces` and `sessions` panels (inline creation disclosure, active-item card, and filterable/paginated table).
  * @param {HTMLElement} article
  * @param {{
  *   readonly getContext: () => WorkspaceSettingsContext,
  *   readonly invoke: (kind: string, params?: Record<string, unknown>, opts?: { requireSession?: boolean }) => Promise<unknown>,
  *   readonly runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
- *   readonly modelSearchCache: ModelSearchCache,
- *   readonly refreshSessionSection: () => Promise<void>,
+ *   readonly invokeModelSearch: (kind: string, params?: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>,
+ *   readonly refreshSessionsSection: () => Promise<void>,
+ *   readonly refreshWorkspacesSection: () => Promise<void>,
+ *   readonly openCreate?: boolean,
  * }} host
  */
 export function mountWorkspaceAndSessionSettings(article, {
     getContext,
     invoke,
     runMutation,
-    modelSearchCache,
-    refreshSessionSection,
+    invokeModelSearch,
+    refreshSessionsSection,
+    refreshWorkspacesSection,
+    openCreate = false,
 }) {
+    const modelSearchCache = createModelSearchCache(invokeModelSearch);
+    const wsPanel = $(article, '[data-settings-panel="workspaces"]');
+    const sessionsPanel = $(article, '[data-settings-panel="sessions"]');
+
+    /** @type {WorkspaceSummary[]} */
+    let cachedWorkspaces = [];
+    /** @type {SessionDirectoryRow[]} */
+    let cachedSessions = [];
+    /** @type {Set<string>} */
+    const knownSessionNames = new Set();
+
     /** @type {ReturnType<typeof attachModelCombobox> | null} */
     let sessionModelCombobox = null;
     /** @type {ReturnType<typeof attachModelCombobox> | null} */
@@ -37,6 +96,34 @@ export function mountWorkspaceAndSessionSettings(article, {
     /** @type {{ model: string, effort: string, childModel: string, persona: string, mode: string }} */
     let currentSessionValues = { model: "", effort: "", childModel: "inherit", persona: "none", mode: "review" };
     let hasPersistedSessionModel = false;
+
+    const offWsCreate = wsPanel instanceof HTMLElement
+        ? wireWorkspaceCreateForm(wsPanel, {
+            signal: getContext().signal,
+            getKnownWorkspaceNames: () => cachedWorkspaces.map(({ name }) => name),
+            runMutation,
+        })
+        : () => {};
+
+    const wsCollectionBar = wsPanel instanceof HTMLElement
+        ? mountCollectionBar(wsPanel, {
+            label: "workspaces",
+            stateOptions: ARCHIVE_STATE_OPTIONS,
+            initialState: "active",
+            onChange: () => { renderWorkspacesTable(); },
+            signal: getContext().signal,
+        })
+        : null;
+
+    const sessCollectionBar = sessionsPanel instanceof HTMLElement
+        ? mountCollectionBar(sessionsPanel, {
+            label: "sessions",
+            stateOptions: ARCHIVE_STATE_OPTIONS,
+            initialState: "active",
+            onChange: () => { renderSessionsTable(); },
+            signal: getContext().signal,
+        })
+        : null;
 
     const effortSync = createModelEffortSync({
         getSelect: () => {
@@ -78,6 +165,123 @@ export function mountWorkspaceAndSessionSettings(article, {
             includeInherit: true,
             signal: getContext().signal,
         });
+    }
+
+    function focusCreateDisclosureIfRequested() {
+        if (!openCreate) return;
+        if (wsPanel instanceof HTMLElement) {
+            const disclosure = $(wsPanel, 'details[data-family-disclosure="workspaces"]');
+            const input = $(wsPanel, 'form#workspace-create input[name="name"]');
+            if (disclosure instanceof HTMLDetailsElement && !disclosure.hidden) {
+                disclosure.open = true;
+                if (input instanceof HTMLInputElement) input.focus();
+            }
+        }
+        if (sessionsPanel instanceof HTMLElement) {
+            const disclosure = $(sessionsPanel, 'details[data-family-disclosure="sessions"]');
+            const input = $(sessionsPanel, 'form#session-create input[name="name"]');
+            if (disclosure instanceof HTMLDetailsElement && !disclosure.hidden) {
+                disclosure.open = true;
+                if (input instanceof HTMLInputElement) input.focus();
+            }
+        }
+    }
+
+    function renderWorkspacesTable() {
+        if (!(wsPanel instanceof HTMLElement) || !wsCollectionBar) return;
+        const tbody = $(wsPanel, "[data-workspaces-rows]");
+        if (!tbody) return;
+        const ctx = getContext();
+        const params = wsCollectionBar.getParams();
+        const stateFilter = typeof params.state === "string" ? params.state : "active";
+        const needle = typeof params.query === "string" ? params.query.trim().toLowerCase() : "";
+
+        const filtered = cachedWorkspaces.filter((ws) => {
+            const isArchived = ws.archivedAt !== null;
+            if (stateFilter === "active" && isArchived) return false;
+            if (stateFilter === "archived" && !isArchived) return false;
+            if (!needle) return true;
+            const hay = `${ws.name}\n${ws.projectLabel ?? ""}\n${ws.projectRoot ?? ""}`.toLowerCase();
+            return hay.includes(needle);
+        });
+        const page = paginateLocalCollection(filtered, wsCollectionBar);
+        $.cloneEach(tbody, "#workspace-directory-row", page, (tr, ws) => {
+            const isArchived = ws.archivedAt !== null;
+            const effectiveFolder = ws.projectLabel ?? ws.projectRoot;
+            const wsPath = directoryPath({ kind: "workspace", workspace: ws.name }) ?? "/";
+            the(tr, {
+                "ws-row-id": String(ws.id),
+                "ws-row-name": ws.name,
+                "ws-row-glyph": effectiveFolder !== null ? "🗂️" : "☁️",
+                "ws-row-path": wsPath,
+                "ws-row-folder": effectiveFolder ?? "Folderless",
+                "ws-row-state": isArchived ? "Archived" : "Active",
+                "ws-row-archived": isArchived ? "true" : "false",
+                "ws-row-current": ws.name === ctx.workspaceName ? "true" : "false",
+            });
+        });
+        the(wsPanel, { "collection-count": page.length });
+    }
+
+    /** @param {readonly WorkspaceSummary[]} [preloaded] */
+    async function loadWorkspacesSection(preloaded) {
+        if (!(wsPanel instanceof HTMLElement)) return;
+        const ctx = getContext();
+        const workspaces = preloaded !== undefined
+            ? [...preloaded]
+            : parseWorkspaceList(await managementAction("workspace.list", { includeArchived: true }, "", ctx.signal));
+        ctx.signal.throwIfAborted();
+        cachedWorkspaces = workspaces;
+        const current = cachedWorkspaces.find(({ id, name }) =>
+            (ctx.workspaceId > 0 && id === ctx.workspaceId) || (ctx.workspaceName !== "" && name === ctx.workspaceName));
+        if (current) {
+            const wsArchived = current.archivedAt !== null;
+            if (wsArchived) article.dataset.workspaceArchived = "true";
+            else delete article.dataset.workspaceArchived;
+            const wsArchBtn = $(wsPanel, "[data-workspace-archive-btn]");
+            const wsUnarchBtn = $(wsPanel, "[data-workspace-unarchive-btn]");
+            if (wsArchBtn instanceof HTMLElement) wsArchBtn.hidden = wsArchived;
+            if (wsUnarchBtn instanceof HTMLElement) wsUnarchBtn.hidden = !wsArchived;
+        }
+        renderWorkspacesTable();
+    }
+
+    function renderSessionsTable() {
+        if (!(sessionsPanel instanceof HTMLElement) || !sessCollectionBar) return;
+        const tbody = $(sessionsPanel, "[data-sessions-rows]");
+        if (!tbody) return;
+        const ctx = getContext();
+        const params = sessCollectionBar.getParams();
+        const stateFilter = typeof params.state === "string" ? params.state : "active";
+        const needle = typeof params.query === "string" ? params.query.trim().toLowerCase() : "";
+
+        const filtered = cachedSessions.filter((row) => {
+            if (stateFilter === "active" && row.archived) return false;
+            if (stateFilter === "archived" && !row.archived) return false;
+            if (!needle) return true;
+            const hay = `#${row.name}\n${row.name}\n${row.title ?? ""}\n${row.kind}\n${row.lifecycle}`.toLowerCase();
+            return hay.includes(needle);
+        });
+        const page = paginateLocalCollection(filtered, sessCollectionBar);
+        $.cloneEach(tbody, "#session-directory-row", page, (tr, row) => {
+            const label = row.title ? `${row.title} (#${row.name})` : `#${row.name}`;
+            const details = [
+                row.kind !== "root" ? row.kind : "",
+                row.parentName ? `parent: #${row.parentName}` : "",
+            ].filter(Boolean).join(" · ") || "root";
+            const sessPath = directoryPath({ kind: "session", workspace: ctx.workspaceName, session: row.name }) ?? "/";
+            the(tr, {
+                "sess-row-name": row.name,
+                "sess-row-label": label,
+                "sess-row-path": sessPath,
+                "sess-row-details": details,
+                "sess-row-state": row.archived ? "archived" : row.lifecycle,
+                "sess-row-archived": row.archived ? "true" : "false",
+                "sess-row-current": row.name === ctx.sessionName ? "true" : "false",
+                "session-kind": row.kind,
+            });
+        });
+        the(sessionsPanel, { "collection-count": page.length });
     }
 
     /**
@@ -187,6 +391,10 @@ export function mountWorkspaceAndSessionSettings(article, {
 
     async function hydrateSessionConfig() {
         const ctx = getContext();
+        if (ctx.sessionName === null) {
+            renderSessionConfigControls(null, [], []);
+            return;
+        }
         const callSession = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
             managementAction(kind, params, `${ctx.workspaceId}#${ctx.sessionName}`, ctx.signal, {
                 workspaceId: ctx.workspaceId,
@@ -197,6 +405,64 @@ export function mountWorkspaceAndSessionSettings(article, {
         ]);
         ctx.signal.throwIfAborted();
         renderSessionConfigControls(sessionRes, aliases, catalog.items);
+    }
+
+    async function loadSessionsSection() {
+        if (!(sessionsPanel instanceof HTMLElement)) return;
+        const ctx = getContext();
+        if (ctx.workspaceId <= 0) {
+            cachedSessions = [];
+            renderSessionsTable();
+            renderSessionConfigControls(null, [], []);
+            return;
+        }
+        const [sessionsRes] = await Promise.all([
+            managementAction("workspace.sessions", {
+                workspaceId: ctx.workspaceId,
+                includeArchived: true,
+            }, "", ctx.signal, { workspaceId: ctx.workspaceId }),
+            ctx.sessionName !== null ? hydrateSessionConfig() : Promise.resolve(),
+        ]);
+        ctx.signal.throwIfAborted();
+        const rawRows = isRecord(sessionsRes) && Array.isArray(sessionsRes.sessions) ? sessionsRes.sessions : [];
+        /** @type {Map<number, Record<string, unknown>>} */
+        const rowById = new Map();
+        knownSessionNames.clear();
+        for (const row of rawRows) {
+            if (isRecord(row) && typeof row.id === "number") {
+                rowById.set(row.id, row);
+                if (typeof row.name === "string") knownSessionNames.add(row.name);
+            }
+        }
+        /** @type {SessionDirectoryRow[]} */
+        const nextSessions = [];
+        for (const row of rawRows) {
+            if (!isRecord(row) || typeof row.id !== "number" || typeof row.name !== "string") continue;
+            if (row.origin !== "model") continue;
+            const parentId = typeof row.parentSessionId === "number" ? row.parentSessionId : null;
+            const parentRow = parentId !== null ? rowById.get(parentId) : undefined;
+            const rawKind = row.kind === "root" || row.kind === "work" || row.kind === "fork"
+                ? row.kind
+                : (parentId === null ? "root" : "work");
+            nextSessions.push({
+                id: row.id,
+                name: row.name,
+                title: typeof row.title === "string" && row.title.trim() !== "" ? row.title.trim() : null,
+                kind: rawKind,
+                lifecycle: typeof row.lifecycle === "string" ? row.lifecycle : "idle",
+                parentName: isRecord(parentRow) && typeof parentRow.name === "string" ? parentRow.name : null,
+                archived: row.archivedAt !== null && row.archivedAt !== undefined,
+            });
+        }
+        cachedSessions = nextSessions.toSorted((a, b) => b.id - a.id);
+        const activeRow = ctx.sessionName !== null ? cachedSessions.find(({ name }) => name === ctx.sessionName) : null;
+        if (activeRow) {
+            const sessArchBtn = $(sessionsPanel, "[data-session-archive-btn]");
+            const sessUnarchBtn = $(sessionsPanel, "[data-session-unarchive-btn]");
+            if (sessArchBtn instanceof HTMLElement) sessArchBtn.hidden = activeRow.archived;
+            if (sessUnarchBtn instanceof HTMLElement) sessUnarchBtn.hidden = !activeRow.archived;
+        }
+        renderSessionsTable();
     }
 
     on(article, "submit", "form#workspace-rename", (event, form) => {
@@ -234,8 +500,80 @@ export function mountWorkspaceAndSessionSettings(article, {
         void runMutation(async () => {
             const ctx = getContext();
             await invoke("workspace.archive", { workspaceId: ctx.workspaceId, archived: false });
-            location.assign(directoryPath({ kind: "workspace", workspace: ctx.workspaceName }) ?? "/search/");
+            location.assign(directoryPath({ kind: "workspace", workspace: ctx.workspaceName }) ?? "/settings/search");
             return "Workspace unarchived.";
+        });
+    });
+
+    on(article, "submit", "form[data-workspace-row-form]", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement)) return;
+        const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+        const operation = submitter?.value ?? "";
+        if (operation !== "archive" && operation !== "unarchive") return;
+        const data = new FormData(form);
+        const wsId = Number(data.get("workspaceId") ?? "0");
+        const wsName = String(data.get("workspace") ?? "").trim();
+        if (!Number.isFinite(wsId) || wsId <= 0 || !wsName) return;
+        void runMutation(async (mutSignal) => {
+            const archived = operation === "archive";
+            await managementAction("workspace.archive", { workspaceId: wsId, archived }, "", mutSignal, { workspaceId: wsId });
+            await refreshWorkspacesSection();
+            return `${wsName}  ${archived ? "archived" : "unarchived"}`;
+        });
+    });
+
+    on(article, "submit", "form#session-create", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement)) return;
+        const data = new FormData(form);
+        const rawName = String(data.get("name") ?? "").trim();
+        const rawTitle = String(data.get("title") ?? "").trim();
+        void runMutation(async (mutSignal) => {
+            const ctx = getContext();
+            if (!ctx.workspaceName) throw new Error("No workspace selected.");
+            /** @type {unknown} */
+            let created;
+            if (rawName) {
+                const existingSessions = await managementAction("workspace.sessions", {
+                    workspace: ctx.workspaceName,
+                    includeArchived: true,
+                }, "", mutSignal, { workspace: ctx.workspaceName });
+                const rows = isRecord(existingSessions) && Array.isArray(existingSessions.sessions) ? existingSessions.sessions : [];
+                if (rows.some((row) => isRecord(row) && row.name === rawName)) {
+                    throw Object.assign(new Error(`Session '${rawName}' is already in use in workspace '${ctx.workspaceName}'.`), { status: 409 });
+                }
+                created = await managementAction("session/new", {
+                    _meta: { plurnk: { workspace: ctx.workspaceName, sessionName: rawName } },
+                }, "", mutSignal);
+            } else {
+                const seen = new Set(knownSessionNames);
+                for (let attempt = 0; attempt < 8; attempt += 1) {
+                    const candidate = nextSequentialName("session", seen);
+                    try {
+                        created = await managementAction("session/new", {
+                            _meta: { plurnk: { workspace: ctx.workspaceName, sessionName: candidate } },
+                        }, "", mutSignal);
+                        break;
+                    } catch (error) {
+                        if (Reflect.get(Object(error), "status") === 409 && attempt < 7) {
+                            seen.add(candidate);
+                            continue;
+                        }
+                        throw error;
+                    }
+                }
+            }
+            const rawSessionId = isRecord(created) && typeof created.sessionId === "string" ? created.sessionId : "";
+            const freshName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : rawName;
+            if (freshName && rawTitle && ctx.workspaceId > 0) {
+                await managementAction("session/set_title", { title: rawTitle }, `${ctx.workspaceId}#${freshName}`, mutSignal);
+            }
+            const dest = freshName
+                ? directoryPath({ kind: "session", workspace: ctx.workspaceName, session: freshName })
+                : directoryPath({ kind: "workspace", workspace: ctx.workspaceName });
+            location.assign(dest ?? "/");
+            return freshName ? `Created #${freshName}.` : "Session created.";
         });
     });
 
@@ -338,8 +676,35 @@ export function mountWorkspaceAndSessionSettings(article, {
             if (article.dataset.workspaceArchived === "true") {
                 await invoke("workspace.archive", { workspaceId: ctx.workspaceId, archived: false });
             }
-            location.assign(directoryPath({ kind: "session", workspace: ctx.workspaceName, session: ctx.sessionName }) ?? "/search/");
+            location.assign(directoryPath({ kind: "session", workspace: ctx.workspaceName, session: ctx.sessionName }) ?? "/settings/search");
             return "Session unarchived.";
+        });
+    });
+
+    on(article, "submit", "form[data-session-row-form]", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement)) return;
+        const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+        const operation = submitter?.value ?? "";
+        if (operation !== "archive" && operation !== "unarchive") return;
+        const targetSession = String(new FormData(form).get("session") ?? "").trim();
+        if (!targetSession) return;
+        void runMutation(async (mutSignal) => {
+            const ctx = getContext();
+            if (ctx.workspaceId <= 0) throw new Error("No workspace selected.");
+            if (operation === "unarchive" && article.dataset.workspaceArchived === "true") {
+                await managementAction("workspace.archive", { workspaceId: ctx.workspaceId, archived: false }, "", mutSignal, { workspaceId: ctx.workspaceId });
+                delete article.dataset.workspaceArchived;
+            }
+            await managementAction(
+                operation === "archive" ? "session/archive" : "session/unarchive",
+                {},
+                `${ctx.workspaceId}#${targetSession}`,
+                mutSignal,
+                { workspaceId: ctx.workspaceId },
+            );
+            await refreshSessionsSection();
+            return `#${targetSession}  ${operation === "archive" ? "archived" : "unarchived"}`;
         });
     });
 
@@ -350,6 +715,7 @@ export function mountWorkspaceAndSessionSettings(article, {
         if (!rawTitle) return;
         void runMutation(async () => {
             await invoke("session/set_title", { title: rawTitle }, { requireSession: true });
+            await refreshSessionsSection();
             return `Title: ${rawTitle}.`;
         });
     });
@@ -412,96 +778,25 @@ export function mountWorkspaceAndSessionSettings(article, {
                 const { currentValue } = await sessionConfigOption(callSession, "mode", selectedMode);
                 summaries.push(`Approval policy: ${currentValue || selectedMode}`);
             }
-            await refreshSessionSection();
+            await refreshSessionsSection();
             return summaries.length > 0 ? `${summaries.join(" · ")}.` : "Session settings saved.";
         });
     });
 
+    focusCreateDisclosureIfRequested();
+
     return {
         renderSessionConfigControls,
         hydrateSessionConfig,
+        loadWorkspacesSection,
+        loadSessionsSection,
         dispose() {
+            offWsCreate();
+            wsCollectionBar?.dispose();
+            sessCollectionBar?.dispose();
             effortSync.dispose();
             sessionModelCombobox?.dispose();
             sessionSpawnCombobox?.dispose();
         },
     };
-}
-
-/**
- * {§web-session-creation} Wire `#dialog-session-create` on `/settings/` to create and optionally title a session over `/acp`.
- * @param {{
- *   readonly signal: AbortSignal,
- *   readonly getWorkspaceId: () => number,
- *   readonly getWorkspaceName: () => string,
- *   readonly getKnownSessionNames: () => Iterable<string>,
- * }} options
- */
-export function wireSettingsSessionCreateDialog({ signal, getWorkspaceId, getWorkspaceName, getKnownSessionNames }) {
-    const sessionDialog = $("#dialog-session-create");
-    if (!(sessionDialog instanceof HTMLElement)) return;
-    let newSessionBusy = false;
-    on(sessionDialog, "submit", "form#session-create", (event, form) => {
-        const currentWorkspaceName = getWorkspaceName();
-        if (!(form instanceof HTMLFormElement) || !currentWorkspaceName) return;
-        event.preventDefault();
-        if (newSessionBusy) return;
-        newSessionBusy = true;
-        the(sessionDialog, "session-create-error", "");
-        const data = new FormData(form);
-        const rawName = String(data.get("name") ?? "").trim();
-        const rawTitle = String(data.get("title") ?? "").trim();
-        void (async () => {
-            try {
-                /** @type {unknown} */
-                let created;
-                if (rawName) {
-                    const existingSessions = await managementAction("workspace.sessions", {
-                        workspace: currentWorkspaceName,
-                        includeArchived: true,
-                    }, "", signal, { workspace: currentWorkspaceName });
-                    const rows = isRecord(existingSessions) && Array.isArray(existingSessions.sessions) ? existingSessions.sessions : [];
-                    if (rows.some((row) => isRecord(row) && row.name === rawName)) {
-                        throw Object.assign(new Error(`Session '${rawName}' is already in use in workspace '${currentWorkspaceName}'.`), { status: 409 });
-                    }
-                    created = await managementAction("session/new", {
-                        _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: rawName } },
-                    }, "", signal);
-                } else {
-                    const seen = new Set(getKnownSessionNames());
-                    for (let attempt = 0; attempt < 8; attempt += 1) {
-                        const candidate = nextSequentialName("session", seen);
-                        try {
-                            created = await managementAction("session/new", {
-                                _meta: { plurnk: { workspace: currentWorkspaceName, sessionName: candidate } },
-                            }, "", signal);
-                            break;
-                        } catch (error) {
-                            if (Reflect.get(Object(error), "status") === 409 && attempt < 7) {
-                                seen.add(candidate);
-                                continue;
-                            }
-                            throw error;
-                        }
-                    }
-                }
-                const rawSessionId = isRecord(created) && typeof created.sessionId === "string" ? created.sessionId : "";
-                const freshName = rawSessionId.includes("#") ? (rawSessionId.split("#")[1] ?? "") : rawName;
-                const workspaceId = getWorkspaceId();
-                if (freshName && rawTitle && workspaceId > 0) {
-                    await managementAction("session/set_title", { title: rawTitle }, `${workspaceId}#${freshName}`, signal);
-                }
-                if (sessionDialog instanceof HTMLDialogElement && sessionDialog.open) sessionDialog.close();
-                const dest = freshName
-                    ? directoryPath({ kind: "session", workspace: currentWorkspaceName, session: freshName })
-                    : directoryPath({ kind: "workspace", workspace: currentWorkspaceName });
-                location.assign(dest ?? "/");
-            } catch (error) {
-                const { message, recovery } = await describeFailure(error);
-                the(sessionDialog, "session-create-error", [message, recovery].filter(Boolean).join(" "));
-            } finally {
-                newSessionBusy = false;
-            }
-        })();
-    });
 }

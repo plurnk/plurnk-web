@@ -450,10 +450,10 @@ export default async function verifySessionObserve(t) {
                         await page.locator('[data-message-id="older-0"]').waitFor();
                         assert.ok((await metrics()).gap > 400, "activating Load earlier messages keeps reader away from bottom");
 
-                        // 7. Client /help command navigates directly to /settings/#help without waterfall injection into #main.
+                        // 7. Client /help command navigates directly to /settings/help without waterfall injection into #main.
                         await draft.fill("/help");
                         await page.getByRole("button", { name: "Send", exact: true }).click();
-                        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#help");
+                        await page.waitForURL((url) => new URL(url).pathname === "/settings/help");
                         await page.locator('#workspace-settings [data-settings-panel="help"] dl[aria-label="Keyboard shortcuts"]').waitFor({ state: "visible" });
                     });
 
@@ -575,11 +575,10 @@ export default async function verifySessionObserve(t) {
                         assert.equal(gateResolutions.at(-1)?.result?._meta?.plurnk?.body, "echo edited-via-shortcut\n");
                     });
 
-                    await t.test("{§web-workspace-settings} {§web-session-commands} quick model dialog preserves user effort choice while async session/options hydration is in flight", async () => {
+                    await t.test("{§web-workspace-settings} {§web-session-commands} top bar and mobile model links navigate directly to /settings/models to update active session effort", async () => {
                         /** @type {Array<{ configId: string, value: string }>} */
                         const configWrites = [];
-                        let releaseOptions;
-                        const optionsGate = new Promise((resolve) => { releaseOptions = resolve; });
+                        let currentEffort = "high";
                         const modelOptions = () => [
                             {
                                 configId: "model",
@@ -592,7 +591,7 @@ export default async function verifySessionObserve(t) {
                                 configId: "thought_level",
                                 name: "Reasoning Effort",
                                 type: "select",
-                                currentValue: "high",
+                                currentValue: currentEffort,
                                 options: [
                                     { value: "low", name: "low" },
                                     { value: "high", name: "high" },
@@ -612,7 +611,7 @@ export default async function verifySessionObserve(t) {
                                                 ...meta,
                                                 status: {
                                                     ...meta.status,
-                                                    model: { alias: "browser", provider: "fixture", model: "browser", effort: "high", effortSource: "default" },
+                                                    model: { alias: "browser", provider: "fixture", model: "browser", effort: currentEffort, effortSource: "default" },
                                                 },
                                             },
                                         },
@@ -635,14 +634,13 @@ export default async function verifySessionObserve(t) {
                                 return { result: { items: [], offset: 0, total: 0, providers: ["fixture"] } };
                             }
                             if (input.method === "session/options") {
-                                await optionsGate;
                                 return {
                                     result: {
                                         configOptions: modelOptions(),
                                         availableCommands: [],
                                         _meta: {
                                             plurnk: {
-                                                status: { model: { alias: "browser", provider: "fixture", model: "browser", effort: "high", effortSource: "default" } },
+                                                status: { model: { alias: "browser", provider: "fixture", model: "browser", effort: currentEffort, effortSource: "default" } },
                                             },
                                         },
                                     },
@@ -650,12 +648,13 @@ export default async function verifySessionObserve(t) {
                             }
                             if (input.method === "session/set_config_option") {
                                 configWrites.push({ configId: String(input.params.configId), value: String(input.params.value) });
+                                if (input.params.configId === "thought_level") currentEffort = String(input.params.value);
                                 return {
                                     result: {
                                         configOptions: modelOptions(),
                                         _meta: {
                                             plurnk: {
-                                                status: { model: { alias: "browser", provider: "fixture", model: "browser", effort: String(input.params.value), effortSource: "explicit" } },
+                                                status: { model: { alias: "browser", provider: "fixture", model: "browser", effort: currentEffort, effortSource: "explicit" } },
                                             },
                                         },
                                     },
@@ -666,21 +665,22 @@ export default async function verifySessionObserve(t) {
 
                         await page.goto(fixture.url);
                         await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-                        await page.getByRole("link", { name: "Model", exact: true }).click();
-                        const quickDialog = page.locator("#dialog-session-model");
-                        await quickDialog.waitFor({ state: "visible" });
-                        const effortSelect = quickDialog.getByRole("combobox", { name: "Reasoning effort", exact: true });
+                        await page.setViewportSize({ width: 1280, height: 700 });
+                        assert.equal(await page.locator("#header-model").isVisible(), true);
+                        assert.equal(await page.locator("#header-model").getAttribute("href"), "/settings/models?workspace=conversation&session=session1");
+                        await page.setViewportSize({ width: 390, height: 600 });
+                        assert.equal(await page.locator("#header-model").isVisible(), false);
+                        await page.locator("#session-model").click();
+                        await page.waitForURL((url) => new URL(url).pathname === "/settings/models");
+                        const modelsForm = page.locator('#workspace-settings [data-settings-panel="models"] form[data-models-session-form]');
+                        await modelsForm.waitFor({ state: "visible" });
+                        const effortSelect = modelsForm.getByRole("combobox", { name: "Reasoning effort", exact: true });
                         assert.equal(await effortSelect.inputValue(), "high");
 
-                        // Pick "low" BEFORE delayed session/options resolves with currentValue: "high".
                         await effortSelect.selectOption("low");
                         assert.equal(await effortSelect.inputValue(), "low");
-                        releaseOptions();
-                        await page.waitForTimeout(100);
-                        assert.equal(await effortSelect.inputValue(), "low", "late session/options hydration must not overwrite user effort selection");
-
-                        await quickDialog.getByRole("button", { name: "Apply", exact: true }).click();
-                        await quickDialog.waitFor({ state: "hidden" });
+                        await modelsForm.getByRole("button", { name: "Apply", exact: true }).click();
+                        await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("Effort: low"));
                         assert.deepEqual(configWrites, [{ configId: "thought_level", value: "low" }]);
                     });
 

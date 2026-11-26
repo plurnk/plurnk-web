@@ -52,13 +52,13 @@
         max-inline-size: 100%;
     }
 
-    /* {§web-page-shell} Single header row: brand + creation controls, centered place, and navigation actions. */
+    /* {§web-page-shell} Single header row: broad-to-narrow scope bar, flex spacer, and right-aligned navigation actions. */
     body > header {
         container-type: inline-size;
         display: flex;
         flex-wrap: nowrap;
         align-items: center;
-        gap: calc(var(--otm-spacing) * 0.65);
+        gap: calc(var(--otm-spacing) * 0.55);
         padding-block: max(env(safe-area-inset-top, 0px), calc(var(--otm-spacing) * 0.35)) calc(var(--otm-spacing) * 0.35);
     }
 
@@ -80,12 +80,16 @@
         display: flex;
         flex: 1 1 auto;
         align-items: center;
-        justify-content: safe center;
-        gap: 0.2ch;
+        justify-content: flex-start;
+        gap: calc(var(--otm-spacing) * 0.45);
         min-inline-size: 0;
         padding-block: calc(var(--otm-spacing) * 0.25);
         overflow-x: auto;
         white-space: nowrap;
+    }
+
+    #header-place > a {
+        flex: 0 0 auto;
     }
 
     body > header > nav[aria-label="Main navigation"] {
@@ -117,23 +121,6 @@
         padding: calc(var(--otm-spacing) * 0.15) calc(var(--otm-spacing) * 0.35);
     }
 
-    body > header > nav[aria-label="breadcrumb"] > ul {
-        align-items: stretch;
-        inline-size: max-content;
-        margin-inline: auto;
-    }
-
-    body > header > nav[aria-label="breadcrumb"] > ul > li {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35ch;
-    }
-
-    body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
-        content: "›" / "";
-        margin-inline-start: calc(var(--otm-spacing) * 0.4);
-    }
-
     header nav form {
         display: inline-flex;
         align-items: center;
@@ -163,7 +150,22 @@
     }
 
     header :where(#header-place a, #header-place button) {
-        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.35);
+        padding: calc(var(--otm-spacing) * 0.2) calc(var(--otm-spacing) * 0.3);
+    }
+
+    @container (width < 48rem) {
+        body > header #header-model {
+            display: none;
+        }
+
+        body > header > #header-place {
+            gap: 0;
+        }
+
+        body > header > #header-place > a {
+            gap: 0;
+            padding-inline: 0.15ch;
+        }
     }
 
     /* Grouped inline controls (<fieldset role="group">) */
@@ -292,7 +294,7 @@
         margin: 0;
     }
 
-    #workspace-tabs > :where(button),
+    #workspace-tabs > :where(a, button),
     #workspace-tabs :where(form > button) {
         --otm-form-element-spacing-block: 0;
         --otm-form-element-spacing-inline: 0;
@@ -307,26 +309,6 @@
         padding: calc(var(--otm-spacing) * 0.22) calc(var(--otm-spacing) * 0.45);
         border-width: 0;
         line-height: 1;
-    }
-
-    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul) {
-        max-block-size: 50dvh;
-        margin: 0;
-        padding: 0;
-        overflow-y: auto;
-    }
-
-    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul > li) {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-    }
-
-    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul > li > a) {
-        display: flex;
-        align-items: center;
-        gap: 0.5ch;
-        padding: calc(var(--otm-spacing) * 0.4) calc(var(--otm-spacing) * 0.6);
     }
 
     /* {§web-workspace-settings} Dedicated workspace settings and about page layout. */
@@ -662,18 +644,5 @@
     #main [aria-label="Review requests"] pre {
         max-inline-size: 100%;
         overflow-x: auto;
-    }
-
-    #dialog-session-model form footer {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: flex-end;
-        gap: calc(var(--otm-spacing) * 0.5);
-    }
-
-    #dialog-session-model form footer > button {
-        inline-size: auto;
-        margin: 0;
     }
 }

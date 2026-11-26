@@ -220,12 +220,12 @@ test("{§web-build} {§web-assets} dev-loader and dev-module serve live source e
         const checkBrowser = browserDiagnostics(context);
         const page = await context.newPage();
 
-        await page.goto(`${base}/search/`);
+        await page.goto(`${base}/settings/search`);
         assert.equal(
             await page.locator('#search-controls input[name="q"]').getAttribute("placeholder"),
             "Search workspaces and sessions…",
         );
-        const stylesheetPath = Documents.stylesheet(await (await fetch(`${base}/search/`)).text());
+        const stylesheetPath = Documents.stylesheet(await (await fetch(`${base}/settings/search`)).text());
         const initialCss = await page.request.get(`${base}${stylesheetPath}`);
         assert.equal(initialCss.status(), 200);
 
@@ -258,7 +258,7 @@ test("{§web-build} {§web-assets} dev-loader and dev-module serve live source e
             }).on("error", reject);
         });
 
-        const updatedStylesheetPath = Documents.stylesheet(await (await fetch(`${base}/search/`)).text());
+        const updatedStylesheetPath = Documents.stylesheet(await (await fetch(`${base}/settings/search`)).text());
         const updatedCss = await rawGet(`${base}${updatedStylesheetPath}`, "br");
         assert.equal(updatedCss.status, 200);
         assert.equal(updatedCss.headers["content-encoding"], "br");
