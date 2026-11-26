@@ -81,16 +81,17 @@ Hosts deploying `@plurnk/plurnk-web` can append host-managed Settings tabs (such
 Query strings do not select assets. Paths select the build-generated asset inventory, never
 filesystem paths derived from the request. Only packaged public assets are served;
 configuration, source, credentials and workspace files are not public resources.
-Assets are loaded during module startup: missing package bytes fail startup rather
-than leaving a partially functioning page. Responses declare their media type,
-byte length and `X-Content-Type-Options: nosniff`.
+Assets are verified during module startup: missing or unreadable package bytes fail startup rather
+than leaving a partially functioning page; packaged `dist/` representations are served on demand
+from the OS page cache rather than pinned in per-daemon private heap buffers. Responses declare
+their media type, byte length and `X-Content-Type-Options: nosniff`.
 
 ## §web-asset-encoding Static content encoding
 
 | Boundary | Contract |
 |---|---|
 | Build | Retain each original asset. For non-HTML assets, package Brotli and gzip representations only when smaller than the original. The inventory names those representations; compression runs at build time, not startup or per request. |
-| Address | All representations share the original URL and media type. Encoded files are inventory implementation details, not additional public URLs. Every declared representation must load before route registration. |
+| Address | All representations share the original URL and media type. Encoded files are inventory implementation details, not additional public URLs. Every declared representation must be verified readable and sized before route registration. |
 | Negotiation | Use standard `Accept-Encoding` negotiation, honoring quality weights, explicit exclusions, wildcards and identity. Among equally acceptable representations prefer the smallest. An absent or empty header selects identity; no acceptable representation yields 406. |
 | Headers | Add `Accept-Encoding` to `Vary`, preserving existing fields; `Content-Encoding` only for encoded representations; `Content-Length` is the selected representation's byte length. HEAD selects the same representation and headers as GET but sends no body. No new cache lifetime is introduced. |
 | Scope | Dynamic/private documents, authentication responses and other daemon mounts, including ACP streams, are not compressed by this handler. Their existing security, caching and streaming contracts remain unchanged. |
@@ -633,7 +634,7 @@ Reference: [SVG image restrictions](https://developer.mozilla.org/en-US/docs/Web
 | Admission | When `seam.credentials?.face?.() != null`, require `Authorization: Bearer <token>` where `seam.credentials.verify(token)` resolves to a non-null claim set (else `401` Problem JSON). Unauthenticated loopback/proxy hosts (`face() == null`) admit same-origin compilation directly. |
 | Isolation | Ondine executes in a bounded Node thread pool, never on the daemon event loop. The environment owns concurrency, admitted render count, queue-inclusive execution deadline, request-byte limit, compiler edge limit and SVG-byte limit. Request-body transport deadlines remain the HTTP host's concern. Compiler limits and thread termination are not an OS memory sandbox. |
 | Failure | Oversized input returns 413; unsupported or invalid diagrams and compiler/output limits return 422; full admission returns 429; execution deadline returns 408; module shutdown returns 503. Failures are Problems, not images. Preserve unexpected compiler failures for the host's normal error path. |
-| Lifetime | Start compiler threads only on demand. Expired or disconnected render requests stop their pending or active compilation. Module close rejects outstanding compilation and awaits thread termination. Neither browser departure nor renderer failure changes agent work. No persisted render cache or temporary files. |
+| Lifetime | Start compiler threads only on demand and retire idle threads automatically (`idleTimeout: 0`). Expired or disconnected render requests stop their pending or active compilation. Module close rejects outstanding compilation and awaits thread termination. Neither browser departure nor renderer failure changes agent work. No persisted render cache or temporary files. |
 | Output | Responses are private and not cached. Compiled SVGs include an embedded `@media (prefers-color-scheme: dark)` `--ondine-*` custom-property block so lines, surfaces, borders, and labels remain high-contrast in dark mode inside sandboxed `<img>` elements across Chromium, Firefox, and WebKit. SVG has `nosniff` and a sandboxed CSP denying scripts and external resource loads, including when opened as a document. The browser consumes it only through {§web-diagram-content}, without changing the application's CSP. |
 
 ## §web-inline-images Safe inline raster images

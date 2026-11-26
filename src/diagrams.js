@@ -63,8 +63,13 @@ export default class Diagrams {
         if (this.#active >= this.#pending) throw new RequestError(429, "Diagram service is busy.");
         const deadline = AbortSignal.timeout(this.#timeout);
         const combined = AbortSignal.any([signal, deadline, this.#stop.signal]);
-        this.#pool ??= new Piscina({ filename: new URL("./diagram-compiler.js", import.meta.url).href,
-            minThreads: 0, maxThreads: this.#threads, maxQueue: this.#pending });
+        this.#pool ??= new Piscina({
+            filename: new URL("./diagram-compiler.js", import.meta.url).href,
+            minThreads: 0,
+            maxThreads: this.#threads,
+            maxQueue: this.#pending,
+            idleTimeout: 0,
+        });
         this.#active++;
         try {
             const result = await this.#pool.run({ source, limit: this.#input, outputLimit: this.#output, maxEdges: this.#edges }, { signal: combined });

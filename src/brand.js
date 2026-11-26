@@ -409,19 +409,20 @@ export function buildWebManifest(brand) {
 
 /**
  * {§web-asset-encoding} Pre-compress a startup-loaded brand resource or synthesized manifest.
- * @param {import("./module.js").LoadedAsset["body"]} body
+ * @param {Buffer} body
  * @param {string} mediaType
- * @returns {Promise<import("./module.js").LoadedAsset>}
+ * @returns {Promise<import("./static-assets.js").LoadedAsset>}
  */
 export async function encodeBrandAsset(body, mediaType) {
-    /** @type {Array<readonly [string, import("./module.js").LoadedAsset["body"]]>} */
+    /** @type {Array<readonly [string, import("./static-assets.js").AssetRepresentation]>} */
     const variants = (await Promise.all(CODECS.map(async ([encoding, compress]) => {
-        const bytes = /** @type {import("./module.js").LoadedAsset["body"]} */ (await compress(body));
-        return bytes.byteLength < body.byteLength ? /** @type {const} */ ([encoding, bytes]) : null;
+        const bytes = /** @type {Buffer} */ (await compress(body));
+        return bytes.byteLength < body.byteLength ? /** @type {const} */ ([encoding, { byteLength: bytes.byteLength, body: bytes }]) : null;
     }))).filter((entry) => entry !== null);
-    const representations = new Map([["identity", body], ...variants]);
+    /** @type {Map<string, import("./static-assets.js").AssetRepresentation>} */
+    const representations = new Map([["identity", { byteLength: body.byteLength, body }], ...variants]);
     const preferred = [...representations].toSorted(([, a], [, b]) => a.byteLength - b.byteLength).map(([encoding]) => encoding);
-    return { body, mediaType, representations, preferred };
+    return { mediaType, representations, preferred };
 }
 
 /**

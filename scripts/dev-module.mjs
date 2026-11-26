@@ -9,6 +9,7 @@ import { build } from "vite";
 import { DEFAULT_BRAND, loadBrandAssets } from "../src/brand.js";
 import { DEFAULT_AUTH_CONFIG } from "../src/http.js";
 import createModule from "../src/module.js";
+import { readAssetBytes } from "../src/static-assets.js";
 import prepareAssets from "./assets.mjs";
 
 const compressBrotli = promisify(brotliCompress);
@@ -30,19 +31,20 @@ const MEDIA_TYPES = {
 
 /**
  * {§web-asset-encoding} Pre-compress live assets in memory with the same Brotli/gzip discipline as dist/.
- * @param {import("../src/module.js").LoadedAsset["body"]} body
+ * @param {Buffer} body
  * @param {string} mediaType
- * @returns {Promise<import("../src/module.js").LoadedAsset>}
+ * @returns {Promise<import("../src/static-assets.js").LoadedAsset>}
  */
 async function encodeAsset(body, mediaType) {
-    /** @type {Array<readonly [string, import("../src/module.js").LoadedAsset["body"]]>} */
+    /** @type {Array<readonly [string, import("../src/static-assets.js").AssetRepresentation]>} */
     const variants = mediaType === "text/html" ? [] : (await Promise.all(CODECS.map(async ([encoding, compress]) => {
-        const bytes = /** @type {import("../src/module.js").LoadedAsset["body"]} */ (await compress(body));
-        return bytes.byteLength < body.byteLength ? /** @type {const} */ ([encoding, bytes]) : null;
+        const bytes = /** @type {Buffer} */ (await compress(body));
+        return bytes.byteLength < body.byteLength ? /** @type {const} */ ([encoding, { byteLength: bytes.byteLength, body: bytes }]) : null;
     }))).filter((entry) => entry !== null);
-    const representations = new Map([["identity", body], ...variants]);
+    /** @type {Map<string, import("../src/static-assets.js").AssetRepresentation>} */
+    const representations = new Map([["identity", { byteLength: body.byteLength, body }], ...variants]);
     const preferred = [...representations].toSorted(([, a], [, b]) => a.byteLength - b.byteLength).map(([encoding]) => encoding);
-    return { body, mediaType, representations, preferred };
+    return { mediaType, representations, preferred };
 }
 
 /** @param {string} directory */
@@ -136,7 +138,8 @@ export default function createDevModule(options = {}) {
             const resources = new Map(assetPairs);
             const root = resources.get("/index.html");
             if (root === undefined) throw new Error("The web asset inventory must include index.html.");
-            const stylesheetPath = DocumentsClass.stylesheet(root.body.toString("utf8"));
+            const rootHtml = (await readAssetBytes(root)).toString("utf8");
+            const stylesheetPath = DocumentsClass.stylesheet(rootHtml);
             const stylesheetAsset = resources.get(stylesheetPath);
             if (!stylesheetAsset || stylesheetAsset.mediaType !== "text/css") {
                 throw new Error("The application stylesheet is absent from the web asset inventory.");
@@ -149,7 +152,7 @@ export default function createDevModule(options = {}) {
                 auth: DEFAULT_AUTH_CONFIG,
             };
             const settingsTabs = await loadBrandAssets(activeKnobs.brand, resources);
-            const documents = new DocumentsClass(root.body.toString("utf8"), { ...activeKnobs, settingsTabs });
+            const documents = new DocumentsClass(rootHtml, { ...activeKnobs, settingsTabs });
             compiled = { documents, resources, stylesheetPath };
             currentSignature = (await sourceSignature()).signature;
         })();
@@ -177,9 +180,10 @@ export default function createDevModule(options = {}) {
                 return;
             }
             const settingsTabs = await loadBrandAssets(initialKnobs.brand, compiled.resources);
+            const rootHtml = (await readAssetBytes(root)).toString("utf8");
             compiled = {
                 ...compiled,
-                documents: new DocumentsClass(root.body.toString("utf8"), { ...initialKnobs, settingsTabs }),
+                documents: new DocumentsClass(rootHtml, { ...initialKnobs, settingsTabs }),
             };
         },
         async snapshot() {

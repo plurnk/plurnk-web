@@ -339,3 +339,30 @@ test("{§web-route-settlement} compiler cleanup failure still drains in-flight b
     await closed;
     assert.deepEqual(order, ["verify.settled"]);
 });
+
+test("{§web-diagram-service} idle compiler threads retire automatically after rendering completes", { timeout: 10_000 }, async (t) => {
+    const { post } = await fixture(t, { PLURNK_WEB_DIAGRAM_THREADS: "1" });
+    /** @type {Piscina | null} */
+    let pool = null;
+    const run = Piscina.prototype.run;
+    t.mock.method(Piscina.prototype, "run", /** @this {Piscina} */ function (input, options) {
+        pool = this;
+        return run.call(this, input, options);
+    });
+
+    const first = await post(simple);
+    assert.equal(first.status, 200);
+    await first.text();
+    assert.ok(pool !== null, "pool was constructed on first render");
+
+    const deadline = Date.now() + 5_000;
+    while (pool.threads.length > 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(pool.threads.length, 0, "idle diagram worker retired cleanly without leaving a pinned V8 isolate");
+
+    // Subsequent render spawns cleanly after idle retirement.
+    const second = await post(simple);
+    assert.equal(second.status, 200);
+    assert.match(await second.text(), /^<svg\b/u);
+});
