@@ -19,8 +19,9 @@ export const BUG_REPORT_URL = "https://github.com/plurnk/plurnk-service/issues";
 export const BRAND_THEME_CSS_PATH = "/brand/theme.css";
 export const MAX_BRAND_FILE_BYTES = 1024 * 1024;
 export const BUILTIN_SETTINGS_SECTIONS = Object.freeze([
-    "workspace",
-    "session",
+    "search",
+    "workspaces",
+    "sessions",
     "models",
     "mcp",
     "skills",

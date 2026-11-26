@@ -65,14 +65,16 @@ export default async function verifyStatus(t) {
                     await page.locator("#session-status").evaluate((element) => element.setAttribute("data-connection", "initial"));
                     await page.setViewportSize({ width: 320, height: 700 });
                     await draft.focus();
-                    const currentSessionLink = page.locator("#session-current");
-                    assert.equal(await currentSessionLink.isVisible(), true, "below 768px surfaces #session handle in status strip");
-                    assert.equal(await currentSessionLink.textContent(), "#session1");
-                    assert.equal(await currentSessionLink.getAttribute("href"), "/settings/?workspace=conversation&session=session1#session");
-                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/?workspace=conversation&session=session1#models");
+                    const headerSessionLink = page.locator("#header-session");
+                    assert.equal(await headerSessionLink.isVisible(), true, "top bar surfaces #session link across mobile and desktop");
+                    assert.equal(await headerSessionLink.locator("[data-text='header-session-name']").textContent(), "session1");
+                    assert.equal(await headerSessionLink.getAttribute("href"), "/settings/sessions?workspace=conversation&session=session1");
+                    assert.equal(await page.locator("#header-model").isVisible(), false, "below 48rem hides #header-model in top bar");
+                    assert.equal(await page.locator("#session-model").isVisible(), true, "below 48rem shows #session-model in status strip");
+                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/models?workspace=conversation&session=session1");
                     assert.deepEqual(
                         await page.locator('#session-status [aria-label="Model controls"] > li').evaluateAll((items) => items.map((li) => getComputedStyle(li).listStyleType)),
-                        ["none", "none"],
+                        ["none"],
                         "model controls render without list bullets",
                     );
                     const sendBtn = page.getByRole("button", { name: "Send", exact: true });
@@ -245,16 +247,19 @@ export default async function verifyStatus(t) {
                     const controlGroup = page.getByRole("list", { name: "Model controls", exact: true });
                     const telemetry = page.locator("#session-status [data-status-telemetry]");
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/?workspace=conversation&session=session1#session", "configured model links to #session");
-                    assert.equal(await page.locator("#session-effort").getAttribute("href"), "/settings/?workspace=conversation&session=session1#session", "configured effort links to #session");
-                    assert.deepEqual(await controlGroup.locator(":is(button, a)").evaluateAll((controls) => controls.map(({ id }) => id)), ["session-current", "session-model", "session-effort"]);
-                    await page.setViewportSize({ width: 1440, height: 900 });
-                    assert.equal(await page.locator("#session-current").isVisible(), false, ">= 768px hides #session-current in status strip");
+                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/models?workspace=conversation&session=session1", "model links to /settings/models");
+                    assert.equal(await page.locator("#session-effort").getAttribute("href"), "/settings/models?workspace=conversation&session=session1", "effort links to /settings/models");
+                    assert.deepEqual(await controlGroup.locator(":is(button, a)").evaluateAll((controls) => controls.map(({ id }) => id)), ["session-model", "session-effort"]);
                     await receive(initial);
-                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/?workspace=conversation&session=session1#models", "No model falls back to #models");
                     const compactControls = await controlGroup.boundingBox();
                     const compactTelemetry = await telemetry.boundingBox();
                     assert.ok(Math.abs(compactControls.y - compactTelemetry.y) < 6, "controls and telemetry share a row when they fit");
+                    await page.setViewportSize({ width: 1440, height: 900 });
+                    assert.equal(await page.locator("#header-model").isVisible(), true, ">= 48rem surfaces #header-model in top bar");
+                    assert.equal(await page.locator("#header-model").getAttribute("href"), "/settings/models?workspace=conversation&session=session1");
+                    assert.equal(await page.locator("#session-model").isVisible(), false, ">= 48rem hides duplicate model link in status strip");
+                    assert.equal(await page.locator("#header-model").getAttribute("href"), "/settings/models?workspace=conversation&session=session1", "No model links to /settings/models");
+                    assert.equal(await page.locator("#session-model").getAttribute("href"), "/settings/models?workspace=conversation&session=session1", "No model links to /settings/models");
                     checkBrowser();
                 } finally { await browser.close(); }
             });

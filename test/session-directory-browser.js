@@ -42,7 +42,7 @@ export default async function verifySessionDirectory(page, workspace) {
     const directory = page.url();
 
     for (const draft of drafts) {
-        assert.equal(await link(draft).count(), 0, `untouched draft ${draft.name} stays hidden from /search/`);
+        assert.equal(await link(draft).count(), 0, `untouched draft ${draft.name} stays hidden from /settings/search`);
     }
     if (wsPath === null) return;
 
@@ -117,7 +117,7 @@ export default async function verifySessionDirectory(page, workspace) {
     await summary.click({ position: { x: summaryBox.width - 8, y: 10 } });
     await entry(review).locator(":scope > details > summary").press("Space");
     assert.equal(await link(evidence).isVisible(), true);
-    await verifyPageShell(page, { title: "Search — Plurnk", kind: "search" });
+    await verifyPageShell(page, { title: "Search — Plurnk", kind: "settings" });
     await link(evidence).click();
     await page.waitForFunction(
         (expected) => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === expected,
@@ -129,12 +129,12 @@ export default async function verifySessionDirectory(page, workspace) {
         if (await activeTab.isVisible()) {
             await activeTab.click();
         } else {
-            await page.locator("#session-current").click();
+            await page.locator("#header-session").click();
         }
-        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#session");
+        await page.waitForURL((url) => new URL(url).pathname === "/settings/sessions");
     };
     await openSessionSettings();
-    const parentLink = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-parent-line]');
+    const parentLink = page.locator('#workspace-settings [data-settings-panel="sessions"] [data-session-parent-line]');
     await parentLink.waitFor({ state: "visible" });
     assert.equal((await parentLink.innerText()).trim(), "Parent: review");
     assert.equal(await page.locator("#session-directory").count(), 0);
@@ -154,7 +154,7 @@ export default async function verifySessionDirectory(page, workspace) {
             () => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "incoming",
         );
         await openSessionSettings();
-        const incomingParentLink = page.locator('#workspace-settings [data-settings-panel="session"] [data-session-parent-line]');
+        const incomingParentLink = page.locator('#workspace-settings [data-settings-panel="sessions"] [data-session-parent-line]');
         await incomingParentLink.waitFor({ state: "visible" });
         assert.equal((await incomingParentLink.innerText()).trim(), "Parent: _plurnk");
         assert.equal(await incomingParentLink.locator("a").count(), 0);

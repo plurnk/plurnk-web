@@ -1,7 +1,7 @@
 import { $, $$, the } from "on_the_money";
 import { directoryPath } from "../src/directory-addresses.js";
-import { clocks, gauges, workspaceIdentity } from "./session-status.js";
 import sessionDescendants from "./session-descendants.js";
+import { clocks, gauges, workspaceIdentity } from "./session-status.js";
 
 /** {§web-session-status} {§web-session-identity} Project the SDK's state; retain no separate daemon state.
  * @param {HTMLElement} element
@@ -18,10 +18,33 @@ export default function sessionState(element, main = $("#main")) {
     const presentDescendants = sessionDescendants(element);
     /** @type {ReturnType<typeof workspaceIdentity> | null} */
     let latestIdentity = null;
-    let hasConfiguredModel = false;
+    /** @type {{ readonly model: string, readonly effort: string, readonly modelLabel: string } | null} */
+    let latestModelSummary = null;
+
+    const syncHeaderModel = () => {
+        if (!main.isConnected || element.hidden) return;
+        const headerModel = $("#header-model");
+        if (!(headerModel instanceof HTMLElement)) return;
+        headerModel.hidden = false;
+        the(headerModel, {
+            ...(latestIdentity ? { "header-models-settings-path": latestIdentity.modelsSettingsPath } : {}),
+            ...(latestModelSummary
+                ? {
+                    "header-model": latestModelSummary.model,
+                    "header-effort": latestModelSummary.effort,
+                    "header-model-label": latestModelSummary.modelLabel,
+                }
+                : {}),
+        });
+    };
+
     const syncHeader = () => {
         if (!latestIdentity || !main.isConnected || element.hidden) return;
         the("page-title", latestIdentity.pageTitle);
+        const searchNav = $('header a[data-nav="search"]');
+        if (searchNav) {
+            the(searchNav, { "search-settings-path": latestIdentity.searchSettingsPath });
+        }
         const wsControl = $("#session-workspace");
         if (wsControl) {
             the(wsControl, {
@@ -32,6 +55,15 @@ export default function sessionState(element, main = $("#main")) {
                 "workspace-icon-label": latestIdentity.workspaceIconLabel,
             });
         }
+        const headerSession = $("#header-session");
+        if (headerSession instanceof HTMLElement) {
+            headerSession.hidden = false;
+            the(headerSession, {
+                "header-session-name": sessionName,
+                "header-session-settings-path": latestIdentity.sessionSettingsPath,
+            });
+        }
+        syncHeaderModel();
         for (const el of $$('[data-text="active-session-name"]')) {
             if (el.textContent !== sessionName) el.textContent = sessionName;
         }
@@ -46,6 +78,7 @@ export default function sessionState(element, main = $("#main")) {
             }
         }
     };
+
     /** @param {{plurnk?: Partial<import("@plurnk/plurnk-acp/client").AcpPlusState["plurnk"]> & {budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState, configOptions?: readonly {configId?: string, currentValue?: unknown}[], laneQueue?: { readonly position?: number | null, readonly depth?: number | null, readonly laneLimit?: number | null } | null, turnPhase?: string | null}, budget?: import("@plurnk/plurnk-acp/client").AcpBudgetState}} state
      * @param {number} now
      */
@@ -59,7 +92,7 @@ export default function sessionState(element, main = $("#main")) {
             the(element, {
                 "session-name": sessionName,
                 "session-settings-path": identity.sessionSettingsPath,
-                "models-settings-path": hasConfiguredModel ? identity.sessionSettingsPath : identity.modelsSettingsPath,
+                "models-settings-path": identity.modelsSettingsPath,
             });
             the(folder, "project-label", identity.projectLabel);
             the(connectionNotice, { "session-path": identity.sessionPath });
@@ -77,10 +110,15 @@ export default function sessionState(element, main = $("#main")) {
         if (status) {
             if (!workspace || !latestIdentity) throw new Error("Session state has no workspace identity.");
             const gaugeValues = gauges(status, state.budget ?? state.plurnk?.budget, { providers, configOptions, laneQueue, turnPhase });
-            hasConfiguredModel = gaugeValues.model !== "No model";
+            latestModelSummary = {
+                model: gaugeValues.model,
+                effort: gaugeValues.effort,
+                modelLabel: gaugeValues["model-label"],
+            };
+            syncHeaderModel();
             the(element, {
                 ...gaugeValues,
-                "models-settings-path": hasConfiguredModel ? latestIdentity.sessionSettingsPath : latestIdentity.modelsSettingsPath,
+                "models-settings-path": latestIdentity.modelsSettingsPath,
                 ...clocks(status, now),
             });
             presentDescendants(status.descendants, workspace.name);

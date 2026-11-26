@@ -38,44 +38,36 @@ const reasoning = {
 
 // {§web-session-commands} {§web-workspace-settings} Real shipped composer, multi-token autocomplete, and unified Settings tabs.
 export default async function verifySessionCommands({ t, withDaemon }) {
-    await t.test("{§web-workspace-settings} {§web-session-commands} status model links open in-place combobox dialog without inference and composer autocomplete completes multi-token /model commands", () =>
+    await t.test("{§web-workspace-settings} {§web-session-commands} header model link opens /settings/models active-session form without inference and composer autocomplete completes multi-token /model commands", () =>
         inputPage(withDaemon, async ({ page, model, checkBrowser }) => {
             page.setDefaultTimeout(5000);
             const draft = page.getByRole("textbox", { name: "Message", exact: true });
             const statusLine = page.locator("#session-status > [data-status-line]");
             assert.equal(await statusLine.isVisible(), true, "connected session exposes steady status bar without jump");
-            const modelLink = page.getByRole("link", { name: "Model", exact: true });
-            const effortLink = page.getByRole("link", { name: "Effort", exact: true });
-            assert.match((await modelLink.getAttribute("href")) ?? "", /^\/settings\/\?workspace=.*#session$/u);
-            assert.equal(await effortLink.getAttribute("href"), await modelLink.getAttribute("href"));
+            const headerModelLink = page.locator("#header-model");
+            await headerModelLink.waitFor({ state: "visible" });
+            assert.match((await headerModelLink.getAttribute("href")) ?? "", /^\/settings\/models\?workspace=.*&session=/u);
 
-            // Clicking #session-model opens the in-place quick-picker dialog without navigating away
-            const sessionUrlBefore = page.url();
-            await modelLink.click();
-            const quickDialog = page.locator("#dialog-session-model");
-            await quickDialog.waitFor({ state: "visible" });
-            assert.equal(page.url(), sessionUrlBefore, "quick model dialog opens in place without leaving the conversation");
-            const quickCombo = quickDialog.getByRole("combobox", { name: "Session model", exact: true });
-            const quickList = quickDialog.locator("[data-combobox-list]");
-            await quickList.locator('[role="option"][data-combobox-option="browser"]').waitFor({ state: "visible" });
-            await quickList.locator('[role="option"][data-combobox-option="browser"]').click();
-            assert.equal(await quickCombo.inputValue(), "browser");
-            await quickDialog.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("low");
-            await quickDialog.getByRole("button", { name: "Apply", exact: true }).click();
-            await quickDialog.waitFor({ state: "hidden" });
-            await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "low");
-            assert.equal(model.requests.length, 0);
-
-            // Opening the quick dialog again and clicking "Browse full catalog…" reaches /settings/#models
-            await modelLink.click();
-            await quickDialog.waitFor({ state: "visible" });
-            await quickDialog.getByRole("link", { name: "Browse full catalog…", exact: true }).click();
-            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#models");
+            // Clicking #header-model navigates directly to /settings/models where active-session Model + Effort and full catalog live together
+            await headerModelLink.click();
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/models");
+            const modelsForm = page.locator('#workspace-settings [data-models-session-form]');
+            await modelsForm.waitFor({ state: "visible" });
+            const modelsCombo = modelsForm.getByRole("combobox", { name: "Active session model", exact: true });
+            await modelsCombo.click();
+            const comboList = modelsForm.locator("[data-combobox-list]");
+            await comboList.locator('[role="option"][data-combobox-option="browser"]').waitFor({ state: "visible" });
+            await comboList.locator('[role="option"][data-combobox-option="browser"]').click();
+            assert.equal(await modelsCombo.inputValue(), "browser");
+            await modelsForm.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("low");
+            await modelsForm.getByRole("button", { name: "Apply", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text=ws-settings-message]")?.textContent?.includes("low") === true);
             await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length >= 1);
+            assert.equal(model.requests.length, 0);
 
             await page.locator("[data-settings-back]").click();
             await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
-            await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "low");
+            await page.waitForFunction(() => document.querySelector("#header-model [data-text=header-effort]")?.textContent === "low");
 
             // Progressive multi-token autocomplete menu in the composer: `/model ` -> click `browser` -> click `high` -> Enter!
             await draft.focus();
@@ -90,7 +82,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             await highPill.click();
             assert.equal(await draft.inputValue(), "/model browser high");
             await draft.press("Enter");
-            await page.waitForFunction(() => document.querySelector("#session-status [data-text=effort]")?.textContent === "high");
+            await page.waitForFunction(() => document.querySelector("#header-model [data-text=header-effort]")?.textContent === "high");
             assert.equal(model.requests.length, 0);
             checkBrowser();
         }, { env: { ...reasoning, PLURNK_SERVICE_PROPOSALS: "review" } }));
@@ -194,9 +186,9 @@ export default async function verifySessionCommands({ t, withDaemon }) {
             });
             const { field, send, submit } = composer(page);
 
-            // `/help` opens unified Settings #help tab with all 40 supported commands
+            // `/help` opens unified Settings /settings/help tab with all 40 supported commands
             await send("/help");
-            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#help");
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/help");
             const helpPanel = page.locator('#workspace-settings [data-settings-panel="help"]');
             await helpPanel.waitFor({ state: "visible" });
             const names = await helpPanel.locator("[data-command-name]").evaluateAll((items) => items.map((item) => item.dataset.commandName));
@@ -228,7 +220,7 @@ export default async function verifySessionCommands({ t, withDaemon }) {
 
             await submit("/env set MY_VAR top-secret-hello");
             await send("/env --scope session list");
-            await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#env");
+            await page.waitForURL((url) => new URL(url).pathname === "/settings/env");
             const envPanel = page.locator('#workspace-settings [data-settings-panel="env"]');
             await envPanel.waitFor({ state: "visible" });
             await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="MY_VAR"]') !== null);

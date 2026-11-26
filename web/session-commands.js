@@ -1,5 +1,5 @@
 import { $, on, the } from "on_the_money";
-import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
+import { directoryPath, settingsPath } from "../src/directory-addresses.js";
 import describeFailure from "./failure.js";
 import { authLogoutMethod, authLogoutUrl } from "./endpoints.js";
 import { hasActiveOidcGrant, signOut } from "./oidc.js";
@@ -129,8 +129,8 @@ export default function sessionCommands(main, actions) {
      */
     const navigateToSettings = (section, extra = undefined) => {
         const { workspaceName, sessionName } = readIdentity();
-        const targetPath = workspaceSettingsPath(workspaceName, sessionName, section, extra);
-        if (!targetPath) throw new Error(`Invalid workspace settings address: ${workspaceName}.`);
+        const targetPath = settingsPath(section, { workspace: workspaceName, session: sessionName, extra });
+        if (!targetPath) throw new Error(`Invalid settings address: ${section}.`);
         if (actions.navigate) {
             actions.navigate(targetPath);
         } else {
@@ -258,7 +258,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "model") {
                 if (!args[0]) {
-                    navigateToSettings("session");
+                    navigateToSettings("models");
                     return true;
                 }
                 const model = await sessionModel(call, args[0], args[1]);
@@ -267,7 +267,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "effort") {
                 if (!args[0]) {
-                    navigateToSettings("session");
+                    navigateToSettings("models");
                     return true;
                 }
                 const { effort, source, supported } = await sessionEffort(call, args[0]);
@@ -276,7 +276,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "persona") {
                 if (!args[0]) {
-                    navigateToSettings("session");
+                    navigateToSettings("sessions");
                     return true;
                 }
                 const { currentValue, supported } = await sessionConfigOption(call, "persona", args[0]);
@@ -285,7 +285,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "child") {
                 if (!args[0]) {
-                    navigateToSettings("session");
+                    navigateToSettings("sessions");
                     return true;
                 }
                 const { currentValue } = await sessionConfigOption(call, "child", args[0]);
@@ -294,7 +294,7 @@ export default function sessionCommands(main, actions) {
             }
             if (name === "mode") {
                 if (!args[0]) {
-                    navigateToSettings("session");
+                    navigateToSettings("sessions");
                     return true;
                 }
                 const { currentValue } = await sessionConfigOption(call, "mode", args[0]);
@@ -326,25 +326,7 @@ export default function sessionCommands(main, actions) {
                 return true;
             }
             if (name === "workspaces" || (name === "workspace" && !rest)) {
-                const wsDialog = $("#dialog-workspaces");
-                if (wsDialog instanceof HTMLDialogElement) {
-                    if (!wsDialog.open) wsDialog.showModal();
-                    return true;
-                }
-                const res = await call("workspace.list", {});
-                signal.throwIfAborted();
-                const items = isRecord(res) && Array.isArray(res.workspaces) ? res.workspaces : [];
-                if (items.length === 0) {
-                    showStatus("workspaces: none");
-                } else {
-                    const lines = items.map((w) => {
-                        if (!isRecord(w)) return String(w);
-                        const wsName = typeof w.name === "string" ? w.name : "";
-                        const root = typeof w.projectRoot === "string" ? w.projectRoot : "(folderless)";
-                        return `${wsName}  ${root}`;
-                    });
-                    showOutputModal("/workspaces", lines.join("\n"));
-                }
+                navigateToSettings("workspaces");
                 return true;
             }
             if (name === "workspace") {
@@ -364,29 +346,7 @@ export default function sessionCommands(main, actions) {
                 return true;
             }
             if (name === "sessions" || (name === "session" && !args[0])) {
-                const openSessionsBtn = $("[data-open-sessions]");
-                if (openSessionsBtn instanceof HTMLButtonElement) {
-                    openSessionsBtn.click();
-                    return true;
-                }
-                const { sessionName } = readIdentity();
-                const res = await call("workspace.sessions", {});
-                signal.throwIfAborted();
-                const items = isRecord(res) && Array.isArray(res.sessions) ? res.sessions : [];
-                if (items.length === 0) {
-                    showStatus(`● ${sessionName}`);
-                } else {
-                    const lines = items.map((s) => {
-                        if (!isRecord(s)) return String(s);
-                        const sName = typeof s.name === "string" ? s.name : "";
-                        const mark = sName === sessionName ? "●" : "○";
-                        const lc = typeof s.lifecycle === "string" && s.lifecycle !== "idle" && s.lifecycle !== "completed"
-                            ? ` (${s.lifecycle})`
-                            : "";
-                        return `${mark} ${sName}${lc}`;
-                    });
-                    showOutputModal("/sessions", lines.join("\n"));
-                }
+                navigateToSettings("sessions");
                 return true;
             }
             if (name === "session") {

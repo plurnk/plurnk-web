@@ -105,7 +105,8 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
                 }
             }
             let childMatch = false;
-            const childList = $(row, ":scope > article > details > ul");
+            const childDetails = $(row, ":scope > article > details");
+            const childList = childDetails ? $(childDetails, ":scope > ul") : null;
             if (childList instanceof HTMLUListElement) {
                 if (filterKind === "root") {
                     childList.hidden = true;
@@ -115,6 +116,9 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
                         if (child instanceof HTMLLIElement && filterSessionRow(child, ws)) {
                             childMatch = true;
                         }
+                    }
+                    if (query !== "" && childMatch && childDetails instanceof HTMLDetailsElement) {
+                        childDetails.open = true;
                     }
                 }
             }
@@ -162,6 +166,7 @@ export function createOverviewRenderer(workspacesOutlet, suggestionsElement) {
                             }
                         }
                         bgDetails.hidden = visibleBg === 0;
+                        if (query !== "" && visibleBg > 0) bgDetails.open = true;
                         visibleSessionsInWs += visibleBg;
                     }
                 }

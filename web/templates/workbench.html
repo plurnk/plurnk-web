@@ -1,4 +1,4 @@
-<!-- {§web-workspace-tabs} Inert tab, pane, and quick-switcher templates reconciled by workspace-workbench. -->
+<!-- {§web-workspace-tabs} Inert tab and pane templates reconciled by workspace-workbench. -->
 <template id="workspace-tab-item">
     <li data-tab-id="" data-session-kind="root"><a data-workspace-route="session" data-tab-session=""><span data-lifecycle="idle" aria-hidden="true"></span><span data-tab-label></span></a></li>
 </template>
@@ -15,8 +15,7 @@
         <p role="status" data-text="connection-label">Not connected.</p>
         <div data-status-line>
             <ul aria-label="Model controls">
-                <li data-status-field="session"><a id="session-current" href="/settings/" data-bind="href:session-settings-path" aria-label="Session">#<span data-text="session-name"></span></a></li>
-                <li data-status-field="model" data-bind="aria-label:model-label title:model-label"><a id="session-model" href="/settings/" data-bind="href:models-settings-path" aria-label="Model"><span data-text="model">No model</span></a><a id="session-effort" href="/settings/" data-bind="href:models-settings-path" aria-label="Effort"><span data-text="effort"></span></a></li>
+                <li data-status-field="model" data-bind="aria-label:model-label title:model-label"><a id="session-model" href="/settings/models" data-bind="href:models-settings-path" aria-label="Model"><span data-text="model">No model</span></a><a id="session-effort" href="/settings/models" data-bind="href:models-settings-path" aria-label="Effort"><span data-text="effort"></span></a></li>
             </ul>
             <div data-status-telemetry>
                 <ul aria-label="Active session activity">
@@ -41,63 +40,4 @@
             </div>
         </div>
     </footer>
-</template>
-<template id="workspace-switcher-dialog">
-    <dialog id="dialog-workspace-switcher" aria-label="Switch session">
-        <article>
-            <header>
-                <p><strong data-i18n="switch-session">Sessions</strong></p>
-                <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-            </header>
-            <div data-switcher-actions>
-                <button type="button" data-switcher-new-session data-i18n="new-session">New session</button>
-            </div>
-            <input type="search" data-switcher-search placeholder="Jump to session…" aria-label="Jump to session" autocomplete="off" spellcheck="false">
-            <ul data-switcher-list></ul>
-            <details data-switcher-archived hidden>
-                <summary><span data-i18n="archived-sessions">Archived sessions</span> (<span data-text="archived-session-count">0</span>)</summary>
-                <ul data-switcher-archived-list></ul>
-            </details>
-            <footer>
-                <a href="/search/" data-i18n="search-all-workspaces">Search workspaces and sessions…</a>
-            </footer>
-        </article>
-    </dialog>
-</template>
-<template id="workspace-switcher-item">
-    <li data-switcher-entry=""><a data-workspace-route="session"><span data-lifecycle="idle" aria-hidden="true"></span><span data-switcher-label></span></a></li>
-</template>
-<template id="workspace-switcher-archived-item">
-    <li data-switcher-archived-entry=""><span data-switcher-archived-label></span><form data-inline-unarchive="session"><input type="hidden" name="workspace" value=""><input type="hidden" name="session" value=""><button type="submit" data-i18n="unarchive">Unarchive</button></form></li>
-</template>
-<template id="session-model-dialog">
-    <dialog id="dialog-session-model" aria-label="Select model">
-        <article>
-            <header>
-                <p><strong data-i18n="select-model">Select model</strong></p>
-                <button type="button" aria-label="Close" rel="prev" data-dialog-close></button>
-            </header>
-            <p role="alert" data-text="model-dialog-error"></p>
-            <form data-session-model-quick-form>
-                <fieldset data-bind="disabled:model-dialog-busy">
-                    <div data-model-field>
-                        <label for="session-model-quick-input" data-i18n="model-label">Model</label>
-                        <div data-model-combobox="quickModel">
-                            <input id="session-model-quick-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-model-quick-listbox" aria-label="Session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
-                            <ul id="session-model-quick-listbox" role="listbox" aria-label="Session model choices" data-combobox-list hidden></ul>
-                        </div>
-                    </div>
-                    <label>
-                        <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
-                        <select name="effort" aria-label="Reasoning effort"></select>
-                    </label>
-                    <footer>
-                        <a href="/settings/" data-model-dialog-catalog data-bind="href:model-dialog-catalog-path" data-i18n="browse-model-catalog">Browse full catalog…</a>
-                        <button type="button" data-dialog-close data-i18n="cancel">Cancel</button>
-                        <button type="submit" data-i18n="apply">Apply</button>
-                    </footer>
-                </fieldset>
-            </form>
-        </article>
-    </dialog>
 </template>

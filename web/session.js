@@ -16,7 +16,6 @@ import sessionCommands from "./session-commands.js";
 import { createSessionComposer } from "./session-composer.js";
 import diagnostics from "./session-diagnostics.js";
 import sessionHistory from "./session-history.js";
-import { createSessionModelDialogController } from "./session-model-dialog.js";
 import { createModelSearchCache, sessionConfigOption } from "./session-models.js";
 import reviewRequests from "./session-review.js";
 import { wireSessionShortcuts } from "./session-shortcuts.js";
@@ -215,17 +214,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             slate.frameTurn(message.id);
             connect({ message, ...(forceReview ? { forceReview: true } : {}) });
         },
-    });
-
-    const modelDialog = createSessionModelDialogController({
-        footer: element,
-        getWorkspaceName: () => latestWorkspaceName,
-        getAgentState: () => agent.state,
-        getStatus: () => status,
-        getResourcesSignal: () => resources.signal,
-        modelSearchCache,
-        action,
-        onFocusComposer: () => composer.draft.focus(),
     });
 
     const shortcuts = wireSessionShortcuts({
@@ -634,7 +622,6 @@ export default function observeSession(element, { main: suppliedMain = $("#main"
             disposed = true;
             clearSendingTimer();
             composer.dispose();
-            modelDialog.dispose();
             shortcuts.dispose();
             offGrantChange();
             offPageHide();

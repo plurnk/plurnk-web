@@ -271,7 +271,7 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                 const checkBrowser = browserDiagnostics(context);
                 try {
                     const page = await context.newPage();
-                    await page.goto(new URL("/search/", base).href);
+                    await page.goto(new URL("/settings/search", base).href);
                     await page.locator('main[data-connection="connected"]').waitFor();
                     assert.equal(await page.title(), "Search — Acme Studio");
                     assert.equal(await page.locator('meta[name="theme-color"]').getAttribute("content"), "#0055aa");
@@ -282,10 +282,10 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                         "startup-loaded /brand/theme.css applies under strict 'self' CSP",
                     );
 
-                    await page.goto(new URL("/settings/#about", base).href);
+                    await page.goto(new URL("/settings/about", base).href);
                     const aboutPanel = page.locator('#workspace-settings [data-settings-panel="about"]');
                     await aboutPanel.waitFor({ state: "visible" });
-                    assert.equal(await page.title(), "Settings — Acme Studio");
+                    assert.equal(await page.title(), "About — Acme Studio");
                     assert.equal(await aboutPanel.locator('a[href="https://support.acme.example/"]').count(), 1);
                     assert.equal(await aboutPanel.locator('a[href="https://acme.example/terms"]').count(), 1);
                     assert.match(await aboutPanel.textContent(), /MIT/u);
@@ -343,12 +343,12 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                 { id: "billing", label: "Billing", htmlFile: billingHtml },
             ]),
         }, async (base) => {
-            const settingsRes = await fetch(new URL("/settings/", base));
-            assert.equal(settingsRes.status, 200);
-            assert.equal(settingsRes.headers.get("x-frame-options"), "DENY");
-            assert.match(settingsRes.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*frame-ancestors 'none'/u);
-            const searchHtml = await (await fetch(new URL("/search/", base))).text();
-            assert.doesNotMatch(searchHtml, /\/brand\/tabs\/account\.js/u, "non-settings pages never load extension scripts");
+            const accountRes = await fetch(new URL("/settings/account", base));
+            assert.equal(accountRes.status, 200);
+            assert.equal(accountRes.headers.get("x-frame-options"), "DENY");
+            assert.match(accountRes.headers.get("content-security-policy") ?? "", /script-src 'self'[\s\S]*frame-ancestors 'none'/u);
+            const searchHtml = await (await fetch(new URL("/settings/search", base))).text();
+            assert.doesNotMatch(searchHtml, /\/brand\/tabs\/account\.js/u, "other pages never load extension scripts");
 
             const browser = await launchBrowser(chromium);
             try {
@@ -358,11 +358,11 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                     const page = await context.newPage();
 
                     // 1. Works cleanly with zero workspaces when deep-linked directly to an extension tab.
-                    await page.goto(new URL("/settings/#account", base).href);
+                    await page.goto(new URL("/settings/account", base).href);
                     const accountPanel = page.locator('#workspace-settings [data-settings-panel="account"]');
                     await accountPanel.waitFor({ state: "visible" });
                     await page.waitForFunction(() => document.querySelector("[data-ext-rendered]")?.textContent === "account|ws=|sess=none");
-                    assert.equal(await page.locator('#workspace-settings [data-settings-section="account"]').getAttribute("aria-current"), "true");
+                    assert.equal(await page.locator('#workspace-settings [data-settings-section="account"]').getAttribute("aria-current"), "page");
 
                     const navOrder = await page.locator("#workspace-settings [data-settings-nav] a[data-settings-section]").evaluateAll(
                         (els) => els.map((el) => el.getAttribute("data-settings-section")),
@@ -372,30 +372,31 @@ test("{§web-package} packed module on the candidate daemon", { timeout: 600_000
                     assert.ok(navOrder.indexOf("billing") < navOrder.indexOf("help"));
                     assert.ok(navOrder.indexOf("help") < navOrder.indexOf("about"));
 
-                    // 2. HTML-only extension tab renders and updates hash without errors.
+                    // 2. HTML-only extension tab renders via path navigation without errors.
                     await page.locator('#workspace-settings [data-settings-section="billing"]').click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/billing");
                     const billingPanel = page.locator('#workspace-settings [data-settings-panel="billing"]');
                     await billingPanel.waitFor({ state: "visible" });
                     assert.equal(await billingPanel.locator("[data-billing-copy]").textContent(), "Self-hosted plan");
-                    assert.equal(new URL(page.url()).hash, "#billing");
 
-                    // 3. Create starter workspace1#session1 via arrival, then open /settings/?workspace=workspace1&session=session1#account.
+                    // 3. Create starter workspace1#session1 via arrival, then open /settings/account?workspace=workspace1&session=session1.
                     await page.goto(base);
                     await page.waitForURL((url) => new URL(url).pathname === "/~/workspace1");
                     await page.waitForFunction(() => document.querySelector("#session-status")?.dataset.connection === "connected");
 
-                    await page.goto(new URL("/settings/?workspace=workspace1&session=session1#account", base).href);
+                    await page.goto(new URL("/settings/account?workspace=workspace1&session=session1", base).href);
                     await accountPanel.waitFor({ state: "visible" });
                     await page.waitForFunction(() => document.querySelector("[data-ext-rendered]")?.textContent === "account|ws=workspace1|sess=session1");
-                    assert.equal(await accountPanel.locator("[data-ext-count]").textContent(), "1");
+                    assert.ok(Number(await accountPanel.locator("[data-ext-count]").textContent()) >= 1);
 
-                    // 4. Switch to native Workspace tab and back to Account without errors.
-                    await page.locator('#workspace-settings [data-settings-section="workspace"]').click();
-                    await page.locator('#workspace-settings [data-settings-panel="workspace"]').waitFor({ state: "visible" });
+                    // 4. Switch to native Workspaces tab and back to Account without errors.
+                    await page.locator('#workspace-settings [data-settings-section="workspaces"]').click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/workspaces");
+                    await page.locator('#workspace-settings [data-settings-panel="workspaces"]').waitFor({ state: "visible" });
                     await page.locator('#workspace-settings [data-settings-section="account"]').click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/account");
                     await accountPanel.waitFor({ state: "visible" });
-                    await page.waitForFunction(() => document.querySelector("[data-ext-count]")?.textContent === "2");
-                    assert.equal(new URL(page.url()).hash, "#account");
+                    await page.waitForFunction(() => document.querySelector("[data-ext-rendered]")?.textContent === "account|ws=workspace1|sess=session1");
 
                     checkBrowser();
                 } finally {

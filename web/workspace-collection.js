@@ -148,15 +148,17 @@ export function formatMembersPreview(res) {
 }
 
 /**
- * {§web-workspace-settings} Mount the shared always-available search/state filter + pagination bar inside a family panel.
+ * {§web-workspace-settings} Mount the shared always-available search/state filter + pagination bar inside a settings panel.
  * @param {HTMLElement} panel
  * @param {{
  *   readonly label: string,
  *   readonly onChange: () => void,
  *   readonly signal: AbortSignal,
+ *   readonly stateOptions?: readonly { readonly value: string, readonly label: string }[],
+ *   readonly initialState?: string,
  * }} options
  */
-export function mountCollectionBar(panel, { label, onChange, signal }) {
+export function mountCollectionBar(panel, { label, onChange, signal, stateOptions, initialState }) {
     const outlet = $(panel, "[data-collection-bar-outlet]");
     /** @type {Element | null} */
     let bar = $(panel, "[data-collection-bar]");
@@ -166,6 +168,7 @@ export function mountCollectionBar(panel, { label, onChange, signal }) {
     }
     if (!bar) {
         return {
+            /** @returns {Record<string, unknown>} */
             getParams: () => ({ offset: 0, limit: COLLECTION_PAGE_SIZE }),
             isFiltered: () => false,
             applyResult: () => ({ clamped: false }),
@@ -180,8 +183,17 @@ export function mountCollectionBar(panel, { label, onChange, signal }) {
         searchInput.placeholder = `Filter ${label}…`;
     }
 
+    const stateSelect = $(bar, 'select[name="state"]');
+    const defaultState = initialState ?? (stateOptions ? (stateOptions[0]?.value ?? "") : "");
+    if (stateOptions && stateSelect instanceof HTMLSelectElement) {
+        $.cloneEach(stateSelect, "#setting-option", stateOptions, (optEl, choice) => {
+            the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+        });
+        stateSelect.value = defaultState;
+    }
+
     let query = "";
-    let state = "";
+    let state = defaultState;
     let offset = 0;
     /** @type {number | undefined} */
     let nextOffset;
@@ -252,7 +264,7 @@ export function mountCollectionBar(panel, { label, onChange, signal }) {
             };
         },
         isFiltered() {
-            return query.length > 0 || state.length > 0;
+            return query.length > 0 || state !== defaultState;
         },
         /** @param {unknown} res */
         applyResult(res) {
@@ -268,7 +280,7 @@ export function mountCollectionBar(panel, { label, onChange, signal }) {
             if (prevBtn instanceof HTMLButtonElement) prevBtn.disabled = !info.canPrev;
             if (nextBtn instanceof HTMLButtonElement) nextBtn.disabled = !info.canNext;
             the(bar, { "collection-summary": info.summary });
-            the(panel, { "collection-filtered": query || state ? "true" : "false" });
+            the(panel, { "collection-filtered": query || state !== defaultState ? "true" : "false" });
             return { clamped: false };
         },
         resetOffset() {

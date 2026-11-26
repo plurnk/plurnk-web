@@ -1,7 +1,7 @@
 import { overviewExcerptCharsLimit, overviewSessionsLimit } from "./endpoints.js";
 import managementAction from "./management-action.js";
 import { matchSnippet, truncateSingleLine } from "./session-selection.js";
-import { parseWorkspaceList, renderWorkspacesDialog } from "./workspace-dialogs.js";
+import { parseWorkspaceList } from "./workspace-records.js";
 
 /**
  * @typedef {{
@@ -493,7 +493,6 @@ export function createOverviewStore() {
         if (signal.aborted || isDisposed()) return false;
 
         const listedWorkspaces = parseWorkspaceList(rawWsList);
-        renderWorkspacesDialog(listedWorkspaces, null);
 
         /** @type {Map<number, OverviewWorkspace>} */
         const nextWorkspaces = new Map();

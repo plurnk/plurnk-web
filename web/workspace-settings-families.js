@@ -3,6 +3,7 @@ import { EFFORTS } from "@plurnk/plurnk-contracts";
 import { attachModelCombobox } from "./combobox.js";
 import { populateStaticEffortSelect } from "./effort-select.js";
 import { populateEnvPanel } from "./env-panel.js";
+import { createModelSearchCache } from "./session-models.js";
 import { isRecord } from "./session-translator.js";
 import {
     mountCandidatePager,
@@ -13,7 +14,7 @@ import {
 /** @typedef {"mcp" | "skills" | "schedule" | "personas" | "members"} WorkspaceFamily */
 /** @typedef {WorkspaceFamily | "env"} BrowsableFamily */
 /** @typedef {"mcp" | "skills" | "personas" | "env"} DiscoverableFamily */
-/** @typedef {import("./workspace-dialogs.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
+/** @typedef {import("./workspace-records.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
 
 const FAMILIES = /** @type {const} */ (["mcp", "skills", "schedule", "personas", "members"]);
@@ -268,7 +269,7 @@ function collapseEnclosingDisclosure(form) {
  *   readonly runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
  *   readonly setFeedback: (busy: boolean, message?: string, recovery?: string) => void,
  *   readonly isBusy: () => boolean,
- *   readonly modelSearchCache: ModelSearchCache,
+ *   readonly invokeModelSearch: (kind: string, params?: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>,
  *   readonly envPanel: Element | null,
  *   readonly initialEnvScope?: "workspace" | "session",
  *   readonly onRenderScheduleList: (res: unknown) => void,
@@ -282,13 +283,14 @@ export function mountFamilyAndEnvSections(article, {
     runMutation,
     setFeedback,
     isBusy,
-    modelSearchCache,
+    invokeModelSearch,
     envPanel,
     initialEnvScope = "workspace",
     onRenderScheduleList,
     onRefreshSection,
     onRefreshEnv,
 }) {
+    const modelSearchCache = createModelSearchCache(invokeModelSearch);
     /** @type {"workspace" | "session"} */
     let envListScope = initialEnvScope === "session" ? "session" : "workspace";
     /** @type {WeakMap<Element, { family: DiscoverableFamily, alias: string, definition: Record<string, unknown> }>} */

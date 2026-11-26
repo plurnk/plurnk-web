@@ -47,15 +47,11 @@
     }
 
     body > header > a,
+    #workspace-tabs > a,
     header #header-place a,
-    #session-current,
     #session-model,
     #session-effort {
         text-decoration: none;
-    }
-
-    body > header > nav[aria-label="breadcrumb"] li:not(:last-child)::after {
-        color: var(--otm-muted-color);
     }
 
     header :where(#header-place button, nav button),
@@ -67,7 +63,7 @@
         cursor: pointer;
     }
 
-    #workspace-tabs > :where(button),
+    #workspace-tabs > :where(a, button),
     #workspace-tabs :where(form > button) {
         --otm-primary-background: transparent;
         --otm-primary-hover-background: var(--plurnk-working-surface);
@@ -132,11 +128,6 @@
 
     #workspace-settings :where(#about dt) {
         color: var(--otm-muted-color);
-    }
-
-    :is(#dialog-workspace-switcher, #dialog-workspaces) :where(ul > li > a) {
-        border-radius: var(--otm-border-radius);
-        text-decoration: none;
     }
 
     #search-workspaces > ul > li > article {

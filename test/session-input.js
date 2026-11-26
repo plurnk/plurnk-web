@@ -283,7 +283,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(await field.inputValue(), "", "daemon admission clears the shortcut-submitted draft");
         await field.fill("/help");
         await field.press("Meta+Enter");
-        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#help");
+        await page.waitForURL((url) => new URL(url).pathname === "/settings/help");
         await page.locator('#workspace-settings [data-settings-panel="help"] ul[aria-label="Supported commands"]').waitFor({ state: "visible" });
         assert.equal(inputs.length, 1, "Meta+Enter routes commands through the same non-model path");
         await page.locator("[data-settings-back]").click();
@@ -321,7 +321,7 @@ export default async function verifySessionInput({ t, withDaemon }) {
         assert.equal(model.requests.length, 1);
         await page.locator("body > header > a").focus();
         await page.keyboard.press("?");
-        await page.waitForURL((url) => new URL(url).pathname === "/settings/" && new URL(url).hash === "#help");
+        await page.waitForURL((url) => new URL(url).pathname === "/settings/help");
         const helpShortcut = page.locator('#workspace-settings [data-settings-panel="help"] dl[aria-label="Keyboard shortcuts"]');
         await helpShortcut.waitFor({ state: "visible" });
         assert.match(await helpShortcut.textContent(), /⌘\+Enter/u);

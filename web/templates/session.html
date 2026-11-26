@@ -26,7 +26,6 @@
                 <button type="submit" form="session-stop" disabled data-bind="disabled:stop-unavailable" aria-label="Stop" title="Stop"></button>
                 <button type="button" data-attach-image disabled data-bind="disabled:send-unavailable" aria-label="Attach image" title="Attach image"></button>
                 <button type="button" data-insert-command disabled data-bind="disabled:send-unavailable" aria-label="Commands and skills" title="Commands and skills (/)"></button>
-                <button type="button" data-open-sessions aria-label="Sessions" title="Sessions"></button>
                 <textarea id="session-message" name="message" aria-label="Message" placeholder="Message…" rows="1" required></textarea>
                 <button type="submit" form="session-compose" disabled data-bind="disabled:send-unavailable" aria-label="Send" aria-keyshortcuts="Enter Control+Enter Meta+Enter" title="Send (Enter · Ctrl+Enter)"></button>
             </fieldset>
@@ -121,7 +120,8 @@
         <dt><kbd>Esc</kbd></dt><dd data-i18n="shortcut-escape">Leave message field, close open dialog, or request Stop.</dd>
         <dt><kbd>/</kbd> · <kbd>?</kbd></dt><dd data-i18n="shortcut-focus-help">Focus the message field or open this command and shortcut reference.</dd>
         <dt><kbd>Y</kbd> / <kbd>N</kbd> / <kbd>E</kbd> (<kbd>A</kbd> / <kbd>R</kbd>)</dt><dd data-i18n="shortcut-review">Select Accept, Reject, or Edit on a pending proposal; confirm with Enter.</dd>
-        <dt><kbd><span data-text="shortcut-mod">Ctrl</span>+K</kbd> · <kbd>Alt+1…9</kbd> · <kbd>Alt+[</kbd> / <kbd>]</kbd> · <kbd>Alt+N</kbd></dt><dd data-i18n="shortcut-tabs">Switch workspace tabs or create a session.</dd>
+        <dt><kbd><span data-text="shortcut-mod">Ctrl</span>+K</kbd></dt><dd data-i18n="shortcut-search">Open Search across workspaces and sessions.</dd>
+        <dt><kbd>Alt+1…9</kbd> · <kbd>Alt+[</kbd> / <kbd>]</kbd> · <kbd>Alt+N</kbd></dt><dd data-i18n="shortcut-tabs">Switch workspace tabs or create a session.</dd>
     </dl>
 </template>
 <template id="command-model">

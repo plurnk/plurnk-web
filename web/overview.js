@@ -3,17 +3,25 @@ import { directoryPath } from "../src/directory-addresses.js";
 import managementAction from "./management-action.js";
 import { createOverviewRenderer } from "./overview-render.js";
 import { createOverviewStore, isRecord } from "./overview-state.js";
-import { wireWorkspaceCreateDialog } from "./workspace-dialogs.js";
 import { subscribeWorkspaceNotifications } from "./workspace-notifications.js";
 
 /**
  * {§web-search} {§web-session-directory} {§web-workspace-archive} {§web-session-archive}
- * Live workspace-grouped Search & Directory page (`/search/`) powered exclusively by `/acp` + `/notifications`.
- * @param {HTMLElement} main
+ * Live workspace-grouped Search & Directory panel (`/settings/search`) powered exclusively by `/acp` + `/notifications`.
+ * @param {HTMLElement} panel
+ * @param {{
+ *   readonly connectionTarget?: HTMLElement,
+ *   readonly contextWorkspace?: string,
+ *   readonly contextSession?: string | null,
+ * }} [options]
  */
-export default function observeOverview(main) {
-    const workspacesOutlet = $(main, "#search-workspaces") ?? main;
-    const controlsForm = $(main, "#search-controls");
+export default function observeOverview(panel, {
+    connectionTarget = panel,
+    contextWorkspace = "",
+    contextSession = null,
+} = {}) {
+    const workspacesOutlet = $(panel, "#search-workspaces") ?? panel;
+    const controlsForm = $(panel, "#search-controls");
     const searchInput = controlsForm ? $(controlsForm, "input[data-overview-search]") : null;
     const suggestionsList = controlsForm ? $(controlsForm, "#search-suggestions") : null;
     const wsField = controlsForm ? $(controlsForm, "[data-search-workspace]") : null;
@@ -45,16 +53,15 @@ export default function observeOverview(main) {
         filterKind,
     });
 
-    wireWorkspaceCreateDialog({
-        signal: resources.signal,
-        getKnownWorkspaceNames: () => [...store.workspacesById.values()].map(({ name }) => name),
-    });
-
     function syncUrlQuery() {
-        if (!location.pathname.startsWith("/search")) return;
+        if (location.pathname !== "/settings/search") return;
         const params = new URLSearchParams();
+        if (contextWorkspace) {
+            params.set("workspace", contextWorkspace);
+            if (contextSession) params.set("session", contextSession);
+        }
         if (filterQuery.trim()) params.set("q", filterQuery.trim());
-        if (filterWorkspace) params.set("workspace", filterWorkspace);
+        if (filterWorkspace) params.set("filterWorkspace", filterWorkspace);
         if (filterStatus && filterStatus !== "all") params.set("status", filterStatus);
         if (filterKind && filterKind !== "all") params.set("kind", filterKind);
         const query = params.toString();
@@ -97,7 +104,7 @@ export default function observeOverview(main) {
     }
 
     let unarchiveBusy = false;
-    on(main, "submit", "form[data-inline-unarchive]", (event, form) => {
+    on(panel, "submit", "form[data-inline-unarchive]", (event, form) => {
         if (!(form instanceof HTMLFormElement)) return;
         event.preventDefault();
         if (unarchiveBusy) return;
@@ -118,7 +125,7 @@ export default function observeOverview(main) {
                         resources.signal,
                         { workspace: wsName, ...(wsEntry ? { workspaceId: wsEntry.id } : {}) },
                     );
-                    location.assign(directoryPath({ kind: "workspace", workspace: wsName }) ?? "/search/");
+                    location.assign(directoryPath({ kind: "workspace", workspace: wsName }) ?? "/settings/search");
                     return;
                 }
                 if (kind === "session" && sessName && wsEntry) {
@@ -137,7 +144,7 @@ export default function observeOverview(main) {
                         `${wsEntry.id}#${sessName}`,
                         resources.signal,
                     );
-                    location.assign(directoryPath({ kind: "session", workspace: wsName, session: sessName }) ?? "/search/");
+                    location.assign(directoryPath({ kind: "session", workspace: wsName, session: sessName }) ?? "/settings/search");
                 }
             } finally {
                 unarchiveBusy = false;
@@ -179,7 +186,7 @@ export default function observeOverview(main) {
 
     const notifications = subscribeWorkspaceNotifications({
         onStateChange: (state) => {
-            if (!disposed) the(main, "connection", state);
+            if (!disposed) the(connectionTarget, "connection", state);
         },
         onNotification: (payload) => {
             if (disposed) return;

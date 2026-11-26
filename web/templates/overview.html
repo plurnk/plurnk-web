@@ -78,14 +78,8 @@
 <template id="model-combobox-hint">
     <li role="presentation" data-combobox-hint></li>
 </template>
-<template id="workspace-list-item">
-    <li><a><span data-workspace-item-glyph></span> <span data-workspace-item-name></span></a></li>
-</template>
-<template id="workspace-project-tag">
-    <small data-workspace-item-project></small>
-</template>
 <template id="workspace-empty-card">
-    <article id="workspace-empty"><p data-i18n="no-sessions">No sessions in this workspace yet.</p><button type="button" data-action="new-session" data-workspace-empty-new data-i18n="start-conversation">New session</button></article>
+    <article id="workspace-empty"><p data-i18n="no-sessions">No sessions in this workspace yet.</p><a href="/settings/sessions?new=1" data-workspace-empty-new data-bind="href:new-session-path" data-i18n="start-conversation">New session</a></article>
 </template>
 <template id="error-view">
     <article aria-labelledby="error-title"><header><h1 id="error-title"><span aria-hidden="true">⚠️</span> <span data-text="error-title">404 Not Found</span></h1></header><p data-text="error-message"></p><p data-text="error-recovery" hidden></p><footer><a href="/" data-i18n="home">Home</a></footer></article>

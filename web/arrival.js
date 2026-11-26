@@ -3,7 +3,7 @@ import renderInPageError from "./error-view.js";
 import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
 import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
-import { parseWorkspaceList } from "./workspace-dialogs.js";
+import { parseWorkspaceList } from "./workspace-records.js";
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);

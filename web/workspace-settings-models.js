@@ -1,21 +1,24 @@
 import { $, $$, on, the } from "on_the_money";
+import { attachModelCombobox } from "./combobox.js";
+import { createModelEffortSync } from "./effort-select.js";
 import { onServiceVersion, serviceVersion, webVersion } from "./endpoints.js";
 import managementAction from "./management-action.js";
 import { primaryModifierLabel } from "./session-commands.js";
-import { listModels, modelLabel, sessionConfigOption, sessionModel } from "./session-models.js";
+import { createModelSearchCache, flattenSelectOptions, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import { isRecord } from "./session-translator.js";
 import { COLLECTION_PAGE_SIZE } from "./workspace-collection.js";
 
-/** @typedef {import("./workspace-dialogs.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
+/** @typedef {import("./workspace-records.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
 
 /**
- * {§web-workspace-settings} Mount `#models` (aliases + paginated catalog), `#help` (shortcuts + commands), and `#about` sections.
+ * {§web-workspace-settings} Mount `models` (active session model+effort form, aliases, paginated catalog), `help`, and `about` panels.
  * @param {HTMLElement} article
  * @param {{
  *   readonly getContext: () => WorkspaceSettingsContext,
  *   readonly invoke: (kind: string, params?: Record<string, unknown>, opts?: { requireSession?: boolean }) => Promise<unknown>,
  *   readonly runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
- *   readonly modelSearchCache: ModelSearchCache,
+ *   readonly invokeModelSearch: (kind: string, params?: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>,
  *   readonly initialQuery?: string,
  *   readonly initialHelpFilter?: string,
  *   readonly onRefreshModels: () => Promise<void>,
@@ -25,11 +28,12 @@ export function mountModelsHelpAboutSections(article, {
     getContext,
     invoke,
     runMutation,
-    modelSearchCache,
+    invokeModelSearch,
     initialQuery = "",
     initialHelpFilter = "",
     onRefreshModels,
 }) {
+    const modelSearchCache = createModelSearchCache(invokeModelSearch);
     let modelsSearchQuery = initialQuery;
     let modelsProviderFilter = "";
     let modelsOffset = 0;
@@ -40,6 +44,45 @@ export function mountModelsHelpAboutSections(article, {
     let helpFilterQuery = initialHelpFilter;
     /** @type {AbortController | null} */
     let modelsLookup = null;
+    /** @type {{ model: string, effort: string }} */
+    let currentSessionModelValues = { model: "", effort: "" };
+    let hasPersistedSessionModel = false;
+
+    /** @type {ReturnType<typeof attachModelCombobox> | null} */
+    let modelsSessionCombobox = null;
+
+    const sessionEffortSync = createModelEffortSync({
+        getSelect: () => {
+            const el = $(article, '[data-models-session-form] select[name="effort"]');
+            return el instanceof HTMLSelectElement ? el : null;
+        },
+        getCache: () => modelSearchCache,
+        getSelectedModel: () => modelsSessionCombobox?.getValue() ?? "",
+        getSignal: () => getContext().signal,
+    });
+
+    const modelsSessionBox = $(article, '[data-models-session-form] [data-model-combobox="modelsSessionModel"]');
+    if (modelsSessionBox instanceof HTMLElement) {
+        modelsSessionCombobox = attachModelCombobox(modelsSessionBox, {
+            getCache: () => modelSearchCache,
+            signal: getContext().signal,
+            onSelect: (selector, choice) => {
+                const effortField = $(article, '[data-models-session-form] select[name="effort"]');
+                if (effortField instanceof HTMLSelectElement) {
+                    sessionEffortSync.sync(selector, effortField.value, choice?.efforts, choice?.defaultEffort);
+                }
+            },
+            onInput: (selector) => {
+                const effortField = $(article, '[data-models-session-form] select[name="effort"]');
+                if (effortField instanceof HTMLSelectElement && selector) {
+                    const cached = modelSearchCache.getCachedEfforts(selector);
+                    if (cached) {
+                        sessionEffortSync.sync(selector, effortField.value, cached.efforts, cached.defaultEffort);
+                    }
+                }
+            },
+        });
+    }
 
     const shortcutsOutlet = $(article, "[data-help-shortcuts-outlet]");
     if (shortcutsOutlet && shortcutsOutlet.children.length === 0) {
@@ -97,6 +140,47 @@ export function mountModelsHelpAboutSections(article, {
     }
 
     /**
+     * @param {unknown} sessionRes
+     * @param {readonly import("./session-models.js").ModelAliasEntry[]} aliases
+     */
+    function renderModelsSessionForm(sessionRes, aliases) {
+        const form = $(article, "form[data-models-session-form]");
+        if (!(form instanceof HTMLFormElement) || !modelsSessionCombobox) return;
+        if (getContext().sessionName === null || !isRecord(sessionRes) || !Array.isArray(sessionRes.configOptions)) {
+            form.hidden = true;
+            return;
+        }
+        const modelOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "model");
+        const thoughtOption = sessionRes.configOptions.find((entry) => isRecord(entry) && entry.configId === "thought_level");
+        const thoughtSupported = isRecord(thoughtOption)
+            ? flattenSelectOptions(thoughtOption.options).flatMap((entry) => typeof entry.value === "string" && entry.value ? [entry.value] : [])
+            : [];
+        const currentModel = isRecord(modelOption) && typeof modelOption.currentValue === "string" && modelOption.currentValue && modelOption.currentValue !== "none"
+            ? modelOption.currentValue
+            : "";
+        if (currentModel && thoughtSupported.length > 0) {
+            modelSearchCache.seedEfforts(currentModel, thoughtSupported);
+        }
+        const plurnkMeta = isRecord(sessionRes._meta) && isRecord(sessionRes._meta.plurnk) ? sessionRes._meta.plurnk : null;
+        const metaStatus = isRecord(plurnkMeta?.status) ? plurnkMeta.status : null;
+        hasPersistedSessionModel = metaStatus !== null && Object.hasOwn(metaStatus, "model")
+            ? metaStatus.model !== null
+            : Boolean(currentModel);
+
+        const resolvedModel = currentModel || (aliases.find((a) => a.active)?.alias ?? aliases[0]?.alias ?? "");
+        modelsSessionCombobox.setValue(resolvedModel);
+
+        const currentEffort = isRecord(thoughtOption) && typeof thoughtOption.currentValue === "string" ? thoughtOption.currentValue : "";
+        const resolvedEffort = sessionEffortSync.sync(resolvedModel, currentEffort);
+
+        currentSessionModelValues = {
+            model: resolvedModel,
+            effort: resolvedEffort,
+        };
+        form.hidden = false;
+    }
+
+    /**
      * @returns {Promise<{ abortedByNewerLookup: boolean }>}
      */
     async function loadModelsCatalog() {
@@ -109,12 +193,15 @@ export function mountModelsHelpAboutSections(article, {
                 managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", signal, {
                     workspaceId: ctx.workspaceId,
                 });
-            const { aliases, catalog, providers } = await listModels(callModels, modelsSearchQuery, {
-                offset: modelsOffset,
-                limit: COLLECTION_PAGE_SIZE,
-                ...(modelsProviderFilter ? { provider: modelsProviderFilter } : {}),
-                signal,
-            });
+            const [{ aliases, catalog, providers }, sessionRes] = await Promise.all([
+                listModels(callModels, modelsSearchQuery, {
+                    offset: modelsOffset,
+                    limit: COLLECTION_PAGE_SIZE,
+                    ...(modelsProviderFilter ? { provider: modelsProviderFilter } : {}),
+                    signal,
+                }),
+                ctx.sessionName !== null ? callModels("session/options").catch(() => null) : Promise.resolve(null),
+            ]);
             signal.throwIfAborted();
             modelSearchCache.recordAliases(aliases);
             modelSearchCache.recordCatalogItems(catalog.items);
@@ -122,6 +209,7 @@ export function mountModelsHelpAboutSections(article, {
             for (const name of modelSearchCache.getKnownProviders()) {
                 knownCatalogProviders.add(name);
             }
+            renderModelsSessionForm(sessionRes, aliases);
             modelsNextOffset = catalog.nextOffset;
             const modelsPanel = $(article, '[data-settings-panel="models"]');
             const aliasBody = modelsPanel ? $(modelsPanel, "[data-models-alias-rows]") : null;
@@ -183,6 +271,35 @@ export function mountModelsHelpAboutSections(article, {
     applyHelpFilter();
     syncAboutPanel();
     const offSvc = onServiceVersion(() => { syncAboutPanel(); });
+
+    on(article, "submit", "[data-models-session-form]", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement)) return;
+        modelsSessionCombobox?.close();
+        const data = new FormData(form);
+        const selectedModel = String(data.get("model") ?? "").trim();
+        const selectedEffort = String(data.get("effort") ?? "").trim();
+        void runMutation(async () => {
+            const callSession = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
+                invoke(kind, params, { requireSession: true });
+            const modelChanged = Boolean(
+                selectedModel
+                && selectedModel !== "none"
+                && (selectedModel !== currentSessionModelValues.model || !hasPersistedSessionModel),
+            );
+            const effortChanged = Boolean(selectedEffort && selectedEffort !== currentSessionModelValues.effort);
+            let summary = "Session model unchanged.";
+            if (modelChanged) {
+                const route = await sessionModel(callSession, selectedModel, selectedEffort || undefined);
+                summary = `Model: ${modelLabel(route)}${route?.effort ? ` (${route.effort})` : ""}.`;
+            } else if (effortChanged) {
+                const effRes = await sessionEffort(callSession, selectedEffort);
+                summary = `Effort: ${effRes.effort ?? selectedEffort}.`;
+            }
+            await onRefreshModels();
+            return summary;
+        });
+    });
 
     on(article, "submit", "[data-models-search-form]", (event, form) => {
         event.preventDefault();
@@ -269,6 +386,8 @@ export function mountModelsHelpAboutSections(article, {
         dispose() {
             offSvc();
             modelsLookup?.abort();
+            sessionEffortSync.dispose();
+            modelsSessionCombobox?.dispose();
         },
     };
 }

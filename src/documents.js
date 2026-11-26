@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { STATUS_CODES } from "node:http";
 import {
     BUG_REPORT_URL,
+    BUILTIN_SETTINGS_SECTIONS,
     DEFAULT_BRAND,
     DEFAULT_ICON_HREF,
 } from "./brand.js";
-import { directoryPath, workspaceSettingsPath } from "./directory-addresses.js";
+import { directoryPath, settingsPath } from "./directory-addresses.js";
 import { DEFAULT_ACP_URL, DEFAULT_AUTH_CONFIG, escapeHtml } from "./http.js";
 
 const WEB_MANIFEST = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -13,8 +14,21 @@ export const WEB_VERSION = typeof WEB_MANIFEST.version === "string" && WEB_MANIF
 export const WEB_LICENSE = typeof WEB_MANIFEST.license === "string" && WEB_MANIFEST.license.length > 0 ? WEB_MANIFEST.license : "MIT";
 export { BUG_REPORT_URL };
 
-const CANCEL = '<button type="button" data-dialog-close data-i18n="cancel">Cancel</button>';
-const WORKSPACES_ICON = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>';
+/** @type {Readonly<Record<string, { readonly label: string, readonly i18n: string }>>} */
+const BUILTIN_SECTION_META = Object.freeze({
+    search: { label: "Search", i18n: "search" },
+    workspaces: { label: "Workspaces", i18n: "workspaces" },
+    sessions: { label: "Sessions", i18n: "sessions" },
+    models: { label: "Models", i18n: "ws-settings-tab-models" },
+    mcp: { label: "MCP", i18n: "ws-settings-tab-mcp" },
+    skills: { label: "Skills", i18n: "ws-settings-tab-skills" },
+    schedule: { label: "Schedule", i18n: "ws-settings-tab-schedule" },
+    personas: { label: "Personas", i18n: "ws-settings-tab-personas" },
+    members: { label: "Members", i18n: "ws-settings-tab-members" },
+    env: { label: "Environment", i18n: "ws-settings-tab-env" },
+    help: { label: "Help", i18n: "ws-settings-tab-help" },
+    about: { label: "About", i18n: "about" },
+});
 
 /** @typedef {"htmlAttrs" | "themeColor" | "appName" | "description" | "title" | "icon" | "themeStylesheet" | "pageScripts" | "headerLead" | "main" | "afterMain"} DocumentSlotName */
 /** @typedef {{ readonly literal: string } | { readonly slot: DocumentSlotName }} DocumentToken */
@@ -163,6 +177,7 @@ export default class Documents {
     #overviewExcerptChars;
     #brand;
     #settingsTabs;
+    #settingsSections;
     #auth;
 
     /** {§web-assets} Read the stylesheet declaration from our compiled head, not unrelated lazy assets.
@@ -193,8 +208,14 @@ export default class Documents {
         this.#overviewExcerptChars = overviewExcerptChars;
         this.#brand = brand;
         this.#settingsTabs = settingsTabs;
+        this.#settingsSections = new Set([...BUILTIN_SETTINGS_SECTIONS, ...settingsTabs.map(({ id }) => id)]);
         this.#auth = auth;
         this.#template = compileDocumentSlots(document);
+    }
+
+    /** @returns {ReadonlySet<string>} */
+    get settingsSections() {
+        return this.#settingsSections;
     }
 
     #htmlBootAttributes() {
@@ -222,10 +243,10 @@ export default class Documents {
     /**
      * @param {string} title
      * @param {string} body
-     * @param {"home" | "search" | "session" | "settings" | "callback" | "error"} kind
-     * @param {{ headerLead?: string, footer?: string, dialogs?: string, mainAttributes?: string, pageScripts?: string }} [slots]
+     * @param {"home" | "session" | "settings" | "callback" | "error"} kind
+     * @param {{ headerLead?: string, footer?: string, mainAttributes?: string, pageScripts?: string }} [slots]
      */
-    #render(title, body, kind, { headerLead = "", footer = "", dialogs = "", mainAttributes = "", pageScripts = "" } = {}) {
+    #render(title, body, kind, { headerLead = "", footer = "", mainAttributes = "", pageScripts = "" } = {}) {
         const label = kind === "home" ? title : `${title} — ${this.#brand.appName}`;
         const themeStylesheet = this.#brand.themeCssHref !== null
             ? `<link rel="stylesheet" href="${escapeHtml(this.#brand.themeCssHref)}">`
@@ -241,56 +262,8 @@ export default class Documents {
             pageScripts,
             headerLead,
             main: `<main id="main" data-page="${kind}"${mainAttributes}>${body}</main>`,
-            afterMain: footer + dialogs,
+            afterMain: footer,
         }));
-    }
-
-    /** {§web-page-shell} {§web-workspace-creation} Workspace switcher modal shell populated over `/acp`. */
-    #workspacesDialog() {
-        const actionsHtml = '<div data-workspaces-actions>'
-            + '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="new-workspace">New workspace…</button>'
-            + "</div>";
-        return '<dialog id="dialog-workspaces" aria-label="Workspaces"><article>'
-            + '<header><p><strong data-i18n="workspaces">Workspaces</strong></p>'
-            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<ul data-workspaces-list hidden></ul>'
-            + '<p data-workspaces-empty data-i18n="no-workspaces">No matching workspaces.</p>'
-            + actionsHtml
-            + '<footer><a href="/search/?status=archived"><span data-i18n="archived-workspaces">Archived workspaces</span> (<span data-text="archived-workspaces-count">0</span>)</a></footer>'
-            + "</article></dialog>";
-    }
-
-    /** {§web-workspace-creation} Native dialog modal for workspace creation submitted over `/acp`. */
-    #creationDialog() {
-        const projectControls = '<label data-project-folder-toggle><input type="checkbox" name="useProjectFolder" value="1" data-toggle-project-folder> <span data-i18n="project-folder">Project folder</span></label>'
-            + '<input type="text" name="projectRoot" value="" placeholder="/path/to/project" aria-label="Project path" data-project-folder-input>'
-            + '<small data-project-folder-note hidden></small>';
-        return '<dialog id="dialog-workspace-create" aria-label="New workspace"><article>'
-            + '<header><p><strong data-i18n="new-workspace-title">New workspace</strong></p>'
-            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<p role="alert" data-text="workspace-create-error"></p>'
-            + '<form id="workspace-create" data-workspace-create-form>'
-            + '<input type="text" name="name" value="" placeholder="Workspace name (optional)" aria-label="Workspace name">'
-            + projectControls
-            + `<footer>${CANCEL}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`
-            + "</article></dialog>";
-    }
-
-    /**
-     * {§web-session-creation} Native dialog modal for session creation submitted over `/acp`.
-     * @param {string} workspaceName
-     */
-    #sessionCreationDialog(workspaceName) {
-        return '<dialog id="dialog-session-create" aria-label="New session"><article>'
-            + '<header><p><strong data-i18n="new-session">New session</strong></p>'
-            + '<button type="button" aria-label="Close" rel="prev" data-dialog-close></button></header>'
-            + '<p role="alert" data-text="session-create-error"></p>'
-            + '<form id="session-create" data-session-create-form>'
-            + `<input type="hidden" name="workspace" value="${escapeHtml(workspaceName)}" data-bind="value:workspace-name">`
-            + '<input type="text" name="name" value="" placeholder="Session name (optional)" aria-label="Session name" autocomplete="off" spellcheck="false">'
-            + '<input type="text" name="title" value="" placeholder="Session title (optional)" aria-label="Session title" autocomplete="off">'
-            + `<footer>${CANCEL}<button type="submit" data-i18n="confirm">Confirm</button></footer></form>`
-            + "</article></dialog>";
     }
 
     /** {§web-arrival} Static arrival shell (`/` and `/index.html`). */
@@ -309,112 +282,79 @@ export default class Documents {
     }
 
     /**
-     * {§web-directory-documents} {§web-workspace-tabs} Static session workbench shell (`GET /~/<workspace>`).
+     * {§web-directory-documents} {§web-workspace-tabs} {§web-page-shell} Static session workbench shell (`GET /~/<workspace>`).
      * @param {string} workspaceName
      */
     session(workspaceName) {
-        const marker = '<span role="img" aria-label="Folderless workspace" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">☁️</span>';
-        const switcherTrigger = `<button type="button" data-dialog-target="dialog-workspaces" aria-label="Change workspace" title="Change workspace">${WORKSPACES_ICON}</button>`;
-        const settingsHref = workspaceSettingsPath(workspaceName);
-        const workspaceSettingsTrigger = settingsHref !== null
-            ? `<a id="session-workspace" href="${escapeHtml(settingsHref)}" data-bind="href:workspace-settings-path" aria-label="Workspace settings" title="Workspace settings">${marker} <span data-text="workspace-name">${escapeHtml(workspaceName)}</span></a>`
-            : `<span id="session-workspace">${marker} <span data-text="workspace-name">${escapeHtml(workspaceName)}</span></span>`;
-        const headerLead = `<div id="header-place">${switcherTrigger}${workspaceSettingsTrigger}</div>`;
+        const marker = '<span data-header-glyph role="img" aria-label="Folderless workspace" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">☁️</span>';
+        const workspacesHref = settingsPath("workspaces", { workspace: workspaceName }) ?? "/settings/workspaces";
+        const sessionsHref = settingsPath("sessions", { workspace: workspaceName }) ?? "/settings/sessions";
+        const newSessionHref = settingsPath("sessions", { workspace: workspaceName, extra: { new: "1" } }) ?? "/settings/sessions?new=1";
+        const modelsHref = settingsPath("models", { workspace: workspaceName }) ?? "/settings/models";
+
+        const workspaceLink = `<a id="session-workspace" href="${escapeHtml(workspacesHref)}" data-bind="href:workspace-settings-path" aria-label="Workspaces" title="Workspaces">${marker} <span data-text="workspace-name">${escapeHtml(workspaceName)}</span></a>`;
+        const sessionLink = `<a id="header-session" href="${escapeHtml(sessionsHref)}" data-bind="href:header-session-settings-path" aria-label="Sessions" title="Sessions" hidden><span data-header-glyph aria-hidden="true" data-text="header-session-icon">💬</span> <span data-header-session-label>#<span data-text="header-session-name"></span></span></a>`;
+        const modelLink = `<a id="header-model" href="${escapeHtml(modelsHref)}" data-bind="href:header-models-settings-path title:header-model-label" aria-label="Models" title="Models" hidden><span data-header-glyph aria-hidden="true">🤖</span> <span data-text="header-model">No model</span> <span data-text="header-effort"></span></a>`;
+        const headerLead = `<div id="header-place">${workspaceLink}${sessionLink}${modelLink}</div>`;
         const body = '<p id="session-folder" data-project-label=""><span role="img" aria-label="Project folder">🗂️</span> <span data-text="project-label"></span></p>';
-        const dialogs = this.#workspacesDialog()
-            + this.#creationDialog()
-            + this.#sessionCreationDialog(workspaceName);
         const tabs = `<nav id="workspace-tabs" aria-label="Workspace sessions" data-workspace-name="${escapeHtml(workspaceName)}" data-tab-count="0">`
-            + '<button type="button" data-action="new-session" data-tab-new aria-label="New session" title="New session">+</button>'
-            + '<button type="button" data-open-sessions aria-label="Sessions and archives" title="Sessions and archives (Ctrl+K)">☰</button>'
+            + `<a href="${escapeHtml(newSessionHref)}" data-tab-new data-bind="href:new-session-path" aria-label="New session" title="New session (Alt+N)">+</a>`
             + "<ul></ul></nav>";
         return this.#render(workspaceName, body, "session", {
             headerLead,
             footer: tabs,
-            dialogs,
             mainAttributes: ` data-requested-workspace="${escapeHtml(workspaceName)}"`,
         });
     }
 
     /**
-     * {§web-search} Static Search directory shell (`GET /search/`).
-     * @param {{ readonly q?: string, readonly workspace?: string, readonly status?: string, readonly kind?: string }} [query]
+     * {§web-search} Render the Search tab panel (`/settings/search`).
+     * @param {{ readonly workspace: string, readonly session: string, readonly q?: string, readonly status?: string, readonly kind?: string, readonly filterWorkspace?: string }} query
      */
-    search(query = {}) {
-        const q = (query.q ?? "").trim();
-        const wsFilter = (query.workspace ?? "").trim();
-        const statusFilter = ["all", "active", "gated", "failed", "archived"].includes(query.status ?? "")
-            ? (query.status ?? "all")
-            : "all";
-        const kindFilter = ["all", "root", "work"].includes(query.kind ?? "")
-            ? (query.kind ?? "all")
-            : "all";
+    #searchPanel({ workspace, session, q = "", status = "all", kind = "all", filterWorkspace = "" }) {
+        const trimmedQ = q.trim();
+        const trimmedFilterWs = filterWorkspace.trim();
+        const statusFilter = ["all", "active", "gated", "failed", "archived"].includes(status) ? status : "all";
+        const kindFilter = ["all", "root", "work"].includes(kind) ? kind : "all";
         const statusOption = (/** @type {string} */ val, /** @type {string} */ label) =>
             `<option value="${val}"${statusFilter === val ? " selected" : ""}>${label}</option>`;
-        const controlsHtml = '<form id="search-controls" method="get" action="/search/" aria-label="Search workspaces and sessions">'
-            + `<input type="search" name="q" list="search-suggestions" data-overview-search value="${escapeHtml(q)}" placeholder="Search workspaces and sessions…" aria-label="Search workspaces and sessions" autocomplete="off">`
+        return '<section id="search" data-settings-panel="search" aria-label="Search">'
+            + '<header data-panel-toolbar><h2 data-i18n="search">Search</h2></header>'
+            + '<form id="search-controls" method="get" action="/settings/search" aria-label="Search workspaces and sessions">'
+            + (workspace ? `<input type="hidden" name="workspace" value="${escapeHtml(workspace)}" data-bind="value:workspace-name">` : "")
+            + (workspace && session ? `<input type="hidden" name="session" value="${escapeHtml(session)}" data-bind="value:active-session-name">` : "")
+            + `<input type="search" name="q" list="search-suggestions" data-overview-search value="${escapeHtml(trimmedQ)}" placeholder="Search workspaces and sessions…" aria-label="Search workspaces and sessions" autocomplete="off">`
             + '<datalist id="search-suggestions"></datalist>'
-            + (wsFilter ? `<input type="hidden" name="workspace" value="${escapeHtml(wsFilter)}" data-search-workspace>` : "")
+            + (trimmedFilterWs ? `<input type="hidden" name="filterWorkspace" value="${escapeHtml(trimmedFilterWs)}" data-search-workspace>` : "")
             + (kindFilter !== "all" ? `<input type="hidden" name="kind" value="${escapeHtml(kindFilter)}" data-search-kind>` : "")
             + `<select name="status" data-overview-scope aria-label="Status filter">${statusOption("all", "All statuses")}${statusOption("active", "Active")}${statusOption("gated", "Needs input")}${statusOption("failed", "Failed")}${statusOption("archived", "Archived")}</select>`
             + '<button type="submit" data-search-submit data-i18n="filter">Filter</button>'
-            + "</form>";
-        const workspacesSection = '<section id="search-workspaces" aria-label="Workspaces"></section>';
-        const switcherTrigger = `<button type="button" data-dialog-target="dialog-workspaces" aria-label="Change workspace" title="Change workspace">${WORKSPACES_ICON}</button>`;
-        const headerLead = `<div id="header-place">${switcherTrigger}<span aria-current="page" data-i18n="search">Search</span></div>`;
-        const dialogs = this.#workspacesDialog() + this.#creationDialog();
-        return this.#render("Search", controlsHtml + workspacesSection, "search", {
-            headerLead,
-            dialogs,
-            mainAttributes: ' data-connection="initial"',
-        });
+            + "</form>"
+            + '<section id="search-workspaces" aria-label="Workspaces"></section>'
+            + "</section>";
     }
 
     /**
-     * {§web-workspace-settings} Static Settings & About shell (`GET /settings/`).
-     * @param {{ readonly workspace?: string, readonly session?: string | null }} [query]
+     * {§web-workspace-settings} {§web-workspace-creation} {§web-workspace-rename} {§web-workspace-archive}
+     * Render the Workspaces tab panel (`/settings/workspaces`).
+     * @param {string} workspaceName
+     * @param {string} sessionName
+     * @param {boolean} openCreate
      */
-    settings(query = {}) {
-        const workspaceName = query.workspace ?? "";
-        const sessionName = query.session ?? "";
-        const marker = '<span role="img" aria-label="Folderless workspace" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">☁️</span>';
-        const backPath = workspaceName
-            ? (sessionName
-                ? directoryPath({ kind: "session", workspace: workspaceName, session: sessionName })
-                : directoryPath({ kind: "workspace", workspace: workspaceName }))
-            : "/";
-        const backLabel = workspaceName || this.#brand.appName;
-        const backItem = backPath !== null
-            ? `<a href="${escapeHtml(backPath)}" data-settings-back data-bind="href:workspace-back-path">${marker} <span data-text="workspace-name">${escapeHtml(backLabel)}</span></a>`
-            : `<span>${marker} <span data-text="workspace-name">${escapeHtml(backLabel)}</span></span>`;
-        const headerLead = '<nav id="header-place" aria-label="breadcrumb"><ul>'
-            + `<li>${backItem}</li>`
-            + '<li><span aria-current="page" data-i18n="settings">Settings</span></li></ul></nav>';
-
-        const addWorkspaceBtn = '<button type="button" data-dialog-target="dialog-workspace-create" data-i18n="ws-settings-add-workspace">+ Add workspace</button>';
-        const addSessionBtn = '<button type="button" data-dialog-target="dialog-session-create" data-settings-add-session data-i18n="ws-settings-add-session">+ Add session</button>';
-
-        const extensionNavHtml = this.#settingsTabs.map(({ id, label }) =>
-            `<li><a href="#${escapeHtml(id)}" data-settings-section="${escapeHtml(id)}" data-settings-extension="true">${escapeHtml(label)}</a></li>`,
-        ).join("");
-
-        const navHtml = '<nav aria-label="Settings sections"><ul data-settings-nav>'
-            + '<li><a href="#workspace" data-settings-section="workspace" aria-current="true" data-i18n="ws-settings-tab-workspace">Workspace</a></li>'
-            + '<li><a href="#session" data-settings-section="session" data-i18n="ws-settings-tab-session">Session</a></li>'
-            + '<li><a href="#models" data-settings-section="models" data-i18n="ws-settings-tab-models">Models</a></li>'
-            + '<li><a href="#mcp" data-settings-section="mcp" data-i18n="ws-settings-tab-mcp">MCP</a></li>'
-            + '<li><a href="#skills" data-settings-section="skills" data-i18n="ws-settings-tab-skills">Skills</a></li>'
-            + '<li><a href="#schedule" data-settings-section="schedule" data-i18n="ws-settings-tab-schedule">Schedule</a></li>'
-            + '<li><a href="#personas" data-settings-section="personas" data-i18n="ws-settings-tab-personas">Personas</a></li>'
-            + '<li><a href="#members" data-settings-section="members" data-i18n="ws-settings-tab-members">Members</a></li>'
-            + '<li><a href="#env" data-settings-section="env" data-i18n="ws-settings-tab-env">Environment</a></li>'
-            + extensionNavHtml
-            + '<li><a href="#help" data-settings-section="help" data-i18n="ws-settings-tab-help">Help</a></li>'
-            + '<li><a href="#about" data-settings-section="about" data-i18n="about">About</a></li>'
-            + "</ul></nav>";
-
-        const workspacePanel = '<section id="workspace" data-settings-panel="workspace" aria-label="Workspace">'
-            + `<header data-panel-toolbar><h2 data-i18n="ws-settings-tab-workspace">Workspace</h2>${addWorkspaceBtn}</header>`
+    #workspacesPanel(workspaceName, sessionName, openCreate) {
+        const projectControls = '<label data-project-folder-toggle><input type="checkbox" name="useProjectFolder" value="1" data-toggle-project-folder> <span data-i18n="project-folder">Project folder</span></label>'
+            + '<input type="text" name="projectRoot" value="" placeholder="/path/to/project" aria-label="Project path" data-project-folder-input>'
+            + '<small data-project-folder-note hidden></small>';
+        const createDisclosure = `<details data-family-disclosure="workspaces"${openCreate ? " open" : ""}>`
+            + '<summary data-i18n="ws-settings-add-workspace">+ New workspace</summary>'
+            + '<form id="workspace-create" data-workspace-create-form>'
+            + '<fieldset data-bind="disabled:ws-settings-busy">'
+            + '<input type="text" name="name" value="" placeholder="Workspace name (optional)" aria-label="Workspace name" autocomplete="off" spellcheck="false">'
+            + projectControls
+            + '<footer><button type="submit" data-i18n="create-workspace">Create workspace</button></footer>'
+            + "</fieldset></form></details>";
+        const activeCard = `<section data-active-workspace-card aria-label="Current workspace"${workspaceName ? "" : " hidden"}>`
+            + '<h3 data-i18n="current-workspace">Current workspace</h3>'
             + '<p data-settings-folder hidden><span role="img" aria-label="Project folder">🗂️</span> <code data-text="project-label"></code></p>'
             + '<form id="workspace-rename" data-workspace-rename-form>'
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspaceName)}" data-bind="value:workspace-name">`
@@ -429,9 +369,42 @@ export default class Documents {
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspaceName)}" data-bind="value:workspace-name">`
             + "</form>"
             + "</section>";
+        const collection = '<div data-collection-bar-outlet></div>'
+            + '<p data-workspaces-empty data-i18n="no-workspaces">No matching workspaces.</p>'
+            + '<figure data-workspaces-table-wrap>'
+            + '<table><thead><tr>'
+            + '<th scope="col" data-i18n="ws-settings-col-workspace">Workspace</th>'
+            + '<th scope="col" data-i18n="ws-settings-col-folder">Folder</th>'
+            + '<th scope="col" data-i18n="ws-settings-col-state">State</th>'
+            + '<th scope="col" data-i18n="ws-settings-col-actions">Actions</th>'
+            + '</tr></thead><tbody data-workspaces-rows></tbody></table></figure>';
+        return '<section id="workspaces" data-settings-panel="workspaces" aria-label="Workspaces" data-collection-count="0">'
+            + '<header data-panel-toolbar><h2 data-i18n="workspaces">Workspaces</h2></header>'
+            + createDisclosure
+            + activeCard
+            + collection
+            + "</section>";
+    }
 
-        const sessionPanel = '<section id="session" data-settings-panel="session" aria-label="Session" hidden>'
-            + `<header data-panel-toolbar><h2 data-session-panel-heading><span data-i18n="ws-settings-tab-session">Session</span><span data-session-heading-handle${sessionName ? "" : " hidden"}> · <code data-text="session-heading-code">#${escapeHtml(sessionName)}</code></span></h2>${addSessionBtn}</header>`
+    /**
+     * {§web-workspace-settings} {§web-session-creation} {§web-session-archive}
+     * Render the Sessions tab panel (`/settings/sessions`).
+     * @param {string} workspaceName
+     * @param {string} sessionName
+     * @param {boolean} openCreate
+     */
+    #sessionsPanel(workspaceName, sessionName, openCreate) {
+        const createDisclosure = `<details data-family-disclosure="sessions" data-settings-add-session${openCreate ? " open" : ""}>`
+            + '<summary data-i18n="ws-settings-add-session">+ New session</summary>'
+            + '<form id="session-create" data-session-create-form>'
+            + '<fieldset data-bind="disabled:ws-settings-busy">'
+            + `<input type="hidden" name="workspace" value="${escapeHtml(workspaceName)}" data-bind="value:workspace-name">`
+            + '<input type="text" name="name" value="" placeholder="Session name (optional)" aria-label="Session name" autocomplete="off" spellcheck="false">'
+            + '<input type="text" name="title" value="" placeholder="Session title (optional)" aria-label="Session title" autocomplete="off">'
+            + '<footer><button type="submit" data-i18n="create-session">Create session</button></footer>'
+            + "</fieldset></form></details>";
+        const activeCard = '<section data-active-session-card aria-label="Current session">'
+            + `<h3 data-session-panel-heading><span data-i18n="current-session">Current session</span><span data-session-heading-handle${sessionName ? "" : " hidden"}> · <code data-text="session-heading-code">#${escapeHtml(sessionName)}</code></span></h3>`
             + '<p data-session-parent-line hidden><span data-i18n="parent-session">Parent:</span> <span data-session-parent-slot></span></p>'
             + `<form id="session-title" data-session-title-form${sessionName ? "" : " hidden"}>`
             + `<input type="hidden" name="workspace" value="${escapeHtml(workspaceName)}" data-bind="value:workspace-name">`
@@ -450,14 +423,31 @@ export default class Documents {
             + `<p data-no-active-session data-i18n="no-active-session"${sessionName ? " hidden" : ""}>Open or create a session to configure session settings.</p>`
             + '<div data-session-config-outlet></div>'
             + "</section>";
+        const collection = '<div data-collection-bar-outlet></div>'
+            + '<p data-sessions-empty data-i18n="no-sessions">No matching sessions.</p>'
+            + '<figure data-sessions-table-wrap>'
+            + '<table><thead><tr>'
+            + '<th scope="col" data-i18n="ws-settings-col-session">Session</th>'
+            + '<th scope="col" data-i18n="ws-settings-col-details">Details</th>'
+            + '<th scope="col" data-i18n="ws-settings-col-state">State</th>'
+            + '<th scope="col" data-i18n="ws-settings-col-actions">Actions</th>'
+            + '</tr></thead><tbody data-sessions-rows></tbody></table></figure>';
+        return '<section id="sessions" data-settings-panel="sessions" aria-label="Sessions" data-collection-count="0">'
+            + '<header data-panel-toolbar><h2 data-i18n="sessions">Sessions</h2></header>'
+            + createDisclosure
+            + activeCard
+            + collection
+            + "</section>";
+    }
 
+    /** {§web-workspace-settings} {§web-brand} Render the About tab panel (`/settings/about`). */
+    #aboutPanel() {
         const aboutLinksHtml = this.#brand.aboutLinks.map(({ label, url }) => {
             const i18nAttr = label === "Report an issue" && url === BUG_REPORT_URL ? ' data-i18n="report-issue"' : "";
             const display = url.replace(/^https?:\/\//iu, "");
             return `<dt${i18nAttr}>${escapeHtml(label)}</dt><dd><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(display)}</a></dd>`;
         }).join("");
-
-        const aboutPanel = '<section id="about" data-settings-panel="about" aria-label="About" hidden>'
+        return '<section id="about" data-settings-panel="about" aria-label="About">'
             + '<header data-panel-toolbar><h2 data-i18n="about">About</h2></header>'
             + '<dl data-about-facts>'
             + '<dt data-about-service-term hidden>@plurnk/plurnk-service</dt><dd data-about-service-value hidden><code data-text="about-service-version"></code></dd>'
@@ -466,35 +456,111 @@ export default class Documents {
             + `<dt data-i18n="license">License</dt><dd>${escapeHtml(WEB_LICENSE)}</dd>`
             + aboutLinksHtml
             + "</dl></section>";
+    }
 
-        const extensionPanelsHtml = this.#settingsTabs.map(({ id, label, html }) =>
-            `<section id="${escapeHtml(id)}" data-settings-panel="${escapeHtml(id)}" data-settings-extension="true" aria-label="${escapeHtml(label)}" hidden>${html}</section>`,
-        ).join("");
+    /**
+     * {§web-workspace-settings} {§web-settings-extensions} {§web-search} Static tabbed hub shell (`GET /settings/<section>`).
+     * @param {string} section
+     * @param {{
+     *   readonly workspace?: string,
+     *   readonly session?: string | null,
+     *   readonly q?: string,
+     *   readonly status?: string,
+     *   readonly kind?: string,
+     *   readonly filterWorkspace?: string,
+     *   readonly openCreate?: boolean,
+     * }} [query]
+     */
+    settings(section, query = {}) {
+        if (!this.#settingsSections.has(section)) {
+            throw new Error(`Unknown settings section: ${section}`);
+        }
+        const workspaceName = query.workspace ?? "";
+        const sessionName = query.session ?? "";
+        const openCreate = query.openCreate === true;
+        const marker = '<span data-header-glyph role="img" aria-label="Folderless workspace" data-bind="aria-label:workspace-icon-label" data-text="workspace-icon">☁️</span>';
+        const backPath = workspaceName
+            ? (sessionName
+                ? directoryPath({ kind: "session", workspace: workspaceName, session: sessionName })
+                : directoryPath({ kind: "workspace", workspace: workspaceName }))
+            : "/";
+        const backLabel = workspaceName || this.#brand.appName;
+        const sessionTag = workspaceName && sessionName
+            ? `<span data-settings-back-session>#<span data-text="active-session-name">${escapeHtml(sessionName)}</span></span>`
+            : "";
+        const backItem = backPath !== null
+            ? `<a href="${escapeHtml(backPath)}" data-settings-back data-bind="href:workspace-back-path" aria-label="Back to workbench" title="Back to workbench">← ${marker} <span data-text="workspace-name">${escapeHtml(backLabel)}</span>${sessionTag}</a>`
+            : `<span>${marker} <span data-text="workspace-name">${escapeHtml(backLabel)}</span></span>`;
+        const headerLead = `<div id="header-place">${backItem}</div>`;
 
-        const pageScripts = this.#settingsTabs
-            .filter((tab) => tab.scriptHref !== null)
-            .map((tab) => `<script type="module" src="${escapeHtml(/** @type {string} */ (tab.scriptHref))}"></script>`)
+        const context = workspaceName && directoryPath({ kind: "workspace", workspace: workspaceName }) !== null
+            ? { workspace: workspaceName, session: sessionName || null }
+            : {};
+
+        /** @param {string} id @param {string} label @param {string | null} i18nKey @param {boolean} isExtension */
+        const tabItem = (id, label, i18nKey, isExtension) => {
+            const href = settingsPath(id, context) ?? `/settings/${id}`;
+            const currentAttr = id === section ? ' aria-current="page"' : "";
+            const extAttr = isExtension ? ' data-settings-extension="true"' : "";
+            const i18nAttr = i18nKey !== null ? ` data-i18n="${i18nKey}"` : "";
+            return `<li><a href="${escapeHtml(href)}" data-settings-section="${escapeHtml(id)}"${extAttr}${currentAttr}${i18nAttr}>${escapeHtml(label)}</a></li>`;
+        };
+
+        const leadingTabs = ["search", "workspaces", "sessions", "models", "mcp", "skills", "schedule", "personas", "members", "env"]
+            .map((id) => tabItem(id, BUILTIN_SECTION_META[id].label, BUILTIN_SECTION_META[id].i18n, false))
             .join("");
+        const extensionNavHtml = this.#settingsTabs
+            .map(({ id, label }) => tabItem(id, label, null, true))
+            .join("");
+        const trailingTabs = ["help", "about"]
+            .map((id) => tabItem(id, BUILTIN_SECTION_META[id].label, BUILTIN_SECTION_META[id].i18n, false))
+            .join("");
+        const navHtml = `<nav aria-label="Settings sections"><ul data-settings-nav>${leadingTabs}${extensionNavHtml}${trailingTabs}</ul></nav>`;
 
-        const body = '<article id="workspace-settings" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">'
+        const activeExtension = this.#settingsTabs.find(({ id }) => id === section) ?? null;
+        let panelHtml;
+        if (section === "search") {
+            panelHtml = this.#searchPanel({
+                workspace: workspaceName,
+                session: sessionName,
+                q: query.q,
+                status: query.status,
+                kind: query.kind,
+                filterWorkspace: query.filterWorkspace,
+            });
+        } else if (section === "workspaces") {
+            panelHtml = this.#workspacesPanel(workspaceName, sessionName, openCreate);
+        } else if (section === "sessions") {
+            panelHtml = this.#sessionsPanel(workspaceName, sessionName, openCreate);
+        } else if (section === "about") {
+            panelHtml = this.#aboutPanel();
+        } else if (activeExtension !== null) {
+            panelHtml = `<section id="${escapeHtml(activeExtension.id)}" data-settings-panel="${escapeHtml(activeExtension.id)}" data-settings-extension="true" aria-label="${escapeHtml(activeExtension.label)}">${activeExtension.html}</section>`;
+        } else {
+            panelHtml = '<div data-settings-subsystems></div>';
+        }
+
+        const pageScripts = activeExtension !== null && activeExtension.scriptHref !== null
+            ? `<script type="module" src="${escapeHtml(activeExtension.scriptHref)}"></script>`
+            : "";
+
+        const sectionLabel = activeExtension?.label ?? BUILTIN_SECTION_META[section]?.label ?? section;
+        const body = `<article id="workspace-settings" data-active-section="${escapeHtml(section)}" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">`
             + '<header><h1 id="workspace-settings-title" data-i18n="settings">Settings</h1></header>'
             + navHtml
             + '<p role="status" data-text="ws-settings-message"></p>'
             + '<p data-text="ws-settings-recovery"></p>'
-            + workspacePanel
-            + sessionPanel
-            + '<div data-settings-subsystems></div>'
-            + extensionPanelsHtml
-            + aboutPanel
+            + panelHtml
             + "</article>";
 
-        const dialogs = this.#creationDialog() + this.#sessionCreationDialog(workspaceName);
-        const mainAttributes = (workspaceName ? ` data-workspace-name="${escapeHtml(workspaceName)}"` : "")
-            + (sessionName ? ` data-session-name="${escapeHtml(sessionName)}"` : "");
-        const title = workspaceName ? `${workspaceName} · Settings` : "Settings";
+        const mainAttributes = ` data-settings-section="${escapeHtml(section)}"`
+            + (workspaceName ? ` data-workspace-name="${escapeHtml(workspaceName)}"` : "")
+            + (sessionName ? ` data-session-name="${escapeHtml(sessionName)}"` : "")
+            + (openCreate ? ' data-open-create="true"' : "")
+            + (section === "search" ? ' data-connection="initial"' : "");
+        const title = workspaceName ? `${workspaceName} · ${sectionLabel}` : sectionLabel;
         return this.#render(title, body, "settings", {
             headerLead,
-            dialogs,
             mainAttributes,
             pageScripts,
         });

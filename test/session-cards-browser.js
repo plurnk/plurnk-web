@@ -83,6 +83,13 @@ export default async function verifySessionCards(t) {
                 return;
             }
             if (request.method === "DELETE") {
+                const connId = String(request.headers["acp-connection-id"] ?? "");
+                for (const [key, entry] of acpSse) {
+                    if (key.startsWith(`${connId}:`)) {
+                        acpSse.delete(key);
+                        if (entry.res && !entry.res.writableEnded) entry.res.end();
+                    }
+                }
                 response.writeHead(202, privateHeaders);
                 response.end();
                 return;
@@ -188,10 +195,12 @@ export default async function verifySessionCards(t) {
             else stream.queue.push(data);
             return;
         }
-        if (path === "/search/" || path === "/search/index.html") {
-            const body = documents.search({
-                q: url.searchParams.get("q") ?? undefined,
+        if (path === "/settings/search" || path === "/settings/search/" || path === "/settings/search/index.html") {
+            const body = documents.settings("search", {
                 workspace: url.searchParams.get("workspace") ?? undefined,
+                session: url.searchParams.get("session") ?? undefined,
+                q: url.searchParams.get("q") ?? undefined,
+                filterWorkspace: url.searchParams.get("filterWorkspace") ?? undefined,
                 status: url.searchParams.get("status") ?? undefined,
                 kind: url.searchParams.get("kind") ?? undefined,
             });
@@ -200,7 +209,7 @@ export default async function verifySessionCards(t) {
             return;
         }
         if (path.startsWith("/~/")) {
-            // Serve a lightweight placeholder HTML page when testing navigation links off /search/
+            // Serve a lightweight placeholder HTML page when testing navigation links off /settings/search
             response.writeHead(200, { ...privateHeaders, "content-type": "text/html; charset=utf-8" });
             response.end("<!doctype html><html lang=\"en\"><head><title>Workspace</title></head><body><main></main></body></html>");
             return;
@@ -246,7 +255,7 @@ export default async function verifySessionCards(t) {
                     currentWorkspaces = [{ id: 7, name, projectRoot, projectLabel: projectRoot, archivedAt: null }];
                     currentSessions = structuredClone(baseSessions);
 
-                    await page.goto(new URL("/search/", base).href);
+                    await page.goto(new URL("/settings/search", base).href);
                     const wsArticle = page.locator('#search-workspaces > ul > li[data-directory-entry="workspace"][data-workspace-id="7"] > article');
                     await wsArticle.waitFor();
                     assert.equal(await wsArticle.getAttribute("aria-label"), projectRoot === null ? "Folderless workspace" : "Project workspace");
@@ -350,7 +359,7 @@ export default async function verifySessionCards(t) {
                     }
                 };
                 notificationRequests.length = 0;
-                await page.goto(new URL("/search/", base).href);
+                await page.goto(new URL("/settings/search", base).href);
                 await page.locator('main[data-connection="connected"]').waitFor();
                 await page.locator('#search-workspaces a[data-session-link][aria-label="done"]').waitFor();
                 assert.equal(notificationRequests.length, 1);

@@ -1,4 +1,4 @@
-import { directoryPath, workspaceSettingsPath } from "../src/directory-addresses.js";
+import { directoryPath, settingsPath } from "../src/directory-addresses.js";
 import { formatPageTitle } from "./endpoints.js";
 
 /** @typedef {Omit<import("@plurnk/plurnk-acp/client").AcpDescendantState, "gates"> & {gates: import("@plurnk/plurnk-acp/client").AcpDescendantState["gates"] | number}} DescendantItem */
@@ -234,9 +234,10 @@ export function workspaceIdentity({ name, projectLabel }, session) {
         workspaceName: name,
         workspacePath,
         sessionPath,
-        workspaceSettingsPath: workspaceSettingsPath(name, session) ?? workspacePath,
-        sessionSettingsPath: workspaceSettingsPath(name, session, "session") ?? workspacePath,
-        modelsSettingsPath: workspaceSettingsPath(name, session, "models") ?? workspacePath,
+        searchSettingsPath: settingsPath("search", { workspace: name, session }) ?? "/settings/search",
+        workspaceSettingsPath: settingsPath("workspaces", { workspace: name, session }) ?? "/settings/workspaces",
+        sessionSettingsPath: settingsPath("sessions", { workspace: name, session }) ?? "/settings/sessions",
+        modelsSettingsPath: settingsPath("models", { workspace: name, session }) ?? "/settings/models",
         projectLabel: namedFolder ? projectLabel : "",
         workspaceIcon: projectLabel !== null ? "🗂️" : "☁️",
         workspaceIconLabel: projectLabel === null ? "Folderless workspace" : "Project workspace",

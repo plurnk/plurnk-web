@@ -36,10 +36,28 @@
 </template>
 <template id="workspace-settings-subsystems">
     <div data-settings-panels>
-        <section data-settings-panel="models" aria-label="Models" data-alias-count="0" hidden>
+        <section data-settings-panel="models" aria-label="Models" data-alias-count="0">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-models">Models</h2>
             </header>
+            <form data-models-session-form hidden>
+                <fieldset data-bind="disabled:ws-settings-busy">
+                    <div data-model-field>
+                        <label for="models-session-model-input" data-i18n="model-label">Model</label>
+                        <div data-model-combobox="modelsSessionModel">
+                            <input id="models-session-model-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="models-session-model-listbox" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
+                            <ul id="models-session-model-listbox" role="listbox" aria-label="Active session model choices" data-combobox-list hidden></ul>
+                        </div>
+                    </div>
+                    <label>
+                        <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
+                        <select name="effort" aria-label="Reasoning effort"></select>
+                    </label>
+                    <footer>
+                        <button type="submit" data-i18n="apply">Apply</button>
+                    </footer>
+                </fieldset>
+            </form>
             <p data-models-aliases-empty data-i18n="no-aliases">No matching aliases.</p>
             <figure data-models-aliases-wrap>
                 <table>
@@ -89,7 +107,7 @@
                 </table>
             </figure>
         </section>
-        <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0" hidden>
+        <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-mcp-heading">MCP servers</h2>
             </header>
@@ -156,7 +174,7 @@
                 </form>
             </section>
         </section>
-        <section data-settings-panel="skills" aria-label="Skills" data-family-count="0" data-candidate-count="0" hidden>
+        <section data-settings-panel="skills" aria-label="Skills" data-family-count="0" data-candidate-count="0">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-skills">Skills</h2>
             </header>
@@ -199,7 +217,7 @@
             </figure>
         </section>
         <div data-schedule-panel-outlet></div>
-        <section data-settings-panel="personas" aria-label="Personas" data-family-count="0" data-candidate-count="0" hidden>
+        <section data-settings-panel="personas" aria-label="Personas" data-family-count="0" data-candidate-count="0">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-personas">Personas</h2>
             </header>
@@ -257,7 +275,7 @@
                 </table>
             </figure>
         </section>
-        <section data-settings-panel="members" aria-label="Members" data-family-count="0" data-candidate-count="0" hidden>
+        <section data-settings-panel="members" aria-label="Members" data-family-count="0" data-candidate-count="0">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-members">Members</h2>
             </header>
@@ -291,7 +309,7 @@
                 </table>
             </figure>
         </section>
-        <section data-settings-panel="env" aria-label="Environment" data-candidate-count="0" hidden>
+        <section data-settings-panel="env" aria-label="Environment" data-candidate-count="0">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-env">Environment</h2>
                 <form data-ws-env-scope-form hidden>
@@ -319,7 +337,7 @@
             <p data-env-empty data-i18n="ws-settings-env-empty">No environment variables configured.</p>
             <div data-ws-env-outlet></div>
         </section>
-        <section data-settings-panel="help" aria-label="Help" hidden>
+        <section data-settings-panel="help" aria-label="Help">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-help">Help</h2>
             </header>
@@ -410,6 +428,39 @@
             <button type="button" data-candidate-next disabled data-i18n="next-page">Next</button>
         </div>
     </div>
+</template>
+<template id="workspace-directory-row">
+    <tr data-ws-row-archived="false" data-ws-row-current="false">
+        <th scope="row"><a data-bind="href:ws-row-path"><span aria-hidden="true" data-text="ws-row-glyph">☁️</span> <span data-text="ws-row-name">workspace</span></a></th>
+        <td><code data-text="ws-row-folder"></code></td>
+        <td data-text="ws-row-state">Active</td>
+        <td>
+            <form data-workspace-row-form>
+                <fieldset data-bind="disabled:ws-settings-busy">
+                    <input type="hidden" name="workspaceId" data-bind="value:ws-row-id">
+                    <input type="hidden" name="workspace" data-bind="value:ws-row-name">
+                    <button type="submit" name="operation" value="archive" data-ws-row-archive data-i18n="archive">Archive</button>
+                    <button type="submit" name="operation" value="unarchive" data-ws-row-unarchive data-i18n="unarchive">Unarchive</button>
+                </fieldset>
+            </form>
+        </td>
+    </tr>
+</template>
+<template id="session-directory-row">
+    <tr data-sess-row-archived="false" data-sess-row-current="false" data-session-kind="root">
+        <th scope="row"><a data-session-link data-bind="href:sess-row-path"><span data-text="sess-row-label">#session</span></a></th>
+        <td data-text="sess-row-details"></td>
+        <td data-text="sess-row-state">idle</td>
+        <td>
+            <form data-session-row-form>
+                <fieldset data-bind="disabled:ws-settings-busy">
+                    <input type="hidden" name="session" data-bind="value:sess-row-name">
+                    <button type="submit" name="operation" value="archive" data-sess-row-archive data-i18n="archive">Archive</button>
+                    <button type="submit" name="operation" value="unarchive" data-sess-row-unarchive data-i18n="unarchive">Unarchive</button>
+                </fieldset>
+            </form>
+        </td>
+    </tr>
 </template>
 <template id="members-preview-path">
     <li data-members-preview-item><code data-text="preview-path"></code></li>

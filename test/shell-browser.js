@@ -57,17 +57,20 @@ export default async function verifyShell(t) {
                     const footer = await page.locator("body > footer").boundingBox();
                     const main = await page.locator("main").boundingBox();
                     const tabs = page.locator("body > #workspace-tabs");
-                    const compactSessionsBtn = page.locator('[aria-label="Session controls"] button[data-open-sessions]');
+                    const headerModel = page.locator("#header-model");
+                    const footerModel = page.locator('#session-status [data-status-field="model"]');
                     assert.ok(main.height > 0 && main.y >= header.y + header.height - 1 && main.y + main.height <= footer.y + 1);
                     if (viewport.width >= 768) {
                         assert.equal(await tabs.isVisible(), true, `${viewport.width}px: bottom Google Sheets session bar is visible`);
-                        assert.equal(await compactSessionsBtn.isVisible(), false, `${viewport.width}px: compact composer sessions button hides at >=768px`);
+                        assert.equal(await headerModel.isVisible(), true, `${viewport.width}px: header model link is visible at >=768px`);
+                        assert.equal(await footerModel.isVisible(), false, `${viewport.width}px: footer model readout hides at >=768px`);
                         const tabsBox = await tabs.boundingBox();
                         assert.ok(Math.abs(footer.y + footer.height - tabsBox.y) < 1, "composer footer sits directly above the bottom session bar");
                         assert.ok(Math.abs(tabsBox.y + tabsBox.height - viewport.height) < 1, "bottom session bar sits at the viewport bottom");
                     } else {
                         assert.equal(await tabs.isVisible(), false, `${viewport.width}px: bottom session bar hides below 768px`);
-                        assert.equal(await compactSessionsBtn.isVisible(), true, `${viewport.width}px: compact composer sessions button shows below 768px`);
+                        assert.equal(await headerModel.isVisible(), false, `${viewport.width}px: header model link collapses below 768px`);
+                        assert.equal(await footerModel.isVisible(), true, `${viewport.width}px: footer model readout remains reachable below 768px`);
                         assert.ok(Math.abs(footer.y + footer.height - viewport.height) < 1, "composer footer remains at the viewport bottom below 768px");
                     }
                     assert.equal(await page.locator("main").evaluate((element) => {

@@ -3,7 +3,7 @@ import { ConfigurationError, Knob } from "@plurnk/plurnk-meta";
 import { Problems } from "@plurnk/plurnk-contracts";
 import { loadBrandAssets, parseBrandConfig } from "./brand.js";
 import indexDocument from "./index-document.js";
-import { parseDirectory } from "./directory-addresses.js";
+import { parseDirectory, parseSettingsSection } from "./directory-addresses.js";
 import Documents from "./documents.js";
 import {
     parseAcpEndpoint,
@@ -165,23 +165,29 @@ export default function createModule(assets = productionAssets()) {
 
                     const directory = parseDirectory(pathname);
                     const home = indexDocument(pathname) === "/index.html";
-                    const search = indexDocument(pathname) === "/search/index.html";
-                    const settings = indexDocument(pathname) === "/settings/index.html";
+                    const settingsIndex = indexDocument(pathname) === "/settings/index.html";
+                    const settingsSection = parseSettingsSection(pathname, documents.settingsSections);
                     const callback = pathname === "/auth/callback";
 
-                    if (directory !== null || home || search || settings || callback) {
+                    if (directory !== null || home || settingsIndex || settingsSection !== null || callback) {
                         if (req.method !== "GET" && req.method !== "HEAD") {
                             res.setHeader("allow", "GET, HEAD");
                             throw new RequestError(405, "Method not allowed.");
                         }
                         if (directory?.kind === "daemon") {
-                            redirect(res, "/search/", headers);
+                            redirect(res, "/settings/search", headers);
+                            return;
+                        }
+                        if (settingsIndex) {
+                            const qsIndex = rawUrl.indexOf("?");
+                            const qs = qsIndex >= 0 ? rawUrl.slice(qsIndex) : "";
+                            redirect(res, `/settings/search${qs}`, headers);
                             return;
                         }
                         if (acpEndpoint === null) {
                             throw new RequestError(503, "The web client is unavailable because PLURNK_ACP_URL is invalid.");
                         }
-                        if (search && (overviewSessions === null || overviewExcerptChars === null)) {
+                        if (settingsSection === "search" && (overviewSessions === null || overviewExcerptChars === null)) {
                             throw new RequestError(503, "Search is unavailable because its overview configuration is invalid.");
                         }
                         let body;
@@ -189,19 +195,16 @@ export default function createModule(assets = productionAssets()) {
                             body = documents.home();
                         } else if (callback) {
                             body = documents.callback();
-                        } else if (search) {
-                            const params = new URL(rawUrl, "http://search.local").searchParams;
-                            body = documents.search({
-                                q: params.get("q") ?? undefined,
-                                workspace: params.get("workspace") ?? undefined,
-                                status: params.get("status") ?? undefined,
-                                kind: params.get("kind") ?? undefined,
-                            });
-                        } else if (settings) {
+                        } else if (settingsSection !== null) {
                             const params = new URL(rawUrl, "http://settings.local").searchParams;
-                            body = documents.settings({
+                            body = documents.settings(settingsSection, {
                                 workspace: params.get("workspace") ?? undefined,
                                 session: params.get("session"),
+                                q: params.get("q") ?? undefined,
+                                status: params.get("status") ?? undefined,
+                                kind: params.get("kind") ?? undefined,
+                                filterWorkspace: params.get("filterWorkspace") ?? undefined,
+                                openCreate: params.get("new") === "1",
                             });
                         } else if (directory !== null) {
                             body = documents.session(directory.workspace);

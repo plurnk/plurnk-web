@@ -368,8 +368,8 @@ test("{§web-oidc} PKCE S256 challenge, protected-resource discovery, callback c
 test("{§web-bff-auth} BFF login URLs, {returnTo} substitution, 401 redirect without OIDC discovery, and POST/GET signOut", async (t) => {
     assert.equal(buildBffLoginUrl("/auth/login", "/~/alpha#session1"), "/auth/login?returnTo=%2F%7E%2Falpha%23session1");
     assert.equal(
-        buildBffLoginUrl("/auth/login?prompt=select_account", "/search/?q=test"),
-        "/auth/login?prompt=select_account&returnTo=%2Fsearch%2F%3Fq%3Dtest",
+        buildBffLoginUrl("/auth/login?prompt=select_account", "/settings/search?q=test"),
+        "/auth/login?prompt=select_account&returnTo=%2Fsettings%2Fsearch%3Fq%3Dtest",
     );
     assert.equal(
         buildBffLoginUrl("/oauth2/start?rd={returnTo}", "/~/alpha#session1"),
