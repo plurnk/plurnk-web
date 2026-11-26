@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
+import { WEB_VERSION } from "../src/documents.js";
 import SessionAgent from "../web/session-agent.js";
 import browserDiagnostics, { httpFailure, networkFailure } from "./browser-diagnostics.js";
 import { launchBrowser } from "./engines.js";
@@ -238,7 +239,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     await sessCreateDialog.getByRole("button", { name: "Confirm", exact: true }).click();
                     await page.waitForFunction(() => document.querySelector('#workspace-tabs a[aria-current="true"]')?.getAttribute("data-tab-session") === "added-session");
 
-                    // /settings/ Rename + #about section (service version, web 4.0.0, desktop UA 1.4.2, MIT, issues link)
+                    // /settings/ Rename + #about section (service version, package web version, desktop UA 1.4.2, MIT, issues link)
                     await page.locator("#session-workspace").click();
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/");
                     const settingsArticle = page.locator("#workspace-settings");
@@ -247,7 +248,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     await settingsArticle.getByRole("link", { name: "About", exact: true }).click();
                     const aboutPanel = settingsArticle.locator('[data-settings-panel="about"]');
                     await aboutPanel.waitFor({ state: "visible" });
-                    assert.equal(await aboutPanel.locator('[data-text="about-web-version"]').textContent(), "4.0.0");
+                    assert.equal(await aboutPanel.locator('[data-text="about-web-version"]').textContent(), WEB_VERSION);
                     assert.match((await aboutPanel.locator('[data-text="about-service-version"]').textContent()) ?? "", /^\d+\.\d+\.\d+/u);
                     assert.equal(await aboutPanel.locator("[data-about-desktop-term]").isVisible(), true);
                     assert.equal(await aboutPanel.locator("[data-about-desktop-value]").isVisible(), true);
