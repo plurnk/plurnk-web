@@ -95,6 +95,150 @@
         cursor: pointer;
     }
 
+    #workspace-settings [data-settings-close] {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        padding: 0.25rem 0.5rem;
+        border-radius: var(--otm-border-radius);
+        color: var(--otm-muted-color);
+        line-height: 1;
+        text-decoration: none;
+    }
+
+    #workspace-settings [data-settings-close]:is(:hover, :focus-visible) {
+        background-color: var(--plurnk-working-surface);
+        color: var(--otm-color);
+    }
+
+    #workspace-settings [data-scope-switcher-form] > fieldset[role="group"] {
+        inline-size: auto;
+        margin: 0;
+    }
+
+    #workspace-settings [data-scope-option] {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: var(--plurnk-working-surface);
+        --otm-primary-inverse: var(--otm-color);
+
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.65);
+        font-size: 0.875em;
+        white-space: nowrap;
+    }
+
+    #workspace-settings [data-scope-option][aria-pressed="true"] {
+        --otm-primary-background: var(--otm-primary);
+        --otm-primary-hover-background: var(--otm-primary-hover);
+        --otm-primary-inverse: var(--otm-primary-inverse);
+
+        border-color: var(--otm-primary);
+        font-weight: 700;
+    }
+
+    #workspace-settings [data-providers-disclosure] {
+        margin-block: 0 var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.5) calc(var(--otm-spacing) * 0.75);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-working-surface);
+    }
+
+    #workspace-settings [data-providers-disclosure] > :where(summary) {
+        margin-block-end: 0;
+    }
+
+    #workspace-settings [data-providers-disclosure]:not([open]) > :where(summary) {
+        border-block-end: 0;
+    }
+
+    #workspace-settings [data-providers-disclosure][open] > :where(summary) {
+        margin-block-end: calc(var(--otm-spacing) * 0.75);
+    }
+
+    #workspace-settings [data-providers-list] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.6);
+    }
+
+    #workspace-settings [data-provider-card] {
+        margin: 0;
+        padding: calc(var(--otm-spacing) * 0.55) calc(var(--otm-spacing) * 0.75);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    #workspace-settings [data-provider-card] > header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        margin-block-end: calc(var(--otm-spacing) * 0.4);
+        padding: 0;
+        border: 0;
+        background-color: transparent;
+    }
+
+    #workspace-settings [data-provider-card][data-provider-ready="true"] > header > small {
+        color: var(--otm-primary);
+        font-weight: 600;
+    }
+
+    #workspace-settings [data-provider-key-form] {
+        margin: 0;
+    }
+
+    #workspace-settings [data-provider-key-form] + [data-provider-key-form] {
+        margin-block-start: calc(var(--otm-spacing) * 0.4);
+    }
+
+    #workspace-settings [data-provider-key-form] > fieldset {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin: 0;
+    }
+
+    #workspace-settings [data-provider-key-form] label {
+        flex: 0 0 auto;
+        margin: 0;
+        font-size: 0.875em;
+    }
+
+    #workspace-settings [data-provider-key-form] input[data-provider-key-input] {
+        flex: 1 1 14rem;
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    #workspace-settings [data-provider-key-form] button {
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.65);
+        font-size: 0.875em;
+    }
+
+    #workspace-settings [data-env-secret-field] {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 0.4ch;
+        margin: 0;
+        font-size: 0.875em;
+        white-space: nowrap;
+    }
+
+    #workspace-settings :is([data-mcp-secret-note], [data-mcp-workspace-secret-note]) {
+        display: block;
+        margin-block: 0 calc(var(--otm-spacing) * 0.5);
+        color: var(--otm-muted-color);
+    }
+
     #workspace-settings [data-settings-nav] a[aria-current="page"] {
         border-block-end-color: var(--otm-primary);
         font-weight: 700;
@@ -402,6 +546,9 @@
     #workspace-settings [data-settings-panel="models"][data-catalog-count="0"] [data-models-catalog-wrap],
     #workspace-settings [data-settings-panel="models"]:not([data-catalog-count="0"]) [data-models-catalog-empty],
     #workspace-settings tr[data-model-session-usable="false"] [data-model-use-session],
+    #workspace-settings tr[data-alias-default="true"] [data-model-set-default],
+    #workspace-settings [data-provider-key-form][data-key-configured="false"] [data-provider-key-clear],
+    #workspace-settings [data-provider-key-form][data-key-editable="false"] :is([data-provider-key-save], [data-provider-key-clear]),
     #workspace-settings [data-family-count="0"] > [data-family-table-wrap],
     #workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
     #workspace-settings [data-settings-panel="env"]:has([data-env-panel]:not([data-env-count="0"])) > [data-env-empty],
@@ -411,7 +558,11 @@
     #workspace-settings tr[data-family-state="disabled"] [data-family-disable],
     #workspace-settings tr[data-family-removable="false"] [data-family-remove],
     #workspace-settings tr[data-family-auth="false"] [data-family-authorize],
+    #workspace-settings tr[data-family-session-usable="false"] [data-family-use-session],
     #workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
+    #workspace-settings [data-env-set-form]:not([data-env-scope="service"]) [data-env-secret-field],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-scope="service"]) [data-mcp-secret-fields],
+    #workspace-settings [data-mcp-save-form]:not([data-mcp-scope="workspace"]) [data-mcp-workspace-secret-note],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],

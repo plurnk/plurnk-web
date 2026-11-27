@@ -705,6 +705,93 @@ export async function sessionEffort(call, selection) {
     };
 }
 
+/**
+ * @typedef {{
+ *   readonly key: string,
+ *   readonly secret: boolean,
+ *   readonly configured: boolean,
+ *   readonly origin?: string,
+ *   readonly source?: string,
+ *   readonly value?: string,
+ *   readonly editable: boolean,
+ * }} ProviderCredentialKey
+ * @typedef {{
+ *   readonly provider: string,
+ *   readonly providerName: string,
+ *   readonly ready: boolean,
+ *   readonly readiness: string,
+ *   readonly credentialKeys: readonly ProviderCredentialKey[],
+ *   readonly baseUrlKey?: ProviderCredentialKey,
+ * }} ModelProviderSummary
+ */
+
+/** @param {unknown} raw @returns {ProviderCredentialKey | null} */
+function parseProviderKey(raw) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+    const rec = /** @type {Record<string, unknown>} */ (raw);
+    if (typeof rec.key !== "string" || rec.key.length === 0) return null;
+    return {
+        key: rec.key,
+        secret: rec.secret === true,
+        configured: rec.configured === true,
+        ...(typeof rec.origin === "string" && rec.origin ? { origin: rec.origin } : {}),
+        ...(typeof rec.source === "string" && rec.source ? { source: rec.source } : {}),
+        ...(typeof rec.value === "string" ? { value: rec.value } : {}),
+        editable: rec.editable !== false,
+    };
+}
+
+/**
+ * {§web-workspace-settings} List known model providers and their credential readiness without exposing secrets.
+ * Returns `null` when the connected daemon does not yet expose `models.providers`.
+ * @param {Action} call
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<readonly ModelProviderSummary[] | null>}
+ */
+export async function listModelProviders(call, signal) {
+    let raw;
+    try {
+        raw = await call("models.providers", {}, signal);
+    } catch (error) {
+        const status = Reflect.get(Object(error), "status");
+        if (status === 404 || status === 400 || status === 501) return null;
+        throw error;
+    }
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+    const rec = /** @type {Record<string, unknown>} */ (raw);
+    if (!Array.isArray(rec.providers)) return null;
+    /** @type {ModelProviderSummary[]} */
+    const out = [];
+    for (const item of rec.providers) {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+        const entry = /** @type {Record<string, unknown>} */ (item);
+        if (typeof entry.provider !== "string" || entry.provider.length === 0) continue;
+        const credentialKeys = Array.isArray(entry.credentialKeys)
+            ? entry.credentialKeys.map(parseProviderKey).filter(/** @returns {v is ProviderCredentialKey} */ (v) => v !== null)
+            : [];
+        const baseUrlKey = parseProviderKey(entry.baseUrlKey) ?? undefined;
+        out.push({
+            provider: entry.provider,
+            providerName: typeof entry.providerName === "string" && entry.providerName ? entry.providerName : entry.provider,
+            ready: entry.ready === true,
+            readiness: typeof entry.readiness === "string" ? entry.readiness : "",
+            credentialKeys,
+            ...(baseUrlKey === undefined ? {} : { baseUrlKey }),
+        });
+    }
+    return out;
+}
+
+/** @param {Action} call @param {string} key @param {string} value */
+export function setServiceConfig(call, key, value) {
+    return call("service.config.set", { key, value });
+}
+
+/** @param {Action} call @param {string} key */
+export function unsetServiceConfig(call, key) {
+    return call("service.config.unset", { key });
+}
+
 /** @param {Action} call @param {"persona" | "child" | "mode"} configId @param {string} [selection] */
 export async function sessionConfigOption(call, configId, selection) {
     const response = /** @type {{configOptions?: Array<{configId?: string, currentValue?: unknown, options?: unknown}>}} */ (

@@ -98,12 +98,12 @@
         <li data-command-name="cancel"><code data-i18n="command-cancel-usage">/cancel [@id]</code> <span data-i18n="command-cancel-summary">Cancel a pending gate.</span></li>
         <li data-command-name="edit"><code data-i18n="command-edit-usage">/edit [@id] &lt;body…&gt;</code> <span data-i18n="command-edit-summary">Approve a pending proposal with an edited body.</span></li>
         <li data-command-name="answer"><code data-i18n="command-answer-usage">/answer [@id] &lt;json&gt;</code> <span data-i18n="command-answer-summary">Submit a structured answer to a pending elicitation gate.</span></li>
-        <li data-command-name="mcp"><code data-i18n="command-mcp-usage">/mcp [list|discover|add|replace|enable|disable|remove|oauth|skills|complete] …</code> <span data-i18n="command-mcp-summary">Inspect or manage workspace MCP servers.</span></li>
-        <li data-command-name="skills"><code data-i18n="command-skills-usage">/skills [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-skills-summary">Inspect or manage workspace skills.</span></li>
+        <li data-command-name="mcp"><code data-i18n="command-mcp-usage">/mcp [--scope service|workspace] [list|discover|add|replace|enable|disable|remove|oauth|skills|complete] …</code> <span data-i18n="command-mcp-summary">Inspect or manage service or workspace MCP servers.</span></li>
+        <li data-command-name="skills"><code data-i18n="command-skills-usage">/skills [--scope service|workspace] [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-skills-summary">Inspect or manage service or workspace skills.</span></li>
         <li data-command-name="schedule"><code data-i18n="command-schedule-usage">/schedule [list|inspect|discover|add|replace|run|done|reopen|enable|disable|remove] …</code> <span data-i18n="command-schedule-summary">Inspect, run, or manage workspace schedules and macros.</span></li>
-        <li data-command-name="personas"><code data-i18n="command-personas-usage">/personas [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-personas-summary">Inspect or manage workspace personas.</span></li>
+        <li data-command-name="personas"><code data-i18n="command-personas-usage">/personas [--scope service|workspace] [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-personas-summary">Inspect or manage service or workspace personas.</span></li>
         <li data-command-name="members"><code data-i18n="command-members-usage">/members [list|discover|add|enable|disable|remove] …</code> <span data-i18n="command-members-summary">Inspect or manage workspace file membership.</span></li>
-        <li data-command-name="env"><code data-i18n="command-env-usage">/env [--scope session|workspace] [list|set|unset] …</code> <span data-i18n="command-env-summary">Inspect or manage session or workspace environment variables.</span></li>
+        <li data-command-name="env"><code data-i18n="command-env-usage">/env [--scope service|session|workspace] [list|set|unset] …</code> <span data-i18n="command-env-summary">Inspect or manage service, workspace, or session environment variables.</span></li>
         <li data-command-name="learn"><code data-i18n="command-learn-usage">/learn [--scope project|plurnk] [instructions]</code> <span data-i18n="command-learn-summary">Ask the session to distill reusable work into a project or Plurnk skill.</span></li>
         <li data-command-name="yolo"><code data-i18n="command-yolo-usage">/yolo</code> <span data-i18n="command-yolo-summary">Toggle session automatic approval (review / accept).</span></li>
         <li data-command-name="stop"><code data-i18n="command-stop-usage">/stop</code> <span data-i18n="command-stop-summary">Request cancellation of this session's active work.</span></li>
@@ -154,21 +154,23 @@
                 <tbody></tbody>
             </table>
         </figure>
-        <form data-env-set-form>
+        <form data-env-set-form data-env-scope="workspace">
             <fieldset data-bind="disabled:env-busy">
                 <select name="scope" aria-label="Variable scope">
-                    <option value="session" data-i18n="env-scope-session">Session</option>
+                    <option value="service" data-i18n="env-scope-service">Service</option>
                     <option value="workspace" data-i18n="env-scope-workspace">Workspace</option>
+                    <option value="session" data-i18n="env-scope-session">Session</option>
                 </select>
                 <input type="text" name="alias" placeholder="NAME" aria-label="Variable name" autocomplete="off" spellcheck="false" required>
                 <input type="password" name="value" placeholder="Value" aria-label="Variable value" autocomplete="off">
+                <label data-env-secret-field><input type="checkbox" name="secret" value="1" aria-label="Secret (MCP only)"> <span data-i18n="env-secret-label">Secret (MCP only)</span></label>
                 <button type="submit" data-i18n="env-set">Set</button>
             </fieldset>
         </form>
     </section>
 </template>
 <template id="command-env-row">
-    <tr data-env-removable="true" data-env-enabled="true">
+    <tr data-env-removable="true" data-env-enabled="true" data-env-secret="false">
         <th scope="row"><code data-text="env-alias">VARIABLE</code></th>
         <td data-text="env-origin">session</td>
         <td data-text="env-status">active</td>

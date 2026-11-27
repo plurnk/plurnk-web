@@ -318,10 +318,18 @@
     }
 
     /* {§web-workspace-settings} Dedicated workspace settings and about page layout. */
+    #workspace-settings > header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--otm-spacing);
+    }
+
     #workspace-settings-title {
         display: inline-flex;
         align-items: center;
         gap: 0.4ch;
+        margin: 0;
     }
 
     #workspace-settings-title > img {

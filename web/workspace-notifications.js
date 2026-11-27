@@ -6,6 +6,7 @@ import { hasActiveOidcGrant, onOidcGrantChange, recoverFromUnauthorized } from "
 import { isRetryableObservationFailure } from "./passive-reconnect.js";
 
 export const NOTIFICATION_EVENT_LIST = [
+    "config/changed",
     "workspace/created",
     "workspace/renamed",
     "workspace/archived",

@@ -31,6 +31,13 @@ const SECTIONS = /** @type {const} */ ([
 ]);
 const FAMILY_SECTIONS = new Set(["mcp", "skills", "schedule", "personas", "members", "env"]);
 const SUBSYSTEM_TEMPLATE_SECTIONS = new Set(["models", "mcp", "skills", "personas", "members", "env", "help"]);
+const SERVICE_CAPABLE_SECTIONS = new Set(["models", "mcp", "skills", "personas", "env"]);
+
+/** @typedef {"service" | "workspace" | "session"} SettingsScope */
+
+/** @param {string | null} value @returns {SettingsScope | undefined} */
+const parseScopeParam = (value) =>
+    value === "service" || value === "workspace" || value === "session" ? value : undefined;
 
 /** @param {unknown} value @returns {value is SettingsSection} */
 export const isSettingsSection = (value) =>
@@ -59,7 +66,9 @@ function declaredSettingsSections(article) {
  *   readonly activeSection?: string,
  *   readonly initialQuery?: string,
  *   readonly initialHelpFilter?: string,
- *   readonly initialEnvScope?: "workspace" | "session",
+ *   readonly initialScope?: SettingsScope,
+ *   readonly initialEnvScope?: "service" | "workspace" | "session",
+ *   readonly initialLoading?: boolean,
  *   readonly openCreate?: boolean,
  *   readonly preloadedWorkspaces?: readonly WorkspaceSummary[],
  * }} [options]
@@ -68,7 +77,9 @@ export async function createWorkspaceSettingsController(article, getContext, {
     activeSection: suppliedSection,
     initialQuery = "",
     initialHelpFilter = "",
+    initialScope,
     initialEnvScope = "workspace",
+    initialLoading = false,
     openCreate = false,
     preloadedWorkspaces,
 } = {}) {
@@ -77,7 +88,8 @@ export async function createWorkspaceSettingsController(article, getContext, {
     /** @type {Element | null} */
     let envPanel = null;
     let busy = false;
-    let refreshDepth = 0;
+    let refreshDepth = initialLoading ? 1 : 0;
+    let pendingInitialLoad = initialLoading;
     let mounted = false;
 
     /** @type {ReturnType<typeof import("./workspace-settings-session.js").mountWorkspaceAndSessionSettings> | null} */
@@ -190,10 +202,17 @@ export async function createWorkspaceSettingsController(article, getContext, {
 
     /** @param {boolean} [usePreloaded] */
     async function refreshActiveSection(usePreloaded = false) {
+        const releaseInitialLoad = () => {
+            if (!pendingInitialLoad) return;
+            pendingInitialLoad = false;
+            refreshDepth = Math.max(0, refreshDepth - 1);
+            syncLoadingState();
+        };
         if (!isSectionAvailable(activeSection)) {
             const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
             if (activePanel instanceof HTMLElement) activePanel.hidden = true;
             if (!busy) setFeedback(false, "This settings section is unavailable for this workspace.", "", "warning");
+            releaseInitialLoad();
             return;
         }
         const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
@@ -201,11 +220,13 @@ export async function createWorkspaceSettingsController(article, getContext, {
 
         if (!isSettingsSection(activeSection) || activeSection === "search") {
             if (!busy) setFeedback(false, "", "", "idle");
+            releaseInitialLoad();
             return;
         }
         if (activeSection === "help") {
             modelsHelpAboutController?.applyHelpFilter();
             if (!busy) setFeedback(false, "", "", "idle");
+            releaseInitialLoad();
             return;
         }
         if (activeSection === "about") {
@@ -216,11 +237,16 @@ export async function createWorkspaceSettingsController(article, getContext, {
                 modelsHelpAboutController?.syncAboutPanel();
             }
             if (!busy) setFeedback(false, "", "", "idle");
+            releaseInitialLoad();
             return;
         }
         const ctx = getContext();
-        if (activeSection !== "workspaces" && ctx.workspaceId <= 0) {
+        const allowsWithoutWorkspace = activeSection === "workspaces"
+            || activeSection === "models"
+            || (SERVICE_CAPABLE_SECTIONS.has(activeSection) && familiesEnvController?.currentScope() === "service");
+        if (!allowsWithoutWorkspace && ctx.workspaceId <= 0) {
             if (!busy) setFeedback(false, "", "", "idle");
+            releaseInitialLoad();
             return;
         }
         if (!busy) {
@@ -257,6 +283,10 @@ export async function createWorkspaceSettingsController(article, getContext, {
             }
         } finally {
             refreshDepth = Math.max(0, refreshDepth - 1);
+            if (pendingInitialLoad) {
+                pendingInitialLoad = false;
+                refreshDepth = Math.max(0, refreshDepth - 1);
+            }
             syncLoadingState();
         }
     }
@@ -392,7 +422,8 @@ export async function createWorkspaceSettingsController(article, getContext, {
                 isBusy: () => busy,
                 invokeModelSearch,
                 envPanel,
-                initialEnvScope,
+                activeFamily: activeSection,
+                initialScope: initialScope ?? (activeSection === "env" ? initialEnvScope : undefined),
                 onRenderScheduleList: (res) => { schedulePanelController?.renderList(res); },
                 onRefreshSection: () => refreshActiveSection(false),
                 onRefreshEnv: () => refreshActiveSection(false),
@@ -402,8 +433,42 @@ export async function createWorkspaceSettingsController(article, getContext, {
         const offPolicy = onDaemonPolicy(() => { syncPolicyVisibility(); });
         syncPolicyVisibility();
 
+        const navigateClose = () => {
+            const closeLink = $(article, "a[data-settings-close]");
+            const href = closeLink instanceof HTMLAnchorElement ? closeLink.getAttribute("href") : null;
+            if (href) location.assign(href);
+        };
+
+        const offEscape = on.target(document, "keydown", (event) => {
+            if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || event.defaultPrevented) return;
+            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if ($("dialog[open]") || $(article, '[role="combobox"][aria-expanded="true"]')) return;
+            const target = event.target;
+            if (
+                target instanceof HTMLInputElement
+                || target instanceof HTMLTextAreaElement
+                || target instanceof HTMLSelectElement
+                || (target instanceof HTMLElement && target.isContentEditable)
+            ) {
+                return;
+            }
+            event.preventDefault();
+            navigateClose();
+        });
+
+        const settingsMain = article.closest('main[data-page="settings"]');
+        const offBackdrop = on.target(document, "click", (event) => {
+            if (!(event instanceof MouseEvent) || event.button !== 0 || event.defaultPrevented) return;
+            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if (settingsMain && event.target === settingsMain) {
+                navigateClose();
+            }
+        });
+
         on.target(getContext().signal, "abort", () => {
             offPolicy();
+            offEscape();
+            offBackdrop();
             sessionController?.dispose();
             modelsHelpAboutController?.dispose();
             familiesEnvController?.dispose();
@@ -446,6 +511,7 @@ export async function createWorkspaceSettingsController(article, getContext, {
             if (
                 familyOrTopic === "resync"
                 || familyOrTopic === activeSection
+                || (familyOrTopic === "config" && activeSection === "models")
                 || (familyOrTopic === "workspaces" && activeSection === "workspaces")
                 || (familyOrTopic === "sessions" && activeSection === "sessions")
                 || (familyOrTopic === "policy" && (activeSection === "sessions" || activeSection === "models"))
@@ -481,6 +547,12 @@ export default async function observeWorkspaceSettings(main) {
     const openCreate = main.dataset.openCreate === "true" || queryParams.get("new") === "1";
     const preseededWorkspaceId = main.dataset.workspaceId ?? "";
     const isPreseededFixture = /^[1-9]\d*$/u.test(preseededWorkspaceId) && main.dataset.live !== "true";
+    const initialScope = parseScopeParam(queryParams.get("scope"))
+        ?? (activeSection === "env" ? parseScopeParam(queryParams.get("envScope")) : undefined);
+    const tracksInitialLoad = !isPreseededFixture && !(activeSection === "search" && (queryParams.get("workspace") ?? main.dataset.workspaceName ?? "") === "");
+    if (tracksInitialLoad) {
+        the(article, "ws-settings-loading", "true");
+    }
 
     let workspaceId = isPreseededFixture ? Number(preseededWorkspaceId) : 0;
     let currentWorkspaceName = queryParams.get("workspace") ?? main.dataset.workspaceName ?? "";
@@ -517,19 +589,25 @@ export default async function observeWorkspaceSettings(main) {
             if (tabLink.getAttribute("href") !== nextHref) tabLink.setAttribute("href", nextHref);
         }
         const backLink = $("[data-settings-back]");
-        if (backLink && wsName) {
+        const closeLink = $(article, "[data-settings-close]");
+        if (wsName) {
             const backPath = sessName !== null
                 ? directoryPath({ kind: "session", workspace: wsName, session: sessName })
                 : directoryPath({ kind: "workspace", workspace: wsName });
             if (backPath !== null) {
-                the(backLink, {
-                    "workspace-name": wsName,
-                    "workspace-back-path": backPath,
-                    ...(marker?.icon ? { "workspace-icon": marker.icon } : {}),
-                    ...(marker?.iconLabel ? { "workspace-icon-label": marker.iconLabel } : {}),
-                });
+                if (backLink) {
+                    the(backLink, {
+                        "workspace-name": wsName,
+                        "workspace-back-path": backPath,
+                        ...(marker?.icon ? { "workspace-icon": marker.icon } : {}),
+                        ...(marker?.iconLabel ? { "workspace-icon-label": marker.iconLabel } : {}),
+                    });
+                }
+                if (closeLink) {
+                    the(closeLink, { "workspace-back-path": backPath });
+                }
             }
-            const backSess = $(backLink, "[data-settings-back-session]");
+            const backSess = backLink ? $(backLink, "[data-settings-back-session]") : null;
             if (sessName !== null && backSess instanceof HTMLElement) {
                 backSess.hidden = false;
                 the(backSess, "active-session-name", sessName);
@@ -558,8 +636,10 @@ export default async function observeWorkspaceSettings(main) {
             if (!matchedWorkspace) {
                 const allowWithoutWorkspace = activeSection === "search"
                     || activeSection === "workspaces"
+                    || activeSection === "models"
                     || activeSection === "help"
                     || activeSection === "about"
+                    || (SERVICE_CAPABLE_SECTIONS.has(activeSection) && initialScope === "service")
                     || !isSettingsSection(activeSection);
                 if (currentWorkspaceName !== "" || !allowWithoutWorkspace) {
                     renderInPageError(main, 404, "Workspace not found.");
@@ -719,7 +799,9 @@ export default async function observeWorkspaceSettings(main) {
         activeSection,
         initialQuery: queryParams.get("q") ?? "",
         initialHelpFilter: queryParams.get("cmd") ?? "",
-        initialEnvScope: queryParams.get("envScope") === "session" ? "session" : "workspace",
+        initialScope,
+        initialEnvScope: parseScopeParam(queryParams.get("envScope")) ?? "workspace",
+        initialLoading: tracksInitialLoad,
         openCreate,
         preloadedWorkspaces,
     });
@@ -771,8 +853,16 @@ export default async function observeWorkspaceSettings(main) {
                 controller.notifyChanged("workspaces");
                 return;
             }
+            if (event === "config/changed") {
+                controller.notifyChanged("config");
+                return;
+            }
             if (event === "workspace/created" || event === "workspace/archived") {
                 controller.notifyChanged("workspaces");
+                return;
+            }
+            if (event === "functionality/changed" && typeof data.family === "string" && notifWorkspaceId === null) {
+                controller.notifyChanged(data.family);
                 return;
             }
             if (notifWorkspaceId !== workspaceId && event !== "notifications/resync") return;

@@ -4,7 +4,7 @@ import { isRecord } from "./session-translator.js";
 /**
  * {§web-session-commands} {§web-workspace-settings} Extracts effective environment entries without exposing secret values.
  * @param {unknown} res
- * @param {"session" | "workspace"} fallbackOrigin
+ * @param {"service" | "session" | "workspace"} fallbackOrigin
  */
 export function extractEnvEntries(res, fallbackOrigin) {
     if (!isRecord(res)) return [];
@@ -20,7 +20,8 @@ export function extractEnvEntries(res, fallbackOrigin) {
         const source = isRecord(item.provenance) && typeof item.provenance.source === "string" && item.provenance.source.length > 0
             ? item.provenance.source
             : "";
-        return [{ alias, origin, state, source }];
+        const secret = isRecord(item.definition) && item.definition.secret === true;
+        return [{ alias, origin, state, source, secret }];
     });
 }
 
@@ -28,18 +29,21 @@ export function extractEnvEntries(res, fallbackOrigin) {
  * {§web-session-commands} {§web-workspace-settings} Reconciles a `#command-env` panel in place.
  * @param {Element} panel
  * @param {unknown} res
- * @param {"session" | "workspace"} listScope
+ * @param {"service" | "session" | "workspace"} listScope
  */
 export function populateEnvPanel(panel, res, listScope) {
     const tbody = $(panel, "tbody");
     if (!tbody) throw new Error("Environment panel template is incomplete.");
     const entries = extractEnvEntries(res, listScope);
     $.cloneEach(tbody, "#command-env-row", entries, (tr, entry) => {
+        const removable = entry.origin === listScope || (listScope === "session" && entry.origin === "workspace");
+        const statusBase = entry.secret ? `secret · ${entry.state}` : entry.state;
         the(tr, {
             "env-alias": entry.alias,
             "env-origin": entry.origin,
-            "env-status": entry.source ? `${entry.state} (${entry.source})` : entry.state,
-            "env-removable": entry.origin === "session" || entry.origin === "workspace" ? "true" : "false",
+            "env-status": entry.source ? `${statusBase} (${entry.source})` : statusBase,
+            "env-secret": entry.secret ? "true" : "false",
+            "env-removable": removable ? "true" : "false",
             "env-enabled": entry.state !== "disabled" ? "true" : "false",
         });
     });

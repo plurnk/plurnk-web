@@ -117,8 +117,24 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             );
             assert.doesNotMatch(await envPanel.textContent(), /ultra-secret-overview-token/u);
 
+            // Switch to Service scope on Environment: save a service-only encrypted secret and verify it never appears in Workspace scope
+            await envPanel.locator('[data-scope-option="service"]').click();
+            await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"]')?.getAttribute("data-panel-scope") === "service");
+            await envDisclosure.locator("> summary").click();
+            await envDisclosure.getByRole("textbox", { name: "Variable name", exact: true }).fill("SVC_MCP_SECRET");
+            await envDisclosure.getByLabel("Variable value", { exact: true }).fill("sk-live-service-secret-e2e");
+            await envDisclosure.getByRole("checkbox", { name: "Secret (MCP only)", exact: true }).check();
+            await envDisclosure.getByRole("button", { name: "Set", exact: true }).click();
+            await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="SVC_MCP_SECRET"]') !== null);
+            assert.doesNotMatch(await envPanel.textContent(), /sk-live-service-secret-e2e/u);
+            assert.match(await envPanel.locator('tr[data-env-alias="SVC_MCP_SECRET"]').textContent(), /secret/u);
+            await envPanel.locator('[data-scope-option="workspace"]').click();
+            await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"]')?.getAttribute("data-panel-scope") === "workspace");
+            await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
+            assert.equal(await envPanel.locator('tr[data-env-alias="SVC_MCP_SECRET"]').count(), 0, "Service secret never appears in Workspace env");
+
             assert.equal(resumedSessions.length, 0, "0-session workspace mutations never attach or create a session");
-            await page.locator("[data-settings-back]").click();
+            await page.locator("[data-settings-close]").click();
             await page.locator("#workspace-empty").waitFor({ state: "visible" });
 
             // 4. Create session "session1", jump to /settings/personas from `/personas list`, then configure persona + approval mode on /settings/sessions without session/resume!

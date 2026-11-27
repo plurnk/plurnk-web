@@ -231,7 +231,7 @@ export default async function verifyCommands(t) {
                     assert.deepEqual((await suggest("/schedule run ")).items, ["nightly"]);
                     assert.deepEqual((await suggest("/schedule add deploy --m")).items, ["--manual"]);
                     assert.deepEqual((await suggest("/schedule replace nightly --st")).items, ["--step"]);
-                    assert.deepEqual((await suggest("/env --scope ")).items, ["session", "workspace"]);
+                    assert.deepEqual((await suggest("/env --scope ")).items, ["service", "session", "workspace"]);
                     assert.equal(await accept("/env --scope ", "session"), "/env --scope session ");
                     assert.deepEqual((await suggest("/env unset ")).items, ["API_TOKEN"]);
                     assert.deepEqual((await suggest("/accept ")).items, ["@gate-42"]);

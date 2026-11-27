@@ -75,6 +75,20 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     /** @type {any[]} */
                     let memberDefs = [];
                     /** @type {any[]} */
+                    let serviceEnv = [
+                        { alias: "SVC_SHARED", origin: "service", state: "dormant", definition: { value: "shared-val" } },
+                    ];
+                    /** @type {any[]} */
+                    let serviceMcpDefs = [
+                        {
+                            alias: "svc-git",
+                            origin: "service",
+                            state: "dormant",
+                            definition: { type: "stdio", command: "git-mcp", args: ["--read-only"] },
+                        },
+                    ];
+                    let providerConfigured = false;
+                    /** @type {any[]} */
                     let workspaceEnv = [
                         { alias: "WS_TOKEN", origin: "workspace", state: "active", provenance: { source: ".env" }, definition: { value: "ws-secret-value" } },
                     ];
@@ -460,6 +474,40 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                     },
                                 };
                             }
+                            case "models.providers":
+                                return {
+                                    result: {
+                                        providers: [{
+                                            provider: "openrouter",
+                                            providerName: "OpenRouter",
+                                            ready: providerConfigured,
+                                            readiness: providerConfigured ? "ready" : "Missing OPENROUTER_API_KEY",
+                                            credentialKeys: [{
+                                                key: "OPENROUTER_API_KEY",
+                                                secret: true,
+                                                configured: providerConfigured,
+                                                ...(providerConfigured ? { origin: "service" } : {}),
+                                                editable: true,
+                                            }],
+                                        }],
+                                    },
+                                };
+                            case "service.config.set":
+                                if (params?.key === "OPENROUTER_API_KEY") providerConfigured = true;
+                                return { result: { key: params?.key, status: "applied" } };
+                            case "service.config.unset":
+                                if (params?.key === "OPENROUTER_API_KEY") providerConfigured = false;
+                                return { result: { key: params?.key, status: "removed" } };
+                            case "service.mcp.list":
+                                return pageFamilyList("mcp", serviceMcpDefs, params);
+                            case "service.mcp.replace": {
+                                const { alias, ...def } = params;
+                                serviceMcpDefs = [...serviceMcpDefs.filter((d) => d.alias !== alias), { alias, origin: "service", state: "dormant", definition: def }];
+                                return { result: { status: 201 } };
+                            }
+                            case "service.mcp.remove":
+                                serviceMcpDefs = serviceMcpDefs.filter((d) => d.alias !== params.alias);
+                                return { result: { status: 200 } };
                             case "workspace.mcp.list":
                                 return pageFamilyList("mcp", mcpDefs, params);
                             case "workspace.mcp.enable":
@@ -805,10 +853,25 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                             case "workspace.members.remove":
                                 memberDefs = memberDefs.filter((d) => d.alias !== params.file);
                                 return { result: { status: 200, family: "members", alias: params.file, removed: true } };
+                            case "service.env.list":
+                                return pageFamilyList("env", serviceEnv, params);
+                            case "service.env.replace": {
+                                const alias = String(params?.alias ?? "");
+                                const isSecret = params?.secret === true;
+                                serviceEnv = [
+                                    ...serviceEnv.filter((d) => d.alias !== alias),
+                                    { alias, origin: "service", state: "dormant", definition: isSecret ? { secret: true } : { value: String(params?.value ?? "") } },
+                                ];
+                                return { result: { status: 201 } };
+                            }
+                            case "service.env.remove":
+                                serviceEnv = serviceEnv.filter((d) => d.alias !== params.alias);
+                                return { result: { status: 200 } };
                             case "workspace.env.list":
                                 return pageFamilyList("env", workspaceEnv, params);
                             case "session.env.list":
                                 return pageFamilyList("env", [...workspaceEnv, ...sessionEnv], params);
+                            case "service.env.discover":
                             case "workspace.env.discover":
                             case "session.env.discover":
                                 return {
@@ -1140,20 +1203,65 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     assert.deepEqual(requests.find((r) => r.params?.kind === "workspace.members.remove").params.params, { file: "docs/**" });
 
-                    // Workspace-only Environment: locked to workspace scope, hides session scope selector, supports discovery prefill, never leaks secret values
+                    // Workspace-only Environment: hides Session scope option, exposes Service secret flag only at Service scope, supports discovery prefill, never leaks secret values
                     await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/env");
                     const envSection = settingsArticle.locator('[data-settings-panel="env"]');
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="env"] tbody tr').length === 1);
-                    assert.equal(await envSection.locator("[data-ws-env-scope-form]").isVisible(), false, "Workspace-only mode hides session env scope switcher");
+                    assert.equal(await envSection.locator('[data-scope-option="session"]').isVisible(), false, "Workspace-only mode hides session env scope button");
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value/u);
                     const envDisclosure = envSection.locator('details[data-family-disclosure="env"]');
                     await envDisclosure.locator("> summary").click();
+                    assert.equal(await envDisclosure.locator("[data-env-secret-field]").isVisible(), false, "Workspace env hides Secret checkbox");
                     await envDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
                     await envDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
                     await envDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     assert.equal(await envDisclosure.locator('[data-env-set-form] input[name="alias"]').inputValue(), "PLURNK_LOG_LEVEL");
-                    await envDisclosure.locator("> summary").click();
+                    // Switch to Service scope: Secret checkbox appears and submits secret: true
+                    await envSection.locator('[data-scope-option="service"]').click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"]')?.getAttribute("data-panel-scope") === "service");
+                    assert.equal(await envDisclosure.locator("[data-env-secret-field]").isVisible(), true, "Service env reveals Secret checkbox");
+                    await envDisclosure.locator('[data-env-set-form] input[name="alias"]').fill("GITHUB_TOKEN");
+                    await envDisclosure.locator('[data-env-set-form] input[name="value"]').fill("ghp_top_secret_unit");
+                    await envDisclosure.locator('[data-env-set-form] input[name="secret"]').check();
+                    await envDisclosure.locator('[data-env-set-form] button[type="submit"]').click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="GITHUB_TOKEN"]') !== null);
+                    assert.doesNotMatch(await envSection.textContent(), /ghp_top_secret_unit/u);
+                    assert.match(await envSection.locator('tr[data-env-alias="GITHUB_TOKEN"]').textContent(), /secret/u);
+                    const secretReq = requests.findLast((r) => r.params?.kind === "service.env.replace");
+                    assert.deepEqual(secretReq?.params?.params, { alias: "GITHUB_TOKEN", value: "ghp_top_secret_unit", secret: true });
+                    // Switch to Service MCP: secret helper fields save service.env secret + bind ${NAME}; Workspace MCP hides them and displays isolation note
+                    await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/mcp");
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
+                    const mcpScopePanel = settingsArticle.locator('[data-settings-panel="mcp"]');
+                    const mcpScopeDisc = mcpScopePanel.locator('details[data-family-disclosure="mcp"]');
+                    await mcpScopeDisc.locator("> summary").click();
+                    assert.equal(await mcpScopeDisc.locator("[data-mcp-secret-fields]").isVisible(), false, "Workspace MCP hides secret key fields");
+                    assert.equal(await mcpScopeDisc.locator("[data-mcp-workspace-secret-note]").isVisible(), true, "Workspace MCP shows service-scope secret note");
+                    await mcpScopePanel.locator('[data-scope-option="service"]').click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="mcp"]')?.getAttribute("data-panel-scope") === "service");
+                    assert.equal(await mcpScopeDisc.locator("[data-mcp-secret-fields]").isVisible(), true, "Service MCP shows secret key fields");
+                    await mcpScopeDisc.locator('select[name="transport"]').selectOption("streamable-http");
+                    await mcpScopeDisc.locator('input[name="alias"]').fill("svc-github");
+                    await mcpScopeDisc.locator('input[name="url"]').fill("https://api.githubcopilot.com/mcp");
+                    await mcpScopeDisc.locator('input[name="secretName"]').fill("GH_MCP_KEY");
+                    await mcpScopeDisc.locator('input[name="secretValue"]').fill("ghp_mcp_secret_99");
+                    await mcpScopeDisc.getByRole("button", { name: "Save server", exact: true }).click();
+                    await page.waitForFunction(() => [...document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr')].some((tr) => tr.textContent?.includes("svc-github")));
+                    assert.deepEqual(
+                        requests.findLast((r) => r.params?.kind === "service.env.replace")?.params?.params,
+                        { alias: "GH_MCP_KEY", value: "ghp_mcp_secret_99", secret: true },
+                    );
+                    assert.deepEqual(
+                        requests.findLast((r) => r.params?.kind === "service.mcp.replace")?.params?.params,
+                        {
+                            alias: "svc-github",
+                            type: "streamable-http",
+                            url: "https://api.githubcopilot.com/mcp",
+                            authorization: { type: "bearer", token: "${GH_MCP_KEY}" },
+                        },
+                    );
 
                     // Help tab renders keyboard shortcuts and live-filterable slash commands
                     await settingsArticle.getByRole("link", { name: "Help", exact: true }).click();
@@ -1500,11 +1608,31 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/small"));
                     assert.equal(activeSessionModel, "local");
 
-                    // Switch to Environment in Session mode and verify session listing scope
+                    // Providers & API keys disclosure saves via service.config.set and clears via service.config.unset
+                    const providersDisc = modelsPanel.locator("details[data-providers-disclosure]");
+                    assert.equal(await providersDisc.isVisible(), true);
+                    await providersDisc.locator("> summary").click();
+                    const openrouterForm = providersDisc.locator("form[data-provider-key-form]").first();
+                    await openrouterForm.locator("input[data-provider-key-input]").fill("sk-or-unit-test-key");
+                    await openrouterForm.getByRole("button", { name: "Save", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("Saved OPENROUTER_API_KEY"));
+                    assert.deepEqual(
+                        requests.findLast((r) => r.params?.kind === "service.config.set")?.params?.params,
+                        { key: "OPENROUTER_API_KEY", value: "sk-or-unit-test-key" },
+                    );
+
+                    // Personas 1-click Use in session
+                    await settingsArticle.getByRole("link", { name: "Personas", exact: true }).click();
+                    await page.waitForURL((url) => new URL(url).pathname === "/settings/personas");
+                    await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="personas"] [data-family-rows] tr').length >= 1);
+                    await settingsArticle.locator('[data-settings-panel="personas"] [data-family-rows] tr').first().getByRole("button", { name: "Use in session", exact: true }).click();
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("Persona: auditor"));
+
+                    // Switch to Environment in Session mode and verify session listing scope via unified scope switcher
                     await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/env");
-                    await envSection.locator("[data-ws-env-scope-form]").waitFor({ state: "visible" });
-                    await envSection.getByRole("combobox", { name: "Environment listing scope", exact: true }).selectOption("session");
+                    await envSection.locator('[data-scope-option="session"]').waitFor({ state: "visible" });
+                    await envSection.locator('[data-scope-option="session"]').click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="env"] tbody tr').length === 2);
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value|sess-secret-value/u);
 

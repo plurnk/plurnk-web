@@ -90,7 +90,7 @@ test("{§web-workspace-settings} {§web-workspace-creation} {§web-workspace-ren
     const documents = new Documents(SHELL);
     const wsHtml = documents.settings("workspaces", { workspace: "alpha", session: "session1" }).toString();
     assert.match(wsHtml, /<title data-text="page-title">alpha · Workspaces — Plurnk<\/title>/u);
-    assert.match(wsHtml, /<h1 id="workspace-settings-title"><span aria-hidden="true">🐹<\/span> <span>Plurnk<\/span><\/h1>/u);
+    assert.match(wsHtml, /<h1 id="workspace-settings-title"><span aria-hidden="true">🐹<\/span> <span>Plurnk<\/span><\/h1><a href="\/~\/alpha#session1" data-settings-close/u);
     assert.match(wsHtml, /<aside data-settings-feedback data-feedback-level="idle" role="status" aria-live="polite" hidden>/u);
     assert.match(wsHtml, /<a href="\/~\/alpha#session1" data-settings-back/u);
     assert.match(wsHtml, /<main id="main" data-page="settings" data-settings-section="workspaces" data-workspace-name="alpha" data-session-name="session1">/u);
