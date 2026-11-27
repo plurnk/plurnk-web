@@ -3,6 +3,7 @@ import { STATUS_CODES } from "node:http";
 import {
     BUG_REPORT_URL,
     BUILTIN_SETTINGS_SECTIONS,
+    DEFAULT_APP_NAME,
     DEFAULT_BRAND,
     DEFAULT_ICON_HREF,
 } from "./brand.js";
@@ -545,11 +546,21 @@ export default class Documents {
             : "";
 
         const sectionLabel = activeExtension?.label ?? BUILTIN_SECTION_META[section]?.label ?? section;
-        const body = `<article id="workspace-settings" data-active-section="${escapeHtml(section)}" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">`
-            + '<header><h1 id="workspace-settings-title" data-i18n="settings">Settings</h1></header>'
-            + navHtml
-            + '<p role="status" data-text="ws-settings-message"></p>'
+        const headingMark = this.#brand.icon !== null
+            ? `<img src="${escapeHtml(this.#brand.icon.href)}" alt="" aria-hidden="true"> `
+            : (this.#brand.appName === DEFAULT_APP_NAME ? '<span aria-hidden="true">🐹</span> ' : "");
+        const feedbackBanner = '<aside data-settings-feedback data-feedback-level="idle" role="status" aria-live="polite" hidden>'
+            + '<span data-feedback-glyph aria-hidden="true"></span>'
+            + '<div data-feedback-body>'
+            + '<p data-text="ws-settings-message"></p>'
             + '<p data-text="ws-settings-recovery"></p>'
+            + "</div>"
+            + '<button type="button" data-feedback-dismiss aria-label="Dismiss message" title="Dismiss">✕</button>'
+            + "</aside>";
+        const body = `<article id="workspace-settings" data-active-section="${escapeHtml(section)}" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">`
+            + `<header><h1 id="workspace-settings-title">${headingMark}<span>${escapeHtml(this.#brand.appName)}</span></h1></header>`
+            + navHtml
+            + feedbackBanner
             + panelHtml
             + "</article>";
 

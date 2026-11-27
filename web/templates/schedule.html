@@ -39,20 +39,20 @@
                         </label>
                     </div>
                     <div data-schedule-timing="relative">
-                        <label>
-                            <span data-i18n="ws-settings-schedule-rel-amount">Delay</span>
-                            <input type="number" name="relativeAmount" aria-label="Relative delay amount" min="1" step="1" value="15">
-                        </label>
-                        <label>
-                            <span data-i18n="ws-settings-schedule-rel-unit">Unit</span>
-                            <select name="relativeUnit" aria-label="Relative delay unit">
+                        <div data-field>
+                            <label for="schedule-relative-amount" data-i18n="ws-settings-schedule-rel-amount">Delay</label>
+                            <input id="schedule-relative-amount" type="number" name="relativeAmount" aria-label="Relative delay amount" min="1" step="1" value="15">
+                        </div>
+                        <div data-field>
+                            <label for="schedule-relative-unit" data-i18n="ws-settings-schedule-rel-unit">Unit</label>
+                            <select id="schedule-relative-unit" name="relativeUnit" aria-label="Relative delay unit">
                                 <option value="s" data-i18n="ws-settings-unit-seconds">Seconds</option>
                                 <option value="m" selected data-i18n="ws-settings-unit-minutes">Minutes</option>
                                 <option value="h" data-i18n="ws-settings-unit-hours">Hours</option>
                                 <option value="d" data-i18n="ws-settings-unit-days">Days</option>
                                 <option value="w" data-i18n="ws-settings-unit-weeks">Weeks</option>
                             </select>
-                        </label>
+                        </div>
                     </div>
                     <div data-schedule-timing="at">
                         <label>
@@ -117,19 +117,19 @@
                     </div>
                     <div data-schedule-prompt-fields>
                         <div data-schedule-target-grid>
-                            <div data-schedule-combobox-wrap>
-                                <span data-schedule-field-label data-i18n="ws-settings-schedule-target-label">Target session</span>
+                            <div data-field data-schedule-combobox-wrap>
+                                <label for="schedule-target-input" data-i18n="ws-settings-schedule-target-label">Target session</label>
                                 <div data-schedule-combobox="target">
-                                    <input type="text" name="target" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="schedule-target-listbox" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false">
+                                    <input id="schedule-target-input" type="text" name="target" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="schedule-target-listbox" aria-label="Target session" placeholder="session1" autocomplete="off" spellcheck="false">
                                     <ul id="schedule-target-listbox" role="listbox" aria-label="Target session choices" data-combobox-list hidden></ul>
                                 </div>
                             </div>
-                            <label>
-                                <span data-i18n="ws-settings-schedule-persona-label">Auto-create persona (optional)</span>
-                                <select name="persona" aria-label="Target session persona">
+                            <div data-field>
+                                <label for="schedule-persona-select" data-i18n="ws-settings-schedule-persona-label">Auto-create persona (optional)</label>
+                                <select id="schedule-persona-select" name="persona" aria-label="Target session persona">
                                     <option value="" data-i18n="ws-settings-schedule-persona-none">None (default)</option>
                                 </select>
-                            </label>
+                            </div>
                         </div>
                         <label>
                             <span data-i18n="ws-settings-schedule-prompt-label">Prompt</span>
@@ -218,14 +218,14 @@
             </div>
         </header>
         <div data-step-tool-grid>
-            <div data-schedule-combobox-wrap>
+            <div data-field data-schedule-combobox-wrap>
                 <span data-schedule-field-label data-i18n="ws-settings-step-server">Server</span>
                 <div data-schedule-combobox="server">
                     <input type="text" name="stepServer" role="combobox" data-otm-dynamic aria-autocomplete="list" aria-expanded="false" aria-label="Step server" placeholder="plurnk or MCP alias…" autocomplete="off" spellcheck="false">
                     <ul role="listbox" aria-label="Step server choices" data-combobox-list hidden></ul>
                 </div>
             </div>
-            <div data-schedule-combobox-wrap>
+            <div data-field data-schedule-combobox-wrap>
                 <span data-schedule-field-label data-i18n="ws-settings-step-tool">Tool</span>
                 <div data-schedule-combobox="tool">
                     <input type="text" name="stepTool" role="combobox" data-otm-dynamic aria-autocomplete="list" aria-expanded="false" aria-label="Step tool" placeholder="Search tool…" autocomplete="off" spellcheck="false">

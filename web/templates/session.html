@@ -125,12 +125,11 @@
     </dl>
 </template>
 <template id="command-model">
-    <tr data-model-session-usable="false" data-model-ready="false">
+    <tr data-model-session-usable="false">
         <th scope="row"><code data-text="model-selector">Provider/model</code></th>
         <td data-text="model-name">Model</td>
-        <td data-text="model-context">0</td>
-        <td data-text="model-efforts">Efforts</td>
-        <td data-text="model-readiness">Readiness</td>
+        <td data-numeric data-text="model-context">0</td>
+        <td data-numeric data-bind="title:model-price-title" data-text="model-price">—</td>
         <td>
             <form data-model-catalog-row-form>
                 <fieldset data-bind="disabled:ws-settings-busy">

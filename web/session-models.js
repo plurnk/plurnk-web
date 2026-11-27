@@ -1,7 +1,17 @@
 /** @typedef {(kind: string, params?: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>} Action */
 /** @typedef {import("@plurnk/plurnk-contracts").ModelRoute} ModelRoute */
-/** @typedef {import("@plurnk/plurnk-contracts").ModelCatalogEntry} ModelCatalogEntry */
-/** @typedef {import("@plurnk/plurnk-contracts").ModelCatalogPage} ModelCatalogPage */
+/**
+ * @typedef {{
+ *   readonly inputPer1M: number,
+ *   readonly outputPer1M: number,
+ *   readonly reasoningPer1M?: number,
+ *   readonly cacheReadPer1M?: number,
+ *   readonly cacheWritePer1M?: number,
+ * }} ModelCatalogCost
+ */
+/** @typedef {import("@plurnk/plurnk-contracts").ModelCatalogEntry & { readonly cost?: ModelCatalogCost }} ModelCatalogEntry */
+/** @typedef {Omit<import("@plurnk/plurnk-contracts").ModelCatalogPage, "items"> & { readonly items: readonly ModelCatalogEntry[] }} ModelCatalogPage */
+/** @typedef {"selector" | "cost-asc" | "cost-desc" | "context-desc"} ModelCatalogSort */
 /** @typedef {ModelRoute & { readonly alias: string, readonly active: boolean }} ModelAliasEntry */
 /**
  * @typedef {{
@@ -21,11 +31,22 @@
  */
 
 const MODEL_SEARCH_CACHE_MAX = 48;
+const EXACT_NUMBER_FORMAT = new Intl.NumberFormat("en-US");
 
 /** {§web-workspace-settings} {§web-session-commands} Shared validation for native forms and slash commands.
  * @param {ModelRoute | null} model
  */
 export const modelLabel = (model) => model === null ? "Not selected" : `${model.alias ? `${model.alias} — ` : ""}${model.provider}/${model.model}`;
+
+/**
+ * Exact comma-grouped context token count (e.g. `200,000`, `1,048,576`).
+ * @param {number | null | undefined} tokens
+ * @returns {string}
+ */
+export function formatContextExact(tokens) {
+    if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens <= 0) return "—";
+    return EXACT_NUMBER_FORMAT.format(Math.trunc(tokens));
+}
 
 /**
  * Compact human-readable context size (e.g. `200k`, `1M`).
@@ -40,6 +61,71 @@ export function formatContextTokens(tokens) {
     }
     if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
     return String(tokens);
+}
+
+/**
+ * Format a single USD-per-1M rate without trailing noise.
+ * @param {number} rate
+ * @returns {string}
+ */
+function formatUsdRate(rate) {
+    if (rate === 0) return "$0";
+    if (rate >= 1) return `$${Number(rate.toFixed(2))}`;
+    if (rate >= 0.01) return `$${Number(rate.toFixed(3))}`;
+    return `$${Number(rate.toFixed(4))}`;
+}
+
+/**
+ * Compact catalog pricing display (`Free`, `$in / $out`, or `—`).
+ * @param {ModelCatalogCost | null | undefined} cost
+ * @returns {string}
+ */
+export function formatModelPrice(cost) {
+    if (!cost) return "—";
+    if (cost.inputPer1M === 0 && cost.outputPer1M === 0) return "Free";
+    return `${formatUsdRate(cost.inputPer1M)} / ${formatUsdRate(cost.outputPer1M)}`;
+}
+
+/**
+ * Detailed pricing breakdown for cell tooltips.
+ * @param {ModelCatalogCost | null | undefined} cost
+ * @returns {string}
+ */
+export function formatModelPriceDetail(cost) {
+    if (!cost) return "Pricing unavailable";
+    if (cost.inputPer1M === 0 && cost.outputPer1M === 0) return "Free ($0 / 1M tokens)";
+    const parts = [
+        `Input: ${formatUsdRate(cost.inputPer1M)}/1M`,
+        `Output: ${formatUsdRate(cost.outputPer1M)}/1M`,
+    ];
+    if (typeof cost.cacheReadPer1M === "number") parts.push(`Cache read: ${formatUsdRate(cost.cacheReadPer1M)}/1M`);
+    if (typeof cost.cacheWritePer1M === "number") parts.push(`Cache write: ${formatUsdRate(cost.cacheWritePer1M)}/1M`);
+    if (typeof cost.reasoningPer1M === "number") parts.push(`Reasoning: ${formatUsdRate(cost.reasoningPer1M)}/1M`);
+    return parts.join(" · ");
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {ModelCatalogCost | undefined}
+ */
+function parseOptionalModelCost(raw) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+    const rec = /** @type {Record<string, unknown>} */ (raw);
+    if (typeof rec.inputPer1M !== "number" || !Number.isFinite(rec.inputPer1M) || rec.inputPer1M < 0) return undefined;
+    if (typeof rec.outputPer1M !== "number" || !Number.isFinite(rec.outputPer1M) || rec.outputPer1M < 0) return undefined;
+    return {
+        inputPer1M: rec.inputPer1M,
+        outputPer1M: rec.outputPer1M,
+        ...(typeof rec.reasoningPer1M === "number" && Number.isFinite(rec.reasoningPer1M) && rec.reasoningPer1M >= 0
+            ? { reasoningPer1M: rec.reasoningPer1M }
+            : {}),
+        ...(typeof rec.cacheReadPer1M === "number" && Number.isFinite(rec.cacheReadPer1M) && rec.cacheReadPer1M >= 0
+            ? { cacheReadPer1M: rec.cacheReadPer1M }
+            : {}),
+        ...(typeof rec.cacheWritePer1M === "number" && Number.isFinite(rec.cacheWritePer1M) && rec.cacheWritePer1M >= 0
+            ? { cacheWritePer1M: rec.cacheWritePer1M }
+            : {}),
+    };
 }
 
 /**
@@ -73,9 +159,9 @@ export async function listAliases(call, signal) {
 }
 
 /**
- * Validate a `models.list` page while tolerating optional `providers` across contracts v9 and v10.
+ * Validate a `models.list` page while tolerating optional `providers` and item `cost` across contracts versions.
  * @param {unknown} raw
- * @param {(input: unknown) => ModelCatalogPage} assertPage
+ * @param {(input: unknown) => import("@plurnk/plurnk-contracts").ModelCatalogPage} assertPage
  * @returns {{ readonly catalog: ModelCatalogPage, readonly providers: readonly string[] }}
  */
 function parseModelCatalogResponse(raw, assertPage) {
@@ -86,13 +172,40 @@ function parseModelCatalogResponse(raw, assertPage) {
     const providers = Array.isArray(rec.providers)
         ? rec.providers.filter((entry) => typeof entry === "string" && entry.length > 0)
         : [];
+    /** @type {(ModelCatalogCost | undefined)[]} */
+    const itemCosts = [];
+    const strippedItems = Array.isArray(rec.items)
+        ? rec.items.map((item) => {
+            if (typeof item !== "object" || item === null || Array.isArray(item)) {
+                itemCosts.push(undefined);
+                return item;
+            }
+            const itemRec = /** @type {Record<string, unknown>} */ (item);
+            itemCosts.push(parseOptionalModelCost(itemRec.cost));
+            if (!Object.hasOwn(itemRec, "cost")) return itemRec;
+            const { cost: _cost, ...rest } = itemRec;
+            return rest;
+        })
+        : rec.items;
     const core = {
-        items: rec.items,
+        items: strippedItems,
         offset: rec.offset,
         total: rec.total,
         ...(rec.nextOffset !== undefined ? { nextOffset: rec.nextOffset } : {}),
     };
-    return { catalog: assertPage(core), providers };
+    const validated = assertPage(core);
+    /** @type {ModelCatalogEntry[]} */
+    const items = validated.items.map((entry, idx) => {
+        const cost = itemCosts[idx];
+        return cost === undefined ? entry : { ...entry, cost };
+    });
+    return {
+        catalog: {
+            ...validated,
+            items,
+        },
+        providers,
+    };
 }
 
 /**
@@ -103,6 +216,10 @@ function parseModelCatalogResponse(raw, assertPage) {
  *   readonly limit?: number,
  *   readonly provider?: string,
  *   readonly availability?: "configured" | "all",
+ *   readonly minInputPer1M?: number,
+ *   readonly maxInputPer1M?: number,
+ *   readonly sort?: ModelCatalogSort,
+ *   readonly includeAliases?: boolean,
  *   readonly signal?: AbortSignal,
  * }} [options]
  * @returns {Promise<{ aliases: ModelAliasEntry[], catalog: ModelCatalogPage, providers: readonly string[] }>}
@@ -113,12 +230,24 @@ export async function listModels(call, search = "", options = {}) {
     const providerFilter = options.provider?.trim().toLowerCase() ?? "";
     const limit = Math.min(100, Math.max(1, options.limit ?? 100));
     const offset = Math.max(0, options.offset ?? 0);
+    const availability = options.availability ?? "configured";
+    const includeAliases = options.includeAliases !== false;
+    const minInputPer1M = typeof options.minInputPer1M === "number" && Number.isFinite(options.minInputPer1M) && options.minInputPer1M >= 0
+        ? options.minInputPer1M
+        : undefined;
+    const maxInputPer1M = typeof options.maxInputPer1M === "number" && Number.isFinite(options.maxInputPer1M) && options.maxInputPer1M >= 0
+        ? options.maxInputPer1M
+        : undefined;
+    const sort = options.sort && options.sort !== "selector" ? options.sort : undefined;
     const [rawAliases, rawCatalog] = await Promise.all([
-        listAliases(call, options.signal),
+        includeAliases ? listAliases(call, options.signal) : Promise.resolve(/** @type {ModelAliasEntry[]} */ ([])),
         call("models.list", {
             ...(needle ? { search: needle } : {}),
             ...(providerFilter ? { provider: providerFilter } : {}),
-            ...(options.availability ? { availability: options.availability } : {}),
+            availability,
+            ...(minInputPer1M !== undefined ? { minInputPer1M } : {}),
+            ...(maxInputPer1M !== undefined ? { maxInputPer1M } : {}),
+            ...(sort !== undefined ? { sort } : {}),
             ...(offset > 0 ? { offset } : {}),
             limit,
         }, options.signal),
@@ -244,11 +373,13 @@ export function rankModelChoices({
 
     for (const item of [...catalogExactOrPrefix, ...catalogModelPrefix, ...catalogSubstring]) {
         const ctxLabel = formatContextTokens(item.limits.contextTokens);
+        const priceLabel = item.cost ? formatModelPrice(item.cost) : "";
         const secondaryParts = [];
         if (item.modelName && item.modelName !== item.selector && item.modelName !== item.model) {
             secondaryParts.push(item.modelName);
         }
         if (ctxLabel) secondaryParts.push(ctxLabel);
+        if (priceLabel && priceLabel !== "—") secondaryParts.push(priceLabel);
         pushUnique({
             value: item.selector,
             kind: "catalog",

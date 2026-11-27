@@ -102,9 +102,17 @@ export async function createWorkspaceSettingsController(article, getContext, {
         the(article, "ws-settings-loading", busy || refreshDepth > 0 ? "true" : null);
     }
 
-    /** @param {boolean} nextBusy @param {string} [message] @param {string} [recovery] */
-    function setFeedback(nextBusy, message = "", recovery = "") {
+    /**
+     * @param {boolean} nextBusy
+     * @param {string} [message]
+     * @param {string} [recovery]
+     * @param {"idle" | "info" | "success" | "warning" | "error"} [level]
+     */
+    function setFeedback(nextBusy, message = "", recovery = "", level) {
         busy = nextBusy;
+        const hasText = message.length > 0 || recovery.length > 0;
+        const resolvedLevel = level ?? (!hasText ? "idle" : "info");
+        const effectiveLevel = hasText ? resolvedLevel : "idle";
         the(article, {
             "ws-settings-loading": nextBusy || refreshDepth > 0 ? "true" : null,
             "ws-settings-busy": nextBusy ? "true" : null,
@@ -112,6 +120,20 @@ export async function createWorkspaceSettingsController(article, getContext, {
             "ws-settings-recovery": recovery,
             "env-busy": nextBusy ? "" : null,
         });
+        const feedbackBox = $(article, "[data-settings-feedback]");
+        if (feedbackBox instanceof HTMLElement) {
+            feedbackBox.dataset.feedbackLevel = effectiveLevel;
+            feedbackBox.hidden = effectiveLevel === "idle";
+            const urgent = effectiveLevel === "error" || effectiveLevel === "warning";
+            feedbackBox.setAttribute("role", urgent ? "alert" : "status");
+            feedbackBox.setAttribute("aria-live", urgent ? "assertive" : "polite");
+            if (urgent && typeof feedbackBox.getBoundingClientRect === "function") {
+                const rect = feedbackBox.getBoundingClientRect();
+                if (rect.top < 0 || rect.bottom > window.innerHeight) {
+                    feedbackBox.scrollIntoView?.({ block: "nearest" });
+                }
+            }
+        }
         if (envPanel) {
             the(envPanel, "env-busy", nextBusy ? "" : null);
         }
@@ -139,15 +161,15 @@ export async function createWorkspaceSettingsController(article, getContext, {
     async function runMutation(work) {
         if (busy) return;
         const ctx = getContext();
-        setFeedback(true, "Running…", "");
+        setFeedback(true, "Running…", "", "info");
         try {
             ctx.signal.throwIfAborted();
             const summary = await work(ctx.signal);
             ctx.signal.throwIfAborted();
-            setFeedback(false, summary, "");
+            setFeedback(false, summary, "", "success");
         } catch (error) {
             const { message, recovery } = await describeFailure(error);
-            setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery);
+            setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery, "error");
         }
     }
 
@@ -171,19 +193,19 @@ export async function createWorkspaceSettingsController(article, getContext, {
         if (!isSectionAvailable(activeSection)) {
             const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
             if (activePanel instanceof HTMLElement) activePanel.hidden = true;
-            if (!busy) setFeedback(false, "This settings section is unavailable for this workspace.", "");
+            if (!busy) setFeedback(false, "This settings section is unavailable for this workspace.", "", "warning");
             return;
         }
         const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
         if (activePanel instanceof HTMLElement) activePanel.hidden = false;
 
         if (!isSettingsSection(activeSection) || activeSection === "search") {
-            if (!busy) setFeedback(false, "", "");
+            if (!busy) setFeedback(false, "", "", "idle");
             return;
         }
         if (activeSection === "help") {
             modelsHelpAboutController?.applyHelpFilter();
-            if (!busy) setFeedback(false, "", "");
+            if (!busy) setFeedback(false, "", "", "idle");
             return;
         }
         if (activeSection === "about") {
@@ -193,16 +215,16 @@ export async function createWorkspaceSettingsController(article, getContext, {
                 await managementAction("workspace.list", {}, "", ctx.signal).catch(() => null);
                 modelsHelpAboutController?.syncAboutPanel();
             }
-            if (!busy) setFeedback(false, "", "");
+            if (!busy) setFeedback(false, "", "", "idle");
             return;
         }
         const ctx = getContext();
         if (activeSection !== "workspaces" && ctx.workspaceId <= 0) {
-            if (!busy) setFeedback(false, "", "");
+            if (!busy) setFeedback(false, "", "", "idle");
             return;
         }
         if (!busy) {
-            the(article, { "ws-settings-message": "", "ws-settings-recovery": "" });
+            setFeedback(false, "", "", "idle");
         }
         refreshDepth += 1;
         syncLoadingState();
@@ -231,7 +253,7 @@ export async function createWorkspaceSettingsController(article, getContext, {
         } catch (error) {
             const { message, recovery } = await describeFailure(error);
             if (!busy) {
-                setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery);
+                setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery, "error");
             }
         } finally {
             refreshDepth = Math.max(0, refreshDepth - 1);
@@ -257,7 +279,7 @@ export async function createWorkspaceSettingsController(article, getContext, {
         const activePanel = $(article, `[data-settings-panel="${activeSection}"]`);
         if (!isSectionAvailable(activeSection)) {
             if (activePanel instanceof HTMLElement) activePanel.hidden = true;
-            if (!busy) setFeedback(false, "This settings section is unavailable for this workspace.", "");
+            if (!busy) setFeedback(false, "This settings section is unavailable for this workspace.", "", "warning");
         } else if (activePanel instanceof HTMLElement) {
             activePanel.hidden = false;
         }
@@ -331,6 +353,7 @@ export async function createWorkspaceSettingsController(article, getContext, {
                 getContext,
                 invoke,
                 runMutation,
+                setFeedback,
                 invokeModelSearch,
                 initialQuery,
                 initialHelpFilter,
@@ -387,8 +410,12 @@ export async function createWorkspaceSettingsController(article, getContext, {
             schedulePanelController?.dispose();
         });
 
+        on(article, "click", "[data-feedback-dismiss]", () => {
+            if (!busy) setFeedback(false, "", "", "idle");
+        });
+
         on(article, "click", "details[data-family-disclosure] > summary", (_event, summary) => {
-            if (!busy) setFeedback(false, "", "");
+            if (!busy) setFeedback(false, "", "", "idle");
             const details = summary.parentElement;
             if (details instanceof HTMLDetailsElement && details.dataset.familyDisclosure === "schedule" && !details.open) {
                 prefillScheduleTarget();

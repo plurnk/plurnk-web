@@ -95,6 +95,7 @@ export function mountWorkspaceAndSessionSettings(article, {
     let sessionSpawnCombobox = null;
     /** @type {{ model: string, effort: string, childModel: string, persona: string, mode: string }} */
     let currentSessionValues = { model: "", effort: "", childModel: "inherit", persona: "none", mode: "review" };
+    let lastSelectedComboboxModel = "";
     let hasPersistedSessionModel = false;
 
     const offWsCreate = wsPanel instanceof HTMLElement
@@ -143,16 +144,9 @@ export function mountWorkspaceAndSessionSettings(article, {
             onSelect: (selector, choice) => {
                 const effortField = $(article, '[data-session-config-form] select[name="effort"]');
                 if (effortField instanceof HTMLSelectElement) {
-                    effortSync.sync(selector, effortField.value, choice?.efforts, choice?.defaultEffort);
-                }
-            },
-            onInput: (selector) => {
-                const effortField = $(article, '[data-session-config-form] select[name="effort"]');
-                if (effortField instanceof HTMLSelectElement && selector) {
-                    const cached = modelSearchCache.getCachedEfforts(selector);
-                    if (cached) {
-                        effortSync.sync(selector, effortField.value, cached.efforts, cached.defaultEffort);
-                    }
+                    const preferred = selector === lastSelectedComboboxModel ? effortField.value : "";
+                    lastSelectedComboboxModel = selector;
+                    effortSync.sync(selector, preferred, choice?.efforts, choice?.defaultEffort);
                 }
             },
         });
@@ -332,6 +326,7 @@ export function mountWorkspaceAndSessionSettings(article, {
             : Boolean(currentModel);
 
         const resolvedModel = currentModel || (aliases.find((a) => a.active)?.alias ?? aliases[0]?.alias ?? "");
+        lastSelectedComboboxModel = resolvedModel;
         sessionModelCombobox.setValue(resolvedModel);
 
         const currentEffort = isRecord(thoughtOption) && typeof thoughtOption.currentValue === "string" ? thoughtOption.currentValue : "";

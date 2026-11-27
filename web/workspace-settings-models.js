@@ -2,14 +2,51 @@ import { $, $$, on, the } from "on_the_money";
 import { attachModelCombobox } from "./combobox.js";
 import { createModelEffortSync } from "./effort-select.js";
 import { onServiceVersion, serviceVersion, webVersion } from "./endpoints.js";
+import describeFailure from "./failure.js";
 import managementAction from "./management-action.js";
 import { primaryModifierLabel } from "./session-commands.js";
-import { createModelSearchCache, flattenSelectOptions, listModels, modelLabel, sessionConfigOption, sessionEffort, sessionModel } from "./session-models.js";
+import {
+    createModelSearchCache,
+    flattenSelectOptions,
+    formatContextExact,
+    formatModelPrice,
+    formatModelPriceDetail,
+    listAliases,
+    listModels,
+    modelLabel,
+    sessionConfigOption,
+    sessionEffort,
+    sessionModel,
+} from "./session-models.js";
 import { isRecord } from "./session-translator.js";
 import { COLLECTION_PAGE_SIZE } from "./workspace-collection.js";
 
 /** @typedef {import("./workspace-records.js").WorkspaceSettingsContext} WorkspaceSettingsContext */
 /** @typedef {ReturnType<typeof import("./session-models.js").createModelSearchCache>} ModelSearchCache */
+/** @typedef {import("./session-models.js").ModelCatalogSort} ModelCatalogSort */
+
+const CATALOG_SEARCH_DEBOUNCE_MS = 180;
+const VALID_SORTS = new Set(["selector", "cost-asc", "cost-desc", "context-desc"]);
+
+/**
+ * Parse a non-negative USD/1M price input field into a number or `undefined` when blank/invalid.
+ * @param {string} raw
+ * @returns {number | undefined}
+ */
+function parsePriceBound(raw) {
+    const trimmed = raw.trim();
+    if (trimmed === "") return undefined;
+    const value = Number(trimmed);
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/**
+ * @param {string} raw
+ * @returns {ModelCatalogSort}
+ */
+function parseCatalogSort(raw) {
+    return VALID_SORTS.has(raw) ? /** @type {ModelCatalogSort} */ (raw) : "selector";
+}
 
 /**
  * {§web-workspace-settings} Mount `models` (active session model+effort form, aliases, paginated catalog), `help`, and `about` panels.
@@ -18,6 +55,7 @@ import { COLLECTION_PAGE_SIZE } from "./workspace-collection.js";
  *   readonly getContext: () => WorkspaceSettingsContext,
  *   readonly invoke: (kind: string, params?: Record<string, unknown>, opts?: { requireSession?: boolean }) => Promise<unknown>,
  *   readonly runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
+ *   readonly setFeedback: (busy: boolean, message?: string, recovery?: string, level?: "idle" | "info" | "success" | "warning" | "error") => void,
  *   readonly invokeModelSearch: (kind: string, params?: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>,
  *   readonly initialQuery?: string,
  *   readonly initialHelpFilter?: string,
@@ -28,6 +66,7 @@ export function mountModelsHelpAboutSections(article, {
     getContext,
     invoke,
     runMutation,
+    setFeedback,
     invokeModelSearch,
     initialQuery = "",
     initialHelpFilter = "",
@@ -36,6 +75,12 @@ export function mountModelsHelpAboutSections(article, {
     const modelSearchCache = createModelSearchCache(invokeModelSearch);
     let modelsSearchQuery = initialQuery;
     let modelsProviderFilter = "";
+    /** @type {number | undefined} */
+    let modelsMinPrice;
+    /** @type {number | undefined} */
+    let modelsMaxPrice;
+    /** @type {ModelCatalogSort} */
+    let modelsSort = "selector";
     let modelsOffset = 0;
     /** @type {number | undefined} */
     let modelsNextOffset;
@@ -44,12 +89,24 @@ export function mountModelsHelpAboutSections(article, {
     let helpFilterQuery = initialHelpFilter;
     /** @type {AbortController | null} */
     let modelsLookup = null;
+    /** @type {AbortController | null} */
+    let catalogLookup = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let catalogDebounceTimer = null;
     /** @type {{ model: string, effort: string }} */
     let currentSessionModelValues = { model: "", effort: "" };
+    let lastSelectedComboboxModel = "";
     let hasPersistedSessionModel = false;
 
     /** @type {ReturnType<typeof attachModelCombobox> | null} */
     let modelsSessionCombobox = null;
+
+    function clearCatalogDebounce() {
+        if (catalogDebounceTimer !== null) {
+            clearTimeout(catalogDebounceTimer);
+            catalogDebounceTimer = null;
+        }
+    }
 
     const sessionEffortSync = createModelEffortSync({
         getSelect: () => {
@@ -69,16 +126,9 @@ export function mountModelsHelpAboutSections(article, {
             onSelect: (selector, choice) => {
                 const effortField = $(article, '[data-models-session-form] select[name="effort"]');
                 if (effortField instanceof HTMLSelectElement) {
-                    sessionEffortSync.sync(selector, effortField.value, choice?.efforts, choice?.defaultEffort);
-                }
-            },
-            onInput: (selector) => {
-                const effortField = $(article, '[data-models-session-form] select[name="effort"]');
-                if (effortField instanceof HTMLSelectElement && selector) {
-                    const cached = modelSearchCache.getCachedEfforts(selector);
-                    if (cached) {
-                        sessionEffortSync.sync(selector, effortField.value, cached.efforts, cached.defaultEffort);
-                    }
+                    const preferred = selector === lastSelectedComboboxModel ? effortField.value : "";
+                    lastSelectedComboboxModel = selector;
+                    sessionEffortSync.sync(selector, preferred, choice?.efforts, choice?.defaultEffort);
                 }
             },
         });
@@ -168,6 +218,7 @@ export function mountModelsHelpAboutSections(article, {
             : Boolean(currentModel);
 
         const resolvedModel = currentModel || (aliases.find((a) => a.active)?.alias ?? aliases[0]?.alias ?? "");
+        lastSelectedComboboxModel = resolvedModel;
         modelsSessionCombobox.setValue(resolvedModel);
 
         const currentEffort = isRecord(thoughtOption) && typeof thoughtOption.currentValue === "string" ? thoughtOption.currentValue : "";
@@ -181,11 +232,116 @@ export function mountModelsHelpAboutSections(article, {
     }
 
     /**
+     * @param {import("./session-models.js").ModelCatalogPage} catalog
+     * @param {readonly string[]} providers
+     */
+    function renderCatalogTable(catalog, providers) {
+        const ctx = getContext();
+        modelSearchCache.recordCatalogItems(catalog.items);
+        modelSearchCache.recordProviders(providers);
+        for (const name of modelSearchCache.getKnownProviders()) {
+            knownCatalogProviders.add(name);
+        }
+        modelsNextOffset = catalog.nextOffset;
+        const modelsPanel = $(article, '[data-settings-panel="models"]');
+        const catalogBody = modelsPanel ? $(modelsPanel, "[data-models-catalog-rows]") : null;
+        const providerSelect = modelsPanel ? $(modelsPanel, '[data-models-search-form] select[name="provider"]') : null;
+        if (providerSelect instanceof HTMLSelectElement) {
+            const providerChoices = [
+                { value: "", label: "All providers" },
+                ...[...knownCatalogProviders].toSorted().map((name) => ({ value: name, label: name })),
+            ];
+            $.cloneEach(providerSelect, "#setting-option", providerChoices, (optEl, choice) => {
+                the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
+            });
+            providerSelect.value = modelsProviderFilter;
+        }
+        if (modelsPanel && catalogBody) {
+            const sessionUsable = ctx.sessionName !== null ? "true" : "false";
+            $.cloneEach(catalogBody, "#command-model", catalog.items, (tr, model) => {
+                the(tr, {
+                    "model-selector": model.selector,
+                    "model-name": model.modelName,
+                    "model-context": formatContextExact(model.limits.contextTokens),
+                    "model-price": formatModelPrice(model.cost),
+                    "model-price-title": formatModelPriceDetail(model.cost),
+                    "model-session-usable": sessionUsable,
+                });
+            });
+            const prevBtn = $(modelsPanel, "[data-models-prev]");
+            const nextBtn = $(modelsPanel, "[data-models-next]");
+            if (prevBtn instanceof HTMLButtonElement) prevBtn.disabled = catalog.offset <= 0;
+            if (nextBtn instanceof HTMLButtonElement) nextBtn.disabled = catalog.nextOffset === undefined;
+            const hasFilter = Boolean(
+                modelsSearchQuery
+                || modelsProviderFilter
+                || modelsMinPrice !== undefined
+                || modelsMaxPrice !== undefined,
+            );
+            const emptyMessage = hasFilter
+                ? "No matching configured models."
+                : "No configured models available. Set a provider API key in the daemon environment.";
+            the(modelsPanel, {
+                "catalog-count": catalog.items.length,
+                "model-empty": emptyMessage,
+                "model-offset": catalog.offset,
+                "model-count": catalog.items.length,
+                "model-total": catalog.total,
+                "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search.",
+            });
+        }
+    }
+
+    /**
+     * Fetch only the configured catalog page so typing, filtering, sorting, and paging never shake
+     * the Aliases table, active session form, or feedback callout above the catalog search bar.
+     */
+    async function loadCatalogOnly() {
+        const ctx = getContext();
+        catalogLookup?.abort();
+        const req = catalogLookup = new AbortController();
+        const signal = AbortSignal.any([ctx.signal, req.signal]);
+        try {
+            const callModels = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) =>
+                managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", signal, {
+                    workspaceId: ctx.workspaceId,
+                });
+            const { catalog, providers } = await listModels(callModels, modelsSearchQuery, {
+                offset: modelsOffset,
+                limit: COLLECTION_PAGE_SIZE,
+                availability: "configured",
+                includeAliases: false,
+                ...(modelsProviderFilter ? { provider: modelsProviderFilter } : {}),
+                ...(modelsMinPrice !== undefined ? { minInputPer1M: modelsMinPrice } : {}),
+                ...(modelsMaxPrice !== undefined ? { maxInputPer1M: modelsMaxPrice } : {}),
+                ...(modelsSort !== "selector" ? { sort: modelsSort } : {}),
+                signal,
+            });
+            signal.throwIfAborted();
+            renderCatalogTable(catalog, providers);
+        } catch (error) {
+            if (req.signal.aborted && !ctx.signal.aborted) return;
+            const { message, recovery } = await describeFailure(error);
+            setFeedback(false, ctx.signal.aborted ? "Response not confirmed." : message, recovery, "error");
+        }
+    }
+
+    function scheduleCatalogRefresh() {
+        clearCatalogDebounce();
+        catalogDebounceTimer = setTimeout(() => {
+            catalogDebounceTimer = null;
+            if (!getContext().signal.aborted) void loadCatalogOnly();
+        }, CATALOG_SEARCH_DEBOUNCE_MS);
+    }
+
+    /**
      * @returns {Promise<{ abortedByNewerLookup: boolean }>}
      */
     async function loadModelsCatalog() {
         const ctx = getContext();
+        clearCatalogDebounce();
         modelsLookup?.abort();
+        catalogLookup?.abort();
         const req = modelsLookup = new AbortController();
         const signal = AbortSignal.any([ctx.signal, req.signal]);
         try {
@@ -193,39 +349,28 @@ export function mountModelsHelpAboutSections(article, {
                 managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", signal, {
                     workspaceId: ctx.workspaceId,
                 });
-            const [{ aliases, catalog, providers }, sessionRes] = await Promise.all([
+            const [aliases, { catalog, providers }, sessionRes] = await Promise.all([
+                listAliases(callModels, signal),
                 listModels(callModels, modelsSearchQuery, {
                     offset: modelsOffset,
                     limit: COLLECTION_PAGE_SIZE,
+                    availability: "configured",
+                    includeAliases: false,
                     ...(modelsProviderFilter ? { provider: modelsProviderFilter } : {}),
+                    ...(modelsMinPrice !== undefined ? { minInputPer1M: modelsMinPrice } : {}),
+                    ...(modelsMaxPrice !== undefined ? { maxInputPer1M: modelsMaxPrice } : {}),
+                    ...(modelsSort !== "selector" ? { sort: modelsSort } : {}),
                     signal,
                 }),
                 ctx.sessionName !== null ? callModels("session/options").catch(() => null) : Promise.resolve(null),
             ]);
             signal.throwIfAborted();
             modelSearchCache.recordAliases(aliases);
-            modelSearchCache.recordCatalogItems(catalog.items);
-            modelSearchCache.recordProviders(providers);
-            for (const name of modelSearchCache.getKnownProviders()) {
-                knownCatalogProviders.add(name);
-            }
+            renderCatalogTable(catalog, providers);
             renderModelsSessionForm(sessionRes, aliases);
-            modelsNextOffset = catalog.nextOffset;
             const modelsPanel = $(article, '[data-settings-panel="models"]');
             const aliasBody = modelsPanel ? $(modelsPanel, "[data-models-alias-rows]") : null;
-            const catalogBody = modelsPanel ? $(modelsPanel, "[data-models-catalog-rows]") : null;
-            const providerSelect = modelsPanel ? $(modelsPanel, '[data-models-search-form] select[name="provider"]') : null;
-            if (providerSelect instanceof HTMLSelectElement) {
-                const providerChoices = [
-                    { value: "", label: "All providers" },
-                    ...[...knownCatalogProviders].toSorted().map((name) => ({ value: name, label: name })),
-                ];
-                $.cloneEach(providerSelect, "#setting-option", providerChoices, (optEl, choice) => {
-                    the(optEl, { "option-value": choice.value, "option-label": choice.label, "option-disabled": null });
-                });
-                providerSelect.value = modelsProviderFilter;
-            }
-            if (modelsPanel && aliasBody && catalogBody) {
+            if (modelsPanel && aliasBody) {
                 const sessionUsable = ctx.sessionName !== null ? "true" : "false";
                 $.cloneEach(aliasBody, "#workspace-model-alias-row", aliases, (tr, item) => {
                     the(tr, {
@@ -236,28 +381,7 @@ export function mountModelsHelpAboutSections(article, {
                         "model-session-usable": sessionUsable,
                     });
                 });
-                $.cloneEach(catalogBody, "#command-model", catalog.items, (tr, model) => {
-                    the(tr, {
-                        "model-selector": model.selector,
-                        "model-name": model.modelName,
-                        "model-context": model.limits.contextTokens,
-                        "model-efforts": model.capabilities.efforts.join(", "),
-                        "model-readiness": model.readiness.ready ? "Configured" : "Not configured",
-                        "model-session-usable": sessionUsable,
-                        "model-ready": model.readiness.ready ? "true" : "false",
-                    });
-                });
-                const prevBtn = $(modelsPanel, "[data-models-prev]");
-                const nextBtn = $(modelsPanel, "[data-models-next]");
-                if (prevBtn instanceof HTMLButtonElement) prevBtn.disabled = catalog.offset <= 0;
-                if (nextBtn instanceof HTMLButtonElement) nextBtn.disabled = catalog.nextOffset === undefined;
-                the(modelsPanel, {
-                    "alias-count": aliases.length,
-                    "model-offset": catalog.offset,
-                    "model-count": catalog.items.length,
-                    "model-total": catalog.total,
-                    "model-more": catalog.nextOffset === undefined ? "" : "More matches are available; narrow the search.",
-                });
+                the(modelsPanel, { "alias-count": aliases.length });
             }
             return { abortedByNewerLookup: false };
         } catch (error) {
@@ -304,37 +428,66 @@ export function mountModelsHelpAboutSections(article, {
     on(article, "submit", "[data-models-search-form]", (event, form) => {
         event.preventDefault();
         if (!(form instanceof HTMLFormElement)) return;
+        clearCatalogDebounce();
         const data = new FormData(form);
         modelsSearchQuery = String(data.get("q") ?? "").trim();
         modelsProviderFilter = String(data.get("provider") ?? "").trim();
+        modelsMinPrice = parsePriceBound(String(data.get("minPrice") ?? ""));
+        modelsMaxPrice = parsePriceBound(String(data.get("maxPrice") ?? ""));
+        modelsSort = parseCatalogSort(String(data.get("sort") ?? "selector"));
         modelsOffset = 0;
-        void onRefreshModels();
+        void loadCatalogOnly();
     });
 
     on(article, "input", '[data-models-search-form] input[name="q"]', (_event, input) => {
         if (!(input instanceof HTMLInputElement)) return;
         modelsSearchQuery = input.value.trim();
         modelsOffset = 0;
-        void onRefreshModels();
+        scheduleCatalogRefresh();
+    });
+
+    on(article, "input", '[data-models-search-form] input[name="minPrice"]', (_event, input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        modelsMinPrice = parsePriceBound(input.value);
+        modelsOffset = 0;
+        scheduleCatalogRefresh();
+    });
+
+    on(article, "input", '[data-models-search-form] input[name="maxPrice"]', (_event, input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        modelsMaxPrice = parsePriceBound(input.value);
+        modelsOffset = 0;
+        scheduleCatalogRefresh();
     });
 
     on(article, "change", '[data-models-search-form] select[name="provider"]', (_event, select) => {
         if (!(select instanceof HTMLSelectElement)) return;
+        clearCatalogDebounce();
         modelsProviderFilter = select.value.trim();
         modelsOffset = 0;
-        void onRefreshModels();
+        void loadCatalogOnly();
+    });
+
+    on(article, "change", '[data-models-search-form] select[name="sort"]', (_event, select) => {
+        if (!(select instanceof HTMLSelectElement)) return;
+        clearCatalogDebounce();
+        modelsSort = parseCatalogSort(select.value);
+        modelsOffset = 0;
+        void loadCatalogOnly();
     });
 
     on(article, "click", "[data-models-prev]", () => {
         if (modelsOffset <= 0) return;
+        clearCatalogDebounce();
         modelsOffset = Math.max(0, modelsOffset - COLLECTION_PAGE_SIZE);
-        void onRefreshModels();
+        void loadCatalogOnly();
     });
 
     on(article, "click", "[data-models-next]", () => {
         if (modelsNextOffset === undefined) return;
+        clearCatalogDebounce();
         modelsOffset = modelsNextOffset;
-        void onRefreshModels();
+        void loadCatalogOnly();
     });
 
     on(article, "submit", "[data-model-alias-row-form]", (event, form) => {
@@ -385,7 +538,9 @@ export function mountModelsHelpAboutSections(article, {
         loadModelsCatalog,
         dispose() {
             offSvc();
+            clearCatalogDebounce();
             modelsLookup?.abort();
+            catalogLookup?.abort();
             sessionEffortSync.dispose();
             modelsSessionCombobox?.dispose();
         },

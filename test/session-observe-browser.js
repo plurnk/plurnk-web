@@ -680,7 +680,7 @@ export default async function verifySessionObserve(t) {
                         await effortSelect.selectOption("low");
                         assert.equal(await effortSelect.inputValue(), "low");
                         await modelsForm.getByRole("button", { name: "Apply", exact: true }).click();
-                        await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("Effort: low"));
+                        await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="ws-settings-message"]')?.textContent ?? "").includes("Effort: low"));
                         assert.deepEqual(configWrites, [{ configId: "thought_level", value: "low" }]);
                     });
 

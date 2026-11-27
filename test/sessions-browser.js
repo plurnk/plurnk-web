@@ -216,7 +216,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     // 409 duplicate workspace name keeps draft in disclosure and displays inline Problem
                     await wsCreateDisclosure.locator('input[name="name"]').fill("folderless");
                     await wsCreateDisclosure.getByRole("button", { name: "Create workspace", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
                     assert.equal(await wsCreateDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
                     assert.equal(await wsCreateDisclosure.locator('input[name="name"]').inputValue(), "folderless");
 
@@ -237,7 +237,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     assert.equal(await sessCreateDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true);
                     await sessCreateDisclosure.locator('input[name="name"]').fill("session1");
                     await sessCreateDisclosure.getByRole("button", { name: "Create session", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
                     await sessCreateDisclosure.locator('input[name="name"]').fill("added-session");
                     await sessCreateDisclosure.locator('input[name="title"]').fill("Added title");
                     await sessCreateDisclosure.getByRole("button", { name: "Create session", exact: true }).click();
@@ -271,7 +271,7 @@ export default async function verifySessions({ t, consumer, withDaemon, webPacka
                     const renameForm = settingsArticle.locator("form#workspace-rename");
                     await renameForm.locator('input[name="name"]').fill("folderless");
                     await renameForm.getByRole("button", { name: "Rename", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
+                    await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="ws-settings-message"]')?.textContent ?? "").includes("already in use"));
                     await renameForm.locator('input[name="name"]').fill("renamed-pure-acp");
                     await renameForm.getByRole("button", { name: "Rename", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/~/renamed-pure-acp");

@@ -25,16 +25,34 @@
     }
 
     [data-schedule-identity-grid],
-    [data-schedule-timing="relative"],
     [data-schedule-timing="repeating"],
     [data-schedule-target-grid],
-    [data-step-tool-grid],
     [data-step-guided-fields],
     [data-step-raw-grid] {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
         gap: calc(var(--otm-spacing) * 0.55) var(--otm-spacing);
         margin-block-end: calc(var(--otm-spacing) * 0.6);
+    }
+
+    [data-schedule-timing="relative"] {
+        display: grid;
+        grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
+        gap: calc(var(--otm-spacing) * 0.55) var(--otm-spacing);
+        margin-block-end: calc(var(--otm-spacing) * 0.6);
+    }
+
+    [data-step-tool-grid] {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--otm-spacing) * 0.55) var(--otm-spacing);
+        margin-block-end: calc(var(--otm-spacing) * 0.6);
+    }
+
+    @media (width >= 48rem) {
+        [data-step-tool-grid] {
+            grid-template-columns: minmax(10rem, 1fr) minmax(0, 2fr);
+        }
     }
 
     [data-schedule-combobox-wrap] {

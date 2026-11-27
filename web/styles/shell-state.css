@@ -23,6 +23,7 @@
         min-block-size: 0;
         padding-inline: max(calc(var(--otm-spacing) + env(safe-area-inset-left, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2)) max(calc(var(--otm-spacing) + env(safe-area-inset-right, 0px)), calc((100% - var(--plurnk-chat-measure)) / 2));
         overflow: auto;
+        scrollbar-gutter: stable;
     }
 
     body > main:is([data-page="settings"], [data-page="callback"]) {
