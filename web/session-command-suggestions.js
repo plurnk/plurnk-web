@@ -299,7 +299,7 @@ function resolveArgumentStage(cmd, completedArgs, sources) {
         const envVars = sources.familyAliases?.env ?? [];
         const hasScope = completedArgs[0] === "--scope";
         if (hasScope && completedArgs.length === 1) {
-            return { candidates: ["session", "workspace"], advances: true };
+            return { candidates: ["service", "session", "workspace"], advances: true };
         }
         const effective = hasScope ? completedArgs.slice(2) : completedArgs;
         if (effective.length === 0) {

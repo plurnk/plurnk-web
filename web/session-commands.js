@@ -229,13 +229,20 @@ export default function sessionCommands(main, actions) {
                 const { parseFamilyCommand } = await import("@plurnk/plurnk-contracts");
                 const parsed = parseFamilyCommand(name, args);
                 if (parsed.sub === "list") {
-                    navigateToSettings(name, name === "env" && parsed.scopePrefix === "session" ? { envScope: "session" } : undefined);
+                    const scopePrefix = /** @type {string | undefined} */ (parsed.scopePrefix);
+                    const extra = scopePrefix === "service"
+                        ? { scope: "service" }
+                        : name === "env" && scopePrefix === "session"
+                            ? { envScope: "session" }
+                            : undefined;
+                    navigateToSettings(name, extra);
                     return true;
                 }
                 let params = parsed.params;
-                if (parsed.actionName === "workspace.mcp.oauth.begin") {
+                if (parsed.actionName === "workspace.mcp.oauth.begin" || parsed.actionName === "service.mcp.oauth.begin") {
                     const alias = typeof params.alias === "string" ? params.alias : "";
-                    const listed = await call("workspace.mcp.list", {});
+                    const listAction = parsed.actionName.startsWith("service.") ? "service.mcp.list" : "workspace.mcp.list";
+                    const listed = await call(listAction, {});
                     if (isRecord(listed)) {
                         const defs = Array.isArray(listed.definitions) ? listed.definitions : [];
                         const entry = defs.find((d) => isRecord(d) && d.alias === alias);

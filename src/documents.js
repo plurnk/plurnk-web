@@ -557,8 +557,10 @@ export default class Documents {
             + "</div>"
             + '<button type="button" data-feedback-dismiss aria-label="Dismiss message" title="Dismiss">✕</button>'
             + "</aside>";
+        const closeHref = backPath ?? "/";
+        const closeLink = `<a href="${escapeHtml(closeHref)}" data-settings-close data-bind="href:workspace-back-path" aria-label="Close settings" title="Close settings (Esc)">✕</a>`;
         const body = `<article id="workspace-settings" data-active-section="${escapeHtml(section)}" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">`
-            + `<header><h1 id="workspace-settings-title">${headingMark}<span>${escapeHtml(this.#brand.appName)}</span></h1></header>`
+            + `<header><h1 id="workspace-settings-title">${headingMark}<span>${escapeHtml(this.#brand.appName)}</span></h1>${closeLink}</header>`
             + navHtml
             + feedbackBanner
             + panelHtml

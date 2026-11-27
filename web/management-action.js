@@ -10,11 +10,15 @@ const SSE_HEADERS_FLUSH_MS = 25;
 
 const DAEMON_SCOPED_ACTIONS = new Set([
     "models.list",
+    "models.providers",
     "service.update",
     "workspace.list",
     "workspace.create",
     "workspace.attach",
 ]);
+
+/** @param {string} kind */
+const isDaemonScopedAction = (kind) => DAEMON_SCOPED_ACTIONS.has(kind) || kind.startsWith("service.");
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -54,7 +58,7 @@ export default async function managementAction(kind, params, sessionId, signal, 
             || kind === "providers/list"
             || kind === "session/new"
             || kind === "session/list"
-            || DAEMON_SCOPED_ACTIONS.has(kind);
+            || isDaemonScopedAction(kind);
         /** @type {typeof fetch} */
         const acpFetch = async (input, init) => {
             if (init?.method === "DELETE") {
@@ -239,12 +243,13 @@ export default async function managementAction(kind, params, sessionId, signal, 
                 await conn.agent.notify(methods.agent.session.cancel, { sessionId });
                 outcome = {};
             } else {
+                const daemonScoped = isDaemonScopedAction(kind);
                 outcome = await conn.agent.request("_plurnk/action", {
                     kind,
                     params,
-                    ...(sessionId && !DAEMON_SCOPED_ACTIONS.has(kind) ? { sessionId } : {}),
-                    ...(typeof options.workspaceId === "number" && !DAEMON_SCOPED_ACTIONS.has(kind) ? { workspaceId: options.workspaceId } : {}),
-                    ...(typeof options.workspace === "string" && options.workspace !== "" && !DAEMON_SCOPED_ACTIONS.has(kind) ? { workspace: options.workspace } : {}),
+                    ...(sessionId && !daemonScoped ? { sessionId } : {}),
+                    ...(typeof options.workspaceId === "number" && !daemonScoped ? { workspaceId: options.workspaceId } : {}),
+                    ...(typeof options.workspace === "string" && options.workspace !== "" && !daemonScoped ? { workspace: options.workspace } : {}),
                 });
             }
             signal.throwIfAborted();

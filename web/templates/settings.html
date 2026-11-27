@@ -60,6 +60,22 @@
                     <button type="submit" data-models-apply data-i18n="apply">Apply</button>
                 </fieldset>
             </form>
+            <details data-providers-disclosure hidden>
+                <summary><span aria-hidden="true">🔑</span> <span data-i18n="ws-settings-providers-heading">Providers &amp; API keys</span> <small data-text="providers-ready-summary"></small></summary>
+                <div data-providers-list></div>
+            </details>
+            <details data-family-disclosure="model-alias">
+                <summary data-i18n="ws-settings-add-alias">+ Add alias</summary>
+                <form data-model-alias-save-form>
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <input type="text" name="alias" aria-label="Alias name" placeholder="alias (e.g. fast)" autocomplete="off" spellcheck="false" required>
+                        <input type="text" name="route" aria-label="Provider and model" placeholder="provider/model (e.g. openrouter/anthropic/claude-sonnet-4)" autocomplete="off" spellcheck="false" required>
+                        <footer>
+                            <button type="submit" data-i18n="ws-settings-save-alias">Save alias</button>
+                        </footer>
+                    </fieldset>
+                </form>
+            </details>
             <p data-models-aliases-empty data-i18n="no-aliases">No configured aliases.</p>
             <figure data-models-aliases-wrap>
                 <table>
@@ -119,9 +135,10 @@
                 </figure>
             </div>
         </section>
-        <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0">
+        <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0" data-panel-scope="workspace">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-mcp-heading">MCP servers</h2>
+                <div data-scope-switcher-outlet></div>
             </header>
             <details data-family-disclosure="mcp">
                 <summary data-i18n="ws-settings-add-mcp">+ Add server</summary>
@@ -133,7 +150,7 @@
                 </form>
                 <ul data-candidate-rows></ul>
                 <div data-candidate-pager-outlet></div>
-                <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none">
+                <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none" data-mcp-scope="workspace">
                     <fieldset data-bind="disabled:ws-settings-busy">
                         <select name="transport" aria-label="MCP transport">
                             <option value="stdio" data-i18n="ws-settings-mcp-stdio">Local command (stdio)</option>
@@ -155,6 +172,12 @@
                             </select>
                             <input type="text" name="bearerToken" data-mcp-bearer-field aria-label="Bearer token reference" placeholder="${MCP_TOKEN}" autocomplete="off" spellcheck="false">
                         </div>
+                        <div data-mcp-secret-fields>
+                            <input type="text" name="secretName" aria-label="Secret env variable name" placeholder="Secret key name (optional, e.g. GITHUB_TOKEN)" autocomplete="off" spellcheck="false">
+                            <input type="password" name="secretValue" aria-label="Secret value" placeholder="Secret value (saved encrypted in Service env)" autocomplete="off">
+                            <small data-mcp-secret-note data-i18n="ws-settings-mcp-secret-note">Saved encrypted in Service Environment (secret). Removing this server keeps the variable.</small>
+                        </div>
+                        <small data-mcp-workspace-secret-note data-i18n="ws-settings-mcp-workspace-secret-note">Servers needing secret API keys belong at Service scope so secrets stay isolated from models.</small>
                         <footer>
                             <button type="submit" data-i18n="ws-settings-save-server">Save server</button>
                         </footer>
@@ -186,9 +209,10 @@
                 </form>
             </section>
         </section>
-        <section data-settings-panel="skills" aria-label="Skills" data-family-count="0" data-candidate-count="0">
+        <section data-settings-panel="skills" aria-label="Skills" data-family-count="0" data-candidate-count="0" data-panel-scope="workspace">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-skills">Skills</h2>
+                <div data-scope-switcher-outlet></div>
             </header>
             <details data-family-disclosure="skills">
                 <summary data-i18n="ws-settings-add-skill">+ Add skill</summary>
@@ -229,9 +253,10 @@
             </figure>
         </section>
         <div data-schedule-panel-outlet></div>
-        <section data-settings-panel="personas" aria-label="Personas" data-family-count="0" data-candidate-count="0">
+        <section data-settings-panel="personas" aria-label="Personas" data-family-count="0" data-candidate-count="0" data-panel-scope="workspace">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-personas">Personas</h2>
+                <div data-scope-switcher-outlet></div>
             </header>
             <details data-family-disclosure="personas">
                 <summary data-i18n="ws-settings-add-persona">+ Add persona</summary>
@@ -329,17 +354,10 @@
                 </table>
             </figure>
         </section>
-        <section data-settings-panel="env" aria-label="Environment" data-candidate-count="0">
+        <section data-settings-panel="env" aria-label="Environment" data-candidate-count="0" data-panel-scope="workspace">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-env">Environment</h2>
-                <form data-ws-env-scope-form hidden>
-                    <fieldset role="group">
-                        <select name="listScope" aria-label="Environment listing scope">
-                            <option value="workspace" data-i18n="env-scope-workspace">Workspace</option>
-                            <option value="session" data-i18n="env-scope-session">Session</option>
-                        </select>
-                    </fieldset>
-                </form>
+                <div data-scope-switcher-outlet></div>
             </header>
             <details data-family-disclosure="env">
                 <summary data-i18n="ws-settings-add-env">+ Set variable</summary>
@@ -369,8 +387,37 @@
         </section>
     </div>
 </template>
+<template id="scope-switcher">
+    <form data-scope-switcher-form aria-label="Configuration scope">
+        <fieldset role="group" data-bind="disabled:ws-settings-busy">
+            <button type="submit" name="scope" value="service" data-scope-option="service" aria-pressed="false">🐹 Service</button>
+            <button type="submit" name="scope" value="workspace" data-scope-option="workspace" aria-pressed="true"><span data-text="scope-workspace-glyph">🗂️</span> Workspace</button>
+            <button type="submit" name="scope" value="session" data-scope-option="session" aria-pressed="false" hidden>💬 Session</button>
+        </fieldset>
+    </form>
+</template>
+<template id="provider-credential-row">
+    <article data-provider-card data-provider-ready="false">
+        <header>
+            <strong data-text="provider-name">Provider</strong>
+            <small data-text="provider-status">Not configured</small>
+        </header>
+        <div data-provider-keys></div>
+    </article>
+</template>
+<template id="provider-key-form">
+    <form data-provider-key-form data-key-configured="false" data-key-editable="true">
+        <fieldset data-bind="disabled:ws-settings-busy">
+            <input type="hidden" name="key" data-bind="value:provider-key-name">
+            <label><code data-text="provider-key-name">API_KEY</code> <small data-text="provider-key-source"></small></label>
+            <input type="password" name="value" data-provider-key-input data-bind="aria-label:provider-key-aria placeholder:provider-key-placeholder" autocomplete="off" spellcheck="false">
+            <button type="submit" name="operation" value="set" data-provider-key-save data-i18n="save">Save</button>
+            <button type="submit" name="operation" value="unset" data-provider-key-clear data-i18n="clear">Clear</button>
+        </fieldset>
+    </form>
+</template>
 <template id="workspace-model-alias-row">
-    <tr data-model-session-usable="false">
+    <tr data-model-session-usable="false" data-alias-default="false">
         <th scope="row"><code data-text="alias-name">alias</code></th>
         <td><code data-text="alias-route">provider/model</code></td>
         <td data-text="alias-effort">Unspecified</td>
@@ -380,13 +427,15 @@
                 <fieldset data-bind="disabled:ws-settings-busy">
                     <input type="hidden" name="alias" data-bind="value:alias-name">
                     <button type="submit" name="operation" value="select" data-model-use-session data-i18n="ws-settings-use-in-session">Use in session</button>
+                    <button type="submit" name="operation" value="default" data-model-set-default data-i18n="ws-settings-set-default">Set default</button>
+                    <button type="submit" name="operation" value="remove" data-model-remove-alias data-i18n="ws-settings-remove">Remove</button>
                 </fieldset>
             </form>
         </td>
     </tr>
 </template>
 <template id="workspace-family-row">
-    <tr data-family-removable="true" data-family-state="active" data-family-auth="false">
+    <tr data-family-removable="true" data-family-state="active" data-family-auth="false" data-family-session-usable="false">
         <th scope="row"><code data-text="family-alias">alias</code></th>
         <td data-text="family-origin">workspace</td>
         <td data-text="family-summary"></td>
@@ -395,6 +444,7 @@
             <form data-family-row-form>
                 <fieldset data-bind="disabled:ws-settings-busy">
                     <input type="hidden" name="alias" data-bind="value:family-alias">
+                    <button type="submit" name="operation" value="select" data-family-use-session data-i18n="ws-settings-use-in-session">Use in session</button>
                     <button type="submit" name="operation" value="enable" data-family-enable data-i18n="env-enable">Enable</button>
                     <button type="submit" name="operation" value="enable" data-family-retry data-i18n="retry-body">Retry</button>
                     <button type="submit" name="operation" value="disable" data-family-disable data-i18n="env-disable">Disable</button>

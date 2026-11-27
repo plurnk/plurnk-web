@@ -118,6 +118,16 @@
         border-block-end: var(--otm-border-width) solid var(--otm-muted-border-color);
     }
 
+    @media (width >= 48rem) {
+        #workspace-settings {
+            margin-block: var(--otm-spacing);
+            padding: calc(var(--otm-spacing) * 1.1) calc(var(--otm-spacing) * 1.25);
+            border: var(--otm-border-width) solid var(--otm-muted-border-color);
+            border-radius: var(--otm-border-radius);
+            background-color: var(--otm-card-background-color);
+        }
+    }
+
     #workspace-tabs :where(ul > li) {
         border: var(--otm-border-width) solid var(--otm-muted-border-color);
         border-block-start: calc(var(--otm-border-width) * 2) solid transparent;

@@ -12,11 +12,14 @@ import {
     formatModelPrice,
     formatModelPriceDetail,
     listAliases,
+    listModelProviders,
     listModels,
     modelLabel,
     sessionConfigOption,
     sessionEffort,
     sessionModel,
+    setServiceConfig,
+    unsetServiceConfig,
 } from "./session-models.js";
 import { isRecord } from "./session-translator.js";
 import { COLLECTION_PAGE_SIZE } from "./workspace-collection.js";
@@ -97,6 +100,7 @@ export function mountModelsHelpAboutSections(article, {
     let currentSessionModelValues = { model: "", effort: "" };
     let lastSelectedComboboxModel = "";
     let hasPersistedSessionModel = false;
+    let autoOpenedProviders = false;
 
     /** @type {ReturnType<typeof attachModelCombobox> | null} */
     let modelsSessionCombobox = null;
@@ -335,6 +339,64 @@ export function mountModelsHelpAboutSections(article, {
     }
 
     /**
+     * @param {readonly import("./session-models.js").ModelProviderSummary[] | null} providers
+     * @param {boolean} hasConfiguredModels
+     */
+    function renderProvidersList(providers, hasConfiguredModels) {
+        const modelsPanel = $(article, '[data-settings-panel="models"]');
+        const disclosure = modelsPanel ? $(modelsPanel, "details[data-providers-disclosure]") : null;
+        const list = disclosure ? $(disclosure, "[data-providers-list]") : null;
+        if (!(disclosure instanceof HTMLDetailsElement) || !list) return;
+        if (providers === null || providers.length === 0) {
+            disclosure.hidden = true;
+            return;
+        }
+        disclosure.hidden = false;
+        const readyCount = providers.filter((item) => item.ready).length;
+        the(disclosure, "providers-ready-summary", `(${readyCount}/${providers.length} ready)`);
+        if (!autoOpenedProviders && !hasConfiguredModels) {
+            autoOpenedProviders = true;
+            disclosure.open = true;
+        }
+        $.cloneEach(list, "#provider-credential-row", providers, (card, provider) => {
+            const statusText = provider.ready ? "Ready" : (provider.readiness || "Not configured");
+            the(card, {
+                "provider-name": provider.providerName,
+                "provider-status": statusText,
+                "provider-ready": provider.ready ? "true" : "false",
+            });
+            const keysBox = $(card, "[data-provider-keys]");
+            if (!keysBox) return;
+            const keys = [
+                ...provider.credentialKeys,
+                ...(provider.baseUrlKey ? [provider.baseUrlKey] : []),
+            ];
+            $.cloneEach(keysBox, "#provider-key-form", keys, (formEl, keyInfo) => {
+                const sourceTag = keyInfo.configured
+                    ? (keyInfo.origin ? `(${keyInfo.origin})` : "(configured)")
+                    : "";
+                const placeholder = keyInfo.secret
+                    ? (keyInfo.configured ? "Configured — enter new key to replace" : "Enter API key…")
+                    : "https://…";
+                the(formEl, {
+                    "provider-key-name": keyInfo.key,
+                    "provider-key-source": sourceTag,
+                    "provider-key-aria": `${provider.providerName} ${keyInfo.key}`,
+                    "provider-key-placeholder": placeholder,
+                    "key-configured": keyInfo.configured ? "true" : "false",
+                    "key-editable": keyInfo.editable ? "true" : "false",
+                });
+                const input = $(formEl, "input[data-provider-key-input]");
+                if (input instanceof HTMLInputElement) {
+                    input.type = keyInfo.secret ? "password" : "url";
+                    input.value = keyInfo.secret ? "" : (keyInfo.value ?? "");
+                    input.disabled = !keyInfo.editable;
+                }
+            });
+        });
+    }
+
+    /**
      * @returns {Promise<{ abortedByNewerLookup: boolean }>}
      */
     async function loadModelsCatalog() {
@@ -349,7 +411,7 @@ export function mountModelsHelpAboutSections(article, {
                 managementAction(kind, params, ctx.sessionName !== null ? `${ctx.workspaceId}#${ctx.sessionName}` : "", signal, {
                     workspaceId: ctx.workspaceId,
                 });
-            const [aliases, { catalog, providers }, sessionRes] = await Promise.all([
+            const [aliases, { catalog, providers }, providerStatuses, sessionRes] = await Promise.all([
                 listAliases(callModels, signal),
                 listModels(callModels, modelsSearchQuery, {
                     offset: modelsOffset,
@@ -362,10 +424,12 @@ export function mountModelsHelpAboutSections(article, {
                     ...(modelsSort !== "selector" ? { sort: modelsSort } : {}),
                     signal,
                 }),
+                listModelProviders(callModels, signal).catch(() => null),
                 ctx.sessionName !== null ? callModels("session/options").catch(() => null) : Promise.resolve(null),
             ]);
             signal.throwIfAborted();
             modelSearchCache.recordAliases(aliases);
+            renderProvidersList(providerStatuses, aliases.length > 0 || catalog.total > 0);
             renderCatalogTable(catalog, providers);
             renderModelsSessionForm(sessionRes, aliases);
             const modelsPanel = $(article, '[data-settings-panel="models"]');
@@ -378,6 +442,7 @@ export function mountModelsHelpAboutSections(article, {
                         "alias-route": `${item.provider}/${item.model}`,
                         "alias-effort": item.effort ?? "Unspecified",
                         "alias-active": item.active ? "Default" : "Configured",
+                        "alias-default": item.active ? "true" : "false",
                         "model-session-usable": sessionUsable,
                     });
                 });
@@ -490,12 +555,83 @@ export function mountModelsHelpAboutSections(article, {
         void loadCatalogOnly();
     });
 
+    on(article, "submit", "[data-provider-key-form]", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement)) return;
+        const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+        const operation = submitter?.value ?? "set";
+        const data = new FormData(form);
+        const key = String(data.get("key") ?? "").trim();
+        const value = String(data.get("value") ?? "").trim();
+        if (!key) return;
+        if (operation === "set" && !value) {
+            setFeedback(false, `Enter a value for ${key}.`, "", "error");
+            return;
+        }
+        void runMutation(async () => {
+            const callDaemon = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) => invoke(kind, params);
+            if (operation === "unset") {
+                await unsetServiceConfig(callDaemon, key);
+            } else {
+                await setServiceConfig(callDaemon, key, value);
+                const input = $(form, "input[data-provider-key-input]");
+                if (input instanceof HTMLInputElement && input.type === "password") input.value = "";
+            }
+            modelSearchCache.invalidate();
+            await onRefreshModels();
+            return operation === "unset" ? `Cleared ${key}.` : `Saved ${key}.`;
+        });
+    });
+
+    on(article, "submit", "[data-model-alias-save-form]", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement)) return;
+        const data = new FormData(form);
+        const alias = String(data.get("alias") ?? "").trim();
+        const route = String(data.get("route") ?? "").trim();
+        if (!/^[a-zA-Z0-9_-]+$/u.test(alias)) {
+            setFeedback(false, "Alias names use letters, digits, hyphens, or underscores.", "", "error");
+            return;
+        }
+        if (!route.includes("/") || route.startsWith("/") || route.endsWith("/")) {
+            setFeedback(false, "Enter a route as provider/model.", "", "error");
+            return;
+        }
+        void runMutation(async () => {
+            const callDaemon = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) => invoke(kind, params);
+            await setServiceConfig(callDaemon, `PLURNK_MODEL_${alias}`, route);
+            modelSearchCache.invalidate();
+            await onRefreshModels();
+            for (const input of $$(form, "input")) {
+                if (input instanceof HTMLInputElement) input.value = "";
+            }
+            const disclosure = form.closest("details");
+            if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+            return `Saved alias ${alias} → ${route}.`;
+        });
+    });
+
     on(article, "submit", "[data-model-alias-row-form]", (event, form) => {
         event.preventDefault();
         if (!(form instanceof HTMLFormElement)) return;
+        const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+        const operation = submitter?.value ?? "select";
         const alias = String(new FormData(form).get("alias") ?? "").trim();
         if (!alias) return;
         void runMutation(async () => {
+            const callDaemon = (/** @type {string} */ kind, /** @type {Record<string, unknown>} */ params = {}) => invoke(kind, params);
+            if (operation === "default") {
+                await setServiceConfig(callDaemon, "PLURNK_MODEL", alias);
+                modelSearchCache.invalidate();
+                await onRefreshModels();
+                return `Default model: ${alias}.`;
+            }
+            if (operation === "remove") {
+                await unsetServiceConfig(callDaemon, `PLURNK_MODEL_${alias}`);
+                modelSearchCache.invalidate();
+                await onRefreshModels();
+                return `Removed alias ${alias}.`;
+            }
             const route = await sessionModel(
                 (kind, params = {}) => invoke(kind, params, { requireSession: true }),
                 alias,

@@ -6,6 +6,7 @@ const DEFAULT_WEB_VERSION = "4.1.0";
 
 /**
  * @typedef {"unrestricted" | "confined" | "none"} ProjectRootPolicyMode
+ * @typedef {"service" | "workspace" | "session"} FunctionalityScope
  * @typedef {{
  *   readonly workspaceTransports: readonly ("stdio" | "streamable-http")[],
  *   readonly publicOnly: boolean,
@@ -17,6 +18,7 @@ const DEFAULT_WEB_VERSION = "4.1.0";
  * @typedef {{
  *   readonly projectRoot?: ProjectRootPolicyMode,
  *   readonly families?: readonly string[],
+ *   readonly familyScopes?: Readonly<Record<string, readonly FunctionalityScope[]>>,
  *   readonly mcp?: McpDaemonPolicy,
  *   readonly skills?: SkillsDaemonPolicy,
  * }} DaemonPolicy
@@ -46,6 +48,7 @@ export function parseDaemonPolicy(raw) {
     /** @type {{
      *   projectRoot?: ProjectRootPolicyMode,
      *   families?: readonly string[],
+     *   familyScopes?: Readonly<Record<string, readonly FunctionalityScope[]>>,
      *   mcp?: McpDaemonPolicy,
      *   skills?: SkillsDaemonPolicy,
      * }} */
@@ -56,6 +59,19 @@ export function parseDaemonPolicy(raw) {
     if (Array.isArray(raw.families)) {
         const families = raw.families.filter((item) => typeof item === "string" && item.length > 0);
         next.families = Object.freeze([...new Set(families)]);
+    }
+    if (isRecord(raw.familyScopes)) {
+        /** @type {Record<string, readonly FunctionalityScope[]>} */
+        const parsedScopes = {};
+        for (const [family, scopes] of Object.entries(raw.familyScopes)) {
+            if (!family || !Array.isArray(scopes)) continue;
+            const valid = scopes.filter(
+                /** @returns {value is FunctionalityScope} */
+                (value) => value === "service" || value === "workspace" || value === "session",
+            );
+            if (valid.length > 0) parsedScopes[family] = Object.freeze([...new Set(valid)]);
+        }
+        if (Object.keys(parsedScopes).length > 0) next.familyScopes = Object.freeze(parsedScopes);
     }
     if (isRecord(raw.mcp) && Array.isArray(raw.mcp.workspaceTransports)) {
         const workspaceTransports = raw.mcp.workspaceTransports.filter(
