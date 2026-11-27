@@ -75,7 +75,7 @@ export {
  * }} SessionRunOptions
  */
 
-const CLIENT_INFO = Object.freeze({ name: "@plurnk/plurnk-web", version: "4.1.0" });
+const CLIENT_INFO = Object.freeze({ name: "@plurnk/plurnk-web", version: "5.0.0" });
 
 /** {§web-session-observer} {§web-session-reasoning} Official ACP v2 client over `/acp`. */
 export default class SessionAgent {
@@ -304,7 +304,7 @@ export default class SessionAgent {
         try {
             const initRes = /** @type {unknown} */ (await conn.agent.request(methods.agent.initialize, {
                 protocolVersion: PROTOCOL_VERSION,
-                info: { name: "@plurnk/plurnk-web", version: "4.1.0" },
+                info: { name: "@plurnk/plurnk-web", version: "5.0.0" },
                 capabilities: {
                     session: {
                         commands: {
