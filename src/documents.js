@@ -559,7 +559,8 @@ export default class Documents {
             + "</aside>";
         const closeHref = backPath ?? "/";
         const closeLink = `<a href="${escapeHtml(closeHref)}" data-settings-close data-bind="href:workspace-back-path" aria-label="Close settings" title="Close settings (Esc)">✕</a>`;
-        const body = `<article id="workspace-settings" data-active-section="${escapeHtml(section)}" aria-labelledby="workspace-settings-title" data-bind="aria-busy:ws-settings-loading">`
+        const initialBusy = !(section === "search" && !workspaceName) ? ' aria-busy="true"' : "";
+        const body = `<article id="workspace-settings" data-active-section="${escapeHtml(section)}" aria-labelledby="workspace-settings-title"${initialBusy} data-bind="aria-busy:ws-settings-loading">`
             + `<header><h1 id="workspace-settings-title">${headingMark}<span>${escapeHtml(this.#brand.appName)}</span></h1>${closeLink}</header>`
             + navHtml
             + feedbackBanner
