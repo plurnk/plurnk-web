@@ -77,6 +77,9 @@ test("{§web-search} {§web-session-directory} /settings/search escapes filter p
     assert.match(html, /<title data-text="page-title">alpha · Search — Plurnk<\/title>/u);
     assert.match(html, /<a href="\/~\/alpha#session1" data-settings-back/u);
     assert.match(html, /<main id="main" data-page="settings" data-settings-section="search" data-workspace-name="alpha" data-session-name="session1" data-connection="initial">/u);
+    assert.match(html, /<article id="workspace-settings" data-active-section="search" aria-labelledby="workspace-settings-title" aria-busy="true"/u);
+    const rootSearchHtml = documents.settings("search").toString();
+    assert.doesNotMatch(rootSearchHtml, /aria-busy="true"/u);
     assert.match(html, /<form id="search-controls" method="get" action="\/settings\/search"/u);
     assert.ok(html.includes('value="wal_sender &amp; &lt;script&gt;&quot;x&quot;"'));
     assert.ok(html.includes('<input type="hidden" name="filterWorkspace" value="~/team&amp;&quot;ws&quot;" data-search-workspace>'));
@@ -94,6 +97,7 @@ test("{§web-workspace-settings} {§web-workspace-creation} {§web-workspace-ren
     assert.match(wsHtml, /<aside data-settings-feedback data-feedback-level="idle" role="status" aria-live="polite" hidden>/u);
     assert.match(wsHtml, /<a href="\/~\/alpha#session1" data-settings-back/u);
     assert.match(wsHtml, /<main id="main" data-page="settings" data-settings-section="workspaces" data-workspace-name="alpha" data-session-name="session1">/u);
+    assert.match(wsHtml, /<article id="workspace-settings" data-active-section="workspaces" aria-labelledby="workspace-settings-title" aria-busy="true"/u);
     for (const section of ["search", "workspaces", "sessions", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help", "about"]) {
         assert.match(wsHtml, new RegExp(`href="/settings/${section}\\?workspace=alpha&amp;session=session1" data-settings-section="${section}"`, "u"));
     }
