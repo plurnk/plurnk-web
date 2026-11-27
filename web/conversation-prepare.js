@@ -46,15 +46,25 @@ export const isReplyOp = (value) => value === "send" || value === "done" || valu
  * @returns {{ readonly actor: string, readonly sessionTarget: string | null } | null}
  */
 export function extractActorInfo(inbound, facts, receipt, args) {
+    /** @param {string} value */
+    const isNamedPrincipal = (value) =>
+        value.length > 0 &&
+        value !== "_plurnk" &&
+        value !== "operator" &&
+        value !== "anonymous" &&
+        value !== "client" &&
+        value !== "owner";
+
     /** @type {unknown[]} */
     const candidates = [];
     if (inbound) {
         candidates.push(facts?.source);
     } else {
-        if (Array.isArray(receipt?.repliedToSources)) candidates.push(...receipt.repliedToSources);
         if (Array.isArray(receipt?.repliedTo)) candidates.push(...receipt.repliedTo);
+        if (Array.isArray(receipt?.repliedToSources)) candidates.push(...receipt.repliedToSources);
         candidates.push(facts?.target, facts?.address, record(args?.target)?.raw);
     }
+    // Preserve intra-workspace #session links ahead of string actor handles.
     for (const candidate of candidates) {
         if (typeof candidate !== "string" || candidate.length === 0) continue;
         const sessionMatch = /^session:\/\/([^/?#]+)/u.exec(candidate);
@@ -65,36 +75,34 @@ export function extractActorInfo(inbound, facts, receipt, args) {
                     return { actor: `#${peer}`, sessionTarget: peer };
                 }
             } catch { /* fall through */ }
+        }
+    }
+    const profileHandle = record(facts?.actorProfile)?.handle;
+    for (const rawActor of [profileHandle, facts?.actor]) {
+        if (typeof rawActor === "string") {
+            const direct = rawActor.trim();
+            if (isNamedPrincipal(direct)) {
+                return { actor: direct, sessionTarget: null };
+            }
+        }
+    }
+    for (const candidate of candidates) {
+        if (typeof candidate !== "string" || candidate.length === 0) continue;
+        const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
+        if (messageMatch !== null) {
+            try {
+                const principal = decodeURIComponent(messageMatch[1] ?? "").trim();
+                if (isNamedPrincipal(principal)) {
+                    return { actor: principal, sessionTarget: null };
+                }
+            } catch { /* fall through */ }
             continue;
         }
         const exteriorMatch = /^(?:acp|mcp):\/\/([^/?#]+)/u.exec(candidate);
         if (exteriorMatch !== null) {
             try {
                 const principal = decodeURIComponent(exteriorMatch[1] ?? "").trim();
-                if (
-                    principal.length > 0 &&
-                    principal !== "operator" &&
-                    principal !== "anonymous" &&
-                    principal !== "client" &&
-                    principal !== "owner"
-                ) {
-                    return { actor: principal, sessionTarget: null };
-                }
-            } catch { /* fall through */ }
-            continue;
-        }
-        const messageMatch = /^message:\/\/[^/?#]+\/([^/?#]+)_([0-9a-zA-Z]{2,5})$/u.exec(candidate);
-        if (messageMatch !== null) {
-            try {
-                const principal = decodeURIComponent(messageMatch[1] ?? "").trim();
-                if (
-                    principal.length > 0 &&
-                    principal !== "_plurnk" &&
-                    principal !== "operator" &&
-                    principal !== "anonymous" &&
-                    principal !== "client" &&
-                    principal !== "owner"
-                ) {
+                if (isNamedPrincipal(principal)) {
                     return { actor: principal, sessionTarget: null };
                 }
             } catch { /* fall through */ }
@@ -108,19 +116,6 @@ export function extractActorInfo(inbound, facts, receipt, args) {
                     return { actor: `schedule:${alias}`, sessionTarget: null };
                 }
             } catch { /* fall through */ }
-        }
-    }
-    if (typeof facts?.actor === "string") {
-        const direct = facts.actor.trim();
-        if (
-            direct.length > 0 &&
-            direct !== "_plurnk" &&
-            direct !== "operator" &&
-            direct !== "anonymous" &&
-            direct !== "client" &&
-            direct !== "owner"
-        ) {
-            return { actor: direct, sessionTarget: null };
         }
     }
     return null;
