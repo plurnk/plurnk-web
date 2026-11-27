@@ -788,6 +788,44 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                                 }],
                             },
                             {
+                                id: "inbound-oidc-actor",
+                                role: "user",
+                                content: "Following up from OIDC with a readable handle.",
+                                _meta: {
+                                    plurnk: {
+                                        op: "send",
+                                        coordinate: "2/2/1",
+                                        origin: "_plurnk",
+                                        actor: "alice",
+                                        actorProfile: { id: "auth0|507f1f77", handle: "alice", name: "Alice Smith" },
+                                        source: "acp://auth0%7C507f1f77/sessions/1%23session1/messages/m1",
+                                        receipt: { status: 200, resource: "message://session1/alice_00" },
+                                    },
+                                },
+                            },
+                            {
+                                id: "outbound-oidc-done",
+                                role: "assistant",
+                                content: "",
+                                toolCalls: [{
+                                    toolCallId: "done-oidc-1",
+                                    name: "done",
+                                    rawInput: { body: { raw: "Addressed by handle." }, target: { raw: "message://session1/alice_00" } },
+                                    _meta: {
+                                        plurnk: {
+                                            op: "done",
+                                            coordinate: "2/2/2",
+                                            receipt: {
+                                                status: 200,
+                                                completion: 200,
+                                                repliedTo: ["message://session1/alice_00"],
+                                                repliedToSources: ["acp://auth0%7C507f1f77/sessions/1%23session1/messages/m1"],
+                                            },
+                                        },
+                                    },
+                                }],
+                            },
+                            {
                                 id: "inbound-schedule",
                                 role: "user",
                                 content: "Nightly audit tick.",
@@ -836,6 +874,12 @@ test("{§web-session-conversation} {§web-conversation-content} native conversat
                         assert.equal(await row("outbound-actor-done").getAttribute("data-actor-direction"), "outbound");
                         assert.equal(await row("outbound-actor-done").locator("[data-message-actor]").textContent(), "scoutproxy");
                         assert.equal(await row("outbound-actor-done").getByRole("article", { name: "done · To scoutproxy", exact: true }).count(), 1);
+
+                        // OIDC / structured exterior actors display readable handle instead of raw sub authority on both inbound and outbound replies.
+                        assert.equal(await row("inbound-oidc-actor").getAttribute("data-actor"), "alice");
+                        assert.equal(await row("inbound-oidc-actor").locator("[data-message-actor]").textContent(), "alice");
+                        assert.equal(await row("outbound-oidc-done").getAttribute("data-actor"), "alice");
+                        assert.equal(await row("outbound-oidc-done").locator("[data-message-actor]").textContent(), "alice");
 
                         // Schedule trigger renders "✉️ schedule:nightly-audit →".
                         assert.equal(await row("inbound-schedule").getAttribute("data-actor"), "schedule:nightly-audit");
