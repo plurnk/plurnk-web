@@ -83,7 +83,7 @@ not justify weakening CSP or adding a compatibility system.
 | Dependency | Why it stands as it does |
 |---|---|
 | `zod` 4.6.7, an exact direct dependency | The SDK and the page share one copy: `web/schema-validation.js` configures it `jitless` before the SDK loads, as the page's CSP requires, and a second copy would not receive that. It moves only with the SDK's own range. |
-| `ondine` 0.0.2, the server-side diagram compiler | Reviewed 2026-11-14: one maintainer, published 2026-10-20 with SLSA v1 provenance, no dependencies, its compilers WASM. Review it again at every version change. |
+| `ondine` 0.0.2, the server-side diagram compiler | Reviewed 2026-11-14: one maintainer, published 2026-10-20 with SLSA v1 provenance, no dependencies, its compilers WASM (`0.0.3` reviewed and rejected 2026-11-27: adds `incur` and transitive `@modelcontextprotocol/server` alpha to runtime `dependencies`). Review it again at every version change. |
 | `highlight.js` 11, the browser syntax tokenizer | Reviewed 2026-11-13: BSD-3-Clause, no dependencies, no `eval` or inline styles, the most widely deployed highlighter with a stable class-scope output. Web reads that output as tokens and projects them as CSS Custom Highlight ranges, so the content keeps one text node and the stylesheet needs no class selectors; Shiki's inline styles would breach the CSP and a hand-written lexer would be a second grammar authority. |
 | `@types/negotiator` 0.6 for `negotiator` 1.1 | No 1.x declarations exist; `src/static-assets.js` declares the one 1.x call it relies on, `encoding(available, { preferred })`. |
 
