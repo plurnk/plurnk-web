@@ -20,8 +20,7 @@ export function extractEnvEntries(res, fallbackOrigin) {
         const source = isRecord(item.provenance) && typeof item.provenance.source === "string" && item.provenance.source.length > 0
             ? item.provenance.source
             : "";
-        const secret = isRecord(item.definition) && item.definition.secret === true;
-        return [{ alias, origin, state, source, secret }];
+        return [{ alias, origin, state, source }];
     });
 }
 
@@ -36,13 +35,11 @@ export function populateEnvPanel(panel, res, listScope) {
     if (!tbody) throw new Error("Environment panel template is incomplete.");
     const entries = extractEnvEntries(res, listScope);
     $.cloneEach(tbody, "#command-env-row", entries, (tr, entry) => {
-        const removable = entry.origin === listScope || (listScope === "session" && entry.origin === "workspace");
-        const statusBase = entry.secret ? `secret · ${entry.state}` : entry.state;
+        const removable = entry.origin === listScope;
         the(tr, {
             "env-alias": entry.alias,
             "env-origin": entry.origin,
-            "env-status": entry.source ? `${statusBase} (${entry.source})` : statusBase,
-            "env-secret": entry.secret ? "true" : "false",
+            "env-status": entry.source ? `${entry.state} (${entry.source})` : entry.state,
             "env-removable": removable ? "true" : "false",
             "env-enabled": entry.state !== "disabled" ? "true" : "false",
         });

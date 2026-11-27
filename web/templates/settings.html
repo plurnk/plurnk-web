@@ -150,7 +150,7 @@
                 </form>
                 <ul data-candidate-rows></ul>
                 <div data-candidate-pager-outlet></div>
-                <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none" data-mcp-scope="workspace">
+                <form data-mcp-save-form data-mcp-transport="stdio" data-mcp-auth="none">
                     <fieldset data-bind="disabled:ws-settings-busy">
                         <select name="transport" aria-label="MCP transport">
                             <option value="stdio" data-i18n="ws-settings-mcp-stdio">Local command (stdio)</option>
@@ -173,11 +173,10 @@
                             <input type="text" name="bearerToken" data-mcp-bearer-field aria-label="Bearer token reference" placeholder="${MCP_TOKEN}" autocomplete="off" spellcheck="false">
                         </div>
                         <div data-mcp-secret-fields>
-                            <input type="text" name="secretName" aria-label="Secret env variable name" placeholder="Secret key name (optional, e.g. GITHUB_TOKEN)" autocomplete="off" spellcheck="false">
-                            <input type="password" name="secretValue" aria-label="Secret value" placeholder="Secret value (saved encrypted in Service env)" autocomplete="off">
-                            <small data-mcp-secret-note data-i18n="ws-settings-mcp-secret-note">Saved encrypted in Service Environment (secret). Removing this server keeps the variable.</small>
+                            <div data-mcp-secret-rows></div>
+                            <button type="button" data-mcp-add-secret-row data-i18n="ws-settings-mcp-add-secret">+ Add secret key</button>
+                            <small data-mcp-secret-note data-i18n="ws-settings-mcp-secret-note">Encrypted for this MCP server only; falls back to Environment when unset.</small>
                         </div>
-                        <small data-mcp-workspace-secret-note data-i18n="ws-settings-mcp-workspace-secret-note">Servers needing secret API keys belong at Service scope so secrets stay isolated from models.</small>
                         <footer>
                             <button type="submit" data-i18n="ws-settings-save-server">Save server</button>
                         </footer>
@@ -198,6 +197,25 @@
                     <tbody data-family-rows></tbody>
                 </table>
             </figure>
+            <section data-mcp-secrets-box aria-label="MCP server secret keys" data-mcp-secrets-empty="true" hidden>
+                <header data-panel-toolbar>
+                    <h3><span data-i18n="ws-settings-mcp-keys-heading">Secret keys for</span> <code data-text="mcp-secrets-alias">server</code> <small>(<span data-text="mcp-secrets-scope">workspace</span>)</small></h3>
+                    <button type="button" data-mcp-secrets-close aria-label="Close secret keys">✕</button>
+                </header>
+                <small data-mcp-secrets-inherited data-text="mcp-secrets-inherited" hidden></small>
+                <p data-mcp-secrets-none data-i18n="ws-settings-mcp-keys-empty">No secret keys stored at this scope (falls back to Environment).</p>
+                <ul data-mcp-configured-keys></ul>
+                <form data-mcp-secrets-set-form>
+                    <fieldset data-bind="disabled:ws-settings-busy">
+                        <input type="hidden" name="alias" data-bind="value:mcp-secrets-alias">
+                        <div data-mcp-secret-rows></div>
+                        <button type="button" data-mcp-add-secret-row data-i18n="ws-settings-mcp-add-secret">+ Add secret key</button>
+                        <footer>
+                            <button type="submit" data-i18n="ws-settings-mcp-save-keys">Save keys</button>
+                        </footer>
+                    </fieldset>
+                </form>
+            </section>
             <section data-mcp-oauth-box aria-label="MCP OAuth authorization" hidden>
                 <p><span data-i18n="ws-settings-oauth-open">Authorize server:</span> <a data-mcp-oauth-link href="/" target="_blank" rel="noopener noreferrer" data-bind="href:mcp-oauth-url" data-text="mcp-oauth-url"></a></p>
                 <form data-mcp-oauth-complete-form>
@@ -435,7 +453,7 @@
     </tr>
 </template>
 <template id="workspace-family-row">
-    <tr data-family-removable="true" data-family-state="active" data-family-auth="false" data-family-session-usable="false">
+    <tr data-family-removable="true" data-family-state="active" data-family-auth="false" data-family-secrets-capable="false" data-family-session-usable="false">
         <th scope="row"><code data-text="family-alias">alias</code></th>
         <td data-text="family-origin">workspace</td>
         <td data-text="family-summary"></td>
@@ -449,11 +467,31 @@
                     <button type="submit" name="operation" value="enable" data-family-retry data-i18n="retry-body">Retry</button>
                     <button type="submit" name="operation" value="disable" data-family-disable data-i18n="env-disable">Disable</button>
                     <button type="submit" name="operation" value="oauth" data-family-authorize data-i18n="ws-settings-authorize">Authorize</button>
+                    <button type="submit" name="operation" value="secrets" data-family-secrets data-text="family-secrets-label">Keys</button>
                     <button type="submit" name="operation" value="remove" data-family-remove data-i18n="ws-settings-remove">Remove</button>
                 </fieldset>
             </form>
         </td>
     </tr>
+</template>
+<template id="mcp-secret-input-row">
+    <div data-mcp-secret-row>
+        <input type="text" name="secretName" aria-label="Secret env variable name" placeholder="KEY (e.g. WEATHER_KEY)" autocomplete="off" spellcheck="false">
+        <input type="password" name="secretValue" aria-label="Secret value" placeholder="Secret value" autocomplete="off">
+        <button type="button" data-mcp-remove-secret-row aria-label="Remove secret row" title="Remove">✕</button>
+    </div>
+</template>
+<template id="mcp-configured-key-row">
+    <li>
+        <code data-text="secret-key-name">KEY</code> <small data-i18n="ws-settings-secret-encrypted">encrypted</small>
+        <form data-mcp-secret-unset-form>
+            <fieldset data-bind="disabled:ws-settings-busy">
+                <input type="hidden" name="alias" data-bind="value:secret-key-alias">
+                <input type="hidden" name="key" data-bind="value:secret-key-name">
+                <button type="submit" data-i18n="ws-settings-remove">Remove</button>
+            </fieldset>
+        </form>
+    </li>
 </template>
 <template id="workspace-candidate-row">
     <li data-candidate-addable="false">

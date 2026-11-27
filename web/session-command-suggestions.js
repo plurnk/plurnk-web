@@ -99,7 +99,7 @@ const ZERO_ARG_COMMANDS = new Set([
 ]);
 
 const FAMILY_SUBCOMMANDS = Object.freeze({
-    mcp: ["list", "enable", "disable", "remove", "oauth", "discover", "add", "replace", "skills", "complete"],
+    mcp: ["list", "enable", "disable", "remove", "oauth", "secrets", "discover", "add", "replace", "skills", "complete"],
     skills: ["list", "enable", "disable", "remove", "discover", "add", "replace"],
     schedule: ["list", "show", "inspect", "run", "enable", "disable", "done", "reopen", "remove", "discover", "add", "replace"],
     personas: ["list", "enable", "disable", "remove", "discover", "add", "replace"],

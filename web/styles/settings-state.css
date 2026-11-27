@@ -223,20 +223,76 @@
         font-size: 0.875em;
     }
 
-    #workspace-settings [data-env-secret-field] {
-        display: inline-flex;
-        flex: 0 0 auto;
-        align-items: center;
-        gap: 0.4ch;
-        margin: 0;
-        font-size: 0.875em;
-        white-space: nowrap;
+    #workspace-settings [data-mcp-secret-note] {
+        display: block;
+        margin-block: calc(var(--otm-spacing) * 0.35) calc(var(--otm-spacing) * 0.5);
+        color: var(--otm-muted-color);
     }
 
-    #workspace-settings :is([data-mcp-secret-note], [data-mcp-workspace-secret-note]) {
-        display: block;
-        margin-block: 0 calc(var(--otm-spacing) * 0.5);
-        color: var(--otm-muted-color);
+    #workspace-settings [data-mcp-secret-row] {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: calc(var(--otm-spacing) * 0.4);
+        margin-block-end: calc(var(--otm-spacing) * 0.4);
+    }
+
+    #workspace-settings [data-mcp-secret-row] > input {
+        flex: 1 1 12rem;
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    #workspace-settings :is([data-mcp-remove-secret-row], [data-mcp-add-secret-row], [data-mcp-secrets-close]) {
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.35) calc(var(--otm-form-element-spacing-inline) * 0.65);
+        font-size: 0.875em;
+    }
+
+    #workspace-settings [data-mcp-secrets-box] {
+        margin-block-start: var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.75) var(--otm-spacing);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-working-surface);
+    }
+
+    #workspace-settings [data-mcp-secrets-box] > header > h3 {
+        margin: 0;
+        font-size: 1rem;
+    }
+
+    #workspace-settings [data-mcp-configured-keys] {
+        display: grid;
+        gap: calc(var(--otm-spacing) * 0.35);
+        padding: 0;
+        margin-block: calc(var(--otm-spacing) * 0.5) calc(var(--otm-spacing) * 0.75);
+        list-style: none;
+    }
+
+    #workspace-settings [data-mcp-configured-keys] > li {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: calc(var(--otm-spacing) * 0.5);
+        padding: calc(var(--otm-spacing) * 0.35) calc(var(--otm-spacing) * 0.6);
+        border: var(--otm-border-width) solid var(--otm-muted-border-color);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--otm-card-background-color);
+    }
+
+    #workspace-settings [data-mcp-configured-keys] form,
+    #workspace-settings [data-mcp-configured-keys] fieldset {
+        margin: 0;
+    }
+
+    #workspace-settings [data-mcp-configured-keys] button {
+        inline-size: auto;
+        margin: 0;
+        padding: calc(var(--otm-form-element-spacing-block) * 0.25) calc(var(--otm-form-element-spacing-inline) * 0.6);
+        font-size: 0.85em;
     }
 
     #workspace-settings [data-settings-nav] a[aria-current="page"] {
@@ -558,11 +614,11 @@
     #workspace-settings tr[data-family-state="disabled"] [data-family-disable],
     #workspace-settings tr[data-family-removable="false"] [data-family-remove],
     #workspace-settings tr[data-family-auth="false"] [data-family-authorize],
+    #workspace-settings tr[data-family-secrets-capable="false"] [data-family-secrets],
     #workspace-settings tr[data-family-session-usable="false"] [data-family-use-session],
     #workspace-settings [data-candidate-addable="false"] [data-candidate-add-form],
-    #workspace-settings [data-env-set-form]:not([data-env-scope="service"]) [data-env-secret-field],
-    #workspace-settings [data-mcp-save-form]:not([data-mcp-scope="service"]) [data-mcp-secret-fields],
-    #workspace-settings [data-mcp-save-form]:not([data-mcp-scope="workspace"]) [data-mcp-workspace-secret-note],
+    #workspace-settings [data-mcp-secrets-box][data-mcp-secrets-empty="true"] > [data-mcp-configured-keys],
+    #workspace-settings [data-mcp-secrets-box]:not([data-mcp-secrets-empty="true"]) > [data-mcp-secrets-none],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="stdio"]) [data-mcp-stdio-fields],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-transport="streamable-http"]) [data-mcp-http-fields],
     #workspace-settings [data-mcp-save-form]:not([data-mcp-auth="bearer"]) [data-mcp-bearer-field],

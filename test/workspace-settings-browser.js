@@ -117,21 +117,23 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             );
             assert.doesNotMatch(await envPanel.textContent(), /ultra-secret-overview-token/u);
 
-            // Switch to Service scope on Environment: save a service-only encrypted secret and verify it never appears in Workspace scope
+            // Switch to Service scope on Environment: save a service default variable, then verify Workspace inherits it without exposing Unset
             await envPanel.locator('[data-scope-option="service"]').click();
             await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"]')?.getAttribute("data-panel-scope") === "service");
             await envDisclosure.locator("> summary").click();
-            await envDisclosure.getByRole("textbox", { name: "Variable name", exact: true }).fill("SVC_MCP_SECRET");
-            await envDisclosure.getByLabel("Variable value", { exact: true }).fill("sk-live-service-secret-e2e");
-            await envDisclosure.getByRole("checkbox", { name: "Secret (MCP only)", exact: true }).check();
+            await envDisclosure.getByRole("textbox", { name: "Variable name", exact: true }).fill("SVC_SHARED_REGION");
+            await envDisclosure.getByLabel("Variable value", { exact: true }).fill("us-east-1");
             await envDisclosure.getByRole("button", { name: "Set", exact: true }).click();
-            await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="SVC_MCP_SECRET"]') !== null);
-            assert.doesNotMatch(await envPanel.textContent(), /sk-live-service-secret-e2e/u);
-            assert.match(await envPanel.locator('tr[data-env-alias="SVC_MCP_SECRET"]').textContent(), /secret/u);
+            await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="SVC_SHARED_REGION"]') !== null);
             await envPanel.locator('[data-scope-option="workspace"]').click();
             await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"]')?.getAttribute("data-panel-scope") === "workspace");
             await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
-            assert.equal(await envPanel.locator('tr[data-env-alias="SVC_MCP_SECRET"]').count(), 0, "Service secret never appears in Workspace env");
+            await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="SVC_SHARED_REGION"]') !== null);
+            assert.equal(
+                await envPanel.locator('tr[data-env-alias="SVC_SHARED_REGION"] [data-env-unset]').isVisible(),
+                false,
+                "Workspace scope hides Unset on inherited service env variable",
+            );
 
             assert.equal(resumedSessions.length, 0, "0-session workspace mutations never attach or create a session");
             await page.locator("[data-settings-close]").click();

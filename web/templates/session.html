@@ -98,7 +98,7 @@
         <li data-command-name="cancel"><code data-i18n="command-cancel-usage">/cancel [@id]</code> <span data-i18n="command-cancel-summary">Cancel a pending gate.</span></li>
         <li data-command-name="edit"><code data-i18n="command-edit-usage">/edit [@id] &lt;body…&gt;</code> <span data-i18n="command-edit-summary">Approve a pending proposal with an edited body.</span></li>
         <li data-command-name="answer"><code data-i18n="command-answer-usage">/answer [@id] &lt;json&gt;</code> <span data-i18n="command-answer-summary">Submit a structured answer to a pending elicitation gate.</span></li>
-        <li data-command-name="mcp"><code data-i18n="command-mcp-usage">/mcp [--scope service|workspace] [list|discover|add|replace|enable|disable|remove|oauth|skills|complete] …</code> <span data-i18n="command-mcp-summary">Inspect or manage service or workspace MCP servers.</span></li>
+        <li data-command-name="mcp"><code data-i18n="command-mcp-usage">/mcp [--scope service|workspace] [list|discover|add|replace|enable|disable|remove|oauth|secrets|skills|complete] …</code> <span data-i18n="command-mcp-summary">Inspect or manage service or workspace MCP servers and secret keys.</span></li>
         <li data-command-name="skills"><code data-i18n="command-skills-usage">/skills [--scope service|workspace] [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-skills-summary">Inspect or manage service or workspace skills.</span></li>
         <li data-command-name="schedule"><code data-i18n="command-schedule-usage">/schedule [list|inspect|discover|add|replace|run|done|reopen|enable|disable|remove] …</code> <span data-i18n="command-schedule-summary">Inspect, run, or manage workspace schedules and macros.</span></li>
         <li data-command-name="personas"><code data-i18n="command-personas-usage">/personas [--scope service|workspace] [list|discover|add|replace|enable|disable|remove] …</code> <span data-i18n="command-personas-summary">Inspect or manage service or workspace personas.</span></li>
@@ -154,7 +154,7 @@
                 <tbody></tbody>
             </table>
         </figure>
-        <form data-env-set-form data-env-scope="workspace">
+        <form data-env-set-form>
             <fieldset data-bind="disabled:env-busy">
                 <select name="scope" aria-label="Variable scope">
                     <option value="service" data-i18n="env-scope-service">Service</option>
@@ -163,14 +163,13 @@
                 </select>
                 <input type="text" name="alias" placeholder="NAME" aria-label="Variable name" autocomplete="off" spellcheck="false" required>
                 <input type="password" name="value" placeholder="Value" aria-label="Variable value" autocomplete="off">
-                <label data-env-secret-field><input type="checkbox" name="secret" value="1" aria-label="Secret (MCP only)"> <span data-i18n="env-secret-label">Secret (MCP only)</span></label>
                 <button type="submit" data-i18n="env-set">Set</button>
             </fieldset>
         </form>
     </section>
 </template>
 <template id="command-env-row">
-    <tr data-env-removable="true" data-env-enabled="true" data-env-secret="false">
+    <tr data-env-removable="true" data-env-enabled="true">
         <th scope="row"><code data-text="env-alias">VARIABLE</code></th>
         <td data-text="env-origin">session</td>
         <td data-text="env-status">active</td>
