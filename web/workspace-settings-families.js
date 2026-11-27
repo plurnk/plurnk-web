@@ -405,7 +405,6 @@ export function mountFamilyAndEnvSections(article, {
         if (family === boundFamily) activeScope = scope;
         const panel = $(article, `[data-settings-panel="${family}"]`);
         if (panel instanceof HTMLElement) {
-            panel.dataset.panelScope = scope;
             const switcher = $(panel, "form[data-scope-switcher-form]");
             if (switcher instanceof HTMLFormElement) {
                 the(switcher, "scope-workspace-glyph", ctx.hasProjectRoot ? "🗂️" : "☁️");
@@ -580,6 +579,7 @@ export function mountFamilyAndEnvSections(article, {
                 "family-session-usable": sessionUsable ? "true" : "false",
             });
         });
+        panel.setAttribute("data-panel-scope", scope);
         the(panel, { "family-count": items.length });
         if (family === "mcp" && openMcpSecretsTarget !== null) {
             renderOpenMcpSecretsBox();
@@ -734,6 +734,8 @@ export function mountFamilyAndEnvSections(article, {
                 const applied = bar ? bar.applyResult(res) : { clamped: false };
                 if (applied.clamped && attempt === 0) continue;
                 if (envPanel) populateEnvPanel(envPanel, res, scope);
+                const envSectionEl = $(article, '[data-settings-panel="env"]');
+                if (envSectionEl instanceof HTMLElement) envSectionEl.dataset.panelScope = scope;
                 return;
             }
         } catch (error) {
@@ -754,6 +756,7 @@ export function mountFamilyAndEnvSections(article, {
         const allowed = availableScopesFor(rawFamily);
         if (!allowed.includes(requested) || requested === activeScope) return;
         activeScope = requested;
+        if (panel instanceof HTMLElement) delete panel.dataset.panelScope;
         collectionBars.get(rawFamily)?.resetOffset();
         syncScopeControls(rawFamily);
         if (rawFamily === "env") void onRefreshEnv();
