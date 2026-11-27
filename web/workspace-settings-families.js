@@ -114,15 +114,56 @@ function formatFamilyDetails(family, item) {
 }
 
 /**
+ * Parse repeatable `(secretName, secretValue)` rows from a form.
+ * @param {HTMLFormElement} form
+ * @returns {{ readonly secretNames: readonly string[], readonly secrets: Readonly<Record<string, string>> }}
+ */
+function parseMcpSecretRows(form) {
+    const data = new FormData(form);
+    const names = data.getAll("secretName").map((v) => String(v).trim());
+    const values = data.getAll("secretValue").map((v) => String(v));
+    /** @type {string[]} */
+    const secretNames = [];
+    /** @type {Record<string, string>} */
+    const secrets = {};
+    const count = Math.max(names.length, values.length);
+    for (let i = 0; i < count; i += 1) {
+        const name = names[i] ?? "";
+        const value = values[i] ?? "";
+        if (!name && !value) continue;
+        if (value && !name) {
+            throw new Error("Enter a secret key variable name alongside the secret value.");
+        }
+        if (!SHELL_VAR_NAME.test(name)) {
+            throw new Error(`'${name}' is not a valid environment variable name.`);
+        }
+        if (!secretNames.includes(name)) secretNames.push(name);
+        if (value !== "") secrets[name] = value;
+    }
+    return { secretNames, secrets };
+}
+
+/**
+ * Reset a `[data-mcp-secret-rows]` container to one blank input row.
+ * @param {ParentNode} root
+ */
+function resetMcpSecretRows(root) {
+    const rowsBox = $(root, "[data-mcp-secret-rows]");
+    if (!rowsBox) return;
+    rowsBox.replaceChildren();
+    $.clone(rowsBox, "#mcp-secret-input-row");
+}
+
+/**
  * {§web-workspace-settings} Table-driven Functionality save contracts across workspace families.
  * @type {readonly {
  *   readonly family: WorkspaceFamily,
  *   readonly selector: string,
  *   readonly verb: "add" | "replace",
- *   readonly build: (form: HTMLFormElement, scope: FamilyScope) => {
+ *   readonly build: (form: HTMLFormElement) => {
  *     readonly label: string,
  *     readonly payload: Record<string, unknown>,
- *     readonly secretBinding?: { readonly alias: string, readonly value: string },
+ *     readonly secrets?: Readonly<Record<string, string>>,
  *   },
  *   readonly clear: (form: HTMLFormElement) => void,
  * }[]}
@@ -132,31 +173,25 @@ const FAMILY_SAVE_SPECS = [
         family: "mcp",
         selector: "[data-mcp-save-form]",
         verb: "replace",
-        /** @param {HTMLFormElement} form @param {FamilyScope} scope */
-        build(form, scope) {
+        /** @param {HTMLFormElement} form */
+        build(form) {
             const data = new FormData(form);
             const transport = String(data.get("transport") ?? "stdio");
             const alias = String(data.get("alias") ?? "").trim();
             if (!alias) throw new Error("Enter a server alias.");
-            const secretName = scope === "service" ? String(data.get("secretName") ?? "").trim() : "";
-            const secretValue = scope === "service" ? String(data.get("secretValue") ?? "") : "";
-            if (secretName && !SHELL_VAR_NAME.test(secretName)) {
-                throw new Error(`'${secretName}' is not a valid environment variable name.`);
-            }
-            if (secretValue && !secretName) {
-                throw new Error("Enter a secret key variable name alongside the secret value.");
-            }
-            const secretBinding = secretName ? { alias: secretName, value: secretValue } : undefined;
+            const { secretNames, secrets } = parseMcpSecretRows(form);
+            const hasSecrets = Object.keys(secrets).length > 0 ? secrets : undefined;
             if (transport === "streamable-http") {
                 const url = String(data.get("url") ?? "").trim();
                 if (!url) throw new Error("Enter an HTTP(S) endpoint URL.");
                 const authMode = String(data.get("authMode") ?? "none");
                 const rawBearerToken = String(data.get("bearerToken") ?? "").trim();
-                const bearerToken = rawBearerToken || (secretName ? `\${${secretName}}` : "");
-                const useBearer = authMode === "bearer" || (authMode === "none" && secretName.length > 0);
+                const autoToken = secretNames.length === 1 ? `\${${secretNames[0]}}` : "";
+                const bearerToken = rawBearerToken || autoToken;
+                const useBearer = authMode === "bearer" || (authMode === "none" && autoToken.length > 0);
                 return {
                     label: alias,
-                    secretBinding,
+                    secrets: hasSecrets,
                     payload: {
                         alias,
                         type: "streamable-http",
@@ -176,14 +211,13 @@ const FAMILY_SAVE_SPECS = [
             const cwd = String(data.get("cwd") ?? "").trim();
             return {
                 label: alias,
-                secretBinding,
+                secrets: hasSecrets,
                 payload: {
                     alias,
                     type: "stdio",
                     command,
                     ...(args.length > 0 ? { args } : {}),
                     ...(cwd ? { cwd } : {}),
-                    ...(secretName ? { env: { [secretName]: `\${${secretName}}` } } : {}),
                 },
             };
         },
@@ -191,6 +225,7 @@ const FAMILY_SAVE_SPECS = [
             for (const input of $$(form, "input")) {
                 if (input instanceof HTMLInputElement) input.value = "";
             }
+            resetMcpSecretRows(form);
         },
     },
     {
@@ -330,6 +365,10 @@ export function mountFamilyAndEnvSections(article, {
     let activeScope = initialScope ?? (getContext().workspaceId <= 0 && MULTI_SCOPE_FAMILIES.has(boundFamily) ? "service" : "workspace");
     /** @type {"service" | "workspace"} */
     let mcpOAuthScope = "workspace";
+    /** @type {{ alias: string, scope: "service" | "workspace" } | null} */
+    let openMcpSecretsTarget = null;
+    /** @type {Map<string, { keys: readonly string[], inheritedKeys: readonly string[] }>} */
+    let mcpSecretsByServer = new Map();
     /** @type {WeakMap<Element, { family: DiscoverableFamily, alias: string, definition: Record<string, unknown> }>} */
     const candidateData = new WeakMap();
     /** @type {Map<BrowsableFamily, AbortController>} */
@@ -380,20 +419,8 @@ export function mountFamilyAndEnvSections(article, {
                 }
             }
         }
-        if (family === "mcp") {
-            const mcpForm = $(article, "form[data-mcp-save-form]");
-            if (mcpForm instanceof HTMLFormElement) mcpForm.dataset.mcpScope = scope;
-        }
         if (family === "env" && envPanel) {
-            const setForm = $(article, "form[data-env-set-form]");
-            const setSelect = setForm ? $(setForm, 'select[name="scope"]') : null;
-            if (setForm instanceof HTMLFormElement) {
-                setForm.dataset.envScope = scope;
-                if (scope !== "service") {
-                    const secretBox = $(setForm, 'input[name="secret"]');
-                    if (secretBox instanceof HTMLInputElement) secretBox.checked = false;
-                }
-            }
+            const setSelect = $(article, 'form[data-env-set-form] select[name="scope"]');
             if (setSelect instanceof HTMLSelectElement) {
                 for (const opt of setSelect.options) {
                     const permitted = allowed.includes(/** @type {FamilyScope} */ (opt.value));
@@ -413,6 +440,10 @@ export function mountFamilyAndEnvSections(article, {
             if (cloned) outlet.remove();
         }
     }
+    const mcpSaveForm = $(article, "form[data-mcp-save-form]");
+    if (mcpSaveForm) resetMcpSecretRows(mcpSaveForm);
+    const mcpSecretsSetForm = $(article, "form[data-mcp-secrets-set-form]");
+    if (mcpSecretsSetForm) resetMcpSecretRows(mcpSecretsSetForm);
     syncScopeControls(boundFamily);
 
     /** @type {ReturnType<typeof attachModelCombobox> | null} */
@@ -528,6 +559,14 @@ export function mountFamilyAndEnvSections(article, {
                 : (state === "unavailable" || state === "authorization-required") ? "retryable"
                 : "active";
             const sessionUsable = family === "personas" && hasSession && state !== "disabled";
+            const secretInfo = family === "mcp" ? mcpSecretsByServer.get(alias) : undefined;
+            const localKeyCount = secretInfo?.keys.length ?? 0;
+            const inheritedKeyCount = secretInfo?.inheritedKeys.length ?? 0;
+            const secretsLabel = localKeyCount > 0
+                ? `Keys (${localKeyCount})`
+                : inheritedKeyCount > 0
+                    ? `Keys (${inheritedKeyCount} svc)`
+                    : "Keys";
             the(tr, {
                 "family-alias": alias,
                 "family-origin": origin,
@@ -536,10 +575,83 @@ export function mountFamilyAndEnvSections(article, {
                 "family-removable": origin === scope ? "true" : "false",
                 "family-state": rowState,
                 "family-auth": supportsOAuth ? "true" : "false",
+                "family-secrets-capable": family === "mcp" ? "true" : "false",
+                "family-secrets-label": secretsLabel,
                 "family-session-usable": sessionUsable ? "true" : "false",
             });
         });
         the(panel, { "family-count": items.length });
+        if (family === "mcp" && openMcpSecretsTarget !== null) {
+            renderOpenMcpSecretsBox();
+        }
+    }
+
+    function renderOpenMcpSecretsBox() {
+        const box = $(article, "[data-mcp-secrets-box]");
+        if (!(box instanceof HTMLElement)) return;
+        const currentMcpScope = resolvedScopeFor("mcp") === "service" ? "service" : "workspace";
+        if (openMcpSecretsTarget === null || openMcpSecretsTarget.scope !== currentMcpScope) {
+            openMcpSecretsTarget = null;
+            box.hidden = true;
+            return;
+        }
+        const { alias, scope } = openMcpSecretsTarget;
+        const info = mcpSecretsByServer.get(alias) ?? { keys: [], inheritedKeys: [] };
+        box.hidden = false;
+        box.dataset.mcpSecretsEmpty = info.keys.length === 0 ? "true" : "false";
+        the(box, {
+            "mcp-secrets-alias": alias,
+            "mcp-secrets-scope": scope === "service" ? "🐹 Service" : "🗂️ Workspace",
+        });
+        const inheritedNote = $(box, "[data-mcp-secrets-inherited]");
+        if (inheritedNote instanceof HTMLElement) {
+            if (scope === "workspace" && info.inheritedKeys.length > 0) {
+                inheritedNote.hidden = false;
+                the(box, "mcp-secrets-inherited", `Inherited from Service: ${info.inheritedKeys.join(", ")} (save a key with the same name below to override in this workspace).`);
+            } else {
+                inheritedNote.hidden = true;
+                the(box, "mcp-secrets-inherited", "");
+            }
+        }
+        const keysList = $(box, "[data-mcp-configured-keys]");
+        if (keysList) {
+            $.cloneEach(keysList, "#mcp-configured-key-row", info.keys, (li, keyName) => {
+                the(li, {
+                    "secret-key-alias": alias,
+                    "secret-key-name": keyName,
+                });
+            });
+        }
+    }
+
+    /**
+     * @param {"service" | "workspace"} scope
+     * @param {AbortSignal} signal
+     */
+    async function loadMcpSecretsMap(scope, signal) {
+        /** @type {Map<string, { keys: readonly string[], inheritedKeys: readonly string[] }>} */
+        const next = new Map();
+        try {
+            const raw = await invoke(`${scope}.mcp.secrets.list`, {}, { signal });
+            if (isRecord(raw) && isRecord(raw.byServer)) {
+                for (const [alias, entry] of Object.entries(raw.byServer)) {
+                    if (Array.isArray(entry)) {
+                        const keys = entry.filter((k) => typeof k === "string");
+                        next.set(alias, { keys, inheritedKeys: [] });
+                    } else if (isRecord(entry)) {
+                        const keys = Array.isArray(entry.keys) ? entry.keys.filter((k) => typeof k === "string") : [];
+                        const inheritedKeys = Array.isArray(entry.inheritedKeys) ? entry.inheritedKeys.filter((k) => typeof k === "string") : [];
+                        next.set(alias, { keys, inheritedKeys });
+                    }
+                }
+            }
+        } catch (error) {
+            const status = Reflect.get(Object(error), "status");
+            if (status !== 404 && status !== 400 && status !== 501) {
+                if (signal.aborted) throw error;
+            }
+        }
+        mcpSecretsByServer = next;
     }
 
     /**
@@ -586,7 +698,11 @@ export function mountFamilyAndEnvSections(article, {
         try {
             for (let attempt = 0; attempt < 2; attempt += 1) {
                 const params = bar ? bar.getParams() : {};
-                const res = await invoke(`${scope}.${family}.list`, params, { signal: req.signal });
+                const mcpScope = scope === "service" ? "service" : "workspace";
+                const [res] = await Promise.all([
+                    invoke(`${scope}.${family}.list`, params, { signal: req.signal }),
+                    family === "mcp" ? loadMcpSecretsMap(mcpScope, req.signal) : Promise.resolve(),
+                ]);
                 if (req.signal.aborted || ctx.signal.aborted) return;
                 const applied = bar ? bar.applyResult(res) : { clamped: false };
                 if (applied.clamped && attempt === 0) continue;
@@ -662,15 +778,31 @@ export function mountFamilyAndEnvSections(article, {
             form.dataset.personaMode = select.value;
         }
     });
-    on(article, "change", '[data-env-set-form] select[name="scope"]', (_event, select) => {
-        const form = select.closest("form[data-env-set-form]");
-        if (!(form instanceof HTMLFormElement) || !(select instanceof HTMLSelectElement)) return;
-        const nextScope = select.value === "service" || select.value === "session" ? select.value : "workspace";
-        form.dataset.envScope = nextScope;
-        if (nextScope !== "service") {
-            const secretBox = $(form, 'input[name="secret"]');
-            if (secretBox instanceof HTMLInputElement) secretBox.checked = false;
+    on(article, "click", "[data-mcp-add-secret-row]", (_event, btn) => {
+        const form = btn.closest("form");
+        const rowsBox = form ? $(form, "[data-mcp-secret-rows]") : null;
+        if (!rowsBox) return;
+        const row = $.clone(rowsBox, "#mcp-secret-input-row");
+        const nameInput = row ? $(row, 'input[name="secretName"]') : null;
+        if (nameInput instanceof HTMLInputElement) nameInput.focus();
+    });
+
+    on(article, "click", "[data-mcp-remove-secret-row]", (_event, btn) => {
+        const row = btn.closest("[data-mcp-secret-row]");
+        const rowsBox = row?.parentElement;
+        if (!row || !rowsBox) return;
+        if (rowsBox.querySelectorAll("[data-mcp-secret-row]").length > 1) {
+            row.remove();
+            return;
         }
+        for (const input of $$(row, "input")) {
+            if (input instanceof HTMLInputElement) input.value = "";
+        }
+    });
+
+    on(article, "click", "[data-mcp-secrets-close]", () => {
+        openMcpSecretsTarget = null;
+        renderOpenMcpSecretsBox();
     });
 
     on(article, "submit", "[data-family-row-form]", (event, form) => {
@@ -684,7 +816,19 @@ export function mountFamilyAndEnvSections(article, {
         const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null;
         const operation = submitter?.value ?? "";
         const alias = String(new FormData(form).get("alias") ?? "").trim();
-        if (!alias || !["enable", "disable", "remove", "oauth", "select"].includes(operation)) return;
+        if (!alias || !["enable", "disable", "remove", "oauth", "secrets", "select"].includes(operation)) return;
+        if (operation === "secrets" && family === "mcp") {
+            const mcpScope = scope === "service" ? "service" : "workspace";
+            if (openMcpSecretsTarget?.alias === alias && openMcpSecretsTarget.scope === mcpScope) {
+                openMcpSecretsTarget = null;
+            } else {
+                openMcpSecretsTarget = { alias, scope: mcpScope };
+                const setForm = $(article, "form[data-mcp-secrets-set-form]");
+                if (setForm) resetMcpSecretRows(setForm);
+            }
+            renderOpenMcpSecretsBox();
+            return;
+        }
         void runMutation(async () => {
             if (operation === "select" && family === "personas") {
                 const { currentValue } = await sessionConfigOption(
@@ -721,10 +865,52 @@ export function mountFamilyAndEnvSections(article, {
                 return `${alias}  active`;
             }
             await invoke(`${scope}.${family}.${operation}`, family === "members" ? { file: alias } : { alias });
+            if (operation === "remove" && family === "mcp" && openMcpSecretsTarget?.alias === alias) {
+                openMcpSecretsTarget = null;
+            }
             await loadFamilySection(family);
             const isRetry = submitter?.hasAttribute("data-family-retry") === true;
             const verbLabel = operation === "remove" ? "removed" : isRetry ? "retried" : `${operation}d`;
             return `${alias}  ${verbLabel}`;
+        });
+    });
+
+    on(article, "submit", "[data-mcp-secrets-set-form]", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement) || isBusy() || openMcpSecretsTarget === null) return;
+        const { alias, scope } = openMcpSecretsTarget;
+        let parsed;
+        try {
+            parsed = parseMcpSecretRows(form);
+        } catch (error) {
+            setFeedback(false, error instanceof Error ? error.message : String(error), "", "error");
+            return;
+        }
+        const keys = Object.keys(parsed.secrets);
+        if (keys.length === 0) {
+            setFeedback(false, "Enter at least one secret key name and value.", "", "error");
+            return;
+        }
+        void runMutation(async () => {
+            await invoke(`${scope}.mcp.secrets.set`, { alias, secrets: parsed.secrets });
+            resetMcpSecretRows(form);
+            await loadFamilySection("mcp");
+            return `Saved ${keys.join(", ")} for ${alias}.`;
+        });
+    });
+
+    on(article, "submit", "[data-mcp-secret-unset-form]", (event, form) => {
+        event.preventDefault();
+        if (!(form instanceof HTMLFormElement) || isBusy() || openMcpSecretsTarget === null) return;
+        const data = new FormData(form);
+        const alias = String(data.get("alias") ?? "").trim();
+        const key = String(data.get("key") ?? "").trim();
+        const { scope } = openMcpSecretsTarget;
+        if (!alias || !key) return;
+        void runMutation(async () => {
+            await invoke(`${scope}.mcp.secrets.unset`, { alias, keys: [key] });
+            await loadFamilySection("mcp");
+            return `Removed ${key} from ${alias}.`;
         });
     });
 
@@ -810,20 +996,20 @@ export function mountFamilyAndEnvSections(article, {
             const scope = resolvedScopeFor(spec.family);
             let built;
             try {
-                built = spec.build(form, scope);
+                built = spec.build(form);
             } catch (error) {
                 setFeedback(false, error instanceof Error ? error.message : String(error), "", "error");
                 return;
             }
             void runMutation(async () => {
-                if (built.secretBinding && built.secretBinding.value !== "") {
-                    await invoke("service.env.replace", {
-                        alias: built.secretBinding.alias,
-                        value: built.secretBinding.value,
-                        secret: true,
+                await invoke(`${scope}.${spec.family}.${spec.verb}`, built.payload);
+                if (spec.family === "mcp" && built.secrets && Object.keys(built.secrets).length > 0) {
+                    const mcpScope = scope === "service" ? "service" : "workspace";
+                    await invoke(`${mcpScope}.mcp.secrets.set`, {
+                        alias: String(built.payload.alias ?? ""),
+                        secrets: built.secrets,
                     });
                 }
-                await invoke(`${scope}.${spec.family}.${spec.verb}`, built.payload);
                 await loadFamilySection(spec.family);
                 spec.clear(form);
                 if (spec.family === "personas") personaEffortSync.sync("", "");
@@ -842,15 +1028,11 @@ export function mountFamilyAndEnvSections(article, {
         if (operation !== "enable" && operation !== "disable" && operation !== "remove") return;
         const data = new FormData(form);
         const alias = String(data.get("alias") ?? "").trim();
-        const origin = String(data.get("origin") ?? "workspace");
         if (!alias) return;
         const listScope = resolvedScopeFor("env");
-        const targetScope = operation === "remove"
-            ? (origin === "service" ? "service" : origin === "workspace" ? "workspace" : "session")
-            : listScope;
         void runMutation(async () => {
-            await invoke(`${targetScope}.env.${operation}`, { alias }, {
-                requireSession: targetScope === "session",
+            await invoke(`${listScope}.env.${operation}`, { alias }, {
+                requireSession: listScope === "session",
             });
             await loadEnvSection();
             const verbLabel = operation === "remove" ? "unset" : `${operation}d`;
@@ -864,7 +1046,6 @@ export function mountFamilyAndEnvSections(article, {
         const aliasInput = $(form, 'input[name="alias"]');
         const valueInput = $(form, 'input[name="value"]');
         const scopeSelect = $(form, 'select[name="scope"]');
-        const secretInput = $(form, 'input[name="secret"]');
         if (!(aliasInput instanceof HTMLInputElement) || !(valueInput instanceof HTMLInputElement)) return;
         const alias = aliasInput.value.trim();
         if (!alias) {
@@ -879,20 +1060,14 @@ export function mountFamilyAndEnvSections(article, {
         const targetScope = (selected === "service" || selected === "workspace" || selected === "session") && allowed.includes(selected)
             ? selected
             : resolvedScopeFor("env");
-        const isSecret = targetScope === "service" && secretInput instanceof HTMLInputElement && secretInput.checked;
         void runMutation(async () => {
-            await invoke(`${targetScope}.env.replace`, {
-                alias,
-                value,
-                ...(isSecret ? { secret: true } : {}),
-            }, {
+            await invoke(`${targetScope}.env.replace`, { alias, value }, {
                 requireSession: targetScope === "session",
             });
             if (targetScope !== activeScope) activeScope = targetScope;
             await loadEnvSection();
             aliasInput.value = "";
             valueInput.value = "";
-            if (secretInput instanceof HTMLInputElement) secretInput.checked = false;
             collapseEnclosingDisclosure(form);
             return `${alias}  active`;
         });

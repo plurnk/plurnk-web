@@ -87,6 +87,10 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                             definition: { type: "stdio", command: "git-mcp", args: ["--read-only"] },
                         },
                     ];
+                    /** @type {Record<string, Record<string, string>>} */
+                    const serviceMcpSecrets = {};
+                    /** @type {Record<string, Record<string, string>>} */
+                    const workspaceMcpSecrets = {};
                     let providerConfigured = false;
                     /** @type {any[]} */
                     let workspaceEnv = [
@@ -505,11 +509,73 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 serviceMcpDefs = [...serviceMcpDefs.filter((d) => d.alias !== alias), { alias, origin: "service", state: "dormant", definition: def }];
                                 return { result: { status: 201 } };
                             }
-                            case "service.mcp.remove":
-                                serviceMcpDefs = serviceMcpDefs.filter((d) => d.alias !== params.alias);
+                            case "service.mcp.remove": {
+                                const alias = String(params?.alias ?? "");
+                                serviceMcpDefs = serviceMcpDefs.filter((d) => d.alias !== alias);
+                                delete serviceMcpSecrets[alias];
                                 return { result: { status: 200 } };
+                            }
+                            case "service.mcp.secrets.list": {
+                                /** @type {Record<string, string[]>} */
+                                const byServer = {};
+                                for (const [alias, map] of Object.entries(serviceMcpSecrets)) {
+                                    const keys = Object.keys(map).toSorted();
+                                    if (keys.length > 0) byServer[alias] = keys;
+                                }
+                                return { result: { byServer } };
+                            }
+                            case "service.mcp.secrets.set": {
+                                const alias = String(params?.alias ?? "");
+                                const next = { ...(serviceMcpSecrets[alias] ?? {}), ...(params?.secrets ?? {}) };
+                                serviceMcpSecrets[alias] = next;
+                                return { result: { alias, keys: Object.keys(next).toSorted() } };
+                            }
+                            case "service.mcp.secrets.unset": {
+                                const alias = String(params?.alias ?? "");
+                                const current = { ...(serviceMcpSecrets[alias] ?? {}) };
+                                const keys = Array.isArray(params?.keys) ? params.keys : Object.keys(current);
+                                for (const k of keys) delete current[String(k)];
+                                if (Object.keys(current).length === 0) delete serviceMcpSecrets[alias];
+                                else serviceMcpSecrets[alias] = current;
+                                return { result: { alias, keys: Object.keys(current).toSorted() } };
+                            }
                             case "workspace.mcp.list":
-                                return pageFamilyList("mcp", mcpDefs, params);
+                                return pageFamilyList("mcp", [
+                                    ...serviceMcpDefs.filter((svc) => !mcpDefs.some((ws) => ws.alias === svc.alias)),
+                                    ...mcpDefs,
+                                ], params);
+                            case "workspace.mcp.secrets.list": {
+                                /** @type {Record<string, { keys: string[], inheritedKeys: string[] }>} */
+                                const byServer = {};
+                                const allAliases = new Set([
+                                    ...Object.keys(serviceMcpSecrets),
+                                    ...Object.keys(workspaceMcpSecrets),
+                                ]);
+                                for (const alias of allAliases) {
+                                    const keys = Object.keys(workspaceMcpSecrets[alias] ?? {}).toSorted();
+                                    const maskedByWorkspace = mcpDefs.some((d) => d.alias === alias && d.origin === "workspace");
+                                    const inheritedKeys = maskedByWorkspace ? [] : Object.keys(serviceMcpSecrets[alias] ?? {}).toSorted();
+                                    if (keys.length > 0 || inheritedKeys.length > 0) {
+                                        byServer[alias] = { keys, inheritedKeys };
+                                    }
+                                }
+                                return { result: { byServer } };
+                            }
+                            case "workspace.mcp.secrets.set": {
+                                const alias = String(params?.alias ?? "");
+                                const next = { ...(workspaceMcpSecrets[alias] ?? {}), ...(params?.secrets ?? {}) };
+                                workspaceMcpSecrets[alias] = next;
+                                return { result: { alias, keys: Object.keys(next).toSorted() } };
+                            }
+                            case "workspace.mcp.secrets.unset": {
+                                const alias = String(params?.alias ?? "");
+                                const current = { ...(workspaceMcpSecrets[alias] ?? {}) };
+                                const keys = Array.isArray(params?.keys) ? params.keys : Object.keys(current);
+                                for (const k of keys) delete current[String(k)];
+                                if (Object.keys(current).length === 0) delete workspaceMcpSecrets[alias];
+                                else workspaceMcpSecrets[alias] = current;
+                                return { result: { alias, keys: Object.keys(current).toSorted() } };
+                            }
                             case "workspace.mcp.enable":
                             case "workspace.mcp.disable": {
                                 mcpDefs = mcpDefs.map((d) => d.alias === params.alias
@@ -857,10 +923,9 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                 return pageFamilyList("env", serviceEnv, params);
                             case "service.env.replace": {
                                 const alias = String(params?.alias ?? "");
-                                const isSecret = params?.secret === true;
                                 serviceEnv = [
                                     ...serviceEnv.filter((d) => d.alias !== alias),
-                                    { alias, origin: "service", state: "dormant", definition: isSecret ? { secret: true } : { value: String(params?.value ?? "") } },
+                                    { alias, origin: "service", state: "dormant", definition: { value: String(params?.value ?? "") } },
                                 ];
                                 return { result: { status: 201 } };
                             }
@@ -927,9 +992,10 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/mcp");
                     await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null && document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr').length === 2);
 
-                    assert.equal(requests.at(-1).params.kind, "workspace.mcp.list");
-                    assert.equal(requests.at(-1).params.workspaceId, 7);
-                    assert.equal("sessionId" in requests.at(-1).params, false, "Workspace-only /settings/mcp sends workspaceId without session attachment");
+                    const mcpListReq = requests.findLast((r) => r.params?.kind === "workspace.mcp.list");
+                    assert.equal(mcpListReq?.params?.kind, "workspace.mcp.list");
+                    assert.equal(mcpListReq?.params?.workspaceId, 7);
+                    assert.equal(mcpListReq !== undefined && "sessionId" in mcpListReq.params, false, "Workspace-only /settings/mcp sends workspaceId without session attachment");
                     assert.equal(await settingsArticle.getByRole("link", { name: "MCP", exact: true }).getAttribute("aria-current"), "page");
 
                     for (const width of [320, 1280]) {
@@ -1203,7 +1269,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="members"] [data-family-rows] tr').length === 1);
                     assert.deepEqual(requests.find((r) => r.params?.kind === "workspace.members.remove").params.params, { file: "docs/**" });
 
-                    // Workspace-only Environment: hides Session scope option, exposes Service secret flag only at Service scope, supports discovery prefill, never leaks secret values
+                    // Workspace-only Environment: hides Session scope option, has no secret checkbox, supports discovery prefill & Service scope, never leaks values
                     await settingsArticle.getByRole("link", { name: "Environment", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/env");
                     const envSection = settingsArticle.locator('[data-settings-panel="env"]');
@@ -1212,55 +1278,78 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value/u);
                     const envDisclosure = envSection.locator('details[data-family-disclosure="env"]');
                     await envDisclosure.locator("> summary").click();
-                    assert.equal(await envDisclosure.locator("[data-env-secret-field]").isVisible(), false, "Workspace env hides Secret checkbox");
+                    assert.equal(await envDisclosure.locator('input[name="secret"]').count(), 0, "Environment form has no secret checkbox");
                     await envDisclosure.locator("[data-family-discover-form]").getByRole("button", { name: "Discover", exact: true }).click();
                     await envDisclosure.locator("[data-candidate-rows] li").first().waitFor({ state: "visible" });
                     await envDisclosure.locator("[data-candidate-rows] li").first().getByRole("button", { name: "Add", exact: true }).click();
                     assert.equal(await envDisclosure.locator('[data-env-set-form] input[name="alias"]').inputValue(), "PLURNK_LOG_LEVEL");
-                    // Switch to Service scope: Secret checkbox appears and submits secret: true
                     await envSection.locator('[data-scope-option="service"]').click();
                     await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"]')?.getAttribute("data-panel-scope") === "service");
-                    assert.equal(await envDisclosure.locator("[data-env-secret-field]").isVisible(), true, "Service env reveals Secret checkbox");
-                    await envDisclosure.locator('[data-env-set-form] input[name="alias"]').fill("GITHUB_TOKEN");
-                    await envDisclosure.locator('[data-env-set-form] input[name="value"]').fill("ghp_top_secret_unit");
-                    await envDisclosure.locator('[data-env-set-form] input[name="secret"]').check();
+                    await envDisclosure.locator('[data-env-set-form] input[name="alias"]').fill("SVC_DEFAULT_TZ");
+                    await envDisclosure.locator('[data-env-set-form] input[name="value"]').fill("UTC");
                     await envDisclosure.locator('[data-env-set-form] button[type="submit"]').click();
-                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="GITHUB_TOKEN"]') !== null);
-                    assert.doesNotMatch(await envSection.textContent(), /ghp_top_secret_unit/u);
-                    assert.match(await envSection.locator('tr[data-env-alias="GITHUB_TOKEN"]').textContent(), /secret/u);
-                    const secretReq = requests.findLast((r) => r.params?.kind === "service.env.replace");
-                    assert.deepEqual(secretReq?.params?.params, { alias: "GITHUB_TOKEN", value: "ghp_top_secret_unit", secret: true });
-                    // Switch to Service MCP: secret helper fields save service.env secret + bind ${NAME}; Workspace MCP hides them and displays isolation note
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="env"] tr[data-env-alias="SVC_DEFAULT_TZ"]') !== null);
+                    assert.deepEqual(
+                        requests.findLast((r) => r.params?.kind === "service.env.replace")?.params?.params,
+                        { alias: "SVC_DEFAULT_TZ", value: "UTC" },
+                    );
+
+                    // Multi-key per-server MCP secrets at both Service and Workspace scopes (with inherited key visibility and per-key removal)
                     await settingsArticle.getByRole("link", { name: "MCP", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/mcp");
                     await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
                     const mcpScopePanel = settingsArticle.locator('[data-settings-panel="mcp"]');
                     const mcpScopeDisc = mcpScopePanel.locator('details[data-family-disclosure="mcp"]');
                     await mcpScopeDisc.locator("> summary").click();
-                    assert.equal(await mcpScopeDisc.locator("[data-mcp-secret-fields]").isVisible(), false, "Workspace MCP hides secret key fields");
-                    assert.equal(await mcpScopeDisc.locator("[data-mcp-workspace-secret-note]").isVisible(), true, "Workspace MCP shows service-scope secret note");
+                    assert.equal(await mcpScopeDisc.locator("[data-mcp-secret-fields]").isVisible(), true, "Workspace MCP shows multi-key secret fields");
+                    // Switch to Service scope and create weatherTracker with 2 encrypted keys (WEATHER_KEY + WEATHER_BACKUP_KEY)
                     await mcpScopePanel.locator('[data-scope-option="service"]').click();
                     await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="mcp"]')?.getAttribute("data-panel-scope") === "service");
-                    assert.equal(await mcpScopeDisc.locator("[data-mcp-secret-fields]").isVisible(), true, "Service MCP shows secret key fields");
-                    await mcpScopeDisc.locator('select[name="transport"]').selectOption("streamable-http");
-                    await mcpScopeDisc.locator('input[name="alias"]').fill("svc-github");
-                    await mcpScopeDisc.locator('input[name="url"]').fill("https://api.githubcopilot.com/mcp");
-                    await mcpScopeDisc.locator('input[name="secretName"]').fill("GH_MCP_KEY");
-                    await mcpScopeDisc.locator('input[name="secretValue"]').fill("ghp_mcp_secret_99");
+                    await mcpScopeDisc.locator('select[name="transport"]').selectOption("stdio");
+                    await mcpScopeDisc.locator('input[name="alias"]').fill("weather-tracker");
+                    await mcpScopeDisc.locator('input[name="command"]').fill("weather-mcp");
+                    await mcpScopeDisc.locator('[data-mcp-secret-row] input[name="secretName"]').first().fill("WEATHER_KEY");
+                    await mcpScopeDisc.locator('[data-mcp-secret-row] input[name="secretValue"]').first().fill("sk-nyc-secret-111");
+                    await mcpScopeDisc.locator("[data-mcp-add-secret-row]").click();
+                    await mcpScopeDisc.locator('[data-mcp-secret-row] input[name="secretName"]').nth(1).fill("WEATHER_BACKUP_KEY");
+                    await mcpScopeDisc.locator('[data-mcp-secret-row] input[name="secretValue"]').nth(1).fill("sk-nyc-backup-222");
                     await mcpScopeDisc.getByRole("button", { name: "Save server", exact: true }).click();
-                    await page.waitForFunction(() => [...document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr')].some((tr) => tr.textContent?.includes("svc-github")));
+                    await page.waitForFunction(() => [...document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr')].some((tr) => tr.textContent?.includes("weather-tracker")));
+                    assert.doesNotMatch(await mcpScopePanel.textContent(), /sk-nyc-secret-111|sk-nyc-backup-222/u);
                     assert.deepEqual(
-                        requests.findLast((r) => r.params?.kind === "service.env.replace")?.params?.params,
-                        { alias: "GH_MCP_KEY", value: "ghp_mcp_secret_99", secret: true },
-                    );
-                    assert.deepEqual(
-                        requests.findLast((r) => r.params?.kind === "service.mcp.replace")?.params?.params,
+                        requests.findLast((r) => r.params?.kind === "service.mcp.secrets.set")?.params?.params,
                         {
-                            alias: "svc-github",
-                            type: "streamable-http",
-                            url: "https://api.githubcopilot.com/mcp",
-                            authorization: { type: "bearer", token: "${GH_MCP_KEY}" },
+                            alias: "weather-tracker",
+                            secrets: { WEATHER_KEY: "sk-nyc-secret-111", WEATHER_BACKUP_KEY: "sk-nyc-backup-222" },
                         },
+                    );
+                    const svcWeatherRow = mcpScopePanel.locator("[data-family-rows] tr", { hasText: "weather-tracker" });
+                    assert.equal(await svcWeatherRow.locator("[data-family-secrets]").textContent(), "Keys (2)");
+                    // Switch back to Workspace scope: weather-tracker shows inherited keys (Keys (2 svc)), and Workspace can override WEATHER_KEY with El Paso secret + remove it
+                    await mcpScopePanel.locator('[data-scope-option="workspace"]').click();
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="mcp"]')?.getAttribute("data-panel-scope") === "workspace");
+                    await page.waitForFunction(() => [...document.querySelectorAll('#workspace-settings [data-settings-panel="mcp"] [data-family-rows] tr')].some((tr) => tr.textContent?.includes("weather-tracker")));
+                    const wsWeatherRow = mcpScopePanel.locator("[data-family-rows] tr", { hasText: "weather-tracker" });
+                    assert.equal(await wsWeatherRow.locator("[data-family-secrets]").textContent(), "Keys (2 svc)");
+                    await wsWeatherRow.locator("[data-family-secrets]").click();
+                    const secretsBox = mcpScopePanel.locator("[data-mcp-secrets-box]");
+                    await secretsBox.waitFor({ state: "visible" });
+                    assert.match(await secretsBox.locator("[data-mcp-secrets-inherited]").textContent(), /Inherited from Service: WEATHER_BACKUP_KEY, WEATHER_KEY/u);
+                    await secretsBox.locator('[data-mcp-secret-row] input[name="secretName"]').first().fill("WEATHER_KEY");
+                    await secretsBox.locator('[data-mcp-secret-row] input[name="secretValue"]').first().fill("sk-elpaso-secret-999");
+                    await secretsBox.getByRole("button", { name: "Save keys", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll("#workspace-settings [data-mcp-configured-keys] li").length === 1);
+                    assert.doesNotMatch(await mcpScopePanel.textContent(), /sk-elpaso-secret-999/u);
+                    assert.deepEqual(
+                        requests.findLast((r) => r.params?.kind === "workspace.mcp.secrets.set")?.params?.params,
+                        { alias: "weather-tracker", secrets: { WEATHER_KEY: "sk-elpaso-secret-999" } },
+                    );
+                    assert.equal(await wsWeatherRow.locator("[data-family-secrets]").textContent(), "Keys (1)");
+                    await secretsBox.locator("[data-mcp-configured-keys] li").first().getByRole("button", { name: "Remove", exact: true }).click();
+                    await page.waitForFunction(() => document.querySelectorAll("#workspace-settings [data-mcp-configured-keys] li").length === 0);
+                    assert.deepEqual(
+                        requests.findLast((r) => r.params?.kind === "workspace.mcp.secrets.unset")?.params?.params,
+                        { alias: "weather-tracker", keys: ["WEATHER_KEY"] },
                     );
 
                     // Help tab renders keyboard shortcuts and live-filterable slash commands
@@ -1635,6 +1724,11 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await envSection.locator('[data-scope-option="session"]').click();
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="env"] tbody tr').length === 2);
                     assert.doesNotMatch(await envSection.textContent(), /ws-secret-value|sess-secret-value/u);
+                    assert.equal(
+                        await envSection.locator('tr[data-env-alias="WS_TOKEN"] [data-env-unset]').isVisible(),
+                        false,
+                        "Session scope hides Unset on workspace-owned env rows",
+                    );
 
                     // 3. Daemon confinement policy reflection:
                     //    (a) projectRoot="none", missing families ["schedule", "env"], MCP streamable-http+publicOnly, skills mcp-only
@@ -1706,7 +1800,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/mcp");
                     await page.waitForFunction(() => document.querySelector('#workspace-settings details[data-family-disclosure="mcp"]')?.hasAttribute("hidden") === true);
                     assert.equal(await mcpDisclosure.isVisible(), false, "empty workspaceTransports hides + Add server disclosure");
-                    assert.equal(await mcpPanel.locator("[data-family-rows] tr").count(), 3, "existing MCP servers remain visible when workspace creation is disabled");
+                    assert.equal(await mcpPanel.locator("[data-family-rows] tr").count(), 4, "existing MCP servers remain visible when workspace creation is disabled");
                     assert.equal(await settingsArticle.locator('[data-settings-section="members"]').isVisible(), true, "confined rooted workspace keeps Members tab visible");
 
                     await settingsArticle.getByRole("link", { name: "Skills", exact: true }).click();
