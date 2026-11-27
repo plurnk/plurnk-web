@@ -1,5 +1,19 @@
 # @plurnk/plurnk-web
 
+## 5.0.0
+
+> Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
+
+### Upgrade
+
+Upgrade this module, `@plurnk/plurnk-service` (`10.0.0`), and `@plurnk/plurnk` (`10.0.0`) together.
+
+### Major Changes
+
+- **Service-Tier Cascade, Scope Switcher & Unified `/settings/<section>` Hub:** Adopt the four-tier `host | service | workspace | session` Functionality origin model (`#171`), unify the top bar and settings navigation onto `/settings/<section>` (`#172`), and add per-family scope switching (`Service` vs `Workspace`), `service.config` / `workspace.config` editing, provider credential onboarding (`models.providers`), and multi-key MCP secret management across `service` and `workspace` scopes (`#174`, `#175`).
+- **Model Catalog Filtering, Actor Attribution & Packaged Asset Caching:** Add model catalog pricing filters, alert banners, and form ergonomics (`#173`), prefer readable actor `handle` and `name` over opaque OIDC `sub` identifiers in conversation attribution (`#177`), and serve packaged static assets through a bounded page cache (`#170`).
+- **Dependencies:** Update `dompurify` (`3.5.0`), `marked` (`18.3.0`), `eslint` (`10.16.0`), `stylelint` (`18.1.0`), `stylelint-config-standard` (`41.1.0`), and `vite` (`8.4.0`) (`#176`), and widen `@plurnk/plurnk-acp` (`^4.0.0 || ^5.0.0`) and `@plurnk/plurnk-contracts` (`^10.0.0 || ^11.0.0`) peer dependency ranges for `10.0.0` (`#178`).
+
 ## 4.1.0
 
 > Bare `#N` issue citations reference our development forge rather than GitHub issues; open bug reports and questions on [GitHub issues](https://github.com/plurnk/plurnk-web/issues).
