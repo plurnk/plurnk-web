@@ -4,6 +4,97 @@
         padding: 0;
     }
 
+    /* {§web-workspace-settings} Dedicated semantic callout banner for info, success, warning, and error feedback. */
+    #workspace-settings [data-settings-feedback] {
+        display: flex;
+        align-items: flex-start;
+        gap: calc(var(--otm-spacing) * 0.6);
+        margin-block: 0 var(--otm-spacing);
+        padding: calc(var(--otm-spacing) * 0.6) calc(var(--otm-spacing) * 0.8);
+        border: var(--otm-border-width) solid var(--plurnk-info-border);
+        border-inline-start-width: calc(var(--otm-border-width) * 4);
+        border-radius: var(--otm-border-radius);
+        background-color: var(--plurnk-info-surface);
+    }
+
+    #workspace-settings [data-settings-feedback][data-feedback-level="idle"] {
+        display: none;
+    }
+
+    #workspace-settings [data-settings-feedback][data-feedback-level="success"] {
+        border-color: var(--plurnk-success-border);
+        background-color: var(--plurnk-success-surface);
+    }
+
+    #workspace-settings [data-settings-feedback][data-feedback-level="warning"] {
+        border-color: var(--plurnk-warning-border);
+        background-color: var(--plurnk-warning-surface);
+    }
+
+    #workspace-settings [data-settings-feedback][data-feedback-level="error"] {
+        border-color: var(--plurnk-error-border);
+        background-color: var(--plurnk-error-surface);
+    }
+
+    #workspace-settings [data-feedback-glyph] {
+        flex: 0 0 auto;
+        line-height: 1.35;
+    }
+
+    #workspace-settings [data-feedback-level="info"] [data-feedback-glyph]::before {
+        content: "ℹ️" / "";
+    }
+
+    #workspace-settings [data-feedback-level="success"] [data-feedback-glyph]::before {
+        content: "✅" / "";
+    }
+
+    #workspace-settings [data-feedback-level="warning"] [data-feedback-glyph]::before {
+        content: "⚠️" / "";
+    }
+
+    #workspace-settings [data-feedback-level="error"] [data-feedback-glyph]::before {
+        content: "⛔" / "";
+    }
+
+    #workspace-settings [data-feedback-body] {
+        flex: 1 1 auto;
+        min-inline-size: 0;
+    }
+
+    #workspace-settings [data-feedback-body] > p {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+
+    #workspace-settings [data-feedback-body] > p[data-text="ws-settings-message"] {
+        font-weight: 600;
+    }
+
+    #workspace-settings [data-feedback-body] > p[data-text="ws-settings-recovery"] {
+        margin-block-start: calc(var(--otm-spacing) * 0.2);
+        color: var(--otm-muted-color);
+        font-size: 0.9em;
+    }
+
+    #workspace-settings [data-feedback-body] > p:empty {
+        display: none;
+    }
+
+    #workspace-settings [data-feedback-dismiss] {
+        --otm-primary-background: transparent;
+        --otm-primary-hover-background: transparent;
+        --otm-primary-inverse: var(--otm-muted-color);
+
+        flex: 0 0 auto;
+        inline-size: auto;
+        margin: 0;
+        padding: 0.1rem 0.35rem;
+        border-width: 0;
+        line-height: 1;
+        cursor: pointer;
+    }
+
     #workspace-settings [data-settings-nav] a[aria-current="page"] {
         border-block-end-color: var(--otm-primary);
         font-weight: 700;
@@ -58,19 +149,100 @@
         color: var(--otm-muted-color);
     }
 
+    /* {§web-workspace-settings} Shared vertical field stack so comboboxes, inputs, and selects align cleanly across every form. */
+    #workspace-settings [data-field] {
+        display: flex;
+        flex-direction: column;
+        gap: calc(var(--otm-spacing) * 0.25);
+        min-inline-size: 0;
+        margin: 0;
+    }
+
+    #workspace-settings [data-field] > :where(label, [data-schedule-field-label]) {
+        margin: 0;
+    }
+
+    #workspace-settings [data-field] > :where(input, select, textarea) {
+        margin: 0;
+    }
+
+    #workspace-settings [data-field] :is(input, select),
+    #workspace-settings [data-models-session-form] [data-models-apply] {
+        block-size: calc(1rem * var(--otm-line-height) + var(--otm-form-element-spacing-block) * 2 + var(--otm-border-width) * 2);
+    }
+
+    #workspace-settings [data-field-row] {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--otm-spacing) * 0.65) var(--otm-spacing);
+        margin-block-end: calc(var(--otm-spacing) * 0.75);
+    }
+
+    #workspace-settings [data-models-session-form] > :where(fieldset) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--otm-spacing) * 0.65) var(--otm-spacing);
+    }
+
+    #workspace-settings [data-models-session-form] [data-models-apply] {
+        margin: 0;
+    }
+
+    #workspace-settings [data-models-search-form] > fieldset[role="group"] {
+        flex-wrap: wrap;
+        gap: calc(var(--otm-spacing) * 0.35);
+    }
+
+    #workspace-settings [data-models-search-form] > fieldset[role="group"] > * {
+        margin-inline-start: 0;
+        border-radius: var(--otm-border-radius);
+    }
+
+    #workspace-settings [data-models-search-form] input[name="q"] {
+        flex: 1 1 13rem;
+    }
+
+    #workspace-settings [data-models-search-form] input:is([name="minPrice"], [name="maxPrice"]) {
+        flex: 0 1 6.75rem;
+        inline-size: 6.75rem;
+    }
+
+    #workspace-settings [data-models-search-form] select {
+        flex: 0 1 auto;
+    }
+
+    #workspace-settings [data-models-more-hint]:not(:empty)::before {
+        content: " · " / "";
+    }
+
+    #workspace-settings [data-models-catalog-stage] {
+        min-block-size: 28rem;
+    }
+
+    #workspace-settings :where(th, td)[data-numeric] {
+        text-align: end;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
     @media (width >= 48rem) {
-        #workspace-settings :is([data-session-config-form], [data-models-session-form]) > :where(fieldset) {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: calc(var(--otm-spacing) * 0.65) var(--otm-spacing);
+        #workspace-settings [data-field-row="model-effort"] {
+            grid-template-columns: minmax(0, 1fr) minmax(10.5rem, max-content);
+            align-items: end;
         }
 
-        #workspace-settings :is([data-session-config-form], [data-models-session-form]) :where(fieldset > label, fieldset > [data-model-field]) {
-            margin: 0;
+        #workspace-settings [data-field-row="session-extras"] {
+            grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr);
+            align-items: end;
         }
 
-        #workspace-settings :is([data-session-config-form], [data-models-session-form]) :where(fieldset > footer) {
-            grid-column: 1 / -1;
+        #workspace-settings [data-models-session-form] > :where(fieldset) {
+            grid-template-columns: minmax(0, 1fr) minmax(10.5rem, max-content) auto;
+            align-items: end;
+        }
+
+        #workspace-settings [data-models-session-form] [data-models-apply] {
+            inline-size: auto;
         }
 
         [data-settings-panel="help"] :where(dl) {
@@ -175,7 +347,6 @@
     }
 
     tr[data-model-session-usable="false"] [data-model-catalog-row-form],
-    tr[data-model-ready="false"] [data-model-catalog-row-form],
     tr[data-ws-row-archived="false"] [data-ws-row-unarchive],
     tr[data-ws-row-archived="true"] [data-ws-row-archive],
     tr[data-sess-row-archived="false"] [data-sess-row-unarchive],
@@ -228,6 +399,8 @@
     #workspace-settings [data-env-removable="false"] [data-env-unset],
     #workspace-settings [data-settings-panel="models"][data-alias-count="0"] > [data-models-aliases-wrap],
     #workspace-settings [data-settings-panel="models"]:not([data-alias-count="0"]) > [data-models-aliases-empty],
+    #workspace-settings [data-settings-panel="models"][data-catalog-count="0"] [data-models-catalog-wrap],
+    #workspace-settings [data-settings-panel="models"]:not([data-catalog-count="0"]) [data-models-catalog-empty],
     #workspace-settings tr[data-model-session-usable="false"] [data-model-use-session],
     #workspace-settings [data-family-count="0"] > [data-family-table-wrap],
     #workspace-settings [data-settings-panel]:not([data-family-count="0"]) > [data-family-empty],
@@ -248,7 +421,7 @@
     }
 
     /* {§web-workspace-settings} {§web-session-commands} Model and schedule combobox popovers, dialog, and catalog pagination. */
-    [data-model-field] {
+    [data-model-field]:not([data-field]) {
         margin-block-end: var(--otm-spacing);
     }
 

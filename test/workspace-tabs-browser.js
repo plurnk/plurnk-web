@@ -191,7 +191,7 @@ export default async function verifyWorkspaceTabs({ t, withDaemon }) {
             await sessionPanel.locator("[data-sessions-rows] tr").first().waitFor({ state: "visible" });
             await sessionPanel.locator('#session-title input[name="title"]').fill("Main chat");
             await sessionPanel.getByRole("button", { name: "Save title", exact: true }).click();
-            await page.waitForFunction(() => document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent === "Title: Main chat.");
+            await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Title: Main chat.");
             await page.locator("[data-settings-back]").click();
             await waitConnectedSession(page, "user");
             await page.waitForFunction(() => document.querySelector('#workspace-tabs a[data-tab-session="user"] [data-tab-label]')?.textContent === "Main chat");

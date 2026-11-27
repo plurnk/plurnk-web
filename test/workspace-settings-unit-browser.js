@@ -318,9 +318,11 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                             inputModalities: ["text"],
                                             outputModalities: ["text"],
                                         },
+                                        cost: { inputPer1M: 0.25, outputPer1M: 0.75 },
                                         readiness: { ready: true, causes: [] },
                                     };
                                 });
+                                /** @type {Array<{ selector: string, provider: string, providerName: string, model: string, modelName: string, limits: { contextTokens: number }, capabilities: { attachment: boolean, reasoning: boolean, efforts: string[], toolCall: boolean, inputModalities: string[], outputModalities: string[] }, cost?: { inputPer1M: number, outputPer1M: number, cacheReadPer1M?: number }, readiness: { ready: boolean, causes: unknown[] } }>} */
                                 const allCatalog = [
                                     ...fillerAlibaba,
                                     {
@@ -338,6 +340,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                             inputModalities: ["text", "image"],
                                             outputModalities: ["text"],
                                         },
+                                        cost: { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3 },
                                         readiness: { ready: true, causes: [] },
                                     },
                                     {
@@ -355,6 +358,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                             inputModalities: ["text"],
                                             outputModalities: ["text"],
                                         },
+                                        cost: { inputPer1M: 0, outputPer1M: 0 },
                                         readiness: { ready: true, causes: [] },
                                     },
                                     {
@@ -389,6 +393,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                             inputModalities: ["text"],
                                             outputModalities: ["text"],
                                         },
+                                        cost: { inputPer1M: 0.15, outputPer1M: 0.6 },
                                         readiness: { ready: true, causes: [] },
                                     },
                                     {
@@ -406,6 +411,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                             inputModalities: ["text", "image"],
                                             outputModalities: ["text"],
                                         },
+                                        cost: { inputPer1M: 12, outputPer1M: 40 },
                                         readiness: { ready: true, causes: [] },
                                     },
                                 ];
@@ -413,20 +419,43 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                                     ? allCatalog.filter((m) => m.provider.toLowerCase() === String(params.provider).toLowerCase())
                                     : allCatalog;
                                 const needle = typeof params?.search === "string" ? params.search.trim().toLowerCase() : "";
-                                const filtered = needle
+                                const bySearch = needle
                                     ? byProvider.filter((m) =>
                                         m.selector.toLowerCase().includes(needle)
                                         || m.modelName.toLowerCase().includes(needle)
                                         || m.providerName.toLowerCase().includes(needle))
                                     : byProvider;
-                                const items = filtered.slice(offset, offset + limit);
+                                const minInput = typeof params?.minInputPer1M === "number" ? params.minInputPer1M : undefined;
+                                const maxInput = typeof params?.maxInputPer1M === "number" ? params.maxInputPer1M : undefined;
+                                const filtered = bySearch.filter((m) => {
+                                    if (minInput !== undefined && (m.cost === undefined || m.cost.inputPer1M < minInput)) return false;
+                                    if (maxInput !== undefined && (m.cost === undefined || m.cost.inputPer1M > maxInput)) return false;
+                                    return true;
+                                });
+                                const sortMode = typeof params?.sort === "string" ? params.sort : "selector";
+                                const sorted = [...filtered].toSorted((a, b) => {
+                                    if (sortMode === "cost-asc" || sortMode === "cost-desc") {
+                                        const aNull = a.cost === undefined;
+                                        const bNull = b.cost === undefined;
+                                        if (aNull !== bNull) return aNull ? 1 : -1;
+                                        if (!aNull && !bNull) {
+                                            const dir = sortMode === "cost-asc" ? 1 : -1;
+                                            if (a.cost.inputPer1M !== b.cost.inputPer1M) return (a.cost.inputPer1M - b.cost.inputPer1M) * dir;
+                                            if (a.cost.outputPer1M !== b.cost.outputPer1M) return (a.cost.outputPer1M - b.cost.outputPer1M) * dir;
+                                        }
+                                    } else if (sortMode === "context-desc" && a.limits.contextTokens !== b.limits.contextTokens) {
+                                        return b.limits.contextTokens - a.limits.contextTokens;
+                                    }
+                                    return a.selector < b.selector ? -1 : a.selector > b.selector ? 1 : 0;
+                                });
+                                const items = sorted.slice(offset, offset + limit);
                                 const nextOffset = offset + items.length;
                                 return {
                                     result: {
                                         items,
                                         offset,
-                                        total: filtered.length,
-                                        ...(nextOffset < filtered.length ? { nextOffset } : {}),
+                                        total: sorted.length,
+                                        ...(nextOffset < sorted.length ? { nextOffset } : {}),
                                         providers: [...new Set(allCatalog.map((m) => m.provider))].toSorted(),
                                     },
                                 };
@@ -915,9 +944,13 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await mcpDisclosure.getByRole("textbox", { name: "Bearer token reference", exact: true }).fill("${EDGE_TOKEN}");
                     activeWork = true;
                     await mcpDisclosure.getByRole("button", { name: "Save server", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent === "Workspace has active loop work.");
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-text="ws-settings-message"]')?.textContent === "Workspace has active loop work.");
+                    assert.equal(await settingsArticle.locator("[data-settings-feedback]").getAttribute("data-feedback-level"), "error");
+                    assert.equal(await settingsArticle.locator("[data-settings-feedback]").getAttribute("role"), "alert");
                     assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true, "409 refusal keeps the disclosure open");
-                    assert.equal(await settingsArticle.locator('> [data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
+                    assert.equal(await settingsArticle.locator('[data-text="ws-settings-recovery"]').textContent(), "Wait for active loops to settle or stop them first.");
+                    await settingsArticle.locator("[data-feedback-dismiss]").click();
+                    assert.equal(await settingsArticle.locator("[data-settings-feedback]").getAttribute("data-feedback-level"), "idle");
                     assert.equal(await mcpDisclosure.getByRole("textbox", { name: "Server alias", exact: true }).inputValue(), "edge-api", "409 refusal preserves unsaved MCP server input");
                     assert.equal(await mcpDisclosure.getByLabel("Endpoint URL", { exact: true }).inputValue(), "https://edge.example/mcp");
                     assert.equal(await mcpDisclosure.getByRole("textbox", { name: "Bearer token reference", exact: true }).inputValue(), "${EDGE_TOKEN}");
@@ -1158,13 +1191,40 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await personasPanel.waitFor({ state: "visible" });
                     assert.equal(await settingsArticle.getByRole("link", { name: "Personas", exact: true }).getAttribute("aria-current"), "page");
                     assert.equal(await personasPanel.locator("[data-session-persona-form]").count(), 0, "session persona selector lives on /settings/sessions");
+                    const personasDisclosure = personasPanel.locator('details[data-family-disclosure="personas"]');
+                    await personasDisclosure.locator("> summary").click();
+                    const personaModelCombo = personasDisclosure.getByRole("combobox", { name: "Persona default model", exact: true });
+                    const personaEffortSelect = personasDisclosure.getByRole("combobox", { name: "Persona default effort", exact: true });
+                    await page.setViewportSize({ width: 1280, height: 740 });
+                    const personaLayout = await page.evaluate(() => {
+                        const modelInput = document.querySelector('#workspace-settings [data-personas-save-form] input[name="model"]')?.getBoundingClientRect();
+                        const effortSel = document.querySelector('#workspace-settings [data-personas-save-form] select[name="effort"]')?.getBoundingClientRect();
+                        return {
+                            aligned: Boolean(modelInput && effortSel && Math.abs(modelInput.top - effortSel.top) <= 2),
+                            modelWider: Boolean(modelInput && effortSel && modelInput.width > effortSel.width * 1.5),
+                        };
+                    });
+                    assert.equal(personaLayout.aligned, true, "Persona model and effort align vertically on desktop");
+                    assert.equal(personaLayout.modelWider, true, "Persona model grows while effort shrinks on desktop");
+                    await page.setViewportSize({ width: 320, height: 740 });
+                    await personaModelCombo.fill("claude");
+                    const personaClaudeOpt = personasDisclosure.locator('[data-model-combobox="personaModel"] [role="option"][data-combobox-option="anthropic/claude-sonnet-4-5"]');
+                    await personaClaudeOpt.waitFor({ state: "visible" });
+                    await personaClaudeOpt.click();
+                    assert.deepEqual(
+                        await personaEffortSelect.locator("option").evaluateAll((opts) => opts.map((o) => o.getAttribute("value"))),
+                        ["", "low", "medium", "high", "max"],
+                        "selecting a persona model narrows optional default effort choices dynamically",
+                    );
+                    await personasDisclosure.locator("> summary").click();
 
-                    // Rejected session/options surfaces Problem detail & recovery instead of silently swallowing
+                    // Rejected session/options surfaces Problem detail & recovery in dedicated error callout
                     failNextSessionOptions = true;
                     await settingsArticle.getByRole("link", { name: "Sessions", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/sessions");
-                    await page.waitForFunction(() => document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent === "Session options temporarily unavailable.");
-                    assert.equal(await settingsArticle.locator('> [data-text="ws-settings-recovery"]').textContent(), "Retry opening the Session tab.");
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Session options temporarily unavailable.");
+                    assert.equal(await settingsArticle.locator("[data-settings-feedback]").getAttribute("data-feedback-level"), "error");
+                    assert.equal(await settingsArticle.locator('[data-text="ws-settings-recovery"]').textContent(), "Retry opening the Session tab.");
 
                     // Re-select Sessions tab: hydrates via session/options with dynamic model-driven efforts, session Approval policy, and standardized Sessions table
                     await settingsArticle.getByRole("link", { name: "Workspaces", exact: true }).click();
@@ -1177,18 +1237,27 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null);
                     await sessionPanel.locator('#session-title input[name="title"]').fill("Security audit");
                     await sessionPanel.getByRole("button", { name: "Save title", exact: true }).click();
-                    await page.waitForFunction(() => document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent === "Title: Security audit.");
+                    await page.waitForFunction(() => document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent === "Title: Security audit.");
+                    assert.equal(await settingsArticle.locator("[data-settings-feedback]").getAttribute("data-feedback-level"), "success");
                     assert.equal(activeSessionTitle, "Security audit");
 
                     const sessionConfigForm = sessionPanel.locator("[data-session-config-form]");
                     await sessionConfigForm.waitFor({ state: "visible" });
                     await page.setViewportSize({ width: 1280, height: 740 });
-                    const applyRightAligned = await page.evaluate(() => {
+                    const sessionLayout = await page.evaluate(() => {
                         const fs = document.querySelector('#workspace-settings [data-session-config-form] > fieldset')?.getBoundingClientRect();
                         const btn = document.querySelector('#workspace-settings [data-session-config-form] footer > button')?.getBoundingClientRect();
-                        return Boolean(fs && btn && Math.abs(fs.right - btn.right) <= 4);
+                        const modelInput = document.querySelector('#workspace-settings [data-session-config-form] input[name="model"]')?.getBoundingClientRect();
+                        const effortSel = document.querySelector('#workspace-settings [data-session-config-form] select[name="effort"]')?.getBoundingClientRect();
+                        return {
+                            applyRightAligned: Boolean(fs && btn && Math.abs(fs.right - btn.right) <= 4),
+                            fieldsAligned: Boolean(modelInput && effortSel && Math.abs(modelInput.top - effortSel.top) <= 2),
+                            modelWiderThanEffort: Boolean(modelInput && effortSel && modelInput.width > effortSel.width * 1.5),
+                        };
                     });
-                    assert.equal(applyRightAligned, true, "Apply to session button aligns to the right edge of the form footer");
+                    assert.equal(sessionLayout.applyRightAligned, true, "Apply to session button aligns to the right edge of the form footer");
+                    assert.equal(sessionLayout.fieldsAligned, true, "Model input and Reasoning effort select align vertically on /settings/sessions");
+                    assert.equal(sessionLayout.modelWiderThanEffort, true, "Model field grows while Reasoning effort shrinks on /settings/sessions");
                     await page.setViewportSize({ width: 320, height: 740 });
 
                     const modelCombo = sessionConfigForm.getByRole("combobox", { name: "Active session model", exact: true });
@@ -1202,7 +1271,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
 
                     // Fresh session (status.model === null) persists default alias when clicking Apply to session
                     await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/small"));
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/small"));
                     assert.equal(activeSessionModelPersisted, true, "fresh session Apply to session persists default alias instead of no-oping");
 
                     // Combobox searches past alphabetical row 100 (120-model catalog) and dynamically resolves efforts for anthropic/claude-sonnet-4-5!
@@ -1275,7 +1344,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await sessionConfigForm.getByRole("combobox", { name: "Active session persona", exact: true }).selectOption("auditor");
                     await sessionConfigForm.getByRole("combobox", { name: "Approval policy", exact: true }).selectOption("accept");
                     await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Approval policy: accept"));
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("Approval policy: accept"));
                     assert.equal(activeSessionModel, "fast");
                     assert.equal(activeSessionEffort, "medium");
                     assert.equal(activeSpawnModel, "google/gemini-2.5-pro");
@@ -1298,7 +1367,7 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await sessStateSelect.selectOption("active");
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-sessions-rows] tr').length === 3);
 
-                    // Models tab in Session mode: shows active-session model+effort form + aliases + paginated 120-model catalog (10 per page) with provider filter and 1-click Use in session / Use as child!
+                    // Models tab in Session mode: inline grow/shrink/apply form, stationary aliases table, comma-formatted context, pricing, min/max price filter, sort, and zero-shake debounced catalog search!
                     await settingsArticle.getByRole("link", { name: "Models", exact: true }).click();
                     await page.waitForURL((url) => new URL(url).pathname === "/settings/models");
                     const modelsPanel = settingsArticle.locator('[data-settings-panel="models"]');
@@ -1306,9 +1375,26 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     const modelsSessionForm = modelsPanel.locator("form[data-models-session-form]");
                     await modelsSessionForm.waitFor({ state: "visible" });
                     assert.equal(await modelsSessionForm.getByRole("combobox", { name: "Active session model", exact: true }).inputValue(), "fast");
+
+                    await page.setViewportSize({ width: 1280, height: 740 });
+                    const modelsLayout = await page.evaluate(() => {
+                        const modelInput = document.querySelector('#workspace-settings [data-models-session-form] input[name="model"]')?.getBoundingClientRect();
+                        const effortSel = document.querySelector('#workspace-settings [data-models-session-form] select[name="effort"]')?.getBoundingClientRect();
+                        const applyBtn = document.querySelector('#workspace-settings [data-models-session-form] button[data-models-apply]')?.getBoundingClientRect();
+                        return {
+                            fieldsAligned: Boolean(modelInput && effortSel && Math.abs(modelInput.top - effortSel.top) <= 2),
+                            inlineApply: Boolean(modelInput && applyBtn && Math.abs(modelInput.bottom - applyBtn.bottom) <= 4),
+                            modelWiderThanEffort: Boolean(modelInput && effortSel && modelInput.width > effortSel.width * 1.5),
+                        };
+                    });
+                    assert.equal(modelsLayout.fieldsAligned, true, "Model input and Reasoning effort select align vertically on /settings/models");
+                    assert.equal(modelsLayout.inlineApply, true, "Apply button sits inline beside Model and Effort on desktop");
+                    assert.equal(modelsLayout.modelWiderThanEffort, true, "Model field grows while Reasoning effort shrinks on /settings/models");
+                    await page.setViewportSize({ width: 320, height: 740 });
+
                     await modelsSessionForm.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("high");
                     await modelsSessionForm.getByRole("button", { name: "Apply", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Effort: high"));
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("Effort: high"));
                     assert.equal(activeSessionEffort, "high");
                     await page.waitForFunction(() => document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 3);
                     assert.equal(await modelsPanel.locator("[data-models-catalog-rows] tr").count(), 10, "first page shows 10 of 120 catalog models");
@@ -1317,6 +1403,11 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                         await modelsPanel.locator('[data-text="model-more"]').textContent(),
                         "More matches are available; narrow the search.",
                         "model-more omits confusing 'or paginate.' jargon",
+                    );
+                    assert.equal(
+                        await modelsPanel.locator("[data-models-catalog-wrap] thead th").count(),
+                        5,
+                        "catalog table shows 5 columns (Selector, Name, Context, Price (/1M), Actions) without Efforts or Readiness",
                     );
                     const nextPageBtn = modelsPanel.locator("[data-models-next]");
                     const prevPageBtn = modelsPanel.locator("[data-models-prev]");
@@ -1331,29 +1422,72 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-offset"]')?.textContent === "0");
                     assert.equal(await prevPageBtn.isDisabled(), true);
 
-                    // Provider filter narrows directly to anthropic and exposes 1-click Use in session & Use as child on catalog rows
+                    // Provider filter narrows directly to anthropic, shows comma-formatted context and USD/1M pricing, and exposes 1-click Use in session & Use as child
                     const providerSelect = modelsPanel.getByRole("combobox", { name: "Filter by provider", exact: true });
                     await providerSelect.selectOption("anthropic");
                     await page.waitForFunction(() =>
                         document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "1"
                         && document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-selector"]')?.textContent === "anthropic/claude-sonnet-4-5",
                     );
+                    assert.equal(await modelsPanel.locator('[data-models-catalog-rows] [data-text="model-context"]').first().textContent(), "200,000");
+                    assert.equal(await modelsPanel.locator('[data-models-catalog-rows] [data-text="model-price"]').first().textContent(), "$3 / $15");
                     await modelsPanel.locator("[data-models-catalog-rows] tr").first().getByRole("button", { name: "Use in session", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("anthropic/claude-sonnet-4-5"));
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("anthropic/claude-sonnet-4-5"));
                     assert.equal(activeSessionModel, "anthropic/claude-sonnet-4-5");
                     await modelsPanel.locator("[data-models-catalog-rows] tr").first().getByRole("button", { name: "Use as child", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Child model: anthropic/claude-sonnet-4-5"));
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("Child model: anthropic/claude-sonnet-4-5"));
                     assert.equal(activeSpawnModel, "anthropic/claude-sonnet-4-5");
                     await providerSelect.selectOption("");
                     await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "120");
 
+                    // Sort by most expensive and filter by Min $/1M and Max $/1M
+                    const sortSelect = modelsPanel.getByRole("combobox", { name: "Sort models", exact: true });
+                    await sortSelect.selectOption("cost-desc");
+                    await page.waitForFunction(() =>
+                        document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-selector"]')?.textContent === "google/gemini-2.5-pro",
+                    );
+                    assert.equal(await modelsPanel.locator('[data-models-catalog-rows] [data-text="model-context"]').first().textContent(), "1,000,000");
+                    assert.equal(await modelsPanel.locator('[data-models-catalog-rows] [data-text="model-price"]').first().textContent(), "$12 / $40");
+
+                    const minPriceInput = modelsPanel.locator('[data-models-search-form] input[name="minPrice"]');
+                    const maxPriceInput = modelsPanel.locator('[data-models-search-form] input[name="maxPrice"]');
+                    await minPriceInput.fill("1");
+                    await maxPriceInput.fill("5");
+                    await page.waitForFunction(() =>
+                        document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "1"
+                        && document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-selector"]')?.textContent === "anthropic/claude-sonnet-4-5",
+                    );
+                    await minPriceInput.fill("");
+                    await maxPriceInput.fill("0");
+                    await page.waitForFunction(() =>
+                        document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "1"
+                        && document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-price"]')?.textContent === "Free",
+                    );
+                    await maxPriceInput.fill("");
+                    await sortSelect.selectOption("selector");
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "120");
+
+                    // Typing into catalog search keeps the Aliases table stationary above it (zero vertical shake!)
                     const catalogSearch = modelsPanel.getByRole("searchbox", { name: "Search model catalog", exact: true });
-                    await catalogSearch.focus();
+                    await catalogSearch.click();
+                    const geomBefore = await catalogSearch.evaluate((el) => ({
+                        top: el.getBoundingClientRect().top,
+                        offsetTop: el instanceof HTMLElement ? el.offsetTop : -1,
+                    }));
                     await catalogSearch.pressSequentially("small", { delay: 15 });
                     await page.waitForFunction(() =>
-                        document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null
-                        && document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-name"]')?.textContent === "Small (small)",
+                        document.querySelector('#workspace-settings [data-models-catalog-rows] [data-text="model-name"]')?.textContent === "Small (small)",
                     );
+                    const geomAfter = await catalogSearch.evaluate((el) => ({
+                        top: el.getBoundingClientRect().top,
+                        offsetTop: el instanceof HTMLElement ? el.offsetTop : -1,
+                    }));
+                    assert.equal(geomAfter.offsetTop, geomBefore.offsetTop, "catalog search offsetTop stays fixed above filtered results");
+                    assert.ok(
+                        Math.abs(geomAfter.top - geomBefore.top) <= 1,
+                        `catalog search input stays vertically anchored while typing (delta=${Math.abs(geomAfter.top - geomBefore.top)})`,
+                    );
+                    assert.equal(await modelsPanel.locator("[data-models-alias-rows] tr").count(), 3, "Aliases table stays intact while searching catalog");
                     assert.equal(
                         await page.evaluate(() => document.activeElement?.getAttribute("aria-label")),
                         "Search model catalog",
@@ -1361,12 +1495,9 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     );
                     assert.equal(await catalogSearch.inputValue(), "small");
                     await catalogSearch.fill("");
-                    await page.waitForFunction(() =>
-                        document.querySelector("#workspace-settings")?.getAttribute("aria-busy") === null
-                        && document.querySelectorAll('#workspace-settings [data-settings-panel="models"] [data-models-alias-rows] tr').length === 3,
-                    );
+                    await page.waitForFunction(() => document.querySelector('#workspace-settings [data-settings-panel="models"] [data-text="model-total"]')?.textContent === "120");
                     await modelsPanel.locator("[data-models-alias-rows] tr").first().getByRole("button", { name: "Use in session", exact: true }).click();
-                    await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/small"));
+                    await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("fixture/small"));
                     assert.equal(activeSessionModel, "local");
 
                     // Switch to Environment in Session mode and verify session listing scope
@@ -1395,7 +1526,8 @@ export default async function verifyWorkspaceSettingsUnit(t) {
                     assert.equal(await settingsArticle.locator('[data-settings-section="env"]').isVisible(), false, "unregistered env family tab is hidden");
                     assert.equal(await settingsArticle.locator('[data-settings-section="members"]').isVisible(), false, "projectRoot=none hides Members tab");
                     assert.equal(await settingsArticle.locator('[data-settings-panel="schedule"]').isVisible(), false, "hidden section panel is hidden on direct URL arrival");
-                    assert.equal(await settingsArticle.locator('> [data-text="ws-settings-message"]').textContent(), "This settings section is unavailable for this workspace.");
+                    assert.equal(await settingsArticle.locator('[data-text="ws-settings-message"]').textContent(), "This settings section is unavailable for this workspace.");
+                    assert.equal(await settingsArticle.locator("[data-settings-feedback]").getAttribute("data-feedback-level"), "warning");
 
                     // Inline + New workspace hides project folder controls under projectRoot="none"
                     await settingsArticle.getByRole("link", { name: "Workspaces", exact: true }).click();

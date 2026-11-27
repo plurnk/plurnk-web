@@ -90,6 +90,8 @@ test("{§web-workspace-settings} {§web-workspace-creation} {§web-workspace-ren
     const documents = new Documents(SHELL);
     const wsHtml = documents.settings("workspaces", { workspace: "alpha", session: "session1" }).toString();
     assert.match(wsHtml, /<title data-text="page-title">alpha · Workspaces — Plurnk<\/title>/u);
+    assert.match(wsHtml, /<h1 id="workspace-settings-title"><span aria-hidden="true">🐹<\/span> <span>Plurnk<\/span><\/h1>/u);
+    assert.match(wsHtml, /<aside data-settings-feedback data-feedback-level="idle" role="status" aria-live="polite" hidden>/u);
     assert.match(wsHtml, /<a href="\/~\/alpha#session1" data-settings-back/u);
     assert.match(wsHtml, /<main id="main" data-page="settings" data-settings-section="workspaces" data-workspace-name="alpha" data-session-name="session1">/u);
     for (const section of ["search", "workspaces", "sessions", "models", "mcp", "skills", "schedule", "personas", "members", "env", "help", "about"]) {
@@ -179,6 +181,7 @@ test("{§web-brand} {§web-document} Documents stamps custom brand identity, the
 
     const settings = docs.settings("about").toString();
     assert.ok(settings.includes('<title data-text="page-title">About — Acme &amp; &quot;Co&quot;</title>'));
+    assert.ok(settings.includes('<h1 id="workspace-settings-title"><img src="/brand/icon.png" alt="" aria-hidden="true"> <span>Acme &amp; &quot;Co&quot;</span></h1>'));
     assert.ok(settings.includes('<span data-text="workspace-name">Acme &amp; &quot;Co&quot;</span>'));
     assert.ok(settings.includes('<dt>Support &amp; Help</dt><dd><a href="https://support.acme.example/help?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">support.acme.example/help?a=1&amp;b=2</a></dd>'));
     assert.ok(settings.includes('<dt>Terms</dt><dd><a href="https://acme.example/terms" target="_blank" rel="noopener noreferrer">acme.example/terms</a></dd>'));

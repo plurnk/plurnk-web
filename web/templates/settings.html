@@ -2,32 +2,36 @@
 <template id="session-config-controls">
     <form data-session-config-form hidden>
         <fieldset data-bind="disabled:ws-settings-busy">
-            <div data-model-field>
-                <label for="session-config-model-input" data-i18n="model-label">Model</label>
-                <div data-model-combobox="model">
-                    <input id="session-config-model-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-model-listbox" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
-                    <ul id="session-config-model-listbox" role="listbox" aria-label="Active session model choices" data-combobox-list hidden></ul>
+            <div data-field-row="model-effort">
+                <div data-field data-model-field>
+                    <label for="session-config-model-input" data-i18n="model-label">Model</label>
+                    <div data-model-combobox="model">
+                        <input id="session-config-model-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-model-listbox" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
+                        <ul id="session-config-model-listbox" role="listbox" aria-label="Active session model choices" data-combobox-list hidden></ul>
+                    </div>
+                </div>
+                <div data-field>
+                    <label for="session-config-effort-select" data-i18n="ws-settings-persona-effort-label">Reasoning effort</label>
+                    <select id="session-config-effort-select" name="effort" aria-label="Reasoning effort"></select>
                 </div>
             </div>
-            <label>
-                <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
-                <select name="effort" aria-label="Reasoning effort"></select>
-            </label>
-            <div data-model-field>
-                <label for="session-config-child-model-input" data-i18n="child-session-model">Child session model</label>
-                <div data-model-combobox="childModel">
-                    <input id="session-config-child-model-input" type="text" name="childModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-child-model-listbox" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
-                    <ul id="session-config-child-model-listbox" role="listbox" aria-label="Child session model choices" data-combobox-list hidden></ul>
+            <div data-field-row="session-extras">
+                <div data-field data-model-field>
+                    <label for="session-config-child-model-input" data-i18n="child-session-model">Child session model</label>
+                    <div data-model-combobox="childModel">
+                        <input id="session-config-child-model-input" type="text" name="childModel" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="session-config-child-model-listbox" aria-label="Child session model" placeholder="inherit, alias, or provider/model…" autocomplete="off" spellcheck="false">
+                        <ul id="session-config-child-model-listbox" role="listbox" aria-label="Child session model choices" data-combobox-list hidden></ul>
+                    </div>
+                </div>
+                <div data-field>
+                    <label for="session-config-persona-select" data-i18n="persona-label">Persona</label>
+                    <select id="session-config-persona-select" name="persona" aria-label="Active session persona"></select>
+                </div>
+                <div data-field>
+                    <label for="session-config-mode-select" data-i18n="approval-policy">Approval policy</label>
+                    <select id="session-config-mode-select" name="mode" aria-label="Approval policy"></select>
                 </div>
             </div>
-            <label>
-                <span data-i18n="persona-label">Persona</span>
-                <select name="persona" aria-label="Active session persona"></select>
-            </label>
-            <label>
-                <span data-i18n="approval-policy">Approval policy</span>
-                <select name="mode" aria-label="Approval policy"></select>
-            </label>
             <footer>
                 <button type="submit" data-i18n="ws-settings-apply-persona">Apply to session</button>
             </footer>
@@ -36,35 +40,33 @@
 </template>
 <template id="workspace-settings-subsystems">
     <div data-settings-panels>
-        <section data-settings-panel="models" aria-label="Models" data-alias-count="0">
+        <section data-settings-panel="models" aria-label="Models" data-alias-count="0" data-catalog-count="0">
             <header data-panel-toolbar>
                 <h2 data-i18n="ws-settings-tab-models">Models</h2>
             </header>
             <form data-models-session-form hidden>
                 <fieldset data-bind="disabled:ws-settings-busy">
-                    <div data-model-field>
+                    <div data-field data-model-field>
                         <label for="models-session-model-input" data-i18n="model-label">Model</label>
                         <div data-model-combobox="modelsSessionModel">
                             <input id="models-session-model-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="models-session-model-listbox" aria-label="Active session model" placeholder="Search alias or provider/model…" autocomplete="off" spellcheck="false">
                             <ul id="models-session-model-listbox" role="listbox" aria-label="Active session model choices" data-combobox-list hidden></ul>
                         </div>
                     </div>
-                    <label>
-                        <span data-i18n="ws-settings-persona-effort-label">Reasoning effort</span>
-                        <select name="effort" aria-label="Reasoning effort"></select>
-                    </label>
-                    <footer>
-                        <button type="submit" data-i18n="apply">Apply</button>
-                    </footer>
+                    <div data-field>
+                        <label for="models-session-effort-select" data-i18n="ws-settings-persona-effort-label">Reasoning effort</label>
+                        <select id="models-session-effort-select" name="effort" aria-label="Reasoning effort"></select>
+                    </div>
+                    <button type="submit" data-models-apply data-i18n="apply">Apply</button>
                 </fieldset>
             </form>
-            <p data-models-aliases-empty data-i18n="no-aliases">No matching aliases.</p>
+            <p data-models-aliases-empty data-i18n="no-aliases">No configured aliases.</p>
             <figure data-models-aliases-wrap>
                 <table>
                     <thead><tr>
                         <th scope="col" data-i18n="ws-settings-col-alias">Alias</th>
                         <th scope="col" data-i18n="model-label">Model</th>
-                        <th scope="col" data-i18n="model-efforts">Efforts</th>
+                        <th scope="col" data-i18n="model-effort">Effort</th>
                         <th scope="col" data-i18n="ws-settings-col-state">State</th>
                         <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
                     </tr></thead>
@@ -78,6 +80,14 @@
                     <select name="provider" aria-label="Filter by provider">
                         <option value="" data-i18n="all-providers">All providers</option>
                     </select>
+                    <input type="number" name="minPrice" min="0" step="any" inputmode="decimal" aria-label="Minimum input price per 1M tokens (USD)" placeholder="Min $/1M" autocomplete="off">
+                    <input type="number" name="maxPrice" min="0" step="any" inputmode="decimal" aria-label="Maximum input price per 1M tokens (USD)" placeholder="Max $/1M" autocomplete="off">
+                    <select name="sort" aria-label="Sort models">
+                        <option value="selector" data-i18n="model-sort-selector">Name (A–Z)</option>
+                        <option value="cost-asc" data-i18n="model-sort-cost-asc">Price: low → high</option>
+                        <option value="cost-desc" data-i18n="model-sort-cost-desc">Price: high → low</option>
+                        <option value="context-desc" data-i18n="model-sort-context-desc">Context: largest</option>
+                    </select>
                     <button type="submit" data-i18n="search">Search</button>
                 </fieldset>
             </form>
@@ -86,26 +96,28 @@
                     <span data-i18n="model-offset">Offset:</span> <span data-text="model-offset">0</span>
                     <span data-i18n="models-shown">Shown:</span> <span data-text="model-count">0</span>
                     <span data-i18n="models-total">Total:</span> <span data-text="model-total">0</span>
+                    <span data-models-more-hint data-text="model-more"></span>
                 </p>
                 <div data-models-page-controls>
                     <button type="button" data-models-prev disabled data-i18n="previous-page">Previous</button>
                     <button type="button" data-models-next disabled data-i18n="next-page">Next</button>
                 </div>
             </div>
-            <p data-text="model-more"></p>
-            <figure>
-                <table>
-                    <thead><tr>
-                        <th scope="col" data-i18n="model-selector">Selector</th>
-                        <th scope="col" data-i18n="model-name">Name</th>
-                        <th scope="col" data-i18n="model-context">Context</th>
-                        <th scope="col" data-i18n="model-efforts">Efforts</th>
-                        <th scope="col" data-i18n="model-readiness">Readiness</th>
-                        <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
-                    </tr></thead>
-                    <tbody data-models-catalog-rows></tbody>
-                </table>
-            </figure>
+            <div data-models-catalog-stage>
+                <p data-models-catalog-empty data-text="model-empty">No configured models available.</p>
+                <figure data-models-catalog-wrap>
+                    <table>
+                        <thead><tr>
+                            <th scope="col" data-i18n="model-selector">Selector</th>
+                            <th scope="col" data-i18n="model-name">Name</th>
+                            <th scope="col" data-numeric data-i18n="model-context">Context</th>
+                            <th scope="col" data-numeric data-i18n="model-price">Price (/1M)</th>
+                            <th scope="col" data-i18n="ws-settings-col-actions">Actions</th>
+                        </tr></thead>
+                        <tbody data-models-catalog-rows></tbody>
+                    </table>
+                </figure>
+            </div>
         </section>
         <section data-settings-panel="mcp" aria-label="MCP servers" data-family-count="0" data-candidate-count="0">
             <header data-panel-toolbar>
@@ -247,13 +259,21 @@
                             <small data-policy-note="personas-source" hidden></small>
                             <input type="text" name="source" aria-label="Persona file path" placeholder="./personas/reviewer.md" autocomplete="off" spellcheck="false">
                         </div>
-                        <div data-model-combobox="personaModel">
-                            <input type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="persona-model-listbox" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
-                            <ul id="persona-model-listbox" role="listbox" aria-label="Persona default model choices" data-combobox-list hidden></ul>
+                        <div data-field-row="model-effort">
+                            <div data-field data-model-field>
+                                <label for="persona-model-input" data-i18n="ws-settings-persona-model-label">Default model (optional)</label>
+                                <div data-model-combobox="personaModel">
+                                    <input id="persona-model-input" type="text" name="model" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="persona-model-listbox" aria-label="Persona default model" placeholder="Default model alias or provider/model (optional)" autocomplete="off" spellcheck="false">
+                                    <ul id="persona-model-listbox" role="listbox" aria-label="Persona default model choices" data-combobox-list hidden></ul>
+                                </div>
+                            </div>
+                            <div data-field>
+                                <label for="persona-effort-select" data-i18n="ws-settings-persona-effort-label">Reasoning effort</label>
+                                <select id="persona-effort-select" name="effort" aria-label="Persona default effort">
+                                    <option value="" data-i18n="ws-settings-default-effort">Default effort (optional)</option>
+                                </select>
+                            </div>
                         </div>
-                        <select name="effort" aria-label="Persona default effort">
-                            <option value="" data-i18n="ws-settings-default-effort">Default effort (optional)</option>
-                        </select>
                         <footer>
                             <button type="submit" data-i18n="ws-settings-save-persona">Save persona</button>
                         </footer>

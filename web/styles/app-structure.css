@@ -178,7 +178,13 @@
     fieldset[role="group"] > * {
         flex: 1 1 auto;
         inline-size: auto;
+        min-inline-size: 0;
         margin-block-end: 0;
+    }
+
+    fieldset[role="group"] > select {
+        flex: 0 1 auto;
+        max-inline-size: 100%;
     }
 
     fieldset[role="group"] > :is(button, input:where([type="submit"], [type="button"], [type="reset"])) {
@@ -312,6 +318,18 @@
     }
 
     /* {§web-workspace-settings} Dedicated workspace settings and about page layout. */
+    #workspace-settings-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4ch;
+    }
+
+    #workspace-settings-title > img {
+        inline-size: 1.15em;
+        block-size: 1.15em;
+        object-fit: contain;
+    }
+
     #workspace-settings :where(nav[aria-label] > ul) {
         display: flex;
         flex: 1 1 auto;

@@ -1,7 +1,7 @@
 import { $, $$, on, the } from "on_the_money";
 import { EFFORTS } from "@plurnk/plurnk-contracts";
 import { attachModelCombobox } from "./combobox.js";
-import { populateStaticEffortSelect } from "./effort-select.js";
+import { createModelEffortSync } from "./effort-select.js";
 import { populateEnvPanel } from "./env-panel.js";
 import { createModelSearchCache } from "./session-models.js";
 import { isRecord } from "./session-translator.js";
@@ -267,7 +267,7 @@ function collapseEnclosingDisclosure(form) {
  *   readonly getContext: () => WorkspaceSettingsContext,
  *   readonly invoke: (kind: string, params?: Record<string, unknown>, opts?: { requireSession?: boolean, signal?: AbortSignal }) => Promise<unknown>,
  *   readonly runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
- *   readonly setFeedback: (busy: boolean, message?: string, recovery?: string) => void,
+ *   readonly setFeedback: (busy: boolean, message?: string, recovery?: string, level?: "idle" | "info" | "success" | "warning" | "error") => void,
  *   readonly isBusy: () => boolean,
  *   readonly invokeModelSearch: (kind: string, params?: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>,
  *   readonly envPanel: Element | null,
@@ -302,16 +302,35 @@ export function mountFamilyAndEnvSections(article, {
     /** @type {Map<DiscoverableFamily, ReturnType<typeof mountCandidatePager>>} */
     const candidatePagers = new Map();
 
-    const personaEffortEl = $(article, '[data-personas-save-form] select[name="effort"]');
-    populateStaticEffortSelect(personaEffortEl instanceof HTMLSelectElement ? personaEffortEl : null, EFFORTS);
+    /** @type {ReturnType<typeof attachModelCombobox> | null} */
+    let personaModelCombobox = null;
+
+    const personaEffortSync = createModelEffortSync({
+        getSelect: () => {
+            const el = $(article, '[data-personas-save-form] select[name="effort"]');
+            return el instanceof HTMLSelectElement ? el : null;
+        },
+        getCache: () => modelSearchCache,
+        getSelectedModel: () => personaModelCombobox?.getValue() ?? "",
+        getSignal: () => getContext().signal,
+        optionalLabel: "Default effort (optional)",
+        fallbackEfforts: EFFORTS,
+    });
 
     const personaModelBox = $(article, '[data-personas-save-form] [data-model-combobox="personaModel"]');
-    const personaModelCombobox = personaModelBox instanceof HTMLElement
+    personaModelCombobox = personaModelBox instanceof HTMLElement
         ? attachModelCombobox(personaModelBox, {
             getCache: () => modelSearchCache,
             signal: getContext().signal,
+            onSelect: (selector, choice) => {
+                const effortField = $(article, '[data-personas-save-form] select[name="effort"]');
+                if (effortField instanceof HTMLSelectElement) {
+                    personaEffortSync.sync(selector, effortField.value, choice?.efforts, choice?.defaultEffort);
+                }
+            },
         })
         : null;
+    personaEffortSync.sync("", "");
 
     const membersSaveForm = $(article, "form[data-members-save-form]");
     const membersPreview = membersSaveForm instanceof HTMLFormElement
@@ -635,7 +654,7 @@ export function mountFamilyAndEnvSections(article, {
                 valueInput.value = defaultVal;
                 valueInput.focus();
             }
-            setFeedback(false, `Filled ${meta.alias}; enter a value and click Set.`, "");
+            setFeedback(false, `Filled ${meta.alias}; enter a value and click Set.`, "", "info");
             return;
         }
         const targetFamily = meta.family;
@@ -658,13 +677,14 @@ export function mountFamilyAndEnvSections(article, {
             try {
                 built = spec.build(form);
             } catch (error) {
-                setFeedback(false, error instanceof Error ? error.message : String(error), "");
+                setFeedback(false, error instanceof Error ? error.message : String(error), "", "error");
                 return;
             }
             void runMutation(async () => {
                 await invoke(spec.action, built.payload);
                 await loadFamilySection(spec.family);
                 spec.clear(form);
+                if (spec.family === "personas") personaEffortSync.sync("", "");
                 if (spec.family === "members") membersPreview?.clear();
                 collapseEnclosingDisclosure(form);
                 return `${built.label}  saved`;
@@ -887,6 +907,7 @@ export function mountFamilyAndEnvSections(article, {
         loadFamilySection,
         loadEnvSection,
         dispose() {
+            personaEffortSync.dispose();
             personaModelCombobox?.dispose();
             membersPreview?.dispose();
             for (const controller of listLookups.values()) controller.abort();

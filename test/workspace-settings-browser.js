@@ -77,7 +77,7 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await mcpDisclosure.getByRole("textbox", { name: "Server alias", exact: true }).fill("123-invalid");
             await mcpDisclosure.getByRole("textbox", { name: "Server command", exact: true }).fill("echo");
             await mcpDisclosure.getByRole("button", { name: "Save server", exact: true }).click();
-            await page.waitForFunction(() => (document.querySelector('#workspace-settings > [data-text="ws-settings-message"]')?.textContent ?? "").includes("123-invalid"));
+            await page.waitForFunction(() => (document.querySelector('#workspace-settings [data-text="ws-settings-message"]')?.textContent ?? "").includes("123-invalid"));
             assert.equal(await mcpDisclosure.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open), true, "daemon Problem keeps MCP disclosure open");
             assert.equal(await mcpDisclosure.getByRole("textbox", { name: "Server command", exact: true }).inputValue(), "echo", "daemon Problem preserves MCP form draft");
             await mcpDisclosure.locator("> summary").click();
@@ -148,8 +148,8 @@ export default async function verifyWorkspaceSettings({ t, withDaemon }) {
             await sessionConfigForm.getByRole("combobox", { name: "Active session persona", exact: true }).selectOption("reviewer");
             await sessionConfigForm.getByRole("combobox", { name: "Approval policy", exact: true }).selectOption("review");
             await sessionConfigForm.getByRole("button", { name: "Apply to session", exact: true }).click();
-            await page.waitForFunction(() => (document.querySelector("#workspace-settings > [data-text='ws-settings-message']")?.textContent ?? "").includes("Persona: reviewer"));
-            assert.match(await settingsArticle.locator('> [data-text="ws-settings-message"]').textContent(), /Approval policy: review/u);
+            await page.waitForFunction(() => (document.querySelector("#workspace-settings [data-text='ws-settings-message']")?.textContent ?? "").includes("Persona: reviewer"));
+            assert.match(await settingsArticle.locator('[data-text="ws-settings-message"]').textContent(), /Approval policy: review/u);
 
             // Schedule & Macro Control Panel: timed prompt schedule + manual multi-step macro with live Run now receipts against real daemon!
             await settingsArticle.getByRole("link", { name: "Schedule", exact: true }).click();

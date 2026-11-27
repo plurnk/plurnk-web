@@ -32,6 +32,16 @@
         --plurnk-diff-hunk-surface: light-dark(#e8eef8, #17253d);
         --plurnk-diff-hunk-color: light-dark(#1c4480, #9ec5ff);
         --plurnk-diff-meta-color: light-dark(#464e5c, #b4bdcd);
+
+        /* {§web-workspace-settings} Semantic alert/callout surfaces for info, success, warning, and error banners. */
+        --plurnk-info-border: light-dark(#2563eb, #60a5fa);
+        --plurnk-info-surface: color-mix(in srgb, var(--plurnk-info-border) 10%, var(--otm-card-background-color));
+        --plurnk-success-border: var(--otm-primary);
+        --plurnk-success-surface: color-mix(in srgb, var(--otm-primary) 11%, var(--otm-card-background-color));
+        --plurnk-warning-border: var(--plurnk-actor);
+        --plurnk-warning-surface: color-mix(in srgb, var(--plurnk-actor) 12%, var(--otm-card-background-color));
+        --plurnk-error-border: light-dark(#b91c1c, #f87171);
+        --plurnk-error-surface: color-mix(in srgb, var(--plurnk-error-border) 12%, var(--otm-card-background-color));
     }
 
     article {

@@ -23,7 +23,7 @@ export { extractGuidedFields, parseRuleToTimingState, synthesizeScheduleRule };
  *   invoke: (kind: string, params?: Record<string, unknown>, opts?: { requireSession?: boolean }) => Promise<unknown>,
  *   invokeForSession: (kind: string, params: Record<string, unknown>, sessionName: string, signal?: AbortSignal) => Promise<unknown>,
  *   runMutation: (work: (signal: AbortSignal) => Promise<string>) => Promise<void>,
- *   setFeedback: (busy: boolean, message?: string, recovery?: string) => void,
+ *   setFeedback: (busy: boolean, message?: string, recovery?: string, level?: "idle" | "info" | "success" | "warning" | "error") => void,
  *   refreshList?: () => Promise<void>,
  * }} host
  */
@@ -302,7 +302,7 @@ export function mountSchedulePanel(panel, host) {
 
     on(form, "click", "[data-schedule-cancel-edit], [data-schedule-reset]", () => {
         resetBuilder();
-        host.setFeedback(false, "", "");
+        host.setFeedback(false, "", "", "idle");
     });
 
     on(form, "click", "[data-schedule-add-step]", () => {
@@ -318,7 +318,7 @@ export function mountSchedulePanel(panel, host) {
         try {
             built = buildPayload();
         } catch (error) {
-            host.setFeedback(false, error instanceof Error ? error.message : String(error), "");
+            host.setFeedback(false, error instanceof Error ? error.message : String(error), "", "error");
             return;
         }
         void host.runMutation(async () => {
@@ -342,7 +342,7 @@ export function mountSchedulePanel(panel, host) {
             const item = scheduleByAlias.get(alias);
             if (item) {
                 loadForEdit(item);
-                host.setFeedback(false, "", "");
+                host.setFeedback(false, "", "", "idle");
             }
             return;
         }

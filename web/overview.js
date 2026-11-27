@@ -31,9 +31,19 @@ export default function observeOverview(panel, {
     let resources = new AbortController();
     /** @type {AbortController | null} */
     let searchAbort = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let searchDebounceTimer = null;
     /** @type {unknown[]} */
     const inFlightNotifications = [];
     let disposed = false;
+
+    const SEARCH_DEBOUNCE_MS = 180;
+    function clearSearchDebounce() {
+        if (searchDebounceTimer !== null) {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = null;
+        }
+    }
 
     const store = createOverviewStore();
     const renderer = createOverviewRenderer(workspacesOutlet, suggestionsList);
@@ -155,6 +165,7 @@ export default function observeOverview(panel, {
     if (controlsForm instanceof HTMLFormElement) {
         on(controlsForm, "submit", "form", (event) => {
             event.preventDefault();
+            clearSearchDebounce();
             filterQuery = searchInput instanceof HTMLInputElement ? searchInput.value : "";
             filterWorkspace = readFieldValue(wsField, "");
             filterStatus = readFieldValue(statusSelect, "all");
@@ -168,11 +179,20 @@ export default function observeOverview(panel, {
                 filterQuery = input.value;
                 syncUrlQuery();
                 renderer.applyFilter(store, currentFilters());
-                void fetchAcpSearch();
+                clearSearchDebounce();
+                if (filterQuery.trim() === "") {
+                    void fetchAcpSearch();
+                } else {
+                    searchDebounceTimer = setTimeout(() => {
+                        searchDebounceTimer = null;
+                        if (!disposed) void fetchAcpSearch();
+                    }, SEARCH_DEBOUNCE_MS);
+                }
             }
         });
         on(controlsForm, "change", "select", (_event, select) => {
             if (!(select instanceof HTMLSelectElement)) return;
+            clearSearchDebounce();
             filterWorkspace = readFieldValue(wsField, "");
             filterStatus = readFieldValue(statusSelect, "all");
             filterKind = readFieldValue(kindField, "all");
@@ -201,6 +221,7 @@ export default function observeOverview(panel, {
 
     const offPageHide = on.target(window, "pagehide", () => {
         if (disposed) return;
+        clearSearchDebounce();
         searchAbort?.abort();
         resources.abort();
     });
@@ -216,6 +237,7 @@ export default function observeOverview(panel, {
         dispose() {
             if (disposed) return;
             disposed = true;
+            clearSearchDebounce();
             offPageHide();
             offPageShow();
             notifications.unsubscribe();
