@@ -1,7 +1,19 @@
 import { overviewExcerptCharsLimit, overviewSessionsLimit } from "./endpoints.js";
 import managementAction from "./management-action.js";
 import { matchSnippet, truncateSingleLine } from "./session-selection.js";
+import {
+    asSessionKind,
+    asSessionOrigin,
+    createWatchState,
+    hydrateWatchState,
+    isRecord,
+    parseWatchReply,
+    reduceWatchNotification,
+    watchSessionKey,
+} from "./watch-store.js";
 import { parseWorkspaceList } from "./workspace-records.js";
+
+export { isRecord };
 
 /**
  * @typedef {{
@@ -45,18 +57,14 @@ import { parseWorkspaceList } from "./workspace-records.js";
  * }} OverviewSession
  */
 
-/** @param {unknown} value @returns {value is Record<string, unknown>} */
-export const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-
-/** @param {unknown} value @returns {"root" | "work" | "fork" | null} */
-const asSessionKind = (value) => value === "root" || value === "work" || value === "fork" ? value : null;
-
-/** @param {string} raw */
-const singleLineExcerpt = (raw) => raw.replaceAll(/\s+/gu, " ").trim();
-
 /** @param {OverviewSession} a @param {OverviewSession} b */
-export const orderSessions = (a, b) => a.reply !== null && b.reply !== null ? b.reply.id - a.reply.id
-    : a.reply !== null ? -1 : b.reply !== null ? 1 : 0;
+export const orderSessions = (a, b) => (a.reply !== null && b.reply !== null
+    ? b.reply.id - a.reply.id
+    : a.reply !== null
+        ? -1
+        : b.reply !== null
+            ? 1
+            : a.id - b.id);
 
 /** @param {OverviewSession} session */
 export const isActiveSession = (session) =>
@@ -87,6 +95,26 @@ export function resolveDisplayedExcerpt(session, queryLower) {
 }
 
 /**
+ * @param {import("./watch-store.js").WatchReply | null} rawReply
+ * @param {number} excerptChars
+ * @returns {OverviewReply | null}
+ */
+function formatOverviewReply(rawReply, excerptChars) {
+    if (!rawReply) return null;
+    const rawExcerpt = typeof rawReply.excerpt === "string" && rawReply.excerpt.trim() !== ""
+        ? truncateSingleLine(rawReply.excerpt, excerptChars)
+        : "";
+    const excerpt = rawExcerpt !== "" && rawReply.continued === true && !rawExcerpt.endsWith("…")
+        ? `${rawExcerpt}…`
+        : rawExcerpt;
+    return {
+        id: rawReply.id,
+        ...(typeof rawReply.at === "number" ? { at: rawReply.at } : {}),
+        ...(excerpt !== "" ? { excerpt } : {}),
+    };
+}
+
+/**
  * Bound concurrent HTTP/1.1 SSE actions so browser per-origin socket pools (6 sockets) never deadlock.
  * @template T, R
  * @param {readonly T[]} items
@@ -109,7 +137,7 @@ async function mapWithConcurrency(items, concurrency, worker) {
 }
 
 /**
- * {§web-search} {§web-session-directory} Live overview inventory store, `/acp` fetcher, and `/notifications` reducer.
+ * {§web-search} {§web-session-directory} Live overview inventory store backed by Watch state and single-pass `session/list`.
  */
 export function createOverviewStore() {
     /** @type {Map<number, OverviewWorkspace>} */
@@ -118,9 +146,77 @@ export function createOverviewStore() {
     const sessionsByKey = new Map();
     /** @type {Map<string, readonly string[]>} */
     const loopPromptsCache = new Map();
-    let nextWorkspaceOrder = 0;
+    let watchState = createWatchState();
     let omittedCount = 0;
     let initialLoadDone = false;
+
+    /**
+     * Project active unarchived `watchState` into `workspacesById`, `sessionsByKey`, and `omittedCount`.
+     * @param {{ readonly applyOverviewLimit: boolean }} options
+     */
+    function syncActiveStoreFromWatch({ applyOverviewLimit }) {
+        const overviewLimit = overviewSessionsLimit();
+        const excerptChars = overviewExcerptCharsLimit();
+        /** @type {Map<string, { matchedQuery?: string, matchedExcerpt?: string }>} */
+        const priorMatches = new Map();
+        for (const [key, prev] of sessionsByKey) {
+            if (prev.matchedQuery !== undefined || prev.matchedExcerpt !== undefined) {
+                priorMatches.set(key, {
+                    ...(prev.matchedQuery !== undefined ? { matchedQuery: prev.matchedQuery } : {}),
+                    ...(prev.matchedExcerpt !== undefined ? { matchedExcerpt: prev.matchedExcerpt } : {}),
+                });
+            }
+        }
+
+        workspacesById.clear();
+        for (const [id, ws] of watchState.workspaces) {
+            workspacesById.set(id, { ...ws });
+        }
+
+        const activeSessions = [...watchState.sessions.values()]
+            .filter((s) => !s.archived && !(workspacesById.get(s.workspaceId)?.archived ?? false))
+            .toSorted((a, b) =>
+                a.reply !== null && b.reply !== null
+                    ? b.reply.id - a.reply.id
+                    : a.reply !== null
+                        ? -1
+                        : b.reply !== null
+                            ? 1
+                            : b.id - a.id,
+            );
+
+        const held = applyOverviewLimit
+            ? activeSessions.filter((s, index) => index < overviewLimit || s.gates > 0)
+            : activeSessions;
+        omittedCount = watchState.omitted + (activeSessions.length - held.length);
+
+        sessionsByKey.clear();
+        for (const s of held) {
+            const key = watchSessionKey(s.workspaceId, s.id);
+            const match = priorMatches.get(key);
+            const openingPrompt = s.opening !== undefined ? truncateSingleLine(s.opening, excerptChars) : undefined;
+            sessionsByKey.set(key, {
+                id: s.id,
+                workspaceId: s.workspaceId,
+                workspaceName: s.workspaceName,
+                projectRoot: s.projectRoot,
+                name: s.name,
+                parentSessionId: s.parentSessionId,
+                parentName: s.parentName,
+                parentOrigin: s.parentOrigin,
+                origin: "model",
+                kind: s.kind,
+                lifecycle: s.lifecycle,
+                gates: s.gates,
+                archived: false,
+                ...(s.title !== undefined ? { title: s.title } : {}),
+                ...(openingPrompt ? { openingPrompt } : {}),
+                ...(match?.matchedQuery !== undefined ? { matchedQuery: match.matchedQuery } : {}),
+                ...(match?.matchedExcerpt !== undefined ? { matchedExcerpt: match.matchedExcerpt } : {}),
+                reply: formatOverviewReply(s.reply, excerptChars),
+            });
+        }
+    }
 
     /**
      * @param {number} wsId
@@ -182,264 +278,34 @@ export function createOverviewStore() {
 
     /**
      * @param {unknown} raw
-     * @param {{ readonly filterStatus: string, readonly onResync: () => void }} context
+     * @param {{
+     *   readonly filterStatus: string,
+     *   readonly isNarrowing?: boolean,
+     *   readonly onResync: () => void,
+     *   readonly onSnapshotHydrated?: () => void,
+     * }} context
      * @returns {boolean}
      */
-    function applyNotification(raw, { filterStatus, onResync }) {
+    function applyNotification(raw, { filterStatus, isNarrowing = false, onResync, onSnapshotHydrated }) {
         if (filterStatus === "archived") return false;
-        if (!isRecord(raw) || typeof raw.event !== "string" || !isRecord(raw.data)) return false;
-        const { event, data } = raw;
-        const notifWorkspaceId = typeof raw.workspaceId === "number" ? raw.workspaceId : null;
-        const notifSessionId = typeof raw.sessionId === "number" ? raw.sessionId : null;
-        const notifTimestamp = typeof raw.timestamp === "number" ? raw.timestamp : Date.now();
-
-        switch (event) {
-            case "workspace/created": {
-                const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
-                const name = typeof data.name === "string" ? data.name : null;
-                if (id === null || name === null) return false;
-                const prev = workspacesById.get(id);
-                const projRoot = typeof data.projectRoot === "string" ? data.projectRoot : null;
-                const projLabel = typeof data.projectLabel === "string" ? data.projectLabel : projRoot;
-                workspacesById.set(id, {
-                    id,
-                    name,
-                    projectRoot: projRoot,
-                    projectLabel: projLabel,
-                    archived: false,
-                    order: prev?.order ?? nextWorkspaceOrder++,
-                });
-                return true;
-            }
-            case "workspace/renamed": {
-                const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
-                const name = typeof data.name === "string" ? data.name : null;
-                if (id === null || name === null) return false;
-                const prev = workspacesById.get(id);
-                workspacesById.set(id, {
-                    id,
-                    name,
-                    projectRoot: prev?.projectRoot ?? null,
-                    projectLabel: prev?.projectLabel ?? null,
-                    archived: prev?.archived ?? false,
-                    order: prev?.order ?? nextWorkspaceOrder++,
-                });
-                for (const [key, session] of sessionsByKey.entries()) {
-                    if (session.workspaceId === id) {
-                        sessionsByKey.set(key, { ...session, workspaceName: name });
-                    }
-                }
-                return true;
-            }
-            case "workspace/archived": {
-                const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
-                if (id === null) return false;
-                const isArchived = data.archivedAt !== null && data.archivedAt !== undefined;
-                const prev = workspacesById.get(id);
-                if (prev) {
-                    workspacesById.set(id, { ...prev, archived: isArchived });
-                }
-                if (isArchived) {
-                    for (const [key, session] of sessionsByKey.entries()) {
-                        if (session.workspaceId === id) {
-                            sessionsByKey.delete(key);
-                        }
-                    }
-                }
-                return true;
-            }
-            case "session/created": {
-                const id = typeof data.id === "number" ? data.id : notifSessionId;
-                const wsId = typeof data.workspaceId === "number" ? data.workspaceId : notifWorkspaceId;
-                if (id === null || wsId === null || typeof data.name !== "string") return false;
-                const prevWs = workspacesById.get(wsId);
-                const wsName = typeof data.workspaceName === "string" ? data.workspaceName : prevWs?.name ?? String(wsId);
-                const projRoot = typeof data.projectRoot === "string" ? data.projectRoot : data.projectRoot === null ? null : prevWs?.projectRoot ?? null;
-                const projLabel = typeof data.projectLabel === "string" ? data.projectLabel : data.projectLabel === null ? null : prevWs?.projectLabel ?? projRoot;
-                workspacesById.set(wsId, {
-                    id: wsId,
-                    name: wsName,
-                    projectRoot: projRoot,
-                    projectLabel: projLabel,
-                    archived: false,
-                    order: prevWs?.order ?? nextWorkspaceOrder++,
-                });
-                if (data.origin !== "model") return true;
-                const parentSessionId = typeof data.parentSessionId === "number" ? data.parentSessionId : null;
-                const parentEntry = parentSessionId !== null ? sessionsByKey.get(`${wsId}:${parentSessionId}`) ?? null : null;
-                const kind = asSessionKind(data.kind) ?? (parentSessionId === null ? "root" : "work");
-                const title = typeof data.title === "string" && data.title.trim() !== "" ? data.title.trim() : undefined;
-                sessionsByKey.set(`${wsId}:${id}`, {
-                    id,
-                    workspaceId: wsId,
-                    workspaceName: wsName,
-                    projectRoot: projRoot,
-                    name: data.name,
-                    parentSessionId,
-                    parentName: parentEntry?.name ?? (parentSessionId !== null ? "_plurnk" : null),
-                    parentOrigin: parentEntry?.origin ?? (parentSessionId !== null ? "_plurnk" : null),
-                    origin: "model",
-                    kind,
-                    lifecycle: typeof data.lifecycle === "string" ? data.lifecycle : "idle",
-                    gates: 0,
-                    archived: false,
-                    ...(title ? { title } : {}),
-                    reply: null,
-                });
-                return true;
-            }
-            case "session/archived":
-            case "session/deleted": {
-                if (event === "session/archived" && (data.archivedAt === null || data.archivedAt === undefined)) return false;
-                const wsId = notifWorkspaceId;
-                const ids = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
-                if (wsId === null || ids.length === 0) return false;
-                let removed = false;
-                for (const sid of ids) {
-                    if (typeof sid === "number" && sessionsByKey.delete(`${wsId}:${sid}`)) {
-                        removed = true;
-                    }
-                }
-                return removed;
-            }
-            case "session/titled": {
-                const wsId = notifWorkspaceId;
-                const sid = typeof data.id === "number" ? data.id : notifSessionId;
-                if (wsId === null || sid === null) return false;
-                const key = `${wsId}:${sid}`;
-                const cur = sessionsByKey.get(key);
-                if (!cur) return false;
-                const nextTitle = typeof data.title === "string" && data.title.trim().length > 0 ? data.title.trim() : undefined;
-                if (cur.title === nextTitle) return false;
-                const next = { ...cur };
-                if (nextTitle !== undefined) next.title = nextTitle;
-                else delete next.title;
-                sessionsByKey.set(key, next);
-                return true;
-            }
-            case "loop/proposal":
-            case "loop/interaction": {
-                if (notifWorkspaceId === null || notifSessionId === null) return false;
-                if (event === "loop/proposal" && isRecord(data.disposition) && data.disposition.decision !== "review") return false;
-                const key = `${notifWorkspaceId}:${notifSessionId}`;
-                const cur = sessionsByKey.get(key);
-                if (!cur) return false;
-                sessionsByKey.set(key, { ...cur, lifecycle: "running", gates: cur.gates + 1 });
-                return true;
-            }
-            case "loop/gate-settled": {
-                const wsId = notifWorkspaceId;
-                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
-                if (wsId === null || sid === null) return false;
-                const key = `${wsId}:${sid}`;
-                const cur = sessionsByKey.get(key);
-                if (!cur || cur.gates <= 0) return false;
-                sessionsByKey.set(key, { ...cur, gates: Math.max(0, cur.gates - 1) });
-                return true;
-            }
-            case "log/entry": {
-                const entry = isRecord(data.entry) ? data.entry : null;
-                if (!entry) return false;
-                const wsId = notifWorkspaceId;
-                const sid = typeof entry.sessionId === "number" ? entry.sessionId : notifSessionId;
-                if (wsId === null || sid === null) return false;
-                const key = `${wsId}:${sid}`;
-                const cur = sessionsByKey.get(key);
-                if (!cur) return false;
-                let nextReply = cur.reply;
-                let nextLifecycle = cur.lifecycle;
-                let nextOpeningPrompt = cur.openingPrompt;
-                if (entry.origin === "client" && entry.op === "send" && !nextOpeningPrompt) {
-                    const tx = isRecord(entry.tx) ? entry.tx : null;
-                    const rawPrompt = typeof tx?.body === "string" ? tx.body
-                        : isRecord(tx?.body) && typeof tx.body.raw === "string" ? tx.body.raw : undefined;
-                    if (rawPrompt) {
-                        const cleaned = singleLineExcerpt(rawPrompt);
-                        if (cleaned !== "") nextOpeningPrompt = cleaned;
-                    }
-                }
-                if (
-                    entry.origin === "model"
-                    && entry.state === "resolved"
-                    && (typeof entry.statusRx !== "number" || entry.statusRx < 400)
-                    && (entry.op === "send" || entry.op === "done" || entry.op === "fail")
-                    && typeof entry.id === "number"
-                ) {
-                    const rxCompletion = isRecord(entry.rx) && (entry.rx.completion === 200 || entry.rx.completion === 499)
-                        ? entry.rx.completion
-                        : (Array.isArray(entry.repliedToSources) && entry.repliedToSources.length > 0 ? 200 : null);
-                    if (rxCompletion !== null) {
-                        const tx = isRecord(entry.tx) ? entry.tx : null;
-                        const rawWords = typeof tx?.body === "string" ? tx.body
-                            : isRecord(tx?.body) && typeof tx.body.raw === "string" ? tx.body.raw : undefined;
-                        const excerpt = rawWords ? singleLineExcerpt(rawWords) : cur.reply?.excerpt;
-                        nextReply = {
-                            id: entry.id,
-                            at: notifTimestamp,
-                            ...(excerpt ? { excerpt } : {}),
-                        };
-                    }
-                }
-                if (entry.state !== "proposed" && entry.op !== "done" && entry.op !== "fail" && entry.op !== "wait") {
-                    nextLifecycle = "running";
-                }
-                if (nextReply !== cur.reply || nextLifecycle !== cur.lifecycle || nextOpeningPrompt !== cur.openingPrompt) {
-                    sessionsByKey.set(key, {
-                        ...cur,
-                        reply: nextReply,
-                        lifecycle: nextLifecycle,
-                        ...(nextOpeningPrompt ? { openingPrompt: nextOpeningPrompt } : {}),
-                    });
-                    return true;
-                }
-                return false;
-            }
-            case "loop/started":
-            case "loop/parked": {
-                const wsId = notifWorkspaceId;
-                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
-                if (wsId === null || sid === null) return false;
-                const key = `${wsId}:${sid}`;
-                const cur = sessionsByKey.get(key);
-                if (!cur) return false;
-                const lifecycle = event === "loop/parked" ? "parked" : "running";
-                const rawPrompt = typeof data.prompt === "string" ? singleLineExcerpt(data.prompt) : "";
-                const nextOpeningPrompt = cur.openingPrompt ?? (rawPrompt !== "" ? rawPrompt : undefined);
-                if (cur.lifecycle !== lifecycle || nextOpeningPrompt !== cur.openingPrompt) {
-                    sessionsByKey.set(key, {
-                        ...cur,
-                        lifecycle,
-                        ...(nextOpeningPrompt ? { openingPrompt: nextOpeningPrompt } : {}),
-                    });
-                    return true;
-                }
-                return false;
-            }
-            case "loop/terminated": {
-                const wsId = notifWorkspaceId;
-                const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
-                if (wsId === null || sid === null) return false;
-                const key = `${wsId}:${sid}`;
-                const cur = sessionsByKey.get(key);
-                if (!cur) return false;
-                const status = isRecord(data.result) && typeof data.result.status === "number" ? data.result.status : 200;
-                const lifecycle = status === 200 ? "completed"
-                    : status === 202 ? "parked"
-                        : status === 499 ? "cancelled"
-                            : status >= 400 ? "failed" : "completed";
-                if (cur.lifecycle !== lifecycle || cur.gates !== 0) {
-                    sessionsByKey.set(key, { ...cur, lifecycle, gates: 0 });
-                    return true;
-                }
-                return false;
-            }
-            case "notifications/resync": {
-                onResync();
-                return false;
-            }
-            default:
-                return false;
+        const outcome = reduceWatchNotification(watchState, raw);
+        watchState = outcome.state;
+        if (outcome.resyncRequired) {
+            onResync();
+            return false;
         }
+        if (outcome.snapshotReason !== null) {
+            initialLoadDone = true;
+            syncActiveStoreFromWatch({ applyOverviewLimit: !isNarrowing });
+            onSnapshotHydrated?.();
+            if (isNarrowing && watchState.omitted > 0) {
+                onResync();
+            }
+            return true;
+        }
+        if (!outcome.changed) return false;
+        syncActiveStoreFromWatch({ applyOverviewLimit: !isNarrowing });
+        return true;
     }
 
     /**
@@ -477,10 +343,10 @@ export function createOverviewStore() {
         const overviewLimit = overviewSessionsLimit();
         const excerptChars = overviewExcerptCharsLimit();
 
-        const [rawWsList, overviewRes] = await Promise.all([
-            managementAction("workspace.list", { includeArchived: true }, "", signal),
-            managementAction("session/list", {
-                archived: showArchived ? "only" : "exclude",
+        if (!showArchived) {
+            // Single-pass unarchived overview via `session/list` (zero `workspace.list` or `N × workspace.sessions` waterfall).
+            const overviewRes = await managementAction("session/list", {
+                archived: "exclude",
                 _meta: {
                     plurnk: {
                         limit: isNarrowing ? 10_000 : overviewLimit,
@@ -488,12 +354,85 @@ export function createOverviewStore() {
                         ...(filterWorkspace ? { workspaceName: filterWorkspace } : {}),
                     },
                 },
-            }, "", signal).catch(() => null),
-        ]);
+            }, "", signal);
+            if (signal.aborted || isDisposed()) return false;
+
+            const overviewMeta = isRecord(overviewRes) && isRecord(overviewRes._meta) && isRecord(overviewRes._meta.plurnk)
+                ? overviewRes._meta.plurnk
+                : null;
+            const rawMetaWorkspaces = Array.isArray(overviewMeta?.workspaces) ? overviewMeta.workspaces : [];
+            const rawSessions = isRecord(overviewRes) && Array.isArray(overviewRes.sessions) ? overviewRes.sessions : [];
+
+            /** @type {Array<Record<string, unknown>>} */
+            const normalizedSessions = [];
+            /** @type {Map<number, Record<string, unknown>>} */
+            const fallbackWorkspaces = new Map();
+            for (const item of rawSessions) {
+                if (!isRecord(item)) continue;
+                const meta = isRecord(item._meta) && isRecord(item._meta.plurnk) ? item._meta.plurnk : null;
+                if (!meta || typeof meta.id !== "number" || typeof meta.workspaceId !== "number" || typeof meta.name !== "string") {
+                    continue;
+                }
+                if (!fallbackWorkspaces.has(meta.workspaceId)) {
+                    const projRoot = typeof meta.projectRoot === "string" ? meta.projectRoot : null;
+                    fallbackWorkspaces.set(meta.workspaceId, {
+                        id: meta.workspaceId,
+                        name: typeof meta.workspaceName === "string" ? meta.workspaceName : String(meta.workspaceId),
+                        projectRoot: projRoot,
+                        projectLabel: typeof meta.projectLabel === "string" ? meta.projectLabel : projRoot,
+                    });
+                }
+                normalizedSessions.push(meta);
+            }
+
+            const workspacesList = rawMetaWorkspaces.length > 0 ? rawMetaWorkspaces : [...fallbackWorkspaces.values()];
+            watchState = hydrateWatchState({
+                workspaces: workspacesList,
+                sessions: normalizedSessions,
+                proposals: Array.isArray(overviewMeta?.proposals) ? overviewMeta.proposals : [],
+                interactions: Array.isArray(overviewMeta?.interactions) ? overviewMeta.interactions : [],
+                omitted: typeof overviewMeta?.omitted === "number" ? overviewMeta.omitted : 0,
+            });
+            syncActiveStoreFromWatch({ applyOverviewLimit: !isNarrowing });
+
+            if (qLower !== "") {
+                const candidates = [...sessionsByKey.values()];
+                await mapWithConcurrency(candidates, 2, async (s) => {
+                    const prompts = await loadSessionLoopPrompts(s.workspaceId, s.name, s.reply?.id ?? null, signal);
+                    if (prompts.length === 0) return;
+                    const key = `${s.workspaceId}:${s.id}`;
+                    const cur = sessionsByKey.get(key);
+                    if (!cur) return;
+                    const opening = cur.openingPrompt ?? truncateSingleLine(prompts[0], excerptChars);
+                    const hit = prompts.find((p) => p.toLowerCase().includes(qLower));
+                    if (!hit && opening === cur.openingPrompt) return;
+                    /** @type {string | undefined} */
+                    let matchedExcerpt;
+                    if (hit && !(cur.reply?.excerpt ?? "").toLowerCase().includes(qLower)) {
+                        matchedExcerpt = matchSnippet(hit, qLower, excerptChars);
+                    }
+                    sessionsByKey.set(key, {
+                        ...cur,
+                        ...(opening ? { openingPrompt: opening } : {}),
+                        ...(hit ? { matchedQuery: qLower } : {}),
+                        ...(matchedExcerpt ? { matchedExcerpt } : {}),
+                    });
+                });
+                if (signal.aborted || isDisposed()) return false;
+            }
+
+            initialLoadDone = true;
+            for (const payload of takeBufferedNotifications()) {
+                applyNotification(payload, { filterStatus, isNarrowing, onResync });
+            }
+            return true;
+        }
+
+        // Archived posture (`?status=archived`): inspect archived workspaces and archived sessions.
+        const rawWsList = await managementAction("workspace.list", { includeArchived: true }, "", signal);
         if (signal.aborted || isDisposed()) return false;
 
         const listedWorkspaces = parseWorkspaceList(rawWsList);
-
         /** @type {Map<number, OverviewWorkspace>} */
         const nextWorkspaces = new Map();
         let nextOrder = 0;
@@ -508,50 +447,7 @@ export function createOverviewStore() {
             });
         }
 
-        const overviewMeta = isRecord(overviewRes) && isRecord(overviewRes._meta) && isRecord(overviewRes._meta.plurnk)
-            ? overviewRes._meta.plurnk
-            : null;
-        omittedCount = typeof overviewMeta?.omitted === "number" ? overviewMeta.omitted : 0;
-
-        /** @type {Map<string, { kind?: string, gates: number, title?: string, reply: OverviewReply | null }>} */
-        const overviewByKey = new Map();
-        /** @type {Set<string>} */
-        const overviewOrderedKeys = new Set();
-        const rawOverviewSessions = isRecord(overviewRes) && Array.isArray(overviewRes.sessions) ? overviewRes.sessions : [];
-        for (const item of rawOverviewSessions) {
-            if (!isRecord(item)) continue;
-            const meta = isRecord(item._meta) && isRecord(item._meta.plurnk) ? item._meta.plurnk : null;
-            if (!meta || typeof meta.workspaceId !== "number" || typeof meta.id !== "number") continue;
-            const key = `${meta.workspaceId}:${meta.id}`;
-            overviewOrderedKeys.add(key);
-            const rawReply = isRecord(meta.reply) ? meta.reply : null;
-            const rawExcerpt = typeof rawReply?.excerpt === "string" && rawReply.excerpt.trim() !== ""
-                ? truncateSingleLine(rawReply.excerpt, excerptChars)
-                : "";
-            const excerpt = rawExcerpt !== "" && rawReply?.continued === true && !rawExcerpt.endsWith("…")
-                ? `${rawExcerpt}…`
-                : rawExcerpt;
-            /** @type {OverviewReply | null} */
-            const reply = rawReply && typeof rawReply.id === "number"
-                ? {
-                    id: rawReply.id,
-                    ...(typeof rawReply.at === "number" ? { at: rawReply.at } : {}),
-                    ...(excerpt !== "" ? { excerpt } : {}),
-                }
-                : null;
-            overviewByKey.set(key, {
-                ...(typeof meta.kind === "string" ? { kind: meta.kind } : {}),
-                gates: typeof meta.gates === "number" ? meta.gates : 0,
-                ...(typeof meta.title === "string" ? { title: meta.title } : {}),
-                reply,
-            });
-        }
-
-        const targetWorkspaces = listedWorkspaces.filter((ws) => {
-            if (filterWorkspace && ws.name !== filterWorkspace) return false;
-            return showArchived ? true : ws.archivedAt === null;
-        });
-
+        const targetWorkspaces = listedWorkspaces.filter((ws) => !filterWorkspace || ws.name === filterWorkspace);
         const perWsSessions = await mapWithConcurrency(
             targetWorkspaces,
             2,
@@ -580,30 +476,20 @@ export function createOverviewStore() {
             for (const row of rows) {
                 if (!isRecord(row) || typeof row.id !== "number" || typeof row.name !== "string") continue;
                 if (row.origin !== "model") continue;
-                const key = `${ws.id}:${row.id}`;
                 const isRowArchived = (row.archivedAt !== null && row.archivedAt !== undefined) || ws.archivedAt !== null;
-                if (showArchived ? !isRowArchived : isRowArchived) continue;
-                if (!showArchived && !isNarrowing && omittedCount > 0 && !overviewOrderedKeys.has(key)) continue;
-
-                const info = overviewByKey.get(key);
-                const prev = sessionsByKey.get(key);
+                if (!isRowArchived) continue;
+                const key = `${ws.id}:${row.id}`;
                 const parentSessionId = typeof row.parentSessionId === "number" ? row.parentSessionId : null;
                 const parentRow = parentSessionId !== null ? rowById.get(parentSessionId) : undefined;
-                const parentOrigin = parentRow?.origin === "model"
-                    ? "model"
-                    : parentRow?.origin === "_plurnk" || parentSessionId !== null
-                        ? "_plurnk"
-                        : null;
+                const parentOrigin = asSessionOrigin(parentRow?.origin) ?? (parentSessionId !== null ? "_plurnk" : null);
                 const parentName = typeof parentRow?.name === "string"
                     ? parentRow.name
                     : parentSessionId !== null
                         ? "_plurnk"
                         : null;
-                const resolvedTitle = typeof info?.title === "string" && info.title.trim() !== ""
-                    ? info.title.trim()
-                    : typeof row.title === "string" && row.title.trim() !== ""
-                        ? row.title.trim()
-                        : undefined;
+                const resolvedTitle = typeof row.title === "string" && row.title.trim() !== ""
+                    ? row.title.trim()
+                    : undefined;
                 nextSessions.set(key, {
                     id: row.id,
                     workspaceId: ws.id,
@@ -614,64 +500,47 @@ export function createOverviewStore() {
                     parentName,
                     parentOrigin,
                     origin: "model",
-                    kind: asSessionKind(info?.kind ?? row.kind) ?? (parentSessionId === null ? "root" : "work"),
+                    kind: asSessionKind(row.kind) ?? (parentSessionId === null ? "root" : "work"),
                     lifecycle: typeof row.lifecycle === "string" ? row.lifecycle : "idle",
-                    gates: info?.gates ?? 0,
-                    archived: isRowArchived,
+                    gates: 0,
+                    archived: true,
                     ...(resolvedTitle ? { title: resolvedTitle } : {}),
-                    ...(prev?.openingPrompt ? { openingPrompt: prev.openingPrompt } : {}),
-                    reply: info?.reply ?? null,
+                    reply: formatOverviewReply(parseWatchReply(row.reply), excerptChars),
                 });
             }
         }
 
-        const needLoopInspection = [...nextSessions.values()].filter((s) =>
-            qLower !== "" || (!s.title && !s.openingPrompt && (s.reply !== null || s.lifecycle !== "idle")),
-        );
-        if (needLoopInspection.length > 0) {
-            await mapWithConcurrency(
-                needLoopInspection,
-                2,
-                async (s) => {
-                    const prompts = await loadSessionLoopPrompts(s.workspaceId, s.name, s.reply?.id ?? null, signal);
-                    if (prompts.length === 0) return;
-                    const opening = truncateSingleLine(prompts[0], excerptChars);
-                    const key = `${s.workspaceId}:${s.id}`;
-                    const cur = nextSessions.get(key);
-                    if (!cur) return;
-                    /** @type {string | undefined} */
-                    let matchedExcerpt;
-                    let matchedQuery;
-                    if (qLower !== "") {
-                        const hit = prompts.find((p) => p.toLowerCase().includes(qLower));
-                        if (hit) {
-                            matchedQuery = qLower;
-                            if (!(cur.reply?.excerpt ?? "").toLowerCase().includes(qLower)) {
-                                matchedExcerpt = matchSnippet(hit, qLower, excerptChars);
-                            }
-                        }
-                    }
-                    nextSessions.set(key, {
-                        ...cur,
-                        ...(opening ? { openingPrompt: opening } : {}),
-                        ...(matchedQuery ? { matchedQuery } : {}),
-                        ...(matchedExcerpt ? { matchedExcerpt } : {}),
-                    });
-                },
-            );
+        if (qLower !== "" && nextSessions.size > 0) {
+            await mapWithConcurrency([...nextSessions.values()], 2, async (s) => {
+                const prompts = await loadSessionLoopPrompts(s.workspaceId, s.name, s.reply?.id ?? null, signal);
+                if (prompts.length === 0) return;
+                const key = `${s.workspaceId}:${s.id}`;
+                const cur = nextSessions.get(key);
+                if (!cur) return;
+                const opening = truncateSingleLine(prompts[0], excerptChars);
+                const hit = prompts.find((p) => p.toLowerCase().includes(qLower));
+                /** @type {string | undefined} */
+                let matchedExcerpt;
+                if (hit && !(cur.reply?.excerpt ?? "").toLowerCase().includes(qLower)) {
+                    matchedExcerpt = matchSnippet(hit, qLower, excerptChars);
+                }
+                nextSessions.set(key, {
+                    ...cur,
+                    ...(opening ? { openingPrompt: opening } : {}),
+                    ...(hit ? { matchedQuery: qLower } : {}),
+                    ...(matchedExcerpt ? { matchedExcerpt } : {}),
+                });
+            });
+            if (signal.aborted || isDisposed()) return false;
         }
-        if (signal.aborted || isDisposed()) return false;
 
+        omittedCount = 0;
         workspacesById.clear();
         for (const [id, ws] of nextWorkspaces) workspacesById.set(id, ws);
-        nextWorkspaceOrder = nextOrder;
         sessionsByKey.clear();
         for (const [k, v] of nextSessions) sessionsByKey.set(k, v);
         initialLoadDone = true;
-
-        for (const payload of takeBufferedNotifications()) {
-            applyNotification(payload, { filterStatus, onResync });
-        }
+        takeBufferedNotifications();
         return true;
     }
 
@@ -680,6 +549,7 @@ export function createOverviewStore() {
         sessionsByKey,
         getOmittedCount: () => omittedCount,
         isInitialLoadDone: () => initialLoadDone,
+        isWatchHydrated: () => watchState.hydrated,
         collectSuggestionTerms,
         applyNotification,
         fetchSnapshot,

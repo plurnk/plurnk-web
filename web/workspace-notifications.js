@@ -6,6 +6,8 @@ import { hasActiveOidcGrant, onOidcGrantChange, recoverFromUnauthorized } from "
 import { isRetryableObservationFailure } from "./passive-reconnect.js";
 
 export const NOTIFICATION_EVENT_LIST = [
+    "notifications/snapshot",
+    "notifications/resync",
     "config/changed",
     "workspace/created",
     "workspace/renamed",
@@ -16,16 +18,15 @@ export const NOTIFICATION_EVENT_LIST = [
     "session/deleted",
     "session/titled",
     "session/policy",
+    "session/replied",
     "loop/started",
     "loop/parked",
     "loop/proposal",
     "loop/interaction",
     "loop/gate-settled",
     "loop/terminated",
-    "log/entry",
     "stream/concluded",
     "notice/event",
-    "notifications/resync",
 ];
 
 /** @typedef {"connecting" | "connected" | "disconnected" | "signed-out" | "closed"} NotificationState */
@@ -43,6 +44,7 @@ const isRecord = (value) => typeof value === "object" && value !== null && !Arra
 /**
  * @typedef {{
  *   state: NotificationState,
+ *   latestSnapshot: Record<string, unknown> | null,
  *   listeners: Set<NotificationListener>,
  *   initialAuthSettled: Promise<void>,
  *   close: () => void,
@@ -53,7 +55,7 @@ const isRecord = (value) => typeof value === "object" && value !== null && !Arra
 const activeStreams = new Map();
 
 /**
- * {§web-session-directory} {§web-workspace-tabs} Shared reference-counted `/notifications` SSE subscription per scope on `acpOrigin()`.
+ * {§web-session-directory} {§web-workspace-tabs} Shared reference-counted `/notifications` Watch SSE subscription per scope on `acpOrigin()`.
  * @param {{
  *   workspaceId?: number,
  *   onNotification?: (payload: Record<string, unknown>) => void,
@@ -101,22 +103,17 @@ export function subscribeWorkspaceNotifications({ workspaceId, onNotification, o
                 onUp: () => {
                     if (!disposed) setState("connected");
                 },
-                onMessage: (type, payload) => {
+                onMessage: (_type, payload) => {
                     if (disposed) return;
-                    if (!isRecord(payload)) {
+                    if (!isRecord(payload) || typeof payload.event !== "string" || !isRecord(payload.data)) {
                         instance.close();
                         setState("disconnected");
                         return;
                     }
-                    const envelope = type === "notifications/resync"
-                        ? {
-                            event: "notifications/resync",
-                            workspaceId: workspaceId ?? null,
-                            sessionId: null,
-                            data: payload,
-                        }
-                        : payload;
-                    for (const listener of listeners) listener.onNotification?.(envelope);
+                    if (payload.event === "notifications/snapshot" && entry) {
+                        entry.latestSnapshot = payload;
+                    }
+                    for (const listener of listeners) listener.onNotification?.(payload);
                 },
                 onError: (error) => {
                     if (disposed) return;
@@ -154,6 +151,7 @@ export function subscribeWorkspaceNotifications({ workspaceId, onNotification, o
             if (!hasActiveOidcGrant()) {
                 stream?.close();
                 stream = null;
+                if (entry) entry.latestSnapshot = null;
                 setState("signed-out");
             }
         });
@@ -162,6 +160,7 @@ export function subscribeWorkspaceNotifications({ workspaceId, onNotification, o
             if (disposed) return;
             stream?.close();
             stream = null;
+            if (entry) entry.latestSnapshot = null;
             setState("closed");
         });
         const offPageShow = on.target(window, "pageshow", (event) => {
@@ -171,10 +170,9 @@ export function subscribeWorkspaceNotifications({ workspaceId, onNotification, o
             }
         });
 
-        startStream();
-
         entry = {
             state: currentState,
+            latestSnapshot: null,
             listeners,
             initialAuthSettled,
             close() {
@@ -189,12 +187,17 @@ export function subscribeWorkspaceNotifications({ workspaceId, onNotification, o
             },
         };
         activeStreams.set(scopeKey, entry);
+        startStream();
     }
 
+    const hadPriorSnapshot = entry.latestSnapshot;
     /** @type {NotificationListener} */
     const listener = { onNotification, onStateChange };
     entry.listeners.add(listener);
     onStateChange?.(entry.state);
+    if (hadPriorSnapshot !== null) {
+        onNotification?.(hadPriorSnapshot);
+    }
 
     const shared = entry;
     return {
