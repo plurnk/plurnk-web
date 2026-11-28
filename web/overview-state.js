@@ -64,7 +64,7 @@ export const orderSessions = (a, b) => (a.reply !== null && b.reply !== null
         ? -1
         : b.reply !== null
             ? 1
-            : a.id - b.id);
+            : b.id - a.id);
 
 /** @param {OverviewSession} session */
 export const isActiveSession = (session) =>
