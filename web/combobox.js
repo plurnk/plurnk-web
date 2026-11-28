@@ -138,25 +138,42 @@ export function attachCombobox(container, {
      */
     function renderItems(items, hintText) {
         if (disposed) return;
-        currentItems = [...items];
-        $.cloneEach(list, "#model-combobox-option", currentItems, (li, choice, index) => {
-            li.id = `${list.id}-opt-${index}`;
-            li.setAttribute("data-combobox-option", choice.value);
-            li.setAttribute("data-combobox-kind", choice.kind ?? defaultKind);
-            li.setAttribute("aria-selected", choice.value === committedValue ? "true" : "false");
-            const primaryEl = $(li, "[data-combobox-primary]");
-            const secondaryEl = $(li, "[data-combobox-secondary]");
-            if (primaryEl) primaryEl.textContent = choice.primary;
-            if (secondaryEl) {
-                secondaryEl.textContent = choice.secondary;
-                if (secondaryEl instanceof HTMLElement) secondaryEl.hidden = choice.secondary.length === 0;
-            }
+        /** @type {T[]} */
+        const unique = [];
+        /** @type {Set<string>} */
+        const seenValues = new Set();
+        for (const item of items) {
+            if (!item.value || seenValues.has(item.value)) continue;
+            seenValues.add(item.value);
+            unique.push(item);
+        }
+        currentItems = unique;
+        $.reconcile(list, "#model-combobox-option", currentItems, {
+            attr: "data-combobox-option",
+            key: (choice) => choice.value,
+            fill(li, choice, index) {
+                li.id = `${list.id}-opt-${index}`;
+                li.setAttribute("data-combobox-kind", choice.kind ?? defaultKind);
+                li.setAttribute("aria-selected", choice.value === committedValue ? "true" : "false");
+                const primaryEl = $(li, "[data-combobox-primary]");
+                const secondaryEl = $(li, "[data-combobox-secondary]");
+                if (primaryEl) primaryEl.textContent = choice.primary;
+                if (secondaryEl) {
+                    secondaryEl.textContent = choice.secondary;
+                    if (secondaryEl instanceof HTMLElement) secondaryEl.hidden = choice.secondary.length === 0;
+                }
+            },
         });
         if (hintText) {
             const hint = $.clone(list, "#model-combobox-hint");
             if (hint) hint.textContent = hintText;
         }
         controller.sync();
+        if (controller.activeOption && list.contains(controller.activeOption) && controller.activeOption.id) {
+            if (input.getAttribute("aria-activedescendant") !== controller.activeOption.id) {
+                input.setAttribute("aria-activedescendant", controller.activeOption.id);
+            }
+        }
     }
 
     /** @param {string} value */
