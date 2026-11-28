@@ -109,6 +109,11 @@ export function lifecycleOfLoopStatus(status) {
     return "completed";
 }
 
+/** @param {string} lifecycle */
+export function isActiveLoopLifecycle(lifecycle) {
+    return lifecycle === "running" || lifecycle === "parked" || lifecycle === "queued";
+}
+
 /** @param {unknown} raw @returns {WatchReply | null} */
 export function parseWatchReply(raw) {
     if (!isRecord(raw) || typeof raw.id !== "number") return null;
@@ -413,25 +418,31 @@ export function reduceWatchNotification(state, raw) {
             if (prev) {
                 workspaces.set(id, { ...prev, archived: isArchived });
             }
+            if (!isArchived) {
+                return {
+                    state: { ...state, lastEventId: nextLastId, workspaces },
+                    changed: Boolean(prev && prev.archived),
+                    resyncRequired: true,
+                    snapshotReason: null,
+                };
+            }
             let sessions = state.sessions;
             let proposals = state.proposals;
             let interactions = state.interactions;
-            if (isArchived) {
-                const nextSessions = new Map(state.sessions);
-                /** @type {Set<number>} */
-                const removedIds = new Set();
-                for (const [key, sess] of state.sessions) {
-                    if (sess.workspaceId === id) {
-                        nextSessions.delete(key);
-                        removedIds.add(sess.id);
-                    }
+            const nextSessions = new Map(state.sessions);
+            /** @type {Set<number>} */
+            const removedIds = new Set();
+            for (const [key, sess] of state.sessions) {
+                if (sess.workspaceId === id) {
+                    nextSessions.delete(key);
+                    removedIds.add(sess.id);
                 }
+            }
+            if (removedIds.size > 0) {
                 sessions = nextSessions;
-                if (removedIds.size > 0) {
-                    const cleaned = removeSessionGates(id, removedIds, proposals, interactions);
-                    proposals = cleaned.nextProposals;
-                    interactions = cleaned.nextInteractions;
-                }
+                const cleaned = removeSessionGates(id, removedIds, proposals, interactions);
+                proposals = cleaned.nextProposals;
+                interactions = cleaned.nextInteractions;
             }
             return {
                 state: {
@@ -442,8 +453,8 @@ export function reduceWatchNotification(state, raw) {
                     proposals,
                     interactions,
                 },
-                changed: Boolean(prev) || sessions !== state.sessions,
-                resyncRequired: false,
+                changed: Boolean(prev && !prev.archived) || sessions !== state.sessions,
+                resyncRequired: state.omitted > 0,
                 snapshotReason: null,
             };
         }
@@ -548,12 +559,17 @@ export function reduceWatchNotification(state, raw) {
             if (wsId === null) {
                 return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
             }
-            if (event === "session/archived" && (data.archivedAt === null || data.archivedAt === undefined)) {
-                return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
-            }
             const rawIds = Array.isArray(data.sessionIds) ? data.sessionIds : (typeof data.id === "number" ? [data.id] : []);
             /** @type {Set<number>} */
             const removedSet = new Set(rawIds.filter((item) => typeof item === "number"));
+            if (event === "session/archived" && (data.archivedAt === null || data.archivedAt === undefined)) {
+                return {
+                    state: { ...state, lastEventId: nextLastId },
+                    changed: false,
+                    resyncRequired: removedSet.size > 0,
+                    snapshotReason: null,
+                };
+            }
             if (removedSet.size === 0) {
                 return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
             }
@@ -572,7 +588,7 @@ export function reduceWatchNotification(state, raw) {
                     interactions: cleaned.nextInteractions,
                 },
                 changed: changed || cleaned.removedAny,
-                resyncRequired: false,
+                resyncRequired: state.omitted > 0 && removedSet.size > 0,
                 snapshotReason: null,
             };
         }
@@ -632,7 +648,15 @@ export function reduceWatchNotification(state, raw) {
             }
             const key = watchSessionKey(wsId, sid);
             const cur = state.sessions.get(key);
-            if (!cur || (cur.reply !== null && cur.reply.id > reply.id)) {
+            if (!cur) {
+                return {
+                    state: { ...state, lastEventId: nextLastId },
+                    changed: false,
+                    resyncRequired: state.omitted > 0,
+                    snapshotReason: null,
+                };
+            }
+            if (cur.reply !== null && cur.reply.id > reply.id) {
                 return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
             }
             const sessions = new Map(state.sessions);
@@ -644,7 +668,103 @@ export function reduceWatchNotification(state, raw) {
                 snapshotReason: null,
             };
         }
-        case "loop/started":
+        case "loop/started": {
+            const sid = typeof data.sessionId === "number" ? data.sessionId : sessId;
+            if (wsId === null || sid === null) {
+                return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
+            }
+            const key = watchSessionKey(wsId, sid);
+            const cur = state.sessions.get(key);
+            const rawOpening = typeof data.opening === "string" && data.opening.trim() !== ""
+                ? data.opening.trim()
+                : undefined;
+            if (isRecord(data.session) && typeof data.session.id === "number" && typeof data.session.name === "string") {
+                const snap = data.session;
+                const snapId = data.session.id;
+                const snapName = data.session.name;
+                const ws = state.workspaces.get(wsId);
+                const wsName = ws?.name ?? cur?.workspaceName ?? String(wsId);
+                const projRoot = ws?.projectRoot ?? cur?.projectRoot ?? null;
+                const projLabel = ws?.projectLabel ?? cur?.projectLabel ?? projRoot;
+                const parentSessionId = typeof snap.parentSessionId === "number" ? snap.parentSessionId : null;
+                const parentName = parentSessionId === null
+                    ? null
+                    : (typeof snap.parentName === "string" ? snap.parentName : "_plurnk");
+                const parentOrigin = parentSessionId === null
+                    ? null
+                    : (asSessionOrigin(snap.parentOrigin) ?? "_plurnk");
+                const kind = asSessionKind(snap.kind) ?? (parentSessionId === null ? "root" : "work");
+                const snapGates = typeof snap.gates === "number" ? snap.gates : 0;
+                const gates = Math.max(snapGates, countSessionGates(wsId, snapId, state.proposals, state.interactions));
+                const snapOpening = typeof snap.opening === "string" && snap.opening.trim() !== ""
+                    ? snap.opening.trim()
+                    : undefined;
+                const nextOpening = cur?.opening ?? snapOpening ?? rawOpening;
+                const snapReply = parseWatchReply(snap.reply);
+                const nextReply = cur?.reply !== null && cur?.reply !== undefined && (snapReply === null || cur.reply.id > snapReply.id)
+                    ? cur.reply
+                    : snapReply;
+                const nextTitle = typeof snap.title === "string" && snap.title.trim() !== ""
+                    ? snap.title.trim()
+                    : cur?.title;
+                const nextPersona = typeof snap.persona === "string"
+                    ? snap.persona
+                    : snap.persona === null
+                        ? undefined
+                        : cur?.persona;
+                const sessions = new Map(state.sessions);
+                sessions.set(key, {
+                    workspaceId: wsId,
+                    workspaceName: wsName,
+                    projectRoot: projRoot,
+                    projectLabel: projLabel,
+                    id: snapId,
+                    name: snapName,
+                    parentSessionId,
+                    parentName,
+                    parentOrigin,
+                    kind,
+                    lifecycle: "running",
+                    gates,
+                    archived: false,
+                    ...(nextOpening !== undefined ? { opening: nextOpening } : {}),
+                    ...(nextTitle !== undefined ? { title: nextTitle } : {}),
+                    ...(nextPersona !== undefined ? { persona: nextPersona } : {}),
+                    reply: nextReply,
+                });
+                const nextOmitted = !cur && state.omitted > 0 ? state.omitted - 1 : state.omitted;
+                return {
+                    state: { ...state, lastEventId: nextLastId, omitted: nextOmitted, sessions },
+                    changed: true,
+                    resyncRequired: false,
+                    snapshotReason: null,
+                };
+            }
+            if (!cur) {
+                return {
+                    state: { ...state, lastEventId: nextLastId },
+                    changed: false,
+                    resyncRequired: state.omitted > 0,
+                    snapshotReason: null,
+                };
+            }
+            const nextOpening = cur.opening ?? rawOpening;
+            if (cur.lifecycle === "running" && cur.opening === nextOpening) {
+                return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
+            }
+            const sessions = new Map(state.sessions);
+            sessions.set(key, {
+                ...cur,
+                lifecycle: "running",
+                ...(nextOpening !== undefined ? { opening: nextOpening } : {}),
+            });
+            return {
+                state: { ...state, lastEventId: nextLastId, sessions },
+                changed: true,
+                resyncRequired: false,
+                snapshotReason: null,
+            };
+        }
         case "loop/parked": {
             const sid = typeof data.sessionId === "number" ? data.sessionId : sessId;
             if (wsId === null || sid === null) {
@@ -653,22 +773,18 @@ export function reduceWatchNotification(state, raw) {
             const key = watchSessionKey(wsId, sid);
             const cur = state.sessions.get(key);
             if (!cur) {
-                return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
+                return {
+                    state: { ...state, lastEventId: nextLastId },
+                    changed: false,
+                    resyncRequired: state.omitted > 0,
+                    snapshotReason: null,
+                };
             }
-            const lifecycle = event === "loop/parked" ? "parked" : "running";
-            const rawOpening = event === "loop/started" && typeof data.opening === "string" && data.opening.trim() !== ""
-                ? data.opening.trim()
-                : undefined;
-            const nextOpening = cur.opening ?? rawOpening;
-            if (cur.lifecycle === lifecycle && cur.opening === nextOpening) {
+            if (cur.lifecycle === "parked") {
                 return { state: { ...state, lastEventId: nextLastId }, changed: false, resyncRequired: false, snapshotReason: null };
             }
             const sessions = new Map(state.sessions);
-            sessions.set(key, {
-                ...cur,
-                lifecycle,
-                ...(nextOpening !== undefined ? { opening: nextOpening } : {}),
-            });
+            sessions.set(key, { ...cur, lifecycle: "parked" });
             return {
                 state: { ...state, lastEventId: nextLastId, sessions },
                 changed: true,
@@ -701,8 +817,8 @@ export function reduceWatchNotification(state, raw) {
             }
             return {
                 state: { ...state, lastEventId: nextLastId, proposals, sessions },
-                changed: true,
-                resyncRequired: false,
+                changed: Boolean(cur),
+                resyncRequired: !cur && state.omitted > 0,
                 snapshotReason: null,
             };
         }
@@ -728,8 +844,8 @@ export function reduceWatchNotification(state, raw) {
             }
             return {
                 state: { ...state, lastEventId: nextLastId, interactions, sessions },
-                changed: true,
-                resyncRequired: false,
+                changed: Boolean(cur),
+                resyncRequired: !cur && state.omitted > 0,
                 snapshotReason: null,
             };
         }
@@ -806,7 +922,7 @@ export function reduceWatchNotification(state, raw) {
                     sessions,
                 },
                 changed,
-                resyncRequired: false,
+                resyncRequired: !cur && state.omitted > 0,
                 snapshotReason: null,
             };
         }

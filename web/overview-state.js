@@ -6,6 +6,7 @@ import {
     asSessionOrigin,
     createWatchState,
     hydrateWatchState,
+    isActiveLoopLifecycle,
     isRecord,
     parseWatchReply,
     reduceWatchNotification,
@@ -186,7 +187,7 @@ export function createOverviewStore() {
             );
 
         const held = applyOverviewLimit
-            ? activeSessions.filter((s, index) => index < overviewLimit || s.gates > 0)
+            ? activeSessions.filter((s, index) => index < overviewLimit || s.gates > 0 || isActiveLoopLifecycle(s.lifecycle))
             : activeSessions;
         omittedCount = watchState.omitted + (activeSessions.length - held.length);
 
@@ -290,9 +291,12 @@ export function createOverviewStore() {
         if (filterStatus === "archived") return false;
         const outcome = reduceWatchNotification(watchState, raw);
         watchState = outcome.state;
+        if (outcome.changed && outcome.snapshotReason === null) {
+            syncActiveStoreFromWatch({ applyOverviewLimit: !isNarrowing });
+        }
         if (outcome.resyncRequired) {
             onResync();
-            return false;
+            return outcome.changed;
         }
         if (outcome.snapshotReason !== null) {
             initialLoadDone = true;
@@ -303,9 +307,7 @@ export function createOverviewStore() {
             }
             return true;
         }
-        if (!outcome.changed) return false;
-        syncActiveStoreFromWatch({ applyOverviewLimit: !isNarrowing });
-        return true;
+        return outcome.changed;
     }
 
     /**
