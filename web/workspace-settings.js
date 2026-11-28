@@ -865,6 +865,12 @@ export default async function observeWorkspaceSettings(main) {
                 controller.notifyChanged(data.family);
                 return;
             }
+            if (event === "notifications/snapshot") {
+                if (typeof data.reason === "string" && data.reason !== "initial") {
+                    controller.notifyChanged("resync");
+                }
+                return;
+            }
             if (notifWorkspaceId !== workspaceId && event !== "notifications/resync") return;
             if (event === "session/created" || event === "session/archived" || event === "session/deleted" || event === "session/titled") {
                 controller.notifyChanged("sessions");

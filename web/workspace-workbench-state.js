@@ -1,6 +1,9 @@
 import { $, $$ } from "on_the_money";
 import managementAction from "./management-action.js";
 import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
+import { asSessionKind, asSessionOrigin, isRecord, lifecycleOfLoopStatus } from "./watch-store.js";
+
+export { asSessionKind, isRecord };
 
 /**
  * @typedef {{
@@ -17,12 +20,6 @@ import { isUntouchedDraftSession, orderByReply } from "./session-selection.js";
  *   readonly archived: boolean,
  * }} WorkbenchSession
  */
-
-/** @param {unknown} value @returns {value is Record<string, unknown>} */
-export const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-
-/** @param {unknown} value @returns {"root" | "work" | "fork" | null} */
-export const asSessionKind = (value) => value === "root" || value === "work" || value === "fork" ? value : null;
 
 /** @param {WorkbenchSession} session @param {boolean} hasModelChildren */
 export function isUntouchedDraftWorkbenchSession(session, hasModelChildren) {
@@ -166,77 +163,46 @@ export function hydrateFoldedSessions(rawFolded, sessionsById) {
 }
 
 /**
- * {§web-directory-documents} Hydrate `sessionsById` from `/acp` (`session/list` + `workspace.sessions`) for `workspaceName`.
+ * {§web-directory-documents} Hydrate `sessionsById` from a single `/acp` `session/list` (`archived: "include"`) call for `workspaceName`.
  * @param {string} workspaceName
  * @param {AbortSignal} signal
  * @param {Map<number, WorkbenchSession>} sessionsById
  */
 export async function loadWorkbenchSessionsFromAcp(workspaceName, signal, sessionsById) {
-    const [overviewRes, sessionsRes] = await Promise.all([
-        managementAction("session/list", {
-            archived: "include",
-            _meta: { plurnk: { workspaceName, limit: 1000 } },
-        }, "", signal),
-        managementAction("workspace.sessions", {
-            workspace: workspaceName,
-            includeArchived: true,
-        }, "", signal, { workspace: workspaceName }),
-    ]);
+    const overviewRes = await managementAction("session/list", {
+        archived: "include",
+        _meta: { plurnk: { workspaceName, limit: 1000 } },
+    }, "", signal);
 
-    /** @type {Map<number, { kind?: string, gates: number, title?: string, replyId: number | null }>} */
-    const overviewById = new Map();
     const rawOverviewSessions = isRecord(overviewRes) && Array.isArray(overviewRes.sessions) ? overviewRes.sessions : [];
+    sessionsById.clear();
     for (const item of rawOverviewSessions) {
         if (!isRecord(item)) continue;
         const meta = isRecord(item._meta) && isRecord(item._meta.plurnk) ? item._meta.plurnk : null;
-        if (!meta || typeof meta.id !== "number") continue;
+        if (!meta || typeof meta.id !== "number" || typeof meta.name !== "string") continue;
+        const parentSessionId = typeof meta.parentSessionId === "number" ? meta.parentSessionId : null;
+        const resolvedTitle = typeof meta.title === "string" && meta.title.trim() !== ""
+            ? meta.title.trim()
+            : null;
         const replyId = isRecord(meta.reply) && typeof meta.reply.id === "number" ? meta.reply.id : null;
-        overviewById.set(meta.id, {
-            ...(typeof meta.kind === "string" ? { kind: meta.kind } : {}),
-            gates: typeof meta.gates === "number" ? meta.gates : 0,
-            ...(typeof meta.title === "string" ? { title: meta.title } : {}),
-            replyId,
-        });
-    }
-
-    const rawRows = isRecord(sessionsRes) && Array.isArray(sessionsRes.sessions) ? sessionsRes.sessions : [];
-    /** @type {Map<number, Record<string, unknown>>} */
-    const rawById = new Map();
-    for (const row of rawRows) {
-        if (isRecord(row) && typeof row.id === "number") rawById.set(row.id, row);
-    }
-
-    sessionsById.clear();
-    for (const row of rawRows) {
-        if (!isRecord(row) || typeof row.id !== "number" || typeof row.name !== "string") continue;
-        if (row.origin !== "model") continue;
-        const info = overviewById.get(row.id);
-        const parentSessionId = typeof row.parentSessionId === "number" ? row.parentSessionId : null;
-        const parentRow = parentSessionId !== null ? rawById.get(parentSessionId) : undefined;
-        const resolvedTitle = typeof info?.title === "string" && info.title.trim() !== ""
-            ? info.title.trim()
-            : typeof row.title === "string" && row.title.trim() !== ""
-                ? row.title.trim()
-                : null;
-        const isArchived = row.archivedAt !== null && row.archivedAt !== undefined;
-        sessionsById.set(row.id, {
-            id: row.id,
-            name: row.name,
+        sessionsById.set(meta.id, {
+            id: meta.id,
+            name: meta.name,
             parentSessionId,
-            parentName: typeof parentRow?.name === "string" ? parentRow.name : null,
-            parentOrigin: typeof parentRow?.origin === "string" ? parentRow.origin : null,
-            kind: asSessionKind(info?.kind ?? row.kind) ?? (parentSessionId === null ? "root" : "work"),
-            lifecycle: typeof row.lifecycle === "string" ? row.lifecycle : "idle",
-            gates: info?.gates ?? 0,
+            parentName: typeof meta.parentName === "string" ? meta.parentName : null,
+            parentOrigin: asSessionOrigin(meta.parentOrigin),
+            kind: asSessionKind(meta.kind) ?? (parentSessionId === null ? "root" : "work"),
+            lifecycle: typeof meta.lifecycle === "string" ? meta.lifecycle : "idle",
+            gates: typeof meta.gates === "number" ? meta.gates : 0,
             title: resolvedTitle,
-            replyId: info?.replyId ?? null,
-            archived: isArchived,
+            replyId,
+            archived: item.archived === true || meta.archived === true,
         });
     }
 }
 
 /**
- * {§web-workspace-tabs} Apply a live `/notifications/<workspace>` SSE event to `sessionsById` and workspace metadata.
+ * {§web-workspace-tabs} Apply a live `/notifications/<workspace>` Watch SSE event to `sessionsById` and workspace metadata.
  * @param {unknown} raw
  * @param {{
  *   readonly workspaceId: number,
@@ -257,6 +223,61 @@ export function applyWorkbenchNotification(raw, ctx) {
     const { workspaceId, sessionsById } = ctx;
 
     switch (event) {
+        case "notifications/snapshot": {
+            if (typeof data.reason === "string" && data.reason !== "initial") {
+                ctx.onResync();
+                return;
+            }
+            const rawWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
+            const wsMeta = rawWorkspaces.find((ws) => isRecord(ws) && ws.id === workspaceId);
+            if (isRecord(wsMeta)) {
+                ctx.onWorkspaceMetaFromSession({
+                    ...(typeof wsMeta.name === "string" ? { workspaceName: wsMeta.name } : {}),
+                    ...(typeof wsMeta.projectRoot === "string" || wsMeta.projectRoot === null
+                        ? { projectRoot: wsMeta.projectRoot }
+                        : {}),
+                    ...(typeof wsMeta.projectLabel === "string" || wsMeta.projectLabel === null
+                        ? { projectLabel: wsMeta.projectLabel }
+                        : {}),
+                });
+            }
+            const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
+            let changed = false;
+            for (const s of rawSessions) {
+                if (!isRecord(s) || s.workspaceId !== workspaceId || typeof s.id !== "number" || typeof s.name !== "string") {
+                    continue;
+                }
+                const prev = sessionsById.get(s.id);
+                const parentSessionId = typeof s.parentSessionId === "number" ? s.parentSessionId : null;
+                const title = typeof s.title === "string" && s.title.trim() !== "" ? s.title.trim() : (prev?.title ?? null);
+                const replyId = isRecord(s.reply) && typeof s.reply.id === "number" ? s.reply.id : (prev?.replyId ?? null);
+                const lifecycle = typeof s.lifecycle === "string" ? s.lifecycle : (prev?.lifecycle ?? "idle");
+                const gates = typeof s.gates === "number" ? s.gates : (prev?.gates ?? 0);
+                sessionsById.set(s.id, {
+                    id: s.id,
+                    name: s.name,
+                    parentSessionId,
+                    parentName: typeof s.parentName === "string" ? s.parentName : (prev?.parentName ?? null),
+                    parentOrigin: asSessionOrigin(s.parentOrigin) ?? prev?.parentOrigin ?? null,
+                    kind: asSessionKind(s.kind) ?? prev?.kind ?? (parentSessionId === null ? "root" : "work"),
+                    lifecycle,
+                    gates,
+                    title,
+                    replyId,
+                    archived: false,
+                });
+                changed = true;
+            }
+            if (changed) {
+                ctx.onReconcileTabs();
+                ctx.onSyncHeaderPlace();
+            }
+            return;
+        }
+        case "notifications/resync": {
+            ctx.onResync();
+            return;
+        }
         case "workspace/renamed": {
             const id = typeof data.id === "number" ? data.id : notifWorkspaceId;
             const name = typeof data.name === "string" ? data.name : null;
@@ -276,18 +297,22 @@ export function applyWorkbenchNotification(raw, ctx) {
             });
             if (data.origin !== "model") return;
             const parentSessionId = typeof data.parentSessionId === "number" ? data.parentSessionId : null;
+            const parentEntry = parentSessionId !== null ? sessionsById.get(parentSessionId) : undefined;
             const kind = asSessionKind(data.kind) ?? (parentSessionId === null ? "root" : "work");
             const lifecycle = typeof data.lifecycle === "string" ? data.lifecycle : "idle";
             const title = typeof data.title === "string" && data.title.trim() !== "" ? data.title.trim() : null;
+            const prev = sessionsById.get(id);
             sessionsById.set(id, {
                 id,
                 name: data.name,
                 parentSessionId,
+                parentName: parentSessionId === null ? null : (parentEntry?.name ?? prev?.parentName ?? "_plurnk"),
+                parentOrigin: parentSessionId === null ? null : (parentEntry !== undefined ? "model" : (prev?.parentOrigin ?? "_plurnk")),
                 kind,
-                lifecycle,
-                gates: 0,
-                title,
-                replyId: null,
+                lifecycle: prev?.lifecycle && prev.lifecycle !== "idle" ? prev.lifecycle : lifecycle,
+                gates: prev?.gates ?? 0,
+                title: title ?? prev?.title ?? null,
+                replyId: prev?.replyId ?? null,
                 archived: false,
             });
             ctx.onReconcileTabs();
@@ -337,6 +362,17 @@ export function applyWorkbenchNotification(raw, ctx) {
             if (changed) ctx.onReconcileTabs();
             return;
         }
+        case "session/replied": {
+            if (notifWorkspaceId !== workspaceId) return;
+            const sid = typeof data.sessionId === "number" ? data.sessionId : notifSessionId;
+            const replyId = isRecord(data.reply) && typeof data.reply.id === "number" ? data.reply.id : null;
+            if (sid === null || replyId === null) return;
+            const cur = sessionsById.get(sid);
+            if (!cur || (cur.replyId !== null && cur.replyId >= replyId)) return;
+            sessionsById.set(sid, { ...cur, replyId });
+            ctx.onReconcileTabs();
+            return;
+        }
         case "loop/proposal":
         case "loop/interaction": {
             if (notifWorkspaceId !== workspaceId || notifSessionId === null) return;
@@ -355,40 +391,6 @@ export function applyWorkbenchNotification(raw, ctx) {
             if (!cur || cur.gates <= 0) return;
             sessionsById.set(sid, { ...cur, gates: Math.max(0, cur.gates - 1) });
             ctx.onReconcileTabs();
-            return;
-        }
-        case "notifications/resync": {
-            ctx.onResync();
-            return;
-        }
-        case "log/entry": {
-            const entry = isRecord(data.entry) ? data.entry : null;
-            if (!entry || notifWorkspaceId !== workspaceId) return;
-            const sid = typeof entry.sessionId === "number" ? entry.sessionId : notifSessionId;
-            if (sid === null) return;
-            const cur = sessionsById.get(sid);
-            if (!cur) return;
-            let nextReplyId = cur.replyId;
-            let nextLifecycle = cur.lifecycle;
-            if (
-                entry.origin === "model"
-                && entry.state === "resolved"
-                && (typeof entry.statusRx !== "number" || entry.statusRx < 400)
-                && (entry.op === "send" || entry.op === "done" || entry.op === "fail")
-                && typeof entry.id === "number"
-            ) {
-                const rxCompletion = isRecord(entry.rx) && (entry.rx.completion === 200 || entry.rx.completion === 499)
-                    ? entry.rx.completion
-                    : (Array.isArray(entry.repliedToSources) && entry.repliedToSources.length > 0 ? 200 : null);
-                if (rxCompletion !== null) nextReplyId = entry.id;
-            }
-            if (entry.state !== "proposed" && entry.op !== "done" && entry.op !== "fail" && entry.op !== "wait") {
-                nextLifecycle = "running";
-            }
-            if (nextReplyId !== cur.replyId || nextLifecycle !== cur.lifecycle) {
-                sessionsById.set(sid, { ...cur, replyId: nextReplyId, lifecycle: nextLifecycle });
-                ctx.onReconcileTabs();
-            }
             return;
         }
         case "loop/started":
@@ -412,10 +414,7 @@ export function applyWorkbenchNotification(raw, ctx) {
             const cur = sessionsById.get(sid);
             if (!cur) return;
             const status = isRecord(data.result) && typeof data.result.status === "number" ? data.result.status : 200;
-            const lifecycle = status === 200 ? "completed"
-                : status === 202 ? "parked"
-                    : status === 499 ? "cancelled"
-                        : status >= 400 ? "failed" : "completed";
+            const lifecycle = lifecycleOfLoopStatus(status);
             if (cur.lifecycle !== lifecycle || cur.gates !== 0) {
                 sessionsById.set(sid, { ...cur, lifecycle, gates: 0 });
                 ctx.onReconcileTabs();

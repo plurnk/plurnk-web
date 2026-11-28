@@ -131,6 +131,7 @@ export default async function verifySessionCards(t) {
             if (input.method === "session/list") {
                 const archivedMode = input.params?.archived ?? "exclude";
                 const wsById = new Map(currentWorkspaces.map((ws) => [ws.id, ws]));
+                const sessById = new Map(currentSessions.map((s) => [s.id, s]));
                 const filtered = currentSessions.filter((s) => {
                     if (s.origin !== "model") return false;
                     const ws = wsById.get(s.workspaceId ?? 7);
@@ -139,10 +140,16 @@ export default async function verifySessionCards(t) {
                     if (archivedMode === "exclude") return !isArch;
                     return true;
                 });
+                const unarchivedWorkspaces = currentWorkspaces
+                    .filter((ws) => !ws.archivedAt)
+                    .map(({ id, name, projectRoot, projectLabel }) => ({ id, name, projectRoot, projectLabel }));
                 rpcResult = {
                     sessions: filtered.map((s) => {
                         const wsId = s.workspaceId ?? 7;
                         const ws = wsById.get(wsId);
+                        const parentSessionId = s.parentSessionId ?? null;
+                        const parentRow = parentSessionId !== null ? sessById.get(parentSessionId) : undefined;
+                        const opening = s.opening ?? loopProvider?.(`${wsId}#${s.name}`)?.[0]?.opening;
                         return {
                             sessionId: `${wsId}#${s.name}`,
                             cwd: ws?.projectRoot ?? "/",
@@ -153,17 +160,31 @@ export default async function verifySessionCards(t) {
                                     id: s.id,
                                     workspaceId: wsId,
                                     workspaceName: ws?.name ?? "work",
+                                    projectRoot: ws?.projectRoot ?? null,
+                                    projectLabel: ws?.projectLabel ?? null,
                                     name: s.name,
-                                    parentSessionId: s.parentSessionId ?? null,
+                                    parentSessionId,
+                                    parentName: parentSessionId === null ? null : (parentRow?.name ?? "_plurnk"),
+                                    parentOrigin: parentSessionId === null ? null : (parentRow?.origin ?? "_plurnk"),
                                     kind: s.kind ?? "root",
                                     lifecycle: s.lifecycle ?? "idle",
                                     gates: s.gates ?? 0,
                                     ...(s.title ? { title: s.title } : {}),
+                                    ...(opening ? { opening } : {}),
                                     reply: s.reply ?? null,
                                 },
                             },
                         };
                     }),
+                    _meta: {
+                        plurnk: {
+                            scope: null,
+                            workspaces: unarchivedWorkspaces,
+                            proposals: [],
+                            interactions: [],
+                            omitted: 0,
+                        },
+                    },
                 };
             } else if (input.method === "session/unarchive") {
                 const targetName = String(input.params?.sessionId ?? "").split("#")[1] ?? "";
@@ -433,24 +454,26 @@ export default async function verifySessionCards(t) {
                 });
                 assert.equal(await page.locator('#search-workspaces a[data-session-link][aria-label="fresh-draft"]').count(), 0, "untouched SSE-created draft stays hidden");
 
-                emitNotification("loop/started", 7, 8, { sessionId: 8, prompt: "Investigate live draft promotion" });
+                emitNotification("loop/started", 7, 8, {
+                    sessionId: 8,
+                    loopId: 1,
+                    loopSeq: 1,
+                    opening: "Investigate live draft promotion",
+                });
                 await page.locator('#search-workspaces a[data-session-link][aria-label="fresh-draft"]').waitFor();
                 assert.equal(await card("fresh-draft").locator("[data-session-headline]").textContent(), "Investigate live draft promotion");
 
-                emitNotification("log/entry", 7, 2, {
-                    entry: {
+                emitNotification("session/replied", 7, 2, {
+                    sessionId: 2,
+                    loopId: 1,
+                    loopSeq: 1,
+                    reply: {
                         id: 40,
-                        sessionId: 2,
-                        loopSeq: 1,
-                        turnSeq: 1,
-                        sequence: 3,
-                        coordinate: "1/1/3/send:40",
-                        origin: "model",
-                        op: "send",
-                        state: "resolved",
-                        statusRx: 200,
-                        tx: { body: "Newest live reply excerpt" },
-                        rx: { completion: 200 },
+                        coordinate: "1/1/3",
+                        completion: 200,
+                        at: Date.now(),
+                        excerpt: "Newest live reply excerpt",
+                        continued: false,
                     },
                 });
                 emitNotification("loop/terminated", 7, 2, {

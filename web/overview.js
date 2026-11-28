@@ -210,10 +210,34 @@ export default function observeOverview(panel, {
         },
         onNotification: (payload) => {
             if (disposed) return;
-            if (searchAbort !== null && isRecord(payload) && payload.event !== "notifications/resync") {
+            const isNarrowing = Boolean(
+                filterQuery.trim()
+                || filterWorkspace
+                || (filterStatus !== "all" && filterStatus !== "archived")
+                || filterKind !== "all",
+            );
+            if (
+                searchAbort !== null
+                && isRecord(payload)
+                && payload.event !== "notifications/resync"
+                && payload.event !== "notifications/snapshot"
+            ) {
                 inFlightNotifications.push(payload);
             }
-            if (store.applyNotification(payload, { filterStatus, onResync: () => { void fetchAcpSearch(); } })) {
+            if (
+                store.applyNotification(payload, {
+                    filterStatus,
+                    isNarrowing,
+                    onResync: () => { void fetchAcpSearch(); },
+                    onSnapshotHydrated: () => {
+                        if (!isNarrowing && filterStatus !== "archived" && searchAbort !== null) {
+                            searchAbort.abort();
+                            searchAbort = null;
+                            inFlightNotifications.length = 0;
+                        }
+                    },
+                })
+            ) {
                 renderer.reconcileDom(store, currentFilters());
             }
         },
